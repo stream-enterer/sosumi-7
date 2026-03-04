@@ -1,0 +1,9 @@
+[package]
+name = "zuicchini"
+version = "0.1.0"
+edition = "2021"
+description = "A zoomable UI framework inspired by Eagle Mode's emCore"
+
+[dependencies]
+log = "0.4"
+slotmap = "1"
