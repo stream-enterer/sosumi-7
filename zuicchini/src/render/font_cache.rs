@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use skrifa::instance::Size;
-use skrifa::outline::DrawSettings;
+use skrifa::outline::{DrawSettings, HintingInstance, HintingOptions};
 use skrifa::MetadataProvider;
 
 static DEFAULT_FONT_DATA: &[u8] = include_bytes!("../../res/fonts/default.ttf");
@@ -40,6 +40,8 @@ pub(crate) struct CachedGlyph {
 
 struct LoadedFont {
     data: Vec<u8>,
+    /// Cached hinting instances keyed by quantized size_px.
+    hinting_instances: HashMap<u16, Option<HintingInstance>>,
 }
 
 /// Font cache with shaping (rustybuzz), hinted rasterization (skrifa+zeno),
@@ -66,6 +68,7 @@ impl FontCache {
         };
         cache.fonts.push(LoadedFont {
             data: DEFAULT_FONT_DATA.to_vec(),
+            hinting_instances: HashMap::new(),
         });
         cache
     }
@@ -73,7 +76,10 @@ impl FontCache {
     /// Register a user-supplied font. Returns the font_id for later use.
     pub fn add_font(&mut self, data: Vec<u8>) -> u16 {
         let id = self.fonts.len() as u16;
-        self.fonts.push(LoadedFont { data });
+        self.fonts.push(LoadedFont {
+            data,
+            hinting_instances: HashMap::new(),
+        });
         id
     }
 
@@ -175,7 +181,7 @@ impl FontCache {
     }
 
     fn rasterize_glyph(&mut self, key: GlyphCacheKey) {
-        let font = match self.fonts.get(key.font_id as usize) {
+        let font = match self.fonts.get_mut(key.font_id as usize) {
             Some(f) => f,
             None => return,
         };
@@ -188,7 +194,8 @@ impl FontCache {
         let location = skrifa::instance::LocationRef::default();
         let glyph_id = skrifa::GlyphId::new(key.glyph_id as u32);
 
-        let advance = self.glyph_advance_from_ref(&font_ref, glyph_id, size, location);
+        let glyph_metrics = font_ref.glyph_metrics(size, location);
+        let advance = glyph_metrics.advance_width(glyph_id).unwrap_or(0.0) as f64;
 
         let outlines = font_ref.outline_glyphs();
         let outline = match outlines.get(glyph_id) {
@@ -200,10 +207,21 @@ impl FontCache {
             }
         };
 
+        // Get or create a hinting instance for this size.
+        let hinting = font
+            .hinting_instances
+            .entry(key.size_px)
+            .or_insert_with(|| {
+                HintingInstance::new(&outlines, size, location, HintingOptions::default()).ok()
+            });
+
         let mut pen = ZenoPen {
             commands: Vec::new(),
         };
-        let settings = DrawSettings::unhinted(size, location);
+        let settings = match hinting {
+            Some(inst) => DrawSettings::hinted(inst, false),
+            None => DrawSettings::unhinted(size, location),
+        };
         if outline.draw(settings, &mut pen).is_err() {
             self.insert_empty_glyph(key, advance);
             return;
@@ -254,17 +272,6 @@ impl FontCache {
                 byte_size: 0,
             },
         );
-    }
-
-    fn glyph_advance_from_ref(
-        &self,
-        font_ref: &skrifa::FontRef,
-        glyph_id: skrifa::GlyphId,
-        size: Size,
-        location: skrifa::instance::LocationRef,
-    ) -> f64 {
-        let glyph_metrics = font_ref.glyph_metrics(size, location);
-        glyph_metrics.advance_width(glyph_id).unwrap_or(0.0) as f64
     }
 
     fn evict_lru(&mut self) {
