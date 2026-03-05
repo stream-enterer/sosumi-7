@@ -90,7 +90,7 @@ impl RadioButton {
     }
 
     pub fn preferred_size(&self) -> (f64, f64) {
-        let tw = FontCache::measure_text(&self.border.caption) as f64;
+        let tw = FontCache::measure_text(&self.border.caption).0 as f64;
         let th = FontCache::GLYPH_HEIGHT as f64;
         self.border.preferred_size_for_content(tw + 8.0, th + 4.0)
     }

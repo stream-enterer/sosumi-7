@@ -37,14 +37,17 @@ impl FontCache {
         Self::GLYPH_HEIGHT as u32
     }
 
-    /// Measure text width without needing a FontCache instance.
-    /// Each character is GLYPH_WIDTH pixels wide with 1 pixel spacing.
-    pub fn measure_text(text: &str) -> u32 {
+    /// Measure text dimensions without needing a FontCache instance.
+    /// Returns (width, height) in pixels.
+    pub fn measure_text(text: &str) -> (u32, u32) {
         let chars = text.chars().count();
         if chars == 0 {
-            return 0;
+            return (0, 0);
         }
-        (chars * (Self::GLYPH_WIDTH + 1) - 1) as u32
+        (
+            (chars * (Self::GLYPH_WIDTH + 1) - 1) as u32,
+            Self::GLYPH_HEIGHT as u32,
+        )
     }
 
     fn init_builtin_glyphs(glyphs: &mut HashMap<char, [u8; Self::GLYPH_HEIGHT]>) {

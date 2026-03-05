@@ -385,6 +385,53 @@ impl<'a> Painter<'a> {
         }
     }
 
+    /// Get the size of text in user coordinates at the given char height.
+    /// Returns (width, height) scaled to match the requested char_height.
+    pub fn get_text_size(&self, text: &str, char_height: f64) -> (f64, f64) {
+        let (gw, gh) = FontCache::measure_text(text);
+        if gh == 0 {
+            return (0.0, 0.0);
+        }
+        let scale = char_height / gh as f64;
+        (gw as f64 * scale, char_height)
+    }
+
+    /// Draw text at the given position scaled to the specified character height.
+    pub fn paint_text_scaled(
+        &mut self,
+        x: f64,
+        y: f64,
+        text: &str,
+        char_height: f64,
+        color: Color,
+    ) {
+        let gh = FontCache::GLYPH_HEIGHT as f64;
+        let scale = char_height / gh;
+        self.push_state();
+        self.translate(x, y);
+        self.scale(scale, scale);
+
+        let mut px = 0.0;
+        for ch in text.chars() {
+            let glyph_data = self.font_cache.get_glyph(ch).copied();
+            if let Some(glyph) = glyph_data {
+                let gw = FontCache::GLYPH_WIDTH as i32;
+                let gh_i = FontCache::GLYPH_HEIGHT as i32;
+                for gy in 0..gh_i {
+                    for gx in 0..gw {
+                        if glyph[gy as usize] & (1 << (gw - 1 - gx)) != 0 {
+                            self.paint_rect(px + gx as f64, gy as f64, 1.0, 1.0, color);
+                        }
+                    }
+                }
+                px += (gw + 1) as f64;
+            } else {
+                px += (FontCache::GLYPH_WIDTH + 1) as f64;
+            }
+        }
+        self.pop_state();
+    }
+
     /// Draw a rectangle outline with a stroke.
     pub fn paint_rect_outlined(&mut self, x: f64, y: f64, w: f64, h: f64, stroke: &Stroke) {
         let sw = stroke.width;

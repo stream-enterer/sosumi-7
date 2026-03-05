@@ -86,7 +86,7 @@ impl CheckBox {
         let w = if self.label.is_empty() {
             BOX_SIZE
         } else {
-            BOX_SIZE + BOX_LABEL_GAP + FontCache::measure_text(&self.label) as f64
+            BOX_SIZE + BOX_LABEL_GAP + FontCache::measure_text(&self.label).0 as f64
         };
         (w, BOX_SIZE)
     }

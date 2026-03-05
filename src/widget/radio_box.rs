@@ -80,7 +80,7 @@ impl RadioBox {
         let w = if self.label.is_empty() {
             CIRCLE_SIZE
         } else {
-            CIRCLE_SIZE + CIRCLE_LABEL_GAP + FontCache::measure_text(&self.label) as f64
+            CIRCLE_SIZE + CIRCLE_LABEL_GAP + FontCache::measure_text(&self.label).0 as f64
         };
         (w, CIRCLE_SIZE)
     }

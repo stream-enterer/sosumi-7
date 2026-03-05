@@ -120,4 +120,32 @@ impl<'a> PanelCtx<'a> {
             (0.0, 0.0)
         }
     }
+
+    /// Find a child by name.
+    pub fn find_child_by_name(&self, name: &str) -> Option<PanelId> {
+        self.tree.find_child_by_name(self.id, name)
+    }
+
+    /// Get the canvas color of the current panel.
+    pub fn canvas_color(&self) -> Color {
+        self.tree
+            .get(self.id)
+            .map(|p| p.canvas_color)
+            .unwrap_or(Color::TRANSPARENT)
+    }
+
+    /// Get whether the panel is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.tree.get(self.id).map(|p| p.enabled).unwrap_or(false)
+    }
+
+    /// Set the enable switch for the current panel.
+    pub fn set_enable_switch(&mut self, enable: bool) {
+        self.tree.set_enable_switch(self.id, enable);
+    }
+
+    /// Get the number of children.
+    pub fn child_count(&self) -> usize {
+        self.tree.child_count(self.id)
+    }
 }

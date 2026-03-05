@@ -52,6 +52,9 @@ impl ZuiWindow {
         if flags.contains(WindowFlags::MAXIMIZED) {
             attrs = attrs.with_maximized(true);
         }
+        if flags.contains(WindowFlags::FULLSCREEN) {
+            attrs = attrs.with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+        }
 
         let winit_window = Arc::new(
             event_loop
@@ -261,6 +264,50 @@ impl ZuiWindow {
                     mouse_x: 0.0,
                     mouse_y: 0.0,
                 })
+            }
+            WindowEvent::CursorMoved { position, .. } => Some(InputEvent {
+                key: InputKey::MouseLeft, // Dummy key for position-only events
+                variant: InputVariant::Move,
+                chars: String::new(),
+                is_repeat: false,
+                mouse_x: position.x,
+                mouse_y: position.y,
+            }),
+            WindowEvent::MouseWheel { delta, .. } => {
+                let (dx, dy) = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => (*x as f64, *y as f64),
+                    winit::event::MouseScrollDelta::PixelDelta(p) => (p.x, p.y),
+                };
+                // Encode scroll as a wheel event with delta in mouse_x/y
+                if dy.abs() > dx.abs() {
+                    Some(InputEvent {
+                        key: if dy > 0.0 {
+                            InputKey::WheelUp
+                        } else {
+                            InputKey::WheelDown
+                        },
+                        variant: InputVariant::Press,
+                        chars: String::new(),
+                        is_repeat: false,
+                        mouse_x: dx,
+                        mouse_y: dy,
+                    })
+                } else if dx.abs() > 0.0 {
+                    Some(InputEvent {
+                        key: if dx > 0.0 {
+                            InputKey::WheelRight
+                        } else {
+                            InputKey::WheelLeft
+                        },
+                        variant: InputVariant::Press,
+                        chars: String::new(),
+                        is_repeat: false,
+                        mouse_x: dx,
+                        mouse_y: dy,
+                    })
+                } else {
+                    None
+                }
             }
             _ => None,
         }

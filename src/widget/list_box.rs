@@ -172,7 +172,7 @@ impl ListBox {
         let max_w = self
             .items
             .iter()
-            .map(|s| FontCache::measure_text(s) as f64)
+            .map(|s| FontCache::measure_text(s).0 as f64)
             .fold(0.0f64, f64::max);
         let h = self.items.len() as f64 * ROW_HEIGHT;
         self.border.preferred_size_for_content(max_w + 4.0, h)

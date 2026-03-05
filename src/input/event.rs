@@ -44,6 +44,12 @@ pub enum InputKey {
     F11,
     F12,
 
+    // Mouse wheel
+    WheelUp,
+    WheelDown,
+    WheelLeft,
+    WheelRight,
+
     // Printable keys
     Space,
     Key(char),
@@ -58,6 +64,8 @@ pub enum InputVariant {
     Release,
     /// Repeated key press (held down).
     Repeat,
+    /// Mouse moved (no button state change).
+    Move,
 }
 
 /// An input event.

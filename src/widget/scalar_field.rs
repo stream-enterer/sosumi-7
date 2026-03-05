@@ -76,7 +76,7 @@ impl ScalarField {
 
         // Value text
         let text = format!("{:.prec$}", self.value, prec = self.precision);
-        let tw = FontCache::measure_text(&text) as f64;
+        let tw = FontCache::measure_text(&text).0 as f64;
         let tx = cx + (cw - tw) / 2.0;
         let ty = cy + (ch - FontCache::GLYPH_HEIGHT as f64) / 2.0;
         painter.paint_text(tx, ty, &text, self.look.fg_color);
@@ -98,7 +98,7 @@ impl ScalarField {
                     self.dragging = false;
                     true
                 }
-                InputVariant::Repeat => {
+                InputVariant::Repeat | InputVariant::Move => {
                     if self.dragging && cw > 0.0 {
                         let dx = event.mouse_x - self.drag_start_x;
                         let dv = dx / cw * range;

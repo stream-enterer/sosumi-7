@@ -103,7 +103,7 @@ impl TextField {
     pub fn input(&mut self, event: &InputEvent) -> bool {
         match event.variant {
             InputVariant::Press | InputVariant::Repeat => {}
-            InputVariant::Release => return false,
+            InputVariant::Release | InputVariant::Move => return false,
         }
 
         match event.key {

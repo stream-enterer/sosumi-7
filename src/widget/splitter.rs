@@ -98,7 +98,7 @@ impl Splitter {
                     }
                     false
                 }
-                InputVariant::Repeat => {
+                InputVariant::Repeat | InputVariant::Move => {
                     if self.dragging {
                         let (pos, size) = match resolved {
                             ResolvedOrientation::Horizontal => (event.mouse_x, w),

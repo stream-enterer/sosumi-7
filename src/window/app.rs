@@ -5,6 +5,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
+use crate::input::{InputState, InputVariant};
 use crate::panel::PanelTree;
 use crate::scheduler::EngineScheduler;
 
@@ -78,6 +79,7 @@ pub struct App {
     pub scheduler: EngineScheduler,
     pub tree: PanelTree,
     pub windows: HashMap<WindowId, ZuiWindow>,
+    pub input_state: InputState,
     setup_fn: Option<SetupFn>,
     initialized: bool,
 }
@@ -90,6 +92,7 @@ impl App {
             scheduler: EngineScheduler::new(),
             tree: PanelTree::new(),
             windows: HashMap::new(),
+            input_state: InputState::new(),
             setup_fn: Some(setup),
             initialized: false,
         }
@@ -167,7 +170,21 @@ impl ApplicationHandler for App {
                 }
             }
             ref input_event => {
-                if let Some(input) = ZuiWindow::handle_input(input_event) {
+                if let Some(mut input) = ZuiWindow::handle_input(input_event) {
+                    // Update persistent input state
+                    match input.variant {
+                        InputVariant::Press => self.input_state.press(input.key),
+                        InputVariant::Release => self.input_state.release(input.key),
+                        InputVariant::Move => {
+                            self.input_state.set_mouse(input.mouse_x, input.mouse_y);
+                        }
+                        _ => {}
+                    }
+
+                    // Always populate current mouse position on events
+                    input.mouse_x = self.input_state.mouse_x;
+                    input.mouse_y = self.input_state.mouse_y;
+
                     if let Some(win) = self.windows.get_mut(&window_id) {
                         // Dispatch to the focused panel's behavior
                         if let Some(focused) = win.view().focused() {

@@ -22,6 +22,8 @@ bitflags! {
         const CANVAS_CHANGED  = 0b0001_0000;
         /// Panel is being viewed (visit state changed).
         const VIEW_CHANGED    = 0b0010_0000;
+        /// Panel's enable state changed.
+        const ENABLE_CHANGED  = 0b0100_0000;
     }
 }
 

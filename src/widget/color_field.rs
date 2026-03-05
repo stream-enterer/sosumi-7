@@ -35,7 +35,12 @@ impl ColorField {
     }
 
     pub fn set_color(&mut self, color: Color) {
-        self.color = color;
+        if self.color != color {
+            self.color = color;
+            if let Some(cb) = &mut self.on_color {
+                cb(color);
+            }
+        }
     }
 
     pub fn is_expanded(&self) -> bool {

@@ -33,6 +33,10 @@ pub struct PanelData {
     pub visible: bool,
     /// Whether the panel can receive input focus.
     pub focusable: bool,
+    /// Per-panel enable switch (ANDed with ancestors to compute enabled).
+    pub enable_switch: bool,
+    /// Computed: true if this panel and all ancestors have enable_switch=true.
+    pub enabled: bool,
     /// Pending notice flags.
     pub pending_notices: NoticeFlags,
     /// The behavior implementation (extracted for mutation).
@@ -52,6 +56,8 @@ impl PanelData {
             canvas_color: Color::TRANSPARENT,
             visible: true,
             focusable: false,
+            enable_switch: true,
+            enabled: true,
             pending_notices: NoticeFlags::empty(),
             behavior: None,
         }
@@ -62,7 +68,9 @@ impl PanelData {
 pub struct PanelTree {
     panels: SlotMap<PanelId, PanelData>,
     root: Option<PanelId>,
-    name_index: HashMap<String, PanelId>,
+    /// Per-parent name index: (parent, child_name) → child_id.
+    /// Root panels use their own id as the "parent" key.
+    name_index: HashMap<(PanelId, String), PanelId>,
 }
 
 impl PanelTree {
@@ -77,7 +85,8 @@ impl PanelTree {
     /// Create the root panel.
     pub fn create_root(&mut self, name: &str) -> PanelId {
         let id = self.panels.insert(PanelData::new(name.to_string()));
-        self.name_index.insert(name.to_string(), id);
+        // Root uses its own id as the parent key
+        self.name_index.insert((id, name.to_string()), id);
         self.root = Some(id);
         id
     }
@@ -85,7 +94,8 @@ impl PanelTree {
     /// Create a child panel under the given parent.
     pub fn create_child(&mut self, parent: PanelId, name: &str) -> PanelId {
         let id = self.panels.insert(PanelData::new(name.to_string()));
-        self.name_index.insert(name.to_string(), id);
+        self.name_index
+            .insert((parent, name.to_string()), id);
 
         // Link into parent's child list
         self.panels[id].parent = Some(parent);
@@ -142,11 +152,18 @@ impl PanelTree {
         // Remove from arena and name index
         for desc_id in descendants {
             if let Some(data) = self.panels.remove(desc_id) {
-                self.name_index.remove(&data.name);
+                if let Some(parent_id) = data.parent {
+                    self.name_index.remove(&(parent_id, data.name));
+                }
             }
         }
         if let Some(data) = self.panels.remove(id) {
-            self.name_index.remove(&data.name);
+            if let Some(parent_id) = data.parent {
+                self.name_index.remove(&(parent_id, data.name));
+            } else {
+                // Root panel uses itself as key
+                self.name_index.remove(&(id, data.name));
+            }
         }
     }
 
@@ -165,9 +182,19 @@ impl PanelTree {
         self.panels.get_mut(id)
     }
 
-    /// Look up a panel by name.
+    /// Look up a child panel by parent and name.
+    pub fn find_child_by_name(&self, parent: PanelId, name: &str) -> Option<PanelId> {
+        self.name_index
+            .get(&(parent, name.to_string()))
+            .copied()
+    }
+
+    /// Look up a panel by name (searches all panels).
     pub fn find_by_name(&self, name: &str) -> Option<PanelId> {
-        self.name_index.get(name).copied()
+        self.panels
+            .iter()
+            .find(|(_, data)| data.name == name)
+            .map(|(id, _)| id)
     }
 
     /// Check if a panel exists.
@@ -217,6 +244,42 @@ impl PanelTree {
         if let Some(panel) = self.panels.get_mut(id) {
             panel.canvas_color = color;
             panel.pending_notices.insert(NoticeFlags::CANVAS_CHANGED);
+        }
+    }
+
+    /// Set the enable switch for a panel and recompute enabled state for descendants.
+    pub fn set_enable_switch(&mut self, id: PanelId, enable: bool) {
+        if let Some(panel) = self.panels.get_mut(id) {
+            if panel.enable_switch == enable {
+                return;
+            }
+            panel.enable_switch = enable;
+        }
+        self.recompute_enabled(id);
+    }
+
+    /// Recompute the `enabled` field for a panel and its descendants.
+    fn recompute_enabled(&mut self, id: PanelId) {
+        let parent_enabled = self
+            .panels
+            .get(id)
+            .and_then(|p| p.parent)
+            .and_then(|pid| self.panels.get(pid))
+            .map(|p| p.enabled)
+            .unwrap_or(true);
+
+        if let Some(panel) = self.panels.get_mut(id) {
+            let new_enabled = panel.enable_switch && parent_enabled;
+            if panel.enabled != new_enabled {
+                panel.enabled = new_enabled;
+                panel.pending_notices.insert(NoticeFlags::ENABLE_CHANGED);
+            }
+        }
+
+        // Recurse into children
+        let child_ids: Vec<PanelId> = self.children(id).collect();
+        for child_id in child_ids {
+            self.recompute_enabled(child_id);
         }
     }
 

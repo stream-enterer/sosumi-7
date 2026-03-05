@@ -33,7 +33,7 @@ impl Label {
     }
 
     pub fn preferred_size(&self) -> (f64, f64) {
-        let tw = FontCache::measure_text(&self.border.caption) as f64;
+        let tw = FontCache::measure_text(&self.border.caption).0 as f64;
         // Content is empty — the caption IS the label text, drawn by the border.
         // Add 4px to width for the 2px left/right padding the border uses when
         // painting the caption text (at ox + 2.0).
