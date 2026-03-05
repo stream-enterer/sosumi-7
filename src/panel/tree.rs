@@ -187,10 +187,7 @@ impl PanelTree {
 
     /// Iterate over children of a panel.
     pub fn children(&self, parent: PanelId) -> ChildIter<'_> {
-        let first = self
-            .panels
-            .get(parent)
-            .and_then(|p| p.first_child);
+        let first = self.panels.get(parent).and_then(|p| p.first_child);
         ChildIter {
             tree: self,
             current: first,
@@ -211,9 +208,7 @@ impl PanelTree {
     pub fn set_layout_rect(&mut self, id: PanelId, x: f64, y: f64, w: f64, h: f64) {
         if let Some(panel) = self.panels.get_mut(id) {
             panel.layout_rect = (x, y, w, h);
-            panel
-                .pending_notices
-                .insert(NoticeFlags::LAYOUT_CHANGED);
+            panel.pending_notices.insert(NoticeFlags::LAYOUT_CHANGED);
         }
     }
 
@@ -221,9 +216,7 @@ impl PanelTree {
     pub fn set_canvas_color(&mut self, id: PanelId, color: Color) {
         if let Some(panel) = self.panels.get_mut(id) {
             panel.canvas_color = color;
-            panel
-                .pending_notices
-                .insert(NoticeFlags::CANVAS_CHANGED);
+            panel.pending_notices.insert(NoticeFlags::CANVAS_CHANGED);
         }
     }
 

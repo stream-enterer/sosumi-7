@@ -99,7 +99,9 @@ impl View {
 
     /// Get the current visit state (top of stack).
     pub fn current_visit(&self) -> &VisitState {
-        self.visit_stack.last().expect("Visit stack should never be empty")
+        self.visit_stack
+            .last()
+            .expect("Visit stack should never be empty")
     }
 
     /// Get the full visit stack.
@@ -197,7 +199,10 @@ impl View {
             _ => return,
         };
 
-        let canvas_color = tree.get(id).map(|p| p.canvas_color).unwrap_or(Color::TRANSPARENT);
+        let canvas_color = tree
+            .get(id)
+            .map(|p| p.canvas_color)
+            .unwrap_or(Color::TRANSPARENT);
 
         painter.push_state();
         painter.translate(offset_x + x, offset_y + y);

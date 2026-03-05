@@ -102,7 +102,7 @@ fn paint_ellipse_basic() {
     // Center should be filled
     let px = img.pixel(10, 10);
     assert_eq!(px[0], 255); // red
-    // Far corner should be canvas color
+                            // Far corner should be canvas color
     assert_eq!(img.pixel(0, 0), &[0, 0, 0, 255]);
 }
 

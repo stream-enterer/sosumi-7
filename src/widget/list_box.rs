@@ -9,6 +9,8 @@ use super::look::Look;
 
 const ROW_HEIGHT: f64 = 11.0;
 
+type SelectionCb = Box<dyn FnMut(&[usize])>;
+
 /// Selection mode for list box items.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SelectionMode {
@@ -26,7 +28,7 @@ pub struct ListBox {
     focus_index: usize,
     scroll_y: f64,
     selection_mode: SelectionMode,
-    pub on_selection: Option<Box<dyn FnMut(&[usize])>>,
+    pub on_selection: Option<SelectionCb>,
     pub on_trigger: Option<Box<dyn FnMut(usize)>>,
 }
 
@@ -149,7 +151,8 @@ impl ListBox {
                             self.fire_selection();
                         }
                         SelectionMode::Multi => {
-                            if let Some(pos) = self.selected.iter().position(|&s| s == clicked_idx) {
+                            if let Some(pos) = self.selected.iter().position(|&s| s == clicked_idx)
+                            {
                                 self.selected.remove(pos);
                             } else {
                                 self.selected.push(clicked_idx);

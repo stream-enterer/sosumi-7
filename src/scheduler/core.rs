@@ -92,11 +92,7 @@ impl EngineScheduler {
     // ── Engine API ──────────────────────────────────────────────────
 
     /// Register an engine with the given priority and behavior. Starts sleeping.
-    pub fn register_engine(
-        &mut self,
-        priority: Priority,
-        behavior: Box<dyn Engine>,
-    ) -> EngineId {
+    pub fn register_engine(&mut self, priority: Priority, behavior: Box<dyn Engine>) -> EngineId {
         self.engines.insert(EngineData {
             priority,
             awake: false,
@@ -133,13 +129,10 @@ impl EngineScheduler {
 
     /// Create a timer that fires the given signal after `interval_ms`.
     /// If `periodic` is true, the timer repeats.
-    pub fn create_timer(
-        &mut self,
-        signal: SignalId,
-        interval_ms: u64,
-        periodic: bool,
-    ) -> TimerId {
-        let id = self.timer_central.create_timer(signal, interval_ms, periodic);
+    pub fn create_timer(&mut self, signal: SignalId, interval_ms: u64, periodic: bool) -> TimerId {
+        let id = self
+            .timer_central
+            .create_timer(signal, interval_ms, periodic);
         // Ensure the timer engine is awake
         self.ensure_timer_engine_awake();
         id

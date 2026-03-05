@@ -51,12 +51,7 @@ impl Screen {
         let virtual_bounds = if monitors.is_empty() {
             (0, 0, 1920, 1080)
         } else {
-            (
-                min_x,
-                min_y,
-                (max_x - min_x) as u32,
-                (max_y - min_y) as u32,
-            )
+            (min_x, min_y, (max_x - min_x) as u32, (max_y - min_y) as u32)
         };
 
         Self {

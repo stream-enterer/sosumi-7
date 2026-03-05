@@ -8,7 +8,6 @@ use crate::render::Painter;
 use super::border::{Border, OuterBorderType};
 use super::look::Look;
 
-
 /// RGBA color editor widget.
 pub struct ColorField {
     border: Border,

@@ -10,6 +10,8 @@ use super::look::Look;
 const CHAR_WIDTH: f64 = 6.0; // GLYPH_WIDTH + 1
 const TEXT_PADDING: f64 = 2.0;
 
+type TextChangeCb = Box<dyn FnMut(&str)>;
+
 /// Single-line text input widget.
 pub struct TextField {
     border: Border,
@@ -20,7 +22,7 @@ pub struct TextField {
     scroll_x: f64,
     password_mode: bool,
     max_length: usize,
-    pub on_text: Option<Box<dyn FnMut(&str)>>,
+    pub on_text: Option<TextChangeCb>,
 }
 
 impl TextField {

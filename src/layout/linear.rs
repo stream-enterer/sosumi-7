@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use crate::panel::{NoticeFlags, PanelBehavior, PanelCtx, PanelId};
 use crate::render::Painter;
 
-use super::{get_constraint, Alignment, ChildConstraint, Orientation, ResolvedOrientation, Spacing};
+use super::{
+    get_constraint, Alignment, ChildConstraint, Orientation, ResolvedOrientation, Spacing,
+};
 
 /// Linear layout: arranges children along a single axis with weighted distribution.
 pub struct LinearLayout {
@@ -66,21 +68,37 @@ impl LinearLayout {
         let resolved = self.orientation.resolve(w, h);
         let sp = &self.spacing;
 
-        let (main_total, cross_total, margin_main_start, margin_main_end, margin_cross_start, margin_cross_end) =
-            match resolved {
-                ResolvedOrientation::Horizontal => (
-                    w, h, sp.margin_left, sp.margin_right, sp.margin_top, sp.margin_bottom,
-                ),
-                ResolvedOrientation::Vertical => (
-                    h, w, sp.margin_top, sp.margin_bottom, sp.margin_left, sp.margin_right,
-                ),
-            };
+        let (
+            main_total,
+            cross_total,
+            margin_main_start,
+            margin_main_end,
+            margin_cross_start,
+            margin_cross_end,
+        ) = match resolved {
+            ResolvedOrientation::Horizontal => (
+                w,
+                h,
+                sp.margin_left,
+                sp.margin_right,
+                sp.margin_top,
+                sp.margin_bottom,
+            ),
+            ResolvedOrientation::Vertical => (
+                h,
+                w,
+                sp.margin_top,
+                sp.margin_bottom,
+                sp.margin_left,
+                sp.margin_right,
+            ),
+        };
 
         let cell_count = children.len().max(self.min_cell_count);
-        let gap_count = if cell_count > 1 { cell_count - 1 } else { 0 };
-        let available_main = (main_total - margin_main_start - margin_main_end
-            - sp.inner * gap_count as f64)
-            .max(0.0);
+        let gap_count = cell_count.saturating_sub(1);
+        let available_main =
+            (main_total - margin_main_start - margin_main_end - sp.inner * gap_count as f64)
+                .max(0.0);
         let cross_available = (cross_total - margin_cross_start - margin_cross_end).max(0.0);
 
         // Compute weighted distribution
@@ -89,7 +107,11 @@ impl LinearLayout {
             .map(|c| get_constraint(&self.child_constraints, *c, &self.default_constraint).weight)
             .sum();
 
-        let total_weight = if total_weight <= 0.0 { 1.0 } else { total_weight };
+        let total_weight = if total_weight <= 0.0 {
+            1.0
+        } else {
+            total_weight
+        };
 
         // First pass: compute initial sizes, clamp, track surplus
         let mut sizes: Vec<f64> = Vec::with_capacity(children.len());
@@ -149,7 +171,12 @@ impl LinearLayout {
         }
     }
 
-    fn child_cross_size(&self, ctx: &mut PanelCtx, child: PanelId, resolved: ResolvedOrientation) -> f64 {
+    fn child_cross_size(
+        &self,
+        ctx: &mut PanelCtx,
+        child: PanelId,
+        resolved: ResolvedOrientation,
+    ) -> f64 {
         let (pw, ph) = ctx.child_preferred_size(child);
         match resolved {
             ResolvedOrientation::Horizontal => ph,
@@ -225,7 +252,11 @@ mod tests {
             let r = tree.get(*child).unwrap().layout_rect;
             assert!((r.2 - 100.0).abs() < 0.01, "child {i} width: {}", r.2);
             assert!((r.3 - 200.0).abs() < 0.01, "child {i} height: {}", r.3);
-            assert!((r.0 - (i as f64 * 100.0)).abs() < 0.01, "child {i} x: {}", r.0);
+            assert!(
+                (r.0 - (i as f64 * 100.0)).abs() < 0.01,
+                "child {i} x: {}",
+                r.0
+            );
             assert!((r.1 - 0.0).abs() < 0.01, "child {i} y: {}", r.1);
         }
     }
@@ -241,7 +272,11 @@ mod tests {
             let r = tree.get(*child).unwrap().layout_rect;
             assert!((r.2 - 300.0).abs() < 0.01, "child {i} width: {}", r.2);
             assert!((r.3 - 200.0).abs() < 0.01, "child {i} height: {}", r.3);
-            assert!((r.1 - (i as f64 * 200.0)).abs() < 0.01, "child {i} y: {}", r.1);
+            assert!(
+                (r.1 - (i as f64 * 200.0)).abs() < 0.01,
+                "child {i} y: {}",
+                r.1
+            );
         }
     }
 
@@ -250,9 +285,27 @@ mod tests {
         let (mut tree, root, children) = setup_tree(3);
         tree.set_layout_rect(root, 0.0, 0.0, 300.0, 100.0);
         let mut layout = LinearLayout::horizontal();
-        layout.set_child_constraint(children[0], ChildConstraint { weight: 1.0, ..Default::default() });
-        layout.set_child_constraint(children[1], ChildConstraint { weight: 2.0, ..Default::default() });
-        layout.set_child_constraint(children[2], ChildConstraint { weight: 1.0, ..Default::default() });
+        layout.set_child_constraint(
+            children[0],
+            ChildConstraint {
+                weight: 1.0,
+                ..Default::default()
+            },
+        );
+        layout.set_child_constraint(
+            children[1],
+            ChildConstraint {
+                weight: 2.0,
+                ..Default::default()
+            },
+        );
+        layout.set_child_constraint(
+            children[2],
+            ChildConstraint {
+                weight: 1.0,
+                ..Default::default()
+            },
+        );
         layout.do_layout(&mut PanelCtx::new(&mut tree, root));
 
         let w0 = tree.get(children[0]).unwrap().layout_rect.2;
@@ -267,14 +320,13 @@ mod tests {
     fn spacing() {
         let (mut tree, root, children) = setup_tree(2);
         tree.set_layout_rect(root, 0.0, 0.0, 200.0, 100.0);
-        let mut layout = LinearLayout::horizontal()
-            .with_spacing(Spacing {
-                inner: 10.0,
-                margin_left: 5.0,
-                margin_right: 5.0,
-                margin_top: 0.0,
-                margin_bottom: 0.0,
-            });
+        let mut layout = LinearLayout::horizontal().with_spacing(Spacing {
+            inner: 10.0,
+            margin_left: 5.0,
+            margin_right: 5.0,
+            margin_top: 0.0,
+            margin_bottom: 0.0,
+        });
         layout.do_layout(&mut PanelCtx::new(&mut tree, root));
 
         let r0 = tree.get(children[0]).unwrap().layout_rect;

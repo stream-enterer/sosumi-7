@@ -1,6 +1,6 @@
-use crate::foundation::{Color, Image};
 use super::font_cache::FontCache;
 use super::stroke::Stroke;
+use crate::foundation::{Color, Image};
 
 /// Coordinate transform state.
 #[derive(Clone, Debug)]
@@ -206,15 +206,7 @@ impl<'a> Painter<'a> {
     }
 
     /// Fill a rounded rectangle.
-    pub fn paint_round_rect(
-        &mut self,
-        x: f64,
-        y: f64,
-        w: f64,
-        h: f64,
-        radius: f64,
-        color: Color,
-    ) {
+    pub fn paint_round_rect(&mut self, x: f64, y: f64, w: f64, h: f64, radius: f64, color: Color) {
         let px = self.to_pixel_x(x);
         let py = self.to_pixel_y(y);
         let pw = (w * self.state.scale_x) as i32;
@@ -314,14 +306,7 @@ impl<'a> Painter<'a> {
     }
 
     /// Draw a rectangle outline with a stroke.
-    pub fn paint_rect_outlined(
-        &mut self,
-        x: f64,
-        y: f64,
-        w: f64,
-        h: f64,
-        stroke: &Stroke,
-    ) {
+    pub fn paint_rect_outlined(&mut self, x: f64, y: f64, w: f64, h: f64, stroke: &Stroke) {
         let sw = stroke.width;
         // Top
         self.paint_rect(x, y, w, sw, stroke.color);
@@ -334,14 +319,7 @@ impl<'a> Painter<'a> {
     }
 
     /// Draw a stroked line.
-    pub fn paint_line_stroked(
-        &mut self,
-        x0: f64,
-        y0: f64,
-        x1: f64,
-        y1: f64,
-        stroke: &Stroke,
-    ) {
+    pub fn paint_line_stroked(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, stroke: &Stroke) {
         // For width=1, just draw a simple line
         if stroke.width <= 1.0 {
             self.paint_line(x0, y0, x1, y1, stroke.color);

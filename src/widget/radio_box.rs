@@ -20,12 +20,7 @@ pub struct RadioBox {
 }
 
 impl RadioBox {
-    pub fn new(
-        label: &str,
-        look: Rc<Look>,
-        group: Rc<RefCell<RadioGroup>>,
-        index: usize,
-    ) -> Self {
+    pub fn new(label: &str, look: Rc<Look>, group: Rc<RefCell<RadioGroup>>, index: usize) -> Self {
         Self {
             label: label.to_string(),
             look,

@@ -1,7 +1,5 @@
 use zuicchini::foundation::Color;
-use zuicchini::panel::{
-    NoticeFlags, PanelBehavior, PanelCtx, PanelId, PanelTree, View, ViewFlags,
-};
+use zuicchini::panel::{NoticeFlags, PanelBehavior, PanelCtx, PanelId, PanelTree, View, ViewFlags};
 use zuicchini::render::Painter;
 
 struct TestBehavior {
@@ -104,7 +102,9 @@ fn notice_flag_propagation() {
 
     // Verify notice is pending before delivery
     let panel = tree.get(root).unwrap();
-    assert!(panel.pending_notices.contains(NoticeFlags::CHILDREN_CHANGED));
+    assert!(panel
+        .pending_notices
+        .contains(NoticeFlags::CHILDREN_CHANGED));
 
     // Deliver notices
     tree.deliver_notices();

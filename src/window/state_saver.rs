@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::model::{ConfigModel, ConfigError, Record};
+use crate::model::{ConfigError, ConfigModel, Record};
 use crate::scheduler::SignalId;
 
 /// Persisted window geometry.
@@ -52,7 +52,13 @@ impl Record for WindowGeometry {
             .and_then(|e| e.as_bool())
             .unwrap_or(false);
 
-        Ok(Self { x, y, width, height, maximized })
+        Ok(Self {
+            x,
+            y,
+            width,
+            height,
+            maximized,
+        })
     }
 
     fn to_kdl(&self) -> kdl::KdlNode {
@@ -87,7 +93,7 @@ impl WindowStateSaver {
     }
 
     /// Save the current window position/size.
-    pub fn save_from(&mut self, window: &super::window::ZuiWindow) {
+    pub fn save_from(&mut self, window: &super::zui_window::ZuiWindow) {
         let pos = window.winit_window.outer_position().unwrap_or_default();
         let size = window.winit_window.inner_size();
         let maximized = window.winit_window.is_maximized();

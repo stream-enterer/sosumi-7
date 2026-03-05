@@ -4,7 +4,7 @@ use bitflags::bitflags;
 
 use crate::input::{InputEvent, InputKey, InputVariant};
 use crate::panel::{PanelId, View};
-use crate::render::{WgpuCompositor, TileCache};
+use crate::render::{TileCache, WgpuCompositor};
 use crate::scheduler::SignalId;
 
 use super::app::GpuContext;
@@ -44,8 +44,7 @@ impl ZuiWindow {
         flags: WindowFlags,
         close_signal: SignalId,
     ) -> Self {
-        let mut attrs = winit::window::WindowAttributes::default()
-            .with_title("zuicchini");
+        let mut attrs = winit::window::WindowAttributes::default().with_title("zuicchini");
 
         if flags.contains(WindowFlags::UNDECORATED) {
             attrs = attrs.with_decorations(false);
@@ -54,14 +53,21 @@ impl ZuiWindow {
             attrs = attrs.with_maximized(true);
         }
 
-        let winit_window = Arc::new(event_loop.create_window(attrs).expect("failed to create window"));
+        let winit_window = Arc::new(
+            event_loop
+                .create_window(attrs)
+                .expect("failed to create window"),
+        );
 
         let size = winit_window.inner_size();
         let w = size.width.max(1);
         let h = size.height.max(1);
 
         // Create surface — use Arc clone for 'static lifetime
-        let surface = gpu.instance.create_surface(winit_window.clone()).expect("failed to create surface");
+        let surface = gpu
+            .instance
+            .create_surface(winit_window.clone())
+            .expect("failed to create surface");
 
         let caps = surface.get_capabilities(&gpu.adapter);
         let format = caps
@@ -113,11 +119,7 @@ impl ZuiWindow {
     }
 
     /// Render a frame: paint dirty tiles on CPU, upload to GPU, composite.
-    pub fn render(
-        &mut self,
-        tree: &mut crate::panel::PanelTree,
-        gpu: &GpuContext,
-    ) {
+    pub fn render(&mut self, tree: &mut crate::panel::PanelTree, gpu: &GpuContext) {
         use crate::render::Painter;
 
         // Paint dirty tiles

@@ -78,8 +78,16 @@ impl RasterLayout {
             return;
         }
 
-        let gap_w = if cols > 1 { sp.inner * (cols - 1) as f64 } else { 0.0 };
-        let gap_h = if rows > 1 { sp.inner * (rows - 1) as f64 } else { 0.0 };
+        let gap_w = if cols > 1 {
+            sp.inner * (cols - 1) as f64
+        } else {
+            0.0
+        };
+        let gap_h = if rows > 1 {
+            sp.inner * (rows - 1) as f64
+        } else {
+            0.0
+        };
 
         let cell_w = ((usable_w - gap_w) / cols as f64).max(0.0);
         let mut cell_h = ((usable_h - gap_h) / rows as f64).max(0.0);
@@ -109,11 +117,11 @@ impl RasterLayout {
             (Some(c), Some(r)) => (c, r),
             (Some(c), None) => {
                 let c = c.max(1);
-                (c, (n + c - 1) / c)
+                (c, n.div_ceil(c))
             }
             (None, Some(r)) => {
                 let r = r.max(1);
-                ((n + r - 1) / r, r)
+                (n.div_ceil(r), r)
             }
             (None, None) => self.auto_grid(n, usable_w, usable_h),
         }
@@ -128,9 +136,17 @@ impl RasterLayout {
         let mut best_score = f64::INFINITY;
 
         for c in 1..=n {
-            let r = (n + c - 1) / c;
-            let gap_w = if c > 1 { self.spacing.inner * (c - 1) as f64 } else { 0.0 };
-            let gap_h = if r > 1 { self.spacing.inner * (r - 1) as f64 } else { 0.0 };
+            let r = n.div_ceil(c);
+            let gap_w = if c > 1 {
+                self.spacing.inner * (c - 1) as f64
+            } else {
+                0.0
+            };
+            let gap_h = if r > 1 {
+                self.spacing.inner * (r - 1) as f64
+            } else {
+                0.0
+            };
             let cw = (usable_w - gap_w) / c as f64;
             let ch = (usable_h - gap_h) / r as f64;
             if cw <= 0.0 || ch <= 0.0 {
@@ -144,7 +160,7 @@ impl RasterLayout {
             }
         }
 
-        let rows = (n + best_cols - 1) / best_cols;
+        let rows = n.div_ceil(best_cols);
         (best_cols, rows)
     }
 }

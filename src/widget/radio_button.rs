@@ -43,7 +43,12 @@ pub struct RadioButton {
 }
 
 impl RadioButton {
-    pub fn new(caption: &str, look: Rc<Look>, group: Rc<RefCell<RadioGroup>>, index: usize) -> Self {
+    pub fn new(
+        caption: &str,
+        look: Rc<Look>,
+        group: Rc<RefCell<RadioGroup>>,
+        index: usize,
+    ) -> Self {
         Self {
             border: Border::new(OuterBorderType::RoundRect).with_caption(caption),
             look,

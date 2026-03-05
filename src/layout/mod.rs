@@ -12,7 +12,9 @@ pub enum Orientation {
     /// Switches between horizontal and vertical based on the container's
     /// tallness (height / width). If tallness > threshold, use horizontal;
     /// otherwise use vertical.
-    Adaptive { tallness_threshold: f64 },
+    Adaptive {
+        tallness_threshold: f64,
+    },
 }
 
 impl Orientation {
@@ -41,18 +43,13 @@ pub enum ResolvedOrientation {
 }
 
 /// Cross-axis alignment for children within a layout.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum Alignment {
     Start,
     Center,
     End,
+    #[default]
     Stretch,
-}
-
-impl Default for Alignment {
-    fn default() -> Self {
-        Self::Stretch
-    }
 }
 
 /// Spacing configuration for layouts.

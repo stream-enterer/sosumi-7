@@ -14,13 +14,15 @@ pub enum DialogResult {
     Custom(u32),
 }
 
+type DialogFinishCb = Box<dyn FnMut(&DialogResult)>;
+
 /// Modal dialog container widget.
 pub struct Dialog {
     border: Border,
     look: Rc<Look>,
     buttons: Vec<(String, DialogResult)>,
     result: Option<DialogResult>,
-    pub on_finish: Option<Box<dyn FnMut(&DialogResult)>>,
+    pub on_finish: Option<DialogFinishCb>,
 }
 
 const BUTTON_HEIGHT: f64 = 22.0;
@@ -79,8 +81,8 @@ impl Dialog {
         // Layout button row at the bottom
         if button_count > 0 {
             let total_btn_w = cw;
-            let btn_w = (total_btn_w - (button_count as f64 - 1.0) * BUTTON_SPACING)
-                / button_count as f64;
+            let btn_w =
+                (total_btn_w - (button_count as f64 - 1.0) * BUTTON_SPACING) / button_count as f64;
             let btn_y = cy + ch - BUTTON_HEIGHT;
 
             for (i, &child) in children.iter().skip(content_children).enumerate() {

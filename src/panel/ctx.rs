@@ -23,11 +23,7 @@ impl<'a> PanelCtx<'a> {
     }
 
     /// Create a child with a behavior.
-    pub fn create_child_with(
-        &mut self,
-        name: &str,
-        behavior: Box<dyn PanelBehavior>,
-    ) -> PanelId {
+    pub fn create_child_with(&mut self, name: &str, behavior: Box<dyn PanelBehavior>) -> PanelId {
         let child_id = self.tree.create_child(self.id, name);
         self.tree.set_behavior(child_id, behavior);
         child_id

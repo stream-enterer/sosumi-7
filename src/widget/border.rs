@@ -97,14 +97,7 @@ impl Border {
     }
 
     /// Paint the border chrome.
-    pub fn paint_border(
-        &self,
-        painter: &mut Painter,
-        w: f64,
-        h: f64,
-        look: &Look,
-        focused: bool,
-    ) {
+    pub fn paint_border(&self, painter: &mut Painter, w: f64, h: f64, look: &Look, focused: bool) {
         // Outer border
         match self.outer {
             OuterBorderType::None => {}
@@ -161,13 +154,7 @@ impl Border {
             }
             OuterBorderType::PopupRoot => {
                 painter.paint_rect(0.0, 0.0, w, h, look.bg_color);
-                painter.paint_rect_outlined(
-                    0.0,
-                    0.0,
-                    w,
-                    h,
-                    &Stroke::new(look.border_color, 2.0),
-                );
+                painter.paint_rect_outlined(0.0, 0.0, w, h, &Stroke::new(look.border_color, 2.0));
             }
         }
 
@@ -218,13 +205,7 @@ impl Border {
                 );
             }
             InnerBorderType::CustomRect => {
-                painter.paint_rect_outlined(
-                    ix,
-                    iy,
-                    iw,
-                    ih,
-                    &Stroke::new(look.border_color, 1.0),
-                );
+                painter.paint_rect_outlined(ix, iy, iw, ih, &Stroke::new(look.border_color, 1.0));
             }
         }
 

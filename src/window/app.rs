@@ -9,7 +9,7 @@ use crate::panel::PanelTree;
 use crate::scheduler::EngineScheduler;
 
 use super::screen::Screen;
-use super::window::{WindowFlags, ZuiWindow};
+use super::zui_window::{WindowFlags, ZuiWindow};
 
 /// Shared GPU resources created once and used by all windows.
 pub struct GpuContext {
@@ -17,6 +17,12 @@ pub struct GpuContext {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+}
+
+impl Default for GpuContext {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GpuContext {
@@ -41,15 +47,14 @@ impl GpuContext {
             .expect("failed to find a suitable GPU adapter");
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("zuicchini_device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("zuicchini_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                trace: wgpu::Trace::Off,
+                experimental_features: wgpu::ExperimentalFeatures::default(),
+            })
             .await
             .expect("failed to create GPU device");
 

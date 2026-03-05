@@ -154,13 +154,26 @@ impl PackLayout {
         let w2: f64 = items[split..].iter().map(|i| i.weight).sum();
         let total = w1 + w2;
         if total <= 0.0 {
-            return (rect, PackRect { x: rect.x, y: rect.y, w: 0.0, h: 0.0 });
+            return (
+                rect,
+                PackRect {
+                    x: rect.x,
+                    y: rect.y,
+                    w: 0.0,
+                    h: 0.0,
+                },
+            );
         }
         let ratio = w1 / total;
 
         if horizontal {
             let split_w = (rect.w - gap).max(0.0) * ratio;
-            let r1 = PackRect { x: rect.x, y: rect.y, w: split_w, h: rect.h };
+            let r1 = PackRect {
+                x: rect.x,
+                y: rect.y,
+                w: split_w,
+                h: rect.h,
+            };
             let r2 = PackRect {
                 x: rect.x + split_w + gap,
                 y: rect.y,
@@ -170,7 +183,12 @@ impl PackLayout {
             (r1, r2)
         } else {
             let split_h = (rect.h - gap).max(0.0) * ratio;
-            let r1 = PackRect { x: rect.x, y: rect.y, w: rect.w, h: split_h };
+            let r1 = PackRect {
+                x: rect.x,
+                y: rect.y,
+                w: rect.w,
+                h: split_h,
+            };
             let r2 = PackRect {
                 x: rect.x,
                 y: rect.y + split_h + gap,

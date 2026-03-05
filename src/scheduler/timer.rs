@@ -43,8 +43,7 @@ impl TimerCentral {
             signal_id,
             interval_ms,
             periodic,
-            next_fire: Instant::now()
-                + std::time::Duration::from_millis(interval_ms),
+            next_fire: Instant::now() + std::time::Duration::from_millis(interval_ms),
             active: true,
         });
         id

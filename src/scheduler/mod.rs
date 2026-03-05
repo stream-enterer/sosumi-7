@@ -1,6 +1,6 @@
-mod signal;
-mod engine;
 mod core;
+mod engine;
+mod signal;
 mod timer;
 
 pub use self::core::EngineScheduler;

@@ -76,7 +76,7 @@ impl WgpuCompositor {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("tile_pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -104,7 +104,7 @@ impl WgpuCompositor {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -193,7 +193,10 @@ impl WgpuCompositor {
                 ],
             });
 
-            self.tiles[idx] = Some(TileGpuData { texture, bind_group });
+            self.tiles[idx] = Some(TileGpuData {
+                texture,
+                bind_group,
+            });
         }
 
         // Write pixel data
@@ -247,6 +250,7 @@ impl WgpuCompositor {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 ..Default::default()
@@ -259,15 +263,13 @@ impl WgpuCompositor {
                     let idx = (row * self.cols + col) as usize;
                     if let Some(gpu_tile) = &self.tiles[idx] {
                         // Compute NDC position for this tile
-                        let ndc_x =
-                            (col as f32 * TILE_SIZE as f32) / self.viewport_width as f32 * 2.0
-                                - 1.0;
+                        let ndc_x = (col as f32 * TILE_SIZE as f32) / self.viewport_width as f32
+                            * 2.0
+                            - 1.0;
                         let ndc_y = 1.0
                             - (row as f32 * TILE_SIZE as f32) / self.viewport_height as f32 * 2.0;
-                        let ndc_w =
-                            TILE_SIZE as f32 / self.viewport_width as f32 * 2.0;
-                        let ndc_h =
-                            -(TILE_SIZE as f32 / self.viewport_height as f32 * 2.0);
+                        let ndc_w = TILE_SIZE as f32 / self.viewport_width as f32 * 2.0;
+                        let ndc_h = -(TILE_SIZE as f32 / self.viewport_height as f32 * 2.0);
 
                         let uniforms = TileUniforms {
                             offset_scale: [ndc_x, ndc_y, ndc_w, ndc_h],
