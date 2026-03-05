@@ -34,19 +34,10 @@ pub trait Record: Sized {
 pub(crate) mod tests {
     use super::*;
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, Default, PartialEq)]
     pub struct TestConfig {
         pub name: String,
         pub value: i64,
-    }
-
-    impl Default for TestConfig {
-        fn default() -> Self {
-            Self {
-                name: String::new(),
-                value: 0,
-            }
-        }
     }
 
     impl Record for TestConfig {
