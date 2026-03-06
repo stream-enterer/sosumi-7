@@ -18,6 +18,14 @@ pub enum ImageQuality {
     Nearest,
     /// Bilinear interpolation.
     Bilinear,
+    /// Box filter for downscaling.
+    AreaSampled,
+    /// Catmull-Rom bicubic (4x4 kernel).
+    Bicubic,
+    /// Windowed sinc (4-tap).
+    Lanczos,
+    /// Edge-sensitive adaptive (Hermite/bicubic blend).
+    Adaptive,
 }
 
 /// A texture describes how a shape is filled.

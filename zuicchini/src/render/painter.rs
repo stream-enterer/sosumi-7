@@ -1,6 +1,8 @@
 use super::font_cache::{FontCache, GlyphCacheKey};
+use super::interpolation;
+use super::scanline::{self, WindingRule};
 use super::stroke::{Stroke, StrokeEnd, StrokeEndType};
-use crate::foundation::{Color, Image, PixelRect};
+use crate::foundation::{Color, Fixed12, Image, PixelRect};
 
 /// Base multiplier for decoration size.
 const ARROW_BASE_SIZE: f64 = 10.0;
@@ -8,6 +10,18 @@ const ARROW_BASE_SIZE: f64 = 10.0;
 const ARROW_NOTCH: f64 = 0.3;
 /// Number of segments for circle approximation.
 const CIRCLE_SEGMENTS: usize = 32;
+/// Bezier subdivision flatness threshold (pixels).
+const BEZIER_FLATNESS: f64 = 0.5;
+/// Maximum Bezier subdivision depth.
+const BEZIER_MAX_DEPTH: u8 = 10;
+
+/// Text alignment for boxed text rendering.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TextAlignment {
+    Left,
+    Center,
+    Right,
+}
 
 /// Coordinate transform state.
 #[derive(Clone, Debug)]
@@ -124,6 +138,69 @@ impl<'a> Painter<'a> {
         };
     }
 
+    /// Set origin (absolute offset, replaces current offset).
+    pub fn set_origin(&mut self, x: f64, y: f64) {
+        self.state.offset_x = x;
+        self.state.offset_y = y;
+    }
+
+    /// Set scaling (absolute, replaces current scale).
+    pub fn set_scaling(&mut self, sx: f64, sy: f64) {
+        self.state.scale_x = sx;
+        self.state.scale_y = sy;
+    }
+
+    /// Get the current origin (offset).
+    pub fn origin(&self) -> (f64, f64) {
+        (self.state.offset_x, self.state.offset_y)
+    }
+
+    /// Get the current scaling.
+    pub fn scaling(&self) -> (f64, f64) {
+        (self.state.scale_x, self.state.scale_y)
+    }
+
+    /// Round x coordinate to nearest pixel.
+    pub fn round_x(&self, x: f64) -> f64 {
+        ((x * self.state.scale_x + self.state.offset_x).round() - self.state.offset_x)
+            / self.state.scale_x
+    }
+
+    /// Round y coordinate to nearest pixel.
+    pub fn round_y(&self, y: f64) -> f64 {
+        ((y * self.state.scale_y + self.state.offset_y).round() - self.state.offset_y)
+            / self.state.scale_y
+    }
+
+    /// Round x coordinate down to pixel boundary.
+    pub fn round_down_x(&self, x: f64) -> f64 {
+        ((x * self.state.scale_x + self.state.offset_x).floor() - self.state.offset_x)
+            / self.state.scale_x
+    }
+
+    /// Round y coordinate down to pixel boundary.
+    pub fn round_down_y(&self, y: f64) -> f64 {
+        ((y * self.state.scale_y + self.state.offset_y).floor() - self.state.offset_y)
+            / self.state.scale_y
+    }
+
+    /// Round x coordinate up to pixel boundary.
+    pub fn round_up_x(&self, x: f64) -> f64 {
+        ((x * self.state.scale_x + self.state.offset_x).ceil() - self.state.offset_x)
+            / self.state.scale_x
+    }
+
+    /// Round y coordinate up to pixel boundary.
+    pub fn round_up_y(&self, y: f64) -> f64 {
+        ((y * self.state.scale_y + self.state.offset_y).ceil() - self.state.offset_y)
+            / self.state.scale_y
+    }
+
+    /// Get the current clip rectangle.
+    pub fn clip(&self) -> PixelRect {
+        self.state.clip
+    }
+
     /// Immutable access to the font cache (for measurement).
     pub fn font_cache(&self) -> &FontCache {
         self.font_cache
@@ -140,45 +217,13 @@ impl<'a> Painter<'a> {
         self.fill_rect_pixels(px, py, pw, ph, color);
     }
 
-    /// Fill an ellipse with a solid color.
+    /// Fill an ellipse with a solid color using AA polygon approximation.
     pub fn paint_ellipse(&mut self, cx: f64, cy: f64, rx: f64, ry: f64, color: Color) {
-        let pcx = self.to_pixel_x(cx);
-        let pcy = self.to_pixel_y(cy);
-        let prx = (rx * self.state.scale_x) as i32;
-        let pry = (ry * self.state.scale_y) as i32;
-
-        if prx <= 0 || pry <= 0 {
+        if rx <= 0.0 || ry <= 0.0 {
             return;
         }
-
-        let x0 = pcx - prx;
-        let y0 = pcy - pry;
-        let x1 = pcx + prx;
-        let y1 = pcy + pry;
-
-        let PixelRect {
-            x: clip_x,
-            y: clip_y,
-            w: clip_w,
-            h: clip_h,
-        } = self.state.clip;
-        let start_y = y0.max(clip_y);
-        let end_y = y1.min(clip_y + clip_h);
-        let start_x = x0.max(clip_x);
-        let end_x = x1.min(clip_x + clip_w);
-
-        let rx_sq = (prx as f64) * (prx as f64);
-        let ry_sq = (pry as f64) * (pry as f64);
-
-        for py in start_y..end_y {
-            let dy = py as f64 - pcy as f64 + 0.5;
-            for px in start_x..end_x {
-                let dx = px as f64 - pcx as f64 + 0.5;
-                if (dx * dx) / rx_sq + (dy * dy) / ry_sq <= 1.0 {
-                    self.blend_pixel(px, py, color);
-                }
-            }
-        }
+        let verts = Self::ellipse_polygon(cx, cy, rx, ry);
+        self.fill_polygon_aa(&verts, color, WindingRule::NonZero);
     }
 
     /// Fill an ellipse sector (pie slice) defined by center, radii, and angle range.
@@ -194,13 +239,26 @@ impl<'a> Painter<'a> {
         end_angle: f64,
         color: Color,
     ) {
-        // Build sector as polygon: center + arc points
-        let segments = CIRCLE_SEGMENTS;
-        let mut verts = Vec::with_capacity(segments + 2);
-        verts.push((cx, cy));
+        if rx <= 0.0 || ry <= 0.0 {
+            return;
+        }
         let sweep = end_angle - start_angle;
-        for i in 0..=segments {
-            let t = i as f64 / segments as f64;
+        // Normalize negative sweep.
+        if sweep < 0.0 {
+            return self.paint_ellipse_sector(cx, cy, rx, ry, end_angle, start_angle, color);
+        }
+        // Full circle or more — delegate to paint_ellipse.
+        if sweep >= 2.0 * std::f64::consts::PI {
+            return self.paint_ellipse(cx, cy, rx, ry, color);
+        }
+        let segments = adaptive_circle_segments(rx.max(ry));
+        // Scale segments proportional to sweep.
+        let arc_segments =
+            ((segments as f64 * sweep / (2.0 * std::f64::consts::PI)).ceil() as usize).max(2);
+        let mut verts = Vec::with_capacity(arc_segments + 2);
+        verts.push((cx, cy));
+        for i in 0..=arc_segments {
+            let t = i as f64 / arc_segments as f64;
             let angle = start_angle + t * sweep;
             verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
         }
@@ -239,20 +297,72 @@ impl<'a> Painter<'a> {
             .min(clip_y + clip_h)
             .min(self.target.height() as i32);
 
+        let (start, end) = if horizontal {
+            ((px as f64, py as f64), ((px + pw) as f64, py as f64))
+        } else {
+            ((px as f64, py as f64), (px as f64, (py + ph) as f64))
+        };
+
         for row in start_y..end_y {
             for col in start_x..end_x {
-                let t = if horizontal {
-                    if pw > 0 {
-                        (col - px) as f64 / pw as f64
-                    } else {
-                        0.0
-                    }
-                } else if ph > 0 {
-                    (row - py) as f64 / ph as f64
-                } else {
-                    0.0
-                };
-                let color = color_a.lerp(color_b, t);
+                let color = interpolation::sample_linear_gradient(
+                    start,
+                    end,
+                    color_a,
+                    color_b,
+                    (col as f64, row as f64),
+                );
+                self.blend_pixel(col, row, color);
+            }
+        }
+    }
+
+    /// Fill an elliptical region with a radial gradient.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_radial_gradient(
+        &mut self,
+        cx: f64,
+        cy: f64,
+        rx: f64,
+        ry: f64,
+        color_inner: Color,
+        color_outer: Color,
+    ) {
+        if rx <= 0.0 || ry <= 0.0 {
+            return;
+        }
+
+        let pcx = self.to_pixel_x(cx);
+        let pcy = self.to_pixel_y(cy);
+        let prx = (rx * self.state.scale_x) as i32;
+        let pry = (ry * self.state.scale_y) as i32;
+
+        let PixelRect {
+            x: clip_x,
+            y: clip_y,
+            w: clip_w,
+            h: clip_h,
+        } = self.state.clip;
+        let start_x = (pcx - prx).max(clip_x).max(0);
+        let start_y = (pcy - pry).max(clip_y).max(0);
+        let end_x = (pcx + prx)
+            .min(clip_x + clip_w)
+            .min(self.target.width() as i32);
+        let end_y = (pcy + pry)
+            .min(clip_y + clip_h)
+            .min(self.target.height() as i32);
+
+        for row in start_y..end_y {
+            for col in start_x..end_x {
+                let color = interpolation::sample_radial_gradient(
+                    pcx as f64,
+                    pcy as f64,
+                    prx as f64,
+                    pry as f64,
+                    color_inner,
+                    color_outer,
+                    (col as f64, row as f64),
+                );
                 self.blend_pixel(col, row, color);
             }
         }
@@ -268,50 +378,14 @@ impl<'a> Painter<'a> {
     }
 
     /// Fill a polygon defined by a list of (x, y) vertices.
+    /// Uses anti-aliased scanline rasterization with NonZero winding rule.
     pub fn paint_polygon(&mut self, vertices: &[(f64, f64)], color: Color) {
-        if vertices.len() < 3 {
-            return;
-        }
+        self.fill_polygon_aa(vertices, color, WindingRule::NonZero);
+    }
 
-        let pixels: Vec<(i32, i32)> = vertices
-            .iter()
-            .map(|&(x, y)| (self.to_pixel_x(x), self.to_pixel_y(y)))
-            .collect();
-
-        let min_y = pixels.iter().map(|p| p.1).min().unwrap();
-        let max_y = pixels.iter().map(|p| p.1).max().unwrap();
-
-        let PixelRect {
-            x: clip_x,
-            y: clip_y,
-            w: clip_w,
-            h: clip_h,
-        } = self.state.clip;
-        let start_y = min_y.max(clip_y);
-        let end_y = (max_y + 1).min(clip_y + clip_h);
-
-        for y in start_y..end_y {
-            let mut intersections = Vec::new();
-            let n = pixels.len();
-            for i in 0..n {
-                let (x0, y0) = pixels[i];
-                let (x1, y1) = pixels[(i + 1) % n];
-                if (y0 <= y && y1 > y) || (y1 <= y && y0 > y) {
-                    let t = (y - y0) as f64 / (y1 - y0) as f64;
-                    intersections.push(x0 + (t * (x1 - x0) as f64) as i32);
-                }
-            }
-            intersections.sort();
-            for pair in intersections.chunks(2) {
-                if pair.len() == 2 {
-                    let sx = pair[0].max(clip_x);
-                    let ex = pair[1].min(clip_x + clip_w);
-                    for px in sx..ex {
-                        self.blend_pixel(px, y, color);
-                    }
-                }
-            }
-        }
+    /// Fill a polygon using even-odd winding rule (for polygon rings with holes).
+    pub fn paint_polygon_even_odd(&mut self, vertices: &[(f64, f64)], color: Color) {
+        self.fill_polygon_aa(vertices, color, WindingRule::EvenOdd);
     }
 
     /// Draw a polygon outline by stroking each edge as a thick line.
@@ -374,57 +448,13 @@ impl<'a> Painter<'a> {
         );
     }
 
-    /// Fill a rounded rectangle.
+    /// Fill a rounded rectangle using AA polygon approximation.
     pub fn paint_round_rect(&mut self, x: f64, y: f64, w: f64, h: f64, radius: f64, color: Color) {
-        let px = self.to_pixel_x(x);
-        let py = self.to_pixel_y(y);
-        let pw = (w * self.state.scale_x) as i32;
-        let ph = (h * self.state.scale_y) as i32;
-        let pr = (radius * self.state.scale_x.min(self.state.scale_y)) as i32;
-        let pr = pr.min(pw / 2).min(ph / 2);
-
-        if pw <= 0 || ph <= 0 {
+        if w <= 0.0 || h <= 0.0 {
             return;
         }
-
-        let PixelRect {
-            x: clip_x,
-            y: clip_y,
-            w: clip_w,
-            h: clip_h,
-        } = self.state.clip;
-        let start_y = py.max(clip_y);
-        let end_y = (py + ph).min(clip_y + clip_h);
-
-        let r_sq = (pr as f64) * (pr as f64);
-
-        for row in start_y..end_y {
-            let ry = row - py;
-            let mut sx = px;
-            let mut ex = px + pw;
-
-            // Check if in corner region
-            if ry < pr {
-                // Top corners
-                let dy = pr as f64 - ry as f64 - 0.5;
-                let dx = (r_sq - dy * dy).max(0.0).sqrt();
-                sx = sx.max(px + pr - dx as i32);
-                ex = ex.min(px + pw - pr + dx as i32);
-            } else if ry >= ph - pr {
-                // Bottom corners
-                let dy = ry as f64 - (ph - pr) as f64 + 0.5;
-                let dx = (r_sq - dy * dy).max(0.0).sqrt();
-                sx = sx.max(px + pr - dx as i32);
-                ex = ex.min(px + pw - pr + dx as i32);
-            }
-
-            sx = sx.max(clip_x);
-            ex = ex.min(clip_x + clip_w);
-
-            for col in sx..ex {
-                self.blend_pixel(col, row, color);
-            }
-        }
+        let verts = Self::round_rect_polygon(x, y, w, h, radius);
+        self.fill_polygon_aa(&verts, color, WindingRule::NonZero);
     }
 
     /// Draw a source image at the given position.
@@ -518,6 +548,640 @@ impl<'a> Painter<'a> {
                 self.blend_pixel(col, row, blended);
             }
         }
+    }
+
+    /// Draw an image scaled to fill a destination rectangle.
+    /// Auto-selects AreaSampled for downscaling.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_image_scaled(
+        &mut self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        image: &Image,
+        quality: super::texture::ImageQuality,
+        extension: super::texture::ImageExtension,
+    ) {
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+
+        let px = self.to_pixel_x(x);
+        let py = self.to_pixel_y(y);
+        let pw = (w * self.state.scale_x) as i32;
+        let ph = (h * self.state.scale_y) as i32;
+        if pw <= 0 || ph <= 0 {
+            return;
+        }
+
+        let src_w = image.width() as f64;
+        let src_h = image.height() as f64;
+
+        // Auto-select area sampling for downscaling.
+        let interp_quality = match quality {
+            super::texture::ImageQuality::Nearest => interpolation::InterpolationQuality::Nearest,
+            super::texture::ImageQuality::Bilinear => {
+                if src_w > pw as f64 || src_h > ph as f64 {
+                    interpolation::InterpolationQuality::AreaSampled
+                } else {
+                    interpolation::InterpolationQuality::Bilinear
+                }
+            }
+            super::texture::ImageQuality::AreaSampled => {
+                interpolation::InterpolationQuality::AreaSampled
+            }
+            super::texture::ImageQuality::Bicubic => interpolation::InterpolationQuality::Bicubic,
+            super::texture::ImageQuality::Lanczos => interpolation::InterpolationQuality::Lanczos,
+            super::texture::ImageQuality::Adaptive => interpolation::InterpolationQuality::Adaptive,
+        };
+
+        let PixelRect {
+            x: clip_x,
+            y: clip_y,
+            w: clip_w,
+            h: clip_h,
+        } = self.state.clip;
+        let start_x = px.max(clip_x).max(0);
+        let start_y = py.max(clip_y).max(0);
+        let end_x = (px + pw)
+            .min(clip_x + clip_w)
+            .min(self.target.width() as i32);
+        let end_y = (py + ph)
+            .min(clip_y + clip_h)
+            .min(self.target.height() as i32);
+
+        let ctx = interpolation::ScaleContext {
+            src_w,
+            src_h,
+            dest_w: pw as f64,
+            dest_h: ph as f64,
+        };
+
+        for row in start_y..end_y {
+            for col in start_x..end_x {
+                let src_x = (col - px) as f64 * src_w / pw as f64;
+                let src_y = (row - py) as f64 * src_h / ph as f64;
+                let color =
+                    interpolation::sample(image, src_x, src_y, interp_quality, extension, &ctx);
+                self.blend_pixel(col, row, color);
+            }
+        }
+    }
+
+    /// Draw an image with two-color mapping based on luminance.
+    /// Pixel luminance maps linearly between `color1` (dark) and `color2` (bright).
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_image_colored_2(
+        &mut self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        image: &Image,
+        src_x: u32,
+        src_y: u32,
+        src_w: u32,
+        src_h: u32,
+        color1: Color,
+        color2: Color,
+    ) {
+        let px = self.to_pixel_x(x);
+        let py = self.to_pixel_y(y);
+        let pw = (w * self.state.scale_x) as i32;
+        let ph = (h * self.state.scale_y) as i32;
+
+        let PixelRect {
+            x: clip_x,
+            y: clip_y,
+            w: clip_w,
+            h: clip_h,
+        } = self.state.clip;
+        let start_x = px.max(clip_x).max(0);
+        let start_y = py.max(clip_y).max(0);
+        let end_x = (px + pw)
+            .min(clip_x + clip_w)
+            .min(self.target.width() as i32);
+        let end_y = (py + ph)
+            .min(clip_y + clip_h)
+            .min(self.target.height() as i32);
+
+        if pw <= 0 || ph <= 0 || src_w == 0 || src_h == 0 {
+            return;
+        }
+
+        let ch = image.channel_count();
+
+        for row in start_y..end_y {
+            for col in start_x..end_x {
+                let sx = src_x + ((col - px) as u32 * src_w / pw as u32).min(src_w - 1);
+                let sy = src_y + ((row - py) as u32 * src_h / ph as u32).min(src_h - 1);
+                let p = image.pixel(sx, sy);
+                let lum = if ch == 1 {
+                    p[0]
+                } else {
+                    // ITU-R BT.601 luminance.
+                    ((p[0] as u32 * 77 + p[1] as u32 * 150 + p[2] as u32 * 29) >> 8) as u8
+                };
+                let t = lum as f64 / 255.0;
+                let blended = color1.lerp(color2, t);
+                self.blend_pixel(col, row, blended);
+            }
+        }
+    }
+
+    // --- Bezier curves ---
+
+    /// Fill a cubic Bezier curve region (tessellated to polygon).
+    /// `points` should contain 4*N control points (groups of [P0, P1, P2, P3]).
+    pub fn paint_bezier(&mut self, points: &[(f64, f64)], color: Color) {
+        if points.len() < 4 {
+            return;
+        }
+        let mut verts = Vec::new();
+        for chunk in points.chunks(4) {
+            if chunk.len() == 4 {
+                tessellate_cubic(
+                    &mut verts,
+                    chunk[0],
+                    chunk[1],
+                    chunk[2],
+                    chunk[3],
+                    BEZIER_FLATNESS,
+                    0,
+                );
+            }
+        }
+        if verts.len() >= 3 {
+            self.fill_polygon_aa(&verts, color, WindingRule::NonZero);
+        }
+    }
+
+    /// Stroke a cubic Bezier curve (tessellated to polyline).
+    pub fn paint_bezier_line(&mut self, points: &[(f64, f64)], stroke: &Stroke) {
+        if points.len() < 4 {
+            return;
+        }
+        let mut verts = Vec::new();
+        for chunk in points.chunks(4) {
+            if chunk.len() == 4 {
+                tessellate_cubic(
+                    &mut verts,
+                    chunk[0],
+                    chunk[1],
+                    chunk[2],
+                    chunk[3],
+                    BEZIER_FLATNESS,
+                    0,
+                );
+            }
+        }
+        if verts.len() >= 2 {
+            self.paint_solid_polyline(&verts, stroke, false);
+        }
+    }
+
+    // --- Formatted text ---
+
+    /// Draw text inside a bounding box with alignment and line wrapping.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_text_boxed(
+        &mut self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        text: &str,
+        size_px: f64,
+        color: Color,
+        alignment: TextAlignment,
+    ) {
+        let quantized = FontCache::quantize_size(size_px * self.state.scale_y.abs());
+        if quantized < 2 {
+            return;
+        }
+
+        let line_height = self.font_cache.line_height(0, quantized);
+
+        let mut cursor_y = y;
+        for line in text.split('\n') {
+            if cursor_y + line_height > y + h {
+                break;
+            }
+            // Expand tabs.
+            let expanded = expand_tabs(line);
+            let (tw, _th) = self.font_cache.measure_text(&expanded, 0, quantized);
+            let line_x = match alignment {
+                TextAlignment::Left => x,
+                TextAlignment::Center => x + (w - tw) / 2.0,
+                TextAlignment::Right => x + w - tw,
+            };
+            self.paint_text(line_x, cursor_y, &expanded, size_px, color);
+            cursor_y += line_height;
+        }
+    }
+
+    // --- 9-slice border images ---
+
+    /// Draw a 9-slice border image stretched to fill a rectangle.
+    /// `border_insets` are (left, top, right, bottom) in source pixel units.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_border_image(
+        &mut self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        image: &Image,
+        border_insets: (f64, f64, f64, f64),
+    ) {
+        let (bl, bt, br, bb) = border_insets;
+        let iw = image.width() as f64;
+        let ih = image.height() as f64;
+        let quality = super::texture::ImageQuality::Bilinear;
+        let ext = super::texture::ImageExtension::Clamp;
+
+        // Clamp border insets to destination size.
+        let bl = bl.min(w / 2.0);
+        let br = br.min(w / 2.0);
+        let bt = bt.min(h / 2.0);
+        let bb = bb.min(h / 2.0);
+
+        // Source regions (in source pixel space).
+        let src_cx = iw - bl - br; // center width in source
+        let src_cy = ih - bt - bb; // center height in source
+
+        // Destination regions.
+        let dst_cx = w - bl - br;
+        let dst_cy = h - bt - bb;
+
+        // Helper to draw a sub-region. We create sub-images from the source.
+        // For simplicity, we draw each slice using paint_image_scaled.
+
+        // Corners (no scaling needed if borders match).
+        self.paint_9slice_section(x, y, bl, bt, image, 0.0, 0.0, bl, bt, quality, ext);
+        self.paint_9slice_section(
+            x + w - br,
+            y,
+            br,
+            bt,
+            image,
+            iw - br,
+            0.0,
+            br,
+            bt,
+            quality,
+            ext,
+        );
+        self.paint_9slice_section(
+            x,
+            y + h - bb,
+            bl,
+            bb,
+            image,
+            0.0,
+            ih - bb,
+            bl,
+            bb,
+            quality,
+            ext,
+        );
+        self.paint_9slice_section(
+            x + w - br,
+            y + h - bb,
+            br,
+            bb,
+            image,
+            iw - br,
+            ih - bb,
+            br,
+            bb,
+            quality,
+            ext,
+        );
+
+        // Edges.
+        if dst_cx > 0.0 {
+            self.paint_9slice_section(
+                x + bl,
+                y,
+                dst_cx,
+                bt,
+                image,
+                bl,
+                0.0,
+                src_cx,
+                bt,
+                quality,
+                ext,
+            );
+            self.paint_9slice_section(
+                x + bl,
+                y + h - bb,
+                dst_cx,
+                bb,
+                image,
+                bl,
+                ih - bb,
+                src_cx,
+                bb,
+                quality,
+                ext,
+            );
+        }
+        if dst_cy > 0.0 {
+            self.paint_9slice_section(
+                x,
+                y + bt,
+                bl,
+                dst_cy,
+                image,
+                0.0,
+                bt,
+                bl,
+                src_cy,
+                quality,
+                ext,
+            );
+            self.paint_9slice_section(
+                x + w - br,
+                y + bt,
+                br,
+                dst_cy,
+                image,
+                iw - br,
+                bt,
+                br,
+                src_cy,
+                quality,
+                ext,
+            );
+        }
+
+        // Center.
+        if dst_cx > 0.0 && dst_cy > 0.0 {
+            self.paint_9slice_section(
+                x + bl,
+                y + bt,
+                dst_cx,
+                dst_cy,
+                image,
+                bl,
+                bt,
+                src_cx,
+                src_cy,
+                quality,
+                ext,
+            );
+        }
+    }
+
+    /// Draw a 9-slice border image with two-color tinting.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_border_image_colored(
+        &mut self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        image: &Image,
+        border_insets: (f64, f64, f64, f64),
+        color1: Color,
+        color2: Color,
+    ) {
+        // Draw the 9-slice first, then apply two-color mapping.
+        // For simplicity, draw directly with the two-color method per section.
+        let (bl, bt, br, bb) = border_insets;
+        let iw = image.width() as f64;
+        let ih = image.height() as f64;
+
+        let bl = bl.min(w / 2.0);
+        let br = br.min(w / 2.0);
+        let bt = bt.min(h / 2.0);
+        let bb = bb.min(h / 2.0);
+
+        let src_cx = iw - bl - br;
+        let src_cy = ih - bt - bb;
+        let dst_cx = w - bl - br;
+        let dst_cy = h - bt - bb;
+
+        // Corners.
+        self.paint_image_colored_2(
+            x, y, bl, bt, image, 0, 0, bl as u32, bt as u32, color1, color2,
+        );
+        self.paint_image_colored_2(
+            x + w - br,
+            y,
+            br,
+            bt,
+            image,
+            (iw - br) as u32,
+            0,
+            br as u32,
+            bt as u32,
+            color1,
+            color2,
+        );
+        self.paint_image_colored_2(
+            x,
+            y + h - bb,
+            bl,
+            bb,
+            image,
+            0,
+            (ih - bb) as u32,
+            bl as u32,
+            bb as u32,
+            color1,
+            color2,
+        );
+        self.paint_image_colored_2(
+            x + w - br,
+            y + h - bb,
+            br,
+            bb,
+            image,
+            (iw - br) as u32,
+            (ih - bb) as u32,
+            br as u32,
+            bb as u32,
+            color1,
+            color2,
+        );
+
+        // Edges.
+        if dst_cx > 0.0 {
+            self.paint_image_colored_2(
+                x + bl,
+                y,
+                dst_cx,
+                bt,
+                image,
+                bl as u32,
+                0,
+                src_cx as u32,
+                bt as u32,
+                color1,
+                color2,
+            );
+            self.paint_image_colored_2(
+                x + bl,
+                y + h - bb,
+                dst_cx,
+                bb,
+                image,
+                bl as u32,
+                (ih - bb) as u32,
+                src_cx as u32,
+                bb as u32,
+                color1,
+                color2,
+            );
+        }
+        if dst_cy > 0.0 {
+            self.paint_image_colored_2(
+                x,
+                y + bt,
+                bl,
+                dst_cy,
+                image,
+                0,
+                bt as u32,
+                bl as u32,
+                src_cy as u32,
+                color1,
+                color2,
+            );
+            self.paint_image_colored_2(
+                x + w - br,
+                y + bt,
+                br,
+                dst_cy,
+                image,
+                (iw - br) as u32,
+                bt as u32,
+                br as u32,
+                src_cy as u32,
+                color1,
+                color2,
+            );
+        }
+
+        // Center.
+        if dst_cx > 0.0 && dst_cy > 0.0 {
+            self.paint_image_colored_2(
+                x + bl,
+                y + bt,
+                dst_cx,
+                dst_cy,
+                image,
+                bl as u32,
+                bt as u32,
+                src_cx as u32,
+                src_cy as u32,
+                color1,
+                color2,
+            );
+        }
+    }
+
+    /// Helper for 9-slice: draw a sub-region of an image scaled to a destination rect.
+    #[allow(clippy::too_many_arguments)]
+    fn paint_9slice_section(
+        &mut self,
+        dx: f64,
+        dy: f64,
+        dw: f64,
+        dh: f64,
+        image: &Image,
+        sx: f64,
+        sy: f64,
+        sw: f64,
+        sh: f64,
+        quality: super::texture::ImageQuality,
+        extension: super::texture::ImageExtension,
+    ) {
+        if dw <= 0.0 || dh <= 0.0 || sw <= 0.0 || sh <= 0.0 {
+            return;
+        }
+
+        let px = self.to_pixel_x(dx);
+        let py = self.to_pixel_y(dy);
+        let pw = (dw * self.state.scale_x) as i32;
+        let ph = (dh * self.state.scale_y) as i32;
+        if pw <= 0 || ph <= 0 {
+            return;
+        }
+
+        let PixelRect {
+            x: clip_x,
+            y: clip_y,
+            w: clip_w,
+            h: clip_h,
+        } = self.state.clip;
+        let start_x = px.max(clip_x).max(0);
+        let start_y = py.max(clip_y).max(0);
+        let end_x = (px + pw)
+            .min(clip_x + clip_w)
+            .min(self.target.width() as i32);
+        let end_y = (py + ph)
+            .min(clip_y + clip_h)
+            .min(self.target.height() as i32);
+
+        let interp_quality = match quality {
+            super::texture::ImageQuality::Nearest => interpolation::InterpolationQuality::Nearest,
+            _ => interpolation::InterpolationQuality::Bilinear,
+        };
+        let ctx = interpolation::ScaleContext {
+            src_w: sw,
+            src_h: sh,
+            dest_w: pw as f64,
+            dest_h: ph as f64,
+        };
+
+        for row in start_y..end_y {
+            for col in start_x..end_x {
+                let src_x = sx + (col - px) as f64 * sw / pw as f64;
+                let src_y = sy + (row - py) as f64 * sh / ph as f64;
+                let color =
+                    interpolation::sample(image, src_x, src_y, interp_quality, extension, &ctx);
+                self.blend_pixel(col, row, color);
+            }
+        }
+    }
+
+    // --- Ellipse/sector outline utilities ---
+
+    /// Draw an ellipse sector outline.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_ellipse_sector_outlined(
+        &mut self,
+        cx: f64,
+        cy: f64,
+        rx: f64,
+        ry: f64,
+        start_angle: f64,
+        end_angle: f64,
+        stroke: &Stroke,
+    ) {
+        if rx <= 0.0 || ry <= 0.0 || stroke.width <= 0.0 {
+            return;
+        }
+        let sweep = end_angle - start_angle;
+        if sweep.abs() < 1e-10 {
+            return;
+        }
+        let segments = adaptive_circle_segments(rx.max(ry));
+        let arc_segs =
+            ((segments as f64 * sweep.abs() / (2.0 * std::f64::consts::PI)).ceil() as usize).max(2);
+        let mut verts = Vec::with_capacity(arc_segs + 2);
+        verts.push((cx, cy));
+        for i in 0..=arc_segs {
+            let t = i as f64 / arc_segs as f64;
+            let angle = start_angle + t * sweep;
+            verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
+        }
+        self.paint_polygon_outlined(&verts, stroke.color, stroke.width);
     }
 
     /// Draw text at the given position using the font system.
@@ -620,9 +1284,16 @@ impl<'a> Painter<'a> {
         self.font_cache.measure_text(text, 0, quantized)
     }
 
-    /// Draw a rectangle outline with a stroke.
+    /// Draw a rectangle outline. Uses four rects for axis-aligned precision.
     pub fn paint_rect_outlined(&mut self, x: f64, y: f64, w: f64, h: f64, stroke: &Stroke) {
         let sw = stroke.width;
+        if w <= 0.0 || h <= 0.0 || sw <= 0.0 {
+            return;
+        }
+        if sw * 2.0 >= w || sw * 2.0 >= h {
+            self.paint_rect(x, y, w, h, stroke.color);
+            return;
+        }
         // Top
         self.paint_rect(x, y, w, sw, stroke.color);
         // Bottom
@@ -631,6 +1302,310 @@ impl<'a> Painter<'a> {
         self.paint_rect(x, y + sw, sw, h - 2.0 * sw, stroke.color);
         // Right
         self.paint_rect(x + w - sw, y + sw, sw, h - 2.0 * sw, stroke.color);
+    }
+
+    /// Draw a rounded rectangle outline.
+    pub fn paint_round_rect_outlined(
+        &mut self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        radius: f64,
+        stroke: &Stroke,
+    ) {
+        if w <= 0.0 || h <= 0.0 || stroke.width <= 0.0 {
+            return;
+        }
+        let sw = stroke.width;
+        if sw * 2.0 >= w || sw * 2.0 >= h {
+            self.paint_round_rect(x, y, w, h, radius, stroke.color);
+            return;
+        }
+        let mut outer = Self::round_rect_polygon(x, y, w, h, radius);
+        let inner_r = (radius - sw).max(0.0);
+        let inner = Self::round_rect_polygon(x + sw, y + sw, w - 2.0 * sw, h - 2.0 * sw, inner_r);
+        // Bridge + reversed inner for NonZero winding hole.
+        outer.push(outer[0]);
+        let first_inner = inner[0];
+        outer.push(first_inner);
+        outer.extend(inner.iter().rev());
+        outer.push(first_inner);
+        self.fill_polygon_aa(&outer, stroke.color, WindingRule::NonZero);
+    }
+
+    /// Draw an ellipse outline using polygon ring.
+    pub fn paint_ellipse_outlined(&mut self, cx: f64, cy: f64, rx: f64, ry: f64, stroke: &Stroke) {
+        if rx <= 0.0 || ry <= 0.0 || stroke.width <= 0.0 {
+            return;
+        }
+        let sw = stroke.width;
+        let irx = (rx - sw).max(0.0);
+        let iry = (ry - sw).max(0.0);
+        if irx <= 0.0 || iry <= 0.0 {
+            self.paint_ellipse(cx, cy, rx, ry, stroke.color);
+            return;
+        }
+        let mut outer = Self::ellipse_polygon(cx, cy, rx, ry);
+        let inner = Self::ellipse_polygon(cx, cy, irx, iry);
+        outer.push(outer[0]);
+        let first_inner = inner[0];
+        outer.push(first_inner);
+        outer.extend(inner.iter().rev());
+        outer.push(first_inner);
+        self.fill_polygon_aa(&outer, stroke.color, WindingRule::NonZero);
+    }
+
+    /// Fill the current clip rect with a solid color.
+    pub fn clear(&mut self, color: Color) {
+        let clip = self.state.clip;
+        self.fill_rect_pixels(clip.x, clip.y, clip.w, clip.h, color);
+    }
+
+    /// Draw a stroked polyline with proper joins and caps.
+    ///
+    /// Uses two-pass polygon tracing: forward (right side), backward (left side).
+    /// Produces a single filled polygon for proper join rendering.
+    pub fn paint_solid_polyline(&mut self, vertices: &[(f64, f64)], stroke: &Stroke, closed: bool) {
+        if vertices.len() < 2 {
+            return;
+        }
+        if stroke.width <= 0.0 {
+            return;
+        }
+
+        let half_w = stroke.width / 2.0;
+        let n = vertices.len();
+        let max_miter = 5.0;
+
+        // Compute segment directions and normals.
+        let mut dirs: Vec<(f64, f64)> = Vec::with_capacity(n - 1);
+        let mut normals: Vec<(f64, f64)> = Vec::with_capacity(n - 1);
+        let seg_count = if closed { n } else { n - 1 };
+
+        for i in 0..seg_count {
+            let j = (i + 1) % n;
+            let dx = vertices[j].0 - vertices[i].0;
+            let dy = vertices[j].1 - vertices[i].1;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 1e-10 {
+                dirs.push((1.0, 0.0));
+                normals.push((0.0, -1.0));
+            } else {
+                dirs.push((dx / len, dy / len));
+                normals.push((-dy / len, dx / len));
+            }
+        }
+
+        if dirs.is_empty() {
+            return;
+        }
+
+        // Build outline polygon: right side forward, left side backward.
+        let mut outline: Vec<(f64, f64)> = Vec::with_capacity(n * 4);
+
+        // Forward pass (right side).
+        for i in 0..n {
+            if !closed && i == 0 {
+                // Start cap.
+                let cap_pts =
+                    self.cap_vertices(vertices[0], dirs[0], normals[0], half_w, &stroke.cap, true);
+                outline.extend_from_slice(&cap_pts);
+            } else if !closed && i == n - 1 {
+                // End cap.
+                let cap_pts = self.cap_vertices(
+                    vertices[n - 1],
+                    dirs[seg_count - 1],
+                    normals[seg_count - 1],
+                    half_w,
+                    &stroke.cap,
+                    false,
+                );
+                outline.extend_from_slice(&cap_pts);
+            } else {
+                // Joint between segments.
+                let seg_a = if closed {
+                    (i + seg_count - 1) % seg_count
+                } else {
+                    (i - 1).min(seg_count - 1)
+                };
+                let seg_b = if closed {
+                    i % seg_count
+                } else {
+                    i.min(seg_count - 1)
+                };
+                let join_pts = Self::join_vertices(
+                    vertices[i],
+                    normals[seg_a],
+                    normals[seg_b],
+                    half_w,
+                    max_miter,
+                    &stroke.join,
+                    true,
+                );
+                outline.extend_from_slice(&join_pts);
+            }
+        }
+
+        // Backward pass (left side).
+        for i in (0..n).rev() {
+            if !closed && i == n - 1 {
+                // Already handled end cap in forward pass.
+                continue;
+            } else if !closed && i == 0 {
+                // Already handled start cap in forward pass.
+                continue;
+            } else {
+                let seg_a = if closed {
+                    (i + seg_count - 1) % seg_count
+                } else {
+                    (i - 1).min(seg_count - 1)
+                };
+                let seg_b = if closed {
+                    i % seg_count
+                } else {
+                    i.min(seg_count - 1)
+                };
+                let join_pts = Self::join_vertices(
+                    vertices[i],
+                    normals[seg_a],
+                    normals[seg_b],
+                    half_w,
+                    max_miter,
+                    &stroke.join,
+                    false,
+                );
+                outline.extend_from_slice(&join_pts);
+            }
+        }
+
+        self.fill_polygon_aa(&outline, stroke.color, WindingRule::NonZero);
+    }
+
+    /// Compute cap vertices at a polyline endpoint.
+    fn cap_vertices(
+        &self,
+        point: (f64, f64),
+        dir: (f64, f64),
+        normal: (f64, f64),
+        half_w: f64,
+        cap: &super::stroke::LineCap,
+        is_start: bool,
+    ) -> Vec<(f64, f64)> {
+        let (px, py) = point;
+        let (nx, ny) = normal;
+        let (dx, dy) = dir;
+        let sign = if is_start { -1.0 } else { 1.0 };
+
+        match cap {
+            super::stroke::LineCap::Butt => {
+                // Right side, then left side will be added in backward pass.
+                vec![
+                    (
+                        px + nx * half_w + sign * dx * 0.0,
+                        py + ny * half_w + sign * dy * 0.0,
+                    ),
+                    (
+                        px - nx * half_w + sign * dx * 0.0,
+                        py - ny * half_w + sign * dy * 0.0,
+                    ),
+                ]
+            }
+            super::stroke::LineCap::Square => {
+                vec![
+                    (
+                        px + nx * half_w - sign * dx * half_w,
+                        py + ny * half_w - sign * dy * half_w,
+                    ),
+                    (
+                        px - nx * half_w - sign * dx * half_w,
+                        py - ny * half_w - sign * dy * half_w,
+                    ),
+                ]
+            }
+            super::stroke::LineCap::Round => {
+                let segments = 8;
+                let mut pts = Vec::with_capacity(segments + 1);
+                let start_angle = if is_start {
+                    std::f64::consts::FRAC_PI_2
+                } else {
+                    -std::f64::consts::FRAC_PI_2
+                };
+                for i in 0..=segments {
+                    let t = i as f64 / segments as f64;
+                    let angle = start_angle + std::f64::consts::PI * t;
+                    let cos_a = angle.cos();
+                    let sin_a = angle.sin();
+                    pts.push((
+                        px + half_w * (cos_a * nx + sin_a * dx * sign),
+                        py + half_w * (cos_a * ny + sin_a * dy * sign),
+                    ));
+                }
+                pts
+            }
+        }
+    }
+
+    /// Compute join vertices at a polyline joint.
+    /// `right_side` selects which side of the stroke to generate vertices for.
+    fn join_vertices(
+        point: (f64, f64),
+        normal_a: (f64, f64),
+        normal_b: (f64, f64),
+        half_w: f64,
+        max_miter: f64,
+        join: &super::stroke::LineJoin,
+        right_side: bool,
+    ) -> Vec<(f64, f64)> {
+        let (px, py) = point;
+        let sign = if right_side { 1.0 } else { -1.0 };
+        let (na_x, na_y) = (normal_a.0 * sign, normal_a.1 * sign);
+        let (nb_x, nb_y) = (normal_b.0 * sign, normal_b.1 * sign);
+
+        match join {
+            super::stroke::LineJoin::Bevel => {
+                vec![
+                    (px + na_x * half_w, py + na_y * half_w),
+                    (px + nb_x * half_w, py + nb_y * half_w),
+                ]
+            }
+            super::stroke::LineJoin::Miter => {
+                // Compute miter point.
+                let mx = na_x + nb_x;
+                let my = na_y + nb_y;
+                let d = mx * na_x + my * na_y;
+                if d.abs() < 1e-10 || (1.0 / d).abs() > max_miter {
+                    // Fall back to bevel.
+                    vec![
+                        (px + na_x * half_w, py + na_y * half_w),
+                        (px + nb_x * half_w, py + nb_y * half_w),
+                    ]
+                } else {
+                    let scale = half_w / d;
+                    vec![(px + mx * scale, py + my * scale)]
+                }
+            }
+            super::stroke::LineJoin::Round => {
+                let angle_a = na_y.atan2(na_x);
+                let angle_b = nb_y.atan2(nb_x);
+                let mut sweep = angle_b - angle_a;
+                if sweep > std::f64::consts::PI {
+                    sweep -= 2.0 * std::f64::consts::PI;
+                }
+                if sweep < -std::f64::consts::PI {
+                    sweep += 2.0 * std::f64::consts::PI;
+                }
+                let segments = (sweep.abs() * 4.0 / std::f64::consts::PI).ceil() as usize;
+                let segments = segments.clamp(1, 16);
+                let mut pts = Vec::with_capacity(segments + 1);
+                for i in 0..=segments {
+                    let t = i as f64 / segments as f64;
+                    let angle = angle_a + t * sweep;
+                    pts.push((px + half_w * angle.cos(), py + half_w * angle.sin()));
+                }
+                pts
+            }
+        }
     }
 
     /// Draw a stroked line with optional end decorations.
@@ -830,6 +1805,7 @@ impl<'a> Painter<'a> {
     ) {
         let r = thickness * ARROW_BASE_SIZE * 0.5 * stroke_end.width_factor;
         let l = thickness * ARROW_BASE_SIZE * stroke_end.length_factor;
+        let half_width = thickness * 0.5;
 
         match stroke_end.end_type {
             StrokeEndType::Butt => {} // Nothing
@@ -891,16 +1867,15 @@ impl<'a> Painter<'a> {
                 let wing_my = y + l * dy - r * ny;
                 let notch_x = x + (1.0 - ARROW_NOTCH) * l * dx;
                 let notch_y = y + (1.0 - ARROW_NOTCH) * l * dy;
-                let verts = [
+                let outer = [
                     (tip_x, tip_y),
                     (wing_px, wing_py),
                     (notch_x, notch_y),
                     (wing_mx, wing_my),
                 ];
-                // Fill inner
-                self.paint_polygon(&verts, stroke_end.inner_color);
-                // Stroke outline
-                self.paint_polygon_outlined(&verts, stroke_color, thickness);
+                let inner = inset_polygon(&outer, half_width);
+                self.paint_polygon(&outer, stroke_color);
+                self.paint_polygon(&inner, stroke_end.inner_color);
             }
 
             StrokeEndType::LineArrow => {
@@ -935,9 +1910,10 @@ impl<'a> Painter<'a> {
                 let base_py = y + l * dy + r * ny;
                 let base_mx = x + l * dx - r * nx;
                 let base_my = y + l * dy - r * ny;
-                let verts = [(tip_x, tip_y), (base_px, base_py), (base_mx, base_my)];
-                self.paint_polygon(&verts, stroke_end.inner_color);
-                self.paint_polygon_outlined(&verts, stroke_color, thickness);
+                let outer = [(tip_x, tip_y), (base_px, base_py), (base_mx, base_my)];
+                let inner = inset_polygon(&outer, half_width);
+                self.paint_polygon(&outer, stroke_color);
+                self.paint_polygon(&inner, stroke_end.inner_color);
             }
 
             StrokeEndType::Square => {
@@ -953,14 +1929,15 @@ impl<'a> Painter<'a> {
             }
 
             StrokeEndType::ContourSquare => {
-                let verts = [
+                let outer = [
                     (x + r * nx, y + r * ny),
                     (x + l * dx + r * nx, y + l * dy + r * ny),
                     (x + l * dx - r * nx, y + l * dy - r * ny),
                     (x - r * nx, y - r * ny),
                 ];
-                self.paint_polygon(&verts, stroke_end.inner_color);
-                self.paint_polygon_outlined(&verts, stroke_color, thickness);
+                let inner = inset_polygon(&outer, half_width);
+                self.paint_polygon(&outer, stroke_color);
+                self.paint_polygon(&inner, stroke_end.inner_color);
             }
 
             StrokeEndType::HalfSquare => {
@@ -986,15 +1963,22 @@ impl<'a> Painter<'a> {
 
             StrokeEndType::ContourCircle => {
                 let center = (x + l * 0.5 * dx, y + l * 0.5 * dy);
-                let verts = Self::ellipse_vertices(
+                let outer = Self::ellipse_vertices(
                     center,
                     (r, l * 0.5),
                     (nx, ny),
                     (dx, dy),
                     CIRCLE_SEGMENTS,
                 );
-                self.paint_polygon(&verts, stroke_end.inner_color);
-                self.paint_polygon_outlined(&verts, stroke_color, thickness);
+                let inner = Self::ellipse_vertices(
+                    center,
+                    ((r - half_width).max(0.0), (l * 0.5 - half_width).max(0.0)),
+                    (nx, ny),
+                    (dx, dy),
+                    CIRCLE_SEGMENTS,
+                );
+                self.paint_polygon(&outer, stroke_color);
+                self.paint_polygon(&inner, stroke_end.inner_color);
             }
 
             StrokeEndType::HalfCircle => {
@@ -1037,14 +2021,15 @@ impl<'a> Painter<'a> {
                 let back_y = y + l * dy;
                 let mid_mx = x + l * 0.5 * dx - r * nx;
                 let mid_my = y + l * 0.5 * dy - r * ny;
-                let verts = [
+                let outer = [
                     (tip_x, tip_y),
                     (mid_px, mid_py),
                     (back_x, back_y),
                     (mid_mx, mid_my),
                 ];
-                self.paint_polygon(&verts, stroke_end.inner_color);
-                self.paint_polygon_outlined(&verts, stroke_color, thickness);
+                let inner = inset_polygon(&outer, half_width);
+                self.paint_polygon(&outer, stroke_color);
+                self.paint_polygon(&inner, stroke_end.inner_color);
             }
 
             StrokeEndType::HalfDiamond => {
@@ -1072,6 +2057,146 @@ impl<'a> Painter<'a> {
                 self.paint_thick_line(p0x, p0y, p1x, p1y, stroke_thickness, stroke_color);
             }
         }
+    }
+
+    // --- Anti-aliased polygon fill ---
+
+    /// Fill a polygon with anti-aliased edges using the scanline rasterizer.
+    fn fill_polygon_aa(&mut self, vertices: &[(f64, f64)], color: Color, rule: WindingRule) {
+        if vertices.len() < 3 {
+            return;
+        }
+
+        let fixed_verts: Vec<(Fixed12, Fixed12)> = vertices
+            .iter()
+            .map(|&(x, y)| {
+                (
+                    Fixed12::from_f64(x * self.state.scale_x + self.state.offset_x),
+                    Fixed12::from_f64(y * self.state.scale_y + self.state.offset_y),
+                )
+            })
+            .collect();
+
+        let rows = scanline::rasterize(&fixed_verts, self.state.clip, rule);
+
+        for (y, spans) in &rows {
+            for span in spans {
+                self.blit_span(*y, span, color);
+            }
+        }
+    }
+
+    /// Blit a single AA span onto the target.
+    fn blit_span(&mut self, y: i32, span: &scanline::Span, color: Color) {
+        let tw = self.target.width() as i32;
+        let th = self.target.height() as i32;
+        if y < 0 || y >= th {
+            return;
+        }
+
+        let x_start = span.x_start.max(0);
+        let x_end = span.x_end.min(tw);
+        let span_width = x_end - x_start;
+        if span_width <= 0 {
+            return;
+        }
+
+        // Fast path: fully opaque, no global alpha modulation needed beyond what blend_pixel does.
+        if span_width == 1 {
+            let opacity = span.opacity_beg;
+            if opacity > 0 {
+                self.blend_pixel_alpha(x_start, y, color, opacity);
+            }
+            return;
+        }
+
+        // First pixel (partial coverage).
+        if span.opacity_beg > 0 {
+            if span.opacity_beg == 255 {
+                self.blend_pixel(x_start, y, color);
+            } else {
+                self.blend_pixel_alpha(x_start, y, color, span.opacity_beg);
+            }
+        }
+
+        // Interior pixels (full coverage) — fast path.
+        if span.opacity_mid == 255 {
+            for x in (x_start + 1)..(x_end - 1) {
+                self.blend_pixel(x, y, color);
+            }
+        } else if span.opacity_mid > 0 {
+            for x in (x_start + 1)..(x_end - 1) {
+                self.blend_pixel_alpha(x, y, color, span.opacity_mid);
+            }
+        }
+
+        // Last pixel (partial coverage).
+        if span_width > 1 && span.opacity_end > 0 {
+            let x_last = x_end - 1;
+            if span.opacity_end == 255 {
+                self.blend_pixel(x_last, y, color);
+            } else {
+                self.blend_pixel_alpha(x_last, y, color, span.opacity_end);
+            }
+        }
+    }
+
+    /// Blend a pixel with an additional alpha coverage factor (0-255).
+    fn blend_pixel_alpha(&mut self, x: i32, y: i32, color: Color, coverage: u8) {
+        let modulated = Color::rgba(
+            color.r(),
+            color.g(),
+            color.b(),
+            (color.a() as u16 * coverage as u16 / 255) as u8,
+        );
+        self.blend_pixel(x, y, modulated);
+    }
+
+    /// Generate polygon vertices approximating an ellipse.
+    fn ellipse_polygon(cx: f64, cy: f64, rx: f64, ry: f64) -> Vec<(f64, f64)> {
+        let segments = adaptive_circle_segments(rx.max(ry));
+        let mut verts = Vec::with_capacity(segments);
+        for i in 0..segments {
+            let angle = 2.0 * std::f64::consts::PI * i as f64 / segments as f64;
+            verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
+        }
+        verts
+    }
+
+    /// Generate polygon vertices for a rounded rectangle.
+    fn round_rect_polygon(x: f64, y: f64, w: f64, h: f64, r: f64) -> Vec<(f64, f64)> {
+        let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
+        if r < 0.5 {
+            return vec![(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
+        }
+        let corner_segments = (adaptive_circle_segments(r) / 4).max(2);
+        let mut verts = Vec::with_capacity(corner_segments * 4 + 4);
+
+        // Top-right corner
+        for i in 0..=corner_segments {
+            let angle = -std::f64::consts::FRAC_PI_2
+                + std::f64::consts::FRAC_PI_2 * i as f64 / corner_segments as f64;
+            verts.push((x + w - r + r * angle.cos(), y + r + r * angle.sin()));
+        }
+        // Bottom-right corner
+        for i in 0..=corner_segments {
+            let angle = std::f64::consts::FRAC_PI_2 * i as f64 / corner_segments as f64;
+            verts.push((x + w - r + r * angle.cos(), y + h - r + r * angle.sin()));
+        }
+        // Bottom-left corner
+        for i in 0..=corner_segments {
+            let angle = std::f64::consts::FRAC_PI_2
+                + std::f64::consts::FRAC_PI_2 * i as f64 / corner_segments as f64;
+            verts.push((x + r + r * angle.cos(), y + h - r + r * angle.sin()));
+        }
+        // Top-left corner
+        for i in 0..=corner_segments {
+            let angle = std::f64::consts::PI
+                + std::f64::consts::FRAC_PI_2 * i as f64 / corner_segments as f64;
+            verts.push((x + r + r * angle.cos(), y + r + r * angle.sin()));
+        }
+
+        verts
     }
 
     // --- Coordinate transform helpers ---
@@ -1153,4 +2278,144 @@ impl<'a> Painter<'a> {
             }
         }
     }
+}
+
+/// Choose number of polygon segments for circle approximation based on radius.
+fn adaptive_circle_segments(radius: f64) -> usize {
+    if radius < 4.0 {
+        8
+    } else if radius < 16.0 {
+        16
+    } else if radius < 64.0 {
+        32
+    } else if radius < 256.0 {
+        64
+    } else {
+        128
+    }
+}
+
+/// Inset a convex polygon by `distance` toward its centroid.
+/// For each vertex, compute the offset along the bisector of adjacent edges,
+/// clamped to `distance * 5.0` to prevent self-intersection.
+fn inset_polygon(vertices: &[(f64, f64)], distance: f64) -> Vec<(f64, f64)> {
+    let n = vertices.len();
+    if n < 3 {
+        return vertices.to_vec();
+    }
+
+    let mut result = Vec::with_capacity(n);
+    for i in 0..n {
+        let prev = vertices[(i + n - 1) % n];
+        let curr = vertices[i];
+        let next = vertices[(i + 1) % n];
+
+        // Edge normals (pointing inward for CW polygon).
+        let e0 = (curr.0 - prev.0, curr.1 - prev.1);
+        let e1 = (next.0 - curr.0, next.1 - curr.1);
+        let len0 = (e0.0 * e0.0 + e0.1 * e0.1).sqrt();
+        let len1 = (e1.0 * e1.0 + e1.1 * e1.1).sqrt();
+        if len0 < 1e-10 || len1 < 1e-10 {
+            result.push(curr);
+            continue;
+        }
+        // Inward normals.
+        let n0 = (e0.1 / len0, -e0.0 / len0);
+        let n1 = (e1.1 / len1, -e1.0 / len1);
+
+        // Bisector direction.
+        let bx = n0.0 + n1.0;
+        let by = n0.1 + n1.1;
+        let bl = (bx * bx + by * by).sqrt();
+        if bl < 1e-10 {
+            result.push(curr);
+            continue;
+        }
+
+        // sin(half_angle) = cross product magnitude.
+        let dot = n0.0 * n1.0 + n0.1 * n1.1;
+        let half_angle_sin = ((1.0 - dot) / 2.0).sqrt().max(1e-10);
+        let offset = (distance / half_angle_sin).min(distance * 5.0);
+
+        result.push((curr.0 + bx / bl * offset, curr.1 + by / bl * offset));
+    }
+
+    result
+}
+
+/// Adaptive subdivision of a cubic Bezier into line segments.
+fn tessellate_cubic(
+    out: &mut Vec<(f64, f64)>,
+    p0: (f64, f64),
+    p1: (f64, f64),
+    p2: (f64, f64),
+    p3: (f64, f64),
+    flatness: f64,
+    depth: u8,
+) {
+    if depth >= BEZIER_MAX_DEPTH {
+        if out.is_empty() || *out.last().unwrap() != p0 {
+            out.push(p0);
+        }
+        out.push(p3);
+        return;
+    }
+
+    // Flatness test: max distance of control points from the line P0-P3.
+    let dx = p3.0 - p0.0;
+    let dy = p3.1 - p0.1;
+    let len_sq = dx * dx + dy * dy;
+
+    let flat = if len_sq < 1e-10 {
+        let d1 = (p1.0 - p0.0).powi(2) + (p1.1 - p0.1).powi(2);
+        let d2 = (p2.0 - p0.0).powi(2) + (p2.1 - p0.1).powi(2);
+        d1.max(d2).sqrt()
+    } else {
+        let inv_len = 1.0 / len_sq.sqrt();
+        let d1 = ((p1.0 - p0.0) * dy - (p1.1 - p0.1) * dx).abs() * inv_len;
+        let d2 = ((p2.0 - p0.0) * dy - (p2.1 - p0.1) * dx).abs() * inv_len;
+        d1.max(d2)
+    };
+
+    if flat <= flatness {
+        if out.is_empty() || *out.last().unwrap() != p0 {
+            out.push(p0);
+        }
+        out.push(p3);
+        return;
+    }
+
+    // De Casteljau subdivision at t=0.5.
+    let m01 = mid(p0, p1);
+    let m12 = mid(p1, p2);
+    let m23 = mid(p2, p3);
+    let m012 = mid(m01, m12);
+    let m123 = mid(m12, m23);
+    let m0123 = mid(m012, m123);
+
+    tessellate_cubic(out, p0, m01, m012, m0123, flatness, depth + 1);
+    tessellate_cubic(out, m0123, m123, m23, p3, flatness, depth + 1);
+}
+
+fn mid(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
+    ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5)
+}
+
+/// Expand tab characters to 8-column tab stops.
+fn expand_tabs(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut col = 0;
+    for ch in s.chars() {
+        if ch == '\t' {
+            let spaces = 8 - (col % 8);
+            for _ in 0..spaces {
+                result.push(' ');
+            }
+            col += spaces;
+        } else {
+            result.push(ch);
+            col += 1;
+        }
+    }
+    result
 }

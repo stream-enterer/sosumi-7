@@ -175,6 +175,21 @@ impl FontCache {
         metrics.ascent.round() as i32
     }
 
+    /// Get the line height in user coordinates at the given size.
+    pub fn line_height(&self, font_id: u16, size_px: u16) -> f64 {
+        let font = match self.fonts.get(font_id as usize) {
+            Some(f) => f,
+            None => return size_px as f64,
+        };
+        let font_ref = match skrifa::FontRef::new(&font.data) {
+            Ok(f) => f,
+            Err(_) => return size_px as f64,
+        };
+        let size = Size::new(size_px as f32);
+        let metrics = font_ref.metrics(size, skrifa::instance::LocationRef::default());
+        (metrics.ascent + metrics.descent.abs() + metrics.leading) as f64
+    }
+
     /// Increment the frame counter (call once per frame).
     pub fn advance_frame(&mut self) {
         self.frame_counter += 1;
