@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 
 use super::tree::{PanelId, PanelTree};
-use crate::foundation::Color;
+use crate::foundation::{Color, Rect};
 use crate::render::Painter;
 
 bitflags! {
@@ -194,7 +194,7 @@ impl View {
         offset_x: f64,
         offset_y: f64,
     ) {
-        let (x, y, w, h) = match tree.get(id) {
+        let Rect { x, y, w, h } = match tree.get(id) {
             Some(panel) if panel.visible => panel.layout_rect,
             _ => return,
         };

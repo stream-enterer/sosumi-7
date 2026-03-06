@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use crate::foundation::Rect;
 use crate::input::{InputEvent, InputKey, InputVariant};
 use crate::render::font_cache::FontCache;
 use crate::render::Painter;
@@ -73,7 +74,12 @@ impl ListBox {
     pub fn paint(&self, painter: &mut Painter, w: f64, h: f64) {
         self.border.paint_border(painter, w, h, &self.look, false);
 
-        let (cx, cy, cw, ch) = self.border.content_rect(w, h, &self.look);
+        let Rect {
+            x: cx,
+            y: cy,
+            w: cw,
+            h: ch,
+        } = self.border.content_rect(w, h, &self.look);
 
         painter.push_state();
         painter.clip_rect(cx, cy, cw, ch);
@@ -146,7 +152,7 @@ impl ListBox {
                 true
             }
             InputKey::MouseLeft if event.variant == InputVariant::Press => {
-                let (_, cy, _, _ch) = self.border.content_rect(0.0, 0.0, &self.look);
+                let Rect { y: cy, .. } = self.border.content_rect(0.0, 0.0, &self.look);
                 let rel_y = event.mouse_y - cy + self.scroll_y;
                 let clicked_idx = (rel_y / ROW_HEIGHT) as usize;
                 if clicked_idx < self.items.len() {

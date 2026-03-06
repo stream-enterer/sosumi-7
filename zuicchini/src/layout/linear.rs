@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::foundation::Rect;
 use crate::panel::{NoticeFlags, PanelBehavior, PanelCtx, PanelId};
 use crate::render::Painter;
 
@@ -59,7 +60,7 @@ impl LinearLayout {
     }
 
     fn do_layout(&mut self, ctx: &mut PanelCtx) {
-        let (_, _, w, h) = ctx.layout_rect();
+        let Rect { w, h, .. } = ctx.layout_rect();
         let children = ctx.children();
         if children.is_empty() {
             return;
@@ -250,14 +251,14 @@ mod tests {
         // Each child should get 100px wide, 200px tall
         for (i, child) in children.iter().enumerate() {
             let r = tree.get(*child).unwrap().layout_rect;
-            assert!((r.2 - 100.0).abs() < 0.01, "child {i} width: {}", r.2);
-            assert!((r.3 - 200.0).abs() < 0.01, "child {i} height: {}", r.3);
+            assert!((r.w - 100.0).abs() < 0.01, "child {i} width: {}", r.w);
+            assert!((r.h - 200.0).abs() < 0.01, "child {i} height: {}", r.h);
             assert!(
-                (r.0 - (i as f64 * 100.0)).abs() < 0.01,
+                (r.x - (i as f64 * 100.0)).abs() < 0.01,
                 "child {i} x: {}",
-                r.0
+                r.x
             );
-            assert!((r.1 - 0.0).abs() < 0.01, "child {i} y: {}", r.1);
+            assert!((r.y - 0.0).abs() < 0.01, "child {i} y: {}", r.y);
         }
     }
 
@@ -270,12 +271,12 @@ mod tests {
 
         for (i, child) in children.iter().enumerate() {
             let r = tree.get(*child).unwrap().layout_rect;
-            assert!((r.2 - 300.0).abs() < 0.01, "child {i} width: {}", r.2);
-            assert!((r.3 - 200.0).abs() < 0.01, "child {i} height: {}", r.3);
+            assert!((r.w - 300.0).abs() < 0.01, "child {i} width: {}", r.w);
+            assert!((r.h - 200.0).abs() < 0.01, "child {i} height: {}", r.h);
             assert!(
-                (r.1 - (i as f64 * 200.0)).abs() < 0.01,
+                (r.y - (i as f64 * 200.0)).abs() < 0.01,
                 "child {i} y: {}",
-                r.1
+                r.y
             );
         }
     }
@@ -308,9 +309,9 @@ mod tests {
         );
         layout.do_layout(&mut PanelCtx::new(&mut tree, root));
 
-        let w0 = tree.get(children[0]).unwrap().layout_rect.2;
-        let w1 = tree.get(children[1]).unwrap().layout_rect.2;
-        let w2 = tree.get(children[2]).unwrap().layout_rect.2;
+        let w0 = tree.get(children[0]).unwrap().layout_rect.w;
+        let w1 = tree.get(children[1]).unwrap().layout_rect.w;
+        let w2 = tree.get(children[2]).unwrap().layout_rect.w;
         assert!((w0 - 75.0).abs() < 0.01);
         assert!((w1 - 150.0).abs() < 0.01);
         assert!((w2 - 75.0).abs() < 0.01);
@@ -333,9 +334,9 @@ mod tests {
         let r0 = tree.get(children[0]).unwrap().layout_rect;
         let r1 = tree.get(children[1]).unwrap().layout_rect;
         // Available = 200 - 5 - 5 - 10 = 180, each child = 90
-        assert!((r0.0 - 5.0).abs() < 0.01);
-        assert!((r0.2 - 90.0).abs() < 0.01);
-        assert!((r1.0 - 105.0).abs() < 0.01); // 5 + 90 + 10
-        assert!((r1.2 - 90.0).abs() < 0.01);
+        assert!((r0.x - 5.0).abs() < 0.01);
+        assert!((r0.w - 90.0).abs() < 0.01);
+        assert!((r1.x - 105.0).abs() < 0.01); // 5 + 90 + 10
+        assert!((r1.w - 90.0).abs() < 0.01);
     }
 }

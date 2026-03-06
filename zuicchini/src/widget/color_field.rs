@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::foundation::Color;
+use crate::foundation::{Color, Rect};
 use crate::input::{InputEvent, InputKey, InputVariant};
 use crate::panel::PanelCtx;
 use crate::render::Painter;
@@ -54,7 +54,12 @@ impl ColorField {
     pub fn paint(&self, painter: &mut Painter, w: f64, h: f64) {
         self.border.paint_border(painter, w, h, &self.look, false);
 
-        let (cx, cy, cw, ch) = self.border.content_rect(w, h, &self.look);
+        let Rect {
+            x: cx,
+            y: cy,
+            w: cw,
+            h: ch,
+        } = self.border.content_rect(w, h, &self.look);
 
         // Color swatch
         let sw = if self.expanded {
@@ -86,7 +91,12 @@ impl ColorField {
             return;
         }
 
-        let (cx, cy, cw, _ch) = self.border.content_rect(w, h, &self.look);
+        let Rect {
+            x: cx,
+            y: cy,
+            w: cw,
+            ..
+        } = self.border.content_rect(w, h, &self.look);
         let field_h = 16.0;
         let start_y = cy + SWATCH_SIZE + 2.0;
 

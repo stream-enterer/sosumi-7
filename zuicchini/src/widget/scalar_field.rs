@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use crate::foundation::Rect;
 use crate::input::{Cursor, InputEvent, InputKey, InputVariant};
 use crate::render::font_cache::FontCache;
 use crate::render::Painter;
@@ -57,7 +58,12 @@ impl ScalarField {
         self.last_w = w;
         self.border.paint_border(painter, w, h, &self.look, false);
 
-        let (cx, cy, cw, ch) = self.border.content_rect(w, h, &self.look);
+        let Rect {
+            x: cx,
+            y: cy,
+            w: cw,
+            h: ch,
+        } = self.border.content_rect(w, h, &self.look);
         let range = self.max - self.min;
 
         if range > 0.0 {
@@ -90,7 +96,7 @@ impl ScalarField {
     }
 
     pub fn input(&mut self, event: &InputEvent) -> bool {
-        let (_, _, cw, _) = self.border.content_rect(self.last_w, 0.0, &self.look);
+        let Rect { w: cw, .. } = self.border.content_rect(self.last_w, 0.0, &self.look);
         let range = self.max - self.min;
 
         match event.key {

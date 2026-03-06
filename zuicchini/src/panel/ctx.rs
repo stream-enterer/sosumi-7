@@ -1,6 +1,6 @@
 use super::behavior::PanelBehavior;
 use super::tree::{PanelId, PanelTree};
-use crate::foundation::Color;
+use crate::foundation::{Color, Rect};
 
 /// Panel context — provides a scoped API for a panel to interact with the tree.
 ///
@@ -66,11 +66,11 @@ impl<'a> PanelCtx<'a> {
     }
 
     /// Get the layout rect of the current panel.
-    pub fn layout_rect(&self) -> (f64, f64, f64, f64) {
+    pub fn layout_rect(&self) -> Rect {
         self.tree
             .get(self.id)
             .map(|p| p.layout_rect)
-            .unwrap_or((0.0, 0.0, 0.0, 0.0))
+            .unwrap_or_default()
     }
 
     /// Set the canvas color.

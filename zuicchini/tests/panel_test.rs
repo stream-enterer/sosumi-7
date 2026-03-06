@@ -1,4 +1,4 @@
-use zuicchini::foundation::Color;
+use zuicchini::foundation::{Color, Rect};
 use zuicchini::panel::{NoticeFlags, PanelBehavior, PanelCtx, PanelId, PanelTree, View, ViewFlags};
 use zuicchini::render::Painter;
 
@@ -88,7 +88,7 @@ fn panel_ctx_operations() {
 
     let child_id = tree.find_by_name("child_via_ctx").unwrap();
     let layout = tree.get(child_id).unwrap().layout_rect;
-    assert_eq!(layout, (10.0, 20.0, 100.0, 50.0));
+    assert_eq!(layout, Rect::new(10.0, 20.0, 100.0, 50.0));
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn layout_rect_and_canvas_color() {
     tree.set_canvas_color(root, Color::rgb(128, 128, 128));
 
     let panel = tree.get(root).unwrap();
-    assert_eq!(panel.layout_rect, (10.0, 20.0, 300.0, 200.0));
+    assert_eq!(panel.layout_rect, Rect::new(10.0, 20.0, 300.0, 200.0));
     assert_eq!(panel.canvas_color, Color::rgb(128, 128, 128));
     assert!(panel.pending_notices.contains(NoticeFlags::LAYOUT_CHANGED));
     assert!(panel.pending_notices.contains(NoticeFlags::CANVAS_CHANGED));

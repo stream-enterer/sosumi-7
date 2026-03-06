@@ -1,3 +1,4 @@
+use crate::foundation::Rect;
 use crate::render::font_cache::FontCache;
 use crate::render::{Painter, Stroke};
 
@@ -66,7 +67,7 @@ impl Border {
     }
 
     /// Compute the content area after border and label insets.
-    pub fn content_rect(&self, w: f64, h: f64, _look: &Look) -> (f64, f64, f64, f64) {
+    pub fn content_rect(&self, w: f64, h: f64, _look: &Look) -> Rect {
         let (ox, oy, ow, oh) = self.outer_insets();
         let caption_h = if self.caption.is_empty() {
             0.0
@@ -80,11 +81,12 @@ impl Border {
         };
         let (ix, iy, iw, ih) = self.inner_insets();
 
-        let x = ox + ix;
-        let y = oy + caption_h + iy;
-        let cw = (w - ow - iw).max(0.0);
-        let ch = (h - oh - caption_h - desc_h - ih).max(0.0);
-        (x, y, cw, ch)
+        Rect {
+            x: ox + ix,
+            y: oy + caption_h + iy,
+            w: (w - ow - iw).max(0.0),
+            h: (h - oh - caption_h - desc_h - ih).max(0.0),
+        }
     }
 
     /// Preferred size to fit the given content size.
@@ -263,7 +265,7 @@ mod tests {
     #[test]
     fn content_rect_none_border() {
         let border = Border::new(OuterBorderType::None);
-        let (x, y, cw, ch) = border.content_rect(100.0, 50.0, &test_look());
+        let Rect { x, y, w: cw, h: ch } = border.content_rect(100.0, 50.0, &test_look());
         assert_eq!((x, y), (0.0, 0.0));
         assert_eq!((cw, ch), (100.0, 50.0));
     }
@@ -271,7 +273,7 @@ mod tests {
     #[test]
     fn content_rect_rect_border() {
         let border = Border::new(OuterBorderType::Rect);
-        let (x, y, cw, ch) = border.content_rect(100.0, 50.0, &test_look());
+        let Rect { x, y, w: cw, h: ch } = border.content_rect(100.0, 50.0, &test_look());
         assert_eq!((x, y), (1.0, 1.0));
         assert_eq!((cw, ch), (98.0, 48.0));
     }
@@ -279,7 +281,7 @@ mod tests {
     #[test]
     fn content_rect_with_caption() {
         let border = Border::new(OuterBorderType::Rect).with_caption("Test");
-        let (x, y, cw, ch) = border.content_rect(100.0, 50.0, &test_look());
+        let Rect { x, y, w: cw, h: ch } = border.content_rect(100.0, 50.0, &test_look());
         assert_eq!(x, 1.0);
         assert_eq!(y, 1.0 + TEXT_ROW_HEIGHT); // outer + caption
         assert_eq!(cw, 98.0);
@@ -289,7 +291,7 @@ mod tests {
     #[test]
     fn content_rect_with_inner_input_field() {
         let border = Border::new(OuterBorderType::None).with_inner(InnerBorderType::InputField);
-        let (x, y, cw, ch) = border.content_rect(100.0, 50.0, &test_look());
+        let Rect { x, y, w: cw, h: ch } = border.content_rect(100.0, 50.0, &test_look());
         assert_eq!((x, y), (2.0, 2.0));
         assert_eq!((cw, ch), (96.0, 46.0));
     }
@@ -299,7 +301,7 @@ mod tests {
         let border = Border::new(OuterBorderType::Instrument)
             .with_caption("Cap")
             .with_inner(InnerBorderType::InputField);
-        let (x, y, cw, ch) = border.content_rect(100.0, 80.0, &test_look());
+        let Rect { x, y, w: cw, h: ch } = border.content_rect(100.0, 80.0, &test_look());
         assert_eq!(x, 3.0 + 2.0); // outer + inner
         assert_eq!(y, 3.0 + TEXT_ROW_HEIGHT + 2.0); // outer + caption + inner
         assert_eq!(cw, 100.0 - 6.0 - 4.0); // w - outer_w - inner_w
@@ -312,7 +314,7 @@ mod tests {
             .with_caption("Title")
             .with_inner(InnerBorderType::Group);
         let (pw, ph) = border.preferred_size_for_content(50.0, 30.0);
-        let (_, _, cw, ch) = border.content_rect(pw, ph, &test_look());
+        let Rect { w: cw, h: ch, .. } = border.content_rect(pw, ph, &test_look());
         assert!((cw - 50.0).abs() < 0.01);
         assert!((ch - 30.0).abs() < 0.01);
     }

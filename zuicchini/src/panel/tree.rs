@@ -4,7 +4,7 @@ use slotmap::{new_key_type, SlotMap};
 
 use super::behavior::{NoticeFlags, PanelBehavior};
 use super::ctx::PanelCtx;
-use crate::foundation::Color;
+use crate::foundation::{Color, Rect};
 
 new_key_type! {
     /// Unique handle for a panel in the panel tree.
@@ -25,8 +25,8 @@ pub struct PanelData {
     pub prev_sibling: Option<PanelId>,
     /// Panel name (for lookup).
     pub name: String,
-    /// Layout rectangle relative to parent (x, y, w, h).
-    pub layout_rect: (f64, f64, f64, f64),
+    /// Layout rectangle relative to parent.
+    pub layout_rect: Rect,
     /// Canvas color for this panel.
     pub canvas_color: Color,
     /// Whether the panel is visible.
@@ -52,7 +52,7 @@ impl PanelData {
             next_sibling: None,
             prev_sibling: None,
             name,
-            layout_rect: (0.0, 0.0, 0.0, 0.0),
+            layout_rect: Rect::default(),
             canvas_color: Color::TRANSPARENT,
             visible: true,
             focusable: false,
@@ -239,7 +239,7 @@ impl PanelTree {
     /// Set the layout rectangle for a panel.
     pub fn set_layout_rect(&mut self, id: PanelId, x: f64, y: f64, w: f64, h: f64) {
         if let Some(panel) = self.panels.get_mut(id) {
-            panel.layout_rect = (x, y, w, h);
+            panel.layout_rect = Rect { x, y, w, h };
             panel.pending_notices.insert(NoticeFlags::LAYOUT_CHANGED);
         }
     }

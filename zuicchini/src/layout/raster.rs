@@ -1,3 +1,4 @@
+use crate::foundation::Rect;
 use crate::panel::{NoticeFlags, PanelBehavior, PanelCtx};
 use crate::render::Painter;
 
@@ -62,7 +63,7 @@ impl RasterLayout {
     }
 
     fn do_layout(&mut self, ctx: &mut PanelCtx) {
-        let (_, _, w, h) = ctx.layout_rect();
+        let Rect { w, h, .. } = ctx.layout_rect();
         let children = ctx.children();
         let n = children.len();
         if n == 0 {
@@ -228,12 +229,12 @@ mod tests {
 
         // 3 cols, 2 rows => each cell 100x100
         let r0 = tree.get(children[0]).unwrap().layout_rect;
-        assert!((r0.2 - 100.0).abs() < 0.01);
-        assert!((r0.3 - 100.0).abs() < 0.01);
+        assert!((r0.w - 100.0).abs() < 0.01);
+        assert!((r0.h - 100.0).abs() < 0.01);
         // Child 3 is at row 1, col 0
         let r3 = tree.get(children[3]).unwrap().layout_rect;
-        assert!((r3.0 - 0.0).abs() < 0.01);
-        assert!((r3.1 - 100.0).abs() < 0.01);
+        assert!((r3.x - 0.0).abs() < 0.01);
+        assert!((r3.y - 100.0).abs() < 0.01);
     }
 
     #[test]
@@ -244,8 +245,8 @@ mod tests {
 
         // 4 items in 400x400 with tallness 1.0 → 2x2 grid, each 200x200
         let r0 = tree.get(children[0]).unwrap().layout_rect;
-        assert!((r0.2 - 200.0).abs() < 0.01);
-        assert!((r0.3 - 200.0).abs() < 0.01);
+        assert!((r0.w - 200.0).abs() < 0.01);
+        assert!((r0.h - 200.0).abs() < 0.01);
     }
 
     #[test]
@@ -257,10 +258,10 @@ mod tests {
 
         // Column-major: child 0 at (0,0), child 1 at (0,100), child 2 at (100,0), child 3 at (100,100)
         let r1 = tree.get(children[1]).unwrap().layout_rect;
-        assert!((r1.0 - 0.0).abs() < 0.01);
-        assert!((r1.1 - 100.0).abs() < 0.01);
+        assert!((r1.x - 0.0).abs() < 0.01);
+        assert!((r1.y - 100.0).abs() < 0.01);
         let r2 = tree.get(children[2]).unwrap().layout_rect;
-        assert!((r2.0 - 100.0).abs() < 0.01);
-        assert!((r2.1 - 0.0).abs() < 0.01);
+        assert!((r2.x - 100.0).abs() < 0.01);
+        assert!((r2.y - 0.0).abs() < 0.01);
     }
 }

@@ -1,6 +1,6 @@
 use super::font_cache::{FontCache, GlyphCacheKey};
 use super::stroke::{Stroke, StrokeEnd, StrokeEndType};
-use crate::foundation::{Color, Image};
+use crate::foundation::{Color, Image, PixelRect};
 
 /// Base multiplier for decoration size.
 const ARROW_BASE_SIZE: f64 = 10.0;
@@ -18,8 +18,8 @@ struct PainterState {
     /// Scale factor.
     scale_x: f64,
     scale_y: f64,
-    /// Clip rectangle in pixel coordinates (x, y, w, h).
-    clip: (i32, i32, i32, i32),
+    /// Clip rectangle in pixel coordinates.
+    clip: PixelRect,
     /// Canvas color for canvas_blend operations.
     canvas_color: Color,
     /// Global alpha multiplier (0–255).
@@ -54,7 +54,7 @@ impl<'a> Painter<'a> {
                 offset_y: 0.0,
                 scale_x: 1.0,
                 scale_y: 1.0,
-                clip: (0, 0, w, h),
+                clip: PixelRect { x: 0, y: 0, w, h },
                 canvas_color: Color::BLACK,
                 alpha: 255,
             },
@@ -105,13 +105,23 @@ impl<'a> Painter<'a> {
         let pw = (w * self.state.scale_x) as i32;
         let ph = (h * self.state.scale_y) as i32;
 
-        let (cx, cy, cw, ch) = self.state.clip;
+        let PixelRect {
+            x: cx,
+            y: cy,
+            w: cw,
+            h: ch,
+        } = self.state.clip;
         // Intersect
         let nx = px.max(cx);
         let ny = py.max(cy);
         let nx2 = (px + pw).min(cx + cw);
         let ny2 = (py + ph).min(cy + ch);
-        self.state.clip = (nx, ny, (nx2 - nx).max(0), (ny2 - ny).max(0));
+        self.state.clip = PixelRect {
+            x: nx,
+            y: ny,
+            w: (nx2 - nx).max(0),
+            h: (ny2 - ny).max(0),
+        };
     }
 
     /// Immutable access to the font cache (for measurement).
@@ -146,7 +156,12 @@ impl<'a> Painter<'a> {
         let x1 = pcx + prx;
         let y1 = pcy + pry;
 
-        let (clip_x, clip_y, clip_w, clip_h) = self.state.clip;
+        let PixelRect {
+            x: clip_x,
+            y: clip_y,
+            w: clip_w,
+            h: clip_h,
+        } = self.state.clip;
         let start_y = y0.max(clip_y);
         let end_y = y1.min(clip_y + clip_h);
         let start_x = x0.max(clip_x);
@@ -209,7 +224,12 @@ impl<'a> Painter<'a> {
         let pw = (w * self.state.scale_x) as i32;
         let ph = (h * self.state.scale_y) as i32;
 
-        let (clip_x, clip_y, clip_w, clip_h) = self.state.clip;
+        let PixelRect {
+            x: clip_x,
+            y: clip_y,
+            w: clip_w,
+            h: clip_h,
+        } = self.state.clip;
         let start_x = px.max(clip_x).max(0);
         let start_y = py.max(clip_y).max(0);
         let end_x = (px + pw)
@@ -261,7 +281,12 @@ impl<'a> Painter<'a> {
         let min_y = pixels.iter().map(|p| p.1).min().unwrap();
         let max_y = pixels.iter().map(|p| p.1).max().unwrap();
 
-        let (clip_x, clip_y, clip_w, clip_h) = self.state.clip;
+        let PixelRect {
+            x: clip_x,
+            y: clip_y,
+            w: clip_w,
+            h: clip_h,
+        } = self.state.clip;
         let start_y = min_y.max(clip_y);
         let end_y = (max_y + 1).min(clip_y + clip_h);
 
@@ -362,7 +387,12 @@ impl<'a> Painter<'a> {
             return;
         }
 
-        let (clip_x, clip_y, clip_w, clip_h) = self.state.clip;
+        let PixelRect {
+            x: clip_x,
+            y: clip_y,
+            w: clip_w,
+            h: clip_h,
+        } = self.state.clip;
         let start_y = py.max(clip_y);
         let end_y = (py + ph).min(clip_y + clip_h);
 
@@ -408,7 +438,12 @@ impl<'a> Painter<'a> {
         let iw = image.width() as i32;
         let ih = image.height() as i32;
 
-        let (clip_x, clip_y, clip_w, clip_h) = self.state.clip;
+        let PixelRect {
+            x: clip_x,
+            y: clip_y,
+            w: clip_w,
+            h: clip_h,
+        } = self.state.clip;
         let start_x = px.max(clip_x);
         let start_y = py.max(clip_y);
         let end_x = (px + iw).min(clip_x + clip_w);
@@ -446,7 +481,12 @@ impl<'a> Painter<'a> {
         let pw = (w * self.state.scale_x) as i32;
         let ph = (h * self.state.scale_y) as i32;
 
-        let (clip_x, clip_y, clip_w, clip_h) = self.state.clip;
+        let PixelRect {
+            x: clip_x,
+            y: clip_y,
+            w: clip_w,
+            h: clip_h,
+        } = self.state.clip;
         let start_x = px.max(clip_x).max(0);
         let start_y = py.max(clip_y).max(0);
         let end_x = (px + pw)
@@ -504,7 +544,12 @@ impl<'a> Painter<'a> {
         let px_x = (x * self.state.scale_x + self.state.offset_x) as i32;
         let baseline_y = (y * self.state.scale_y + self.state.offset_y) as i32 + ascent;
 
-        let (cx, cy, cw, ch) = self.state.clip;
+        let PixelRect {
+            x: cx,
+            y: cy,
+            w: cw,
+            h: ch,
+        } = self.state.clip;
         let canvas_color = self.state.canvas_color;
         let global_alpha = self.state.alpha;
         let tw = self.target.width() as i32;
@@ -1042,7 +1087,12 @@ impl<'a> Painter<'a> {
     // --- Pixel-level operations ---
 
     fn blend_pixel(&mut self, x: i32, y: i32, color: Color) {
-        let (cx, cy, cw, ch) = self.state.clip;
+        let PixelRect {
+            x: cx,
+            y: cy,
+            w: cw,
+            h: ch,
+        } = self.state.clip;
         if x < cx || x >= cx + cw || y < cy || y >= cy + ch {
             return;
         }
@@ -1061,7 +1111,12 @@ impl<'a> Painter<'a> {
     }
 
     fn fill_rect_pixels(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
-        let (cx, cy, cw, ch) = self.state.clip;
+        let PixelRect {
+            x: cx,
+            y: cy,
+            w: cw,
+            h: ch,
+        } = self.state.clip;
         let start_x = x.max(cx).max(0);
         let start_y = y.max(cy).max(0);
         let end_x = (x + w).min(cx + cw).min(self.target.width() as i32);

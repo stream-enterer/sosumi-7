@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use crate::foundation::Rect;
 use crate::panel::PanelCtx;
 use crate::render::Painter;
 
@@ -61,7 +62,12 @@ impl Dialog {
 
     /// Layout content area and button row at the bottom.
     pub fn layout_children(&self, ctx: &mut PanelCtx, w: f64, h: f64) {
-        let (cx, cy, cw, ch) = self.border.content_rect(w, h, &self.look);
+        let Rect {
+            x: cx,
+            y: cy,
+            w: cw,
+            h: ch,
+        } = self.border.content_rect(w, h, &self.look);
         let children = ctx.children();
 
         if children.is_empty() {

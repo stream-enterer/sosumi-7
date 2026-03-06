@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use crate::foundation::Rect;
 use crate::input::{Cursor, InputEvent, InputKey, InputVariant};
 use crate::render::font_cache::FontCache;
 use crate::render::Painter;
@@ -78,7 +79,12 @@ impl TextField {
     pub fn paint(&mut self, painter: &mut Painter, w: f64, h: f64) {
         self.border.paint_border(painter, w, h, &self.look, false);
 
-        let (cx, cy, cw, ch) = self.border.content_rect(w, h, &self.look);
+        let Rect {
+            x: cx,
+            y: cy,
+            w: cw,
+            h: ch,
+        } = self.border.content_rect(w, h, &self.look);
 
         painter.push_state();
         painter.clip_rect(cx, cy, cw, ch);

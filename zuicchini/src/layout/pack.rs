@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::foundation::Rect;
 use crate::panel::{NoticeFlags, PanelBehavior, PanelCtx, PanelId};
 use crate::render::Painter;
 
@@ -32,7 +33,7 @@ impl PackLayout {
     }
 
     fn do_layout(&mut self, ctx: &mut PanelCtx) {
-        let (_, _, w, h) = ctx.layout_rect();
+        let Rect { w, h, .. } = ctx.layout_rect();
         let children = ctx.children();
         if children.is_empty() {
             return;
@@ -302,10 +303,10 @@ mod tests {
         layout.do_layout(&mut PanelCtx::new(&mut tree, root));
 
         let r = tree.get(children[0]).unwrap().layout_rect;
-        assert!((r.0 - 0.0).abs() < 0.01);
-        assert!((r.1 - 0.0).abs() < 0.01);
-        assert!((r.2 - 400.0).abs() < 0.01);
-        assert!((r.3 - 300.0).abs() < 0.01);
+        assert!((r.x - 0.0).abs() < 0.01);
+        assert!((r.y - 0.0).abs() < 0.01);
+        assert!((r.w - 400.0).abs() < 0.01);
+        assert!((r.h - 300.0).abs() < 0.01);
     }
 
     #[test]
@@ -317,7 +318,7 @@ mod tests {
         // Both children should cover the full area
         let r0 = tree.get(children[0]).unwrap().layout_rect;
         let r1 = tree.get(children[1]).unwrap().layout_rect;
-        let total_area = r0.2 * r0.3 + r1.2 * r1.3;
+        let total_area = r0.w * r0.h + r1.w * r1.h;
         assert!((total_area - 400.0 * 200.0).abs() < 1.0);
     }
 
@@ -328,10 +329,10 @@ mod tests {
         layout.do_layout(&mut PanelCtx::new(&mut tree, root));
 
         let r = tree.get(children[0]).unwrap().layout_rect;
-        assert!((r.0 - 10.0).abs() < 0.01);
-        assert!((r.1 - 10.0).abs() < 0.01);
-        assert!((r.2 - 380.0).abs() < 0.01);
-        assert!((r.3 - 280.0).abs() < 0.01);
+        assert!((r.x - 10.0).abs() < 0.01);
+        assert!((r.y - 10.0).abs() < 0.01);
+        assert!((r.w - 380.0).abs() < 0.01);
+        assert!((r.h - 280.0).abs() < 0.01);
     }
 
     #[test]
@@ -343,8 +344,8 @@ mod tests {
         // All children should have positive dimensions
         for (i, child) in children.iter().enumerate() {
             let r = tree.get(*child).unwrap().layout_rect;
-            assert!(r.2 > 0.0, "child {i} has zero width");
-            assert!(r.3 > 0.0, "child {i} has zero height");
+            assert!(r.w > 0.0, "child {i} has zero width");
+            assert!(r.h > 0.0, "child {i} has zero height");
         }
     }
 
@@ -357,8 +358,8 @@ mod tests {
         // Verify no overlapping and all positive sizes
         for child in &children {
             let r = tree.get(*child).unwrap().layout_rect;
-            assert!(r.2 > 0.0);
-            assert!(r.3 > 0.0);
+            assert!(r.w > 0.0);
+            assert!(r.h > 0.0);
         }
     }
 }
