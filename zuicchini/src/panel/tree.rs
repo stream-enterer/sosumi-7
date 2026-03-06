@@ -851,7 +851,11 @@ impl PanelTree {
     pub fn deliver_notices(&mut self) {
         let ids: Vec<PanelId> = self.panels.keys().collect();
         for id in ids {
-            let flags = self.panels[id].pending_notices;
+            // Panel may have been removed by a prior callback in this loop.
+            let Some(panel) = self.panels.get(id) else {
+                continue;
+            };
+            let flags = panel.pending_notices;
             if flags.is_empty() {
                 continue;
             }
@@ -862,7 +866,10 @@ impl PanelTree {
                     let mut ctx = PanelCtx::new(self, id);
                     behavior.layout_children(&mut ctx);
                 }
-                self.put_behavior(id, behavior);
+                // Panel may have been removed by its own callback (e.g. delete_self).
+                if self.panels.contains_key(id) {
+                    self.put_behavior(id, behavior);
+                }
             }
         }
     }
