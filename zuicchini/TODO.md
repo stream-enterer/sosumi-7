@@ -14,6 +14,10 @@ Tracked here so they don't get forgotten. Sourced from EMCORE_FEATURE_CONTRACT.m
 - [ ] `CoreConfigPanel` — core settings editor (needs config system fully working)
 - [ ] `ErrorPanel` — simple error text display (small effort, useful for debugging)
 
+## Structural Refactors
+
+- [ ] Restrict PanelData field visibility — make computed fields (`enabled`, `pending_notices`) and tree-managed fields (`parent`, `first_child`, etc.) non-public after the fix pass settles their access patterns
+
 ## Rendering
 
 - [ ] Multi-threaded tile rasterization — parallelize independent dirty tiles across threads (benchmark-driven, threading boundary is well-defined)
