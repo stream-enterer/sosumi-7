@@ -169,6 +169,11 @@ impl ApplicationHandler for App {
                     win.render(&mut self.tree, gpu);
                 }
             }
+            WindowEvent::Focused(focused) => {
+                if let Some(win) = self.windows.get_mut(&window_id) {
+                    win.view_mut().set_window_focused(focused);
+                }
+            }
             ref input_event => {
                 if let Some(mut input) = ZuiWindow::handle_input(input_event) {
                     // Update persistent input state
@@ -186,13 +191,7 @@ impl ApplicationHandler for App {
                     input.mouse_y = self.input_state.mouse_y;
 
                     if let Some(win) = self.windows.get_mut(&window_id) {
-                        // Dispatch to the focused panel's behavior
-                        if let Some(focused) = win.view().focused() {
-                            if let Some(mut behavior) = self.tree.take_behavior(focused) {
-                                behavior.input(&input);
-                                self.tree.put_behavior(focused, behavior);
-                            }
-                        }
+                        win.dispatch_input(&mut self.tree, &input, &self.input_state);
                     }
                 }
             }
@@ -206,8 +205,19 @@ impl ApplicationHandler for App {
         // Deliver notices (includes layout dispatch)
         self.tree.deliver_notices();
 
-        // Request redraws for all windows
-        for win in self.windows.values() {
+        // Update views and tick animators
+        let dt = 1.0 / 60.0; // Fixed timestep for now
+        let tree = &mut self.tree;
+        for win in self.windows.values_mut() {
+            // Tick animator (take out to avoid borrow conflict)
+            if let Some(mut anim) = win.active_animator.take() {
+                if anim.animate(win.view_mut(), tree, dt) {
+                    win.active_animator = Some(anim);
+                }
+            }
+
+            // Update view (recompute viewing coords, auto-select active)
+            win.view_mut().update(tree);
             win.request_redraw();
         }
     }

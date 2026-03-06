@@ -41,6 +41,20 @@ pub struct PanelData {
     pub pending_notices: NoticeFlags,
     /// The behavior implementation (extracted for mutation).
     pub behavior: Option<Box<dyn PanelBehavior>>,
+
+    // Viewing state (set by View::update_viewing each frame)
+    pub viewed: bool,
+    pub in_viewed_path: bool,
+    pub in_active_path: bool,
+    pub is_active: bool,
+    pub viewed_x: f64,
+    pub viewed_y: f64,
+    pub viewed_width: f64,
+    pub viewed_height: f64,
+    pub clip_x: f64,
+    pub clip_y: f64,
+    pub clip_w: f64,
+    pub clip_h: f64,
 }
 
 impl PanelData {
@@ -60,6 +74,18 @@ impl PanelData {
             enabled: true,
             pending_notices: NoticeFlags::empty(),
             behavior: None,
+            viewed: false,
+            in_viewed_path: false,
+            in_active_path: false,
+            is_active: false,
+            viewed_x: 0.0,
+            viewed_y: 0.0,
+            viewed_width: 0.0,
+            viewed_height: 0.0,
+            clip_x: 0.0,
+            clip_y: 0.0,
+            clip_w: 0.0,
+            clip_h: 0.0,
         }
     }
 }
@@ -349,6 +375,61 @@ impl PanelTree {
         }
     }
 
+    /// Walk from `id` to root, returning ancestor chain (id first, root last).
+    pub fn ancestors(&self, id: PanelId) -> Vec<PanelId> {
+        let mut result = vec![id];
+        let mut cur = id;
+        while let Some(parent) = self.panels.get(cur).and_then(|p| p.parent) {
+            result.push(parent);
+            cur = parent;
+        }
+        result
+    }
+
+    /// Iterate children in reverse order (last_child → first_child).
+    pub fn children_rev(&self, parent: PanelId) -> ChildRevIter<'_> {
+        let last = self.panels.get(parent).and_then(|p| p.last_child);
+        ChildRevIter {
+            tree: self,
+            current: last,
+        }
+    }
+
+    /// Find nearest focusable ancestor of `id` (including self).
+    pub fn focusable_ancestor(&self, id: PanelId) -> Option<PanelId> {
+        let mut cur = Some(id);
+        while let Some(c) = cur {
+            if self.panels.get(c).map(|p| p.focusable).unwrap_or(false) {
+                return Some(c);
+            }
+            cur = self.panels.get(c).and_then(|p| p.parent);
+        }
+        None
+    }
+
+    /// Clear all viewing flags on all panels.
+    pub fn clear_viewing_flags(&mut self) {
+        for (_, panel) in self.panels.iter_mut() {
+            panel.viewed = false;
+            panel.in_viewed_path = false;
+            panel.in_active_path = false;
+            panel.is_active = false;
+            panel.viewed_x = 0.0;
+            panel.viewed_y = 0.0;
+            panel.viewed_width = 0.0;
+            panel.viewed_height = 0.0;
+            panel.clip_x = 0.0;
+            panel.clip_y = 0.0;
+            panel.clip_w = 0.0;
+            panel.clip_h = 0.0;
+        }
+    }
+
+    /// Get all panel IDs.
+    pub fn all_ids(&self) -> Vec<PanelId> {
+        self.panels.keys().collect()
+    }
+
     fn collect_descendants(&self, id: PanelId) -> Vec<PanelId> {
         let mut result = Vec::new();
         let mut stack = Vec::new();
@@ -390,6 +471,22 @@ impl<'a> Iterator for ChildIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let id = self.current?;
         self.current = self.tree.panels.get(id).and_then(|p| p.next_sibling);
+        Some(id)
+    }
+}
+
+/// Iterator over children of a panel in reverse order (last → first).
+pub struct ChildRevIter<'a> {
+    tree: &'a PanelTree,
+    current: Option<PanelId>,
+}
+
+impl<'a> Iterator for ChildRevIter<'a> {
+    type Item = PanelId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let id = self.current?;
+        self.current = self.tree.panels.get(id).and_then(|p| p.prev_sibling);
         Some(id)
     }
 }

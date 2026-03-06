@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use bitflags::bitflags;
 
-use crate::input::{InputEvent, InputKey, InputVariant};
-use crate::panel::{PanelId, View};
+use crate::input::{InputEvent, InputKey, InputState, InputVariant};
+use crate::panel::{
+    KeyboardZoomScrollVIF, MouseZoomScrollVIF, PanelId, PanelTree, View, ViewAnimator,
+    ViewInputFilter,
+};
 use crate::render::{FontCache, TileCache, WgpuCompositor};
 use crate::scheduler::SignalId;
 
@@ -34,6 +37,8 @@ pub struct ZuiWindow {
     pub flags: WindowFlags,
     pub close_signal: SignalId,
     root_panel: PanelId,
+    vif_chain: Vec<Box<dyn ViewInputFilter>>,
+    pub active_animator: Option<Box<dyn ViewAnimator>>,
 }
 
 impl ZuiWindow {
@@ -98,6 +103,11 @@ impl ZuiWindow {
         let font_cache = FontCache::new();
         let view = View::new(root_panel, w as f64, h as f64);
 
+        let vif_chain: Vec<Box<dyn ViewInputFilter>> = vec![
+            Box::new(MouseZoomScrollVIF::new()),
+            Box::new(KeyboardZoomScrollVIF::new()),
+        ];
+
         Self {
             winit_window,
             surface,
@@ -109,6 +119,8 @@ impl ZuiWindow {
             flags,
             close_signal,
             root_panel,
+            vif_chain,
+            active_animator: None,
         }
     }
 
@@ -314,6 +326,39 @@ impl ZuiWindow {
                 }
             }
             _ => None,
+        }
+    }
+
+    /// Dispatch an input event through VIF chain, then to panel behavior.
+    pub fn dispatch_input(&mut self, tree: &mut PanelTree, event: &InputEvent, state: &InputState) {
+        // Run VIF chain
+        for vif in &mut self.vif_chain {
+            if vif.filter(event, state, &mut self.view) {
+                return;
+            }
+        }
+
+        // For mouse press: hit test and set active panel
+        if event.variant == InputVariant::Press
+            && matches!(
+                event.key,
+                InputKey::MouseLeft | InputKey::MouseRight | InputKey::MouseMiddle
+            )
+        {
+            if let Some(hit) = self
+                .view
+                .get_focusable_panel_at(tree, event.mouse_x, event.mouse_y)
+            {
+                self.view.set_active_panel(tree, hit);
+            }
+        }
+
+        // Dispatch to active panel's behavior
+        if let Some(active) = self.view.active() {
+            if let Some(mut behavior) = tree.take_behavior(active) {
+                behavior.input(event);
+                tree.put_behavior(active, behavior);
+            }
         }
     }
 

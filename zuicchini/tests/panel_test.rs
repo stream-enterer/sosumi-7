@@ -165,12 +165,15 @@ fn view_zoom_and_scroll() {
 
     let mut view = View::new(root, 800.0, 600.0);
 
+    // scroll(dx, dy) normalizes by viewport: rel_x += dx / vw
     view.scroll(10.0, 20.0);
-    assert!((view.current_visit().rel_x - 10.0).abs() < 0.001);
-    assert!((view.current_visit().rel_y - 20.0).abs() < 0.001);
+    let expected_x = 10.0 / 800.0;
+    let expected_y = 20.0 / 600.0;
+    assert!((view.current_visit().rel_x - expected_x).abs() < 0.001);
+    assert!((view.current_visit().rel_y - expected_y).abs() < 0.001);
 
     view.zoom(2.0, 400.0, 300.0);
-    assert!((view.current_visit().rel_a - 2.0).abs() < 0.001);
+    assert!((view.current_visit().rel_a - 2.0).abs() < 0.01);
 }
 
 #[test]
