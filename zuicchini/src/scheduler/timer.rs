@@ -37,11 +37,17 @@ impl TimerCentral {
         interval_ms: u64,
         periodic: bool,
     ) -> TimerId {
+        // C++ clamps periodic timer interval to at least 1ms to prevent spin-loop
+        let clamped_ms = if periodic {
+            interval_ms.max(1)
+        } else {
+            interval_ms
+        };
         self.timers.insert(TimerEntry {
             signal_id,
-            interval_ms,
+            interval_ms: clamped_ms,
             periodic,
-            next_fire: Instant::now() + Duration::from_millis(interval_ms),
+            next_fire: Instant::now() + Duration::from_millis(clamped_ms),
             active: true,
         })
     }
@@ -56,6 +62,11 @@ impl TimerCentral {
     /// Remove a cancelled timer, freeing its slot.
     pub fn remove_timer(&mut self, id: TimerId) {
         self.timers.remove(id);
+    }
+
+    /// Check if a timer is still active (running).
+    pub fn is_running(&self, id: TimerId) -> bool {
+        self.timers.get(id).is_some_and(|t| t.active)
     }
 
     /// Run timer checks and collect signals to fire. Called directly
@@ -120,11 +131,27 @@ mod tests {
         let sig = signals.insert(());
 
         let mut tc = TimerCentral::new();
-        tc.create_timer(sig, 0, true); // periodic, fires immediately
+        // interval_ms=0 is clamped to 1ms for periodic timers,
+        // so wait briefly to ensure it fires.
+        tc.create_timer(sig, 0, true);
+        std::thread::sleep(Duration::from_millis(2));
 
         let fired = tc.check_and_collect();
         assert_eq!(fired.len(), 1);
         assert!(!tc.timers.is_empty()); // periodic stays
+    }
+
+    #[test]
+    fn periodic_zero_interval_clamped_to_1ms() {
+        let mut signals: SlotMap<SignalId, ()> = SlotMap::with_key();
+        let sig = signals.insert(());
+
+        let mut tc = TimerCentral::new();
+        tc.create_timer(sig, 0, true);
+
+        // Should NOT fire immediately — clamped to 1ms minimum
+        let fired = tc.check_and_collect();
+        assert!(fired.is_empty());
     }
 
     #[test]

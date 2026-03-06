@@ -121,9 +121,9 @@ impl ViewAnimator for SpeedingViewAnimator {
 
         view.scroll(self.current_vx * dt, self.current_vy * dt);
 
-        // Stop if at target zero velocity
-        if self.target_vx == 0.0
-            && self.target_vy == 0.0
+        // Stop if target velocity is near zero and current velocity has decayed
+        if self.target_vx.abs() < 0.01
+            && self.target_vy.abs() < 0.01
             && self.current_vx.abs() < 0.01
             && self.current_vy.abs() < 0.01
         {
@@ -190,10 +190,10 @@ impl ViewAnimator for VisitingViewAnimator {
             };
             view.zoom(zoom_factor, 0.0, 0.0);
 
-            // Check if arrived
-            if (state.rel_x - self.target_x).abs() < 0.01
-                && (state.rel_y - self.target_y).abs() < 0.01
-                && (state.rel_a - self.target_a).abs() < 0.001
+            // Check if arrived (compare new interpolated values, not stale state)
+            if (new_x - self.target_x).abs() < 0.01
+                && (new_y - self.target_y).abs() < 0.01
+                && (new_a - self.target_a).abs() < 0.001
             {
                 self.active = false;
             }

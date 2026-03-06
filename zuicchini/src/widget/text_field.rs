@@ -62,6 +62,8 @@ impl TextField {
         self.text = text.to_string();
         self.cursor = self.text.len();
         self.selection_anchor = None;
+        self.undo_stack.clear();
+        self.redo_stack.clear();
     }
 
     pub fn cursor_pos(&self) -> usize {
@@ -145,16 +147,69 @@ impl TextField {
             painter.paint_rect(sx, cy, sw, ch, self.look.input_hl_color);
         }
 
-        // Text
+        // Text — render in segments with swapped color for selected region
         let text_x = cx + TEXT_PADDING - self.scroll_x;
         let text_y = cy + (ch - TEXT_SIZE) / 2.0;
-        painter.paint_text(
-            text_x,
-            text_y,
-            &display_text,
-            TEXT_SIZE,
-            self.look.input_fg_color,
-        );
+
+        if let Some(anchor) = self.selection_anchor {
+            let sel_start = anchor.min(self.cursor).min(display_text.len());
+            let sel_end = anchor.max(self.cursor).min(display_text.len());
+
+            if sel_start != sel_end {
+                // Before selection
+                if sel_start > 0 {
+                    painter.paint_text(
+                        text_x,
+                        text_y,
+                        &display_text[..sel_start],
+                        TEXT_SIZE,
+                        self.look.input_fg_color,
+                    );
+                }
+                // Selected text (fg/bg swapped)
+                let sel_x_offset = painter
+                    .font_cache()
+                    .measure_text(&display_text[..sel_start], 0, size_px)
+                    .0;
+                painter.paint_text(
+                    text_x + sel_x_offset,
+                    text_y,
+                    &display_text[sel_start..sel_end],
+                    TEXT_SIZE,
+                    self.look.input_bg_color,
+                );
+                // After selection
+                if sel_end < display_text.len() {
+                    let after_x_offset = painter
+                        .font_cache()
+                        .measure_text(&display_text[..sel_end], 0, size_px)
+                        .0;
+                    painter.paint_text(
+                        text_x + after_x_offset,
+                        text_y,
+                        &display_text[sel_end..],
+                        TEXT_SIZE,
+                        self.look.input_fg_color,
+                    );
+                }
+            } else {
+                painter.paint_text(
+                    text_x,
+                    text_y,
+                    &display_text,
+                    TEXT_SIZE,
+                    self.look.input_fg_color,
+                );
+            }
+        } else {
+            painter.paint_text(
+                text_x,
+                text_y,
+                &display_text,
+                TEXT_SIZE,
+                self.look.input_fg_color,
+            );
+        }
 
         // Cursor line
         let cursor_x = cx + TEXT_PADDING + cursor_x_px - self.scroll_x;
@@ -234,8 +289,11 @@ impl TextField {
             }
             _ => {
                 if !event.chars.is_empty() {
-                    self.save_undo();
-                    self.delete_selection();
+                    // save_undo once: delete_selection saves internally if
+                    // there was a selection, otherwise we save before inserting.
+                    if !self.delete_selection() {
+                        self.save_undo();
+                    }
                     for ch in event.chars.chars() {
                         if ch.is_control() {
                             continue;

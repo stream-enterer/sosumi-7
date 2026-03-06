@@ -1,0 +1,30 @@
+module: zuicchini/src/scheduler/timer.rs
+changes:
+  - fix_id: TIMER-001
+    action: MODIFIED
+    lines_before: 40-46
+    lines_after: 40-48
+    description: >
+      Added 1ms minimum clamp for periodic timer interval. When periodic=true,
+      interval_ms is clamped to max(interval_ms, 1) before storing and
+      computing next_fire. One-shot timers are not affected.
+    extract_branches_addressed:
+      - "C++ clamps Period to 1 for periodic timers with millisecs=0"
+
+  - fix_id: TIMER-002
+    action: RECLASSIFIED
+    reason: >
+      TimerCentral doesn't own the scheduler, so it cannot call
+      scheduler.abort(signal_id). Adding abort_signal requires either
+      passing a callback/reference to the scheduler, or restructuring
+      the API to return the signal_id so the caller can abort it.
+      This is an architectural decision, not a simple fix.
+
+  - fix_id: TIMER-003
+    action: ADDED
+    lines_after: 63-66
+    description: >
+      Added pub fn is_running(&self, id: TimerId) -> bool method to
+      TimerCentral. Also exposed as is_timer_running on EngineScheduler.
+    extract_branches_addressed:
+      - "IsRunning() public query method"

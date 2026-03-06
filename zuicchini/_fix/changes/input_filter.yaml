@@ -1,0 +1,42 @@
+module: zuicchini/src/panel/input_filter.rs
+changes:
+  - fix_id: VIF-001
+    action: MODIFIED
+    lines_before: 100-116
+    lines_after: 106-120
+    description: >
+      Arrow keys now require Alt modifier (state.alt()) before processing.
+      Matches C++ emDefaultTouchVIF which requires Alt or Shift+Alt for
+      keyboard navigation.
+    extract_branches_addressed:
+      - "requires Alt or Shift+Alt for keyboard navigation activation"
+
+  - fix_id: VIF-002
+    action: MODIFIED
+    lines_before: 117-126
+    lines_after: 121-128
+    description: >
+      PageUp/PageDown now call view.zoom() instead of view.scroll().
+      PageUp zooms in (zoom_speed factor), PageDown zooms out
+      (1/zoom_speed factor). The zoom_speed field (1.2) is now used.
+    extract_branches_addressed:
+      - "PageUp zooms in, PageDown zooms out"
+
+  - fix_id: VIF-003
+    action: MODIFIED
+    lines_before: 38-68, 94-134
+    lines_after: 38-72, 98-138
+    description: >
+      Both MouseZoomScrollVIF and KeyboardZoomScrollVIF now check
+      view.flags.contains(ViewFlags::NO_NAVIGATE) at the start of
+      filter() and return false if set. Added ViewFlags import.
+    extract_branches_addressed:
+      - "check VF_NO_USER_NAVIGATION before processing"
+
+  - fix_id: VIF-004
+    action: BLOCKED
+    reason: >
+      View::is_focused() does not exist. The View struct has
+      focused: Option<PanelId> for panel-level focus, but no concept
+      of OS-level window focus. Adding window focus requires extending
+      View with a boolean flag set by the windowing layer.

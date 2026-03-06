@@ -1,0 +1,24 @@
+module: zuicchini/src/panel/animator.rs
+changes:
+  - fix_id: ANIM-001
+    action: MODIFIED
+    lines_before: 124-131
+    lines_after: 124-131
+    description: >
+      Replaced exact float equality check (target_vx == 0.0) with
+      threshold check (target_vx.abs() < 0.01). Prevents animator from
+      staying active forever due to epsilon-small target velocity.
+    extract_branches_addressed:
+      - "GetAbsTargetVelocity() > 0.01 threshold check"
+
+  - fix_id: ANIM-002
+    action: MODIFIED
+    lines_before: 193-199
+    lines_after: 193-199
+    description: >
+      Convergence check now compares the NEW interpolated values (new_x,
+      new_y, new_a) against targets instead of the stale pre-scroll
+      state. Animator correctly detects convergence on the same frame
+      it arrives, without one extra frame delay.
+    extract_branches_addressed:
+      - "convergence check after applying scroll/zoom"

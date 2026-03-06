@@ -63,6 +63,7 @@ pub(crate) struct EngineCtxInner {
     pub wake_queues: [Vec<EngineId>; 10],
     pub time_slice: i8,
     pub clock: u64,
+    pub time_slice_counter: u64,
     pub deadline: std::time::Instant,
     pub timer_central: super::timer::TimerCentral,
 }

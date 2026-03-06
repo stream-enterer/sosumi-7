@@ -1,0 +1,411 @@
+# Verification verdict: emPanel (Tier 2)
+# Date: 2026-03-05
+# Verifier: claude-opus-4-6
+
+overall: partial_pass
+
+# ==========================================================================
+# MAPPED methods
+# ==========================================================================
+
+- method: "emPanel::GetName -> PanelCtx::name"
+  status: MAPPED
+  verdict: pass
+  notes: >
+    Returns PanelData.name via PanelCtx. Correct; returns "" on missing panel
+    which is a safe default.
+
+- method: "emPanel::GetParent -> PanelTree::parent"
+  status: MAPPED
+  verdict: pass
+  notes: >
+    Returns Option<PanelId> instead of raw pointer. Semantically equivalent.
+
+- method: "emPanel::GetCanvasColor -> PanelCtx::canvas_color"
+  status: MAPPED
+  verdict: pass
+  notes: >
+    Returns PanelData.canvas_color. Default is Color::TRANSPARENT vs C++ default
+    of 0 (black). Different defaults but TRANSPARENT is reasonable for the Rust
+    rendering pipeline.
+
+- method: "emPanel::IsEnabled -> PanelCtx::is_enabled"
+  status: MAPPED
+  verdict: pass
+  notes: Returns computed PanelData.enabled field. Correct.
+
+- method: "emPanel::GetEnableSwitch -> PanelData.enable_switch"
+  status: MAPPED
+  verdict: pass
+  notes: Field is pub, accessible directly. Correct.
+
+- method: "emPanel::IsFocusable -> PanelData.focusable"
+  status: MAPPED
+  verdict: pass
+  notes: Field is pub, accessible directly. Correct.
+
+- method: "emPanel::DeleteAllChildren -> PanelTree::delete_all_children"
+  status: MAPPED
+  verdict: pass
+  notes: >
+    Collects children and removes each. C++ deletes last-to-first;
+    Rust iterates first-to-last. Order difference is harmless since each
+    remove properly unlinks. Sibling pointers are correctly maintained
+    because each remove() re-patches prev/next links.
+
+- method: "emPanel::Paint -> PanelBehavior::paint"
+  status: MAPPED
+  verdict: pass
+  notes: >
+    Both default to no-op. Rust receives (w, h) explicitly instead of
+    reading from panel state. Acceptable restructure.
+
+- method: "emPanel::GetCursor -> PanelBehavior::get_cursor"
+  status: MAPPED
+  verdict: pass
+  detail: >
+    C++ default delegates to parent, root returns NORMAL. Rust always returns
+    Cursor::Normal. This means child panels won't inherit parent cursor by
+    default in Rust. Minor behavioral difference but acceptable since cursor
+    inheritance can be added at the View level if needed.
+
+- method: "emPanel::IsOpaque -> PanelBehavior::is_opaque"
+  status: MAPPED
+  verdict: pass
+  notes: Default returns false in both. Correct.
+
+- method: "emPanel::LayoutChildren -> PanelBehavior::layout_children"
+  status: MAPPED
+  verdict: pass
+  notes: Default no-op in both. Rust version receives PanelCtx. Correct.
+
+- method: "emPanel::Notice -> PanelBehavior::notice"
+  status: MAPPED
+  verdict: pass
+  notes: Default no-op in both. Correct.
+
+- method: "emPanel::Cycle -> PanelBehavior::cycle"
+  status: MAPPED
+  verdict: flag
+  detail: >
+    C++ returns bool (true = keep cycling/awake). Rust returns () (void).
+    This means the wake/sleep optimization is lost -- panels cannot signal
+    they want to stop receiving cycle calls. Not a correctness bug but
+    a performance concern for idle panels.
+
+# ==========================================================================
+# RESTRUCTURED methods
+# ==========================================================================
+
+- method: "emPanel::emPanel -> PanelTree::create_root / create_child"
+  status: RESTRUCTURED
+  verdict: flag
+  items:
+    - check: "Child sibling linking"
+      result: pass
+      detail: >
+        create_child correctly links prev/next siblings and sets
+        parent.first_child / parent.last_child. Matches C++ Prev/Next
+        linking logic.
+    - check: "CHILDREN_CHANGED notification on parent"
+      result: pass
+      detail: >
+        create_child inserts CHILDREN_CHANGED into parent pending_notices.
+        Matches C++ NF_CHILD_LIST_CHANGED.
+    - check: "Name index insertion"
+      result: pass
+      detail: >
+        HashMap insert replaces AVL tree insert. Semantically equivalent.
+    - check: "Child enabled inheritance"
+      result: fail
+      detail: >
+        C++ sets child Enabled = parent->Enabled (inherits computed enabled
+        state from parent). Rust create_child initializes enabled=true
+        unconditionally (PanelData::new sets enabled: true). If parent is
+        disabled, newly created child will incorrectly appear enabled until
+        the next recompute_enabled call. No recompute_enabled is called
+        during create_child.
+    - check: "Root panel initial layout"
+      result: info
+      detail: >
+        C++ sets LayoutX=0, LayoutY=0, LayoutWidth=1.0,
+        LayoutHeight=View.GetHomeTallness(). Rust create_root sets
+        layout_rect=(0,0,0,0). Width/height are zero, so root starts
+        with degenerate geometry. This is documented in the mapping notes
+        as deferred to View struct setup.
+    - check: "Root panel duplicate guard"
+      result: fail
+      detail: >
+        C++ emFatalError if RootPanel already exists. Rust create_root
+        silently overwrites self.root with the new panel ID, orphaning the
+        previous root without removing it from the arena. No panic or error.
+    - check: "Off-screen initial position (LayoutX=-2)"
+      result: info
+      detail: >
+        C++ initializes child at LayoutX=-2 LayoutY=-2 (off-screen).
+        Rust initializes at (0,0,0,0). Documented divergence. Zero-size
+        rect achieves similar effect (invisible) but at origin rather
+        than off-screen.
+
+- method: "emPanel::~emPanel -> PanelTree::remove"
+  status: RESTRUCTURED
+  verdict: pass
+  items:
+    - check: "Sibling unlinking"
+      result: pass
+      detail: >
+        Correctly handles all four cases: prev exists / prev is None,
+        next exists / next is None. Parent first_child and last_child
+        updated correctly.
+    - check: "CHILDREN_CHANGED notification on parent"
+      result: pass
+      detail: Inserted on parent when parent exists.
+    - check: "Root reference cleanup"
+      result: pass
+      detail: Sets self.root = None when removing root.
+    - check: "Name index cleanup"
+      result: pass
+      detail: >
+        Removes descendants from name_index using parent key, and handles
+        root panel (self-key) separately. Correct.
+    - check: "Recursive child deletion"
+      result: pass
+      detail: >
+        collect_descendants does DFS via first_child/next_sibling. All
+        descendants collected and removed from arena.
+    - check: "View-level cleanup (SVP, active, seek)"
+      result: info
+      detail: >
+        Not handled in PanelTree::remove. Documented as deferred to View.
+        C++ destructor has complex SVP/active path cleanup. This is
+        acceptable given the architecture split.
+
+- method: "emPanel::GetChild -> PanelTree::find_child_by_name"
+  status: RESTRUCTURED
+  verdict: pass
+  notes: >
+    HashMap lookup replaces AVL tree search. O(1) amortized vs O(log n).
+    Returns Option<PanelId> instead of raw pointer. Correct.
+
+- method: "emPanel::GetFirstChild -> PanelTree::children (ChildIter)"
+  status: RESTRUCTURED
+  verdict: pass
+  notes: >
+    No direct accessor but first_child is pub on PanelData, and ChildIter
+    starts from first_child. Equivalent access.
+
+- method: "emPanel::GetLastChild -> PanelData.last_child"
+  status: RESTRUCTURED
+  verdict: pass
+  notes: Field is pub on PanelData. Equivalent.
+
+- method: "emPanel::GetPrev -> PanelData.prev_sibling"
+  status: RESTRUCTURED
+  verdict: pass
+  notes: Field is pub on PanelData. Equivalent.
+
+- method: "emPanel::GetNext -> PanelData.next_sibling"
+  status: RESTRUCTURED
+  verdict: pass
+  notes: Field is pub on PanelData. Equivalent.
+
+- method: "emPanel::Layout -> PanelTree::set_layout_rect"
+  status: RESTRUCTURED
+  verdict: flag
+  items:
+    - check: "LayoutWidth/Height minimum clamp"
+      result: fail
+      detail: >
+        C++ clamps LayoutWidth and LayoutHeight to 1E-100 minimum to
+        prevent division by zero. Rust set_layout_rect stores the values
+        as-is with no clamping. Zero or negative width/height could cause
+        division by zero when computing tallness (height/width).
+    - check: "Canvas color separate from geometry"
+      result: pass
+      detail: >
+        set_canvas_color is a separate method with CANVAS_CHANGED notice.
+        Acceptable restructure.
+    - check: "LAYOUT_CHANGED notice"
+      result: pass
+      detail: Correctly set on geometry change.
+    - check: "Root panel forced layout"
+      result: info
+      detail: >
+        C++ forces root LayoutX=0, LayoutY=0, LayoutWidth=1.0. Rust has
+        no such constraint in set_layout_rect. Caller must enforce this.
+    - check: "Early return on no-change"
+      result: fail
+      detail: >
+        C++ checks if geometry is unchanged and returns early (only
+        checking canvas color). Rust always overwrites and always sets
+        LAYOUT_CHANGED even if the rect is identical. This could cause
+        unnecessary layout_children calls.
+
+- method: "emPanel::GetLayoutX/Y/Width/Height -> PanelCtx::layout_rect"
+  status: RESTRUCTURED
+  verdict: pass
+  notes: >
+    Four individual accessors merged into single tuple return. Correct.
+
+- method: "emPanel::IsViewed -> PanelCtx::is_visible"
+  status: RESTRUCTURED
+  verdict: flag
+  detail: >
+    Semantic mismatch documented in mapping. C++ IsViewed is computed from
+    viewport intersection. Rust is_visible returns a user-set visibility
+    flag. These are fundamentally different concepts. Code that depends on
+    IsViewed for viewport-awareness will not work correctly with is_visible.
+
+- method: "emPanel::SetEnableSwitch -> PanelTree::set_enable_switch + recompute_enabled"
+  status: MAPPED
+  verdict: pass
+  items:
+    - check: "Early return on no change"
+      result: pass
+      detail: Both C++ and Rust check if value unchanged and return early.
+    - check: "Recursive propagation"
+      result: pass
+      detail: >
+        C++ uses iterative DFS with pointer manipulation. Rust uses
+        recursive recompute_enabled. Both AND enable_switch with parent
+        enabled state. Both skip subtrees where enabled state doesn't
+        actually change (Rust checks new_enabled != panel.enabled).
+    - check: "ENABLE_CHANGED notification"
+      result: pass
+      detail: Both set NF_ENABLE_CHANGED / ENABLE_CHANGED only when state changes.
+    - check: "Enable when parent disabled"
+      result: pass
+      detail: >
+        C++ checks (!Parent || Parent->Enabled) before traversal. Rust
+        computes parent_enabled from parent's enabled field (defaults to
+        true for root). Since enable_switch && false == false, children
+        won't change. Correct.
+
+- method: "emPanel::SetFocusable -> PanelCtx::set_focusable"
+  status: RESTRUCTURED
+  verdict: flag
+  items:
+    - check: "Basic focusable flag set"
+      result: pass
+      detail: Sets PanelData.focusable. Correct.
+    - check: "Active panel migration on unfocusing"
+      result: fail
+      detail: >
+        C++ moves activation to parent when active panel becomes
+        unfocusable. Rust simply sets the flag with no migration logic.
+        An unfocusable active panel would remain active.
+    - check: "Root unfocusable guard"
+      result: fail
+      detail: >
+        C++ prevents root from becoming unfocusable (logs debug, returns).
+        Rust has no such guard; root can be made unfocusable.
+
+- method: "emPanel::Input -> PanelBehavior::input"
+  status: RESTRUCTURED
+  verdict: pass
+  notes: >
+    C++ default handles focus-on-click and keyboard navigation. Rust
+    default is no-op, returning false. Keyboard navigation moved to
+    ViewInputFilter chain. Documented divergence. The trait signature
+    returns bool for event consumption which is correct.
+
+- method: "emPanel::AutoExpand -> PanelBehavior::auto_expand"
+  status: RESTRUCTURED
+  verdict: flag
+  detail: >
+    C++ is void (performs expansion side-effects directly). Rust returns
+    bool (declarative). The expansion triggering mechanism is not yet wired
+    up, so the return value is currently unused.
+
+- method: "emPanel::AutoShrink -> PanelBehavior::auto_shrink"
+  status: RESTRUCTURED
+  verdict: flag
+  detail: >
+    C++ deletes all CreatedByAE children (concrete side-effect). Rust returns
+    bool (declarative). CreatedByAE tracking is not implemented, so selective
+    deletion of AE-created children is not possible. All-or-nothing via
+    delete_all_children would be the alternative.
+
+- method: "emPanel::AddPendingNotice -> direct field mutation"
+  status: RESTRUCTURED
+  verdict: pass
+  notes: >
+    C++ ORs flags into PendingNoticeFlags and adds to view notice list.
+    Rust mutates pending_notices directly. deliver_notices iterates all
+    panels (no explicit notice list), which is O(n) vs C++ O(pending).
+    Correct but less efficient.
+
+- method: "emPanel::HandleNotice -> PanelTree::deliver_notices"
+  status: RESTRUCTURED
+  verdict: flag
+  items:
+    - check: "Notice flag clearing and delivery"
+      result: pass
+      detail: >
+        Clears pending flags, calls behavior.notice(flags). Correct.
+    - check: "LAYOUT_CHANGED triggers layout_children"
+      result: pass
+      detail: >
+        If flags contains LAYOUT_CHANGED, calls behavior.layout_children(ctx).
+        Correct.
+    - check: "AE decision logic"
+      result: fail
+      detail: >
+        C++ HandleNotice handles AEInvalid, AEDecisionInvalid, and the
+        full expand/shrink decision cycle. Rust deliver_notices has none
+        of this. Auto-expansion is completely absent from the notice
+        delivery path.
+    - check: "Iteration order"
+      result: info
+      detail: >
+        Rust iterates all panels via SlotMap::keys() which has arbitrary
+        order. C++ processes via a linked notice list. Delivery order may
+        differ; parent notices could fire after child notices in Rust,
+        potentially causing stale layout_children calls.
+
+- method: "emPanel::InvalidateChildrenLayout -> NoticeFlags::LAYOUT_CHANGED"
+  status: RESTRUCTURED
+  verdict: pass
+  notes: >
+    LAYOUT_CHANGED set by set_layout_rect, and deliver_notices calls
+    layout_children when LAYOUT_CHANGED is pending. Correct structural
+    replacement.
+
+# ==========================================================================
+# NoticeFlags mapping
+# ==========================================================================
+
+- item: "NoticeFlags bit values"
+  verdict: pass
+  notes: >
+    Bit positions differ from C++ but this is internal. All mapped flags
+    (LAYOUT_CHANGED, FOCUS_CHANGED, CHILDREN_CHANGED, VIEW_CHANGED,
+    ENABLE_CHANGED) are present. CANVAS_CHANGED and VISIBILITY are
+    Rust-only additions. NF_ACTIVE_CHANGED, NF_VIEW_FOCUS_CHANGED,
+    NF_UPDATE_PRIORITY_CHANGED, NF_MEMORY_LIMIT_CHANGED,
+    NF_SOUGHT_NAME_CHANGED are missing but correspond to missing features.
+
+# ==========================================================================
+# Summary
+# ==========================================================================
+
+summary:
+  total_verified: 28
+  pass: 19
+  flag: 7
+  fail_items: 5
+  critical_issues:
+    - "create_child does not inherit parent enabled state (child starts enabled even if parent disabled)"
+    - "create_root silently overwrites existing root without error"
+    - "set_layout_rect missing width/height minimum clamp (1E-100) -- division by zero risk"
+  moderate_issues:
+    - "set_layout_rect always sets LAYOUT_CHANGED even when rect unchanged (unnecessary relayouts)"
+    - "set_focusable missing root unfocusable guard and active panel migration"
+    - "deliver_notices has no AE decision logic and arbitrary iteration order"
+    - "Cycle returns () not bool -- wake/sleep optimization lost"
+  acceptable_divergences:
+    - "Off-screen initial position (0,0,0,0) vs (-2,-2) -- both invisible"
+    - "GetCursor defaults to Normal instead of parent delegation"
+    - "Input default is no-op; keyboard nav moved to ViewInputFilter"
+    - "is_visible is user-set flag, not computed viewport intersection"
+    - "deliver_notices O(n) iteration vs C++ O(pending) notice list"

@@ -1,0 +1,560 @@
+# Design decisions needed before fixing
+# Generated: 2026-03-06
+# Source: 20 verdict files + 8 mapping files
+#
+# Items here are either:
+# 1. DESIGN-classified findings from triage.yaml (ambiguous correct behavior)
+# 2. MISSING methods with no callers in current Rust code
+#
+# Each entry needs a human decision before implementation.
+
+# ============================================================================
+# INDIVIDUAL DESIGN DECISIONS (from triage.yaml)
+# ============================================================================
+
+individual:
+
+  # --- Border ---
+
+  - id: BORDER-001
+    module: zuicchini/src/widget/border.rs
+    question: "Should border geometry use proportional insets (C++ style) or keep fixed pixels?"
+    context: >
+      C++ uses dynamic proportional insets based on BorderScaling and panel
+      dimensions (d=min(1,h)*BorderScaling*0.04, s*0.023, etc.). Rust uses
+      fixed pixel values (1.0, 2.0, 3.0, etc.). Proportional insets scale
+      with panel size; fixed pixels do not.
+    options:
+      - "Port C++ proportional geometry (requires also porting BorderScaling)"
+      - "Keep fixed pixels (simpler, adequate for game UI)"
+      - "Use a hybrid (proportional for outer border, fixed for inner)"
+    affects_files:
+      - zuicchini/src/widget/border.rs
+
+  - id: BORDER-002
+    module: zuicchini/src/widget/border.rs
+    question: "Should disabled state visual dimming be implemented?"
+    context: >
+      C++ applies 75% fg transparency and 80% bg blend when !IsEnabled().
+      Rust has no disabled state handling in border painting.
+    options:
+      - "Port disabled dimming (needed if any game widget uses disabled state)"
+      - "Skip (if game never disables widgets)"
+    affects_files:
+      - zuicchini/src/widget/border.rs
+
+  - id: BORDER-003
+    module: zuicchini/src/widget/border.rs
+    question: "Should round rect outlines follow the rounded shape?"
+    context: >
+      Three border types (RoundRect, Instrument, InstrumentMoreRound) draw
+      rectangular outlines instead of rounded. Requires paint_round_rect_outlined
+      in the painter.
+    options:
+      - "Add paint_round_rect_outlined to painter, use in border"
+      - "Keep rectangular outlines (acceptable for game)"
+    affects_files:
+      - zuicchini/src/widget/border.rs
+      - zuicchini/src/render/painter.rs
+
+  - id: BORDER-004
+    module: zuicchini/src/widget/border.rs
+    question: "Should icon support be added to border label painting?"
+    context: >
+      C++ DoLabel handles icons with layout options. Requires image loading
+      pipeline and layout computation.
+    options:
+      - "Add icon support (large scope, requires image pipeline)"
+      - "Skip (if game borders don't use icons)"
+    affects_files:
+      - zuicchini/src/widget/border.rs
+
+  - id: BORDER-005
+    module: zuicchini/src/widget/border.rs
+    question: "Should label alignment options be added?"
+    context: >
+      C++ supports CaptionAlignment/DescriptionAlignment. Rust uses fixed
+      left-aligned position.
+    options:
+      - "Port alignment options"
+      - "Keep left-aligned (adequate for game)"
+    affects_files:
+      - zuicchini/src/widget/border.rs
+
+  # --- Layout ---
+
+  - id: LAYOUT-001
+    module: zuicchini/src/layout/linear.rs
+    question: "Should LinearLayout apply tallness constraints on main axis?"
+    context: >
+      C++ LayoutChildren applies min/max tallness per child during main-axis
+      sizing. Rust do_layout ignores ChildConstraint.min_tallness/max_tallness.
+      Porting requires deciding on iterative solver vs single-pass.
+    options:
+      - "Port iterative CalculateForce solver from C++"
+      - "Add single-pass tallness clamping (simpler but may produce suboptimal layouts)"
+      - "Keep current behavior (adequate if callers don't rely on tallness constraints)"
+    affects_files:
+      - zuicchini/src/layout/linear.rs
+
+  - id: LAYOUT-002
+    module: zuicchini/src/layout/linear.rs
+    question: "Should spacing model use proportional or absolute values?"
+    context: >
+      C++ uses relative spacing (proportions of total space). Rust uses
+      absolute pixel spacing. C++ spacing scales with panel size.
+    options:
+      - "Port proportional spacing model"
+      - "Keep absolute pixel spacing (simpler, predictable)"
+    affects_files:
+      - zuicchini/src/layout/linear.rs
+      - zuicchini/src/layout/raster.rs
+      - zuicchini/src/layout/pack.rs
+
+  - id: LAYOUT-003
+    module: zuicchini/src/layout/raster.rs
+    question: "Should RasterLayout defaults match C++ (PrefCT=0.2, Center, column-major)?"
+    context: >
+      Multiple default differences. Callers can override all defaults.
+    options:
+      - "Match C++ defaults for behavioral compatibility"
+      - "Keep Rust defaults (more intuitive for new code)"
+    affects_files:
+      - zuicchini/src/layout/raster.rs
+
+  - id: LAYOUT-004
+    module: zuicchini/src/layout/raster.rs
+    question: "Should auto-grid scoring use log-error (scale-invariant) instead of linear?"
+    context: >
+      C++ |log(prefCT/ct)| vs Rust |tallness - preferred|. Different column
+      counts selected for extreme tallness ratios.
+    options:
+      - "Port log-error scoring"
+      - "Keep linear scoring (adequate for typical aspect ratios)"
+    affects_files:
+      - zuicchini/src/layout/raster.rs
+
+  - id: LAYOUT-005
+    module: zuicchini/src/layout/pack.rs
+    question: "Should PackLayout scoring use ratio-cubed (scale-invariant) instead of linear?"
+    context: >
+      C++ (actual/preferred)^3 - 1 vs Rust |actual - preferred|. Can produce
+      significantly different arrangements.
+    options:
+      - "Port ratio-cubed scoring"
+      - "Keep linear scoring"
+    affects_files:
+      - zuicchini/src/layout/pack.rs
+
+  - id: LAYOUT-006
+    module: zuicchini/src/layout/pack.rs
+    question: "Should PackLayout default preferred_tallness be 0.2 (C++) or 1.0 (current)?"
+    options:
+      - "Use 0.2 (landscape target, matches C++)"
+      - "Keep 1.0 (square target)"
+    affects_files:
+      - zuicchini/src/layout/pack.rs
+
+  - id: LAYOUT-007
+    module: zuicchini/src/layout/raster.rs
+    question: "Should RasterLayout alignment field actually affect do_layout?"
+    context: >
+      The alignment field exists but do_layout ignores it. Either wire it up
+      or remove the dead field.
+    options:
+      - "Wire alignment into do_layout"
+      - "Remove dead field"
+    affects_files:
+      - zuicchini/src/layout/raster.rs
+
+  # --- View ---
+
+  - id: VIEW-001
+    module: zuicchini/src/panel/view.rs
+    question: "What is the architecture plan for View (currently ~5% complete)?"
+    context: >
+      ~50 C++ methods absent. Major systems missing: coordinate transform,
+      SVP, viewing flags, input dispatch, navigation. Needs design document.
+    options:
+      - "Incremental port (add features as game needs them)"
+      - "Full port of core coordinate/SVP/navigation systems"
+    affects_files:
+      - zuicchini/src/panel/view.rs
+
+  - id: VIEW-002
+    module: zuicchini/src/panel/view.rs
+    question: "Should visit_fullsized compute proper fit or use identity zoom?"
+    affects_files:
+      - zuicchini/src/panel/view.rs
+
+  - id: VIEW-003
+    module: zuicchini/src/panel/view.rs
+    question: "Should zoom implement fix-point zoom around center coordinates?"
+    affects_files:
+      - zuicchini/src/panel/view.rs
+
+  - id: VIEW-004
+    module: zuicchini/src/panel/view.rs
+    question: "Should is_visible be replaced with viewport-intersection-based IsViewed?"
+    affects_files:
+      - zuicchini/src/panel/view.rs
+
+  # --- Animator ---
+
+  - id: ANIM-003
+    module: zuicchini/src/panel/animator.rs
+    question: "Should friction model match C++ (linear drag) or keep exponential decay?"
+    options:
+      - "Port C++ linear drag model"
+      - "Keep exponential decay (different feel but valid)"
+    affects_files:
+      - zuicchini/src/panel/animator.rs
+
+  - id: ANIM-004
+    module: zuicchini/src/panel/animator.rs
+    question: "Should animators support zoom (3rd) dimension?"
+    context: >
+      C++ velocity is 3D. Rust is 2D. Zoom animation absent. Requires View
+      coordinate math.
+    affects_files:
+      - zuicchini/src/panel/animator.rs
+      - zuicchini/src/panel/view.rs
+
+  # --- Painter ---
+
+  - id: PAINT-001
+    module: zuicchini/src/render/painter.rs
+    question: "Should sub-pixel anti-aliasing be added to the CPU rasterizer?"
+    context: >
+      Feature contract says CPU rasterizer should be a 'direct port' with
+      sub-pixel AA. Currently absent. Massive scope.
+    options:
+      - "Port C++ 12-bit fixed-point AA system"
+      - "Skip AA (if GPU rendering is planned)"
+      - "Add simple 2x supersampling as compromise"
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  - id: PAINT-002
+    module: zuicchini/src/render/painter.rs
+    question: "Should polygon fill use non-zero winding rule instead of even-odd?"
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  - id: PAINT-003
+    module: zuicchini/src/render/painter.rs
+    question: "Should transform setters support absolute-set (C++ style) in addition to relative?"
+    options:
+      - "Add set_origin/set_scaling for absolute set"
+      - "Keep relative-only (callers use push_state/pop_state)"
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  - id: PAINT-004
+    module: zuicchini/src/render/painter.rs
+    question: "Should polyline rendering support joins, caps, and closed paths?"
+    context: >
+      C++ PaintSolidPolyline is ~300 lines with miter/bevel/round joins
+      and butt/cap/round caps. Rust has per-segment thick lines with no joins.
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  - id: PAINT-005
+    module: zuicchini/src/render/painter.rs
+    question: "Should rect outline use polygon ring to avoid alpha overlap at corners?"
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  - id: PAINT-006
+    module: zuicchini/src/render/painter.rs
+    question: "Should PaintEllipseSector normalize negative sweep and detect full circle?"
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  - id: PAINT-007
+    module: zuicchini/src/render/painter.rs
+    question: "Should contour stroke end types include contour offset (s) computation?"
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  - id: PAINT-008
+    module: zuicchini/src/render/painter.rs
+    question: "Should interpolation pipeline be ported (gradients, image scaling, quality modes)?"
+    context: >
+      Entire pipeline is ~5% implemented. Radial gradients, bilinear/bicubic/
+      lanczos/adaptive interpolation, area-sampled filtering, extension modes
+      all absent.
+    options:
+      - "Port C++ fixed-point interpolation pipeline"
+      - "Use existing Rust image crate for interpolation"
+      - "Defer to GPU rendering"
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  - id: PAINT-009
+    module: zuicchini/src/render/painter.rs
+    question: "Same as PAINT-001 (sub-pixel AA for scanline blending)"
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  - id: PAINT-010
+    module: zuicchini/src/render/painter.rs
+    question: "Should PaintImage support arbitrary scaling?"
+    context: "Requires interpolation pipeline (PAINT-008)."
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  - id: PAINT-011
+    module: zuicchini/src/render/painter.rs
+    question: "Should PaintImageColored support two-color gradient blitting?"
+    context: >
+      Specific to TGA border images which are not used in Rust. May not be needed.
+    affects_files:
+      - zuicchini/src/render/painter.rs
+
+  # --- Color / Image ---
+
+  - id: COLOR-001
+    module: zuicchini/src/foundation/color.rs
+    question: "Which Color utility methods should be added?"
+    context: "9 methods missing. All trivial one-liners. Add on-demand."
+    affects_files:
+      - zuicchini/src/foundation/color.rs
+
+  - id: IMAGE-001
+    module: zuicchini/src/foundation/image.rs
+    question: "Which Image utility methods should be added?"
+    context: "19 methods missing. Most unused by current codebase."
+    affects_files:
+      - zuicchini/src/foundation/image.rs
+
+  # --- Window/Screen ---
+
+  - id: WIN-001
+    module: zuicchini/src/window/
+    question: "Which window/screen utility methods should be added?"
+    context: >
+      16 methods missing. winit covers most platform functionality. Add on-demand.
+    affects_files:
+      - zuicchini/src/window/
+
+  # --- Simple Widgets ---
+
+  - id: WIDGET-001
+    module: zuicchini/src/widget/
+    question: "Should Button::click() (programmatic click) be added?"
+    affects_files:
+      - zuicchini/src/widget/
+
+  - id: WIDGET-002
+    module: zuicchini/src/widget/
+    question: "Should RadioGroup utility methods (count, get_button, index_of) be added?"
+    affects_files:
+      - zuicchini/src/widget/
+
+# ============================================================================
+# BULK MISSING METHODS (from mapping files)
+# ============================================================================
+# These are C++ methods marked MISSING in mappings with no Rust callers.
+# Classified as DESIGN: "method has no callers in Rust; need human decision
+# on whether to port it."
+#
+# They are grouped by mapping file for reference. The human decision is:
+# for each group, which methods (if any) are needed for the game?
+
+bulk_missing:
+
+  panel:
+    count: 70
+    mapping_file: zuicchini/_verify/mappings/panel.yaml
+    rust_module: zuicchini/src/panel/
+    notable_methods:
+      - "GetIdentity / EncodeIdentity / DecodeIdentity (panel identity strings)"
+      - "GetViewCondition / GetUpdatePriority (viewing optimization)"
+      - "GetAutoExpansionThreshold (auto-expand tuning)"
+      - "BeFirst / BeLast / Sort methods (sibling ordering)"
+      - "GetHeight / GetTallness (derived geometry)"
+      - "GetViewedX/Y/Width/Height (viewport-relative position)"
+      - "IsInViewedPath / IsViewed / IsInActivePath (view flags)"
+      - "FindActivePanel / activate methods (activation path)"
+      - "IsCreatedByAE / CreatedByAE tracking"
+      - "IsAutoExpanded / IsAutoShrunk"
+      - "GetClipRect (clip rectangle)"
+    decision: "Port on-demand as View subsystem develops."
+
+  text_field:
+    count: 52
+    mapping_file: zuicchini/_verify/mappings/text_field.yaml
+    rust_module: zuicchini/src/widget/text_field.rs
+    notable_methods:
+      - "Multi-line editing (GetRowIndex, GetColumnIndex, GetLineStart, etc.)"
+      - "Word selection (GetWordStart, GetWordEnd, SelectWord)"
+      - "Clipboard integration (DoCopy, DoCut, DoPaste)"
+      - "Selection manipulation (SetSelection, SelectAll, SelectWord)"
+      - "Overwrite mode (IsOverwriteMode, SetOverwriteMode)"
+      - "Multi-line specific (GetRowCount, GetLineCount)"
+      - "Context flags (IsEditable, SetEditable)"
+      - "Validation hooks (CheckText, AdjustText)"
+      - "DragAndDrop support (DragDropText)"
+    decision: "Port clipboard and basic selection methods first (most impactful)."
+
+  painter:
+    count: 27
+    mapping_file: zuicchini/_verify/mappings/painter.yaml
+    rust_module: zuicchini/src/render/painter.rs
+    notable_methods:
+      - "PaintTextBoxed (multi-line text with alignment)"
+      - "PaintDashedPolyline (dashed/dotted lines)"
+      - "PaintBorderImage / PaintBorderImageColored (9-slice)"
+      - "PaintEllipseOutline (stroked ellipse)"
+      - "PaintEllipseSectorOutline (stroked arc)"
+      - "PaintRoundRectOutline (stroked rounded rect)"
+      - "PaintBezierLine (Bezier curves)"
+      - "PaintEllipseArc (stroked arc)"
+      - "Clear (clear to clip bounds)"
+      - "GetUserClip* accessors"
+      - "SharedModel (pixel format caching)"
+    decision: >
+      Priority: Clear, PaintRoundRectOutline (needed by border),
+      PaintTextBoxed. Others on-demand.
+
+  view:
+    count: 28
+    mapping_file: zuicchini/_verify/mappings/view.yaml
+    rust_module: zuicchini/src/panel/view.rs
+    notable_methods:
+      - "10 directional navigation methods (VisitNext/Prev/In/Out/Left/Right/Up/Down)"
+      - "RawVisitAbs / RawScrollAndZoom (core coordinate math)"
+      - "CalcVisitCoords / CalcVisitFullsizedCoords"
+      - "FindBestSVP / FindBestSVPInTree"
+      - "SetActivePanelBestPossible"
+      - "GetPanelAt / GetFocusablePanelAt (hit testing)"
+      - "Input / RecurseInput (input dispatch)"
+      - "Update (main loop integration)"
+      - "SetBackgroundColor"
+    decision: "Part of View architecture plan (VIEW-001)."
+
+  border:
+    count: 25
+    mapping_file: zuicchini/_verify/mappings/border.yaml
+    rust_module: zuicchini/src/widget/border.rs
+    notable_methods:
+      - "SetIcon / SetLabel (icon support)"
+      - "SetLabelAlignment / SetCaptionAlignment / SetDescriptionAlignment"
+      - "SetBorderScaling"
+      - "HaveAux / RemoveAux / GetAuxRect (auxiliary panel area)"
+      - "GetSubstanceRect / GetContentRoundRect / GetContentRectUnobscured"
+      - "IsOpaque (opacity query)"
+      - "HasHowTo / GetHowTo / HowToPreface / HowToDisabled / HowToFocus"
+      - "SetLabelInBorder / SetMaxIconAreaTallness / SetIconAboveCaption"
+      - "GetBestLabelTallness"
+    decision: >
+      HowTo system is intentionally dropped. Icon and aux support TBD.
+      Alignment methods needed if BORDER-005 is decided yes.
+
+  painter_ScTl:
+    count: 14
+    mapping_file: zuicchini/_verify/mappings/painter_ScTl.yaml
+    rust_module: zuicchini/src/render/painter.rs
+    notable_methods:
+      - "ScanlineTool::Init (dispatch infrastructure)"
+      - "PaintScanlineInt (textured scanline blending)"
+      - "PaintLargeScanlineInt (chunked scanline for SIMD)"
+      - "InterpolateImageBilinear (bilinear filtering)"
+      - "InterpolateImageBicubic (bicubic filtering)"
+      - "InterpolateImageLanczos (Lanczos filtering)"
+      - "InterpolateImageAdaptive (edge-adaptive filtering)"
+      - "InterpolateImageAreaSampled (downscale box filter)"
+      - "InterpolateRadialGradient"
+      - "InterpolateFourValuesAdaptive (edge-adaptive helper)"
+    decision: "Part of interpolation pipeline plan (PAINT-008)."
+
+  layout:
+    count: 3
+    mapping_file: zuicchini/_verify/mappings/layout.yaml
+    rust_module: zuicchini/src/layout/
+    notable_methods:
+      - "emTiling (deprecated, replaced by RasterLayout)"
+      - "emPackLayout::SetMinCellCount"
+      - "emPackLayout::GetMinCellCount"
+    decision: "emTiling intentionally dropped. MinCellCount add if needed."
+
+  scheduler:
+    count: 1
+    mapping_file: zuicchini/_verify/mappings/scheduler.yaml
+    rust_module: zuicchini/src/scheduler/
+    notable_methods:
+      - "emStandardScheduler::InitiateTermination"
+    decision: "Intentionally dropped (winit handles termination)."
+
+# ============================================================================
+# CROSS-MODULE DEPENDENCIES
+# ============================================================================
+
+cross_module_dependencies:
+  - change: "Adding PaintRoundRectOutline to painter"
+    affects:
+      - zuicchini/src/render/painter.rs  # new method
+      - zuicchini/src/widget/border.rs    # caller
+
+  - change: "Implementing View coordinate transform (RawVisitAbs)"
+    affects:
+      - zuicchini/src/panel/view.rs       # core implementation
+      - zuicchini/src/panel/animator.rs    # zoom animation needs transforms
+      - zuicchini/src/panel/input_filter.rs  # navigation uses transforms
+
+  - change: "Adding sub-pixel AA to painter"
+    affects:
+      - zuicchini/src/render/painter.rs   # core pipeline
+      - zuicchini/src/foundation/color.rs # may need blend helpers
+
+  - change: "Implementing interpolation pipeline"
+    affects:
+      - zuicchini/src/render/painter.rs   # core implementation
+      - zuicchini/src/render/texture.rs   # texture types defined here
+      - zuicchini/src/widget/border.rs    # may enable TGA border images
+
+  - change: "Panel viewing flags (Viewed, InViewedPath)"
+    affects:
+      - zuicchini/src/panel/data.rs       # new fields on PanelData
+      - zuicchini/src/panel/view.rs       # sets flags during SVP computation
+      - zuicchini/src/panel/tree.rs       # may need flag propagation
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
+
+summary:
+  individual_design_decisions: 29
+  bulk_missing_groups: 8
+  bulk_missing_total_methods: 220
+  cross_module_dependencies: 5
+  recommended_priority:
+    immediate:
+      - "PANEL-001 (child enabled inheritance) - BUG, CRITICAL"
+      - "PANEL-002 (create_root overwrites) - BUG, CRITICAL"
+      - "PANEL-003 (layout_rect clamp) - MISSING_BRANCH, CRITICAL"
+      - "TF-001 (double undo) - BUG, MEDIUM"
+      - "TF-002 (selected text color) - BUG, MEDIUM"
+      - "TF-003 (set_text clears undo) - MISSING_BRANCH, MEDIUM"
+    soon:
+      - "SCHED-001 (clock double-increment) - BUG, BEHAVIORAL"
+      - "SCHED-002 (time_slice_counter) - BUG, BEHAVIORAL"
+      - "TIMER-001 (periodic 1ms clamp) - BUG, BEHAVIORAL"
+      - "VIF-001 (Alt modifier gating) - MISSING_BRANCH, BEHAVIORAL"
+      - "VIF-002 (PageUp/Down zoom vs scroll) - BUG, BEHAVIORAL"
+      - "VIF-003 (NO_NAVIGATE check) - MISSING_BRANCH, BEHAVIORAL"
+      - "PANEL-004 (layout_rect no-change guard) - MISSING_BRANCH, MEDIUM"
+      - "PANEL-005 (focusable guards) - MISSING_BRANCH, MEDIUM"
+    later:
+      - "ANIM-001 (float equality) - BUG, MINOR"
+      - "ANIM-002 (stale convergence) - BUG, MINOR"
+      - "TIMER-002 (abortSignal) - MISSING_BRANCH, BEHAVIORAL"
+      - "TIMER-003 (IsRunning) - MISSING_METHOD, BEHAVIORAL"
+      - "VIF-004 (focus check) - MISSING_BRANCH, BEHAVIORAL"
+    design_needed:
+      - "All BORDER-* items"
+      - "All LAYOUT-* items"
+      - "All VIEW-* items"
+      - "All PAINT-* items"
+      - "All bulk MISSING method groups"

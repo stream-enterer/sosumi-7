@@ -30,6 +30,7 @@ impl EngineScheduler {
                 wake_queues: Default::default(),
                 time_slice: 0,
                 clock: 1, // Start at 1 so that clock > 0 comparisons work
+                time_slice_counter: 0,
                 deadline: Instant::now(),
                 timer_central: TimerCentral::new(),
             },
@@ -212,6 +213,11 @@ impl EngineScheduler {
         self.inner.timer_central.remove_timer(id);
     }
 
+    /// Check if a timer is still active (running).
+    pub fn is_timer_running(&self, id: TimerId) -> bool {
+        self.inner.timer_central.is_running(id)
+    }
+
     // ── Time slice execution ────────────────────────────────────────
 
     /// Execute one time slice: process signals, run timers, then run engines.
@@ -266,6 +272,7 @@ impl EngineScheduler {
                         self.inner.wake_queues[dst].extend(remaining);
                     }
                     self.inner.time_slice = next_parity;
+                    self.inner.time_slice_counter += 1;
                     return;
                 }
                 // Step down by one priority level (skip by 2 because
@@ -316,10 +323,7 @@ impl EngineScheduler {
             }
 
             // After engine cycle, process signals it may have fired.
-            // The clock increment + signal processing at the top of the loop
-            // handles this, but we also need to check if higher-priority engines
-            // were woken — re-ascend if so.
-            self.inner.clock += 1;
+            // Re-ascend if higher-priority engines were woken.
             self.process_pending_signals();
 
             // Re-ascend: check if any higher-priority queue (in current parity)
@@ -339,16 +343,9 @@ impl EngineScheduler {
         Instant::now() >= self.inner.deadline
     }
 
-    /// Current time slice counter (incremented by parity flip).
+    /// Current time slice counter (incremented once per `do_time_slice` call).
     pub fn time_slice_counter(&self) -> u64 {
-        // The parity alternates each do_time_slice call. We can derive
-        // a monotonic counter from it.
-        // Actually, let's just track it explicitly.
-        // For now, we use clock / 2 as an approximation. But really we
-        // should track this properly.
-        // TODO: This was the time_slice_counter field before. Let's just
-        // use the existing mechanism.
-        self.inner.clock
+        self.inner.time_slice_counter
     }
 
     // ── Internal helpers ────────────────────────────────────────────

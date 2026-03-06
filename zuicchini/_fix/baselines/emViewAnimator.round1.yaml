@@ -1,0 +1,304 @@
+# Verdict: emViewAnimator behavioral verification (Tier 1)
+# Generated: 2026-03-05
+# Spec: _verify/extracts/emViewAnimator.yaml
+# Mapping: _verify/mappings/view.yaml (emViewAnimator section)
+# Rust: zuicchini/src/panel/animator.rs
+
+###############################################################################
+# Summary
+###############################################################################
+#
+# The Rust animator.rs is a dramatically simplified reimplementation.
+# The C++ emViewAnimator hierarchy has ~2100 lines with 5 concrete classes,
+# a master/slave activation chain, 3D velocity (scroll-x, scroll-y, zoom),
+# zoom-fix-point compensation, friction toggle, blocked-motion feedback,
+# a 7-state visiting state machine with seeking, and a precomputed optimal
+# curve table.
+#
+# The Rust replacement is 227 lines with 3 concrete structs behind a trait,
+# 2D velocity only, simple exponential friction, simple lerp visiting, and
+# no seeking/state machine.
+#
+# This is a skeletal scaffold, not a faithful port. Many MAPPED methods have
+# significant behavioral gaps even for the subset that is implemented.
+
+###############################################################################
+# Base emViewAnimator -> ViewAnimator trait
+###############################################################################
+
+methods:
+
+  # --- RESTRUCTURED (no code to verify) ---
+  # emViewAnimator::emViewAnimator        RESTRUCTURED  (no base class state)
+  # emViewAnimator::~emViewAnimator       RESTRUCTURED  (no Drop)
+  # emViewAnimator::SetMaster             RESTRUCTURED  (no master/slave chain)
+  # emViewAnimator::Activate              RESTRUCTURED  (no activation chain)
+  # emViewAnimator::SetDeactivateWhenIdle RESTRUCTURED  (caller decides)
+  # emViewAnimator::Input                 RESTRUCTURED  (no input routing)
+  # emViewAnimator::Paint                 RESTRUCTURED  (no paint routing)
+
+  - method: "emViewAnimator::Deactivate -> ViewAnimator::stop"
+    status: MAPPED
+    verdict: CORRECT
+    note: >
+      Trait method stop(&mut self) sets active=false. No slave chain to
+      deactivate, which is consistent with the RESTRUCTURED master/slave design.
+
+  - method: "emViewAnimator::IsActive -> ViewAnimator::is_active"
+    status: MAPPED
+    verdict: CORRECT
+    note: Trait method returning bool. Semantically equivalent.
+
+  - method: "emViewAnimator::Cycle + CycleAnimation -> ViewAnimator::animate"
+    status: MAPPED
+    verdict: CORRECT
+    note: >
+      C++ Cycle computes dt from clock, clamps (0.33 max, 0.01 fallback),
+      then calls CycleAnimation(dt). Rust animate() receives dt from caller,
+      collapsing both into one method. Time management is external, which is
+      a valid restructuring. The dt-clamp constants (0.33, 0.01) are NOT
+      replicated in Rust -- caller is responsible.
+    missing_constants:
+      - { name: "dt clamp max", spec: 0.33, rust: "not applied (caller's job)" }
+      - { name: "dt fallback", spec: 0.01, rust: "not applied (caller's job)" }
+
+  ###########################################################################
+  # emKineticViewAnimator -> KineticViewAnimator
+  ###########################################################################
+
+  # RESTRUCTURED (no code):
+  # emKineticViewAnimator::Activate         (no chain traversal / dynamic_cast)
+  # emKineticViewAnimator::GetAbsVelocity   (inlined)
+  # emKineticViewAnimator::SetFrictionEnabled (always-on friction)
+  # emKineticViewAnimator::SetFriction      (set at construction)
+  # emKineticViewAnimator::UpdateBusyState  (inlined in animate)
+  # MISSING:
+  # emKineticViewAnimator::CenterZoomFixPoint
+  # emKineticViewAnimator::SetZoomFixPoint
+  # emKineticViewAnimator::UpdateZoomFixPoint
+
+  - method: "emKineticViewAnimator::emKineticViewAnimator -> KineticViewAnimator::new"
+    status: MAPPED
+    verdict: DEFICIENT
+    evidence:
+      - "C++ velocity is 3D (scroll-x, scroll-y, zoom). Rust is 2D (velocity_x, velocity_y). Zoom axis missing."
+      - "C++ default Friction=1000.0 (absolute deceleration rate). Rust friction clamped to [0.0,1.0] (decay coefficient). Entirely different units and physics model."
+      - "C++ initialises ZoomFixPointCentered=true, ZoomFixX/Y=0. Rust has no zoom fix point."
+      - "C++ FrictionEnabled=false initially. Rust friction is always enabled."
+    constants:
+      - { name: "default Friction", spec: 1000.0, rust: "friction.clamp(0.0, 1.0)", match: "NO -- different model" }
+    note: >
+      The 2D-only design is acceptable as a simplification, but the friction
+      model is fundamentally different: C++ subtracts a*dt from speed (linear
+      drag), Rust raises (1-f) to power dt*60 (exponential drag). This changes
+      the feel of deceleration curves. The initial-velocity threshold 0.01
+      matches.
+
+  - method: "emKineticViewAnimator::Deactivate -> KineticViewAnimator::stop"
+    status: MAPPED
+    verdict: CORRECT
+    note: Zeros velocity_x, velocity_y, sets active=false.
+
+  - method: "emKineticViewAnimator::SetVelocity -> KineticViewAnimator::set_velocity"
+    status: MAPPED
+    verdict: CORRECT
+    note: >
+      C++ takes (dimension, value) per call. Rust takes (vx, vy) pair.
+      Equivalent for 2D use. Missing: UpdateBusyState call (Rust sets active
+      inline based on threshold).
+
+  - method: "emKineticViewAnimator::CycleAnimation -> KineticViewAnimator::animate"
+    status: MAPPED
+    verdict: DEFICIENT
+    evidence:
+      - "C++ applies linear friction: v *= (v-a*dt)/v per dimension. Rust applies exponential decay: v *= (1-friction)^(dt*60). Different deceleration curves."
+      - "C++ checks minimum motion threshold (0.01) before calling RawScrollAndZoom. Rust always calls view.scroll()."
+      - "C++ zeros velocity per-dimension when blocked (done < 0.99*dist). Rust has no blocked-motion feedback."
+      - "C++ handles zoom dimension (Velocity[2]). Rust has no zoom animation."
+      - "C++ uses trapezoidal integration (friction applied before computing distance). Rust multiplies velocity*dt then applies decay. Different integration order."
+    constants:
+      - { name: "velocity threshold", spec: 0.01, rust: 0.01, match: YES }
+      - { name: "minimum motion threshold", spec: 0.01, rust: "not checked", match: NO }
+      - { name: "done ratio threshold", spec: 0.99, rust: "not implemented", match: NO }
+
+  ###########################################################################
+  # emSpeedingViewAnimator -> SpeedingViewAnimator
+  ###########################################################################
+
+  # RESTRUCTURED (no code):
+  # emSpeedingViewAnimator::Activate           (implicit via set_target)
+  # emSpeedingViewAnimator::GetAbsTargetVelocity (inlined)
+  # emSpeedingViewAnimator::SetAcceleration    (set at construction)
+  # emSpeedingViewAnimator::UpdateBusyState    (inlined in animate)
+  # MISSING:
+  # emSpeedingViewAnimator::SetReverseAcceleration
+
+  - method: "emSpeedingViewAnimator::emSpeedingViewAnimator -> SpeedingViewAnimator::new"
+    status: MAPPED
+    verdict: DEFICIENT
+    evidence:
+      - "C++ has 3D target velocity. Rust has 2D."
+      - "C++ defaults: Acceleration=1.0, ReverseAcceleration=1.0. Rust takes acceleration as param, no reverse acceleration."
+    constants:
+      - { name: "default Acceleration", spec: 1.0, rust: "caller-supplied", match: APPROXIMATE }
+      - { name: "default ReverseAcceleration", spec: 1.0, rust: "not implemented", match: NO }
+
+  - method: "emSpeedingViewAnimator::Deactivate -> SpeedingViewAnimator::stop"
+    status: MAPPED
+    verdict: CORRECT
+    note: Zeros current and target velocity, sets active=false.
+
+  - method: "emSpeedingViewAnimator::SetTargetVelocity -> SpeedingViewAnimator::set_target"
+    status: MAPPED
+    verdict: CORRECT
+    note: >
+      C++ per-dimension + UpdateBusyState. Rust takes (vx,vy) pair + sets
+      active=true. Equivalent for 2D.
+
+  - method: "emSpeedingViewAnimator::CycleAnimation -> SpeedingViewAnimator::animate"
+    status: MAPPED
+    verdict: DEFICIENT
+    evidence:
+      - "C++ per-dimension logic with 3 branches: reverse accel (v1*vt < -0.1), forward accel (|v1|<|vt|, dt clamped to 0.1), friction decel. Rust uses simple approach() helper with uniform step."
+      - "C++ opposite-sign threshold: v1*vt < -0.1. Rust approach() has no direction-aware acceleration."
+      - "C++ clamps dt to 0.1 for forward acceleration to prevent overshoot. Rust does not clamp."
+      - "C++ temporarily disables base friction during speeding. Rust has no friction interaction (no base class friction)."
+      - "C++ deactivation: target velocity magnitude > 0.01. Rust: target_vx==0 && target_vy==0 && current < 0.01. The Rust condition is stricter (requires exact zero target)."
+    constants:
+      - { name: "opposite sign threshold", spec: -0.1, rust: "not implemented", match: NO }
+      - { name: "acceleration dt clamp", spec: 0.1, rust: "not implemented", match: NO }
+      - { name: "target velocity threshold", spec: 0.01, rust: "exact 0.0 check", match: NO }
+    bugs:
+      - severity: MINOR
+        description: >
+          Rust idle check compares target_vx == 0.0 && target_vy == 0.0 using
+          exact float equality (line 125-126). The C++ uses
+          GetAbsTargetVelocity() > 0.01. The exact-zero check means release()
+          works (sets to 0.0) but any epsilon-small target will keep the
+          animator active forever.
+
+  ###########################################################################
+  # emSwipingViewAnimator -- INTENTIONAL (deferred, touch support)
+  ###########################################################################
+  # All methods: INTENTIONAL, no Rust code. Nothing to verify.
+
+  ###########################################################################
+  # emMagneticViewAnimator -- INTENTIONAL (deferred, polish)
+  ###########################################################################
+  # All methods: INTENTIONAL, no Rust code. Nothing to verify.
+
+  ###########################################################################
+  # emVisitingViewAnimator -> VisitingViewAnimator
+  ###########################################################################
+
+  # RESTRUCTURED (no code):
+  # emVisitingViewAnimator::SetAnimated          (always animated)
+  # emVisitingViewAnimator::SetAcceleration      (speed param instead)
+  # emVisitingViewAnimator::SetMaxCuspSpeed      (no cusp path)
+  # emVisitingViewAnimator::SetMaxAbsoluteSpeed  (no speed limit)
+  # emVisitingViewAnimator::SetGoal              (target coords directly)
+  # emVisitingViewAnimator::SetGoalFullsized     (caller sets target_a=1.0)
+  # emVisitingViewAnimator::Activate             (active from construction)
+  # MISSING:
+  # emVisitingViewAnimator::SetAnimParamsByCoreConfig
+  # emVisitingViewAnimator::Input   (no user-abort during seek)
+  # emVisitingViewAnimator::Paint   (no seek progress overlay)
+  # All curve/direct/seek helper methods (GetCurvePoint, GetCurvePosDist,
+  #   GetDirectDist, GetDirectPoint, GetDistanceTo, GetNearestExistingPanel,
+  #   GetNearestViewedPanel, GetViewRect, UpdateSpeed)
+
+  - method: "emVisitingViewAnimator::emVisitingViewAnimator -> VisitingViewAnimator::new"
+    status: MAPPED
+    verdict: DEFICIENT
+    evidence:
+      - "C++ initialises full state machine (ST_NO_GOAL, Animated=false, Acceleration=5.0, MaxCuspSpeed=2.0, MaxAbsoluteSpeed=5.0, etc.). Rust takes (target_x, target_y, target_a, speed) and sets active=true. No state machine."
+    constants:
+      - { name: "default Acceleration", spec: 5.0, rust: "not applicable (different model)", match: NO }
+      - { name: "default MaxCuspSpeed", spec: 2.0, rust: "not implemented", match: NO }
+      - { name: "default MaxAbsoluteSpeed", spec: 5.0, rust: "not implemented", match: NO }
+
+  - method: "emVisitingViewAnimator::ClearGoal -> VisitingViewAnimator::stop"
+    status: MAPPED
+    verdict: CORRECT
+    note: >
+      stop() sets active=false. C++ ClearGoal also clears identity, names,
+      seek state, etc. Rust has none of those fields, so stop() is equivalent.
+
+  - method: "emVisitingViewAnimator::Deactivate -> VisitingViewAnimator::stop"
+    status: MAPPED
+    verdict: CORRECT
+
+  - method: "emVisitingViewAnimator::CycleAnimation -> VisitingViewAnimator::animate"
+    status: MAPPED
+    verdict: DEFICIENT
+    evidence:
+      - "C++ is a 7-state machine (NO_GOAL, GIVEN_UP, GOAL_REACHED, GIVING_UP, CURVE, DIRECT, SEEK) with panel-tree-aware pathfinding, curved optimal paths, blocked-motion escalation, and seek retry. Rust is a simple lerp."
+      - "Rust lerp convergence t = (speed * dt).min(1.0). C++ uses acceleration/deceleration profile (UpdateSpeed) with cusp speed and deceleration-to-stop."
+      - "C++ uses RawScrollAndZoom with done-distance feedback and 0.2 blocking threshold. Rust calls scroll() + zoom() without feedback."
+      - "Rust zoom factor = new_a / state.rel_a with div-by-zero guard. C++ uses log-space zoom."
+    constants:
+      - { name: "curve arrival threshold", spec: 1E-6, rust: "not applicable", match: NO }
+      - { name: "blocked motion threshold", spec: 0.2, rust: "not implemented", match: NO }
+      - { name: "give-up hope threshold", spec: 10, rust: "not implemented", match: NO }
+      - { name: "give-up display time", spec: 1500, rust: "not implemented", match: NO }
+    bugs:
+      - severity: MINOR
+        description: >
+          Convergence check (lines 194-198) tests the OLD visit state (before
+          scroll/zoom) against target. This means the animator always runs one
+          extra frame after convergence. Should check the NEW state, or at least
+          compare the deltas applied.
+      - severity: MINOR
+        description: >
+          view.zoom(zoom_factor, 0.0, 0.0) zooms around viewport origin (0,0).
+          The center_x/center_y parameters are ignored by View::zoom() (confirmed:
+          view.rs line 146 uses _center_x, _center_y). This means zoom always
+          scales rel_a without compensating scroll, which can cause drift when
+          target position is away from origin.
+
+  ###########################################################################
+  # Helper functions
+  ###########################################################################
+
+  - method: "lerp (Rust-only helper)"
+    status: RESTRUCTURED
+    verdict: CORRECT
+    note: "a + (b - a) * t. Standard lerp."
+
+  - method: "approach (Rust-only helper)"
+    status: RESTRUCTURED
+    verdict: CORRECT
+    note: >
+      Moves current toward target by at most step. Snaps to target when within
+      step. Correct. Similar to C++ inline logic but without direction-aware
+      acceleration rates.
+
+###############################################################################
+# Overall assessment
+###############################################################################
+
+overall:
+  verdict: SKELETAL
+  summary: >
+    The Rust animator.rs provides a minimal scaffolding with correct trait
+    interface design but dramatically simplified physics compared to the C++
+    specification. Of 15 MAPPED methods, 5 are CORRECT (trivial stop/is_active/
+    deactivate methods) and 6 are DEFICIENT (all CycleAnimation variants and
+    constructors). Major gaps:
+
+    1. No zoom (3rd) dimension in any animator.
+    2. Friction model is fundamentally different (exponential decay vs linear drag).
+    3. SpeedingViewAnimator lacks reverse acceleration, direction-aware accel,
+       and dt clamping.
+    4. VisitingViewAnimator has no state machine, no curved paths, no seeking,
+       no panel-tree-aware navigation. It is a simple lerp.
+    5. No blocked-motion feedback (RawScrollAndZoom done-distance checking).
+    6. emSwipingViewAnimator entirely deferred (INTENTIONAL).
+    7. emMagneticViewAnimator entirely deferred (INTENTIONAL).
+    8. VisitingViewAnimator::Input/Paint not implemented (no user abort,
+       no seek overlay).
+
+  bugs_found: 2
+  bugs:
+    - "SpeedingViewAnimator idle check uses exact float equality on target (MINOR)"
+    - "VisitingViewAnimator convergence check uses stale pre-scroll state (MINOR)"

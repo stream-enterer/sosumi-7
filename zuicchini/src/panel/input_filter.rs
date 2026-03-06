@@ -1,6 +1,6 @@
 use crate::input::{InputEvent, InputKey, InputState, InputVariant};
 
-use super::view::View;
+use super::view::{View, ViewFlags};
 
 /// Trait for view input filters that intercept input before it reaches panels.
 pub trait ViewInputFilter {
@@ -37,6 +37,10 @@ impl Default for MouseZoomScrollVIF {
 
 impl ViewInputFilter for MouseZoomScrollVIF {
     fn filter(&mut self, event: &InputEvent, state: &InputState, view: &mut View) -> bool {
+        if view.flags.contains(ViewFlags::NO_NAVIGATE) {
+            return false;
+        }
+
         if event.key == InputKey::MouseMiddle {
             match event.variant {
                 InputVariant::Press => {
@@ -92,36 +96,40 @@ impl Default for KeyboardZoomScrollVIF {
 }
 
 impl ViewInputFilter for KeyboardZoomScrollVIF {
-    fn filter(&mut self, event: &InputEvent, _state: &InputState, view: &mut View) -> bool {
+    fn filter(&mut self, event: &InputEvent, state: &InputState, view: &mut View) -> bool {
+        if view.flags.contains(ViewFlags::NO_NAVIGATE) {
+            return false;
+        }
+
         if event.variant != InputVariant::Press && event.variant != InputVariant::Repeat {
             return false;
         }
 
         match event.key {
-            InputKey::ArrowUp => {
+            // Arrow keys require Alt modifier (matches C++ emDefaultTouchVIF)
+            InputKey::ArrowUp if state.alt() => {
                 view.scroll(0.0, -self.scroll_speed);
                 true
             }
-            InputKey::ArrowDown => {
+            InputKey::ArrowDown if state.alt() => {
                 view.scroll(0.0, self.scroll_speed);
                 true
             }
-            InputKey::ArrowLeft => {
+            InputKey::ArrowLeft if state.alt() => {
                 view.scroll(-self.scroll_speed, 0.0);
                 true
             }
-            InputKey::ArrowRight => {
+            InputKey::ArrowRight if state.alt() => {
                 view.scroll(self.scroll_speed, 0.0);
                 true
             }
+            // PageUp/Down zoom instead of scroll (matches C++ behavior)
             InputKey::PageUp => {
-                let (_, h) = view.viewport_size();
-                view.scroll(0.0, -h * 0.8);
+                view.zoom(self.zoom_speed, 0.0, 0.0);
                 true
             }
             InputKey::PageDown => {
-                let (_, h) = view.viewport_size();
-                view.scroll(0.0, h * 0.8);
+                view.zoom(1.0 / self.zoom_speed, 0.0, 0.0);
                 true
             }
             InputKey::Home => {

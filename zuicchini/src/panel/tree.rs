@@ -83,7 +83,14 @@ impl PanelTree {
     }
 
     /// Create the root panel.
+    ///
+    /// # Panics
+    /// Panics if a root panel already exists.
     pub fn create_root(&mut self, name: &str) -> PanelId {
+        assert!(
+            self.root.is_none(),
+            "create_root called but root panel already exists"
+        );
         let id = self.panels.insert(PanelData::new(name.to_string()));
         // Root uses its own id as the parent key
         self.name_index.insert((id, name.to_string()), id);
@@ -107,6 +114,9 @@ impl PanelTree {
             self.panels[parent].first_child = Some(id);
         }
         self.panels[parent].last_child = Some(id);
+
+        // Inherit parent's enabled state
+        self.recompute_enabled(id);
 
         // Notify parent
         self.panels[parent]
@@ -237,9 +247,21 @@ impl PanelTree {
     }
 
     /// Set the layout rectangle for a panel.
+    ///
+    /// Width and height are clamped to a minimum of `1e-100` to prevent
+    /// division-by-zero when computing tallness.
     pub fn set_layout_rect(&mut self, id: PanelId, x: f64, y: f64, w: f64, h: f64) {
+        let rect = Rect {
+            x,
+            y,
+            w: w.max(1e-100),
+            h: h.max(1e-100),
+        };
         if let Some(panel) = self.panels.get_mut(id) {
-            panel.layout_rect = Rect { x, y, w, h };
+            if panel.layout_rect == rect {
+                return;
+            }
+            panel.layout_rect = rect;
             panel.pending_notices.insert(NoticeFlags::LAYOUT_CHANGED);
         }
     }

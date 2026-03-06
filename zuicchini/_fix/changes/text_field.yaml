@@ -1,0 +1,36 @@
+module: zuicchini/src/widget/text_field.rs
+changes:
+  - fix_id: TF-001
+    action: MODIFIED
+    lines_before: 235-250
+    lines_after: 235-254
+    description: >
+      Fixed double undo on type-over selection. Character input now calls
+      delete_selection() first; if it returns false (no selection deleted),
+      then save_undo() is called before inserting. delete_selection()
+      internally saves undo when it deletes, so exactly one undo entry
+      is created per type-over operation.
+    extract_branches_addressed:
+      - "if selection exists, save_undo then delete_selection before inserting"
+
+  - fix_id: TF-002
+    action: MODIFIED
+    lines_before: 148-157
+    lines_after: 148-205
+    description: >
+      Split text rendering into 3 segments: before-selection (input_fg_color),
+      selected text (input_bg_color for fg/bg swap), and after-selection
+      (input_fg_color). Each segment is rendered with positioned paint_text
+      calls using font_cache measurements for offsets.
+    extract_branches_addressed:
+      - "selected text foreground = bgColor (fg/bg swap)"
+
+  - fix_id: TF-003
+    action: MODIFIED
+    lines_before: 61-65
+    lines_after: 61-67
+    description: >
+      Added self.undo_stack.clear() and self.redo_stack.clear() to set_text().
+      Prevents undo from restoring pre-set_text values.
+    extract_branches_addressed:
+      - "SetText clears all undo and redo entries"
