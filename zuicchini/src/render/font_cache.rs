@@ -54,15 +54,18 @@ struct LoadedFont {
     hinting_instances: HashMap<u16, Option<HintingInstance>>,
 }
 
+/// Shaping cache entry: shaped glyphs + frame last accessed.
+type ShapingEntry = (Vec<ShapedGlyph>, u64);
+
 /// Font cache with shaping (rustybuzz), hinted rasterization (skrifa+zeno),
 /// and LRU glyph bitmap caching.
 pub struct FontCache {
     fonts: Vec<LoadedFont>,
     glyph_cache: HashMap<GlyphCacheKey, CachedGlyph>,
     /// Cache of shaped text results, keyed by (font_id, size_px, text_hash).
-    /// Uses RefCell because shape_text/measure_text take &self (used by widget
-    /// preferred_size methods that only have &FontCache).
-    shaping_cache: RefCell<HashMap<(u16, u16, u64), Vec<ShapedGlyph>>>,
+    /// Uses RefCell because shape_text/measure_text take &self (widget
+    /// preferred_size methods).
+    shaping_cache: RefCell<HashMap<(u16, u16, u64), ShapingEntry>>,
     cache_byte_budget: usize,
     cache_bytes_used: usize,
     frame_counter: u64,
@@ -153,9 +156,10 @@ impl FontCache {
         let cache_key = (font_id, size_px, text_hash);
 
         {
-            let cache = self.shaping_cache.borrow();
-            if let Some(cached) = cache.get(&cache_key) {
-                return cached.clone();
+            let mut cache = self.shaping_cache.borrow_mut();
+            if let Some((glyphs, last_used)) = cache.get_mut(&cache_key) {
+                *last_used = self.frame_counter;
+                return glyphs.clone();
             }
         }
 
@@ -183,9 +187,13 @@ impl FontCache {
 
         let mut cache = self.shaping_cache.borrow_mut();
         if cache.len() >= 512 {
-            cache.clear();
+            // LRU eviction: keep entries at or above the median last_used frame.
+            let mut ages: Vec<u64> = cache.values().map(|(_, lu)| *lu).collect();
+            ages.sort_unstable();
+            let threshold = ages[ages.len() / 2];
+            cache.retain(|_, (_, lu)| *lu >= threshold);
         }
-        cache.insert(cache_key, result.clone());
+        cache.insert(cache_key, (result.clone(), self.frame_counter));
         result
     }
 

@@ -21,6 +21,8 @@ Tracked here so they don't get forgotten. Sourced from EMCORE_FEATURE_CONTRACT.m
 ## Rendering
 
 - [ ] Multi-threaded tile rasterization — parallelize independent dirty tiles across threads (benchmark-driven, threading boundary is well-defined)
+- [ ] 4K paint profiling — `bench_interaction 3840 2160` to check if paint exceeds 16ms budget; if so, scanline rasterizer needs optimization
+- [ ] Glyph rasterization cost under complex panel trees — single TestPanel is cheap, but multiple panels with diverse text sizes may stress the glyph cache LRU eviction path
 
 ## Font System Follow-ups
 
