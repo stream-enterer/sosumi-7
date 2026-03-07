@@ -907,7 +907,7 @@ impl<'a> Painter<'a> {
 
         let mut cursor_y = start_y;
         for line in &lines {
-            if cursor_y + line_height > y + h {
+            if cursor_y >= y + h {
                 break;
             }
             if cursor_y + line_height > y {
