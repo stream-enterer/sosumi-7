@@ -863,6 +863,8 @@ impl PanelTree {
             viewed: p.viewed,
             clip_rect: Rect::new(p.clip_x, p.clip_y, p.clip_w, p.clip_h),
             viewed_rect: Rect::new(p.viewed_x, p.viewed_y, p.viewed_width, p.viewed_height),
+            priority: 0.0,
+            memory_limit: 0,
         }
     }
 

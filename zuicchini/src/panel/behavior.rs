@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 
 use crate::foundation::{Color, Rect};
-use crate::input::{Cursor, InputEvent};
+use crate::input::{Cursor, InputEvent, InputState};
 use crate::render::Painter;
 
 use super::ctx::PanelCtx;
@@ -30,6 +30,10 @@ pub struct PanelState {
     pub clip_rect: Rect,
     /// The panel's full viewed rectangle in absolute view coordinates.
     pub viewed_rect: Rect,
+    /// Update priority (0.0–1.0), based on centrality and focus.
+    pub priority: f64,
+    /// Memory limit in bytes for this panel's subtree.
+    pub memory_limit: u64,
 }
 
 impl PanelState {
@@ -76,7 +80,12 @@ pub trait PanelBehavior {
     fn paint(&mut self, _painter: &mut Painter, _w: f64, _h: f64, _state: &PanelState) {}
 
     /// Handle an input event. Returns true if the event was consumed.
-    fn input(&mut self, _event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        _event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         false
     }
 

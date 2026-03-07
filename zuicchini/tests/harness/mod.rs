@@ -118,7 +118,7 @@ impl TestHarness {
         if let Some(active) = self.view.active() {
             if let Some(mut behavior) = self.tree.take_behavior(active) {
                 let state = self.tree.build_panel_state(active, wf);
-                behavior.input(&ev, &state);
+                behavior.input(&ev, &state, &self.input_state);
                 self.tree.put_behavior(active, behavior);
             }
         }
@@ -147,7 +147,12 @@ impl PanelBehavior for RecordingBehavior {
         self.log.borrow_mut().push(format!("notice:{flags:?}"));
     }
 
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.log
             .borrow_mut()
             .push(format!("input:{:?}:{:?}", event.key, event.variant));

@@ -3,14 +3,14 @@ use std::f64::consts::PI;
 use std::rc::Rc;
 
 use zuicchini::foundation::{Color, Image};
-use zuicchini::input::{InputEvent, InputKey, InputVariant};
+use zuicchini::input::{InputEvent, InputKey, InputState, InputVariant};
 use zuicchini::layout::Orientation;
 use zuicchini::panel::{
     NoticeFlags, PanelBehavior, PanelCtx, PanelId, PanelState, ViewConditionType, ViewFlags,
 };
 use zuicchini::render::{
     ImageExtension, ImageQuality, LineCap, LineJoin, Painter, Stroke, StrokeEnd, StrokeEndType,
-    TextAlignment, Texture,
+    TextAlignment, Texture, VAlign,
 };
 use zuicchini::widget::{
     Button, CheckBox, CheckButton, ColorField, Label, ListBox, Look, RadioBox, RadioButton,
@@ -80,6 +80,7 @@ impl TestPanel {
             0.1,
             fg,
             TextAlignment::Center,
+            VAlign::Top,
         );
         painter.paint_rect(0.25, 0.8, 0.05, 0.05, Color::rgba(255, 0, 0, 32));
 
@@ -597,6 +598,7 @@ impl PanelBehavior for TestPanel {
             0.1,
             fg,
             TextAlignment::Left,
+            VAlign::Top,
         );
 
         let mut state_str = "State:".to_string();
@@ -609,6 +611,7 @@ impl PanelBehavior for TestPanel {
         if state.window_focused {
             state_str += " ViewFocused";
         }
+        state_str += &format!(" Pri={:.3} MemLim={}", state.priority, state.memory_limit);
         painter.paint_text_boxed(
             0.05,
             0.4,
@@ -618,6 +621,7 @@ impl PanelBehavior for TestPanel {
             0.05,
             fg,
             TextAlignment::Left,
+            VAlign::Top,
         );
 
         let log_color = Color::rgba(0x88, 0x88, 0xBB, 0xFF);
@@ -629,10 +633,13 @@ impl PanelBehavior for TestPanel {
         painter.pop_state();
     }
 
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
-        let log_entry = format!(
-            "EVENT: key={:?} chars=\"{}\" repeat={} variant={:?} mouse={:.4},{:.4}",
+    fn input(&mut self, event: &InputEvent, _state: &PanelState, input_state: &InputState) -> bool {
+        let pressed: Vec<_> = input_state.pressed_keys().iter().collect();
+        let log_entry =
+            format!(
+            "EVENT: key={:?} chars=\"{}\" repeat={} variant={:?} mouse={:.4},{:.4} pressed={:?}",
             event.key, event.chars, event.is_repeat, event.variant, event.mouse_x, event.mouse_y,
+            pressed,
         );
         if self.input_log.len() >= MAX_LOG_ENTRIES {
             self.input_log.remove(0);
@@ -725,7 +732,12 @@ impl PanelBehavior for ButtonPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.button.paint(painter, w, h);
     }
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.button.input(event)
     }
     fn is_opaque(&self) -> bool {
@@ -741,7 +753,12 @@ impl PanelBehavior for CheckButtonPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.cb.paint(painter, w, h);
     }
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.cb.input(event)
     }
     fn is_opaque(&self) -> bool {
@@ -757,7 +774,12 @@ impl PanelBehavior for CheckBoxPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.cb.paint(painter, w, h);
     }
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.cb.input(event)
     }
     fn is_opaque(&self) -> bool {
@@ -773,7 +795,12 @@ impl PanelBehavior for RadioButtonPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.rb.paint(painter, w, h);
     }
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.rb.input(event)
     }
     fn is_opaque(&self) -> bool {
@@ -789,7 +816,12 @@ impl PanelBehavior for RadioBoxPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.rb.paint(painter, w, h);
     }
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.rb.input(event)
     }
     fn is_opaque(&self) -> bool {
@@ -805,7 +837,12 @@ impl PanelBehavior for TextFieldPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.tf.paint(painter, w, h);
     }
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.tf.input(event)
     }
     fn is_opaque(&self) -> bool {
@@ -821,7 +858,12 @@ impl PanelBehavior for ScalarFieldPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.sf.paint(painter, w, h);
     }
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.sf.input(event)
     }
     fn is_opaque(&self) -> bool {
@@ -837,7 +879,12 @@ impl PanelBehavior for ColorFieldPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.field.paint(painter, w, h);
     }
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.field.input(event)
     }
     fn layout_children(&mut self, ctx: &mut PanelCtx) {
@@ -857,7 +904,12 @@ impl PanelBehavior for ListBoxPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.lb.paint(painter, w, h);
     }
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.lb.input(event)
     }
     fn is_opaque(&self) -> bool {
@@ -873,7 +925,12 @@ impl PanelBehavior for SplitterPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.splitter.paint(painter, w, h);
     }
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         self.splitter.input(event)
     }
     fn layout_children(&mut self, ctx: &mut PanelCtx) {
@@ -925,6 +982,7 @@ impl PanelBehavior for TkTestGrpPanel {
             0.03,
             Color::WHITE,
             TextAlignment::Left,
+            VAlign::Top,
         );
         painter.pop_state();
     }
@@ -1005,6 +1063,7 @@ impl PanelBehavior for TkTestPanel {
                 0.02,
                 Color::grey(100),
                 TextAlignment::Center,
+                VAlign::Top,
             );
         }
         painter.pop_state();
@@ -1327,11 +1386,17 @@ impl PanelBehavior for PolyDrawPanel {
             0.03,
             Color::WHITE,
             TextAlignment::Center,
+            VAlign::Top,
         );
         painter.pop_state();
     }
 
-    fn input(&mut self, event: &InputEvent, _state: &PanelState) -> bool {
+    fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
         let mx = event.mouse_x;
         let my = event.mouse_y;
 

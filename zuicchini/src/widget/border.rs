@@ -1,5 +1,5 @@
 use crate::foundation::{Image, Rect};
-use crate::render::{Painter, Stroke, TextAlignment};
+use crate::render::{Painter, Stroke, TextAlignment, VAlign};
 
 use super::look::Look;
 
@@ -1019,6 +1019,7 @@ impl Border {
                 label.caption_font_size,
                 dim_color(look.fg_color),
                 cap_align,
+                VAlign::Top,
             );
         }
 
@@ -1033,6 +1034,7 @@ impl Border {
                 label.description_font_size,
                 dim_color(look.disabled_fg()),
                 desc_align,
+                VAlign::Top,
             );
         }
 

@@ -1501,7 +1501,21 @@ impl View {
         painter.set_canvas_color(canvas_color);
 
         if let Some(mut behavior) = tree.take_behavior(id) {
-            let state = tree.build_panel_state(id, self.window_focused);
+            let mut state = tree.build_panel_state(id, self.window_focused);
+            state.priority = tree.get_update_priority(
+                id,
+                self.viewport_width,
+                self.viewport_height,
+                self.window_focused,
+            );
+            const DEFAULT_MEMORY_LIMIT: u64 = 1_073_741_824;
+            state.memory_limit = tree.get_memory_limit(
+                id,
+                self.viewport_width,
+                self.viewport_height,
+                DEFAULT_MEMORY_LIMIT,
+                self.seek_pos_panel,
+            );
             behavior.paint(painter, vw, vh, &state);
             tree.put_behavior(id, behavior);
         }

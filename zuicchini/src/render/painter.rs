@@ -63,6 +63,14 @@ pub enum TextAlignment {
     Right,
 }
 
+/// Vertical alignment for boxed text rendering.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum VAlign {
+    Top,
+    Center,
+    Bottom,
+}
+
 /// Coordinate transform state.
 #[derive(Clone, Debug)]
 struct PainterState {
@@ -878,6 +886,7 @@ impl<'a> Painter<'a> {
         size_px: f64,
         color: Color,
         alignment: TextAlignment,
+        v_align: VAlign,
     ) {
         let quantized = FontCache::quantize_size(size_px * self.state.scale_y.abs());
         if quantized < 2 {
@@ -886,20 +895,31 @@ impl<'a> Painter<'a> {
 
         let line_height = self.font_cache.line_height(0, quantized);
 
-        let mut cursor_y = y;
-        for line in text.split('\n') {
+        // Count lines and compute vertical start based on v_align.
+        let lines: Vec<&str> = text.split('\n').collect();
+        let num_lines = lines.len();
+        let total_height = num_lines as f64 * line_height;
+        let start_y = match v_align {
+            VAlign::Top => y,
+            VAlign::Center => y + (h - total_height) / 2.0,
+            VAlign::Bottom => y + h - total_height,
+        };
+
+        let mut cursor_y = start_y;
+        for line in &lines {
             if cursor_y + line_height > y + h {
                 break;
             }
-            // Expand tabs.
-            let expanded = expand_tabs(line);
-            let (tw, _th) = self.font_cache.measure_text(&expanded, 0, quantized);
-            let line_x = match alignment {
-                TextAlignment::Left => x,
-                TextAlignment::Center => x + (w - tw) / 2.0,
-                TextAlignment::Right => x + w - tw,
-            };
-            self.paint_text(line_x, cursor_y, &expanded, size_px, color);
+            if cursor_y + line_height > y {
+                let expanded = expand_tabs(line);
+                let (tw, _th) = self.font_cache.measure_text(&expanded, 0, quantized);
+                let line_x = match alignment {
+                    TextAlignment::Left => x,
+                    TextAlignment::Center => x + (w - tw) / 2.0,
+                    TextAlignment::Right => x + w - tw,
+                };
+                self.paint_text(line_x, cursor_y, &expanded, size_px, color);
+            }
             cursor_y += line_height;
         }
     }
