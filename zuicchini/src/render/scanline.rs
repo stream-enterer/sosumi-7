@@ -53,10 +53,10 @@ fn build_edges(vertices: &[(Fixed12, Fixed12)]) -> Vec<(i32, Edge)> {
             continue;
         }
 
-        let (top_x, top_iy, bot_x, bot_iy, direction) = if iy0 < iy1 {
-            (x0, iy0, x1, iy1, 1i8)
+        let (top_x, top_iy, bot_iy, direction) = if iy0 < iy1 {
+            (x0, iy0, iy1, 1i8)
         } else {
-            (x1, iy1, x0, iy0, -1i8)
+            (x1, iy1, iy0, -1i8)
         };
 
         let dy_fixed = y1 - y0;
@@ -71,7 +71,7 @@ fn build_edges(vertices: &[(Fixed12, Fixed12)]) -> Vec<(i32, Edge)> {
 
         // Pre-step x to the first scanline.
         let prestep = Fixed12::from_i32(top_iy) - if direction > 0 { y0 } else { y1 };
-        let x_at_top = if direction > 0 { top_x } else { bot_x };
+        let x_at_top = top_x;
         let x_start = x_at_top
             + Fixed12::from_raw(((dx_per_row.raw() as i64 * prestep.raw() as i64) >> 12) as i32);
 
@@ -167,6 +167,10 @@ pub(crate) fn rasterize(
 }
 
 /// Generate spans from sorted active edges for one scanline.
+///
+/// Edges at the same x position are grouped and their winding contributions
+/// accumulated atomically. This ensures bridge edges (same geometric line
+/// traversed in opposite directions) cancel without creating AA seams.
 fn generate_spans(
     aet: &[Edge],
     winding_rule: WindingRule,
@@ -176,38 +180,28 @@ fn generate_spans(
     let mut spans = Vec::new();
     let mut winding = 0i32;
     let mut i = 0;
+    let mut x_enter = Fixed12::ZERO;
 
     while i < aet.len() {
-        let old_winding = winding;
-        winding += aet[i].direction as i32;
-        let inside_before = is_inside(old_winding, winding_rule);
+        let inside_before = is_inside(winding, winding_rule);
+        let x_cur = aet[i].x_cur;
+
+        // Accumulate winding for all edges at this x position.
+        while i < aet.len() && aet[i].x_cur == x_cur {
+            winding += aet[i].direction as i32;
+            i += 1;
+        }
+
         let inside_after = is_inside(winding, winding_rule);
 
         if !inside_before && inside_after {
             // Entering filled region.
-            let x_enter = aet[i].x_cur;
-
-            // Find the exit edge.
-            let mut j = i + 1;
-            while j < aet.len() {
-                winding += aet[j].direction as i32;
-                if !is_inside(winding, winding_rule) {
-                    // Exiting filled region.
-                    let x_exit = aet[j].x_cur;
-                    if let Some(span) = make_span(x_enter, x_exit, clip_x_start, clip_x_end) {
-                        spans.push(span);
-                    }
-                    i = j + 1;
-                    break;
-                }
-                j += 1;
+            x_enter = x_cur;
+        } else if inside_before && !inside_after {
+            // Exiting filled region.
+            if let Some(span) = make_span(x_enter, x_cur, clip_x_start, clip_x_end) {
+                spans.push(span);
             }
-            if j >= aet.len() {
-                // No exit found — shouldn't happen with valid polygons, but handle gracefully.
-                break;
-            }
-        } else {
-            i += 1;
         }
     }
 
@@ -434,6 +428,62 @@ mod tests {
             spans.len(),
             2,
             "NonZero ring should produce 2 spans at y=10"
+        );
+    }
+
+    #[test]
+    fn thin_triangle_narrow_spans() {
+        // A tall, narrow triangle pointing up — spans should be narrow, not inflated.
+        let verts = vec![
+            (Fixed12::from_f64(50.0), Fixed12::from_f64(10.0)), // apex
+            (Fixed12::from_f64(52.0), Fixed12::from_f64(90.0)), // bottom-right
+            (Fixed12::from_f64(48.0), Fixed12::from_f64(90.0)), // bottom-left
+        ];
+        let clip = PixelRect {
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 100,
+        };
+        let rows = rasterize(&verts, clip, WindingRule::EvenOdd);
+        assert!(!rows.is_empty());
+        // Near the apex (first few scanlines), width must be <= 3 pixels.
+        for (_, spans) in rows.iter().take(5) {
+            assert_eq!(spans.len(), 1, "should have exactly one span per row");
+            let width = spans[0].x_end - spans[0].x_start;
+            assert!(
+                width <= 3,
+                "near apex, span width should be narrow, got {width}"
+            );
+        }
+    }
+
+    #[test]
+    fn bowtie_quad_two_span_groups() {
+        // A bowtie (self-intersecting quad) — at the crossing scanline, even-odd
+        // should produce two separate filled regions.
+        // Vertices form an X shape: top-left, bottom-right, top-right, bottom-left.
+        let verts = vec![
+            (Fixed12::from_f64(10.0), Fixed12::from_f64(10.0)),
+            (Fixed12::from_f64(90.0), Fixed12::from_f64(90.0)),
+            (Fixed12::from_f64(90.0), Fixed12::from_f64(10.0)),
+            (Fixed12::from_f64(10.0), Fixed12::from_f64(90.0)),
+        ];
+        let clip = PixelRect {
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 100,
+        };
+        let rows = rasterize(&verts, clip, WindingRule::EvenOdd);
+        assert!(!rows.is_empty());
+        // Away from the crossing point (~y=50), there should be 2 spans on some rows.
+        let has_two_spans = rows
+            .iter()
+            .any(|(y, spans)| *y > 20 && *y < 45 && spans.len() == 2);
+        assert!(
+            has_two_spans,
+            "bowtie should produce 2 separate spans on some scanlines"
         );
     }
 }

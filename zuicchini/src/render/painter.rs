@@ -296,8 +296,8 @@ impl<'a> Painter<'a> {
     pub fn paint_rect(&mut self, x: f64, y: f64, w: f64, h: f64, color: Color) {
         let px = self.to_pixel_x(x);
         let py = self.to_pixel_y(y);
-        let pw = (w * self.state.scale_x) as i32;
-        let ph = (h * self.state.scale_y) as i32;
+        let pw = self.to_pixel_x(x + w) - px;
+        let ph = self.to_pixel_y(y + h) - py;
         self.fill_rect_pixels(px, py, pw, ph, color);
     }
 
@@ -893,7 +893,7 @@ impl<'a> Painter<'a> {
             return;
         }
 
-        let line_height = self.font_cache.line_height(0, quantized);
+        let line_height = self.font_cache.line_height(0, quantized) / self.state.scale_y.abs();
 
         // Count lines and compute vertical start based on v_align.
         let lines: Vec<&str> = text.split('\n').collect();
@@ -912,7 +912,8 @@ impl<'a> Painter<'a> {
             }
             if cursor_y + line_height > y {
                 let expanded = expand_tabs(line);
-                let (tw, _th) = self.font_cache.measure_text(&expanded, 0, quantized);
+                let (tw_px, _th) = self.font_cache.measure_text(&expanded, 0, quantized);
+                let tw = tw_px / self.state.scale_x.abs();
                 let line_x = match alignment {
                     TextAlignment::Left => x,
                     TextAlignment::Center => x + (w - tw) / 2.0,
