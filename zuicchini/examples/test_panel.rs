@@ -569,6 +569,10 @@ impl PanelBehavior for TestPanel {
         // Scale to C++ normalized panel coordinates (0..1, 0..tallness).
         // The framework passes pixel dimensions; C++ emTestPanel uses
         // GetWidth()=1.0, GetHeight()=tallness for all painting.
+        if state.viewed_rect.w < 25.0 {
+            return;
+        }
+
         painter.push_state();
         painter.scale(w, w);
         let h = h / w;

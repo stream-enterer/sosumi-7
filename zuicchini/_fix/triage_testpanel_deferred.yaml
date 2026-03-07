@@ -1,0 +1,234 @@
+# Deep triage of TESTPANEL_GAP_ANALYSIS deferred items
+# Generated: 2026-03-07 (Round 2 — post-research pass)
+# Source: triage_testpanel.yaml design_decisions TP08, TP10-14
+#
+# This file supersedes the design_decisions section of triage_testpanel.yaml
+# for these items. Each item now has a researched implementation analysis.
+#
+# Classification:
+#   TRIVIAL          — no framework changes, < 5 lines
+#   EXAMPLE_ONLY     — changes only in examples/, no framework API changes
+#   FRAMEWORK_CHANGE — requires modifying framework types/traits/signatures
+#   NOT_A_BUG        — architectural divergence that works correctly
+#   REDUNDANT        — already handled by existing framework behavior
+
+# ============================================================================
+# RESOLVED ITEMS (clear answers, no human decision needed)
+# ============================================================================
+
+resolved:
+  - id: TP08
+    source_finding: TESTPANEL_GAP_ANALYSIS.md:GAP-TP08
+    classification: TRIVIAL
+    summary: Add GetViewCondition early-return in TestPanel::paint()
+    resolution: IMPLEMENTED
+    detail: >
+      C++ emTestPanel::Paint() returns early when GetViewCondition(VCT_WIDTH) < 25.0.
+      PanelState.viewed_rect.w provides the viewed width in pixels.
+      Added early return BEFORE push_state/scale in TestPanel::paint().
+    implementation:
+      files: [zuicchini/examples/test_panel.rs]
+      lines_after: test_panel.rs:571-573
+      pattern: |
+        if state.viewed_rect.w < 25.0 {
+            return;
+        }
+
+  - id: TP09
+    source_finding: TESTPANEL_GAP_ANALYSIS.md:GAP-TP09
+    classification: REDUNDANT
+    summary: Notice() should call InvalidatePainting()
+    resolution: SKIP
+    detail: >
+      app.rs:about_to_wait() checks deliver_notices() return value (had_notices)
+      and sets needs_repaint=true for ALL windows when any notice fires.
+      Per-panel InvalidatePainting() in notice() is redundant.
+
+  - id: TP12
+    source_finding: TESTPANEL_GAP_ANALYSIS.md:GAP-TP12
+    classification: REDUNDANT
+    summary: Missing InvalidatePainting() after input
+    resolution: SKIP
+    detail: >
+      Same as TP09. The framework blanket-repaints after input dispatch via
+      the dirty_rects / viewport_changed checks in about_to_wait().
+
+  - id: TP14
+    source_finding: TESTPANEL_GAP_ANALYSIS.md:GAP-TP14
+    classification: NOT_A_BUG
+    summary: Children created in layout_children() instead of separate AutoExpand()
+    resolution: SKIP
+    detail: >
+      C++ separates AutoExpand() (creation) and LayoutChildren() (positioning).
+      Rust conflates them in layout_children() using a child_count()==0 guard.
+      This works correctly because the framework's auto-expansion mechanism
+      fires LAYOUT_CHANGED notice (view.rs:904-911) which triggers
+      layout_children(). The behavior then creates children on first call
+      and repositions on subsequent calls.
+
+      The auto_expand() -> bool trait method on PanelBehavior (behavior.rs:100)
+      exists but is unused by the framework. Expansion decisions are driven
+      entirely by set_auto_expansion_threshold() + get_view_condition().
+      This is a valid architectural simplification, not a bug.
+
+# ============================================================================
+# FRAMEWORK CHANGES NEEDED (require human decision on approach)
+# ============================================================================
+
+framework_changes:
+  - id: TP10
+    source_finding: TESTPANEL_GAP_ANALYSIS.md:GAP-TP10
+    classification: FRAMEWORK_CHANGE
+    summary: Display Priority and MemoryLimit text in TestPanel
+    detail: >
+      C++ emTestPanel::Paint() shows "Pri=X MemLim=Y" using GetUpdatePriority()
+      and GetMemoryLimit(). These are methods on PanelTree (tree.rs:1311,1383),
+      but paint() only receives (&mut Painter, w, h, &PanelState) — no tree access.
+    dilemma: >
+      get_update_priority(id, viewport_w, viewport_h, view_focused) needs viewport
+      dimensions. get_memory_limit(id, viewport_w, viewport_h, max_per_view_by_user,
+      seek_panel) additionally needs a user-configurable memory ceiling that isn't
+      stored anywhere in the framework. Both compute per-frame values that vary
+      with pan/zoom.
+    approaches:
+      - name: Pre-compute on PanelData
+        description: >
+          Compute priority/memory_limit during View::update_viewing() (which already
+          iterates all viewed panels and has viewport dims). Cache on PanelData fields.
+          Expose via PanelState. build_panel_state() reads cached values.
+        pros: [No signature changes, works at all call sites, computed once per frame]
+        cons: [Need to pick a default max_per_view_by_user value, adds 2 fields to PanelData]
+        files: [tree.rs (PanelData + build_panel_state), behavior.rs (PanelState), view.rs (update_viewing)]
+      - name: Extend build_panel_state for paint path
+        description: >
+          Create build_panel_state_for_paint(id, wf, viewport_w, viewport_h) that
+          also computes priority/memory_limit. Keep old build_panel_state for
+          deliver_notices path which lacks viewport info.
+        pros: [No PanelData storage, viewport dims available at paint call site]
+        cons: [Two build methods, still needs max_per_view_by_user from somewhere]
+        files: [tree.rs (new method), behavior.rs (PanelState), view.rs (paint call site)]
+    blockers:
+      - max_per_view_by_user is not stored anywhere in the framework. C++ gets it from
+        user configuration. Need to either hardcode a default or add a config field to
+        View or PanelTree.
+    consumer: Only test_panel.rs — purely diagnostic/debug text
+
+  - id: TP11
+    source_finding: TESTPANEL_GAP_ANALYSIS.md:GAP-TP11
+    classification: FRAMEWORK_CHANGE
+    summary: Pass pressed-keys state to behavior.input() for key dump logging
+    detail: >
+      C++ emTestPanel::Input(event, state, mx, my) iterates state.Get(key) for
+      all 256 keys to log which are currently pressed. Rust behavior.input() only
+      receives (&InputEvent, &PanelState) — no InputState with pressed keys.
+      InputState IS available at the dispatch site (zui_window.rs:353 receives it
+      from app.rs:208), but is not forwarded to behaviors.
+    note: >
+      Modifier keys (shift/ctrl/alt/meta) are ALREADY stamped onto InputEvent
+      via with_modifiers() at zui_window.rs:377. Widgets (Button, TextField, etc.)
+      use event.shift/event.ctrl and do NOT need InputState. Only test_panel's
+      key dump logging needs the full pressed_keys set.
+    dilemma: >
+      Adding &InputState to the PanelBehavior::input() trait touches 27 implementors
+      across 5 files (behavior.rs, test_panel.rs, harness/mod.rs, linear.rs, pack.rs,
+      raster.rs). All changes are trivial (add unused param) except test_panel which
+      actually uses it. Alternatively, pressed_keys could go in PanelState, but
+      that's semantically wrong (PanelState is panel-specific, pressed keys are global).
+    approaches:
+      - name: Add &InputState to trait
+        description: >
+          Change PanelBehavior::input() signature to
+          fn input(&mut self, event: &InputEvent, state: &PanelState, input: &InputState) -> bool.
+          Thread InputState from dispatch_input through to behavior.input().
+        pros: [Clean API, matches C++ pattern, InputState already at call site]
+        cons: [27 implementors need signature update (all trivial), API churn]
+        files: [behavior.rs (trait), zui_window.rs (dispatch), test_panel.rs, harness/mod.rs, linear.rs, pack.rs, raster.rs]
+        blast_radius: 27 fn signatures across 5 files
+      - name: Add pressed_keys to PanelState
+        description: >
+          Add pressed_keys: Vec<InputKey> (or similar) to PanelState. Populate in
+          dispatch_input before calling behavior.input(). No trait signature change.
+        pros: [Zero implementor changes, data flows through existing param]
+        cons: [Semantic mismatch — PanelState is panel state not global input state, clones key set per call]
+        files: [behavior.rs (PanelState), zui_window.rs (populate before call)]
+        blast_radius: 2 files
+    consumer: Only test_panel.rs key dump — purely diagnostic/debug text
+
+  - id: TP13
+    source_finding: TESTPANEL_GAP_ANALYSIS.md:GAP-TP13
+    classification: FRAMEWORK_CHANGE
+    summary: paint_text_boxed missing vertical alignment, canvas_color, textAlignment
+    detail: >
+      C++ PaintTextBoxed has 14 parameters. Rust has 8. Key missing features:
+
+      1. VERTICAL ALIGNMENT (boxAlignment): C++ uses bitflag enum with
+         TOP|BOTTOM|LEFT|RIGHT|CENTER combinations. Rust TextAlignment only has
+         Left/Center/Right (horizontal). Current Rust impl always pins text to
+         top of box. C++ test panel uses EM_ALIGN_TOP_LEFT and EM_ALIGN_CENTER.
+
+      2. CANVAS_COLOR: C++ passes background color for text anti-aliasing.
+         Painter already has set_canvas_color() internally but paint_text_boxed
+         doesn't use it.
+
+      3. TEXT_ALIGNMENT (separate from box alignment): C++ has independent
+         boxAlignment (where block goes in box) and textAlignment (how lines
+         align within block). Rust conflates them into a single alignment param.
+
+      4. Minor: minWidthScale (wrap control), formatted flag, relLineSpace.
+    dilemma: >
+      Adding all C++ params would make a 14-param method. Current 8 callers
+      (test_panel.rs x6, border.rs x2) would all need updating. Alternatives:
+      (a) Add only vertical alignment to TextAlignment enum (becomes 2D: TopLeft,
+          Center, BottomRight, etc.) — minimal change, covers most usage.
+      (b) Use a TextBoxOptions builder struct for optional params — clean API
+          but more code. Default gives current behavior.
+      (c) Add a second method paint_text_boxed_ex() with full params — avoids
+          touching existing callers.
+    approaches:
+      - name: Extend TextAlignment to 2D bitflags
+        description: >
+          Replace TextAlignment enum with bitflag-style alignment matching C++:
+          TOP, BOTTOM, LEFT, RIGHT, CENTER (default). Compose as TOP_LEFT etc.
+          Update paint_text_boxed impl to handle vertical positioning.
+          Add canvas_color param. Keep textAlignment as TODO (same as boxAlignment
+          for now — C++ test panel only uses them independently once).
+        pros: [Matches C++ model, moderate change, covers all test_panel usage]
+        cons: [8 callers need TextAlignment::Left -> Alignment::LEFT etc., adds canvas_color param]
+        files: [painter.rs (enum + impl), test_panel.rs (callers), border.rs (callers)]
+        blast_radius: 3 files, ~10 call sites
+      - name: TextBoxOptions builder
+        description: >
+          Add TextBoxOptions struct with defaults matching current behavior.
+          New paint_text_boxed signature takes &TextBoxOptions. Old callers
+          use TextBoxOptions::new(color, alignment). Extend later with
+          canvas_color, v_align, text_align, etc.
+        pros: [Extensible, backward-compat via defaults, no positional param explosion]
+        cons: [More boilerplate, every caller constructs options struct]
+        files: [painter.rs (new struct + impl), all callers]
+        blast_radius: 3 files, ~10 call sites
+      - name: Add paint_text_boxed_aligned() variant
+        description: >
+          Keep existing paint_text_boxed unchanged. Add new method with full
+          alignment support. Test panel calls new method where needed.
+        pros: [Zero changes to existing callers, additive only]
+        cons: [Two similar methods, doesn't fix existing callers that might want v-align]
+        files: [painter.rs (new method), test_panel.rs (new callers only)]
+        blast_radius: 2 files
+
+# ============================================================================
+# QUALITY GATE
+# ============================================================================
+
+quality_gate:
+  items_triaged: 7
+  implemented: 1         # TP08 (done)
+  skipped_redundant: 2   # TP09, TP12
+  skipped_not_a_bug: 1   # TP14
+  deferred_framework: 3  # TP10, TP11, TP13 (need approach decision)
+  total: 7
+  note: >
+    TP05 (focus highlight) and TP06 (DefaultTouchVIF) remain in
+    triage_testpanel.yaml as DESIGN decisions — they are feature
+    implementations, not parameter/API gaps.
+    TP10, TP11, TP13 all require framework API changes but their only
+    consumer is diagnostic text in the test panel example.
