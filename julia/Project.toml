@@ -1,0 +1,8 @@
+[deps]
+BeforeIT = "ca9fcad7-41d0-4f76-b1e5-366c28bce52e"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+
+[compat]
+julia = "1.10"
+BeforeIT = "0.5"
+JSON3 = "1"

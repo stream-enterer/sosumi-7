@@ -1,5 +1,5 @@
 [workspace]
-members = ["zuicchini", "egopol"]
+members = ["zuicchini", "egopol", "world"]
 resolver = "2"
 
 [profile.release]

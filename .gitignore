@@ -1,2 +1,6 @@
 /target
 zuicchini/_verify/
+julia/Manifest.toml
+julia/sysimage/*.so
+julia/sysimage/*.dylib
+julia/sysimage/*.dll
