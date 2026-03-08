@@ -1,6 +1,7 @@
 use crate::foundation::Rect;
-use crate::panel::{NoticeFlags, PanelBehavior, PanelCtx, PanelState};
+use crate::panel::{NoticeFlags, PanelBehavior, PanelCtx, PanelId, PanelState};
 use crate::render::Painter;
+use crate::widget::{Border, InnerBorderType, Look, OuterBorderType};
 
 use super::{Alignment, Spacing};
 
@@ -79,13 +80,28 @@ impl RasterLayout {
         self
     }
 
+    pub(crate) fn do_layout_skip(&mut self, ctx: &mut PanelCtx, skip: Option<PanelId>) {
+        self.do_layout_inner(ctx, skip);
+    }
+
     fn do_layout(&mut self, ctx: &mut PanelCtx) {
+        self.do_layout_inner(ctx, None);
+    }
+
+    fn do_layout_inner(&mut self, ctx: &mut PanelCtx, skip: Option<PanelId>) {
         let Rect { w, h, .. } = ctx.layout_rect();
-        let children = ctx.children();
+        let mut children = ctx.children();
+        if let Some(skip_id) = skip {
+            children.retain(|&id| id != skip_id);
+        }
         let n = children.len().max(self.min_cell_count);
         if n == 0 {
             return;
         }
+
+        // Clamp degenerate dimensions to 1E-100 and continue layout (C++ parity).
+        let w = w.max(1e-100);
+        let h = h.max(1e-100);
 
         let min_ct = self.min_child_tallness.max(0.0);
         let max_ct = self.max_child_tallness.max(min_ct);
@@ -114,6 +130,10 @@ impl RasterLayout {
                     }
                     cols += 1;
                     rows = n.div_ceil(cols);
+                    // Cross-dimension clamp: enforce FixedRowCount (C++ parity)
+                    if let Some(fr) = self.fixed_rows {
+                        rows = rows.max(fr);
+                    }
                 }
             } else if !self.row_major && self.fixed_rows.is_none() {
                 // Increase rows while ct > max_child_tallness
@@ -124,6 +144,10 @@ impl RasterLayout {
                     }
                     rows += 1;
                     cols = n.div_ceil(rows);
+                    // Cross-dimension clamp: enforce FixedColumnCount (C++ parity)
+                    if let Some(fc) = self.fixed_columns {
+                        cols = cols.max(fc);
+                    }
                 }
             }
         }
@@ -211,11 +235,21 @@ impl RasterLayout {
             }
             (Some(c), None) => {
                 let c = c.max(1);
-                (c, n.div_ceil(c))
+                let mut r = n.div_ceil(c);
+                // Cross-dimension clamp (C++ parity: if (rows<FixedRowCount) rows=FixedRowCount)
+                if let Some(fr) = self.fixed_rows {
+                    r = r.max(fr);
+                }
+                (c, r)
             }
             (None, Some(r)) => {
                 let r = r.max(1);
-                (n.div_ceil(r), r)
+                let mut c = n.div_ceil(r);
+                // Cross-dimension clamp (C++ parity)
+                if let Some(fc) = self.fixed_columns {
+                    c = c.max(fc);
+                }
+                (c, r)
             }
             (None, None) => self.auto_grid_clamped(n, w, h, pref_ct),
         }
@@ -257,12 +291,16 @@ impl PanelBehavior for RasterLayout {
 /// RasterGroup wraps RasterLayout with border painting and focusable support.
 pub struct RasterGroup {
     pub layout: RasterLayout,
+    pub border: Border,
+    pub look: Look,
 }
 
 impl RasterGroup {
     pub fn new() -> Self {
         Self {
             layout: RasterLayout::new(),
+            border: Border::new(OuterBorderType::Group).with_inner(InnerBorderType::Group),
+            look: Look::default(),
         }
     }
 }
@@ -274,10 +312,14 @@ impl Default for RasterGroup {
 }
 
 impl PanelBehavior for RasterGroup {
-    fn paint(&mut self, _painter: &mut Painter, _w: f64, _h: f64, _state: &PanelState) {}
+    fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, state: &PanelState) {
+        self.border
+            .paint_border(painter, w, h, &self.look, state.is_focused(), state.enabled);
+    }
 
     fn layout_children(&mut self, ctx: &mut PanelCtx) {
-        self.layout.do_layout(ctx);
+        let aux_id = super::position_aux_panel(ctx, &self.border);
+        self.layout.do_layout_skip(ctx, aux_id);
     }
 
     fn auto_expand(&self) -> bool {

@@ -5,13 +5,19 @@ use crate::panel::{NoticeFlags, PanelBehavior, PanelCtx, PanelId, PanelState};
 use crate::render::Painter;
 
 use super::{
-    get_constraint, Alignment, ChildConstraint, Orientation, ResolvedOrientation, Spacing,
+    get_constraint, AlignmentH, AlignmentV, ChildConstraint, Orientation, ResolvedOrientation,
+    Spacing,
 };
+use crate::widget::{Border, InnerBorderType, Look, OuterBorderType};
 
 /// Linear layout: arranges children along a single axis with weighted distribution.
+///
+/// Implements the C++ emLinearLayout spacing model with absolute spacing units
+/// and per-axis alignment (D-LAYOUT-01 through D-LAYOUT-04).
 pub struct LinearLayout {
     pub orientation: Orientation,
-    pub alignment: Alignment,
+    pub alignment_h: AlignmentH,
+    pub alignment_v: AlignmentV,
     pub spacing: Spacing,
     pub child_constraints: HashMap<PanelId, ChildConstraint>,
     pub default_constraint: ChildConstraint,
@@ -23,7 +29,8 @@ impl LinearLayout {
     pub fn horizontal() -> Self {
         Self {
             orientation: Orientation::Horizontal,
-            alignment: Alignment::default(),
+            alignment_h: AlignmentH::default(),
+            alignment_v: AlignmentV::default(),
             spacing: Spacing::default(),
             child_constraints: HashMap::new(),
             default_constraint: ChildConstraint::default(),
@@ -50,8 +57,13 @@ impl LinearLayout {
         self
     }
 
-    pub fn with_alignment(mut self, alignment: Alignment) -> Self {
-        self.alignment = alignment;
+    pub fn with_alignment_h(mut self, alignment: AlignmentH) -> Self {
+        self.alignment_h = alignment;
+        self
+    }
+
+    pub fn with_alignment_v(mut self, alignment: AlignmentV) -> Self {
+        self.alignment_v = alignment;
         self
     }
 
@@ -59,145 +71,219 @@ impl LinearLayout {
         self.child_constraints.insert(child, constraint);
     }
 
+    pub(crate) fn do_layout_skip(&mut self, ctx: &mut PanelCtx, skip: Option<PanelId>) {
+        self.do_layout_inner(ctx, skip);
+    }
+
     fn do_layout(&mut self, ctx: &mut PanelCtx) {
+        self.do_layout_inner(ctx, None);
+    }
+
+    /// Core layout algorithm matching C++ emLinearLayout::LayoutChildren.
+    ///
+    /// Uses the C++ absolute spacing model (D-LAYOUT-01):
+    /// 1. Compute spacing scale factors (sx, sy) and unit sizes (ux, uy)
+    /// 2. Call calculate_force with normalized dimensions (w/ux, h/uy)
+    /// 3. Compute child sizes from force (these are in abstract pixel-equiv units)
+    /// 4. Apply per-axis alignment post-processing (D-LAYOUT-03)
+    /// 5. Convert spacing proportions to pixels and position children
+    fn do_layout_inner(&mut self, ctx: &mut PanelCtx, skip: Option<PanelId>) {
         let Rect { w, h, .. } = ctx.layout_rect();
-        let children = ctx.children();
+        let mut children = ctx.children();
+        if let Some(skip_id) = skip {
+            children.retain(|&id| id != skip_id);
+        }
         if children.is_empty() {
             return;
         }
+
+        // Clamp degenerate dimensions to 1E-100 and continue layout (C++ parity).
+        let mut w = w.max(1e-100);
+        let mut h = h.max(1e-100);
 
         let resolved = self.orientation.resolve(w, h);
         let horizontal = resolved == ResolvedOrientation::Horizontal;
         let sp = self.spacing.clamped();
 
-        let (main_total, cross_total, mms, mme, mcs, mce, inner_main) = if horizontal {
-            (
-                w,
-                h,
-                sp.margin_left,
-                sp.margin_right,
-                sp.margin_top,
-                sp.margin_bottom,
-                sp.inner_h,
-            )
-        } else {
-            (
-                h,
-                w,
-                sp.margin_top,
-                sp.margin_bottom,
-                sp.margin_left,
-                sp.margin_right,
-                sp.inner_v,
-            )
-        };
+        let cells = children.len().max(self.min_cell_count);
 
-        let cell_count = children.len().max(self.min_cell_count);
-        let gap_count = cell_count.saturating_sub(1);
+        // C++ step: cols/rows for spacing calculation
+        let cols = if horizontal { cells } else { 1 };
+        let rows = if horizontal { 1 } else { cells };
 
-        // Total weight including padding for min_cell_count
-        let children_weight: f64 = children
-            .iter()
-            .map(|c| get_constraint(&self.child_constraints, *c, &self.default_constraint).weight)
-            .sum::<f64>();
-        let pad_count = cell_count.saturating_sub(children.len());
-        let total_weight: f64 =
-            (children_weight + pad_count as f64 * self.default_constraint.weight).max(1e-100);
+        // Total spacing units in each axis (SpaceL + SpaceR + SpaceH*(cols-1), etc.)
+        let sx = sp.margin_left + sp.margin_right + sp.inner_h * cols.saturating_sub(1) as f64;
+        let sy = sp.margin_top + sp.margin_bottom + sp.inner_v * rows.saturating_sub(1) as f64;
 
-        // Proportional spacing: compute scale factors.
-        // Content occupies total_weight proportion-units on main, 1.0 on cross.
-        let denom_main = mms + inner_main * gap_count as f64 + mme + total_weight;
-        let denom_cross = mcs + mce + 1.0;
-        if denom_main < 1e-100 || denom_cross < 1e-100 {
+        // Unit size: spacing overhead per cell + 1.0 for the cell content
+        let ux = sx / cols as f64 + 1.0;
+        let uy = sy / rows as f64 + 1.0;
+
+        if ux < 1e-100 || uy < 1e-100 {
             return;
         }
 
-        let s_main = main_total / denom_main;
-        let s_cross = cross_total / denom_cross;
+        // Normalized dimensions: content area extent (all cells combined)
+        // w/ux = total content width in abstract units
+        // h/uy = total content height in abstract units
+        let nw = w / ux;
+        let nh = h / uy;
 
-        // Available dimensions in pixels for the content area
-        let available_main = total_weight * s_main;
-        let cross_px = s_cross; // 1.0 * s_cross
+        // Calculate force. CalculateForce distributes the main-axis content extent
+        // among cells items based on weights.
+        let force = self.calculate_force(&children, cells, nw, nh, horizontal);
 
-        // Calculate force: iterative solver in pixel space
-        let force =
-            self.calculate_force(&children, available_main, cross_px, horizontal, cell_count);
-
-        // Compute each child's main size from force, clamped by tallness
-        let mut main_sizes = Vec::with_capacity(children.len());
+        // Compute child sizes in abstract units from force
+        let mut child_widths = Vec::with_capacity(children.len());
+        let mut child_heights = Vec::with_capacity(children.len());
         for child in &children {
             let cc = get_constraint(&self.child_constraints, *child, &self.default_constraint);
-            let mut main_size = cc.weight * force;
+            let (mut cw, mut ch) = if horizontal {
+                (cc.weight * force, nh)
+            } else {
+                (nw, cc.weight * force)
+            };
 
-            if main_size > 0.0 {
-                let (cw, ch) = if horizontal {
-                    (main_size, cross_px)
-                } else {
-                    (cross_px, main_size)
-                };
+            // Apply tallness constraints
+            if cw > 0.0 && ch > 0.0 {
                 let tallness = ch / cw;
                 let max_t = cc.max_tallness.max(cc.min_tallness);
                 let clamped = tallness.clamp(cc.min_tallness, max_t);
                 if (clamped - tallness).abs() > 1e-10 {
-                    main_size = if horizontal {
-                        cross_px / clamped
+                    if horizontal {
+                        cw = ch / clamped;
                     } else {
-                        cross_px * clamped
-                    };
+                        ch = cw * clamped;
+                    }
                 }
             }
 
-            main_sizes.push(main_size);
+            child_widths.push(cw);
+            child_heights.push(ch);
         }
 
-        // Place children
-        let actual_mm = mms * s_main;
-        let actual_mc = mcs * s_cross;
-        let actual_gap = inner_main * s_main;
-
-        // Compute total main extent for alignment
-        let total_main: f64 =
-            main_sizes.iter().sum::<f64>() + actual_gap * children.len().saturating_sub(1) as f64;
-        let available = main_total - actual_mm - mme * s_main;
-        let surplus = (available - total_main).max(0.0);
-
-        let align_offset = match self.alignment {
-            Alignment::Center => surplus / 2.0,
-            Alignment::End => surplus,
-            _ => 0.0,
+        // Compute bounding box of children + spacing in abstract units
+        let total_cw: f64 = if horizontal {
+            child_widths.iter().sum::<f64>()
+                + sp.inner_h * children.len().saturating_sub(1) as f64
+                + sp.margin_left
+                + sp.margin_right
+        } else {
+            child_widths.iter().cloned().fold(0.0_f64, f64::max) + sp.margin_left + sp.margin_right
+        };
+        let total_ch: f64 = if horizontal {
+            child_heights.iter().cloned().fold(0.0_f64, f64::max) + sp.margin_top + sp.margin_bottom
+        } else {
+            child_heights.iter().sum::<f64>()
+                + sp.inner_v * children.len().saturating_sub(1) as f64
+                + sp.margin_top
+                + sp.margin_bottom
         };
 
-        let mut main_pos = actual_mm + align_offset;
-        for (i, child) in children.iter().enumerate() {
-            let main_size = main_sizes[i];
-            let (x, y, cw, ch) = if horizontal {
-                (main_pos, actual_mc, main_size, cross_px)
+        // Alignment step (D-LAYOUT-03): determine which axis has surplus and apply
+        // per-axis alignment. C++: if (w*ch >= h*cw) -> horizontal surplus
+        let mut x_offset = 0.0;
+        let mut y_offset = 0.0;
+
+        if w * total_ch >= h * total_cw {
+            // Horizontal surplus: reduce w to fill aspect ratio
+            let t = if total_ch > 1e-100 {
+                h * total_cw / total_ch
             } else {
-                (actual_mc, main_pos, cross_px, main_size)
+                w
             };
-            ctx.layout_child(*child, x, y, cw, ch);
-            main_pos += main_size + actual_gap;
+            match self.alignment_h {
+                AlignmentH::Right => x_offset = w - t,
+                AlignmentH::Center => x_offset = (w - t) * 0.5,
+                AlignmentH::Left => {}
+            }
+            w = t;
+        } else {
+            // Vertical surplus: reduce h to fill aspect ratio
+            let t = if total_cw > 1e-100 {
+                w * total_ch / total_cw
+            } else {
+                h
+            };
+            match self.alignment_v {
+                AlignmentV::Bottom => y_offset = h - t,
+                AlignmentV::Center => y_offset = (h - t) * 0.5,
+                AlignmentV::Top => {}
+            }
+            h = t;
+        }
+
+        // Convert spacing to pixels using (possibly adjusted) w, h.
+        // C++: sx_scale = (w - w/ux) / sx, then x += sx_scale * SpaceL, gap = sx_scale * SpaceH
+        let (space_x, gap_x) = if sx >= 1e-100 {
+            let sx_scale = (w - w / ux) / sx;
+            (sx_scale * sp.margin_left, sx_scale * sp.inner_h)
+        } else {
+            (0.0, 0.0)
+        };
+
+        let (space_y, gap_y) = if sy >= 1e-100 {
+            let sy_scale = (h - h / uy) / sy;
+            (sy_scale * sp.margin_top, sy_scale * sp.inner_v)
+        } else {
+            (0.0, 0.0)
+        };
+
+        // Content scale: maps abstract sizes (computed using pre-alignment nw, nh)
+        // to pixels (using post-alignment w, h). The post-alignment content extent
+        // in pixels is w/ux, while the abstract extent is nw (= orig_w/ux).
+        let scale_x = (w / ux) / nw;
+        let scale_y = (h / uy) / nh;
+
+        // Position children
+        if horizontal {
+            let mut x = x_offset + space_x;
+            let base_y = y_offset + space_y;
+            for (i, child) in children.iter().enumerate() {
+                let pixel_w = child_widths[i] * scale_x;
+                let pixel_h = child_heights[i] * scale_y;
+                ctx.layout_child(*child, x, base_y, pixel_w, pixel_h);
+                x += pixel_w + gap_x;
+            }
+        } else {
+            let base_x = x_offset + space_x;
+            let mut y = y_offset + space_y;
+            for (i, child) in children.iter().enumerate() {
+                let pixel_w = child_widths[i] * scale_x;
+                let pixel_h = child_heights[i] * scale_y;
+                ctx.layout_child(*child, base_x, y, pixel_w, pixel_h);
+                y += pixel_h + gap_y;
+            }
         }
     }
 
-    /// Iterative force solver matching C++ CalculateForce.
-    /// Returns force (pixels per weight unit) that distributes `total_length`
-    /// among free children while respecting tallness constraints.
+    /// Iterative force solver matching C++ CalculateForce (D-LAYOUT-04).
+    ///
+    /// Takes the number of cells (including min_cell_count padding), the
+    /// normalized container dimensions (w/ux, h/uy), and orientation.
+    /// Returns force (abstract units per weight unit) that distributes the
+    /// main-axis content extent among cells while respecting tallness constraints.
+    ///
+    /// C++ conflict resolution: when both compressed and expanded children exist,
+    /// uses `compressedLength + expandedLength + freeLength < totalLength` to decide
+    /// whether to release compressed (space left over) or expanded (over-committed).
     fn calculate_force(
         &self,
         children: &[PanelId],
-        total_length: f64,
-        cross: f64,
-        horizontal: bool,
         cell_count: usize,
+        nw: f64,
+        nh: f64,
+        horizontal: bool,
     ) -> f64 {
         let n = children.len();
+        // total_length is the main-axis content extent in abstract units
+        let total_length = if horizontal { nw } else { nh };
+        let cross = if horizontal { nh } else { nw };
+
         if n == 0 || total_length <= 0.0 {
             return 0.0;
         }
 
-        // Child state: None = free, Some(fixed_size) = constrained
-        // Track compressed vs expanded separately for conflict resolution
         let constraints: Vec<&ChildConstraint> = children
             .iter()
             .map(|c| get_constraint(&self.child_constraints, *c, &self.default_constraint))
@@ -252,7 +338,7 @@ impl LinearLayout {
                 let max_t = cc.max_tallness.max(cc.min_tallness);
 
                 if tallness > max_t {
-                    // Too tall → child needs more main space → expanded
+                    // Too tall -> child needs more main space -> expanded
                     let fixed = if horizontal {
                         cross / max_t
                     } else {
@@ -264,7 +350,7 @@ impl LinearLayout {
                     any_changed = true;
                     has_expanded = true;
                 } else if tallness < cc.min_tallness {
-                    // Too wide → child needs less main space → compressed
+                    // Too wide -> child needs less main space -> compressed
                     let fixed = if horizontal {
                         cross / cc.min_tallness
                     } else {
@@ -282,47 +368,55 @@ impl LinearLayout {
                 break;
             }
 
-            // Conflict resolution: if both compressed and expanded exist
+            // Conflict resolution (D-LAYOUT-04): C++ includes free children's
+            // sizes at current force in the comparison.
             if has_compressed && has_expanded {
-                let committed: f64 = states
+                let compressed_length: f64 = states
                     .iter()
                     .map(|s| match s {
-                        State::Compressed(f) | State::Expanded(f) => *f,
-                        State::Free => 0.0,
+                        State::Compressed(f) => *f,
+                        _ => 0.0,
+                    })
+                    .sum();
+                let expanded_length: f64 = states
+                    .iter()
+                    .map(|s| match s {
+                        State::Expanded(f) => *f,
+                        _ => 0.0,
                     })
                     .sum();
 
-                // C++ CalculateForce names its constrained lists by
-                // tallness direction, which flips between orientations.
-                // In horizontal mode Expanded (tallness>max, larger main)
-                // maps to C++ "compressed", while in vertical it maps to
-                // C++ "expanded". C++ always keeps "compressed" on over-
-                // commit, so the Rust release target differs by axis.
-                let release_expanded = if horizontal {
-                    committed <= total_length
+                // Free children's sizes at current force
+                let current_force = if free_weight > 0.0 {
+                    free_length / free_weight
                 } else {
-                    committed > total_length
+                    0.0
                 };
-                for i in 0..n {
-                    let release = match states[i] {
-                        State::Expanded(_) => release_expanded,
-                        State::Compressed(_) => !release_expanded,
-                        State::Free => false,
-                    };
-                    if release {
-                        states[i] = State::Free;
-                        free_weight += constraints[i].weight;
+                let free_child_length: f64 = (0..n)
+                    .filter(|&i| states[i] == State::Free)
+                    .map(|i| constraints[i].weight * current_force)
+                    .sum::<f64>();
+
+                // C++: if (compressedLength + expandedLength + freeLength < totalLength)
+                if compressed_length + expanded_length + free_child_length < total_length {
+                    // Space left over: release compressed, keep expanded
+                    free_length = total_length - expanded_length;
+                    for i in 0..n {
+                        if let State::Compressed(_) = states[i] {
+                            states[i] = State::Free;
+                            free_weight += constraints[i].weight;
+                        }
+                    }
+                } else {
+                    // Over-committed: release expanded, keep compressed
+                    free_length = total_length - compressed_length;
+                    for i in 0..n {
+                        if let State::Expanded(_) = states[i] {
+                            states[i] = State::Free;
+                            free_weight += constraints[i].weight;
+                        }
                     }
                 }
-
-                free_length = total_length
-                    - states
-                        .iter()
-                        .map(|s| match s {
-                            State::Compressed(f) | State::Expanded(f) => *f,
-                            State::Free => 0.0,
-                        })
-                        .sum::<f64>();
             }
         }
 
@@ -343,29 +437,42 @@ impl PanelBehavior for LinearLayout {
 }
 
 /// LinearGroup: a LinearLayout that also paints a border and is focusable.
+/// Replicates C++ emLinearGroup which inherits from emLinearLayout (which
+/// inherits from emBorder).
 pub struct LinearGroup {
     pub layout: LinearLayout,
+    pub border: Border,
+    pub look: Look,
 }
 
 impl LinearGroup {
     pub fn horizontal() -> Self {
         Self {
             layout: LinearLayout::horizontal(),
+            border: Border::new(OuterBorderType::Group).with_inner(InnerBorderType::Group),
+            look: Look::default(),
         }
     }
 
     pub fn vertical() -> Self {
         Self {
             layout: LinearLayout::vertical(),
+            border: Border::new(OuterBorderType::Group).with_inner(InnerBorderType::Group),
+            look: Look::default(),
         }
     }
 }
 
 impl PanelBehavior for LinearGroup {
-    fn paint(&mut self, _painter: &mut Painter, _w: f64, _h: f64, _state: &PanelState) {}
+    fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, state: &PanelState) {
+        self.border
+            .paint_border(painter, w, h, &self.look, state.is_focused(), state.enabled);
+    }
 
     fn layout_children(&mut self, ctx: &mut PanelCtx) {
-        self.layout.do_layout(ctx);
+        // C++ base-call: position aux panel first, then layout remaining children
+        let aux_id = super::position_aux_panel(ctx, &self.border);
+        self.layout.do_layout_skip(ctx, aux_id);
     }
 
     fn auto_expand(&self) -> bool {
@@ -392,11 +499,12 @@ mod tests {
 
     #[test]
     fn horizontal_equal_weight() {
+        // 4 children in 400x200, no spacing. force=100.
+        // No alignment adjustment (aspect ratios match). Each child 100x200.
         let (mut tree, root, children) = setup_tree(4);
         let mut layout = LinearLayout::horizontal();
         layout.do_layout(&mut PanelCtx::new(&mut tree, root));
 
-        // Each child should get 100px wide, 200px tall
         for (i, child) in children.iter().enumerate() {
             let r = tree.get(*child).unwrap().layout_rect;
             assert!((r.w - 100.0).abs() < 0.01, "child {i} width: {}", r.w);
@@ -412,6 +520,8 @@ mod tests {
 
     #[test]
     fn vertical_equal_weight() {
+        // 2 children in 300x400, vertical, no spacing. force=200.
+        // No alignment adjustment. Each child 300x200.
         let (mut tree, root, children) = setup_tree(2);
         tree.set_layout_rect(root, 0.0, 0.0, 300.0, 400.0);
         let mut layout = LinearLayout::vertical();
@@ -431,6 +541,8 @@ mod tests {
 
     #[test]
     fn weighted_distribution() {
+        // 3 children in 300x100, weights [1,2,1], no spacing.
+        // total_weight=4, force=75. Widths: 75, 150, 75.
         let (mut tree, root, children) = setup_tree(3);
         tree.set_layout_rect(root, 0.0, 0.0, 300.0, 100.0);
         let mut layout = LinearLayout::horizontal();
@@ -460,17 +572,17 @@ mod tests {
         let w0 = tree.get(children[0]).unwrap().layout_rect.w;
         let w1 = tree.get(children[1]).unwrap().layout_rect.w;
         let w2 = tree.get(children[2]).unwrap().layout_rect.w;
-        assert!((w0 - 75.0).abs() < 0.01);
-        assert!((w1 - 150.0).abs() < 0.01);
-        assert!((w2 - 75.0).abs() < 0.01);
+        assert!((w0 - 75.0).abs() < 0.01, "w0={w0}");
+        assert!((w1 - 150.0).abs() < 0.01, "w1={w1}");
+        assert!((w2 - 75.0).abs() < 0.01, "w2={w2}");
     }
 
     #[test]
     fn spacing() {
-        // Proportional spacing: margin=0.5 each side, inner=1.0
-        // 2 children (weight 1.0 each): denom_x = 0.5 + 1.0 + 0.5 + 2.0 = 4.0
-        // sx = 200/4 = 50. margin = 25, gap = 50, cell = 50.
-        // denom_y = 0 + 0 + 1.0 = 1.0, sy = 100.
+        // C++ spacing model: margin_left=0.5, margin_right=0.5, inner_h=1.0
+        // sx=2.0, ux=2.0, nw=100, nh=100, force=50.
+        // Abstract bbox: cw=102, ch=100. Horizontal surplus: w scaled to 102,
+        // centered at x_offset=49. sx_scale=25.5, child pixel_w=25.5.
         let (mut tree, root, children) = setup_tree(2);
         tree.set_layout_rect(root, 0.0, 0.0, 200.0, 100.0);
         let mut layout = LinearLayout::horizontal().with_spacing(Spacing {
@@ -485,31 +597,17 @@ mod tests {
 
         let r0 = tree.get(children[0]).unwrap().layout_rect;
         let r1 = tree.get(children[1]).unwrap().layout_rect;
-        assert!((r0.x - 25.0).abs() < 0.01, "r0.x: {}", r0.x);
-        assert!((r0.w - 50.0).abs() < 0.01, "r0.w: {}", r0.w);
-        assert!((r1.x - 125.0).abs() < 0.01, "r1.x: {}", r1.x); // 25 + 50 + 50
-        assert!((r1.w - 50.0).abs() < 0.01, "r1.w: {}", r1.w);
+        assert!((r0.x - 61.75).abs() < 0.01, "r0.x: {}", r0.x);
+        assert!((r0.w - 25.5).abs() < 0.01, "r0.w: {}", r0.w);
+        assert!((r1.x - 112.75).abs() < 0.01, "r1.x: {}", r1.x);
+        assert!((r1.w - 25.5).abs() < 0.01, "r1.w: {}", r1.w);
         assert!((r0.h - 100.0).abs() < 0.01, "r0.h: {}", r0.h);
     }
 
     #[test]
     fn tallness_constraints() {
-        // Horizontal layout, 400x200, 2 children weight 1.0 each.
-        // No spacing: denom_x = 2, sx = 200. denom_y = 1, sy = 200.
-        // Each child: cw = 200, ch = 200, tallness = 1.0.
-        // Child 0: max_tallness = 0.5 → cw = 200/0.5 = 400 (expanded)
-        // Force solver marks child 0 as expanded with fixed=400.
-        // free_length = 400-400 = 0, free_weight = 1.0, force = 0.
-        // Child 1 gets 0 width. Tallness = 200/0 → skip.
-        // Actually let me use a more reasonable scenario.
-        //
-        // 2 children in 600x100, weight [1.0, 1.0].
-        // denom_x = 2, sx = 300. denom_y = 1, sy = 100.
-        // available_main = 600. force = 300.
-        // Child 0: cw=300, ch=100, tallness=0.333. Constraint min_tallness=0.5.
-        // tallness < min → compressed. fixed = 100/0.5 = 200.
-        // free_length = 600-200 = 400, free_weight=1.0, force = 400.
-        // Child 1: cw=400, ch=100, tallness=0.25. No constraint → OK.
+        // 2 children in 600x100. Child 0 min_tallness=0.5 compresses to w=200.
+        // Child 1 gets remaining 400. No alignment adjustment.
         let (mut tree, root, children) = setup_tree(2);
         tree.set_layout_rect(root, 0.0, 0.0, 600.0, 100.0);
         let mut layout = LinearLayout::horizontal();
@@ -532,15 +630,10 @@ mod tests {
 
     #[test]
     fn force_convergence() {
-        // 3 children in 900x100, weights [1,1,1].
-        // denom_x=3, sx=300. available_main=900. force=300.
-        // Child 0: min_tallness=0.5 → tallness=100/300=0.333 < 0.5 → compressed to 200.
-        // Child 1: max_tallness=0.2 → tallness=100/300=0.333 > 0.2 → expanded to 500.
-        // Both compressed AND expanded → committed=700 < 900 → release compressed.
-        // free: child 0 + child 2, free_weight=2, free_length=900-500=400. force=200.
-        // Child 0: tallness=100/200=0.5 = min_tallness → OK.
-        // Child 2: tallness=100/200=0.5 → OK (default constraints).
-        // Converged. force=200.
+        // 3 children in 900x100. Child 0 min_tallness=0.5, child 1 max_tallness=0.2.
+        // Both compressed+expanded triggers D-LAYOUT-04 conflict resolution.
+        // compressed+expanded+free = 900 = total (not < total), so over-committed:
+        // release expanded, keep compressed. Result: 200, 500, 200.
         let (mut tree, root, children) = setup_tree(3);
         tree.set_layout_rect(root, 0.0, 0.0, 900.0, 100.0);
         let mut layout = LinearLayout::horizontal();

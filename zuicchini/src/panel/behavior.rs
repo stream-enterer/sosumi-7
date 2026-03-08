@@ -176,6 +176,15 @@ pub trait PanelBehavior {
         false
     }
 
+    /// TF-003: Return a panel-pixel rect that the view should scroll to make
+    /// visible. Called by the framework after `input()`. The rect is in the
+    /// same coordinate space as `paint(w, h)`.
+    ///
+    /// Returns `Some((x, y, w, h))` if a scroll is needed, `None` otherwise.
+    fn take_scroll_to_visible(&mut self) -> Option<(f64, f64, f64, f64)> {
+        None
+    }
+
     /// Create a control panel as a child of `parent_ctx` with `name`.
     ///
     /// Return the new panel's id, or `None` to delegate to the parent

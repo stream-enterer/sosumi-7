@@ -431,6 +431,10 @@ impl ZuiWindow {
             if let Some(mut behavior) = tree.take_behavior(active) {
                 let panel_state = tree.build_panel_state(active, wf);
                 consumed = behavior.input(&panel_ev, &panel_state, state);
+                // TF-003: Process scroll-to-visible requests from behaviors
+                if let Some(rect) = behavior.take_scroll_to_visible() {
+                    self.view.scroll_to_panel_rect(tree, active, rect);
+                }
                 tree.put_behavior(active, behavior);
             }
 
@@ -446,6 +450,10 @@ impl ZuiWindow {
                     if let Some(mut behavior) = tree.take_behavior(parent_id) {
                         let panel_state = tree.build_panel_state(parent_id, wf);
                         consumed = behavior.input(&parent_ev, &panel_state, state);
+                        // TF-003: Process scroll-to-visible from parent behaviors
+                        if let Some(rect) = behavior.take_scroll_to_visible() {
+                            self.view.scroll_to_panel_rect(tree, parent_id, rect);
+                        }
                         tree.put_behavior(parent_id, behavior);
                         if consumed {
                             break;

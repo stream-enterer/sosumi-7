@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-use super::Color;
+use super::color::Color;
+use crate::render::interpolation::sample_bilinear;
+use crate::render::ImageExtension;
 
 /// CPU bitmap image with 1–4 channels per pixel.
 #[derive(Clone, Debug, PartialEq)]
@@ -462,6 +464,146 @@ impl Image {
         self.calc_channel_min_max_rect(alpha_ch, 0)
     }
 
+    /// Sample a pixel using bilinear interpolation, returning `bg` for
+    /// out-of-bounds coordinates. `x` and `y` are in source pixel coordinates.
+    /// `w` and `h` describe the sampling footprint (unused for bilinear; reserved
+    /// for future area-sampling support). Requires a 4-channel image.
+    pub fn get_pixel_interpolated(&self, x: f64, y: f64, _w: f64, _h: f64, bg: Color) -> Color {
+        if self.is_empty() {
+            return bg;
+        }
+        // If the sample center is entirely outside source bounds, return bg.
+        if x < -0.5 || y < -0.5 || x >= self.width as f64 - 0.5 || y >= self.height as f64 - 0.5 {
+            return bg;
+        }
+        sample_bilinear(self, x, y, ImageExtension::Clamp)
+    }
+
+    /// Apply an affine transformation from `src` into a region of `self`.
+    ///
+    /// `x`, `y`, `w`, `h` define the target clip rectangle (in `self` pixel
+    /// coords).  `matrix` is a 2×3 affine mapping **source → target**:
+    ///
+    /// ```text
+    /// target_x = matrix[0]*src_x + matrix[1]*src_y + matrix[2]
+    /// target_y = matrix[3]*src_x + matrix[4]*src_y + matrix[5]
+    /// ```
+    ///
+    /// The matrix is inverted internally so that each target pixel can be
+    /// mapped back to source coordinates.
+    ///
+    /// * `interpolate` – `true` for bilinear sampling, `false` for nearest.
+    /// * `bg_color` – used for source samples that fall outside the source
+    ///   image bounds.
+    ///
+    /// Both `self` and `src` must be 4-channel RGBA images.
+    pub fn copy_transformed(
+        &mut self,
+        clip: (i32, i32, i32, i32),
+        matrix: &[f64; 6],
+        src: &Image,
+        interpolate: bool,
+        bg_color: Color,
+    ) {
+        let (x, y, w, h) = clip;
+        assert_eq!(
+            self.channel_count, 4,
+            "copy_transformed() requires a 4-channel target image"
+        );
+        assert_eq!(
+            src.channel_count, 4,
+            "copy_transformed() requires a 4-channel source image"
+        );
+
+        if w <= 0 || h <= 0 || self.is_empty() {
+            return;
+        }
+
+        // Invert the source→target affine matrix to get target→source.
+        //
+        //   | a  b  c |        | a  b |
+        //   | d  e  f |   M =  | d  e |
+        //
+        // inv(M) = (1/det) *  |  e  -b |
+        //                     | -d   a |
+        let a = matrix[0];
+        let b = matrix[1];
+        let c = matrix[2];
+        let d = matrix[3];
+        let e = matrix[4];
+        let f = matrix[5];
+
+        let det = a * e - b * d;
+        if det.abs() < 1e-15 {
+            // Degenerate (singular) matrix — fill with bg.
+            let bg_bytes = [bg_color.r(), bg_color.g(), bg_color.b(), bg_color.a()];
+            for py in y..y + h {
+                for px in x..x + w {
+                    if px >= 0 && py >= 0 && (px as u32) < self.width && (py as u32) < self.height {
+                        self.pixel_mut(px as u32, py as u32)
+                            .copy_from_slice(&bg_bytes);
+                    }
+                }
+            }
+            return;
+        }
+
+        let inv_det = 1.0 / det;
+        let ia = e * inv_det;
+        let ib = -b * inv_det;
+        let id = -d * inv_det;
+        let ie = a * inv_det;
+        // Inverted translation: inv_M * (-t)
+        let ic = -(ia * c + ib * f);
+        let ifc = -(id * c + ie * f);
+
+        let src_w = src.width as f64;
+        let src_h = src.height as f64;
+
+        for py in y..y + h {
+            if py < 0 || (py as u32) >= self.height {
+                continue;
+            }
+            for px in x..x + w {
+                if px < 0 || (px as u32) >= self.width {
+                    continue;
+                }
+
+                let tx = px as f64;
+                let ty = py as f64;
+
+                // Map target pixel back to source coordinates.
+                let sx = ia * tx + ib * ty + ic;
+                let sy = id * tx + ie * ty + ifc;
+
+                let color = if interpolate {
+                    // Bilinear sampling with bounds check.
+                    if sx < -0.5 || sy < -0.5 || sx >= src_w - 0.5 || sy >= src_h - 0.5 {
+                        bg_color
+                    } else {
+                        sample_bilinear(src, sx, sy, ImageExtension::Clamp)
+                    }
+                } else {
+                    // Nearest-neighbor with bounds check.
+                    let ix = sx.round() as i32;
+                    let iy = sy.round() as i32;
+                    if ix < 0 || iy < 0 || ix >= src.width as i32 || iy >= src.height as i32 {
+                        bg_color
+                    } else {
+                        let p = src.pixel(ix as u32, iy as u32);
+                        Color::rgba(p[0], p[1], p[2], p[3])
+                    }
+                };
+
+                let dst = self.pixel_mut(px as u32, py as u32);
+                dst[0] = color.r();
+                dst[1] = color.g();
+                dst[2] = color.b();
+                dst[3] = color.a();
+            }
+        }
+    }
+
     /// Collect all unique colors, sorted by packed u32 value. 4-channel only.
     pub fn determine_all_colors_sorted(&self) -> Vec<Color> {
         assert_eq!(
@@ -748,5 +890,141 @@ mod tests {
         assert_eq!(dst.get_pixel_channel(0, 0, 2), 42);
         assert_eq!(dst.get_pixel_channel(1, 1, 2), 99);
         assert_eq!(dst.get_pixel_channel(0, 0, 0), 0); // red untouched
+    }
+
+    #[test]
+    fn get_pixel_interpolated_in_bounds() {
+        let mut img = Image::new(2, 2, 4);
+        img.fill(Color::RED);
+        let c = img.get_pixel_interpolated(0.0, 0.0, 1.0, 1.0, Color::BLUE);
+        assert_eq!(c.r(), 255);
+        assert_eq!(c.g(), 0);
+        assert_eq!(c.b(), 0);
+    }
+
+    #[test]
+    fn get_pixel_interpolated_out_of_bounds() {
+        let mut img = Image::new(2, 2, 4);
+        img.fill(Color::RED);
+        let c = img.get_pixel_interpolated(-1.0, -1.0, 1.0, 1.0, Color::BLUE);
+        assert_eq!(c, Color::BLUE);
+    }
+
+    #[test]
+    fn get_pixel_interpolated_empty_image() {
+        let img = Image::new(0, 0, 4);
+        let c = img.get_pixel_interpolated(0.0, 0.0, 1.0, 1.0, Color::GREEN);
+        assert_eq!(c, Color::GREEN);
+    }
+
+    #[test]
+    fn copy_transformed_identity() {
+        // Identity matrix: target == source coords
+        let mut src = Image::new(4, 4, 4);
+        src.fill(Color::RED);
+        src.pixel_mut(1, 1).copy_from_slice(&[0, 255, 0, 255]);
+
+        let mut dst = Image::new(4, 4, 4);
+        // Identity: target_x = 1*src_x + 0*src_y + 0, target_y = 0*src_x + 1*src_y + 0
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        dst.copy_transformed((0, 0, 4, 4), &identity, &src, false, Color::BLACK);
+
+        assert_eq!(dst.pixel(0, 0), &[255, 0, 0, 255]);
+        assert_eq!(dst.pixel(1, 1), &[0, 255, 0, 255]);
+        assert_eq!(dst.pixel(3, 3), &[255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn copy_transformed_translation() {
+        // Translate source by (+2, +1)
+        let mut src = Image::new(2, 2, 4);
+        src.fill(Color::rgb(10, 20, 30));
+
+        let mut dst = Image::new(6, 6, 4);
+        // target_x = src_x + 2, target_y = src_y + 1
+        let translate = [1.0, 0.0, 2.0, 0.0, 1.0, 1.0];
+        dst.copy_transformed((0, 0, 6, 6), &translate, &src, false, Color::BLACK);
+
+        // Source pixel (0,0) maps to target (2,1)
+        assert_eq!(dst.pixel(2, 1), &[10, 20, 30, 255]);
+        assert_eq!(dst.pixel(3, 2), &[10, 20, 30, 255]);
+        // Outside source -> bg
+        assert_eq!(dst.pixel(0, 0), &[0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn copy_transformed_scale() {
+        // Scale 2x: target_x = 2*src_x, target_y = 2*src_y
+        let mut src = Image::new(2, 2, 4);
+        src.pixel_mut(0, 0).copy_from_slice(&[255, 0, 0, 255]);
+        src.pixel_mut(1, 0).copy_from_slice(&[0, 255, 0, 255]);
+        src.pixel_mut(0, 1).copy_from_slice(&[0, 0, 255, 255]);
+        src.pixel_mut(1, 1).copy_from_slice(&[255, 255, 0, 255]);
+
+        let mut dst = Image::new(4, 4, 4);
+        let scale = [2.0, 0.0, 0.0, 0.0, 2.0, 0.0];
+        dst.copy_transformed((0, 0, 4, 4), &scale, &src, false, Color::BLACK);
+
+        // Source (0,0) maps to target (0,0); nearest for (0,0) -> src(0,0)
+        assert_eq!(dst.pixel(0, 0), &[255, 0, 0, 255]);
+        // Source (1,0) maps to target (2,0); nearest for (2,0) -> src(1,0)
+        assert_eq!(dst.pixel(2, 0), &[0, 255, 0, 255]);
+    }
+
+    #[test]
+    fn copy_transformed_interpolated() {
+        // Simple identity with interpolation
+        let mut src = Image::new(2, 2, 4);
+        src.fill(Color::rgb(100, 100, 100));
+
+        let mut dst = Image::new(2, 2, 4);
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        dst.copy_transformed((0, 0, 2, 2), &identity, &src, true, Color::BLACK);
+
+        // With bilinear on a uniform image, result should be same
+        assert_eq!(dst.pixel(0, 0), &[100, 100, 100, 255]);
+        assert_eq!(dst.pixel(1, 1), &[100, 100, 100, 255]);
+    }
+
+    #[test]
+    fn copy_transformed_clips_target() {
+        // Clip rectangle smaller than target
+        let mut src = Image::new(4, 4, 4);
+        src.fill(Color::RED);
+
+        let mut dst = Image::new(4, 4, 4);
+        dst.fill(Color::BLACK);
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        // Only transform the top-left 2x2 region
+        dst.copy_transformed((0, 0, 2, 2), &identity, &src, false, Color::BLUE);
+
+        assert_eq!(dst.pixel(0, 0), &[255, 0, 0, 255]); // transformed
+        assert_eq!(dst.pixel(1, 1), &[255, 0, 0, 255]); // transformed
+        assert_eq!(dst.pixel(2, 2), &[0, 0, 0, 255]); // untouched
+        assert_eq!(dst.pixel(3, 3), &[0, 0, 0, 255]); // untouched
+    }
+
+    #[test]
+    fn copy_transformed_singular_matrix() {
+        // Degenerate matrix (all zeros) should fill with bg color
+        let src = Image::new(2, 2, 4);
+        let mut dst = Image::new(4, 4, 4);
+        let singular = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        dst.copy_transformed((1, 1, 2, 2), &singular, &src, false, Color::rgb(42, 42, 42));
+
+        assert_eq!(dst.pixel(1, 1), &[42, 42, 42, 255]);
+        assert_eq!(dst.pixel(2, 2), &[42, 42, 42, 255]);
+        assert_eq!(dst.pixel(0, 0), &[0, 0, 0, 0]); // outside clip
+    }
+
+    #[test]
+    fn copy_transformed_zero_size_noop() {
+        let src = Image::new(2, 2, 4);
+        let mut dst = Image::new(4, 4, 4);
+        dst.fill(Color::WHITE);
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        // Zero-width clip should be a no-op
+        dst.copy_transformed((0, 0, 0, 4), &identity, &src, false, Color::BLACK);
+        assert_eq!(dst.pixel(0, 0), &[255, 255, 255, 255]);
     }
 }

@@ -178,6 +178,8 @@ pub(crate) struct PanelData {
     pub(crate) ae_expanded: bool,
     pub(crate) ae_invalid: bool,
     pub(crate) ae_decision_invalid: bool,
+    /// True if this panel was created during auto-expansion (C++ `CreatedByAE`).
+    pub(crate) created_by_ae: bool,
 
     // Viewing state (set by View::update_viewing each frame)
     pub(crate) viewed: bool,
@@ -217,6 +219,7 @@ impl PanelData {
             ae_expanded: false,
             ae_invalid: false,
             ae_decision_invalid: false,
+            created_by_ae: false,
             viewed: false,
             in_viewed_path: false,
             in_active_path: false,
@@ -764,6 +767,19 @@ impl PanelTree {
         let children: Vec<PanelId> = self.children(parent).collect();
         for child in children {
             self.remove(child);
+        }
+    }
+
+    /// Delete only the children that were created by auto-expansion (C++ parity).
+    ///
+    /// Preserves manually-added children. Corresponds to the C++ pattern of
+    /// only removing `CreatedByAE` children during auto-shrink.
+    pub fn delete_ae_children(&mut self, parent: PanelId) {
+        let children: Vec<PanelId> = self.children(parent).collect();
+        for child in children {
+            if self.panels.get(child).is_some_and(|p| p.created_by_ae) {
+                self.remove(child);
+            }
         }
     }
 

@@ -1,6 +1,6 @@
 pub mod compositor;
 pub mod font_cache;
-mod interpolation;
+pub(crate) mod interpolation;
 mod painter;
 mod scanline;
 mod stroke;

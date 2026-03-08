@@ -79,6 +79,9 @@ pub struct TextField {
     pub on_can_undo_redo: Option<Box<dyn FnMut(bool, bool)>>,
     // Published selection tracking
     selection_published: bool,
+    /// TF-003: Pending view scroll request — cursor rect in panel-pixel coords.
+    /// Set by scroll_to_cursor(), consumed by take_pending_scroll_to_visible().
+    pending_scroll_to_visible: Option<(f64, f64, f64, f64)>,
 }
 
 const MAX_UNDO: usize = 100;
@@ -121,6 +124,7 @@ impl TextField {
             on_selection_signal: None,
             on_can_undo_redo: None,
             selection_published: false,
+            pending_scroll_to_visible: None,
         }
     }
 
@@ -1108,11 +1112,62 @@ impl TextField {
         }
     }
 
+    // ── ScrollToCursor (TF-003) ────────────────────────────────────────
+
+    /// TF-003: Compute cursor rect in panel-pixel coordinates and store as
+    /// a pending view-scroll request. Matches C++ `emTextField::ScrollToCursor`.
+    ///
+    /// The cursor rect is in the same coordinate space as `paint(w, h)`.
+    /// The panel behavior or framework reads this via
+    /// `take_pending_scroll_to_visible()` and applies it to the View.
+    pub fn scroll_to_cursor(&mut self) {
+        if self.last_w <= 0.0 || self.last_h <= 0.0 {
+            return;
+        }
+
+        let content = self
+            .border
+            .content_rect(self.last_w, self.last_h, &self.look);
+
+        let (col, row) = self.index_to_col_row(self.cursor);
+
+        // Cursor X from cached char_positions (populated during paint).
+        let cursor_x_px = if col < self.char_positions.len() {
+            self.char_positions[col]
+        } else {
+            self.char_positions.last().copied().unwrap_or(0.0)
+        };
+
+        // Cursor Y from row index.
+        let cursor_y_px = if row < self.row_y_positions.len() {
+            self.row_y_positions[row]
+        } else {
+            row as f64 * LINE_HEIGHT
+        };
+
+        // Cursor rect in panel-pixel coords (after internal scroll).
+        // Padding matches C++ (±0.5 char, ±0.2 row).
+        let half_char = 4.0;
+        let x1 = content.x + TEXT_PADDING + cursor_x_px - self.scroll_x - half_char;
+        let y1 = content.y + cursor_y_px - self.scroll_y - LINE_HEIGHT * 0.2;
+        let x2 = x1 + half_char * 2.0;
+        let y2 = y1 + LINE_HEIGHT * 1.4;
+
+        self.pending_scroll_to_visible = Some((x1, y1, x2 - x1, y2 - y1));
+    }
+
+    /// Take the pending scroll-to-visible request, if any.
+    /// Returns (x, y, w, h) in panel-pixel coordinates.
+    pub fn take_pending_scroll_to_visible(&mut self) -> Option<(f64, f64, f64, f64)> {
+        self.pending_scroll_to_visible.take()
+    }
+
     // ── Input ───────────────────────────────────────────────────────────
 
     pub fn input(&mut self, event: &InputEvent) -> bool {
         // Handle mouse events
         if self.handle_mouse(event) {
+            self.scroll_to_cursor();
             return true;
         }
 
@@ -1124,7 +1179,7 @@ impl TextField {
         let shift = event.shift;
         let ctrl = event.ctrl;
 
-        match event.key {
+        let consumed = match event.key {
             // ── Navigation ──────────────────────────────────────────
             InputKey::ArrowLeft => {
                 self.magic_col = None;
@@ -1354,11 +1409,16 @@ impl TextField {
                     if self.validate_text() {
                         self.fire_change();
                     }
+                    self.scroll_to_cursor();
                     return true;
                 }
                 false
             }
+        };
+        if consumed {
+            self.scroll_to_cursor();
         }
+        consumed
     }
 
     fn handle_mouse(&mut self, event: &InputEvent) -> bool {

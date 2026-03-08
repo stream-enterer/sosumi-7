@@ -2,7 +2,7 @@ use bitflags::bitflags;
 
 use super::tree::{PanelId, PanelTree};
 use crate::foundation::{Color, Rect};
-use crate::render::Painter;
+use crate::render::{Painter, Stroke};
 
 bitflags! {
     /// Flags controlling view behavior.
@@ -77,6 +77,13 @@ pub struct View {
     /// Set by scroll/zoom/navigate operations that change the viewport and need
     /// a repaint, but don't go through the notice or dirty_rects systems.
     viewport_changed: bool,
+    /// VIEW-003: Set by scroll/zoom to signal that any active animator should be
+    /// aborted. Consumers (window loop) should check and clear this flag.
+    needs_animator_abort: bool,
+    /// D-PANEL-02: Pending animated visit goal. Navigation methods set this
+    /// instead of doing an instant jump. The window loop feeds this to the
+    /// VisitingViewAnimator. None means no pending animated visit.
+    pending_animated_visit: Option<VisitState>,
 }
 
 impl View {
@@ -112,6 +119,8 @@ impl View {
             control_panel_invalid: false,
             activation_adherent: false,
             viewport_changed: false,
+            needs_animator_abort: false,
+            pending_animated_visit: None,
         }
     }
 
@@ -255,6 +264,33 @@ impl View {
         self.visit(panel, x, y, a);
     }
 
+    /// D-PANEL-02: Request an animated visit to a panel. Sets a pending goal
+    /// that the window loop feeds to the VisitingViewAnimator. Also sets the
+    /// active panel immediately for UI responsiveness.
+    pub fn animated_visit(
+        &mut self,
+        tree: &mut PanelTree,
+        panel: PanelId,
+        rel_x: f64,
+        rel_y: f64,
+        rel_a: f64,
+        adherent: bool,
+    ) {
+        self.set_active_panel(tree, panel, adherent);
+        self.pending_animated_visit = Some(VisitState {
+            panel,
+            rel_x,
+            rel_y,
+            rel_a,
+        });
+    }
+
+    /// D-PANEL-02: Request an animated visit to a panel at its natural size.
+    pub fn animated_visit_panel(&mut self, tree: &mut PanelTree, panel: PanelId, adherent: bool) {
+        let (x, y, a) = self.calc_visit_coords(tree, panel);
+        self.animated_visit(tree, panel, x, y, a, adherent);
+    }
+
     pub fn go_back(&mut self) -> bool {
         if self.visit_stack.len() > 1 {
             self.visit_stack.pop();
@@ -274,10 +310,37 @@ impl View {
 
     // --- Viewport ---
 
+    /// D-PANEL-05: Clamp dimensions, preserve zoom state on resize (C++ SetGeometry parity).
     pub fn set_viewport(&mut self, width: f64, height: f64) {
+        let width = width.max(MIN_DIMENSION);
+        let height = height.max(MIN_DIMENSION);
+
+        if (self.viewport_width - width).abs() < 1e-15
+            && (self.viewport_height - height).abs() < 1e-15
+        {
+            return;
+        }
+
+        // Save zoom state before change
+        let was_zoomed_out = self.visit_stack.last().is_none_or(|s| {
+            s.rel_x.abs() < 0.001 && s.rel_y.abs() < 0.001 && (s.rel_a - 1.0).abs() < 0.001
+        });
+
         self.viewport_width = width;
         self.viewport_height = height;
-        self.pixel_tallness = if width > 0.0 { height / width } else { 1.0 };
+        self.pixel_tallness = height / width;
+
+        // Preserve zoom state: if was zoomed out, re-apply zoom-out.
+        // Otherwise, keep current visit coords (panel stays at same relative position).
+        if was_zoomed_out {
+            if let Some(state) = self.visit_stack.last_mut() {
+                state.rel_x = 0.0;
+                state.rel_y = 0.0;
+                state.rel_a = 1.0;
+            }
+        }
+
+        self.viewport_changed = true;
     }
 
     pub fn viewport_size(&self) -> (f64, f64) {
@@ -292,6 +355,8 @@ impl View {
         if self.flags.contains(ViewFlags::NO_ZOOM) {
             return;
         }
+        // VIEW-003: Signal abort for any active animator (C++ AbortActiveAnimator)
+        self.needs_animator_abort = true;
         if let Some(state) = self.visit_stack.last_mut() {
             let old_a = state.rel_a;
             let new_a = (old_a * factor).clamp(0.001, 1000.0);
@@ -344,6 +409,8 @@ impl View {
         if self.flags.contains(ViewFlags::NO_SCROLL) {
             return;
         }
+        // VIEW-003: Signal abort for any active animator (C++ AbortActiveAnimator)
+        self.needs_animator_abort = true;
         if let Some(state) = self.visit_stack.last_mut() {
             // Convert pixel deltas to view-coordinate space by dividing by the
             // panel's viewed size (viewport * sqrt(rel_a)), matching C++ Scroll.
@@ -620,60 +687,88 @@ impl View {
     }
 
     /// Auto-select best visible focusable panel as active.
+    ///
+    /// D-PANEL-03: Uses center-containment descent (C++ parity) instead of
+    /// max-area. Starts at SVP and descends into the deepest focusable child
+    /// whose clip rect contains the viewport center, stopping when children
+    /// are too small (< 99% view width AND height, AND < 33% view area).
     pub fn set_active_panel_best_possible(&mut self, tree: &mut PanelTree) {
         let svp = match self.svp {
             Some(id) => id,
             None => return,
         };
 
-        // Find the best focusable visible panel by area
-        let mut best: Option<(PanelId, f64)> = None;
+        let vw = self.viewport_width.max(1.0);
+        let vh = self.viewport_height.max(1.0);
+        let cx = vw * 0.5;
+        let cy = vh * 0.5;
+        let min_w = vw * 0.99;
+        let min_h = vh * 0.99;
+        let min_a = vw * vh * 0.33;
 
-        fn find_best(tree: &PanelTree, id: PanelId, best: &mut Option<(PanelId, f64)>) {
-            let panel = match tree.get(id) {
-                Some(p) => p,
-                None => return,
-            };
-            if !panel.viewed {
-                return;
-            }
-            if panel.focusable {
-                let area = panel.clip_w * panel.clip_h;
-                if best.map(|(_, a)| area > a).unwrap_or(true) {
-                    *best = Some((id, area));
+        let mut best = svp;
+
+        // Center-containment descent
+        loop {
+            let children: Vec<PanelId> = tree.children_rev(best).collect();
+            let mut found = None;
+            for child in children {
+                let p = match tree.get(child) {
+                    Some(p) if p.viewed && p.focusable => p,
+                    _ => continue,
+                };
+                // Check if child's clip rect contains view center
+                if p.clip_x <= cx
+                    && (p.clip_x + p.clip_w) > cx
+                    && p.clip_y <= cy
+                    && (p.clip_y + p.clip_h) > cy
+                {
+                    found = Some(child);
+                    break;
                 }
             }
-            let children: Vec<PanelId> = tree.children(id).collect();
-            for child in children {
-                find_best(tree, child, best);
+
+            match found {
+                Some(child) => {
+                    let p = tree.get(child).expect("child just found");
+                    // Don't descend into panels smaller than thresholds
+                    if p.clip_w < min_w && p.clip_h < min_h && (p.clip_w * p.clip_h) < min_a {
+                        break;
+                    }
+                    best = child;
+                }
+                None => break,
             }
         }
 
-        find_best(tree, svp, &mut best);
+        // Ensure best is focusable (ascend if needed)
+        if !tree.get(best).map(|p| p.focusable).unwrap_or(false) {
+            if let Some(anc) = tree.focusable_ancestor(best) {
+                best = anc;
+            } else {
+                return;
+            }
+        }
 
-        if let Some((best_id, _)) = best {
-            // If currently adherent, check whether the active panel is still
-            // visible and the best candidate is its ancestor — if so, keep the
-            // current active panel and stay adherent.
-            if self.activation_adherent {
-                if let Some(active_id) = self.active {
-                    if let Some(active_panel) = tree.get(active_id) {
-                        if active_panel.viewed
-                            && active_panel.viewed_width >= 4.0
-                            && active_panel.viewed_height >= 4.0
-                        {
-                            if let Some(best_panel) = tree.get(best_id) {
-                                if best_panel.in_active_path {
-                                    self.set_active_panel(tree, active_id, true);
-                                    return;
-                                }
+        // Adherent check: keep current active if still visible and best is ancestor
+        if self.activation_adherent {
+            if let Some(active_id) = self.active {
+                if let Some(active_panel) = tree.get(active_id) {
+                    if active_panel.viewed
+                        && active_panel.viewed_width >= 4.0
+                        && active_panel.viewed_height >= 4.0
+                    {
+                        if let Some(best_panel) = tree.get(best) {
+                            if best_panel.in_active_path {
+                                self.set_active_panel(tree, active_id, true);
+                                return;
                             }
                         }
                     }
                 }
             }
-            self.set_active_panel(tree, best_id, false);
         }
+        self.set_active_panel(tree, best, false);
     }
 
     // --- Coordinate transform: update_viewing ---
@@ -944,6 +1039,10 @@ impl View {
 
     // --- Navigation ---
 
+    /// D-PANEL-01: Navigate to next focusable panel (C++ VisitNext parity).
+    ///
+    /// Tries next focusable sibling; if at end, ascends to focusable parent
+    /// and wraps to its first focusable child.
     pub fn visit_next(&mut self, tree: &mut PanelTree) {
         if self
             .flags
@@ -955,25 +1054,25 @@ impl View {
             Some(id) => id,
             None => return,
         };
-        let parent = match tree.parent(active) {
-            Some(p) => p,
-            None => return,
-        };
-        // Find next focusable sibling, wrapping around
-        let siblings: Vec<PanelId> = tree.children(parent).collect();
-        let pos = siblings.iter().position(|&id| id == active);
-        if let Some(idx) = pos {
-            let len = siblings.len();
-            for i in 1..=len {
-                let candidate = siblings[(idx + i) % len];
-                if tree.get(candidate).map(|p| p.focusable).unwrap_or(false) {
-                    self.set_active_panel(tree, candidate, false);
-                    return;
-                }
+
+        // Try next focusable sibling (no wrap)
+        if let Some(next) = tree.focusable_next(active) {
+            self.animated_visit_panel(tree, next, false);
+            return;
+        }
+
+        // No next sibling: go to focusable parent's first focusable child
+        let parent = tree
+            .focusable_ancestor(active)
+            .unwrap_or_else(|| tree.root().unwrap_or(active));
+        if parent != active {
+            if let Some(first) = tree.focusable_first_child(parent) {
+                self.animated_visit_panel(tree, first, false);
             }
         }
     }
 
+    /// D-PANEL-01: Navigate to previous focusable panel (C++ VisitPrev parity).
     pub fn visit_prev(&mut self, tree: &mut PanelTree) {
         if self
             .flags
@@ -985,20 +1084,20 @@ impl View {
             Some(id) => id,
             None => return,
         };
-        let parent = match tree.parent(active) {
-            Some(p) => p,
-            None => return,
-        };
-        let siblings: Vec<PanelId> = tree.children(parent).collect();
-        let pos = siblings.iter().position(|&id| id == active);
-        if let Some(idx) = pos {
-            let len = siblings.len();
-            for i in 1..=len {
-                let candidate = siblings[(idx + len - i) % len];
-                if tree.get(candidate).map(|p| p.focusable).unwrap_or(false) {
-                    self.set_active_panel(tree, candidate, false);
-                    return;
-                }
+
+        // Try previous focusable sibling (no wrap)
+        if let Some(prev) = tree.focusable_prev(active) {
+            self.animated_visit_panel(tree, prev, false);
+            return;
+        }
+
+        // No previous sibling: go to focusable parent's last focusable child
+        let parent = tree
+            .focusable_ancestor(active)
+            .unwrap_or_else(|| tree.root().unwrap_or(active));
+        if parent != active {
+            if let Some(last) = tree.focusable_last_child(parent) {
+                self.animated_visit_panel(tree, last, false);
             }
         }
     }
@@ -1020,7 +1119,7 @@ impl View {
         };
         for child in tree.children(parent) {
             if tree.get(child).map(|p| p.focusable).unwrap_or(false) {
-                self.set_active_panel(tree, child, false);
+                self.animated_visit_panel(tree, child, false);
                 return;
             }
         }
@@ -1043,7 +1142,7 @@ impl View {
         };
         for child in tree.children_rev(parent) {
             if tree.get(child).map(|p| p.focusable).unwrap_or(false) {
-                self.set_active_panel(tree, child, false);
+                self.animated_visit_panel(tree, child, false);
                 return;
             }
         }
@@ -1079,7 +1178,7 @@ impl View {
         // Find first focusable child
         for child in tree.children(active) {
             if tree.get(child).map(|p| p.focusable).unwrap_or(false) {
-                self.set_active_panel(tree, child, false);
+                self.animated_visit_panel(tree, child, false);
                 return;
             }
         }
@@ -1101,11 +1200,11 @@ impl View {
         // Go to focusable parent — check parent itself first, then walk up
         if let Some(parent) = tree.parent(active) {
             if tree.get(parent).map(|p| p.focusable).unwrap_or(false) {
-                self.set_active_panel(tree, parent, false);
+                self.animated_visit_panel(tree, parent, false);
                 return;
             }
             if let Some(focusable) = tree.focusable_ancestor(parent) {
-                self.set_active_panel(tree, focusable, false);
+                self.animated_visit_panel(tree, focusable, false);
                 return;
             }
         }
@@ -1178,7 +1277,7 @@ impl View {
         }
 
         if let Some((winner, _)) = best {
-            self.set_active_panel(tree, winner, false);
+            self.animated_visit_panel(tree, winner, false);
         }
     }
 
@@ -1434,17 +1533,105 @@ impl View {
         self.viewport_changed = false;
     }
 
+    /// VIEW-003: Whether scroll/zoom was called and any active animator should
+    /// be aborted. The window loop should check this and abort the
+    /// VisitingViewAnimator if active.
+    pub fn needs_animator_abort(&self) -> bool {
+        self.needs_animator_abort
+    }
+
+    /// Clear the animator-abort flag.
+    pub fn clear_animator_abort(&mut self) {
+        self.needs_animator_abort = false;
+    }
+
+    /// D-PANEL-02: Take the pending animated visit goal. Returns `Some` if a
+    /// navigation method requested an animated visit. The window loop should
+    /// feed this to the VisitingViewAnimator.
+    pub fn take_pending_animated_visit(&mut self) -> Option<VisitState> {
+        self.pending_animated_visit.take()
+    }
+
+    /// Whether there is a pending animated visit goal.
+    pub fn has_pending_animated_visit(&self) -> bool {
+        self.pending_animated_visit.is_some()
+    }
+
+    /// TF-003: Scroll the viewport to make a panel-pixel rect visible.
+    ///
+    /// `rect` is `(x, y, w, h)` in the panel's paint coordinate space
+    /// (same space as `paint(w, h)`). The method converts to viewport
+    /// coordinates, checks visibility, and scrolls the minimum amount
+    /// needed.
+    ///
+    /// Matches C++ `emTextField::ScrollToCursor` → `emView::Scroll` path.
+    pub fn scroll_to_panel_rect(
+        &mut self,
+        tree: &PanelTree,
+        panel: PanelId,
+        rect: (f64, f64, f64, f64),
+    ) {
+        let p = match tree.get(panel) {
+            Some(p) if p.viewed => p,
+            _ => return,
+        };
+
+        let (rx, ry, rw, rh) = rect;
+
+        // Convert panel-pixel rect to viewport coords.
+        // Paint coord (px, py) maps to viewport (viewed_x + px, viewed_y + py)
+        // because there is no per-panel scaling in the paint pipeline.
+        let vx1 = p.viewed_x + rx;
+        let vy1 = p.viewed_y + ry;
+        let vx2 = vx1 + rw;
+        let vy2 = vy1 + rh;
+
+        let mut dx = 0.0_f64;
+        let mut dy = 0.0_f64;
+        let mut need = false;
+
+        // Horizontal: bring cursor into viewport [0, viewport_width]
+        if vx1 < 0.0 {
+            dx = -vx1; // shift content right
+            need = true;
+        } else if vx2 > self.viewport_width {
+            dx = self.viewport_width - vx2; // shift content left
+            need = true;
+        }
+
+        // Vertical: bring cursor into viewport [0, viewport_height]
+        if vy1 < 0.0 {
+            dy = -vy1;
+            need = true;
+        } else if vy2 > self.viewport_height {
+            dy = self.viewport_height - vy2;
+            need = true;
+        }
+
+        if need {
+            // scroll() divides by scale internally. To achieve a viewport
+            // shift of exactly (dx, dy) pixels, pre-multiply by scale.
+            let scale = self
+                .visit_stack
+                .last()
+                .map(|s| s.rel_a.sqrt().max(1e-10))
+                .unwrap_or(1.0);
+            self.scroll(dx * scale, dy * scale);
+        }
+    }
+
     // --- Update loop ---
 
     pub fn update(&mut self, tree: &mut PanelTree) {
         self.update_viewing(tree);
 
-        // If active panel is invalid or non-focusable, auto-select
+        // VIEW-003: After scroll/zoom or viewport change, reselect active panel
+        // (C++ calls SetActivePanelBestPossible after Scroll/Zoom)
         let need_reselect = match self.active {
             None => true,
             Some(id) => !tree.contains(id) || !tree.get(id).map(|p| p.focusable).unwrap_or(false),
         };
-        if need_reselect {
+        if need_reselect || self.viewport_changed {
             self.set_active_panel_best_possible(tree);
         }
     }
@@ -1473,6 +1660,72 @@ impl View {
         let start = self.svp.unwrap_or(self.root);
         let base_offset = painter.offset();
         self.paint_panel_recursive(tree, painter, start, base_offset);
+
+        // D-PANEL-06: Paint focus/active highlight (C++ PaintHighlight parity)
+        self.paint_highlight(tree, painter);
+    }
+
+    /// D-PANEL-06: Paint highlight around the active panel.
+    ///
+    /// C++ draws a rounded rectangle with arrows around the active panel's
+    /// substance rect. White normally, light yellow if adherent, dimmed if
+    /// window not focused.
+    fn paint_highlight(&self, tree: &PanelTree, painter: &mut Painter) {
+        if self.flags.contains(ViewFlags::NO_ACTIVE_HIGHLIGHT) {
+            return;
+        }
+
+        let active_id = match self.active {
+            Some(id) => id,
+            None => return,
+        };
+
+        let panel = match tree.get(active_id) {
+            Some(p) if p.viewed => p,
+            _ => return,
+        };
+
+        // Get the panel's substance rect in viewport coords
+        let (sx, sy, sw, sh, _sr) = tree.get_substance_rect(active_id);
+        let hx = panel.viewed_x + sx * panel.viewed_width;
+        let hy = panel.viewed_y + sy * panel.viewed_height;
+        let hw = sw * panel.viewed_width;
+        let hh = sh * panel.viewed_height;
+
+        if hw < 1.0 || hh < 1.0 {
+            return;
+        }
+
+        // Expand by distance-from-panel (C++ constant: 2.0)
+        let pad = 2.0;
+        let hx = hx - pad;
+        let hy = hy - pad;
+        let hw = hw + pad * 2.0;
+        let hh = hh + pad * 2.0;
+
+        // Color selection (C++ constants)
+        let base_color = if self.activation_adherent {
+            Color::rgba(255, 255, 187, 255) // Light yellow for adherent
+        } else {
+            Color::rgba(255, 255, 255, 255) // White
+        };
+
+        let alpha = if !self.window_focused || self.flags.contains(ViewFlags::NO_FOCUS_HIGHLIGHT) {
+            85 // alpha / 3
+        } else {
+            255
+        };
+
+        let color = Color::rgba(base_color.r(), base_color.g(), base_color.b(), alpha);
+
+        // Stroke width scales with the viewport size for visibility
+        let stroke_w = 2.0_f64
+            .max((self.viewport_width + self.viewport_height) * 0.002)
+            .min(4.0);
+
+        painter.push_state();
+        painter.paint_rect_outlined(hx, hy, hw, hh, &Stroke::new(color, stroke_w));
+        painter.pop_state();
     }
 
     fn paint_panel_recursive(

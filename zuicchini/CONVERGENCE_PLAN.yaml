@@ -1,0 +1,871 @@
+# Convergence Plan: zuicchini → emCore Full Parity
+#
+# This file is the human-editable control surface for the convergence harness.
+# The harness reads this file and acts ONLY on items with a non-empty `resolution`.
+#
+# ─── How to use ───────────────────────────────────────────────────────────────
+#
+#   1. Pick a phase (phases are ordered by dependency — earlier phases unblock later ones)
+#   2. For each item in that phase, set `resolution` to one of:
+#
+#        PORT      → implement C++ behavior (harness fixes autonomously)
+#        PORT:<x>  → implement with specific approach (e.g., "PORT: use enum not bitfield")
+#        KEEP      → accept Rust behavior as intentional divergence (no code changes)
+#        DEFER     → skip for now (harness ignores; revisit later)
+#
+#   3. Run the harness — it processes only resolved items in dependency order
+#   4. After the harness completes, it updates `status` on each processed item:
+#        DONE      → fix applied, compiles, passes clippy+tests
+#        VERIFIED  → re-verification confirms no regressions
+#        FAILED    → fix attempt failed (see change log for details)
+#   5. Review results, then fill in the next phase
+#
+# ─── Relationship to existing artifacts ───────────────────────────────────────
+#
+#   Source findings:  _fix/design_decisions.yaml  (47 decisions from first pipeline run)
+#   Source verdicts:  _verify/verdicts/*.yaml      (residual BEHAVIORAL findings)
+#   Source mappings:  _verify/mappings/*.yaml       (MISSING method inventory)
+#   Source extracts:  _verify/extracts/*.yaml       (C++ behavioral specs — reusable)
+#
+# ─── Notes ────────────────────────────────────────────────────────────────────
+#
+#   - Items marked `needs_extract: true` require a Phase 1 EXTRACT before fixing
+#     (the C++ method wasn't extracted at Tier 1/2 depth in the first run)
+#   - `depends_on` lists item IDs that must be resolved first
+#   - Phases are implementation phases (dependency order), not harness phases
+#   - The harness maps each resolution to the appropriate harness phases automatically
+#
+
+phases:
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PHASE 1: Foundation & Plumbing
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Prerequisites that unblock later phases. Image primitives needed by
+  # painter convergence. Border base-call question. Degenerate-container
+  # handling. Panel lifecycle tracking.
+  #
+  # No dependencies. Start here.
+
+  - phase: 1
+    name: "Foundation & Plumbing"
+    depends_on: []
+    items:
+
+      - id: D-FOUNDATION-01
+        summary: "Missing Image convenience methods"
+        detail: >
+          GetPixel/SetPixel are trivial wrappers. GetPixelInterpolated (bilinear
+          sampling) and CopyTransformed (affine ops) need a transform pipeline
+          that doesn't exist yet. The trivial wrappers unblock nothing; the
+          interpolated/transformed methods unblock painter image convergence.
+        options:
+          - "PORT: trivial wrappers now, interpolated/transformed when painter needs them"
+          - "PORT: all methods including affine pipeline"
+          - "DEFER: implement on-demand"
+        resolution: "PORT: all methods including affine pipeline"
+        status: DONE
+        needs_extract: true
+        affected_files: [src/foundation/image.rs]
+
+      - id: D-LAYOUT-08
+        summary: "No emBorder::LayoutChildren base call in any layout"
+        detail: >
+          C++ LayoutChildren calls emBorder::LayoutChildren() first (base class).
+          Rust has no inheritance — border is a separate component. If the base
+          call does meaningful work (e.g., aux panel positioning), this is a gap.
+          Needs C++ investigation to determine.
+        options:
+          - "KEEP: border is separate; no inheritance chain to replicate"
+          - "PORT: add equivalent if aux panel logic lives in base"
+        resolution: "PORT: add equivalent base-call logic if aux panel positioning lives in base"
+        status: DONE
+        needs_extract: true
+        affected_files: [src/layout/linear.rs, src/layout/raster.rs, src/layout/pack.rs]
+
+      - id: D-LAYOUT-09
+        summary: "w/h < 1E-100 returns early instead of clamping"
+        detail: >
+          C++ clamps w,h to 1E-100 and continues layout. Rust returns early,
+          producing no layout for degenerate containers. Children retain
+          previous positions.
+        options:
+          - "KEEP: early return is safer for degenerate containers"
+          - "PORT: clamp and continue for strict parity"
+        resolution: "PORT: clamp and continue for strict parity"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/layout/linear.rs, src/layout/raster.rs]
+
+      - id: D-PANEL-07
+        summary: "AutoShrink has no CreatedByAE tracking"
+        detail: >
+          C++ tracks which child panels were created by auto-expansion and
+          selectively deletes only those. Rust behaviors must manage their
+          own cleanup. Affects memory management for deeply zoomed hierarchies.
+        options:
+          - "KEEP: behaviors manage cleanup individually"
+          - "PORT: add created_by_ae flag and selective deletion"
+        resolution: "PORT: add created_by_ae flag and selective deletion"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/tree.rs, src/panel/behavior.rs]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PHASE 2: View ↔ Panel Communication
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Structural changes to how view, panels, animators, and input filters
+  # coordinate. Creates the communication pathways that scroll-to-cursor,
+  # animated navigation, and focus management require.
+  #
+  # Depends on: Phase 1 (notice flags must be wired first)
+
+  - phase: 2
+    name: "View ↔ Panel Communication"
+    depends_on: [1]
+    items:
+
+      # --- Core plumbing (unblocks the rest of this phase) ---
+
+      - id: VIEW-003
+        summary: "Scroll/Zoom don't abort active animator or update active panel"
+        detail: >
+          C++ scroll/zoom calls AbortActiveAnimator + SetActivePanelBestPossible.
+          Rust just moves the viewport without telling anyone. This is the
+          central missing coordination point.
+        options:
+          - "PORT: add abort + set_active_panel_best_possible calls"
+        resolution: "PORT: add abort + set_active_panel_best_possible calls"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/view.rs]
+
+      - id: TF-003
+        summary: "ScrollToCursor not implemented"
+        detail: >
+          Text field cannot request the view to scroll to make cursor visible.
+          Needs a view-level API that widgets can call upward. Blocked on
+          the view exposing scroll-request hooks.
+        options:
+          - "PORT: implement ScrollToCursor with view hook"
+        resolution: "PORT: implement ScrollToCursor with view hook"
+        status: DONE
+        needs_extract: false
+        depends_on: [VIEW-003]
+        affected_files: [src/widget/text_field.rs, src/panel/view.rs, src/panel/behavior.rs, src/window/zui_window.rs]
+
+      # --- Navigation algorithms ---
+
+      - id: D-PANEL-01
+        summary: "Navigation uses sibling-only traversal instead of depth-first"
+        detail: >
+          C++ VisitNext/VisitPrev does depth-first traversal of the focusable
+          panel tree. Rust only traverses siblings at the same level. Deep
+          panel hierarchies are unreachable via keyboard.
+        options:
+          - "KEEP: sibling-only is simpler for flat game UIs"
+          - "PORT: implement depth-first focusable traversal"
+        resolution: "PORT: implement depth-first focusable traversal"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/view.rs]
+
+      - id: D-PANEL-03
+        summary: "set_active_panel_best_possible uses max-area instead of center-coverage"
+        detail: >
+          C++ uses center-containment descent (walks tree checking which child
+          contains view center). Rust uses maximum visible area. May select
+          different panels after scroll/zoom.
+        options:
+          - "KEEP: area-based is reasonable"
+          - "PORT: center-containment descent"
+        resolution: "PORT: center-containment descent"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/view.rs]
+
+      - id: D-PANEL-04
+        summary: "VisitNeighbour uses simplified scoring"
+        detail: >
+          C++ uses edge/center vectors with complex penalty formula. Rust uses
+          center-to-center distance with basic penalty. Arrow key navigation
+          may select different panels.
+        options:
+          - "KEEP: simple scoring works for most layouts"
+          - "PORT: edge/center vector scoring"
+        resolution: "PORT: edge/center vector scoring"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/view.rs]
+
+      # --- View lifecycle ---
+
+      - id: D-PANEL-05
+        summary: "SetGeometry/set_viewport missing clamping and re-zoom/re-visit"
+        detail: >
+          C++ clamps dimensions, preserves zoom state on resize, triggers
+          re-visit if one was active. Rust sets values without clamping.
+        options:
+          - "KEEP: winit resize events provide valid dimensions"
+          - "PORT: add clamping and zoom preservation"
+        resolution: "PORT: add clamping and zoom preservation"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/view.rs]
+
+      - id: D-PANEL-06
+        summary: "Highlight painting not implemented"
+        detail: >
+          C++ paints focus highlight arrows and active highlight around the
+          active panel. Rust has no highlight painting. The VF_NO_FOCUS_HIGHLIGHT
+          and VF_NO_ACTIVE_HIGHLIGHT flags exist but do nothing.
+        options:
+          - "KEEP: game aesthetic may not want highlights"
+          - "PORT: implement focus/active highlight painting"
+        resolution: "PORT: implement focus/active highlight painting"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/view.rs]
+
+      # --- Animation ---
+
+      - id: D-PANEL-02
+        summary: "Navigation is instant instead of animated"
+        detail: >
+          C++ uses VisitingViewAnimator for smooth zoom-to-target transitions.
+          Rust sets active panel immediately with no animation.
+        options:
+          - "KEEP: instant navigation is responsive"
+          - "PORT: wire up VisitingViewAnimator"
+        resolution: "PORT: wire up VisitingViewAnimator"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/view.rs]
+
+      - id: D-PANEL-08
+        summary: "VisitingViewAnimator simplified state machine"
+        detail: >
+          C++ has seek phase, give-up timeout, S-curve path, UpdateSpeed
+          acceleration/deceleration, blocked-movement detection, tight
+          convergence thresholds. Rust uses simple lerp with 1000x larger
+          convergence thresholds and no seek/timeout logic.
+        options:
+          - "KEEP: simpler animation is sufficient"
+          - "PORT: S-curve + seek + tight convergence"
+          - "PARTIAL: keep lerp but tighten convergence thresholds"
+        resolution: "PORT: S-curve + seek + tight convergence"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/animator.rs]
+
+      - id: D-PANEL-09
+        summary: "Missing emSwipingViewAnimator and emMagneticViewAnimator"
+        detail: >
+          Two entire animator classes not implemented. SwipingViewAnimator
+          handles touch drag/flick with kinetic coasting. MagneticViewAnimator
+          handles panel snapping.
+        options:
+          - "DEFER: not needed until touch support"
+          - "PORT: implement both animators"
+        resolution: "PORT: implement both animators"
+        status: DONE
+        needs_extract: true
+        affected_files: [src/panel/animator.rs]
+
+      # --- Input filters ---
+
+      - id: D-PANEL-10
+        summary: "No kinetic scrolling in mouse VIF"
+        detail: >
+          C++ middle-button drag uses SwipingViewAnimator for grip-drag with
+          inertia. Rust applies scroll deltas directly.
+        options:
+          - "DEFER: depends on D-PANEL-09"
+          - "PARTIAL: simple velocity-based kinetic scrolling"
+        resolution: "PORT: integrate SwipingViewAnimator for grip-drag with inertia per C++ emDefaultMouseVIF"
+        status: DONE
+        needs_extract: false
+        depends_on: [D-PANEL-09]
+        affected_files: [src/panel/input_filter.rs]
+
+      - id: D-PANEL-11
+        summary: "No continuous keyboard animation"
+        detail: >
+          C++ uses SpeedingViewAnimator for smooth continuous scrolling with
+          acceleration. Rust applies discrete scroll steps.
+        options:
+          - "KEEP: discrete steps are responsive"
+          - "PORT: continuous keyboard scrolling animation"
+        resolution: "PORT: continuous keyboard scrolling animation"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/input_filter.rs]
+
+      - id: D-PANEL-12
+        summary: "No Ctrl+middle-button zoom mode"
+        detail: >
+          C++ supports Ctrl+middle vertical drag = zoom. Rust has no equivalent.
+        options:
+          - "PORT: add Ctrl+middle zoom handler"
+          - "KEEP: mouse wheel zoom is sufficient"
+        resolution: "PORT: add Ctrl+middle zoom handler"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/input_filter.rs]
+
+      - id: D-PANEL-13
+        summary: "No focus check during drag/keyboard navigation"
+        detail: >
+          C++ checks window focus before accepting drag/keyboard input. Rust
+          processes input regardless, which may cause phantom input from
+          unfocused windows.
+        options:
+          - "PORT: add window focus check in VIF input methods"
+          - "KEEP: verify that winit already gates events by focus"
+        resolution: "PORT: add window focus check in VIF input methods"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/panel/input_filter.rs]
+
+      - id: D-PANEL-14
+        summary: "emDefaultTouchVIF entirely missing"
+        detail: >
+          16-touch state machine for multi-touch gesture input filter.
+          Touch input not yet supported.
+        options:
+          - "DEFER: not needed until touch/mobile platform support"
+          - "PORT: implement full touch VIF"
+        resolution: "PORT: implement full touch VIF"
+        status: DONE
+        needs_extract: true
+        affected_files: [src/panel/input_filter.rs]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PHASE 3: Layout Convergence
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Self-contained math fixes with good test coverage. The spacing model
+  # question (D-LAYOUT-01) is the key decision — several others follow from it.
+  #
+  # Depends on: Phase 1 (degenerate-container handling)
+
+  - phase: 3
+    name: "Layout Convergence"
+    depends_on: [1]
+    items:
+
+      - id: D-LAYOUT-01
+        summary: "Proportional vs absolute spacing model"
+        detail: >
+          C++ uses absolute spacing (pixel values) with a separate alignment step.
+          Rust uses proportional spacing (margins/gaps as proportion-units relative
+          to cell weight). Fundamentally different models producing different numeric
+          results. D-LAYOUT-02, -03, -04 are downstream of this choice.
+        options:
+          - "KEEP: proportional model is arguably better for responsive layouts"
+          - "PORT: rewrite to absolute spacing + alignment to match C++ exactly"
+          - "HYBRID: keep proportional but add alignment as a post-step"
+        resolution: "PORT: rewrite to absolute spacing + alignment to match C++ exactly"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/layout/linear.rs, src/layout/mod.rs]
+
+      - id: D-LAYOUT-02
+        summary: "Default alignment Stretch vs Center"
+        detail: >
+          C++ defaults to EM_ALIGN_CENTER. Rust defaults to Alignment::Stretch.
+          Coupled to D-LAYOUT-01: if proportional is kept, Stretch may be more
+          appropriate; if absolute is ported, Center matches C++.
+        options:
+          - "KEEP: Stretch is right for proportional spacing"
+          - "PORT: change default to Center"
+        resolution: "PORT: change default to Center"
+        status: DONE
+        needs_extract: false
+        depends_on: [D-LAYOUT-01]
+        affected_files: [src/layout/mod.rs]
+
+      - id: D-LAYOUT-03
+        summary: "Alignment enum lacks per-axis control"
+        detail: >
+          C++ uses bitfield (LEFT|RIGHT|TOP|BOTTOM) for independent per-axis
+          alignment. Rust uses single enum (Start/Center/End/Stretch). Cannot
+          express asymmetric alignments like LEFT+BOTTOM.
+        options:
+          - "KEEP: single enum is simpler; per-axis rarely used"
+          - "PORT: add AlignmentH/AlignmentV or bitfield approach"
+        resolution: "PORT: add per-axis alignment (AlignmentH/AlignmentV) matching C++ bitfield semantics"
+        status: DONE
+        needs_extract: false
+        depends_on: [D-LAYOUT-01]
+        affected_files: [src/layout/mod.rs]
+
+      - id: D-LAYOUT-04
+        summary: "CalculateForce conflict resolution formula differs"
+        detail: >
+          C++ compares compressed+expanded+free vs total to decide which
+          constrained set to release. Rust compares committed (compressed+expanded
+          only) vs total. Edge cases produce different resolution choices.
+        options:
+          - "KEEP: Rust formula may be correct for proportional model"
+          - "PORT: match C++ formula"
+        resolution: "PORT: match C++ formula"
+        status: DONE
+        needs_extract: false
+        depends_on: [D-LAYOUT-01]
+        affected_files: [src/layout/linear.rs]
+
+      - id: D-LAYOUT-05
+        summary: "Pack split search simplified (single midpoint vs multi-point)"
+        detail: >
+          C++ tests multiple split points around midpoint (11 for 8 items,
+          decreasing to 2 for 20 items) using alternating pattern. Rust uses
+          single weight-based midpoint for all items > 7.
+        options:
+          - "KEEP: simpler code, acceptable quality"
+          - "PORT: multi-point search for 8-20 items"
+          - "PARTIAL: 3-point search (midpoint, midpoint-1, midpoint+1)"
+        resolution: "PORT: multi-point search for 8-20 items"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/layout/pack.rs]
+
+      - id: D-LAYOUT-06
+        summary: "No log(PCT) orientation ordering in pack layout"
+        detail: >
+          C++ uses log(PCT) sums to determine which split orientation to test
+          first. Rust tests both unconditionally. Same results, different order.
+        options:
+          - "KEEP: both tested anyway; just a performance hint"
+          - "PORT: add log(PCT) heuristic"
+        resolution: "PORT: add log(PCT) heuristic"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/layout/pack.rs]
+
+      - id: D-LAYOUT-07
+        summary: "No error relaxation factor for pack execute pass"
+        detail: >
+          C++ uses bestError * 1.00000001 + 1E-100 as relaxed threshold during
+          execute pass. Rust has no separate search/execute and no relaxation.
+          Relaxation prevents epsilon-different layouts at solution boundaries.
+        options:
+          - "KEEP: single-pass is simpler and deterministic"
+          - "PORT: add epsilon relaxation"
+        resolution: "PORT: add epsilon relaxation"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/layout/pack.rs]
+
+      - id: D-LAYOUT-10
+        summary: "Strict raster loops don't enforce cross-dimension fixed counts"
+        detail: >
+          C++ strict raster row-by-row loop clamps rows to max(rows, FixedRowCount).
+          Column-by-column clamps cols similarly. Rust ignores cross-dimension.
+        options:
+          - "KEEP: both-fixed with overflow is rare"
+          - "PORT: add cross-dimension clamp"
+        resolution: "PORT: add cross-dimension clamp"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/layout/raster.rs]
+
+      - id: D-LAYOUT-11
+        summary: "SetChildWeight/SetPrefChildTallness don't clear per-child arrays"
+        detail: >
+          C++ global setters atomically set the default AND clear the per-child
+          array. Rust only sets the default; clearing is manual.
+        options:
+          - "KEEP: caller responsibility; document the API"
+          - "PORT: add clear_child_constraints() call in global setters"
+        resolution: "PORT: add clear_child_constraints() call in global setters"
+        status: DONE
+        needs_extract: false
+        affected_files: [src/layout/pack.rs]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PHASE 4: Painter Convergence
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Largest body of work. Benefits from stable foundation underneath.
+  # The font system decision (PAINTER-FONT) is the key gate — most of the
+  # 88 painter findings trace back to it.
+  #
+  # Items ordered: geometric/algorithmic first, then image pipeline, then font.
+  #
+  # Depends on: Phase 1 (image primitives)
+
+  - phase: 4
+    name: "Painter Convergence"
+    depends_on: [1]
+    items:
+
+      # --- Geometric/algorithmic (no font dependency) ---
+
+      - id: D-RENDER-07
+        summary: "PaintRect lacks sub-pixel anti-aliasing"
+        detail: >
+          C++ uses 12-bit fixed-point for fractional edge coverage. Rust
+          truncates to integer pixels. Sub-pixel rects (< 1px) disappear.
+        options:
+          - "PORT: add sub-pixel AA for rect painting"
+          - "KEEP: GPU compositor may handle AA later"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      - id: D-RENDER-06
+        summary: "Ellipse segment count not scale-aware"
+        detail: >
+          C++ incorporates current scale factor into tessellation. Rust uses
+          user-space radius only. Zoomed-in ellipses may appear polygonal.
+        options:
+          - "PORT: incorporate scale factor into segment count"
+          - "KEEP: fixed tier approach acceptable at normal zoom"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      - id: D-RENDER-09
+        summary: "Bezier convention differs (chunks-of-4 vs stride-3)"
+        detail: >
+          C++ stride-3: last point of prev segment = first of next (continuous
+          spline). Rust chunks-of-4: disjoint groups. Same point array produces
+          different curves.
+        options:
+          - "PORT: change to stride-3 for C++ compatibility"
+          - "KEEP: chunks-of-4 is more intuitive; document convention"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      - id: D-RENDER-11
+        summary: "paint_polygon_outlined uses individual lines (no proper joins)"
+        detail: >
+          C++ delegates to PaintPolyline with NoEnd (closed path) for proper
+          miter/bevel joins. Rust draws separate rectangles, producing visible
+          gap/overlap artifacts at corners.
+        options:
+          - "PORT: route through paint_solid_polyline with closed=true"
+          - "KEEP: artifacts acceptable for current use"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      - id: D-RENDER-10
+        summary: "No arrow support on polylines"
+        detail: >
+          C++ supports start/end arrows on polylines and bezier lines.
+          Rust only supports arrows on single lines.
+        options:
+          - "PORT: extend polyline/bezier to support arrows"
+          - "KEEP: single-line arrows sufficient"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      - id: D-RENDER-08
+        summary: "No dashed outlines for ellipse/roundrect/rect"
+        detail: >
+          C++ outline methods dispatch to polyline system for dashed strokes.
+          Rust outline methods are always solid.
+        options:
+          - "PORT: route outlines through polyline system"
+          - "KEEP: dashed outlines not used in current game UI"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      # --- Image pipeline ---
+
+      - id: D-RENDER-01
+        summary: "PaintImage missing alpha, canvasColor, extension parameters"
+        detail: >
+          C++ PaintImage supports alpha blending, canvas color compositing,
+          and extension modes (EXTEND_EDGE_OR_ZERO). Rust is a 1:1 blit.
+        options:
+          - "PORT: add alpha and canvasColor parameters"
+          - "KEEP: callers can pre-process images"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      - id: D-RENDER-02
+        summary: "PaintImageColored single-color vs two-color gradient"
+        detail: >
+          C++ supports two colors (bg + fg) for gradient rendering. Rust uses
+          single color as alpha mask; paint_image_colored_2 exists separately.
+        options:
+          - "KEEP: separate APIs are clearer"
+          - "PORT: merge into single C++-compatible two-color API"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      - id: D-RENDER-03
+        summary: "PaintBorderImage always paints center (no whichSubRects bitmask)"
+        detail: >
+          C++ has bitmask to selectively paint 9-slice sections (default skips
+          center). Rust always paints all 9 sections. Slight overdraw.
+        options:
+          - "KEEP: simpler; overdraw is minor"
+          - "PORT: add whichSubRects parameter"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      # --- Text rendering (font-dependent) ---
+
+      - id: D-RENDER-04
+        summary: "PaintTextBoxed significantly simplified"
+        detail: >
+          C++ supports widthScale, minWidthScale, relLineSpace, formatted flag,
+          CR/CRLF handling. Rust has none of these. Width-scaling fitting
+          behavior produces wrong results.
+        options:
+          - "KEEP: TTF shaping handles fitting differently"
+          - "PARTIAL: add width scaling for text fitting"
+          - "PORT: full feature set including multi-line and formatted text"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      - id: D-RENDER-05
+        summary: "GetTextSize single-line only (no multi-line or tab support)"
+        detail: >
+          C++ handles tabs, newlines, multi-line text, CharBoxTallness-based
+          sizing. Rust measures single lines via rustybuzz.
+        options:
+          - "PORT: add multi-line and tab handling"
+          - "KEEP: callers split lines and measure individually"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs]
+
+      - id: PAINTER-FONT
+        summary: "Font system architecture divergence (~60 of 88 painter findings)"
+        detail: >
+          C++ uses a built-in bitmap monospace font with sub-pixel positioning.
+          Rust uses TTF proportional fonts via rustybuzz/ab_glyph. This is
+          the root cause of most painter BEHAVIORAL findings. Converging means
+          either replicating C++ bitmap font (exact parity) or accepting TTF
+          with a C++-metrics compatibility layer (visual parity).
+        options:
+          - "KEEP: TTF is intentional divergence (document as new Decision)"
+          - "PORT: replicate C++ bitmap font for exact parity"
+          - "HYBRID: TTF with C++ metrics compatibility layer"
+        resolution:
+        status:
+        needs_extract: true
+        affected_files: [src/render/painter.rs, src/render/font_cache.rs]
+
+      - id: PAINTER-SCANLINE
+        summary: "Scanline blending precision and compositing differences (~20 findings)"
+        detail: >
+          Alpha blending, image scaling filters, and color interpolation differ
+          in precision. C++ uses specific rounding and intermediate precision
+          that Rust doesn't replicate exactly.
+        options:
+          - "PORT: match C++ precision for each operation"
+          - "KEEP: visual differences are acceptable"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/render/painter.rs, src/render/scanline.rs]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PHASE 5: Window Management
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Platform glue. Isolated from the widget tree. Can be done in parallel
+  # with Phases 3 and 4.
+  #
+  # No dependencies (these are winit wrappers, independent of widget logic).
+
+  - phase: 5
+    name: "Window Management"
+    depends_on: []
+    items:
+
+      - id: D-WINDOW-01a
+        summary: "Missing window state methods (SetWindowFlags, SetViewPos/Size, SetWinPos/Size)"
+        detail: >
+          High priority: needed for WindowStateSaver restore and runtime flag
+          toggling. These are winit wrappers.
+        options:
+          - "PORT"
+          - "DEFER"
+        resolution:
+        status:
+        needs_extract: true
+        affected_files: [src/window/zui_window.rs]
+
+      - id: D-WINDOW-01b
+        summary: "Missing monitor/DPI methods (GetMonitorIndex, GetDPI, SignalClosing)"
+        detail: >
+          Medium priority: needed for multi-monitor correctness.
+        options:
+          - "PORT"
+          - "DEFER"
+        resolution:
+        status:
+        needs_extract: true
+        affected_files: [src/window/zui_window.rs, src/window/screen.rs]
+
+      - id: D-WINDOW-01c
+        summary: "Missing misc window methods (Icon, Screensaver, MoveMousePointer, Beep)"
+        detail: >
+          Low priority: no downstream dependencies. Mostly platform niceties.
+        options:
+          - "PORT"
+          - "DEFER"
+        resolution:
+        status:
+        needs_extract: true
+        affected_files: [src/window/zui_window.rs]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PHASE 6: Widget API Completeness
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Leaf-node features. Pure additive surface area — nothing breaks without
+  # them, but certain interactions are impossible until they exist.
+  #
+  # Depends on: Phase 2 (view hooks needed by some widgets like TextField)
+
+  - phase: 6
+    name: "Widget API Completeness"
+    depends_on: [2]
+    items:
+
+      - id: D-WIDGET-01
+        summary: "SetLabelInBorder not ported"
+        detail: >
+          C++ toggles label inside/outside border. Rust always behaves as
+          LabelInBorder=true.
+        options:
+          - "KEEP: no egopol widget uses LabelInBorder=false"
+          - "PORT: add label_in_border field"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/widget/border.rs]
+
+      - id: D-WIDGET-02
+        summary: "Label block alignment not implemented"
+        detail: >
+          C++ positions the entire label block (icon+caption+description) as
+          a unit using LabelAlignment. Rust only aligns individual text lines.
+        options:
+          - "KEEP: per-line alignment may look better"
+          - "PORT: block-level alignment"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/widget/border.rs]
+
+      - id: D-WIDGET-03
+        summary: "No undo merge logic in TextField"
+        detail: >
+          C++ merges consecutive same-type edits into single undo entries
+          (typing several characters = one undo). Rust creates separate
+          entry per operation.
+        options:
+          - "KEEP: per-operation undo is simpler"
+          - "PORT: merge consecutive inserts/deletes"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/widget/text_field.rs]
+
+      - id: D-WIDGET-04
+        summary: "DM_INSERT/DM_MOVE drag behaviors simplified"
+        detail: >
+          DM_INSERT release doesn't paste from primary clipboard. DM_MOVE
+          doesn't use drag offset (cursor jumps to drop position).
+        options:
+          - "KEEP: simplified drag is fine for game UI"
+          - "PORT: full drag-and-drop behaviors"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/widget/text_field.rs]
+
+      - id: D-WIDGET-05
+        summary: "ModifySelection anchor logic differs"
+        detail: >
+          C++ uses closest-endpoint anchor for selection modification. Rust
+          uses a different anchor strategy. Affects Shift+click behavior.
+        options:
+          - "KEEP: if current behavior feels natural"
+          - "PORT: match C++ closest-endpoint anchor"
+        resolution:
+        status:
+        needs_extract: false
+        affected_files: [src/widget/text_field.rs]
+
+      - id: D-WIDGET-06
+        summary: "emListBox: 21 missing item manipulation APIs"
+        detail: >
+          Missing add/insert/remove/move/sort and programmatic selection APIs.
+          Rust uses simplified bulk-set model (set_items replaces all).
+        options:
+          - "KEEP: bulk-set model is simpler"
+          - "PORT: incremental API for large dynamic lists"
+        resolution:
+        status:
+        needs_extract: true
+        affected_files: [src/widget/list_box.rs]
+
+      - id: D-WIDGET-07
+        summary: "emScalarField: 12 missing methods"
+        detail: >
+          Missing editable toggle, min/max getters/setters, scale mark config,
+          text formatting hooks, keyboard interval.
+        options:
+          - "KEEP: minimal slider is sufficient"
+          - "PORT: add range configuration and scale marks"
+        resolution:
+        status:
+        needs_extract: true
+        affected_files: [src/widget/scalar_field.rs]
+
+      - id: D-WIDGET-08
+        summary: "emRadioButton: 5 missing mechanism methods"
+        detail: >
+          Missing SetChecked on individual buttons, Mechanism::RemoveByIndex,
+          RemoveAll, GetButton, combined layout groups.
+        options:
+          - "KEEP: current API covers basic use"
+          - "PORT: add mechanism methods for dynamic radio groups"
+        resolution:
+        status:
+        needs_extract: true
+        affected_files: [src/widget/radio_button.rs]
+
+      - id: D-BULK-MISSING
+        summary: "220+ MISSING methods across all subsystems (bulk)"
+        detail: >
+          Most are low-priority accessors, C++ infrastructure (RTTI,
+          serialization), or features unused by egopol. High-impact items
+          are captured individually above. This catch-all covers the remainder.
+        options:
+          - "AUDIT: review each MISSING method against egopol usage"
+          - "DEFER: implement on-demand as egopol features require them"
+        resolution:
+        status:
+        needs_extract: true
+        affected_files: ["(see _verify/mappings/*.yaml)"]

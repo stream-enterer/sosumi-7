@@ -45,13 +45,34 @@ pub enum ResolvedOrientation {
 }
 
 /// Cross-axis alignment for children within a layout.
+///
+/// Used by RasterLayout for block-level alignment. LinearLayout uses
+/// per-axis `AlignmentH`/`AlignmentV` instead.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum Alignment {
     Start,
+    #[default]
     Center,
     End,
-    #[default]
     Stretch,
+}
+
+/// Horizontal alignment (matching C++ EM_ALIGN_LEFT / EM_ALIGN_CENTER / EM_ALIGN_RIGHT).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum AlignmentH {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
+/// Vertical alignment (matching C++ EM_ALIGN_TOP / EM_ALIGN_CENTER / EM_ALIGN_BOTTOM).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum AlignmentV {
+    Top,
+    #[default]
+    Center,
+    Bottom,
 }
 
 /// Spacing configuration for layouts.
@@ -154,4 +175,25 @@ pub(crate) fn get_constraint<'a>(
     default: &'a ChildConstraint,
 ) -> &'a ChildConstraint {
     constraints.get(&child).unwrap_or(default)
+}
+
+/// Position the aux panel and return its ID (if any) so the layout can skip it.
+///
+/// Replicates `emBorder::LayoutChildren()` base-call behavior: finds the aux
+/// panel by name, positions it using `border.get_aux_rect()`, and returns its
+/// PanelId so the layout algorithm can exclude it from normal layout.
+pub(crate) fn position_aux_panel(
+    ctx: &mut crate::panel::PanelCtx,
+    border: &crate::widget::Border,
+) -> Option<PanelId> {
+    let aux_name = border.get_aux_panel_name();
+    if aux_name.is_empty() {
+        return None;
+    }
+
+    let aux_id = ctx.find_child_by_name(aux_name)?;
+    let r = ctx.layout_rect();
+    let aux_rect = border.get_aux_rect(r.w, r.h)?;
+    ctx.layout_child(aux_id, aux_rect.x, aux_rect.y, aux_rect.w, aux_rect.h);
+    Some(aux_id)
 }

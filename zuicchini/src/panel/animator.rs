@@ -378,7 +378,8 @@ pub(crate) enum VisitingState {
 }
 
 /// Visiting view animator — smoothly animates the camera to a target visit state.
-/// Uses logarithmic interpolation for zoom dimension.
+/// Uses S-curve velocity profile with acceleration/deceleration ramps and
+/// logarithmic interpolation for zoom dimension.
 pub struct VisitingViewAnimator {
     target_x: f64,
     target_y: f64,
@@ -399,6 +400,16 @@ pub struct VisitingViewAnimator {
     identity: String,
     /// Human-readable subject description for seek overlay.
     subject: String,
+    /// Current animation speed (ramps up then down via S-curve).
+    current_speed: f64,
+    /// Total elapsed animation time in seconds.
+    elapsed: f64,
+    /// Frames with no significant progress (blocked-movement detection).
+    stall_frames: u32,
+    /// Previous position for blocked-movement detection.
+    prev_x: f64,
+    prev_y: f64,
+    prev_log_a: f64,
 }
 
 impl VisitingViewAnimator {
@@ -416,6 +427,12 @@ impl VisitingViewAnimator {
             state: VisitingState::Curve,
             identity: String::new(),
             subject: String::new(),
+            current_speed: 0.0,
+            elapsed: 0.0,
+            stall_frames: 0,
+            prev_x: f64::NAN,
+            prev_y: f64::NAN,
+            prev_log_a: f64::NAN,
         }
     }
 
@@ -619,6 +636,28 @@ impl VisitingViewAnimator {
     }
 }
 
+impl VisitingViewAnimator {
+    /// Compute the S-curve speed factor for the current animation progress.
+    ///
+    /// Uses a smoothstep-like profile: accelerate during the first half of
+    /// the remaining distance, then decelerate during the second half.
+    /// `remaining` is the normalised distance to target (0..inf),
+    /// returns a speed multiplier in 0..1.
+    fn s_curve_speed(&self, remaining: f64) -> f64 {
+        // Ramp up from 0 to 1 over the range 0..1, stay at 1 for 1..large,
+        // then decelerate as remaining shrinks below a threshold.
+        // We blend acceleration (near start) with deceleration (near end).
+        let accel_factor = (self.elapsed * self.acceleration).min(1.0);
+        // Deceleration: as remaining distance shrinks, slow down proportionally
+        let decel_factor = remaining.min(1.0);
+        // S-curve: the effective factor is the minimum of both ramps,
+        // smoothed with a cubic Hermite (smoothstep).
+        let raw = accel_factor.min(decel_factor);
+        // Smoothstep for a nicer S-curve profile
+        raw * raw * (3.0 - 2.0 * raw)
+    }
+}
+
 impl ViewAnimator for VisitingViewAnimator {
     fn animate(&mut self, view: &mut View, tree: &mut PanelTree, dt: f64) -> bool {
         if !self.active {
@@ -634,21 +673,61 @@ impl ViewAnimator for VisitingViewAnimator {
                 return true;
             }
             VisitingState::Seek => {
-                // Seek state not fully implemented; fall through to animate
+                // Seek state — track elapsed for give-up timeout
+                self.elapsed += dt;
+                if self.elapsed > 3.0 {
+                    self.state = VisitingState::GivingUp;
+                }
+                return true;
             }
             VisitingState::Curve | VisitingState::Direct => {
                 // Continue with animation below
             }
         }
 
-        let t = (self.speed * dt).min(1.0);
+        self.elapsed += dt;
+
+        // Give-up timeout: after 3 seconds, snap to target
+        if self.elapsed > 3.0 {
+            if let Some(state) = view.visit_stack().last().cloned() {
+                let log_target = self.target_a.max(0.001).ln();
+                let dx = (self.target_x - state.rel_x) * view.viewport_size().0.max(1.0);
+                let dy = (self.target_y - state.rel_y) * view.viewport_size().1.max(1.0);
+                let dz = if state.rel_a > 0.0 {
+                    log_target - state.rel_a.ln()
+                } else {
+                    0.0
+                };
+                let (vw, vh) = view.viewport_size();
+                view.raw_scroll_and_zoom(tree, vw * 0.5, vh * 0.5, dx, dy, dz);
+            }
+            self.active = false;
+            self.set_visiting_state(VisitingState::GoalReached);
+            return false;
+        }
 
         if let Some(state) = view.visit_stack().last().cloned() {
-            let new_x = lerp(state.rel_x, self.target_x, t);
-            let new_y = lerp(state.rel_y, self.target_y, t);
-            // Logarithmic interpolation for zoom
             let log_a = state.rel_a.ln();
             let log_target = self.target_a.max(0.001).ln();
+
+            // Compute remaining distance (normalised)
+            let dx_rem = (self.target_x - state.rel_x).abs();
+            let dy_rem = (self.target_y - state.rel_y).abs();
+            let dz_rem = (log_target - log_a).abs();
+            let remaining = dx_rem + dy_rem + dz_rem;
+
+            // S-curve speed: ramp up then decelerate
+            let s_factor = self.s_curve_speed(remaining);
+            // Effective speed blends base speed with S-curve modulation
+            let effective_speed = self.speed * (0.1 + 0.9 * s_factor);
+            self.current_speed = effective_speed;
+
+            // Exponential decay interpolation (framerate-independent)
+            // t approaches 1 as effective_speed * dt grows
+            let t = (1.0 - (-effective_speed * dt).exp()).min(1.0);
+
+            let new_x = lerp(state.rel_x, self.target_x, t);
+            let new_y = lerp(state.rel_y, self.target_y, t);
             let new_log_a = lerp(log_a, log_target, t);
             let new_a = new_log_a.exp();
 
@@ -673,10 +752,30 @@ impl ViewAnimator for VisitingViewAnimator {
                 }
             }
 
-            // Check convergence
-            if (new_x - self.target_x).abs() < 0.001
-                && (new_y - self.target_y).abs() < 0.001
-                && (new_log_a - log_target).abs() < 0.01
+            // Blocked-movement detection: if position barely changed for 3+ frames, give up
+            if self.prev_x.is_finite() {
+                let progress = (new_x - self.prev_x).abs()
+                    + (new_y - self.prev_y).abs()
+                    + (new_log_a - self.prev_log_a).abs();
+                if progress < 1e-10 {
+                    self.stall_frames += 1;
+                } else {
+                    self.stall_frames = 0;
+                }
+                if self.stall_frames >= 3 {
+                    self.active = false;
+                    self.set_visiting_state(VisitingState::GoalReached);
+                    return false;
+                }
+            }
+            self.prev_x = new_x;
+            self.prev_y = new_y;
+            self.prev_log_a = new_log_a;
+
+            // Tight convergence thresholds (C++ parity: pos < 1e-6, area < 1e-12)
+            if (new_x - self.target_x).abs() < 1e-6
+                && (new_y - self.target_y).abs() < 1e-6
+                && (new_log_a - log_target).abs() < 1e-12
             {
                 self.active = false;
                 self.set_visiting_state(VisitingState::GoalReached);
@@ -692,6 +791,7 @@ impl ViewAnimator for VisitingViewAnimator {
 
     fn stop(&mut self) {
         self.active = false;
+        self.current_speed = 0.0;
         self.set_visiting_state(VisitingState::NoGoal);
     }
 }
@@ -709,6 +809,283 @@ fn apply_friction_1d(v: f64, a: f64, dt: f64) -> f64 {
 
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
+}
+
+/// State for the swiping (touch/mouse drag) animator.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SwipingState {
+    /// No active swipe.
+    Inactive,
+    /// Finger/mouse is down, following the drag.
+    Tracking,
+    /// Released with velocity, coasting to a stop.
+    Coasting,
+}
+
+/// Swiping view animator — handles touch/mouse drag with kinetic coasting.
+///
+/// During tracking, accumulates velocity from position deltas.
+/// On release, coasts with friction deceleration until velocity drops below threshold.
+pub struct SwipingViewAnimator {
+    state: SwipingState,
+    velocity_x: f64,
+    velocity_y: f64,
+    /// Friction factor applied per frame (typical: 0.95).
+    friction_factor: f64,
+    /// Velocity threshold below which coasting stops.
+    stop_threshold: f64,
+    /// Previous tracking position for delta computation.
+    last_x: f64,
+    last_y: f64,
+    /// Smoothed velocity accumulator (exponential moving average).
+    smoothed_vx: f64,
+    smoothed_vy: f64,
+}
+
+impl SwipingViewAnimator {
+    pub fn new() -> Self {
+        Self {
+            state: SwipingState::Inactive,
+            velocity_x: 0.0,
+            velocity_y: 0.0,
+            friction_factor: 0.95,
+            stop_threshold: 0.5,
+            last_x: 0.0,
+            last_y: 0.0,
+            smoothed_vx: 0.0,
+            smoothed_vy: 0.0,
+        }
+    }
+
+    /// Current swiping state.
+    pub fn state(&self) -> SwipingState {
+        self.state
+    }
+
+    /// Set the friction factor (0..1, higher = less friction).
+    pub fn set_friction_factor(&mut self, factor: f64) {
+        self.friction_factor = factor.clamp(0.0, 1.0);
+    }
+
+    /// Set the velocity threshold below which coasting stops.
+    pub fn set_stop_threshold(&mut self, threshold: f64) {
+        self.stop_threshold = threshold;
+    }
+
+    /// Begin tracking a drag at the given position.
+    pub fn begin_tracking(&mut self, x: f64, y: f64) {
+        self.state = SwipingState::Tracking;
+        self.last_x = x;
+        self.last_y = y;
+        self.smoothed_vx = 0.0;
+        self.smoothed_vy = 0.0;
+        self.velocity_x = 0.0;
+        self.velocity_y = 0.0;
+    }
+
+    /// Update tracking position. Call each frame while dragging.
+    /// `dt` is the frame delta in seconds (must be > 0).
+    pub fn update_tracking(&mut self, x: f64, y: f64, dt: f64) {
+        if self.state != SwipingState::Tracking {
+            return;
+        }
+        let dt_safe = dt.max(1e-6);
+        let instant_vx = (x - self.last_x) / dt_safe;
+        let instant_vy = (y - self.last_y) / dt_safe;
+        // Exponential moving average for smooth velocity
+        let alpha = 0.3;
+        self.smoothed_vx = lerp(self.smoothed_vx, instant_vx, alpha);
+        self.smoothed_vy = lerp(self.smoothed_vy, instant_vy, alpha);
+        self.last_x = x;
+        self.last_y = y;
+    }
+
+    /// End tracking and begin coasting with the accumulated velocity.
+    pub fn end_tracking(&mut self) {
+        if self.state != SwipingState::Tracking {
+            return;
+        }
+        self.velocity_x = self.smoothed_vx;
+        self.velocity_y = self.smoothed_vy;
+        let speed = (self.velocity_x * self.velocity_x + self.velocity_y * self.velocity_y).sqrt();
+        if speed < self.stop_threshold {
+            self.state = SwipingState::Inactive;
+        } else {
+            self.state = SwipingState::Coasting;
+        }
+    }
+
+    /// Current velocity.
+    pub fn velocity(&self) -> (f64, f64) {
+        (self.velocity_x, self.velocity_y)
+    }
+}
+
+impl Default for SwipingViewAnimator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ViewAnimator for SwipingViewAnimator {
+    fn animate(&mut self, view: &mut View, tree: &mut PanelTree, dt: f64) -> bool {
+        match self.state {
+            SwipingState::Inactive => false,
+            SwipingState::Tracking => {
+                // During tracking, the caller drives position via update_tracking.
+                // Scroll is applied externally. We just stay active.
+                true
+            }
+            SwipingState::Coasting => {
+                // Apply friction each frame
+                self.velocity_x *= self.friction_factor;
+                self.velocity_y *= self.friction_factor;
+
+                let dx = self.velocity_x * dt;
+                let dy = self.velocity_y * dt;
+
+                if dx.abs() > 0.001 || dy.abs() > 0.001 {
+                    let (vw, vh) = view.viewport_size();
+                    let done = view.raw_scroll_and_zoom(tree, vw * 0.5, vh * 0.5, dx, dy, 0.0);
+                    // Zero blocked dimensions
+                    if done[0].abs() < 0.99 * dx.abs() {
+                        self.velocity_x = 0.0;
+                    }
+                    if done[1].abs() < 0.99 * dy.abs() {
+                        self.velocity_y = 0.0;
+                    }
+                }
+
+                let speed =
+                    (self.velocity_x * self.velocity_x + self.velocity_y * self.velocity_y).sqrt();
+                if speed < self.stop_threshold {
+                    self.velocity_x = 0.0;
+                    self.velocity_y = 0.0;
+                    self.state = SwipingState::Inactive;
+                    return false;
+                }
+                true
+            }
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        self.state != SwipingState::Inactive
+    }
+
+    fn stop(&mut self) {
+        self.velocity_x = 0.0;
+        self.velocity_y = 0.0;
+        self.state = SwipingState::Inactive;
+    }
+}
+
+/// Magnetic view animator — snaps the view to the nearest panel boundary.
+///
+/// After another animation settles, this applies a spring-like force toward
+/// the nearest snap point. The displacement from the snap target is multiplied
+/// by a spring constant and applied as velocity, producing a smooth settle.
+pub struct MagneticViewAnimator {
+    /// Spring constant controlling snap strength.
+    spring_constant: f64,
+    /// Current snap velocity.
+    velocity_x: f64,
+    velocity_y: f64,
+    /// Target snap position (set externally when a snap point is identified).
+    snap_target_x: f64,
+    snap_target_y: f64,
+    /// Whether snapping is active.
+    active: bool,
+    /// Damping factor to prevent oscillation (0..1).
+    damping: f64,
+}
+
+impl MagneticViewAnimator {
+    pub fn new(spring_constant: f64) -> Self {
+        Self {
+            spring_constant,
+            velocity_x: 0.0,
+            velocity_y: 0.0,
+            snap_target_x: 0.0,
+            snap_target_y: 0.0,
+            active: false,
+            damping: 0.8,
+        }
+    }
+
+    /// Set the snap target position. Activates the animator.
+    pub fn set_snap_target(&mut self, x: f64, y: f64) {
+        self.snap_target_x = x;
+        self.snap_target_y = y;
+        self.active = true;
+    }
+
+    /// Set the spring constant.
+    pub fn set_spring_constant(&mut self, k: f64) {
+        self.spring_constant = k;
+    }
+
+    /// Set the damping factor (0..1, lower = more damping).
+    pub fn set_damping(&mut self, d: f64) {
+        self.damping = d.clamp(0.0, 1.0);
+    }
+
+    /// Current velocity.
+    pub fn velocity(&self) -> (f64, f64) {
+        (self.velocity_x, self.velocity_y)
+    }
+}
+
+impl ViewAnimator for MagneticViewAnimator {
+    fn animate(&mut self, view: &mut View, tree: &mut PanelTree, dt: f64) -> bool {
+        if !self.active {
+            return false;
+        }
+
+        if let Some(state) = view.visit_stack().last().cloned() {
+            let disp_x = self.snap_target_x - state.rel_x;
+            let disp_y = self.snap_target_y - state.rel_y;
+
+            // Spring force: F = k * displacement
+            let force_x = self.spring_constant * disp_x;
+            let force_y = self.spring_constant * disp_y;
+
+            // Update velocity: v += F * dt, then apply damping
+            self.velocity_x = (self.velocity_x + force_x * dt) * self.damping;
+            self.velocity_y = (self.velocity_y + force_y * dt) * self.damping;
+
+            let dx = self.velocity_x * dt * view.viewport_size().0.max(1.0);
+            let dy = self.velocity_y * dt * view.viewport_size().1.max(1.0);
+
+            if dx.abs() > 1e-8 || dy.abs() > 1e-8 {
+                let (vw, vh) = view.viewport_size();
+                view.raw_scroll_and_zoom(tree, vw * 0.5, vh * 0.5, dx, dy, 0.0);
+            }
+
+            // Converged when displacement and velocity are both tiny
+            let dist = disp_x.abs() + disp_y.abs();
+            let speed =
+                (self.velocity_x * self.velocity_x + self.velocity_y * self.velocity_y).sqrt();
+            if dist < 1e-6 && speed < 1e-6 {
+                self.velocity_x = 0.0;
+                self.velocity_y = 0.0;
+                self.active = false;
+                return false;
+            }
+        }
+
+        self.active
+    }
+
+    fn is_active(&self) -> bool {
+        self.active
+    }
+
+    fn stop(&mut self) {
+        self.velocity_x = 0.0;
+        self.velocity_y = 0.0;
+        self.active = false;
+    }
 }
 
 #[cfg(test)]
@@ -762,7 +1139,7 @@ mod tests {
 
         let mut anim = VisitingViewAnimator::new(0.1, 0.1, 2.0, 10.0);
 
-        for _ in 0..100 {
+        for _ in 0..300 {
             if !anim.animate(&mut view, &mut tree, 0.016) {
                 break;
             }
@@ -889,5 +1266,164 @@ mod tests {
 
         anim.set_visiting_state(VisitingState::GoalReached);
         assert_eq!(anim.visiting_state(), VisitingState::GoalReached);
+    }
+
+    #[test]
+    fn visiting_give_up_timeout() {
+        let (mut tree, mut view) = setup();
+        view.update_viewing(&mut tree);
+
+        // Target a position that cannot converge quickly with very low speed
+        let mut anim = VisitingViewAnimator::new(0.5, 0.5, 5.0, 0.001);
+
+        // Simulate 4 seconds of frames — should hit the 3s give-up timeout
+        let mut converged = false;
+        for _ in 0..250 {
+            if !anim.animate(&mut view, &mut tree, 0.016) {
+                converged = true;
+                break;
+            }
+        }
+        assert!(converged, "Should give up after 3s timeout");
+        assert_eq!(anim.visiting_state(), VisitingState::GoalReached);
+    }
+
+    #[test]
+    fn visiting_blocked_movement_gives_up() {
+        let (mut tree, mut view) = setup();
+        view.update_viewing(&mut tree);
+
+        // Start at the target — should detect stall and stop
+        let state = view.current_visit().clone();
+        let mut anim = VisitingViewAnimator::new(state.rel_x, state.rel_y, state.rel_a, 10.0);
+
+        let mut stopped = false;
+        for _ in 0..20 {
+            if !anim.animate(&mut view, &mut tree, 0.016) {
+                stopped = true;
+                break;
+            }
+        }
+        assert!(stopped, "Should stop when blocked (already at target)");
+    }
+
+    #[test]
+    fn visiting_s_curve_speed_ramps() {
+        let anim = VisitingViewAnimator::new(0.5, 0.5, 2.0, 5.0);
+        // At elapsed=0 (start), s-curve factor should be very small
+        let s0 = anim.s_curve_speed(1.0);
+        assert!(s0 < 0.01, "S-curve should start near zero");
+    }
+
+    #[test]
+    fn visiting_seek_timeout() {
+        let (mut tree, mut view) = setup();
+        view.update_viewing(&mut tree);
+
+        let mut anim = VisitingViewAnimator::new(0.5, 0.5, 2.0, 5.0);
+        anim.set_visiting_state(VisitingState::Seek);
+
+        // Run for 4 seconds — should transition to GivingUp
+        for _ in 0..250 {
+            anim.animate(&mut view, &mut tree, 0.016);
+        }
+        assert_eq!(anim.visiting_state(), VisitingState::GivingUp);
+    }
+
+    #[test]
+    fn swiping_tracking_and_coasting() {
+        let (mut tree, mut view) = setup();
+        view.update_viewing(&mut tree);
+
+        let mut anim = SwipingViewAnimator::new();
+        assert_eq!(anim.state(), SwipingState::Inactive);
+        assert!(!anim.is_active());
+
+        // Begin tracking
+        anim.begin_tracking(100.0, 100.0);
+        assert_eq!(anim.state(), SwipingState::Tracking);
+        assert!(anim.is_active());
+
+        // Simulate drag with velocity
+        anim.update_tracking(120.0, 100.0, 0.016);
+        anim.update_tracking(140.0, 100.0, 0.016);
+        anim.update_tracking(160.0, 100.0, 0.016);
+
+        // Release — should enter coasting
+        anim.end_tracking();
+        assert_eq!(anim.state(), SwipingState::Coasting);
+        let (vx, _vy) = anim.velocity();
+        assert!(
+            vx > 0.0,
+            "Should have positive X velocity after rightward drag"
+        );
+
+        // Run coasting frames until stopped
+        for _ in 0..500 {
+            if !anim.animate(&mut view, &mut tree, 0.016) {
+                break;
+            }
+        }
+        assert!(!anim.is_active(), "Should decelerate to stop");
+    }
+
+    #[test]
+    fn swiping_slow_release_stays_inactive() {
+        let mut anim = SwipingViewAnimator::new();
+        anim.begin_tracking(100.0, 100.0);
+        // No significant movement — velocity stays near zero
+        anim.update_tracking(100.001, 100.0, 0.016);
+        anim.end_tracking();
+        // Should go directly to inactive since velocity is below threshold
+        assert_eq!(anim.state(), SwipingState::Inactive);
+    }
+
+    #[test]
+    fn swiping_stop() {
+        let mut anim = SwipingViewAnimator::new();
+        anim.begin_tracking(100.0, 100.0);
+        anim.update_tracking(200.0, 100.0, 0.016);
+        anim.end_tracking();
+        assert!(anim.is_active());
+
+        anim.stop();
+        assert!(!anim.is_active());
+        let (vx, vy) = anim.velocity();
+        assert_eq!(vx, 0.0);
+        assert_eq!(vy, 0.0);
+    }
+
+    #[test]
+    fn magnetic_snaps_to_target() {
+        let (mut tree, mut view) = setup();
+        view.update_viewing(&mut tree);
+
+        let mut anim = MagneticViewAnimator::new(50.0);
+        let state = view.current_visit().clone();
+        // Set a snap target slightly offset from current position
+        anim.set_snap_target(state.rel_x + 0.001, state.rel_y + 0.001);
+
+        assert!(anim.is_active());
+
+        for _ in 0..500 {
+            if !anim.animate(&mut view, &mut tree, 0.016) {
+                break;
+            }
+        }
+
+        assert!(!anim.is_active(), "Should converge to snap target");
+    }
+
+    #[test]
+    fn magnetic_stop() {
+        let mut anim = MagneticViewAnimator::new(50.0);
+        anim.set_snap_target(0.5, 0.5);
+        assert!(anim.is_active());
+
+        anim.stop();
+        assert!(!anim.is_active());
+        let (vx, vy) = anim.velocity();
+        assert_eq!(vx, 0.0);
+        assert_eq!(vy, 0.0);
     }
 }
