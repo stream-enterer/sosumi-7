@@ -1,4 +1,3 @@
-use super::font_cache::{FontCache, GlyphCacheKey};
 use super::interpolation;
 use super::scanline::{self, WindingRule};
 use super::stroke::{Stroke, StrokeEnd, StrokeEndType};
@@ -93,7 +92,6 @@ pub struct Painter<'a> {
     target: &'a mut Image,
     state: PainterState,
     state_stack: Vec<PainterState>,
-    font_cache: &'a mut FontCache,
 }
 
 impl<'a> Painter<'a> {
@@ -101,7 +99,7 @@ impl<'a> Painter<'a> {
     ///
     /// # Panics
     /// Panics if the image is not 4-channel RGBA.
-    pub fn new(target: &'a mut Image, font_cache: &'a mut FontCache) -> Self {
+    pub fn new(target: &'a mut Image) -> Self {
         assert_eq!(
             target.channel_count(),
             4,
@@ -121,7 +119,6 @@ impl<'a> Painter<'a> {
                 alpha: 255,
             },
             state_stack: Vec::new(),
-            font_cache,
         }
     }
 
@@ -283,11 +280,6 @@ impl<'a> Painter<'a> {
     /// Get the bottom edge of the clip rectangle in user coordinates.
     pub fn get_user_clip_y2(&self) -> f64 {
         ((self.state.clip.y + self.state.clip.h) as f64 - self.state.offset_y) / self.state.scale_y
-    }
-
-    /// Immutable access to the font cache (for measurement).
-    pub fn font_cache(&self) -> &FontCache {
-        self.font_cache
     }
 
     // --- Drawing API ---
@@ -872,59 +864,6 @@ impl<'a> Painter<'a> {
         }
     }
 
-    // --- Formatted text ---
-
-    /// Draw text inside a bounding box with alignment and line wrapping.
-    #[allow(clippy::too_many_arguments)]
-    pub fn paint_text_boxed(
-        &mut self,
-        x: f64,
-        y: f64,
-        w: f64,
-        h: f64,
-        text: &str,
-        size_px: f64,
-        color: Color,
-        alignment: TextAlignment,
-        v_align: VAlign,
-    ) {
-        let quantized = FontCache::quantize_size(size_px * self.state.scale_y.abs());
-        if quantized < 2 {
-            return;
-        }
-
-        let line_height = self.font_cache.line_height(0, quantized) / self.state.scale_y.abs();
-
-        // Count lines and compute vertical start based on v_align.
-        let lines: Vec<&str> = text.split('\n').collect();
-        let num_lines = lines.len();
-        let total_height = num_lines as f64 * line_height;
-        let start_y = match v_align {
-            VAlign::Top => y,
-            VAlign::Center => y + (h - total_height) / 2.0,
-            VAlign::Bottom => y + h - total_height,
-        };
-
-        let mut cursor_y = start_y;
-        for line in &lines {
-            if cursor_y >= y + h {
-                break;
-            }
-            if cursor_y + line_height > y {
-                let expanded = expand_tabs(line);
-                let (tw_px, _th) = self.font_cache.measure_text(&expanded, 0, quantized);
-                let tw = tw_px / self.state.scale_x.abs();
-                let line_x = match alignment {
-                    TextAlignment::Left => x,
-                    TextAlignment::Center => x + (w - tw) / 2.0,
-                    TextAlignment::Right => x + w - tw,
-                };
-                self.paint_text(line_x, cursor_y, &expanded, size_px, color);
-            }
-            cursor_y += line_height;
-        }
-    }
-
     // --- 9-slice border images ---
 
     /// Draw a 9-slice border image stretched to fill a rectangle.
@@ -1361,120 +1300,6 @@ impl<'a> Painter<'a> {
             verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
         }
         self.paint_polygon_outlined(&verts, stroke.color, stroke.width);
-    }
-
-    /// Draw text at the given position using the font system.
-    /// `size_px` is the text size in user coordinates.
-    pub fn paint_text(&mut self, x: f64, y: f64, text: &str, size_px: f64, color: Color) {
-        let quantized = FontCache::quantize_size(size_px * self.state.scale_y.abs());
-        if quantized < 2 {
-            // Too small — draw a solid rectangle as placeholder.
-            let (tw, th) = self.font_cache.measure_text(text, 0, 2);
-            let scale = size_px / 2.0;
-            self.paint_rect(x, y, tw * scale, th * scale, color);
-            return;
-        }
-
-        // Phase 1: shape and ensure all glyphs are cached (mutates font_cache).
-        let shaped = self.font_cache.shape_text(text, 0, quantized);
-        for sg in &shaped {
-            self.font_cache.ensure_glyph(0, quantized, sg.glyph_id);
-        }
-        let ascent = self.font_cache.ascent(0, quantized);
-
-        // Phase 2: render glyphs using disjoint field borrows.
-        // We borrow self.font_cache immutably and self.target/self.state mutably.
-        let px_x = (x * self.state.scale_x + self.state.offset_x) as i32;
-        let baseline_y = (y * self.state.scale_y + self.state.offset_y) as i32 + ascent;
-
-        let PixelRect {
-            x: cx,
-            y: cy,
-            w: cw,
-            h: ch,
-        } = self.state.clip;
-        let global_alpha = self.state.alpha as u16;
-        let tw = self.target.width() as i32;
-        let th = self.target.height() as i32;
-        let color_a = color.a() as u16;
-
-        let mut pen_x = 0i32;
-        for sg in &shaped {
-            let key = GlyphCacheKey {
-                font_id: 0,
-                size_px: quantized,
-                glyph_id: sg.glyph_id,
-            };
-            if let Some(glyph) = self.font_cache.get_cached_glyph(&key) {
-                if glyph.width > 0 && glyph.height > 0 {
-                    let gx = px_x + pen_x + sg.x_offset.round() as i32 + glyph.bearing_x;
-                    let gy = baseline_y - sg.y_offset.round() as i32 - glyph.bearing_y;
-
-                    let gw = glyph.width as i32;
-                    let gh = glyph.height as i32;
-
-                    // Compute visible bounds (clip early).
-                    let row_start = (cy - gy).max(0);
-                    let row_end = ((cy + ch) - gy).min(gh);
-                    let col_start = (cx - gx).max(0);
-                    let col_end = ((cx + cw) - gx).min(gw);
-
-                    for row in row_start..row_end {
-                        let py = gy + row;
-                        if py < 0 || py >= th {
-                            continue;
-                        }
-                        for col in col_start..col_end {
-                            let px = gx + col;
-                            if px < 0 || px >= tw {
-                                continue;
-                            }
-                            let a = glyph.bitmap[(row as u32 * glyph.width + col as u32) as usize];
-                            if a == 0 {
-                                continue;
-                            }
-                            // Standard alpha blend: coverage * color_alpha * global_alpha
-                            let ca = (color_a * a as u16 + 127) / 255;
-                            let ea = if global_alpha == 255 {
-                                ca
-                            } else {
-                                (ca * global_alpha + 127) / 255
-                            };
-                            if ea == 0 {
-                                continue;
-                            }
-                            if ea >= 255 {
-                                let out = self.target.pixel_mut(px as u32, py as u32);
-                                out[0] = color.r();
-                                out[1] = color.g();
-                                out[2] = color.b();
-                                out[3] = 255;
-                            } else {
-                                let inv = 255 - ea;
-                                let bg = self.target.pixel(px as u32, py as u32);
-                                let r = (bg[0] as u16 * inv + color.r() as u16 * ea + 127) / 255;
-                                let g = (bg[1] as u16 * inv + color.g() as u16 * ea + 127) / 255;
-                                let b = (bg[2] as u16 * inv + color.b() as u16 * ea + 127) / 255;
-                                let a = (bg[3] as u16 * inv + 255 * ea + 127) / 255;
-                                let out = self.target.pixel_mut(px as u32, py as u32);
-                                out[0] = r as u8;
-                                out[1] = g as u8;
-                                out[2] = b as u8;
-                                out[3] = a as u8;
-                            }
-                        }
-                    }
-                }
-            }
-            pen_x += sg.x_advance.round() as i32;
-        }
-    }
-
-    /// Get the size of text in user coordinates at the given size.
-    /// Returns (width, height).
-    pub fn get_text_size(&self, text: &str, size_px: f64) -> (f64, f64) {
-        let quantized = FontCache::quantize_size(size_px);
-        self.font_cache.measure_text(text, 0, quantized)
     }
 
     /// Draw a rectangle outline. Uses four rects for axis-aligned precision.
@@ -3217,39 +3042,19 @@ fn mid(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
     ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5)
 }
 
-/// Expand tab characters to 8-column tab stops.
-fn expand_tabs(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut col = 0;
-    for ch in s.chars() {
-        if ch == '\t' {
-            let spaces = 8 - (col % 8);
-            for _ in 0..spaces {
-                result.push(' ');
-            }
-            col += spaces;
-        } else {
-            result.push(ch);
-            col += 1;
-        }
-    }
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::foundation::Image;
 
-    fn make_painter<'a>(target: &'a mut Image, font_cache: &'a mut FontCache) -> Painter<'a> {
-        Painter::new(target, font_cache)
+    fn make_painter<'a>(target: &'a mut Image) -> Painter<'a> {
+        Painter::new(target)
     }
 
     #[test]
     fn edge_correction_no_crash() {
         let mut img = Image::new(32, 32, 4);
-        let mut fc = FontCache::new();
-        let mut p = make_painter(&mut img, &mut fc);
+        let mut p = make_painter(&mut img);
         p.paint_polygon(&[(0.0, 0.0), (16.0, 0.0), (16.0, 16.0)], Color::RED);
         p.paint_polygon(&[(0.0, 0.0), (16.0, 16.0), (0.0, 16.0)], Color::BLUE);
         p.paint_edge_correction(0.0, 0.0, 16.0, 16.0, Color::RED, Color::BLUE);
@@ -3258,8 +3063,7 @@ mod tests {
     #[test]
     fn edge_correction_transparent_noop() {
         let mut img = Image::new(16, 16, 4);
-        let mut fc = FontCache::new();
-        let mut p = make_painter(&mut img, &mut fc);
+        let mut p = make_painter(&mut img);
         p.paint_edge_correction(0.0, 0.0, 10.0, 10.0, Color::TRANSPARENT, Color::RED);
         p.paint_edge_correction(0.0, 0.0, 10.0, 10.0, Color::RED, Color::TRANSPARENT);
     }
@@ -3267,8 +3071,7 @@ mod tests {
     #[test]
     fn bezier_outline_paints_pixels() {
         let mut img = Image::new(64, 64, 4);
-        let mut fc = FontCache::new();
-        let mut p = make_painter(&mut img, &mut fc);
+        let mut p = make_painter(&mut img);
         let stroke = Stroke::new(Color::WHITE, 2.0);
         let points = [
             (32.0, 10.0),
@@ -3331,8 +3134,7 @@ mod tests {
     #[test]
     fn polyline_without_arrows_solid() {
         let mut img = Image::new(32, 32, 4);
-        let mut fc = FontCache::new();
-        let mut p = make_painter(&mut img, &mut fc);
+        let mut p = make_painter(&mut img);
         let stroke = Stroke::new(Color::WHITE, 2.0);
         let verts = [(5.0, 5.0), (25.0, 5.0), (25.0, 25.0)];
         p.paint_polyline_without_arrows(&verts, &stroke, false);
@@ -3354,8 +3156,7 @@ mod tests {
             }
         }
         let mut img = Image::new(16, 16, 4);
-        let mut fc = FontCache::new();
-        let mut p = make_painter(&mut img, &mut fc);
+        let mut p = make_painter(&mut img);
         p.paint_image_scaled(
             0.0,
             0.0,
@@ -3373,8 +3174,7 @@ mod tests {
     #[test]
     fn paint_radial_gradient_fills() {
         let mut img = Image::new(32, 32, 4);
-        let mut fc = FontCache::new();
-        let mut p = make_painter(&mut img, &mut fc);
+        let mut p = make_painter(&mut img);
         p.paint_radial_gradient(16.0, 16.0, 12.0, 12.0, Color::WHITE, Color::BLACK);
         let center = img.pixel(16, 16);
         assert!(center[0] > 200, "center should be near white");
@@ -3399,8 +3199,7 @@ mod tests {
     fn paint_image_scaled_bicubic() {
         let src = make_gradient_src();
         let mut img = Image::new(32, 32, 4);
-        let mut fc = FontCache::new();
-        let mut p = make_painter(&mut img, &mut fc);
+        let mut p = make_painter(&mut img);
         p.paint_image_scaled(
             0.0,
             0.0,
@@ -3418,8 +3217,7 @@ mod tests {
     fn paint_image_scaled_lanczos() {
         let src = make_gradient_src();
         let mut img = Image::new(32, 32, 4);
-        let mut fc = FontCache::new();
-        let mut p = make_painter(&mut img, &mut fc);
+        let mut p = make_painter(&mut img);
         p.paint_image_scaled(
             0.0,
             0.0,
@@ -3437,8 +3235,7 @@ mod tests {
     fn paint_image_scaled_adaptive() {
         let src = make_gradient_src();
         let mut img = Image::new(32, 32, 4);
-        let mut fc = FontCache::new();
-        let mut p = make_painter(&mut img, &mut fc);
+        let mut p = make_painter(&mut img);
         p.paint_image_scaled(
             0.0,
             0.0,
@@ -3456,8 +3253,7 @@ mod tests {
     fn paint_image_scaled_area_sampled() {
         let src = make_gradient_src();
         let mut img = Image::new(4, 4, 4);
-        let mut fc = FontCache::new();
-        let mut p = make_painter(&mut img, &mut fc);
+        let mut p = make_painter(&mut img);
         // Downscale: 8x8 -> 4x4 (area sampling)
         p.paint_image_scaled(
             0.0,

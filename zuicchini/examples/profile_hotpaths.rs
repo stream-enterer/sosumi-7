@@ -10,7 +10,7 @@ use zuicchini::foundation::Color;
 use zuicchini::layout::pack::PackLayout;
 use zuicchini::layout::ChildConstraint;
 use zuicchini::panel::{PanelBehavior, PanelTree, ViewFlags};
-use zuicchini::render::{FontCache, Painter, TileCache, TILE_SIZE};
+use zuicchini::render::{Painter, TileCache, TILE_SIZE};
 use zuicchini::widget::{Border, Look, OuterBorderType};
 
 struct BorderPanel {
@@ -86,10 +86,7 @@ fn main() {
     let (mut tree, root) = build_tree(panel_count);
     let t_build = t0.elapsed();
 
-    // ── Phase 2: Font cache init ──
-    let t0 = Instant::now();
-    let mut font_cache = FontCache::new();
-    let t_font = t0.elapsed();
+    let t_font = std::time::Duration::ZERO;
 
     // ── Phase 3: View creation ──
     let t0 = Instant::now();
@@ -121,7 +118,7 @@ fn main() {
         for col in 0..cols {
             let tile = tile_cache.get_or_create(col, row);
             tile.image.fill(Color::BLACK);
-            let mut painter = Painter::new(&mut tile.image, &mut font_cache);
+            let mut painter = Painter::new(&mut tile.image);
             let tile_size = TILE_SIZE as f64;
             painter.translate(-(col as f64 * tile_size), -(row as f64 * tile_size));
             view.paint(&mut tree, &mut painter);
@@ -147,7 +144,7 @@ fn main() {
             for col in 0..cols {
                 let tile = tile_cache.get_or_create(col, row);
                 tile.image.fill(Color::BLACK);
-                let mut painter = Painter::new(&mut tile.image, &mut font_cache);
+                let mut painter = Painter::new(&mut tile.image);
                 let tile_size = TILE_SIZE as f64;
                 painter.translate(-(col as f64 * tile_size), -(row as f64 * tile_size));
                 view.paint(&mut tree, &mut painter);

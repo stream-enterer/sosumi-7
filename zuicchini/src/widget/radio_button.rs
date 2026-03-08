@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::input::{Cursor, InputEvent, InputKey, InputVariant};
-use crate::render::font_cache::FontCache;
 use crate::render::Painter;
 
 use super::border::{Border, OuterBorderType};
@@ -103,10 +102,9 @@ impl RadioButton {
         Cursor::Hand
     }
 
-    pub fn preferred_size(&self, font_cache: &FontCache) -> (f64, f64) {
-        let size_px = FontCache::quantize_size(FontCache::DEFAULT_SIZE_PX);
-        let tw = font_cache.measure_text(&self.border.caption, 0, size_px).0;
-        let th = FontCache::DEFAULT_SIZE_PX;
+    pub fn preferred_size(&self) -> (f64, f64) {
+        let tw = self.border.caption.len() as f64 * 7.0; // TODO(font): measure_text stub
+        let th = 13.0;
         self.border.preferred_size_for_content(tw + 8.0, th + 4.0)
     }
 }

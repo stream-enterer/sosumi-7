@@ -10,7 +10,7 @@ use zuicchini::panel::{
 };
 use zuicchini::render::{
     ImageExtension, ImageQuality, LineCap, LineJoin, Painter, Stroke, StrokeEnd, StrokeEndType,
-    TextAlignment, Texture, VAlign,
+    Texture,
 };
 use zuicchini::widget::{
     Button, CheckBox, CheckButton, ColorField, Label, ListBox, Look, RadioBox, RadioButton,
@@ -70,18 +70,7 @@ impl TestPanel {
     }
 
     fn paint_primitives(&self, painter: &mut Painter, fg: Color) {
-        // Text test box
-        painter.paint_text_boxed(
-            0.25,
-            0.8,
-            0.05,
-            0.05,
-            "Text Test\n\t<-tab\ntab->\t<-tab",
-            0.1,
-            fg,
-            TextAlignment::Center,
-            VAlign::Top,
-        );
+        // TODO(font): paint text here
         painter.paint_rect(0.25, 0.8, 0.05, 0.05, Color::rgba(255, 0, 0, 32));
 
         // Triangle
@@ -589,44 +578,24 @@ impl PanelBehavior for TestPanel {
         let bg = self.bg_color();
         painter.paint_rect(0.0, 0.0, 1.0, h, bg);
         painter.paint_rect_outlined(0.01, 0.01, 1.0 - 0.02, h - 0.02, &Stroke::new(fg, 0.02));
-        painter.paint_text_boxed(
-            0.02,
-            0.02,
-            0.49,
-            0.07,
-            "Test Panel",
-            0.1,
-            fg,
-            TextAlignment::Left,
-            VAlign::Top,
-        );
+        // TODO(font): paint text here
 
-        let mut state_str = "State:".to_string();
+        let mut _state_str = "State:".to_string();
         if state.is_focused() {
-            state_str += " Focused";
+            _state_str += " Focused";
         }
         if state.in_focused_path() {
-            state_str += " InFocusedPath";
+            _state_str += " InFocusedPath";
         }
         if state.window_focused {
-            state_str += " ViewFocused";
+            _state_str += " ViewFocused";
         }
-        state_str += &format!(" Pri={:.3} MemLim={}", state.priority, state.memory_limit);
-        painter.paint_text_boxed(
-            0.05,
-            0.4,
-            0.9,
-            0.05,
-            &state_str,
-            0.05,
-            fg,
-            TextAlignment::Left,
-            VAlign::Top,
-        );
+        _state_str += &format!(" Pri={:.3} MemLim={}", state.priority, state.memory_limit);
+        // TODO(font): paint text here
 
-        let log_color = Color::rgba(0x88, 0x88, 0xBB, 0xFF);
-        for (i, entry) in self.input_log.iter().enumerate() {
-            painter.paint_text(0.05, 0.57 + i as f64 * 0.008, entry, 0.008, log_color);
+        let _log_color = Color::rgba(0x88, 0x88, 0xBB, 0xFF);
+        for _entry in self.input_log.iter() {
+            // TODO(font): paint text here
         }
 
         self.paint_primitives(painter, fg);
@@ -973,17 +942,7 @@ impl PanelBehavior for TkTestGrpPanel {
         painter.scale(w, w);
         let h = h / w;
         painter.paint_rect(0.0, 0.0, 1.0, h, Color::rgba(0x20, 0x30, 0x40, 0xFF));
-        painter.paint_text_boxed(
-            0.01,
-            0.01,
-            1.0 - 0.02,
-            0.03,
-            "Toolkit Test",
-            0.03,
-            Color::WHITE,
-            TextAlignment::Left,
-            VAlign::Top,
-        );
+        // TODO(font): paint text here
         painter.pop_state();
     }
 
@@ -1054,17 +1013,7 @@ impl PanelBehavior for TkTestPanel {
         painter.paint_rect(0.0, 0.0, 1.0, h, bg);
 
         if self.disabled {
-            painter.paint_text_boxed(
-                0.0,
-                0.0,
-                1.0,
-                h,
-                "Disabled",
-                0.02,
-                Color::grey(100),
-                TextAlignment::Center,
-                VAlign::Top,
-            );
+            // TODO(font): paint text here
         }
         painter.pop_state();
     }
@@ -1377,17 +1326,7 @@ impl PanelBehavior for PolyDrawPanel {
             }
         }
 
-        painter.paint_text_boxed(
-            0.0,
-            h - 0.06,
-            1.0,
-            0.06,
-            "Drag vertices with left mouse button! (Hold shift for snap grid)",
-            0.03,
-            Color::WHITE,
-            TextAlignment::Center,
-            VAlign::Top,
-        );
+        // TODO(font): paint text here
         painter.pop_state();
     }
 

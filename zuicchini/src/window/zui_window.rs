@@ -7,7 +7,7 @@ use crate::panel::{
     KeyboardZoomScrollVIF, MouseZoomScrollVIF, PanelId, PanelTree, View, ViewAnimator,
     ViewInputFilter,
 };
-use crate::render::{FontCache, TileCache, WgpuCompositor};
+use crate::render::{TileCache, WgpuCompositor};
 use crate::scheduler::SignalId;
 
 use super::app::GpuContext;
@@ -32,7 +32,6 @@ pub struct ZuiWindow {
     surface_config: wgpu::SurfaceConfiguration,
     compositor: WgpuCompositor,
     tile_cache: TileCache,
-    font_cache: FontCache,
     view: View,
     /// Pre-allocated viewport-sized buffer for single-pass rendering.
     /// Used when many tiles are dirty (e.g. during panning) to avoid
@@ -104,7 +103,6 @@ impl ZuiWindow {
 
         let compositor = WgpuCompositor::new(&gpu.device, format, w, h);
         let tile_cache = TileCache::new(w, h, 256);
-        let font_cache = FontCache::new();
         let viewport_buffer = crate::foundation::Image::new(w, h, 4);
         let view = View::new(root_panel, w as f64, h as f64);
 
@@ -119,7 +117,6 @@ impl ZuiWindow {
             surface_config,
             compositor,
             tile_cache,
-            font_cache,
             viewport_buffer,
             view,
             flags,
@@ -166,7 +163,7 @@ impl ZuiWindow {
             // re-rasterization of primitives across tiles.
             self.viewport_buffer.fill(crate::foundation::Color::BLACK);
             {
-                let mut painter = Painter::new(&mut self.viewport_buffer, &mut self.font_cache);
+                let mut painter = Painter::new(&mut self.viewport_buffer);
                 self.view.paint(tree, &mut painter);
             }
             for row in 0..rows {
@@ -194,7 +191,7 @@ impl ZuiWindow {
                     if tile.dirty {
                         tile.image.fill(crate::foundation::Color::BLACK);
                         {
-                            let mut painter = Painter::new(&mut tile.image, &mut self.font_cache);
+                            let mut painter = Painter::new(&mut tile.image);
                             let ts = tile_size as f64;
                             painter.translate(-(col as f64 * ts), -(row as f64 * ts));
                             self.view.paint(tree, &mut painter);
@@ -209,7 +206,6 @@ impl ZuiWindow {
         }
 
         self.tile_cache.advance_frame();
-        self.font_cache.advance_frame();
 
         // Composite and present
         match self.compositor.render_frame(

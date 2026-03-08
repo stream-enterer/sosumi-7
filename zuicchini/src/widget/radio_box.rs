@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::input::{Cursor, InputEvent, InputKey, InputVariant};
-use crate::render::font_cache::FontCache;
 use crate::render::Painter;
 
 use super::look::Look;
@@ -52,15 +51,7 @@ impl RadioBox {
 
         // Label
         if !self.label.is_empty() {
-            let text_x = CIRCLE_SIZE + CIRCLE_LABEL_GAP;
-            let text_y = 1.0;
-            painter.paint_text(
-                text_x,
-                text_y,
-                &self.label,
-                FontCache::DEFAULT_SIZE_PX,
-                self.look.fg_color,
-            );
+            // TODO(font): paint text here
         }
     }
 
@@ -82,12 +73,11 @@ impl RadioBox {
         Cursor::Hand
     }
 
-    pub fn preferred_size(&self, font_cache: &FontCache) -> (f64, f64) {
+    pub fn preferred_size(&self) -> (f64, f64) {
         let w = if self.label.is_empty() {
             CIRCLE_SIZE
         } else {
-            let size_px = FontCache::quantize_size(FontCache::DEFAULT_SIZE_PX);
-            CIRCLE_SIZE + CIRCLE_LABEL_GAP + font_cache.measure_text(&self.label, 0, size_px).0
+            CIRCLE_SIZE + CIRCLE_LABEL_GAP + self.label.len() as f64 * 7.0 // TODO(font): measure_text stub
         };
         (w, CIRCLE_SIZE)
     }

@@ -1,5 +1,4 @@
 pub mod compositor;
-pub mod font_cache;
 pub(crate) mod interpolation;
 mod painter;
 mod scanline;
@@ -8,7 +7,6 @@ mod texture;
 pub mod tile_cache;
 
 pub use compositor::WgpuCompositor;
-pub use font_cache::FontCache;
 pub use painter::{Painter, TextAlignment, VAlign};
 pub use stroke::{LineCap, LineJoin, Stroke, StrokeEnd, StrokeEndType};
 pub use texture::{ImageExtension, ImageQuality, Texture};

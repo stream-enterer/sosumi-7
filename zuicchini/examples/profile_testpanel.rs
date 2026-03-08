@@ -10,8 +10,8 @@ use zuicchini::foundation::Color;
 use zuicchini::foundation::Image;
 use zuicchini::panel::{PanelBehavior, PanelState, PanelTree, ViewFlags};
 use zuicchini::render::{
-    FontCache, ImageExtension, ImageQuality, LineCap, LineJoin, Painter, Stroke, StrokeEnd,
-    StrokeEndType, TextAlignment, Texture, TileCache, VAlign, TILE_SIZE,
+    ImageExtension, ImageQuality, LineCap, LineJoin, Painter, Stroke, StrokeEnd, StrokeEndType,
+    Texture, TileCache, TILE_SIZE,
 };
 
 use std::f64::consts::PI;
@@ -56,60 +56,15 @@ impl PanelBehavior for TestPanel {
         painter.paint_rect(0.0, 0.0, 1.0, h, bg);
         painter.paint_rect_outlined(0.01, 0.01, 1.0 - 0.02, h - 0.02, &Stroke::new(fg, 0.02));
 
-        // Title text
-        painter.paint_text_boxed(
-            0.02,
-            0.02,
-            0.49,
-            0.07,
-            "Test Panel",
-            0.1,
-            fg,
-            TextAlignment::Left,
-            VAlign::Top,
-        );
+        // TODO(font): paint text here
 
-        // State text
-        let state_str = format!(
-            "State: InFocusedPath ViewFocused Pri={:.3} MemLim={}",
-            state.priority, state.memory_limit,
-        );
-        painter.paint_text_boxed(
-            0.05,
-            0.4,
-            0.9,
-            0.05,
-            &state_str,
-            0.05,
-            fg,
-            TextAlignment::Left,
-            VAlign::Top,
-        );
+        // TODO(font): paint text here
 
-        // Simulated input log (20 entries like real TestPanel)
-        let log_color = Color::rgba(0x88, 0x88, 0xBB, 0xFF);
-        for i in 0..20 {
-            painter.paint_text(
-                0.05, 0.57 + i as f64 * 0.008,
-                "EVENT: key=A chars=\"a\" repeat=false variant=Press mouse=0.1234,0.5678 pressed=[]",
-                0.008, log_color,
-            );
-        }
+        // TODO(font): paint text here
 
         // --- All the paint_primitives from the real TestPanel ---
 
-        // Text test box
-        painter.paint_text_boxed(
-            0.25,
-            0.8,
-            0.05,
-            0.05,
-            "Text Test\n\t<-tab\ntab->\t<-tab",
-            0.1,
-            fg,
-            TextAlignment::Center,
-            VAlign::Top,
-        );
+        // TODO(font): paint text here
         painter.paint_rect(0.25, 0.8, 0.05, 0.05, Color::rgba(255, 0, 0, 32));
 
         // Polygons
@@ -608,7 +563,6 @@ fn main() {
     tree.set_layout_rect(root, 0.0, 0.0, 1.0, tallness);
     tree.set_focusable(root, true);
 
-    let mut font_cache = FontCache::new();
     let mut view = zuicchini::panel::View::new(root, vw as f64, vh as f64);
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     tree.deliver_notices(true);
@@ -622,7 +576,7 @@ fn main() {
         for col in 0..cols {
             let tile = tile_cache.get_or_create(col, row);
             tile.image.fill(Color::BLACK);
-            let mut painter = Painter::new(&mut tile.image, &mut font_cache);
+            let mut painter = Painter::new(&mut tile.image);
             painter.translate(
                 -(col as f64 * TILE_SIZE as f64),
                 -(row as f64 * TILE_SIZE as f64),
@@ -638,7 +592,7 @@ fn main() {
             for col in 0..cols {
                 let tile = tile_cache.get_or_create(col, row);
                 tile.image.fill(Color::BLACK);
-                let mut painter = Painter::new(&mut tile.image, &mut font_cache);
+                let mut painter = Painter::new(&mut tile.image);
                 painter.translate(
                     -(col as f64 * TILE_SIZE as f64),
                     -(row as f64 * TILE_SIZE as f64),
@@ -654,7 +608,7 @@ fn main() {
     // Warmup
     viewport_buf.fill(Color::BLACK);
     {
-        let mut painter = Painter::new(&mut viewport_buf, &mut font_cache);
+        let mut painter = Painter::new(&mut viewport_buf);
         view.paint(&mut tree, &mut painter);
     }
 
@@ -662,7 +616,7 @@ fn main() {
     for _ in 0..iterations {
         viewport_buf.fill(Color::BLACK);
         {
-            let mut painter = Painter::new(&mut viewport_buf, &mut font_cache);
+            let mut painter = Painter::new(&mut viewport_buf);
             view.paint(&mut tree, &mut painter);
         }
         // Copy to tiles (simulates the upload path)

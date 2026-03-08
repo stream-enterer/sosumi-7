@@ -2,13 +2,12 @@ use std::rc::Rc;
 
 use crate::foundation::Rect;
 use crate::input::{InputEvent, InputKey, InputVariant};
-use crate::render::font_cache::FontCache;
 use crate::render::Painter;
 
 use super::border::{Border, InnerBorderType, OuterBorderType};
 use super::look::Look;
 
-const ROW_HEIGHT: f64 = FontCache::DEFAULT_SIZE_PX + 4.0;
+const ROW_HEIGHT: f64 = 17.0;
 
 type SelectionCb = Box<dyn FnMut(&[usize])>;
 
@@ -85,7 +84,7 @@ impl ListBox {
         painter.push_state();
         painter.clip_rect(cx, cy, cw, ch);
 
-        for (i, item) in self.items.iter().enumerate() {
+        for (i, _item) in self.items.iter().enumerate() {
             let y = cy + i as f64 * ROW_HEIGHT - self.scroll_y;
             if y + ROW_HEIGHT < cy || y > cy + ch {
                 continue;
@@ -95,14 +94,7 @@ impl ListBox {
                 painter.paint_rect(cx, y, cw, ROW_HEIGHT, self.look.input_hl_color);
             }
 
-            let text_y = y + 2.0;
-            painter.paint_text(
-                cx + 2.0,
-                text_y,
-                item,
-                FontCache::DEFAULT_SIZE_PX,
-                self.look.input_fg_color,
-            );
+            // TODO(font): paint text here
         }
 
         painter.pop_state();
@@ -181,12 +173,11 @@ impl ListBox {
         }
     }
 
-    pub fn preferred_size(&self, font_cache: &FontCache) -> (f64, f64) {
-        let size_px = FontCache::quantize_size(FontCache::DEFAULT_SIZE_PX);
+    pub fn preferred_size(&self) -> (f64, f64) {
         let max_w = self
             .items
             .iter()
-            .map(|s| font_cache.measure_text(s, 0, size_px).0)
+            .map(|s| s.len() as f64 * 7.0) // TODO(font): measure_text stub
             .fold(0.0f64, f64::max);
         let h = self.items.len() as f64 * ROW_HEIGHT;
         self.border.preferred_size_for_content(max_w + 4.0, h)

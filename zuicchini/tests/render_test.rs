@@ -1,13 +1,13 @@
 use zuicchini::foundation::{Color, Image};
-use zuicchini::render::{FontCache, Painter, Stroke};
+use zuicchini::render::{Painter, Stroke};
 
 #[test]
 fn paint_rect_fills_correct_pixels() {
     let mut img = Image::new(10, 10, 4);
     img.fill(Color::BLACK);
-    let mut fc = FontCache::new();
+
     {
-        let mut p = Painter::new(&mut img, &mut fc);
+        let mut p = Painter::new(&mut img);
         p.set_canvas_color(Color::BLACK);
         p.paint_rect(2.0, 3.0, 4.0, 2.0, Color::RED);
     }
@@ -23,9 +23,9 @@ fn paint_rect_fills_correct_pixels() {
 fn canvas_blend_works_in_painter() {
     let mut img = Image::new(4, 4, 4);
     img.fill(Color::rgb(100, 100, 100));
-    let mut fc = FontCache::new();
+
     {
-        let mut p = Painter::new(&mut img, &mut fc);
+        let mut p = Painter::new(&mut img);
         // Canvas = rgb(50,50,50), source = rgb(150,150,150), alpha = 128
         // target += (150 - 50) * 128 / 255 = target + 50 = 150
         p.set_canvas_color(Color::rgb(50, 50, 50));
@@ -42,9 +42,9 @@ fn canvas_blend_works_in_painter() {
 fn clip_rect_respected() {
     let mut img = Image::new(10, 10, 4);
     img.fill(Color::BLACK);
-    let mut fc = FontCache::new();
+
     {
-        let mut p = Painter::new(&mut img, &mut fc);
+        let mut p = Painter::new(&mut img);
         p.set_canvas_color(Color::BLACK);
         p.clip_rect(2.0, 2.0, 4.0, 4.0);
         // Paint a rect that extends beyond the clip
@@ -61,9 +61,9 @@ fn clip_rect_respected() {
 fn coordinate_transforms() {
     let mut img = Image::new(20, 20, 4);
     img.fill(Color::BLACK);
-    let mut fc = FontCache::new();
+
     {
-        let mut p = Painter::new(&mut img, &mut fc);
+        let mut p = Painter::new(&mut img);
         p.set_canvas_color(Color::BLACK);
         p.translate(5.0, 5.0);
         p.paint_rect(0.0, 0.0, 2.0, 2.0, Color::BLUE);
@@ -79,9 +79,9 @@ fn coordinate_transforms() {
 fn push_pop_state() {
     let mut img = Image::new(20, 20, 4);
     img.fill(Color::BLACK);
-    let mut fc = FontCache::new();
+
     {
-        let mut p = Painter::new(&mut img, &mut fc);
+        let mut p = Painter::new(&mut img);
         p.set_canvas_color(Color::BLACK);
         p.push_state();
         p.translate(10.0, 10.0);
@@ -100,9 +100,9 @@ fn push_pop_state() {
 fn paint_ellipse_basic() {
     let mut img = Image::new(20, 20, 4);
     img.fill(Color::BLACK);
-    let mut fc = FontCache::new();
+
     {
-        let mut p = Painter::new(&mut img, &mut fc);
+        let mut p = Painter::new(&mut img);
         p.set_canvas_color(Color::BLACK);
         p.paint_ellipse(10.0, 10.0, 5.0, 5.0, Color::RED);
     }
@@ -117,9 +117,9 @@ fn paint_ellipse_basic() {
 fn paint_line_basic() {
     let mut img = Image::new(10, 10, 4);
     img.fill(Color::BLACK);
-    let mut fc = FontCache::new();
+
     {
-        let mut p = Painter::new(&mut img, &mut fc);
+        let mut p = Painter::new(&mut img);
         p.set_canvas_color(Color::BLACK);
         p.paint_line(0.0, 0.0, 9.0, 0.0, Color::WHITE);
     }
@@ -131,29 +131,12 @@ fn paint_line_basic() {
 }
 
 #[test]
-fn paint_text_basic() {
-    let mut img = Image::new(100, 30, 4);
-    img.fill(Color::BLACK);
-    let mut fc = FontCache::new();
-    {
-        let mut p = Painter::new(&mut img, &mut fc);
-        p.set_canvas_color(Color::BLACK);
-        p.paint_text(0.0, 0.0, "Hi", FontCache::DEFAULT_SIZE_PX, Color::WHITE);
-    }
-    // There should be some white pixels from the text
-    let has_white = (0..100u32)
-        .flat_map(|x| (0..30u32).map(move |y| (x, y)))
-        .any(|(x, y)| img.pixel(x, y)[0] == 255 && img.pixel(x, y)[1] == 255);
-    assert!(has_white, "Text should produce visible pixels");
-}
-
-#[test]
 fn paint_rect_outlined() {
     let mut img = Image::new(20, 20, 4);
     img.fill(Color::BLACK);
-    let mut fc = FontCache::new();
+
     {
-        let mut p = Painter::new(&mut img, &mut fc);
+        let mut p = Painter::new(&mut img);
         p.set_canvas_color(Color::BLACK);
         let stroke = Stroke::new(Color::WHITE, 1.0);
         p.paint_rect_outlined(5.0, 5.0, 10.0, 10.0, &stroke);
@@ -162,39 +145,6 @@ fn paint_rect_outlined() {
     assert_eq!(img.pixel(5, 5), &[255, 255, 255, 255]);
     // Center should be canvas color (only outline)
     assert_eq!(img.pixel(10, 10), &[0, 0, 0, 255]);
-}
-
-#[test]
-fn glyph_cache_rasterize() {
-    let fc = FontCache::new();
-    let shaped = fc.shape_text("Hello", 0, 13);
-    assert!(!shaped.is_empty(), "Shaping should produce glyphs");
-    // Verify all glyphs have positive advances
-    for sg in &shaped {
-        assert!(sg.x_advance > 0.0, "Glyph advance should be positive");
-    }
-}
-
-#[test]
-fn quantize_size() {
-    assert_eq!(FontCache::quantize_size(13.0), 13);
-    assert_eq!(FontCache::quantize_size(13.4), 13);
-    assert_eq!(FontCache::quantize_size(13.6), 14);
-    assert_eq!(FontCache::quantize_size(0.3), 1);
-    // Sizes > 48 round to nearest even
-    assert_eq!(FontCache::quantize_size(49.0), 50); // 49 rounds to even 50
-    assert_eq!(FontCache::quantize_size(50.0), 50);
-    assert_eq!(FontCache::quantize_size(51.0), 52); // 51 rounds to even 52
-}
-
-#[test]
-fn measure_text_dimensions() {
-    let fc = FontCache::new();
-    let (w, h) = fc.measure_text("Test", 0, 13);
-    assert!(w > 0.0, "Text width should be positive");
-    assert_eq!(h, 13.0, "Text height should equal size_px");
-    let (w2, _) = fc.measure_text("Te", 0, 13);
-    assert!(w > w2, "Longer text should be wider");
 }
 
 #[test]
@@ -208,9 +158,9 @@ fn paint_image_colored_basic() {
 
     let mut target = Image::new(4, 4, 4);
     target.fill(Color::BLACK);
-    let mut fc = FontCache::new();
+
     {
-        let mut p = Painter::new(&mut target, &mut fc);
+        let mut p = Painter::new(&mut target);
         p.set_canvas_color(Color::BLACK);
         p.paint_image_colored(0.0, 0.0, 2.0, 2.0, &alpha_img, 0, 0, 2, 2, Color::RED);
     }

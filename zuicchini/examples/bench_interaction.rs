@@ -9,15 +9,14 @@
 //!
 //! Default resolution: 1920x1080
 
-use std::collections::HashSet;
 use std::f64::consts::PI;
 use std::time::Instant;
 
 use zuicchini::foundation::{Color, Image};
 use zuicchini::panel::{PanelBehavior, PanelState, PanelTree, View, ViewFlags};
 use zuicchini::render::{
-    FontCache, ImageExtension, ImageQuality, LineCap, LineJoin, Painter, Stroke, StrokeEnd,
-    StrokeEndType, TextAlignment, Texture, TileCache, VAlign, TILE_SIZE,
+    ImageExtension, ImageQuality, LineCap, LineJoin, Painter, Stroke, StrokeEnd, StrokeEndType,
+    Texture, TileCache, TILE_SIZE,
 };
 
 // ---------------------------------------------------------------------------
@@ -59,54 +58,14 @@ impl PanelBehavior for TestPanel {
         painter.paint_rect(0.0, 0.0, 1.0, h, bg);
         painter.paint_rect_outlined(0.01, 0.01, 1.0 - 0.02, h - 0.02, &Stroke::new(fg, 0.02));
 
-        painter.paint_text_boxed(
-            0.02,
-            0.02,
-            0.49,
-            0.07,
-            "Test Panel",
-            0.1,
-            fg,
-            TextAlignment::Left,
-            VAlign::Top,
-        );
-
-        let state_str = format!(
+        // TODO(font): paint text here
+        // TODO(font): paint text here
+        let _state_str = format!(
             "State: InFocusedPath ViewFocused Pri={:.3} MemLim={}",
             state.priority, state.memory_limit,
         );
-        painter.paint_text_boxed(
-            0.05,
-            0.4,
-            0.9,
-            0.05,
-            &state_str,
-            0.05,
-            fg,
-            TextAlignment::Left,
-            VAlign::Top,
-        );
-
-        let log_color = Color::rgba(0x88, 0x88, 0xBB, 0xFF);
-        for i in 0..20 {
-            painter.paint_text(
-                0.05, 0.57 + i as f64 * 0.008,
-                "EVENT: key=A chars=\"a\" repeat=false variant=Press mouse=0.1234,0.5678 pressed=[]",
-                0.008, log_color,
-            );
-        }
-
-        painter.paint_text_boxed(
-            0.25,
-            0.8,
-            0.05,
-            0.05,
-            "Text Test\n\t<-tab\ntab->\t<-tab",
-            0.1,
-            fg,
-            TextAlignment::Center,
-            VAlign::Top,
-        );
+        // TODO(font): paint text here
+        // TODO(font): paint text here
         painter.paint_rect(0.25, 0.8, 0.05, 0.05, Color::rgba(255, 0, 0, 32));
 
         painter.paint_polygon(&[(0.7, 0.6), (0.6, 0.7), (0.8, 0.8)], fg);
@@ -621,9 +580,6 @@ const SCENARIOS: &[Scenario] = &[
 
 const FRAMES_PER_SCENARIO: usize = 120;
 
-/// Logical text sizes used by TestPanel (title=0.1, state=0.05, log=0.008).
-const TEXT_SIZES: [f64; 3] = [0.1, 0.05, 0.008];
-
 fn setup_tree_and_view(vw: u32, vh: u32) -> (PanelTree, View, zuicchini::panel::PanelId) {
     let mut tree = PanelTree::new();
     let root = tree.create_root("bench_root");
@@ -640,13 +596,8 @@ fn setup_tree_and_view(vw: u32, vh: u32) -> (PanelTree, View, zuicchini::panel::
     (tree, view, root)
 }
 
-fn run_scenario(
-    scenario: &Scenario,
-    vw: u32,
-    vh: u32,
-    font_cache: &mut FontCache,
-) -> (Vec<FrameTiming>, usize) {
-    let (mut tree, mut view, root) = setup_tree_and_view(vw, vh);
+fn run_scenario(scenario: &Scenario, vw: u32, vh: u32) -> (Vec<FrameTiming>, usize) {
+    let (mut tree, mut view, _root) = setup_tree_and_view(vw, vh);
 
     let mut viewport_buf = Image::new(vw, vh, 4);
     let mut tile_cache = TileCache::new(vw, vh, 256);
@@ -655,7 +606,7 @@ fn run_scenario(
     // Warmup: one full frame so caches are primed
     viewport_buf.fill(Color::BLACK);
     {
-        let mut painter = Painter::new(&mut viewport_buf, font_cache);
+        let mut painter = Painter::new(&mut viewport_buf);
         view.paint(&mut tree, &mut painter);
     }
     for row in 0..rows {
@@ -669,14 +620,12 @@ fn run_scenario(
             );
         }
     }
-    font_cache.advance_frame();
     view.clear_viewport_changed();
 
     let fix_x = vw as f64 / 2.0;
     let fix_y = vh as f64 / 2.0;
 
     let mut timings = Vec::with_capacity(FRAMES_PER_SCENARIO);
-    let mut font_sizes: HashSet<u16> = HashSet::new();
 
     for _ in 0..FRAMES_PER_SCENARIO {
         let frame_start = Instant::now();
@@ -701,19 +650,11 @@ fn run_scenario(
         view.update(&mut tree);
         let update_us = t.elapsed().as_micros() as u64;
 
-        // Track font cache churn: compute effective pixel sizes from viewed_rect
-        let state = tree.build_panel_state(root, true);
-        let panel_pixel_width = state.viewed_rect.w;
-        for &logical_size in &TEXT_SIZES {
-            let effective_px = logical_size * panel_pixel_width;
-            font_sizes.insert(FontCache::quantize_size(effective_px));
-        }
-
         // 4. Paint (single-buffer path)
         let t = Instant::now();
         viewport_buf.fill(Color::BLACK);
         {
-            let mut painter = Painter::new(&mut viewport_buf, font_cache);
+            let mut painter = Painter::new(&mut viewport_buf);
             view.paint(&mut tree, &mut painter);
         }
         let paint_us = t.elapsed().as_micros() as u64;
@@ -734,7 +675,6 @@ fn run_scenario(
         let tile_copy_us = t.elapsed().as_micros() as u64;
 
         // 6. Frame cleanup
-        font_cache.advance_frame();
         view.clear_viewport_changed();
 
         let total_us = frame_start.elapsed().as_micros() as u64;
@@ -747,7 +687,7 @@ fn run_scenario(
         });
     }
 
-    (timings, font_sizes.len())
+    (timings, 0)
 }
 
 fn percentile(sorted: &[u64], p: f64) -> u64 {
@@ -758,7 +698,7 @@ fn percentile(sorted: &[u64], p: f64) -> u64 {
     sorted[idx.min(sorted.len() - 1)]
 }
 
-fn print_stat_line(label: &str, values: &mut Vec<u64>) {
+fn print_stat_line(label: &str, values: &mut [u64]) {
     values.sort_unstable();
     let min = values.first().copied().unwrap_or(0);
     let median = percentile(values, 0.5);
@@ -775,7 +715,6 @@ fn main() {
     let vw: u32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1920);
     let vh: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1080);
 
-    let mut font_cache = FontCache::new();
     let tile_cache = TileCache::new(vw, vh, 256);
     let (cols, rows) = tile_cache.grid_size();
 
@@ -786,7 +725,7 @@ fn main() {
     println!();
 
     for scenario in SCENARIOS {
-        let (timings, font_size_count) = run_scenario(scenario, vw, vh, &mut font_cache);
+        let (timings, font_size_count) = run_scenario(scenario, vw, vh);
 
         let mut notices: Vec<u64> = timings.iter().map(|t| t.notices_us).collect();
         let mut update: Vec<u64> = timings.iter().map(|t| t.update_us).collect();

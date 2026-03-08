@@ -1,5 +1,5 @@
 use crate::foundation::{Image, Rect};
-use crate::render::{Painter, Stroke, TextAlignment, VAlign};
+use crate::render::{Painter, Stroke, TextAlignment};
 
 use super::look::Look;
 
@@ -40,8 +40,8 @@ struct LabelLayout {
     caption_rect: Option<Rect>,
     description_rect: Option<Rect>,
     total_height: f64,
-    caption_font_size: f64,
-    description_font_size: f64,
+    _caption_font_size: f64,
+    _description_font_size: f64,
 }
 
 /// Border chrome helper. Embedded in widgets to draw surrounding decoration.
@@ -449,8 +449,8 @@ impl Border {
                     caption_rect: None,
                     description_rect: None,
                     total_height: 0.0,
-                    caption_font_size: 0.0,
-                    description_font_size: 0.0,
+                    _caption_font_size: 0.0,
+                    _description_font_size: 0.0,
                 };
             }
             let cap_h = area_h * cap_units / total_units;
@@ -485,8 +485,8 @@ impl Border {
                 caption_rect: cap_rect,
                 description_rect: desc_rect,
                 total_height: cap_h + gap2 + desc_h,
-                caption_font_size: cap_font,
-                description_font_size: desc_font,
+                _caption_font_size: cap_font,
+                _description_font_size: desc_font,
             };
         }
 
@@ -546,8 +546,8 @@ impl Border {
                 caption_rect: cap_rect,
                 description_rect: desc_rect,
                 total_height: total,
-                caption_font_size: cap_font,
-                description_font_size: desc_font,
+                _caption_font_size: cap_font,
+                _description_font_size: desc_font,
             }
         } else {
             // Icon beside caption: icon is 1 "row", gap 0.1 rows.
@@ -609,8 +609,8 @@ impl Border {
                 caption_rect: cap_rect,
                 description_rect: desc_rect,
                 total_height: total,
-                caption_font_size: cap_font,
-                description_font_size: desc_font,
+                _caption_font_size: cap_font,
+                _description_font_size: desc_font,
             }
         }
     }
@@ -1024,8 +1024,8 @@ impl Border {
         let lch = self.label_content_height(label_area_w, rnd_h);
         let label = self.label_layout(ox, oy, label_area_w, lch);
 
-        let cap_align = self.caption_alignment.unwrap_or(self.label_alignment);
-        let desc_align = self.description_alignment.unwrap_or(self.label_alignment);
+        let _cap_align = self.caption_alignment.unwrap_or(self.label_alignment);
+        let _desc_align = self.description_alignment.unwrap_or(self.label_alignment);
 
         // Icon
         if let Some(ref icon_rect) = label.icon_rect {
@@ -1060,33 +1060,13 @@ impl Border {
         }
 
         // Caption
-        if let Some(ref cap_rect) = label.caption_rect {
-            painter.paint_text_boxed(
-                cap_rect.x,
-                cap_rect.y,
-                cap_rect.w,
-                cap_rect.h,
-                &self.caption,
-                label.caption_font_size,
-                dim_color(look.fg_color),
-                cap_align,
-                VAlign::Top,
-            );
+        if label.caption_rect.is_some() {
+            // TODO(font): paint text here (caption)
         }
 
         // Description
-        if let Some(ref desc_rect) = label.description_rect {
-            painter.paint_text_boxed(
-                desc_rect.x,
-                desc_rect.y,
-                desc_rect.w,
-                desc_rect.h,
-                &self.description,
-                label.description_font_size,
-                dim_color(look.disabled_fg()),
-                desc_align,
-                VAlign::Top,
-            );
+        if label.description_rect.is_some() {
+            // TODO(font): paint text here (description)
         }
 
         // Inner border — content starts after the full label space (including padding)

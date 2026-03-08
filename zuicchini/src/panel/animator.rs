@@ -544,33 +544,20 @@ impl VisitingViewAnimator {
             crate::foundation::Color::rgba(34, 102, 153, 208),
         );
 
-        let ch = h * 0.22;
+        let _ch = h * 0.22;
 
         if self.state == VisitingState::GivingUp {
-            // "Not found" text
-            painter.paint_text(
-                x + w * 0.1,
-                y + h * 0.15,
-                "Not found",
-                ch,
-                crate::foundation::Color::rgba(255, 136, 136, 255),
-            );
+            // TODO(font): paint text here ("Not found")
             return;
         }
 
         // "Seeking..." text
-        let mut seeking_text = String::from("Seeking...");
+        let mut _seeking_text = String::from("Seeking...");
         if !self.subject.is_empty() {
-            seeking_text.push_str(" for ");
-            seeking_text.push_str(&self.subject);
+            _seeking_text.push_str(" for ");
+            _seeking_text.push_str(&self.subject);
         }
-        painter.paint_text(
-            x + w * 0.05,
-            y + h * 0.1,
-            &seeking_text,
-            ch * 0.7,
-            crate::foundation::Color::rgba(221, 221, 221, 255),
-        );
+        // TODO(font): paint text here (seeking status)
 
         // Progress bar background
         let bar_x = x + w * 0.05;
@@ -616,23 +603,9 @@ impl VisitingViewAnimator {
             );
         }
 
-        // Identity text
-        painter.paint_text(
-            bar_x,
-            bar_y + bar_h + h * 0.05,
-            &self.identity,
-            ch * 0.5,
-            crate::foundation::Color::rgba(221, 221, 221, 255),
-        );
+        // TODO(font): paint text here (identity label)
 
-        // Abort instruction
-        painter.paint_text(
-            x + w * 0.05,
-            y + h * 0.8,
-            "Press any key to abort",
-            ch * 0.5,
-            crate::foundation::Color::rgba(170, 170, 170, 255),
-        );
+        // TODO(font): paint text here ("Press any key to abort")
     }
 }
 

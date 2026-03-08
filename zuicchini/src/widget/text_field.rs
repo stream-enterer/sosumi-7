@@ -2,14 +2,13 @@ use std::rc::Rc;
 
 use crate::foundation::Rect;
 use crate::input::{Cursor, InputEvent, InputKey, InputVariant};
-use crate::render::font_cache::FontCache;
 use crate::render::Painter;
 
 use super::border::{Border, InnerBorderType, OuterBorderType};
 use super::look::Look;
 
 const TEXT_PADDING: f64 = 2.0;
-const TEXT_SIZE: f64 = FontCache::DEFAULT_SIZE_PX;
+const TEXT_SIZE: f64 = 13.0;
 const LINE_HEIGHT: f64 = TEXT_SIZE + 2.0;
 const DOUBLE_CLICK_MS: u128 = 500;
 const DOUBLE_CLICK_DIST: f64 = 3.0;
@@ -837,26 +836,16 @@ impl TextField {
         painter.push_state();
         painter.clip_rect(cx, cy, cw, ch);
 
-        let size_px = FontCache::quantize_size(TEXT_SIZE);
-
         if self.multi_line {
-            self.paint_multi_line(painter, cx, cy, cw, ch, size_px);
+            self.paint_multi_line(painter, cx, cy, cw, ch);
         } else {
-            self.paint_single_line(painter, cx, cy, cw, ch, size_px);
+            self.paint_single_line(painter, cx, cy, cw, ch);
         }
 
         painter.pop_state();
     }
 
-    fn paint_single_line(
-        &mut self,
-        painter: &mut Painter,
-        cx: f64,
-        cy: f64,
-        cw: f64,
-        ch: f64,
-        size_px: u16,
-    ) {
+    fn paint_single_line(&mut self, painter: &mut Painter, cx: f64, cy: f64, cw: f64, ch: f64) {
         let display_text = if self.password_mode {
             "*".repeat(self.text.chars().count())
         } else {
@@ -873,9 +862,7 @@ impl TextField {
                 .map(|c| c.len_utf8())
                 .unwrap_or(1);
             let end = i + next;
-            let (w_px, _) = painter
-                .font_cache()
-                .measure_text(&display_text[..end], 0, size_px);
+            let w_px = display_text[..end].len() as f64 * 7.0; // TODO(font): measure_text stub
             self.char_positions.push(w_px);
         }
 
@@ -883,18 +870,8 @@ impl TextField {
         let sel_rect = if let Some(anchor) = self.selection_anchor {
             let sel_start = anchor.min(self.cursor);
             let sel_end = anchor.max(self.cursor);
-            let sx_px = painter
-                .font_cache()
-                .measure_text(
-                    &display_text[..sel_start.min(display_text.len())],
-                    0,
-                    size_px,
-                )
-                .0;
-            let ex_px = painter
-                .font_cache()
-                .measure_text(&display_text[..sel_end.min(display_text.len())], 0, size_px)
-                .0;
+            let sx_px = display_text[..sel_start.min(display_text.len())].len() as f64 * 7.0; // TODO(font): measure_text stub
+            let ex_px = display_text[..sel_end.min(display_text.len())].len() as f64 * 7.0; // TODO(font): measure_text stub
             Some((cx + TEXT_PADDING + sx_px - self.scroll_x, ex_px - sx_px))
         } else {
             None
@@ -905,10 +882,7 @@ impl TextField {
         } else {
             self.text[..self.cursor].to_string()
         };
-        let cursor_x_px = painter
-            .font_cache()
-            .measure_text(&cursor_text, 0, size_px)
-            .0;
+        let cursor_x_px = cursor_text.len() as f64 * 7.0; // TODO(font): measure_text stub
 
         // Update scroll_x so the cursor stays visible
         let visible_w = cw - 2.0 * TEXT_PADDING;
@@ -928,8 +902,8 @@ impl TextField {
         }
 
         // Text
-        let text_x = cx + TEXT_PADDING - self.scroll_x;
-        let text_y = cy + (ch - TEXT_SIZE) / 2.0;
+        let _text_x = cx + TEXT_PADDING - self.scroll_x;
+        let _text_y = cy + (ch - TEXT_SIZE) / 2.0;
 
         let fg = if self.editable {
             self.look.input_fg_color
@@ -939,58 +913,14 @@ impl TextField {
                 .lerp(self.look.input_bg_color, 0.80)
         };
 
-        if let Some(anchor) = self.selection_anchor {
-            let sel_start = anchor.min(self.cursor).min(display_text.len());
-            let sel_end = anchor.max(self.cursor).min(display_text.len());
-
-            if sel_start != sel_end {
-                if sel_start > 0 {
-                    painter.paint_text(text_x, text_y, &display_text[..sel_start], TEXT_SIZE, fg);
-                }
-                let sel_x_offset = painter
-                    .font_cache()
-                    .measure_text(&display_text[..sel_start], 0, size_px)
-                    .0;
-                painter.paint_text(
-                    text_x + sel_x_offset,
-                    text_y,
-                    &display_text[sel_start..sel_end],
-                    TEXT_SIZE,
-                    self.look.input_bg_color,
-                );
-                if sel_end < display_text.len() {
-                    let after_x_offset = painter
-                        .font_cache()
-                        .measure_text(&display_text[..sel_end], 0, size_px)
-                        .0;
-                    painter.paint_text(
-                        text_x + after_x_offset,
-                        text_y,
-                        &display_text[sel_end..],
-                        TEXT_SIZE,
-                        fg,
-                    );
-                }
-            } else {
-                painter.paint_text(text_x, text_y, &display_text, TEXT_SIZE, fg);
-            }
-        } else {
-            painter.paint_text(text_x, text_y, &display_text, TEXT_SIZE, fg);
-        }
+        // TODO(font): paint text here (selection-aware rendering)
 
         // Cursor
         let cursor_x = cx + TEXT_PADDING + cursor_x_px - self.scroll_x;
         if self.overwrite_mode && self.cursor < self.text.len() {
             // Box cursor
             let ch_w = if self.cursor < display_text.len() {
-                let next = self.next_char_boundary(self.cursor);
-                let next_text = if self.password_mode {
-                    "*".repeat(self.text[..next].chars().count())
-                } else {
-                    self.text[..next].to_string()
-                };
-                let next_x = painter.font_cache().measure_text(&next_text, 0, size_px).0;
-                next_x - cursor_x_px
+                7.0 // TODO(font): measure_text stub
             } else {
                 8.0
             };
@@ -1000,15 +930,7 @@ impl TextField {
         }
     }
 
-    fn paint_multi_line(
-        &mut self,
-        painter: &mut Painter,
-        cx: f64,
-        cy: f64,
-        _cw: f64,
-        ch: f64,
-        size_px: u16,
-    ) {
+    fn paint_multi_line(&mut self, painter: &mut Painter, cx: f64, cy: f64, _cw: f64, ch: f64) {
         let rows: Vec<&str> = self.text.split('\n').collect();
         let total_rows = rows.len();
 
@@ -1060,14 +982,8 @@ impl TextField {
             if has_selection && sel_start < row_byte_end && sel_end > row_byte_start {
                 let hl_start = sel_start.max(row_byte_start) - row_byte_start;
                 let hl_end = sel_end.min(row_byte_end) - row_byte_start;
-                let sx = painter
-                    .font_cache()
-                    .measure_text(&row_text[..hl_start], 0, size_px)
-                    .0;
-                let ex = painter
-                    .font_cache()
-                    .measure_text(&row_text[..hl_end], 0, size_px)
-                    .0;
+                let sx = row_text[..hl_start].len() as f64 * 7.0; // TODO(font): measure_text stub
+                let ex = row_text[..hl_end].len() as f64 * 7.0; // TODO(font): measure_text stub
                 painter.paint_rect(
                     cx + TEXT_PADDING + sx,
                     row_y,
@@ -1077,9 +993,7 @@ impl TextField {
                 );
             }
 
-            // Text
-            let text_x = cx + TEXT_PADDING;
-            painter.paint_text(text_x, row_y, row_text, TEXT_SIZE, fg);
+            // TODO(font): paint text here
 
             byte_offset = row_byte_end + 1; // +1 for \n
         }
@@ -1087,19 +1001,14 @@ impl TextField {
         // Cursor
         let cursor_row_start = self.row_start(self.cursor);
         let cursor_in_row = &self.text[cursor_row_start..self.cursor];
-        let cursor_x_px = painter
-            .font_cache()
-            .measure_text(cursor_in_row, 0, size_px)
-            .0;
+        let cursor_x_px = cursor_in_row.len() as f64 * 7.0; // TODO(font): measure_text stub
         let cursor_x = cx + TEXT_PADDING + cursor_x_px;
         let cursor_screen_y = cy + cursor_row as f64 * LINE_HEIGHT - self.scroll_y;
         let _ = cursor_col;
 
         if self.overwrite_mode && self.cursor < self.text.len() && self.char_at(self.cursor) != '\n'
         {
-            let next = self.next_char_boundary(self.cursor);
-            let ch_text = &self.text[self.cursor..next];
-            let ch_w = painter.font_cache().measure_text(ch_text, 0, size_px).0;
+            let ch_w = 7.0; // TODO(font): measure_text stub
             painter.paint_rect(
                 cursor_x,
                 cursor_screen_y,
@@ -1623,7 +1532,7 @@ impl TextField {
         Cursor::Text
     }
 
-    pub fn preferred_size(&self, _font_cache: &FontCache) -> (f64, f64) {
+    pub fn preferred_size(&self) -> (f64, f64) {
         let cw = 120.0;
         let ch = if self.multi_line {
             LINE_HEIGHT * self.visible_rows as f64
@@ -2447,13 +2356,12 @@ mod tests {
     #[test]
     fn preferred_size_multi_line() {
         let look = Look::new();
-        let fc = FontCache::new();
         let mut tf = TextField::new(look);
 
-        let (_w1, h1) = tf.preferred_size(&fc);
+        let (_w1, h1) = tf.preferred_size();
 
         tf.set_multi_line(true);
-        let (_w2, h2) = tf.preferred_size(&fc);
+        let (_w2, h2) = tf.preferred_size();
 
         assert!(h2 > h1, "multi-line should be taller");
     }
