@@ -21,6 +21,8 @@ Tracked here so they don't get forgotten. Sourced from EMCORE_FEATURE_CONTRACT.m
 ## Rendering
 
 - [ ] Multi-threaded tile rasterization — parallelize independent dirty tiles across threads (benchmark-driven, threading boundary is well-defined)
+- [ ] Sub-pixel AA for non-text operations — route rects/gradients/images through polygon rasterizer with Fixed12 edge coverage; add axis-aligned rect fast path; fix coverage rounding in `make_span` (edge seams) and clamp minimum coverage for thin rects. See `.workflow/dialectic/convergence_ledger.md` for full analysis
+- [ ] Glyph content sub-pixel positioning — edge coverage solves rect wiggle but glyphs remain pixel-snapped inside their bounding box. Investigate SDF rendering, boundary-only bilinear, or accept integer glyph positioning as C++ Eagle Mode does
 - [ ] 4K paint profiling — `bench_interaction 3840 2160` to check if paint exceeds 16ms budget; if so, scanline rasterizer needs optimization
 - [ ] Glyph rasterization cost under complex panel trees — single TestPanel is cheap, but multiple panels with diverse text sizes may stress the glyph cache LRU eviction path
 
