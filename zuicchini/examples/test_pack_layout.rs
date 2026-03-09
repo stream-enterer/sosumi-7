@@ -1,3 +1,9 @@
+//! Pack layout test derived from C++ `emTestPackLayout.cpp`.
+//!
+//! Creates N panels (default 20, configurable via CLI arg) with random weights
+//! and preferred tallnesses, arranged by a `PackLayout`. Each panel paints a
+//! colored `Border` with its tallness value as caption.
+
 use rand::Rng;
 
 use zuicchini::foundation::Color;

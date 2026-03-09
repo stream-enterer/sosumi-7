@@ -2,6 +2,8 @@
 zuicchini/_verify/
 zuicchini/_fix/
 zuicchini/_stale/
+zuicchini/golden/
+zuicchini/golden_gen/gen_golden
 julia/Manifest.toml
 julia/sysimage/*.so
 julia/sysimage/*.dylib

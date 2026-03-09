@@ -133,60 +133,53 @@ impl LinearLayout {
         // among cells items based on weights.
         let force = self.calculate_force(&children, cells, nw, nh, horizontal);
 
-        // Compute child sizes in abstract units from force
-        let mut child_widths = Vec::with_capacity(children.len());
-        let mut child_heights = Vec::with_capacity(children.len());
+        // ─── Pass 1: Compute bounding box in normalized units (C++ lines 375-412) ───
+        // C++ computes child sizes in a normalized space: for horizontal, ch=1.0
+        // (cross-axis normalized to 1); for vertical, cw=1.0.
+        let mut length = 0.0;
         for child in &children {
             let cc = get_constraint(&self.child_constraints, *child, &self.default_constraint);
-            let (mut cw, mut ch) = if horizontal {
-                (cc.weight * force, nh)
-            } else {
-                (nw, cc.weight * force)
-            };
-
-            // Apply tallness constraints
-            if cw > 0.0 && ch > 0.0 {
-                let tallness = ch / cw;
-                let max_t = cc.max_tallness.max(cc.min_tallness);
-                let clamped = tallness.clamp(cc.min_tallness, max_t);
-                if (clamped - tallness).abs() > 1e-10 {
-                    if horizontal {
-                        cw = ch / clamped;
-                    } else {
-                        ch = cw * clamped;
+            let min_ct = cc.min_tallness;
+            let max_ct = cc.max_tallness.max(min_ct);
+            if horizontal {
+                let mut cw = cc.weight * force;
+                let ch = 1.0;
+                if cw > 0.0 {
+                    if ch < cw * min_ct {
+                        cw = ch / min_ct;
+                    } else if ch > cw * max_ct {
+                        cw = ch / max_ct;
                     }
                 }
+                length += cw;
+            } else {
+                let cw = 1.0;
+                let mut ch = cc.weight * force;
+                if ch > 0.0 {
+                    if ch < cw * min_ct {
+                        ch = cw * min_ct;
+                    } else if ch > cw * max_ct {
+                        ch = cw * max_ct;
+                    }
+                }
+                length += ch;
             }
-
-            child_widths.push(cw);
-            child_heights.push(ch);
         }
 
-        // Compute bounding box of children + spacing in abstract units
-        let total_cw: f64 = if horizontal {
-            child_widths.iter().sum::<f64>()
-                + sp.inner_h * children.len().saturating_sub(1) as f64
-                + sp.margin_left
-                + sp.margin_right
+        // C++ lines 405-412: convert bounding box to pixel dimensions
+        let (total_cw, total_ch) = if horizontal {
+            // cw = h/uy * ux * length; ch = h
+            (h / uy * ux * length, h)
         } else {
-            child_widths.iter().cloned().fold(0.0_f64, f64::max) + sp.margin_left + sp.margin_right
-        };
-        let total_ch: f64 = if horizontal {
-            child_heights.iter().cloned().fold(0.0_f64, f64::max) + sp.margin_top + sp.margin_bottom
-        } else {
-            child_heights.iter().sum::<f64>()
-                + sp.inner_v * children.len().saturating_sub(1) as f64
-                + sp.margin_top
-                + sp.margin_bottom
+            // cw = w; ch = w/ux * uy * length
+            (w, w / ux * uy * length)
         };
 
-        // Alignment step (D-LAYOUT-03): determine which axis has surplus and apply
-        // per-axis alignment. C++: if (w*ch >= h*cw) -> horizontal surplus
+        // ─── Alignment step (C++ lines 414-425) ───
         let mut x_offset = 0.0;
         let mut y_offset = 0.0;
 
         if w * total_ch >= h * total_cw {
-            // Horizontal surplus: reduce w to fill aspect ratio
             let t = if total_ch > 1e-100 {
                 h * total_cw / total_ch
             } else {
@@ -199,7 +192,6 @@ impl LinearLayout {
             }
             w = t;
         } else {
-            // Vertical surplus: reduce h to fill aspect ratio
             let t = if total_cw > 1e-100 {
                 w * total_ch / total_cw
             } else {
@@ -213,8 +205,7 @@ impl LinearLayout {
             h = t;
         }
 
-        // Convert spacing to pixels using (possibly adjusted) w, h.
-        // C++: sx_scale = (w - w/ux) / sx, then x += sx_scale * SpaceL, gap = sx_scale * SpaceH
+        // ─── Spacing (C++ lines 427-439) ───
         let (space_x, gap_x) = if sx >= 1e-100 {
             let sx_scale = (w - w / ux) / sx;
             (sx_scale * sp.margin_left, sx_scale * sp.inner_h)
@@ -229,30 +220,42 @@ impl LinearLayout {
             (0.0, 0.0)
         };
 
-        // Content scale: maps abstract sizes (computed using pre-alignment nw, nh)
-        // to pixels (using post-alignment w, h). The post-alignment content extent
-        // in pixels is w/ux, while the abstract extent is nw (= orig_w/ux).
-        let scale_x = (w / ux) / nw;
-        let scale_y = (h / uy) / nh;
-
-        // Position children
+        // ─── Pass 2: Position children using post-alignment dimensions (C++ lines 441-479) ───
         if horizontal {
-            let mut x = x_offset + space_x;
-            let base_y = y_offset + space_y;
-            for (i, child) in children.iter().enumerate() {
-                let pixel_w = child_widths[i] * scale_x;
-                let pixel_h = child_heights[i] * scale_y;
-                ctx.layout_child(*child, x, base_y, pixel_w, pixel_h);
-                x += pixel_w + gap_x;
+            let mut cx = x_offset + space_x;
+            let base_cy = y_offset + space_y;
+            for child in &children {
+                let cc = get_constraint(&self.child_constraints, *child, &self.default_constraint);
+                let min_ct = cc.min_tallness;
+                let max_ct = cc.max_tallness.max(min_ct);
+                // C++: ch = h/uy; cw = weight*force*ch; then tallness clamp
+                let ch = h / uy;
+                let mut cw = cc.weight * force * ch;
+                if ch < cw * min_ct {
+                    cw = ch / min_ct;
+                } else if ch > cw * max_ct {
+                    cw = ch / max_ct;
+                }
+                ctx.layout_child(*child, cx, base_cy, cw, ch);
+                cx += cw + gap_x;
             }
         } else {
-            let base_x = x_offset + space_x;
-            let mut y = y_offset + space_y;
-            for (i, child) in children.iter().enumerate() {
-                let pixel_w = child_widths[i] * scale_x;
-                let pixel_h = child_heights[i] * scale_y;
-                ctx.layout_child(*child, base_x, y, pixel_w, pixel_h);
-                y += pixel_h + gap_y;
+            let base_cx = x_offset + space_x;
+            let mut cy = y_offset + space_y;
+            for child in &children {
+                let cc = get_constraint(&self.child_constraints, *child, &self.default_constraint);
+                let min_ct = cc.min_tallness;
+                let max_ct = cc.max_tallness.max(min_ct);
+                // C++: cw = w/ux; ch = weight*force*cw; then tallness clamp
+                let cw = w / ux;
+                let mut ch = cc.weight * force * cw;
+                if ch < cw * min_ct {
+                    ch = cw * min_ct;
+                } else if ch > cw * max_ct {
+                    ch = cw * max_ct;
+                }
+                ctx.layout_child(*child, base_cx, cy, cw, ch);
+                cy += ch + gap_y;
             }
         }
     }
@@ -276,9 +279,10 @@ impl LinearLayout {
         horizontal: bool,
     ) -> f64 {
         let n = children.len();
-        // total_length is the main-axis content extent in abstract units
-        let total_length = if horizontal { nw } else { nh };
-        let cross = if horizontal { nh } else { nw };
+        // C++ uses totalLength = w/h (horizontal) or h/w (vertical), i.e.,
+        // the main-axis extent relative to cross-axis=1.0 in normalized space.
+        let total_length = if horizontal { nw / nh } else { nh / nw };
+        let cross = 1.0; // Normalized cross-axis
 
         if n == 0 || total_length <= 0.0 {
             return 0.0;
@@ -289,142 +293,173 @@ impl LinearLayout {
             .map(|c| get_constraint(&self.child_constraints, *c, &self.default_constraint))
             .collect();
 
-        #[derive(Clone, Copy, PartialEq)]
-        enum State {
-            Free,
-            Compressed(f64),
-            Expanded(f64),
-        }
+        // C++ CalculateForce uses a linked-list approach: all children start in
+        // the "input" list, each iteration classifies them into compressed/expanded/free,
+        // then resolves conflicts and re-iterates with only the free children.
+        // We match this by tracking state per-child and iterating until stable.
 
-        let mut states = vec![State::Free; n];
         // Include min_cell_count padding in free weight
         let pad_weight = if cell_count > n {
             (cell_count - n) as f64 * self.default_constraint.weight
         } else {
             0.0
         };
-        let mut free_weight: f64 = constraints.iter().map(|c| c.weight).sum::<f64>() + pad_weight;
-        let mut free_length = total_length;
+
+        // Per-child: None = still in input, Some(None) = free, Some(Some(fixed)) = constrained
+        let mut constrained: Vec<Option<f64>> = vec![None; n]; // None = in input list
+        let mut remaining_length = total_length;
+        let mut last_force = 0.0;
 
         for _ in 0..n + 2 {
-            if free_weight <= 0.0 {
+            // Compute weight of input children
+            let mut input_weight = pad_weight;
+            for i in 0..n {
+                if constrained[i].is_none() {
+                    input_weight += constraints[i].weight;
+                }
+            }
+            if input_weight < 1e-100 {
                 break;
             }
-            let force = free_length / free_weight;
+            let force = remaining_length / input_weight;
+            last_force = force;
 
-            let mut any_changed = false;
-            let mut has_compressed = false;
-            let mut has_expanded = false;
+            let mut compressed_length = 0.0;
+            let mut expanded_length = 0.0;
+            let mut free_length = 0.0;
+            let mut compressed: Vec<usize> = Vec::new();
+            let mut expanded: Vec<usize> = Vec::new();
+            let mut free_list: Vec<usize> = Vec::new();
 
-            for i in 0..n {
-                if states[i] != State::Free {
-                    continue;
-                }
+            // Classify all input children
+            let mut input_indices: Vec<usize> =
+                (0..n).filter(|&i| constrained[i].is_none()).collect();
+
+            for i in input_indices.drain(..) {
                 let cc = constraints[i];
                 let main_size = cc.weight * force;
-                if main_size <= 0.0 {
-                    continue;
-                }
+                let min_ct = cc.min_tallness;
+                let max_ct = cc.max_tallness.max(min_ct);
 
-                let (cw, ch) = if horizontal {
-                    (main_size, cross)
+                if horizontal {
+                    let cw = main_size;
+                    if cw <= 0.0 {
+                        free_list.push(i);
+                        continue;
+                    }
+                    let ct = cross / cw; // tallness = cross/width
+                    if ct >= max_ct {
+                        // Tallness too high → needs more width → "compressed" in C++ terms
+                        let fixed = cross / max_ct;
+                        expanded.push(i);
+                        expanded_length += fixed;
+                    } else if ct <= min_ct {
+                        // Tallness too low → needs less width → "expanded" in C++ terms
+                        let fixed = cross / min_ct;
+                        compressed.push(i);
+                        compressed_length += fixed;
+                    } else {
+                        free_list.push(i);
+                        free_length += cw;
+                    }
                 } else {
-                    (cross, main_size)
-                };
-                if cw <= 0.0 {
-                    continue;
-                }
-                let tallness = ch / cw;
-                let max_t = cc.max_tallness.max(cc.min_tallness);
-
-                if tallness > max_t {
-                    // Too tall -> child needs more main space -> expanded
-                    let fixed = if horizontal {
-                        cross / max_t
+                    let ch = main_size;
+                    if ch <= 0.0 || cross <= 0.0 {
+                        free_list.push(i);
+                        continue;
+                    }
+                    let ct = ch / cross; // tallness = height/width = ch/cross
+                    if ct <= min_ct {
+                        let fixed = cross * min_ct;
+                        compressed.push(i);
+                        compressed_length += fixed;
+                    } else if ct >= max_ct {
+                        let fixed = cross * max_ct;
+                        expanded.push(i);
+                        expanded_length += fixed;
                     } else {
-                        cross * max_t
-                    };
-                    states[i] = State::Expanded(fixed);
-                    free_weight -= cc.weight;
-                    free_length -= fixed;
-                    any_changed = true;
-                    has_expanded = true;
-                } else if tallness < cc.min_tallness {
-                    // Too wide -> child needs less main space -> compressed
-                    let fixed = if horizontal {
-                        cross / cc.min_tallness
-                    } else {
-                        cross * cc.min_tallness
-                    };
-                    states[i] = State::Compressed(fixed);
-                    free_weight -= cc.weight;
-                    free_length -= fixed;
-                    any_changed = true;
-                    has_compressed = true;
+                        free_list.push(i);
+                        free_length += ch;
+                    }
                 }
             }
 
-            if !any_changed {
+            if compressed.is_empty() && expanded.is_empty() {
+                // All free → converged
                 break;
             }
 
-            // Conflict resolution (D-LAYOUT-04): C++ includes free children's
-            // sizes at current force in the comparison.
-            if has_compressed && has_expanded {
-                let compressed_length: f64 = states
-                    .iter()
-                    .map(|s| match s {
-                        State::Compressed(f) => *f,
-                        _ => 0.0,
-                    })
-                    .sum();
-                let expanded_length: f64 = states
-                    .iter()
-                    .map(|s| match s {
-                        State::Expanded(f) => *f,
-                        _ => 0.0,
-                    })
-                    .sum();
-
-                // Free children's sizes at current force
-                let current_force = if free_weight > 0.0 {
-                    free_length / free_weight
-                } else {
-                    0.0
-                };
-                let free_child_length: f64 = (0..n)
-                    .filter(|&i| states[i] == State::Free)
-                    .map(|i| constraints[i].weight * current_force)
-                    .sum::<f64>();
-
-                // C++: if (compressedLength + expandedLength + freeLength < totalLength)
-                if compressed_length + expanded_length + free_child_length < total_length {
-                    // Space left over: release compressed, keep expanded
-                    free_length = total_length - expanded_length;
-                    for i in 0..n {
-                        if let State::Compressed(_) = states[i] {
-                            states[i] = State::Free;
-                            free_weight += constraints[i].weight;
-                        }
-                    }
-                } else {
-                    // Over-committed: release expanded, keep compressed
-                    free_length = total_length - compressed_length;
-                    for i in 0..n {
-                        if let State::Expanded(_) = states[i] {
-                            states[i] = State::Free;
-                            free_weight += constraints[i].weight;
-                        }
-                    }
+            // Conflict resolution (matches C++ emLinearLayout::CalculateForce)
+            if compressed.is_empty() {
+                // Only expanded: fix expanded children, re-iterate with free
+                for &i in &expanded {
+                    let cc = constraints[i];
+                    let max_ct = cc.max_tallness.max(cc.min_tallness);
+                    let fixed = if horizontal {
+                        cross / max_ct
+                    } else {
+                        cross * max_ct
+                    };
+                    constrained[i] = Some(fixed);
+                }
+                remaining_length = total_length;
+                for fixed in constrained.iter().flatten() {
+                    remaining_length -= fixed;
+                }
+                // Free children stay in input for next iteration (they're already unconstrained)
+            } else if expanded.is_empty() {
+                // Only compressed: subtract compressed length, re-iterate with free
+                for &i in &compressed {
+                    let cc = constraints[i];
+                    let min_ct = cc.min_tallness;
+                    let fixed = if horizontal {
+                        cross / min_ct
+                    } else {
+                        cross * min_ct
+                    };
+                    constrained[i] = Some(fixed);
+                }
+                remaining_length = total_length;
+                for fixed in constrained.iter().flatten() {
+                    remaining_length -= fixed;
+                }
+            } else if compressed_length + expanded_length + free_length < total_length {
+                // Space left over: keep expanded, release compressed
+                for &i in &expanded {
+                    let cc = constraints[i];
+                    let max_ct = cc.max_tallness.max(cc.min_tallness);
+                    let fixed = if horizontal {
+                        cross / max_ct
+                    } else {
+                        cross * max_ct
+                    };
+                    constrained[i] = Some(fixed);
+                }
+                // Compressed children go back to input (unconstrained)
+                remaining_length = total_length;
+                for fixed in constrained.iter().flatten() {
+                    remaining_length -= fixed;
+                }
+            } else {
+                // Over-committed: keep compressed, release expanded
+                for &i in &compressed {
+                    let cc = constraints[i];
+                    let min_ct = cc.min_tallness;
+                    let fixed = if horizontal {
+                        cross / min_ct
+                    } else {
+                        cross * min_ct
+                    };
+                    constrained[i] = Some(fixed);
+                }
+                remaining_length = total_length;
+                for fixed in constrained.iter().flatten() {
+                    remaining_length -= fixed;
                 }
             }
         }
 
-        if free_weight > 0.0 {
-            free_length / free_weight
-        } else {
-            0.0
-        }
+        last_force
     }
 }
 
@@ -580,9 +615,8 @@ mod tests {
     #[test]
     fn spacing() {
         // C++ spacing model: margin_left=0.5, margin_right=0.5, inner_h=1.0
-        // sx=2.0, ux=2.0, nw=100, nh=100, force=50.
-        // Abstract bbox: cw=102, ch=100. Horizontal surplus: w scaled to 102,
-        // centered at x_offset=49. sx_scale=25.5, child pixel_w=25.5.
+        // sx=2.0, ux=2.0. Force=0.5 (normalized). No alignment surplus.
+        // space_x=25, gap_x=50, child cw = weight*force*ch = 0.5*100 = 50.
         let (mut tree, root, children) = setup_tree(2);
         tree.set_layout_rect(root, 0.0, 0.0, 200.0, 100.0);
         let mut layout = LinearLayout::horizontal().with_spacing(Spacing {
@@ -597,10 +631,10 @@ mod tests {
 
         let r0 = tree.get(children[0]).unwrap().layout_rect;
         let r1 = tree.get(children[1]).unwrap().layout_rect;
-        assert!((r0.x - 61.75).abs() < 0.01, "r0.x: {}", r0.x);
-        assert!((r0.w - 25.5).abs() < 0.01, "r0.w: {}", r0.w);
-        assert!((r1.x - 112.75).abs() < 0.01, "r1.x: {}", r1.x);
-        assert!((r1.w - 25.5).abs() < 0.01, "r1.w: {}", r1.w);
+        assert!((r0.x - 25.0).abs() < 0.01, "r0.x: {}", r0.x);
+        assert!((r0.w - 50.0).abs() < 0.01, "r0.w: {}", r0.w);
+        assert!((r1.x - 125.0).abs() < 0.01, "r1.x: {}", r1.x);
+        assert!((r1.w - 50.0).abs() < 0.01, "r1.w: {}", r1.w);
         assert!((r0.h - 100.0).abs() < 0.01, "r0.h: {}", r0.h);
     }
 
