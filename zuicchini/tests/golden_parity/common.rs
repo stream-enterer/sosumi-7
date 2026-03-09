@@ -158,6 +158,76 @@ pub fn scale_golden_rects(rects: &mut [GoldenRect], parent_width: f64) {
     }
 }
 
+// ────────────────────── Behavioral golden files ──────────────────
+
+#[derive(Debug, Clone)]
+pub struct GoldenPanelState {
+    pub is_active: bool,
+    pub in_active_path: bool,
+}
+
+/// Load a behavioral golden file. Returns a list of panel states in DFS order.
+pub fn load_behavioral_golden(name: &str) -> Vec<GoldenPanelState> {
+    let path = golden_dir()
+        .join("behavioral")
+        .join(format!("{name}.behavioral.golden"));
+    let data =
+        std::fs::read(&path).unwrap_or_else(|e| panic!("Cannot read {}: {e}", path.display()));
+    assert!(
+        data.len() >= 4,
+        "Behavioral golden too short: {}",
+        path.display()
+    );
+    let num_panels = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+    let expected_len = 4 + num_panels * 2;
+    assert_eq!(
+        data.len(),
+        expected_len,
+        "Behavioral golden size mismatch for {name}: got {} expected {expected_len}",
+        data.len()
+    );
+    let mut panels = Vec::with_capacity(num_panels);
+    for i in 0..num_panels {
+        let off = 4 + i * 2;
+        panels.push(GoldenPanelState {
+            is_active: data[off] != 0,
+            in_active_path: data[off + 1] != 0,
+        });
+    }
+    panels
+}
+
+/// Compare behavioral state against golden. Panel order must match DFS traversal.
+pub fn compare_behavioral(
+    actual: &[(bool, bool)],
+    expected: &[GoldenPanelState],
+    panel_names: &[&str],
+) -> Result<(), CompareError> {
+    if actual.len() != expected.len() {
+        return Err(CompareError {
+            message: format!(
+                "Panel count mismatch: actual={} expected={}",
+                actual.len(),
+                expected.len()
+            ),
+        });
+    }
+    for (i, ((a_active, a_path), e)) in actual.iter().zip(expected.iter()).enumerate() {
+        let name = panel_names.get(i).copied().unwrap_or("?");
+        if *a_active != e.is_active || *a_path != e.in_active_path {
+            return Err(CompareError {
+                message: format!(
+                    "Panel {i} ({name}) mismatch:\n  \
+                     actual =(active={a_active}, in_path={a_path})\n  \
+                     expected=(active={}, in_path={})",
+                    e.is_active, e.in_active_path
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 pub fn compare_rects(
     actual: &[(f64, f64, f64, f64)],
     expected: &[GoldenRect],

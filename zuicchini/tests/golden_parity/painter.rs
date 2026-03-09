@@ -559,6 +559,127 @@ fn painter_polyline() {
     compare_images(img.data(), &expected, ew, eh, 1, 0.5).unwrap();
 }
 
+// ─── Test 30: transform_translate ───────────────────────────────
+#[test]
+fn painter_transform_translate() {
+    require_golden!();
+    let (ew, eh, expected) = load_painter_golden("transform_translate");
+    let mut img = white_canvas(ew, eh);
+    {
+        let mut p = white_painter(&mut img);
+        p.push_state();
+        p.translate(50.0, 30.0);
+        p.paint_rect(0.0, 0.0, 80.0, 60.0, Color::RED);
+        p.pop_state();
+    }
+    compare_images(img.data(), &expected, ew, eh, 1, 0.5).unwrap();
+}
+
+// ─── Test 35: transform_fractional ──────────────────────────────
+#[test]
+fn painter_transform_fractional() {
+    require_golden!();
+    let (ew, eh, expected) = load_painter_golden("transform_fractional");
+    let mut img = white_canvas(ew, eh);
+    {
+        let mut p = white_painter(&mut img);
+        p.push_state();
+        p.translate(0.3, 0.7);
+        p.paint_rect(20.0, 20.0, 100.0, 80.0, Color::RED);
+        p.pop_state();
+    }
+    compare_images(img.data(), &expected, ew, eh, 1, 0.5).unwrap();
+}
+
+// ─── Test 36: transform_identity_roundtrip ─────────────────────
+#[test]
+fn painter_transform_identity_roundtrip() {
+    require_golden!();
+    let (ew, eh, expected) = load_painter_golden("transform_identity_roundtrip");
+    let mut img = white_canvas(ew, eh);
+    {
+        let mut p = white_painter(&mut img);
+        p.push_state();
+        p.scale(2.0, 2.0);
+        p.scale(0.5, 0.5);
+        p.paint_rect(20.0, 20.0, 100.0, 80.0, Color::RED);
+        p.pop_state();
+    }
+    compare_images(img.data(), &expected, ew, eh, 1, 0.5).unwrap();
+}
+
+// ─── Test 34: transform_ellipse_scaled ──────────────────────────
+#[test]
+fn painter_transform_ellipse_scaled() {
+    require_golden!();
+    let (ew, eh, expected) = load_painter_golden("transform_ellipse_scaled");
+    let mut img = white_canvas(ew, eh);
+    {
+        let mut p = white_painter(&mut img);
+        p.push_state();
+        p.scale(2.0, 1.0);
+        // C++ PaintEllipse(10,50,60,60) → bbox center (40,80), radius (30,30) in user space
+        p.paint_ellipse(40.0, 80.0, 30.0, 30.0, Color::GREEN);
+        p.pop_state();
+    }
+    compare_images(img.data(), &expected, ew, eh, 1, 0.5).unwrap();
+}
+
+// ─── Test 33: transform_clip_interaction ────────────────────────
+#[test]
+fn painter_transform_clip_interaction() {
+    require_golden!();
+    let (ew, eh, expected) = load_painter_golden("transform_clip_interaction");
+    let mut img = white_canvas(ew, eh);
+    {
+        let mut p = white_painter(&mut img);
+        p.push_state();
+        p.clip_rect(64.0, 64.0, 128.0, 128.0);
+        p.translate(160.0, 100.0);
+        p.paint_rect(0.0, 0.0, 80.0, 60.0, Color::RED);
+        p.pop_state();
+    }
+    compare_images(img.data(), &expected, ew, eh, 1, 0.5).unwrap();
+}
+
+// ─── Test 32: transform_nested ──────────────────────────────────
+#[test]
+fn painter_transform_nested() {
+    require_golden!();
+    let (ew, eh, expected) = load_painter_golden("transform_nested");
+    let mut img = white_canvas(ew, eh);
+    {
+        let mut p = white_painter(&mut img);
+        // Inner: translate(50,50) then scale(2,2), paint red rect
+        p.push_state();
+        p.translate(50.0, 50.0);
+        p.push_state();
+        p.scale(2.0, 2.0);
+        p.paint_rect(0.0, 0.0, 30.0, 30.0, Color::RED);
+        p.pop_state();
+        // Outer: translate(50,50) only, paint blue rect
+        p.paint_rect(0.0, 0.0, 50.0, 50.0, Color::rgba(0, 0, 255, 128));
+        p.pop_state();
+    }
+    compare_images(img.data(), &expected, ew, eh, 1, 0.5).unwrap();
+}
+
+// ─── Test 31: transform_scale ───────────────────────────────────
+#[test]
+fn painter_transform_scale() {
+    require_golden!();
+    let (ew, eh, expected) = load_painter_golden("transform_scale");
+    let mut img = white_canvas(ew, eh);
+    {
+        let mut p = white_painter(&mut img);
+        p.push_state();
+        p.scale(2.0, 2.0);
+        p.paint_rect(10.0, 10.0, 50.0, 40.0, Color::RED);
+        p.pop_state();
+    }
+    compare_images(img.data(), &expected, ew, eh, 1, 0.5).unwrap();
+}
+
 // ─── Test 29: ellipse_sector ────────────────────────────────────
 #[test]
 fn painter_ellipse_sector() {
