@@ -1,5 +1,5 @@
 use zuicchini::foundation::{Color, Image};
-use zuicchini::render::{LineCap, LineJoin, Painter, Stroke, StrokeEnd, StrokeEndType};
+use zuicchini::render::{DashType, LineCap, LineJoin, Painter, Stroke, StrokeEnd, StrokeEndType};
 
 use super::common::*;
 
@@ -217,9 +217,8 @@ fn painter_gradient_radial() {
         let mut p = white_painter(&mut img);
         p.paint_radial_gradient(128.0, 128.0, 128.0, 128.0, Color::WHITE, Color::BLACK);
     }
-    // ARCH GAP [C3:gradient-rounding]: gradient texturing has small per-pixel
-    // rounding diffs at shape boundary. max_diff=50, 25.08% differ at ch_tol=1.
-    // Polygon AA coverage is now exact; remaining diff is gradient interpolation.
+    // Residual: C++ uses integer sqrt lookup table for gradient; Rust uses f64 sqrt.
+    // max_diff=50 at polygon boundary AA, 25.08% of pixels differ at ch_tol=1.
     compare_images(img.data(), &expected, ew, eh, 50, 1.0).unwrap();
 }
 
@@ -297,10 +296,7 @@ fn painter_line_ends_all() {
             p.paint_line_stroked(30.0, y, 226.0, y, &stroke);
         }
     }
-    // ARCH GAP [C4:stroke-ends]: decoration geometry differs.
-    // max_diff=255, 13.28% of pixels differ at ch_tol=1.
-    // ABOVE 5% BUDGET — flagged for architectural review, see ARCH_GAPS.md.
-    compare_images(img.data(), &expected, ew, eh, 80, 17.0).unwrap();
+    compare_images(img.data(), &expected, ew, eh, 1, 1.0).unwrap();
 }
 
 // ─── Test 16: line_dashed ───────────────────────────────────────
@@ -311,19 +307,19 @@ fn painter_line_dashed() {
     let mut img = white_canvas(ew, eh);
     {
         let mut p = white_painter(&mut img);
-        // Dashed line
+        // Dashed line: C++ emDashedStroke(BLACK, 3.0, 3.0)
         let mut stroke_dash = Stroke::new(Color::BLACK, 3.0);
-        stroke_dash.dash_pattern = vec![9.0, 9.0]; // dashLen*width, gapLen*width
+        stroke_dash.dash_type = DashType::Dashed;
+        stroke_dash.dash_length_factor = 3.0;
+        stroke_dash.gap_length_factor = 3.0;
         p.paint_line_stroked(10.0, 64.0, 240.0, 64.0, &stroke_dash);
-        // Dotted line
+        // Dotted line: C++ emDottedStroke(BLACK, 3.0)
         let mut stroke_dot = Stroke::new(Color::BLACK, 3.0);
-        stroke_dot.cap = LineCap::Round;
-        stroke_dot.dash_pattern = vec![0.001, 9.0];
+        stroke_dot.dash_type = DashType::Dotted;
+        stroke_dot.gap_length_factor = 3.0;
         p.paint_line_stroked(10.0, 128.0, 240.0, 128.0, &stroke_dot);
     }
-    // ARCH GAP [C2:stroke-expansion]: dash pattern + stroke expansion differ.
-    // max_diff=255, 1.92% of pixels differ at ch_tol=1.
-    compare_images(img.data(), &expected, ew, eh, 80, 2.0).unwrap();
+    compare_images(img.data(), &expected, ew, eh, 1, 0.1).unwrap();
 }
 
 // ─── Test 17: outline_rect ──────────────────────────────────────
@@ -336,9 +332,7 @@ fn painter_outline_rect() {
         let mut p = white_painter(&mut img);
         p.paint_rect_outlined(20.0, 20.0, 200.0, 150.0, &Stroke::new(Color::BLACK, 3.0));
     }
-    // ARCH GAP [C2:stroke-expansion]: outline stroke geometry differs.
-    // max_diff=255, 4.25% of pixels differ at ch_tol=1.
-    compare_images(img.data(), &expected, ew, eh, 80, 4.5).unwrap();
+    compare_images(img.data(), &expected, ew, eh, 1, 0.1).unwrap();
 }
 
 // ─── Test 18: outline_ellipse ───────────────────────────────────
@@ -352,9 +346,7 @@ fn painter_outline_ellipse() {
         // C++ PaintEllipseOutline(28,28,200,150, 2.0, stroke) → cx=128 cy=103 rx=100 ry=75
         p.paint_ellipse_outlined(128.0, 103.0, 100.0, 75.0, &Stroke::new(Color::BLACK, 2.0));
     }
-    // ARCH GAP [C2:stroke-expansion]: ellipse outline stroke geometry differs.
-    // max_diff=255, 3.47% of pixels differ at ch_tol=1.
-    compare_images(img.data(), &expected, ew, eh, 80, 3.5).unwrap();
+    compare_images(img.data(), &expected, ew, eh, 1, 0.1).unwrap();
 }
 
 // ─── Test 19: outline_polygon ───────────────────────────────────
@@ -379,9 +371,7 @@ fn painter_outline_polygon() {
         let mut p = white_painter(&mut img);
         p.paint_polygon_outlined(&pentagon_vertices(), Color::BLACK, 3.0);
     }
-    // ARCH GAP [C2:stroke-expansion]: polygon outline stroke geometry differs.
-    // max_diff=255, 0.85% of pixels differ at ch_tol=1.
-    compare_images(img.data(), &expected, ew, eh, 80, 1.5).unwrap();
+    compare_images(img.data(), &expected, ew, eh, 1, 0.1).unwrap();
 }
 
 // ─── Test 20: outline_round_rect ────────────────────────────────
@@ -401,9 +391,9 @@ fn painter_outline_round_rect() {
             &Stroke::new(Color::BLACK, 3.0),
         );
     }
-    // ARCH GAP [C2:stroke-expansion]: round-rect outline stroke geometry differs.
-    // max_diff=255, 4.33% of pixels differ at ch_tol=1.
-    compare_images(img.data(), &expected, ew, eh, 80, 4.5).unwrap();
+    // Residual: arc approximation segment count differs slightly from C++.
+    // max_diff=162, 0.21% of pixels differ at ch_tol=1.
+    compare_images(img.data(), &expected, ew, eh, 2, 0.5).unwrap();
 }
 
 // ─── Test 21: bezier_filled ─────────────────────────────────────
@@ -421,9 +411,7 @@ fn painter_bezier_filled() {
         let mut p = white_painter(&mut img);
         p.paint_bezier(&bezier_points(), Color::RED);
     }
-    // ARCH GAP [C6:bezier-flattening]: bezier curve approximation differs.
-    // max_diff=255, 4.41% of pixels differ at ch_tol=1.
-    compare_images(img.data(), &expected, ew, eh, 80, 4.5).unwrap();
+    compare_images(img.data(), &expected, ew, eh, 1, 0.1).unwrap();
 }
 
 // ─── Test 22: bezier_stroked ────────────────────────────────────
@@ -441,9 +429,7 @@ fn painter_bezier_stroked() {
         stroke.finish_end = StrokeEnd::new(StrokeEndType::Arrow).with_inner_color(Color::WHITE);
         p.paint_bezier_line(&bezier_points(), &stroke);
     }
-    // ARCH GAP [C2:stroke-expansion]: stroked bezier + arrow geometry differs.
-    // max_diff=255, 3.17% of pixels differ at ch_tol=1.
-    compare_images(img.data(), &expected, ew, eh, 80, 3.5).unwrap();
+    compare_images(img.data(), &expected, ew, eh, 1, 1.0).unwrap();
 }
 
 // ─── Test 23: clip_basic ────────────────────────────────────────
@@ -570,9 +556,7 @@ fn painter_polyline() {
         let verts = [(20.0, 200.0), (80.0, 40.0), (160.0, 200.0), (240.0, 40.0)];
         p.paint_solid_polyline(&verts, &stroke, false);
     }
-    // ARCH GAP [C2:stroke-expansion]: polyline stroke + join geometry differs.
-    // max_diff=255, 3.99% of pixels differ at ch_tol=1.
-    compare_images(img.data(), &expected, ew, eh, 80, 4.0).unwrap();
+    compare_images(img.data(), &expected, ew, eh, 1, 0.5).unwrap();
 }
 
 // ─── Test 29: ellipse_sector ────────────────────────────────────

@@ -138,11 +138,13 @@ fn paint_rect_outlined() {
     {
         let mut p = Painter::new(&mut img);
         p.set_canvas_color(Color::BLACK);
-        let stroke = Stroke::new(Color::WHITE, 1.0);
+        let stroke = Stroke::new(Color::WHITE, 2.0);
         p.paint_rect_outlined(5.0, 5.0, 10.0, 10.0, &stroke);
     }
-    // Top edge
-    assert_eq!(img.pixel(5, 5), &[255, 255, 255, 255]);
+    // Top edge interior pixel (fully inside the stroke ring).
+    // Stroke centered on boundary: outer=(4,4), inner=(6,6).
+    // Pixel (8,5) is fully within the top stroke band.
+    assert_eq!(img.pixel(8, 5), &[255, 255, 255, 255]);
     // Center should be canvas color (only outline)
     assert_eq!(img.pixel(10, 10), &[0, 0, 0, 255]);
 }

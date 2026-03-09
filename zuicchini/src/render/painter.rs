@@ -11,14 +11,10 @@ const ARROW_BASE_SIZE: f64 = 10.0;
 const ARROW_NOTCH: f64 = 0.3;
 /// Circle quality factor matching C++ emPainter::CircleQuality.
 const CIRCLE_QUALITY: f64 = 4.5;
-/// Default segment count for circle approximation (used by decorations).
-const CIRCLE_SEGMENTS: usize = 32;
 /// Maximum miter extension factor.
 const MAX_MITER: f64 = 5.0;
-/// Bezier subdivision flatness threshold (pixels).
-const BEZIER_FLATNESS: f64 = 0.5;
-/// Maximum Bezier subdivision depth.
-const BEZIER_MAX_DEPTH: u8 = 10;
+/// Minimum relative segment length for short-segment filtering.
+const MIN_REL_SEG_LEN: f64 = 0.001;
 /// Default bitmask for `paint_border_image`: all sub-rects except center.
 /// Octal 0757 = binary 0b111_101_111.
 ///
@@ -1184,18 +1180,21 @@ impl<'a> Painter<'a> {
     /// segment i uses points[i*3], points[i*3+1], points[i*3+2], points[((i+1)*3) % n].
     /// The path is implicitly closed.
     pub fn paint_bezier(&mut self, points: &[(f64, f64)], color: Color) {
-        let n = points.len();
-        if n < 3 || !n.is_multiple_of(3) {
+        if points.len() < 3 {
             return;
         }
+        // C++ convention: n -= n%3; truncate to multiple of 3.
+        let n = points.len() - points.len() % 3;
         let seg_count = n / 3;
+        let s = self.state.scale_x + self.state.scale_y;
         let mut verts = Vec::new();
         for i in 0..seg_count {
             let p0 = points[i * 3];
             let p1 = points[i * 3 + 1];
             let p2 = points[i * 3 + 2];
+            // P3 = first point of next segment; wraps to points[0] for last segment.
             let p3 = points[((i + 1) * 3) % n];
-            tessellate_cubic(&mut verts, p0, p1, p2, p3, BEZIER_FLATNESS, 0);
+            tessellate_cubic_cpp(&mut verts, p0, p1, p2, p3, s);
         }
         if verts.len() >= 3 {
             self.fill_polygon_aa(&verts, color, WindingRule::NonZero);
@@ -1204,20 +1203,20 @@ impl<'a> Painter<'a> {
 
     /// Stroke a closed Bezier path outline (tessellated to polyline, then stroked).
     /// Corresponds to C++ `PaintBezierOutline`: tessellates + strokes as closed path.
-    /// `points` length must be a multiple of 3. Uses stride-3 convention.
     pub fn paint_bezier_outline(&mut self, points: &[(f64, f64)], stroke: &Stroke) {
-        let n = points.len();
-        if n < 3 || !n.is_multiple_of(3) {
+        if points.len() < 3 {
             return;
         }
+        let n = points.len() - points.len() % 3;
         let seg_count = n / 3;
+        let s = self.state.scale_x + self.state.scale_y;
         let mut verts = Vec::new();
         for i in 0..seg_count {
             let p0 = points[i * 3];
             let p1 = points[i * 3 + 1];
             let p2 = points[i * 3 + 2];
             let p3 = points[((i + 1) * 3) % n];
-            tessellate_cubic(&mut verts, p0, p1, p2, p3, BEZIER_FLATNESS, 0);
+            tessellate_cubic_cpp(&mut verts, p0, p1, p2, p3, s);
         }
         if verts.len() >= 2 {
             self.paint_polyline_without_arrows(&verts, stroke, true);
@@ -1237,6 +1236,7 @@ impl<'a> Painter<'a> {
         if seg_count == 0 {
             return;
         }
+        let s = self.state.scale_x + self.state.scale_y;
         let mut verts = Vec::new();
         for i in 0..seg_count {
             let p0 = points[i * 3];
@@ -1247,7 +1247,11 @@ impl<'a> Painter<'a> {
             } else {
                 points[i * 3 + 3]
             };
-            tessellate_cubic(&mut verts, p0, p1, p2, p3, BEZIER_FLATNESS, 0);
+            tessellate_cubic_cpp(&mut verts, p0, p1, p2, p3, s);
+        }
+        // For open bezier lines, add the final endpoint (t=1 of last segment).
+        if !closed && !verts.is_empty() {
+            verts.push(points[n - 1]);
         }
         if verts.len() >= 2 {
             self.paint_polyline_with_arrows(&verts, stroke, closed);
@@ -1782,39 +1786,79 @@ impl<'a> Painter<'a> {
             let angle = start_rad + t * sweep_rad;
             verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
         }
-        if !stroke.dash_pattern.is_empty() {
+        if stroke.is_dashed() {
             self.paint_polyline_without_arrows(&verts, stroke, true);
         } else {
             self.paint_polygon_outlined(&verts, stroke.color, stroke.width);
         }
     }
 
-    /// Draw a rectangle outline. Routes through polyline if dashed.
+    /// Draw a rectangle outline. Stroke is centered on the shape boundary.
+    ///
+    /// Matches C++ `PaintRectOutline`: for solid non-rounded strokes, builds a
+    /// 10-vertex polygon (outer rect + bridge + reversed inner rect). For
+    /// dashed/rounded strokes, routes through `PaintPolylineWithoutArrows`.
     pub fn paint_rect_outlined(&mut self, x: f64, y: f64, w: f64, h: f64, stroke: &Stroke) {
         let sw = stroke.width;
-        if w <= 0.0 || h <= 0.0 || sw <= 0.0 {
+        let w = w.max(0.0);
+        let h = h.max(0.0);
+        if sw <= 0.0 {
             return;
         }
-        if !stroke.dash_pattern.is_empty() {
+        let t2 = sw * 0.5;
+        let rounded = stroke.join == super::stroke::LineJoin::Round;
+
+        if rounded || stroke.is_dashed() {
+            if (w <= sw || h <= sw) && !stroke.is_dashed() {
+                self.paint_round_rect(x - t2, y - t2, w + sw, h + sw, t2, stroke.color);
+                return;
+            }
             let verts = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
             self.paint_polyline_without_arrows(&verts, stroke, true);
             return;
         }
-        if sw * 2.0 >= w || sw * 2.0 >= h {
-            self.paint_rect(x, y, w, h, stroke.color);
+
+        // Outer rect expanded by t2 on each side.
+        let ox1 = x - t2;
+        let oy1 = y - t2;
+        let ox2 = x + w + t2;
+        let oy2 = y + h + t2;
+        // Inner rect contracted by t2 from shape boundary.
+        let ix1 = ox1 + sw;
+        let iy1 = oy1 + sw;
+        let ix2 = ox2 - sw;
+        let iy2 = oy2 - sw;
+
+        if ix1 >= ix2 || iy1 >= iy2 {
+            // Stroke fills entire rect.
+            self.paint_polygon(
+                &[(ox1, oy1), (ox2, oy1), (ox2, oy2), (ox1, oy2)],
+                stroke.color,
+            );
             return;
         }
-        // Top
-        self.paint_rect(x, y, w, sw, stroke.color);
-        // Bottom
-        self.paint_rect(x, y + h - sw, w, sw, stroke.color);
-        // Left
-        self.paint_rect(x, y + sw, sw, h - 2.0 * sw, stroke.color);
-        // Right
-        self.paint_rect(x + w - sw, y + sw, sw, h - 2.0 * sw, stroke.color);
+
+        // 10-vertex polygon: outer CW, bridge, inner CCW, bridge back.
+        let poly = [
+            (ox1, oy1),
+            (ox2, oy1),
+            (ox2, oy2),
+            (ox1, oy2),
+            (ox1, oy1), // bridge back to start
+            (ix1, iy1), // inner start
+            (ix1, iy2),
+            (ix2, iy2),
+            (ix2, iy1),
+            (ix1, iy1), // close inner
+        ];
+        self.fill_polygon_aa(&poly, stroke.color, WindingRule::NonZero);
     }
 
-    /// Draw a rounded rectangle outline. Routes through polyline if dashed.
+    /// Draw a rounded rectangle outline. Stroke is centered on the shape boundary.
+    ///
+    /// Matches C++ `PaintRoundRectOutline`: for solid strokes, builds outer +
+    /// inner round-rect polygons with a bridge for NonZero winding hole.
+    /// For dashed, routes through polyline.
     pub fn paint_round_rect_outlined(
         &mut self,
         x: f64,
@@ -1827,19 +1871,37 @@ impl<'a> Painter<'a> {
         if w <= 0.0 || h <= 0.0 || stroke.width <= 0.0 {
             return;
         }
-        if !stroke.dash_pattern.is_empty() {
+        let sw = stroke.width;
+        let t2 = sw * 0.5;
+
+        if stroke.is_dashed() {
             let verts = self.round_rect_polygon(x, y, w, h, radius);
             self.paint_polyline_without_arrows(&verts, stroke, true);
             return;
         }
-        let sw = stroke.width;
+
+        // Outer round-rect expanded by t2 on each side.
+        let ox = x - t2;
+        let oy = y - t2;
+        let ow = w + sw;
+        let oh = h + sw;
+        let or = radius + t2;
+
         if sw * 2.0 >= w || sw * 2.0 >= h {
-            self.paint_round_rect(x, y, w, h, radius, stroke.color);
+            self.paint_round_rect(ox, oy, ow, oh, or, stroke.color);
             return;
         }
-        let mut outer = self.round_rect_polygon(x, y, w, h, radius);
-        let inner_r = (radius - sw).max(0.0);
-        let inner = self.round_rect_polygon(x + sw, y + sw, w - 2.0 * sw, h - 2.0 * sw, inner_r);
+
+        // Inner round-rect contracted by t2 from shape boundary.
+        let ix = ox + sw;
+        let iy = oy + sw;
+        let iw = ow - 2.0 * sw;
+        let ih = oh - 2.0 * sw;
+        let ir = (or - sw).max(0.0);
+
+        let mut outer = self.round_rect_polygon(ox, oy, ow, oh, or);
+        let inner = self.round_rect_polygon(ix, iy, iw, ih, ir);
+
         // Bridge + reversed inner for NonZero winding hole.
         outer.push(outer[0]);
         let first_inner = inner[0];
@@ -1849,25 +1911,43 @@ impl<'a> Painter<'a> {
         self.fill_polygon_aa(&outer, stroke.color, WindingRule::NonZero);
     }
 
-    /// Draw an ellipse outline. Routes through polyline if dashed.
+    /// Draw an ellipse outline. Stroke is centered on the shape boundary.
+    ///
+    /// Matches C++ `PaintEllipseOutline`: for solid strokes, builds
+    /// outer + inner ellipse polygons with adaptive segment counts and a
+    /// bridge for NonZero winding hole. For dashed, routes through polyline.
     pub fn paint_ellipse_outlined(&mut self, cx: f64, cy: f64, rx: f64, ry: f64, stroke: &Stroke) {
         if rx <= 0.0 || ry <= 0.0 || stroke.width <= 0.0 {
             return;
         }
-        if !stroke.dash_pattern.is_empty() {
+        let sw = stroke.width;
+        let t2 = sw * 0.5;
+        // Outer radii expanded by t2 (stroke centered on boundary).
+        let orx = rx + t2;
+        let ory = ry + t2;
+
+        if stroke.is_dashed() {
+            // Dashed: use centerline radii for the polyline.
             let verts = self.ellipse_polygon(cx, cy, rx, ry);
             self.paint_polyline_without_arrows(&verts, stroke, true);
             return;
         }
-        let sw = stroke.width;
-        let irx = (rx - sw).max(0.0);
-        let iry = (ry - sw).max(0.0);
+
+        // Inner radii contracted by t2 from shape boundary.
+        let irx = orx - sw;
+        let iry = ory - sw;
         if irx <= 0.0 || iry <= 0.0 {
-            self.paint_ellipse(cx, cy, rx, ry, stroke.color);
+            self.paint_ellipse(cx, cy, orx, ory, stroke.color);
             return;
         }
-        let mut outer = self.ellipse_polygon(cx, cy, rx, ry);
+
+        // Build outer polygon with adaptive segment count.
+        let mut outer = self.ellipse_polygon(cx, cy, orx, ory);
+
+        // Build inner polygon (may have different segment count).
         let inner = self.ellipse_polygon(cx, cy, irx, iry);
+
+        // Bridge + reversed inner for NonZero winding hole.
         outer.push(outer[0]);
         let first_inner = inner[0];
         outer.push(first_inner);
@@ -2066,11 +2146,24 @@ impl<'a> Painter<'a> {
         stroke: &Stroke,
         closed: bool,
     ) {
-        if vertices.len() < 2 || stroke.width <= 0.0 || stroke.dash_pattern.is_empty() {
+        use super::stroke::DashType;
+
+        if vertices.len() < 2 || stroke.width <= 0.0 {
             self.paint_solid_polyline(vertices, stroke, closed);
             return;
         }
 
+        // Route: if C++ dash_type API is set, use the fitted algorithm.
+        if stroke.dash_type != DashType::Solid {
+            self.paint_dashed_polyline_fitted(vertices, stroke, closed);
+            return;
+        }
+
+        // Legacy pattern-based dashes.
+        if stroke.dash_pattern.is_empty() {
+            self.paint_solid_polyline(vertices, stroke, closed);
+            return;
+        }
         let pattern = &stroke.dash_pattern;
         let total_pattern_len: f64 = pattern.iter().sum();
         if total_pattern_len <= 0.0 {
@@ -2078,7 +2171,6 @@ impl<'a> Painter<'a> {
             return;
         }
 
-        // Walk edges, splitting at dash boundaries.
         let n = vertices.len();
         let seg_count = if closed { n } else { n - 1 };
         let mut pat_idx = 0usize;
@@ -2086,7 +2178,6 @@ impl<'a> Painter<'a> {
         let mut is_dash = true;
         let mut offset = stroke.dash_offset % total_pattern_len;
 
-        // Advance through pattern by offset.
         while offset > 0.0 {
             if offset >= remaining_in_pat {
                 offset -= remaining_in_pat;
@@ -2103,6 +2194,7 @@ impl<'a> Painter<'a> {
         let dash_stroke = Stroke {
             dash_pattern: Vec::new(),
             dash_offset: 0.0,
+            dash_type: DashType::Solid,
             ..stroke.clone()
         };
 
@@ -2136,7 +2228,6 @@ impl<'a> Painter<'a> {
                 remaining_in_pat -= step;
 
                 if remaining_in_pat <= 1e-10 {
-                    // End of this pattern element.
                     if is_dash && current_segment.len() >= 2 {
                         self.paint_solid_polyline(&current_segment, &dash_stroke, false);
                         current_segment.clear();
@@ -2150,9 +2241,315 @@ impl<'a> Painter<'a> {
             }
         }
 
-        // Flush any remaining dash segment.
         if is_dash && current_segment.len() >= 2 {
             self.paint_solid_polyline(&current_segment, &dash_stroke, false);
+        }
+    }
+
+    /// C++ `PaintDashedPolyline` port: fits dashes to total path length.
+    fn paint_dashed_polyline_fitted(
+        &mut self,
+        vertices: &[(f64, f64)],
+        stroke: &Stroke,
+        closed: bool,
+    ) {
+        use super::stroke::DashType;
+
+        const MAX_DASHES: f64 = 1e5;
+
+        let n = vertices.len();
+        if n < 2 {
+            self.paint_solid_polyline(vertices, stroke, closed);
+            return;
+        }
+
+        let thickness = stroke.width;
+        let rounded = stroke.join == super::stroke::LineJoin::Round;
+        let have_dashes = stroke.dash_type != DashType::Dotted;
+        let have_dots = stroke.dash_type != DashType::Dashed;
+        let have_dashes_and_dots = have_dashes && have_dots;
+        let is_endless = closed;
+
+        let min_dash_len = if have_dashes {
+            thickness
+                * if rounded {
+                    1.0 + MIN_REL_SEG_LEN
+                } else {
+                    MIN_REL_SEG_LEN
+                }
+        } else {
+            0.0
+        };
+        let pref_dash_len = if have_dashes {
+            min_dash_len.max(thickness * 5.0 * stroke.dash_length_factor)
+        } else {
+            0.0
+        };
+        let mut dot_len = if have_dots {
+            thickness * (1.0 + MIN_REL_SEG_LEN)
+        } else {
+            0.0
+        };
+        let pref_gap_len = (thickness * 5.0 * stroke.gap_length_factor).max(0.0);
+        let min_phase_len = min_dash_len + dot_len;
+        let pref_phase_len = pref_dash_len + dot_len + pref_gap_len;
+
+        // Compute total path length.
+        let num_edges = if is_endless { n } else { n - 1 };
+        let mut total_len = 0.0;
+        let mut x2 = vertices[0].0;
+        let mut y2 = vertices[0].1;
+        for i in 1..=num_edges {
+            let x1 = x2;
+            let y1 = y2;
+            let vi = vertices[i % n];
+            x2 = vi.0;
+            y2 = vi.1;
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            total_len += (dx * dx + dy * dy).sqrt();
+        }
+
+        // Compute fitted dash/gap/stroke counts.
+        let stroke_count: i32;
+        let mut dash_len: f64;
+        let mut gap_len: f64;
+        let mut end_extra: f64;
+
+        if is_endless {
+            let max_stroke_count = MAX_DASHES.min(total_len / min_phase_len) as i32;
+            if max_stroke_count < 1 {
+                self.paint_solid_polyline(vertices, stroke, closed);
+                return;
+            }
+            stroke_count = (MAX_DASHES.min(total_len / pref_phase_len + 0.5) as i32)
+                .max(1)
+                .min(max_stroke_count);
+            end_extra = 0.0;
+            let t = total_len / stroke_count as f64 - dot_len;
+            dash_len = min_dash_len.max(t / (pref_phase_len - dot_len) * pref_dash_len);
+            gap_len = t - dash_len;
+        } else {
+            let mut t = total_len;
+            if have_dashes {
+                t += thickness.min(min_dash_len);
+            } else {
+                t += thickness;
+            }
+            if have_dashes_and_dots {
+                t += dot_len;
+            }
+            let max_stroke_count = (MAX_DASHES.min(t / min_phase_len)) as i32;
+            if max_stroke_count < 2 {
+                self.paint_solid_polyline(vertices, stroke, closed);
+                return;
+            }
+            t = total_len + pref_gap_len;
+            if have_dashes {
+                t += thickness.min(pref_dash_len);
+            } else {
+                t += thickness;
+            }
+            if have_dashes_and_dots {
+                t += dot_len;
+            }
+            stroke_count = (MAX_DASHES.min(t / pref_phase_len + 0.5) as i32)
+                .max(2)
+                .min(max_stroke_count);
+            end_extra = thickness;
+            if have_dashes {
+                t = total_len + end_extra;
+                if have_dots {
+                    t -= (stroke_count - 1) as f64 * dot_len;
+                }
+                let u =
+                    stroke_count as f64 * pref_dash_len + (stroke_count - 1) as f64 * pref_gap_len;
+                dash_len = min_dash_len.max(t / u * pref_dash_len);
+                if dash_len < end_extra {
+                    let t2 = t - end_extra;
+                    let u2 = u - pref_dash_len;
+                    dash_len = min_dash_len.max(t2 / u2 * pref_dash_len);
+                    end_extra = dash_len;
+                }
+            } else {
+                dash_len = 0.0;
+            }
+            t = total_len + end_extra - stroke_count as f64 * (dash_len + dot_len);
+            if have_dashes_and_dots {
+                t += dot_len;
+            }
+            gap_len = t / (stroke_count - 1) as f64;
+            end_extra *= 0.5;
+        }
+
+        // Check if gap is too small at screen scale → render as solid with alpha.
+        let t_gap = if rounded {
+            gap_len + thickness * 0.215
+        } else {
+            gap_len
+        };
+        let s = self.state.scale_x + self.state.scale_y;
+        if t_gap * s * 0.5 < 1.2 {
+            let phase_len = dash_len + dot_len + gap_len;
+            let t_solid = ((phase_len - t_gap) / phase_len).clamp(0.0, 1.0);
+            if t_solid <= 0.0 {
+                return;
+            }
+            let mut solid_stroke = stroke.clone();
+            solid_stroke.dash_type = DashType::Solid;
+            solid_stroke.dash_pattern.clear();
+            let a = (stroke.color.a() as f64 * t_solid + 0.5) as u8;
+            solid_stroke.color = solid_stroke.color.with_alpha(a);
+            self.paint_solid_polyline(vertices, &solid_stroke, closed);
+            return;
+        }
+
+        let mut stroke_count = stroke_count;
+        if have_dashes_and_dots {
+            gap_len *= 0.5;
+            stroke_count *= 2;
+            if !is_endless {
+                stroke_count -= 1;
+            }
+        }
+
+        if rounded {
+            end_extra = 0.0;
+            if have_dashes {
+                dash_len -= thickness;
+            }
+            if have_dots {
+                dot_len -= thickness;
+            }
+            gap_len += thickness;
+        }
+
+        // Make a solid stroke for sub-segments.
+        let mut solid_stroke = stroke.clone();
+        solid_stroke.dash_type = DashType::Solid;
+        solid_stroke.dash_pattern.clear();
+
+        let cap_end = StrokeEnd::new(StrokeEndType::Cap);
+        let butt_end = StrokeEnd::butt();
+
+        // Walk the path, emitting dash sub-polylines.
+        let mut is_in_stroke = false;
+        let mut end_of_stroke_reached;
+        let mut stroke_number = 1i32;
+        let mut remaining_segment_len = 0.0f64;
+        let mut remaining_edge_len = 0.0f64;
+        let mut i: i32 = 0;
+        x2 = vertices[0].0;
+        y2 = vertices[0].1;
+        let mut nx = 1.0f64;
+        let mut ny = 0.0f64;
+        let mut xy_out: Vec<(f64, f64)> = Vec::new();
+
+        let (mut x1, mut y1) = if is_endless {
+            (vertices[n - 1].0, vertices[n - 1].1)
+        } else {
+            (x2, y2)
+        };
+
+        if is_endless {
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            let ll = dx * dx + dy * dy;
+            if ll > 1e-280 {
+                let l = ll.sqrt();
+                remaining_edge_len = l.min(if have_dashes { dash_len } else { dot_len } * 0.5);
+                nx = dx / l;
+                ny = dy / l;
+                i -= 1;
+            }
+        }
+
+        loop {
+            while remaining_edge_len <= 1e-140 && i < num_edges as i32 {
+                i += 1;
+                x1 = x2;
+                y1 = y2;
+                let vi = vertices[i as usize % n];
+                x2 = vi.0;
+                y2 = vi.1;
+                let dx = x2 - x1;
+                let dy = y2 - y1;
+                let ll = dx * dx + dy * dy;
+                let l = ll.sqrt();
+                remaining_edge_len += l;
+                if ll > 1e-280 {
+                    nx = dx / l;
+                    ny = dy / l;
+                }
+            }
+
+            if remaining_segment_len < remaining_edge_len {
+                remaining_edge_len -= remaining_segment_len;
+                remaining_segment_len = 0.0;
+                end_of_stroke_reached = true;
+            } else {
+                remaining_segment_len -= remaining_edge_len;
+                remaining_edge_len = 0.0;
+                if i >= num_edges as i32 {
+                    if !is_in_stroke {
+                        break;
+                    }
+                    end_of_stroke_reached = true;
+                } else {
+                    if !is_in_stroke {
+                        continue;
+                    }
+                    end_of_stroke_reached = false;
+                }
+            }
+
+            let x = x2 - nx * remaining_edge_len;
+            let y = y2 - ny * remaining_edge_len;
+            xy_out.push((x, y));
+
+            if !is_in_stroke {
+                is_in_stroke = true;
+                remaining_segment_len = if have_dashes && (!have_dots || (stroke_number & 1) != 0) {
+                    dash_len
+                } else {
+                    dot_len
+                };
+                if stroke_number == 1 {
+                    remaining_segment_len -= end_extra;
+                }
+                continue;
+            }
+
+            if !end_of_stroke_reached {
+                continue;
+            }
+
+            // Emit this dash sub-polyline.
+            if xy_out.len() >= 2 {
+                solid_stroke.start_end = if !is_endless && stroke_number == 1 {
+                    stroke.start_end
+                } else if rounded {
+                    cap_end
+                } else {
+                    butt_end
+                };
+                solid_stroke.finish_end = if !is_endless && stroke_number == stroke_count {
+                    stroke.finish_end
+                } else if rounded {
+                    cap_end
+                } else {
+                    butt_end
+                };
+                self.paint_solid_polyline(&xy_out, &solid_stroke, false);
+            }
+
+            if stroke_number >= stroke_count {
+                break;
+            }
+            stroke_number += 1;
+            is_in_stroke = false;
+            remaining_segment_len = gap_len;
+            xy_out.clear();
         }
     }
 
@@ -2164,7 +2561,7 @@ impl<'a> Painter<'a> {
         stroke: &Stroke,
         closed: bool,
     ) {
-        if !stroke.dash_pattern.is_empty() {
+        if stroke.is_dashed() {
             self.paint_dashed_polyline(vertices, stroke, closed);
         } else {
             self.paint_solid_polyline(vertices, stroke, closed);
@@ -2231,6 +2628,8 @@ impl<'a> Painter<'a> {
             }
         };
 
+        let rounded = stroke.join == super::stroke::LineJoin::Round;
+
         // Shorten the polyline at start/end to account for arrow length.
         let mut work_verts = vertices.to_vec();
 
@@ -2238,10 +2637,11 @@ impl<'a> Painter<'a> {
             let (new_x, new_y) = Self::cut_line_at_end(
                 work_verts[0].0,
                 work_verts[0].1,
-                -start_dx,
-                -start_dy,
+                start_dx,
+                start_dy,
                 stroke.width,
                 &stroke.start_end,
+                rounded,
             );
             work_verts[0] = (new_x, new_y);
         }
@@ -2251,10 +2651,11 @@ impl<'a> Painter<'a> {
             let (new_x, new_y) = Self::cut_line_at_end(
                 work_verts[last].0,
                 work_verts[last].1,
-                end_dx,
-                end_dy,
+                -end_dx,
+                -end_dy,
                 stroke.width,
                 &stroke.finish_end,
+                rounded,
             );
             work_verts[last] = (new_x, new_y);
         }
@@ -2262,20 +2663,19 @@ impl<'a> Painter<'a> {
         // Paint the polyline body.
         self.paint_polyline_without_arrows(&work_verts, stroke, closed);
 
-        let rounded = stroke.join == super::stroke::LineJoin::Round;
-
-        // Normal vectors (perpendicular to direction).
+        // Direction vectors point INTO the line (toward the interior).
+        // Perpendicular = (dy, -dx) of the into-line direction, matching C++ convention.
         if has_start_arrow {
             let (x, y) = vertices[0];
-            let nx = -start_dy;
-            let ny = start_dx;
+            let nx = start_dy;
+            let ny = -start_dx;
             self.paint_stroke_end(
                 x,
                 y,
                 nx,
                 ny,
-                -start_dx,
-                -start_dy,
+                start_dx,
+                start_dy,
                 stroke.width,
                 stroke.color,
                 &stroke.start_end,
@@ -2292,8 +2692,8 @@ impl<'a> Painter<'a> {
                 y,
                 nx,
                 ny,
-                end_dx,
-                end_dy,
+                -end_dx,
+                -end_dy,
                 stroke.width,
                 stroke.color,
                 &stroke.finish_end,
@@ -2304,328 +2704,434 @@ impl<'a> Painter<'a> {
 
     /// Draw a stroked polyline with proper joins and caps.
     ///
-    /// Uses two-pass polygon tracing: forward (right side), backward (left side).
-    /// Produces a single filled polygon for proper join rendering.
+    /// Structural port of C++ `emPainter::PaintSolidPolyline`. Builds a Vertex
+    /// array with per-edge direction, per-vertex miter vectors, and edge-length
+    /// tracking, then walks forward (right side) and backward (left side) to
+    /// produce a single filled polygon.
     pub fn paint_solid_polyline(&mut self, vertices: &[(f64, f64)], stroke: &Stroke, closed: bool) {
-        if vertices.len() < 2 {
-            return;
-        }
-        if stroke.width <= 0.0 {
+        if vertices.is_empty() || stroke.width <= 0.0 {
             return;
         }
 
-        let half_w = stroke.width / 2.0;
+        // --- C++ Vertex flags ---
+        const VTX_IS_START: u32 = 1 << 0;
+        const VTX_IS_END: u32 = 1 << 1;
+        const VTX_IS_NEAR_START_OR_END: u32 = 1 << 2;
+        const VTX_DISALLOW_OUTER_MITER: u32 = 1 << 3;
+
+        struct Vtx {
+            dir: i32, // 0=right turn, 1=left turn, -1=start/end/collinear
+            flags: u32,
+            x: f64,
+            y: f64,
+            nx: f64,      // outgoing edge unit direction X
+            ny: f64,      // outgoing edge unit direction Y
+            el: [f64; 2], // remaining edge length: [0]=right side, [1]=left side
+            nn: f64,      // dot(prev_edge_dir, this_edge_dir)
+            mx: f64,      // miter vector X (points toward outer side of turn)
+            my: f64,      // miter vector Y
+        }
+
         let n = vertices.len();
-        let max_miter = 5.0;
+        let thickness = stroke.width;
+        let d = thickness * 0.5;
+        let rounded = stroke.join == super::stroke::LineJoin::Round;
 
-        // Compute segment directions and normals.
-        let mut dirs: Vec<(f64, f64)> = Vec::with_capacity(n - 1);
-        let mut normals: Vec<(f64, f64)> = Vec::with_capacity(n - 1);
-        let seg_count = if closed { n } else { n - 1 };
+        // ── Phase 1: Build vertex array with short-segment filtering ──
 
-        for i in 0..seg_count {
-            let j = (i + 1) % n;
-            let dx = vertices[j].0 - vertices[i].0;
-            let dy = vertices[j].1 - vertices[i].1;
-            let len = (dx * dx + dy * dy).sqrt();
-            if len < 1e-10 {
-                dirs.push((1.0, 0.0));
-                normals.push((0.0, -1.0));
-            } else {
-                dirs.push((dx / len, dy / len));
-                normals.push((-dy / len, dx / len));
+        let min_seg_len = MIN_REL_SEG_LEN * thickness * 1.01;
+        let mut vtx: Vec<Vtx> = Vec::with_capacity(n + 1);
+
+        let mut x1 = vertices[0].0;
+        let mut y1 = vertices[0].1;
+
+        for (i, &(x2, y2)) in vertices.iter().enumerate().skip(1) {
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            let l = (dx * dx + dy * dy).sqrt();
+            // Keep segment if long enough, or if it's the only segment
+            // and either end is non-cap (not purely rounded-cap line).
+            if l >= min_seg_len
+                || (l > 1e-140
+                    && vtx.is_empty()
+                    && i == n - 1
+                    && (!rounded
+                        || stroke.start_end.end_type != StrokeEndType::Cap
+                        || stroke.finish_end.end_type != StrokeEndType::Cap))
+            {
+                vtx.push(Vtx {
+                    dir: 0,
+                    flags: 0,
+                    x: x1,
+                    y: y1,
+                    nx: dx / l,
+                    ny: dy / l,
+                    el: [l, l],
+                    nn: 0.0,
+                    mx: 0.0,
+                    my: 0.0,
+                });
+                x1 = x2;
+                y1 = y2;
             }
         }
 
-        if dirs.is_empty() {
+        // Sentinel last vertex.
+        vtx.push(Vtx {
+            dir: 0,
+            flags: 0,
+            x: x1,
+            y: y1,
+            nx: 1.0,
+            ny: 0.0,
+            el: [0.0, 0.0],
+            nn: 0.0,
+            mx: 0.0,
+            my: 0.0,
+        });
+
+        if vtx.len() < 2 {
             return;
         }
 
-        // Build outline polygon: right side forward, left side backward.
-        let mut outline: Vec<(f64, f64)> = Vec::with_capacity(n * 4);
+        let v_last = vtx.len() - 1;
 
-        // Forward pass (right side).
-        for i in 0..n {
-            if !closed && i == 0 {
-                // Start cap.
-                let cap_pts =
-                    self.cap_vertices(vertices[0], dirs[0], normals[0], half_w, &stroke.cap, true);
-                outline.extend_from_slice(&cap_pts);
-            } else if !closed && i == n - 1 {
-                // End cap.
-                let cap_pts = self.cap_vertices(
-                    vertices[n - 1],
-                    dirs[seg_count - 1],
-                    normals[seg_count - 1],
-                    half_w,
-                    &stroke.cap,
-                    false,
-                );
-                outline.extend_from_slice(&cap_pts);
-            } else {
-                // Joint between segments.
-                let seg_a = if closed {
-                    (i + seg_count - 1) % seg_count
-                } else {
-                    (i - 1).min(seg_count - 1)
-                };
-                let seg_b = if closed {
-                    i % seg_count
-                } else {
-                    i.min(seg_count - 1)
-                };
-                let join_pts = Self::join_vertices(
-                    vertices[i],
-                    normals[seg_a],
-                    normals[seg_b],
-                    half_w,
-                    max_miter,
-                    &stroke.join,
-                    true,
-                );
-                outline.extend_from_slice(&join_pts);
+        // ── Phase 1b: Handle closed vs open, set up miter iteration ──
+
+        // miter_pairs: pairs (v1, v2) to process in the miter loop.
+        // v1 is the vertex with the incoming edge, v2 is the vertex getting the miter.
+        let mut miter_pairs: Vec<(usize, usize)> = Vec::new();
+
+        if closed {
+            // Compute closing edge direction on vLast.
+            let x2 = vertices[0].0;
+            let y2 = vertices[0].1;
+            let mut vi = v_last;
+            loop {
+                let dx = x2 - vtx[vi].x;
+                let dy = y2 - vtx[vi].y;
+                let ll = dx * dx + dy * dy;
+                if ll > 1e-280 {
+                    let l = ll.sqrt();
+                    vtx[vi].nx = dx / l;
+                    vtx[vi].ny = dy / l;
+                    vtx[vi].el = [l, l];
+                    break;
+                }
+                if vi == 0 {
+                    break;
+                }
+                vi -= 1;
+                // Effectively "vLast--" — shrink the active vertex range.
+            }
+            // For closed: miter loop starts at (vLast, 0) and goes backward
+            // to (0+1's predecessor, 0+1). C++ order: (vLast,0), (vLast-1,vLast), ..., (0,1).
+            miter_pairs.push((vi, 0));
+            let mut v1i = vi;
+            while v1i > 0 {
+                v1i -= 1;
+                let v2i = v1i + 1;
+                miter_pairs.push((v1i, v2i));
+            }
+        } else {
+            // Open polyline.
+            vtx[0].flags = VTX_IS_START;
+            vtx[0].dir = -1;
+            vtx[v_last].flags |= VTX_IS_END;
+            vtx[v_last].dir = -1;
+            if v_last >= 2 {
+                vtx[1].flags = VTX_IS_NEAR_START_OR_END;
+                vtx[v_last - 1].flags = VTX_IS_NEAR_START_OR_END;
+            }
+            // v1 = vLast-2, v2 = vLast-1 down to v1 = vtx[0].
+            if v_last >= 2 {
+                let mut v1i = v_last - 2;
+                loop {
+                    let v2i = v1i + 1;
+                    miter_pairs.push((v1i, v2i));
+                    if v1i == 0 {
+                        break;
+                    }
+                    v1i -= 1;
+                }
             }
         }
 
-        // Backward pass (left side).
-        for i in (0..n).rev() {
-            if !closed && i == n - 1 {
-                // Already handled end cap in forward pass.
+        // ── Phase 2: Miter computation ──
+
+        let max_m = MAX_MITER * d;
+
+        for &(v1i, v2i) in &miter_pairs {
+            let mx_raw = vtx[v1i].nx - vtx[v2i].nx;
+            let my_raw = vtx[v1i].ny - vtx[v2i].ny;
+            let ll = mx_raw * mx_raw + my_raw * my_raw;
+            if ll <= 1e-280 {
+                vtx[v2i].dir = -1; // collinear
                 continue;
-            } else if !closed && i == 0 {
-                // Already handled start cap in forward pass.
-                continue;
+            }
+            let l = ll.sqrt();
+            let mx_n = mx_raw / l;
+            let my_n = my_raw / l;
+            let nm_base = vtx[v1i].nx * mx_n + vtx[v1i].ny * my_n;
+            let m = d / (1.0 - nm_base * nm_base).max(1e-40).sqrt();
+            let nm = nm_base * m;
+            let mx = mx_n * m;
+            let my = my_n * m;
+            vtx[v2i].mx = mx;
+            vtx[v2i].my = my;
+            if m > max_m {
+                vtx[v2i].flags |= VTX_DISALLOW_OUTER_MITER;
+            }
+            let dir = if vtx[v1i].nx * vtx[v2i].ny - vtx[v1i].ny * vtx[v2i].nx < 0.0 {
+                1
             } else {
-                let seg_a = if closed {
-                    (i + seg_count - 1) % seg_count
+                0
+            };
+            vtx[v2i].dir = dir;
+            let d_idx = dir as usize;
+            vtx[v1i].el[d_idx] -= nm;
+            let dot = vtx[v2i].nx * mx + vtx[v2i].ny * my;
+            vtx[v2i].el[d_idx] += dot;
+            vtx[v2i].nn = vtx[v1i].nx * vtx[v2i].nx + vtx[v1i].ny * vtx[v2i].ny;
+        }
+
+        // ── Phase 3: Walk and emit polygon ──
+
+        let scale_sum = self.state.scale_x + self.state.scale_y;
+        let mut outline: Vec<f64> = Vec::with_capacity(vtx.len() * 8);
+
+        // State machine using indices. C++ uses pointers v1, e1, e2.
+        let mut dir: i32 = 0; // 0 = right side (forward), 1 = left side (backward)
+        let mut sd = d; // signed half-width: positive for right, negative for left
+        let mut mid_out: usize = 0;
+
+        // e1 = previous edge vertex, e2 = next edge vertex, v1 = current vertex
+        let mut v1i: usize = 0;
+        let mut e1i: usize = v_last;
+        let mut e2i: usize = 0;
+
+        loop {
+            // Macro-like inline functions replaced by direct logic.
+            let v1_dir = vtx[v1i].dir;
+            let v1_flags = vtx[v1i].flags;
+
+            if v1_dir == dir {
+                // ── INNER side of turn ──
+                let el_e1 = vtx[e1i].el[dir as usize];
+                let el_e2 = vtx[e2i].el[dir as usize];
+                if el_e1 > 0.0 {
+                    if el_e2 > 0.0 {
+                        // INNER_MITER
+                        outline.push(vtx[v1i].x - vtx[v1i].mx);
+                        outline.push(vtx[v1i].y - vtx[v1i].my);
+                    } else {
+                        // e1 ok, e2 consumed — check near-endpoint
+                        if (v1_flags & VTX_IS_NEAR_START_OR_END) != 0 && vtx[v1i].nn >= -0.5 {
+                            outline.push(vtx[v1i].x - vtx[v1i].mx);
+                            outline.push(vtx[v1i].y - vtx[v1i].my);
+                        } else {
+                            // BEVEL
+                            outline.push(vtx[v1i].x - sd * vtx[e1i].ny);
+                            outline.push(vtx[v1i].y + sd * vtx[e1i].nx);
+                            outline.push(vtx[v1i].x - sd * vtx[e2i].ny);
+                            outline.push(vtx[v1i].y + sd * vtx[e2i].nx);
+                        }
+                    }
+                } else if el_e2 <= 0.0 {
+                    // Both edges consumed
+                    if vtx[v1i].nn < 0.5 {
+                        // BEVEL
+                        outline.push(vtx[v1i].x - sd * vtx[e1i].ny);
+                        outline.push(vtx[v1i].y + sd * vtx[e1i].nx);
+                        outline.push(vtx[v1i].x - sd * vtx[e2i].ny);
+                        outline.push(vtx[v1i].y + sd * vtx[e2i].nx);
+                    }
+                    // else SKIP (nn >= 0.5 and both consumed)
                 } else {
-                    (i - 1).min(seg_count - 1)
-                };
-                let seg_b = if closed {
-                    i % seg_count
+                    // e1 consumed, e2 ok — check near-endpoint
+                    if (v1_flags & VTX_IS_NEAR_START_OR_END) != 0 && vtx[v1i].nn >= -0.5 {
+                        outline.push(vtx[v1i].x - vtx[v1i].mx);
+                        outline.push(vtx[v1i].y - vtx[v1i].my);
+                    } else {
+                        // BEVEL
+                        outline.push(vtx[v1i].x - sd * vtx[e1i].ny);
+                        outline.push(vtx[v1i].y + sd * vtx[e1i].nx);
+                        outline.push(vtx[v1i].x - sd * vtx[e2i].ny);
+                        outline.push(vtx[v1i].y + sd * vtx[e2i].nx);
+                    }
+                }
+            } else if v1_dir < 0 {
+                // ── START, END, or COLLINEAR vertex ──
+                if (v1_flags & (VTX_IS_START | VTX_IS_END)) != 0 {
+                    let is_end_on_right = dir == 0 && (v1_flags & VTX_IS_END) != 0;
+                    let is_start_on_left = dir == 1 && (v1_flags & VTX_IS_START) != 0;
+                    if !is_end_on_right && !is_start_on_left {
+                        // SKIP — wrong cap for this walking direction
+                    } else {
+                        // Determine cap type from stroke end.
+                        let st = if dir == 0 {
+                            &stroke.finish_end
+                        } else {
+                            &stroke.start_end
+                        };
+                        if st.end_type != StrokeEndType::Cap {
+                            // BUTT
+                            outline.push(vtx[v1i].x - sd * vtx[e1i].ny);
+                            outline.push(vtx[v1i].y + sd * vtx[e1i].nx);
+                            outline.push(vtx[v1i].x + sd * vtx[e1i].ny);
+                            outline.push(vtx[v1i].y - sd * vtx[e1i].nx);
+                        } else if !rounded {
+                            // NRCAP (non-rounded cap = square cap)
+                            outline.push(vtx[v1i].x + sd * (vtx[e1i].nx - vtx[e1i].ny));
+                            outline.push(vtx[v1i].y + sd * (vtx[e1i].ny + vtx[e1i].nx));
+                            outline.push(vtx[v1i].x + sd * (vtx[e1i].nx + vtx[e1i].ny));
+                            outline.push(vtx[v1i].y + sd * (vtx[e1i].ny - vtx[e1i].nx));
+                        } else {
+                            // ROUND cap
+                            let f = CIRCLE_QUALITY * (d * scale_sum).sqrt() * 0.5;
+                            if f < 1.5 {
+                                // Degrade to BUTT
+                                outline.push(vtx[v1i].x - sd * vtx[e1i].ny);
+                                outline.push(vtx[v1i].y + sd * vtx[e1i].nx);
+                                outline.push(vtx[v1i].x + sd * vtx[e1i].ny);
+                                outline.push(vtx[v1i].y - sd * vtx[e1i].nx);
+                            } else {
+                                let a = std::f64::consts::PI;
+                                let k = (f + 0.5) as usize;
+                                let k = k.clamp(1, 128);
+                                let step = a / k as f64;
+                                for j in 0..=k {
+                                    let c = (step * j as f64).cos();
+                                    let s = (step * j as f64).sin();
+                                    outline.push(
+                                        vtx[v1i].x + sd * (s * vtx[e1i].nx - c * vtx[e1i].ny),
+                                    );
+                                    outline.push(
+                                        vtx[v1i].y + sd * (s * vtx[e1i].ny + c * vtx[e1i].nx),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                // else: collinear, SKIP
+            } else {
+                // ── OUTER side of turn ──
+                if rounded && vtx[v1i].nn < 1.0 {
+                    let a = if vtx[v1i].nn > -1.0 {
+                        vtx[v1i].nn.acos()
+                    } else {
+                        std::f64::consts::PI
+                    };
+                    let f =
+                        CIRCLE_QUALITY * (d * scale_sum).sqrt() * a / (2.0 * std::f64::consts::PI);
+                    if f >= 1.5 {
+                        // ROUND join
+                        let k = (f + 0.5) as usize;
+                        let k = k.clamp(1, 128);
+                        let step = a / k as f64;
+                        for j in 0..=k {
+                            let c = (step * j as f64).cos();
+                            let s = (step * j as f64).sin();
+                            outline.push(vtx[v1i].x + sd * (s * vtx[e1i].nx - c * vtx[e1i].ny));
+                            outline.push(vtx[v1i].y + sd * (s * vtx[e1i].ny + c * vtx[e1i].nx));
+                        }
+                    } else if f >= 0.5 {
+                        // BEVEL
+                        outline.push(vtx[v1i].x - sd * vtx[e1i].ny);
+                        outline.push(vtx[v1i].y + sd * vtx[e1i].nx);
+                        outline.push(vtx[v1i].x - sd * vtx[e2i].ny);
+                        outline.push(vtx[v1i].y + sd * vtx[e2i].nx);
+                    } else {
+                        // f < 0.5: fall through to miter/bevel below
+                        if (v1_flags & VTX_DISALLOW_OUTER_MITER) == 0 {
+                            outline.push(vtx[v1i].x + vtx[v1i].mx);
+                            outline.push(vtx[v1i].y + vtx[v1i].my);
+                        } else {
+                            outline.push(vtx[v1i].x - sd * vtx[e1i].ny);
+                            outline.push(vtx[v1i].y + sd * vtx[e1i].nx);
+                            outline.push(vtx[v1i].x - sd * vtx[e2i].ny);
+                            outline.push(vtx[v1i].y + sd * vtx[e2i].nx);
+                        }
+                    }
+                } else if (v1_flags & VTX_DISALLOW_OUTER_MITER) == 0 {
+                    // OUTER_MITER
+                    outline.push(vtx[v1i].x + vtx[v1i].mx);
+                    outline.push(vtx[v1i].y + vtx[v1i].my);
                 } else {
-                    i.min(seg_count - 1)
-                };
-                let join_pts = Self::join_vertices(
-                    vertices[i],
-                    normals[seg_a],
-                    normals[seg_b],
-                    half_w,
-                    max_miter,
-                    &stroke.join,
-                    false,
-                );
-                outline.extend_from_slice(&join_pts);
+                    // BEVEL
+                    outline.push(vtx[v1i].x - sd * vtx[e1i].ny);
+                    outline.push(vtx[v1i].y + sd * vtx[e1i].nx);
+                    outline.push(vtx[v1i].x - sd * vtx[e2i].ny);
+                    outline.push(vtx[v1i].y + sd * vtx[e2i].nx);
+                }
+            }
+
+            // ── Advance pointers ──
+            if dir == 0 {
+                e1i = e2i;
+                e2i += 1;
+                v1i = e2i;
+                if e2i <= v_last {
+                    continue;
+                }
+                // Switch to backward (left side) walk.
+                dir = 1;
+                sd = -sd;
+                mid_out = outline.len();
+                v1i = v_last;
+                e1i = v_last;
+                e2i = v_last;
+                if v_last > 0 {
+                    e2i = v_last - 1;
+                }
+            } else {
+                if v1i == 0 {
+                    break;
+                }
+                v1i = e2i;
+                e1i = e2i;
+                if e2i == 0 {
+                    e2i = v_last;
+                } else {
+                    e2i -= 1;
+                }
             }
         }
 
-        self.fill_polygon_aa(&outline, stroke.color, WindingRule::NonZero);
-    }
-
-    /// Compute cap vertices at a polyline endpoint.
-    fn cap_vertices(
-        &self,
-        point: (f64, f64),
-        dir: (f64, f64),
-        normal: (f64, f64),
-        half_w: f64,
-        cap: &super::stroke::LineCap,
-        is_start: bool,
-    ) -> Vec<(f64, f64)> {
-        let (px, py) = point;
-        let (nx, ny) = normal;
-        let (dx, dy) = dir;
-        let sign = if is_start { -1.0 } else { 1.0 };
-
-        match cap {
-            super::stroke::LineCap::Butt => {
-                // Right side, then left side will be added in backward pass.
-                vec![
-                    (
-                        px + nx * half_w + sign * dx * 0.0,
-                        py + ny * half_w + sign * dy * 0.0,
-                    ),
-                    (
-                        px - nx * half_w + sign * dx * 0.0,
-                        py - ny * half_w + sign * dy * 0.0,
-                    ),
-                ]
-            }
-            super::stroke::LineCap::Square => {
-                vec![
-                    (
-                        px + nx * half_w - sign * dx * half_w,
-                        py + ny * half_w - sign * dy * half_w,
-                    ),
-                    (
-                        px - nx * half_w - sign * dx * half_w,
-                        py - ny * half_w - sign * dy * half_w,
-                    ),
-                ]
-            }
-            super::stroke::LineCap::Round => {
-                let segments = 8;
-                let mut pts = Vec::with_capacity(segments + 1);
-                let start_angle = if is_start {
-                    std::f64::consts::FRAC_PI_2
-                } else {
-                    -std::f64::consts::FRAC_PI_2
-                };
-                for i in 0..=segments {
-                    let t = i as f64 / segments as f64;
-                    let angle = start_angle + std::f64::consts::PI * t;
-                    let cos_a = angle.cos();
-                    let sin_a = angle.sin();
-                    pts.push((
-                        px + half_w * (cos_a * nx + sin_a * dx * sign),
-                        py + half_w * (cos_a * ny + sin_a * dy * sign),
-                    ));
-                }
-                pts
-            }
+        // ── Closed-polygon stitching ──
+        if closed && mid_out > 0 && mid_out < outline.len() {
+            outline.push(outline[mid_out]);
+            outline.push(outline[mid_out + 1]);
+            outline.push(outline[mid_out - 2]);
+            outline.push(outline[mid_out - 1]);
         }
-    }
 
-    /// Compute join vertices at a polyline joint.
-    /// `right_side` selects which side of the stroke to generate vertices for.
-    fn join_vertices(
-        point: (f64, f64),
-        normal_a: (f64, f64),
-        normal_b: (f64, f64),
-        half_w: f64,
-        max_miter: f64,
-        join: &super::stroke::LineJoin,
-        right_side: bool,
-    ) -> Vec<(f64, f64)> {
-        let (px, py) = point;
-        let sign = if right_side { 1.0 } else { -1.0 };
-        let (na_x, na_y) = (normal_a.0 * sign, normal_a.1 * sign);
-        let (nb_x, nb_y) = (normal_b.0 * sign, normal_b.1 * sign);
+        // Convert flat [x,y,x,y,...] to [(x,y),...] for fill_polygon_aa.
+        let n_out = outline.len() / 2;
+        let poly: Vec<(f64, f64)> = (0..n_out)
+            .map(|i| (outline[i * 2], outline[i * 2 + 1]))
+            .collect();
 
-        match join {
-            super::stroke::LineJoin::Bevel => {
-                vec![
-                    (px + na_x * half_w, py + na_y * half_w),
-                    (px + nb_x * half_w, py + nb_y * half_w),
-                ]
-            }
-            super::stroke::LineJoin::Miter => {
-                // Compute miter point.
-                let mx = na_x + nb_x;
-                let my = na_y + nb_y;
-                let d = mx * na_x + my * na_y;
-                if d.abs() < 1e-10 || (1.0 / d).abs() > max_miter {
-                    // Fall back to bevel.
-                    vec![
-                        (px + na_x * half_w, py + na_y * half_w),
-                        (px + nb_x * half_w, py + nb_y * half_w),
-                    ]
-                } else {
-                    let scale = half_w / d;
-                    vec![(px + mx * scale, py + my * scale)]
-                }
-            }
-            super::stroke::LineJoin::Round => {
-                let angle_a = na_y.atan2(na_x);
-                let angle_b = nb_y.atan2(nb_x);
-                let mut sweep = angle_b - angle_a;
-                if sweep > std::f64::consts::PI {
-                    sweep -= 2.0 * std::f64::consts::PI;
-                }
-                if sweep < -std::f64::consts::PI {
-                    sweep += 2.0 * std::f64::consts::PI;
-                }
-                let segments = (sweep.abs() * 4.0 / std::f64::consts::PI).ceil() as usize;
-                let segments = segments.clamp(1, 16);
-                let mut pts = Vec::with_capacity(segments + 1);
-                for i in 0..=segments {
-                    let t = i as f64 / segments as f64;
-                    let angle = angle_a + t * sweep;
-                    pts.push((px + half_w * angle.cos(), py + half_w * angle.sin()));
-                }
-                pts
-            }
-        }
+        self.fill_polygon_aa(&poly, stroke.color, WindingRule::NonZero);
     }
 
     /// Draw a stroked line with optional end decorations.
     pub fn paint_line_stroked(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, stroke: &Stroke) {
-        // For width=1, just draw a simple line (no decorations)
+        // For width=1 with no decorations and no rounding, simple line.
         if stroke.width <= 1.0
             && !stroke.start_end.is_decorated()
             && !stroke.finish_end.is_decorated()
+            && stroke.join != super::stroke::LineJoin::Round
         {
             self.paint_line(x0, y0, x1, y1, stroke.color);
             return;
         }
 
-        // Compute direction and normal vectors
-        let dx = x1 - x0;
-        let dy = y1 - y0;
-        let len = (dx * dx + dy * dy).sqrt();
-        if len < 0.001 {
-            return;
-        }
-
-        // Unit direction along line
-        let udx = dx / len;
-        let udy = dy / len;
-        // Unit normal (perpendicular)
-        let unx = -udy;
-        let uny = udx;
-
-        // Cut line at ends for decorations
-        let (ax0, ay0) = Self::cut_line_at_end(x0, y0, -udx, -udy, stroke.width, &stroke.start_end);
-        let (ax1, ay1) = Self::cut_line_at_end(x1, y1, udx, udy, stroke.width, &stroke.finish_end);
-
-        // Draw the line body as a filled polygon
-        let half_w = stroke.width / 2.0;
-        let nx = unx * half_w;
-        let ny = uny * half_w;
-
-        self.paint_polygon(
-            &[
-                (ax0 + nx, ay0 + ny),
-                (ax1 + nx, ay1 + ny),
-                (ax1 - nx, ay1 - ny),
-                (ax0 - nx, ay0 - ny),
-            ],
-            stroke.color,
-        );
-
-        let rounded = stroke.join == super::stroke::LineJoin::Round;
-
-        // Draw start end (direction reversed — points away from the line)
-        if stroke.start_end.is_decorated() {
-            self.paint_stroke_end(
-                x0,
-                y0,
-                unx,
-                uny,
-                -udx,
-                -udy,
-                stroke.width,
-                stroke.color,
-                &stroke.start_end,
-                rounded,
-            );
-        }
-
-        // Draw finish end
-        if stroke.finish_end.is_decorated() {
-            self.paint_stroke_end(
-                x1,
-                y1,
-                unx,
-                uny,
-                udx,
-                udy,
-                stroke.width,
-                stroke.color,
-                &stroke.finish_end,
-                rounded,
-            );
-        }
+        // Route through the polyline system which handles caps, joins,
+        // decorations, and dashes correctly — matching C++ PaintLine.
+        let verts = [(x0, y0), (x1, y1)];
+        self.paint_polyline_with_arrows(&verts, stroke, false);
     }
 
     /// Calculate the maximum radius that a line point (including any arrow
@@ -2655,8 +3161,8 @@ impl<'a> Painter<'a> {
         r
     }
 
-    /// Calculate how far to shorten a line end so decorations don't overlap the stroke body.
-    /// Returns the adjusted endpoint.
+    /// Simplified line shortening for arrow decorations.
+    /// `(dx, dy)` points INTO the line body. Returns the new endpoint moved inward.
     fn cut_line_at_end(
         x: f64,
         y: f64,
@@ -2664,98 +3170,137 @@ impl<'a> Painter<'a> {
         dy: f64,
         thickness: f64,
         end: &StrokeEnd,
+        rounded: bool,
     ) -> (f64, f64) {
+        let r = (thickness * ARROW_BASE_SIZE * 0.5 * end.width_factor).abs();
+        let l = (thickness * ARROW_BASE_SIZE * end.length_factor).abs();
+        let s = thickness * 0.5;
+
         let cut = match end.end_type {
-            StrokeEndType::Butt => 0.0,
-            StrokeEndType::Cap => thickness * 0.5,
+            StrokeEndType::Butt | StrokeEndType::Cap => 0.0,
             StrokeEndType::Arrow => {
-                let l = thickness * ARROW_BASE_SIZE * end.length_factor;
-                l * (1.0 - ARROW_NOTCH)
+                // C++ adjusts for stroke width around the arrow shape.
+                let b = l / r;
+                let s_adj = (1.0 + b * b).sqrt() * s;
+                let b_notch = b * ARROW_NOTCH;
+                let u = (1.0 + b_notch * b_notch).sqrt() * s;
+                let l2 = l - (s_adj + u) / (1.0 - ARROW_NOTCH);
+                l2.max(0.0)
             }
             StrokeEndType::ContourArrow => {
-                let l = thickness * ARROW_BASE_SIZE * end.length_factor;
-                l * (1.0 - ARROW_NOTCH)
+                let cs = if rounded {
+                    s
+                } else {
+                    let sin_a = r / (l * l + r * r).sqrt();
+                    if MAX_MITER * sin_a < 1.0 {
+                        s * sin_a
+                    } else {
+                        s / sin_a
+                    }
+                };
+                cs + l
             }
-            StrokeEndType::LineArrow => 0.0, // open arrow, no cut needed
-            StrokeEndType::Triangle | StrokeEndType::ContourTriangle => 0.0,
-            StrokeEndType::Square | StrokeEndType::ContourSquare => {
-                thickness * ARROW_BASE_SIZE * end.length_factor
+            StrokeEndType::LineArrow => {
+                let cs = if rounded {
+                    s
+                } else {
+                    let sin_a = r / (l * l + r * r).sqrt();
+                    if MAX_MITER * sin_a < 1.0 {
+                        s * sin_a
+                    } else {
+                        s / sin_a
+                    }
+                };
+                // C++ reduces to s*1.5 for the cut shape.
+                cs * 1.5
             }
-            StrokeEndType::HalfSquare => 0.0,
-            StrokeEndType::Circle | StrokeEndType::ContourCircle => {
-                let l = thickness * ARROW_BASE_SIZE * end.length_factor;
-                l * 0.5
+            StrokeEndType::Triangle => {
+                let b = l / r;
+                let s_adj = (1.0 + b * b).sqrt() * s;
+                (l - s_adj - s).max(0.0)
             }
-            StrokeEndType::HalfCircle => 0.0,
-            StrokeEndType::Diamond | StrokeEndType::ContourDiamond => {
-                let l = thickness * ARROW_BASE_SIZE * end.length_factor;
-                l * 0.5
+            StrokeEndType::ContourTriangle => {
+                let cs = if rounded {
+                    s
+                } else {
+                    let sin_a = r / (l * l + r * r).sqrt();
+                    if MAX_MITER * sin_a < 1.0 {
+                        s * sin_a
+                    } else {
+                        s / sin_a
+                    }
+                };
+                cs + l
             }
-            StrokeEndType::HalfDiamond => 0.0,
-            StrokeEndType::Stroke => 0.0,
+            StrokeEndType::Square => {
+                // C++ adjusts: r_adj = max(0, r-s), l_adj = max(0, l-thickness)
+                let l_adj = (l - thickness).max(0.0);
+                s + l_adj
+            }
+            StrokeEndType::ContourSquare => s + l,
+            StrokeEndType::HalfSquare => {
+                let l_adj = (l * 0.5 - s).max(thickness * 0.0001);
+                s + l_adj
+            }
+            StrokeEndType::Circle => {
+                // C++ adjusts: r_adj = max(0, r-s), l_adj = max(0, l-thickness)
+                let l_adj = (l - thickness).max(0.0);
+                s + l_adj * 0.5
+            }
+            StrokeEndType::ContourCircle => s + l * 0.5,
+            StrokeEndType::HalfCircle => {
+                let s_hc = if rounded { s } else { 0.0 };
+                (s_hc + l * 0.5).max(0.0)
+            }
+            StrokeEndType::Diamond => {
+                let s_adj = (r * r + l * l * 0.25).sqrt() / r * s;
+                (l - s_adj * 2.0).max(0.0)
+            }
+            StrokeEndType::ContourDiamond => {
+                let cs = if rounded {
+                    s
+                } else {
+                    let sin_a = r / (l * l * 0.25 + r * r).sqrt();
+                    if MAX_MITER * sin_a < 1.0 {
+                        s * sin_a
+                    } else {
+                        s / sin_a
+                    }
+                };
+                cs + l
+            }
+            StrokeEndType::HalfDiamond => {
+                let mut cs = s;
+                if !rounded {
+                    let sin_a = r / (l * l * 0.25 + r * r).sqrt();
+                    cs *= sin_a + (1.0 - sin_a).sqrt();
+                }
+                (cs + l * 0.5).max(0.0)
+            }
+            StrokeEndType::Stroke => {
+                let sl = thickness * (end.length_factor.abs() - 1.0);
+                if sl > 0.0 {
+                    sl * 0.5
+                } else {
+                    0.0
+                }
+            }
         };
 
-        // Move the endpoint inward (opposite to dx,dy which points outward)
         (x + dx * cut, y + dy * cut)
     }
 
-    /// Generate vertices for an approximate ellipse/circle using line segments.
-    ///
-    /// `center` is the ellipse center, `radii` are (normal_radius, direction_radius),
-    /// `normal` and `direction` are the oriented basis vectors.
-    fn ellipse_vertices(
-        center: (f64, f64),
-        radii: (f64, f64),
-        normal: (f64, f64),
-        direction: (f64, f64),
-        segments: usize,
-    ) -> Vec<(f64, f64)> {
-        let (cx, cy) = center;
-        let (rx, ry) = radii;
-        let (nx, ny) = normal;
-        let (dx, dy) = direction;
-        let mut verts = Vec::with_capacity(segments);
-        for i in 0..segments {
-            let angle = 2.0 * std::f64::consts::PI * i as f64 / segments as f64;
-            let cos_a = angle.cos();
-            let sin_a = angle.sin();
-            let px = cx + rx * cos_a * nx + ry * sin_a * dx;
-            let py = cy + rx * cos_a * ny + ry * sin_a * dy;
-            verts.push((px, py));
-        }
-        verts
-    }
-
-    /// Generate vertices for a half-ellipse (semicircle) as an open polyline.
-    ///
-    /// `center` is the arc center, `radii` are (normal_radius, direction_radius),
-    /// `normal` and `direction` are the oriented basis vectors.
-    fn half_ellipse_vertices(
-        center: (f64, f64),
-        radii: (f64, f64),
-        normal: (f64, f64),
-        direction: (f64, f64),
-        segments: usize,
-    ) -> Vec<(f64, f64)> {
-        let (cx, cy) = center;
-        let (rx, ry) = radii;
-        let (nx, ny) = normal;
-        let (dx, dy) = direction;
-        let mut verts = Vec::with_capacity(segments + 1);
-        for i in 0..=segments {
-            // Half circle: from -PI/2 to PI/2 (the half facing away from the line)
-            let angle =
-                -std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / segments as f64;
-            let cos_a = angle.cos();
-            let sin_a = angle.sin();
-            let px = cx + rx * cos_a * nx + ry * sin_a * dx;
-            let py = cy + rx * cos_a * ny + ry * sin_a * dy;
-            verts.push((px, py));
-        }
-        verts
-    }
-
     /// Paint a stroke end decoration at an endpoint.
+    /// Structural port of C++ `emPainter::PaintArrow`.
+    ///
+    /// Parameters:
+    /// - `(x, y)`: endpoint position
+    /// - `(nx, ny)`: perpendicular to line direction = `(dy, -dx)` of into-line direction
+    /// - `(dx, dy)`: along-line direction pointing INTO the line body
+    /// - `thickness`: stroke width
+    /// - `stroke_color`: line body color
+    /// - `stroke_end`: decoration specification
+    /// - `rounded`: whether the parent stroke uses round joins/caps
     #[allow(clippy::too_many_arguments)]
     fn paint_stroke_end(
         &mut self,
@@ -2770,117 +3315,117 @@ impl<'a> Painter<'a> {
         stroke_end: &StrokeEnd,
         rounded: bool,
     ) {
-        let r = thickness * ARROW_BASE_SIZE * 0.5 * stroke_end.width_factor;
-        let l = thickness * ARROW_BASE_SIZE * stroke_end.length_factor;
-        let half_width = thickness * 0.5;
+        // C++ uses fabs for r and handles negative l by flipping direction.
+        let r = (thickness * ARROW_BASE_SIZE * 0.5 * stroke_end.width_factor).abs();
+        if r <= 1e-140 {
+            return;
+        }
+        let mut l = thickness * ARROW_BASE_SIZE * stroke_end.length_factor;
+        // Handle negative length: flip direction (matches C++).
+        let (dx, dy, nx, ny) = if l < 0.0 {
+            l = -l;
+            (-dx, -dy, -nx, -ny)
+        } else {
+            (dx, dy, nx, ny)
+        };
+        if l <= 1e-140 {
+            return;
+        }
 
-        match stroke_end.end_type {
-            StrokeEndType::Butt => {} // Nothing
+        // Stroke for sub-drawing (outlines, open polylines).
+        // Matches C++ `arrowStroke = stroke; arrowStroke.DashType = SOLID;`.
+        let arrow_stroke = {
+            let mut s = Stroke::new(stroke_color, thickness);
+            if rounded {
+                s.join = super::stroke::LineJoin::Round;
+                s.cap = super::stroke::LineCap::Round;
+            }
+            s
+        };
 
-            StrokeEndType::Cap => {
-                if rounded {
-                    // Semicircle cap
-                    let half_t = thickness * 0.5;
-                    let verts = Self::half_ellipse_vertices(
-                        (x, y),
-                        (half_t, half_t),
-                        (nx, ny),
-                        (dx, dy),
-                        CIRCLE_SEGMENTS,
-                    );
-                    self.paint_polygon(&verts, stroke_color);
+        // Contour offset helper: C++ `s = thickness*0.5` with miter adjustment.
+        let contour_s = |r_val: f64, l_val: f64| -> f64 {
+            let mut s = thickness * 0.5;
+            if !rounded {
+                let sin_a = r_val / (l_val * l_val + r_val * r_val).sqrt();
+                if MAX_MITER * sin_a < 1.0 {
+                    s *= sin_a;
                 } else {
-                    // Rectangular cap extension
-                    let half_t = thickness * 0.5;
-                    self.paint_polygon(
-                        &[
-                            (x + half_t * nx, y + half_t * ny),
-                            (x + half_t * nx + half_t * dx, y + half_t * ny + half_t * dy),
-                            (x - half_t * nx + half_t * dx, y - half_t * ny + half_t * dy),
-                            (x - half_t * nx, y - half_t * ny),
-                        ],
-                        stroke_color,
-                    );
+                    s /= sin_a;
                 }
             }
+            s
+        };
+
+        // Bezier circle constant: 4/3 * tan(PI/8).
+        let bc = 4.0_f64 / 3.0 * (std::f64::consts::PI / 8.0).tan();
+
+        match stroke_end.end_type {
+            StrokeEndType::Butt | StrokeEndType::Cap => {}
 
             StrokeEndType::Arrow => {
-                // 4-vertex: tip, wing+, notch, wing-
-                let tip_x = x;
-                let tip_y = y;
-                let wing_px = x + l * dx + r * nx;
-                let wing_py = y + l * dy + r * ny;
-                let wing_mx = x + l * dx - r * nx;
-                let wing_my = y + l * dy - r * ny;
-                let notch_x = x + (1.0 - ARROW_NOTCH) * l * dx;
-                let notch_y = y + (1.0 - ARROW_NOTCH) * l * dy;
                 self.paint_polygon(
                     &[
-                        (tip_x, tip_y),
-                        (wing_px, wing_py),
-                        (notch_x, notch_y),
-                        (wing_mx, wing_my),
+                        (x, y),
+                        (x + l * dx + r * nx, y + l * dy + r * ny),
+                        (
+                            x + (1.0 - ARROW_NOTCH) * l * dx,
+                            y + (1.0 - ARROW_NOTCH) * l * dy,
+                        ),
+                        (x + l * dx - r * nx, y + l * dy - r * ny),
                     ],
                     stroke_color,
                 );
             }
 
             StrokeEndType::ContourArrow => {
-                let tip_x = x;
-                let tip_y = y;
-                let wing_px = x + l * dx + r * nx;
-                let wing_py = y + l * dy + r * ny;
-                let wing_mx = x + l * dx - r * nx;
-                let wing_my = y + l * dy - r * ny;
-                let notch_x = x + (1.0 - ARROW_NOTCH) * l * dx;
-                let notch_y = y + (1.0 - ARROW_NOTCH) * l * dy;
-                let outer = [
-                    (tip_x, tip_y),
-                    (wing_px, wing_py),
-                    (notch_x, notch_y),
-                    (wing_mx, wing_my),
+                let s = contour_s(r, l);
+                let verts = [
+                    (x + s * dx, y + s * dy),
+                    (x + (s + l) * dx + r * nx, y + (s + l) * dy + r * ny),
+                    (
+                        x + (s + (1.0 - ARROW_NOTCH) * l) * dx,
+                        y + (s + (1.0 - ARROW_NOTCH) * l) * dy,
+                    ),
+                    (x + (s + l) * dx - r * nx, y + (s + l) * dy - r * ny),
                 ];
-                let inner = inset_polygon(&outer, half_width);
-                self.paint_polygon(&outer, stroke_color);
-                self.paint_polygon(&inner, stroke_end.inner_color);
+                self.paint_polygon(&verts, stroke_end.inner_color);
+                self.paint_polyline_without_arrows(&verts, &arrow_stroke, true);
             }
 
             StrokeEndType::LineArrow => {
-                // Open arrow: two lines from wings to tip
-                let tip_x = x;
-                let tip_y = y;
-                let wing_px = x + l * dx + r * nx;
-                let wing_py = y + l * dy + r * ny;
-                let wing_mx = x + l * dx - r * nx;
-                let wing_my = y + l * dy - r * ny;
-                self.paint_thick_line(wing_px, wing_py, tip_x, tip_y, thickness, stroke_color);
-                self.paint_thick_line(tip_x, tip_y, wing_mx, wing_my, thickness, stroke_color);
+                let s = contour_s(r, l);
+                let verts = [
+                    (x + (s + l) * dx - r * nx, y + (s + l) * dy - r * ny),
+                    (x + s * dx, y + s * dy),
+                    (x + (s + l) * dx + r * nx, y + (s + l) * dy + r * ny),
+                ];
+                let mut line_stroke = arrow_stroke.clone();
+                line_stroke.start_end = StrokeEnd::new(StrokeEndType::Cap);
+                line_stroke.finish_end = StrokeEnd::new(StrokeEndType::Cap);
+                self.paint_polyline_without_arrows(&verts, &line_stroke, false);
             }
 
             StrokeEndType::Triangle => {
-                let tip_x = x;
-                let tip_y = y;
-                let base_px = x + l * dx + r * nx;
-                let base_py = y + l * dy + r * ny;
-                let base_mx = x + l * dx - r * nx;
-                let base_my = y + l * dy - r * ny;
                 self.paint_polygon(
-                    &[(tip_x, tip_y), (base_px, base_py), (base_mx, base_my)],
+                    &[
+                        (x, y),
+                        (x + l * dx + r * nx, y + l * dy + r * ny),
+                        (x + l * dx - r * nx, y + l * dy - r * ny),
+                    ],
                     stroke_color,
                 );
             }
 
             StrokeEndType::ContourTriangle => {
-                let tip_x = x;
-                let tip_y = y;
-                let base_px = x + l * dx + r * nx;
-                let base_py = y + l * dy + r * ny;
-                let base_mx = x + l * dx - r * nx;
-                let base_my = y + l * dy - r * ny;
-                let outer = [(tip_x, tip_y), (base_px, base_py), (base_mx, base_my)];
-                let inner = inset_polygon(&outer, half_width);
-                self.paint_polygon(&outer, stroke_color);
-                self.paint_polygon(&inner, stroke_end.inner_color);
+                let s = contour_s(r, l);
+                let verts = [
+                    (x + s * dx, y + s * dy),
+                    (x + (s + l) * dx + r * nx, y + (s + l) * dy + r * ny),
+                    (x + (s + l) * dx - r * nx, y + (s + l) * dy - r * ny),
+                ];
+                self.paint_polygon(&verts, stroke_end.inner_color);
+                self.paint_polyline_without_arrows(&verts, &arrow_stroke, true);
             }
 
             StrokeEndType::Square => {
@@ -2896,132 +3441,208 @@ impl<'a> Painter<'a> {
             }
 
             StrokeEndType::ContourSquare => {
-                let outer = [
-                    (x + r * nx, y + r * ny),
-                    (x + l * dx + r * nx, y + l * dy + r * ny),
-                    (x + l * dx - r * nx, y + l * dy - r * ny),
-                    (x - r * nx, y - r * ny),
+                let s = thickness * 0.5;
+                let verts = [
+                    (x + s * dx + r * nx, y + s * dy + r * ny),
+                    (x + (s + l) * dx + r * nx, y + (s + l) * dy + r * ny),
+                    (x + (s + l) * dx - r * nx, y + (s + l) * dy - r * ny),
+                    (x + s * dx - r * nx, y + s * dy - r * ny),
                 ];
-                let inner = inset_polygon(&outer, half_width);
-                self.paint_polygon(&outer, stroke_color);
-                self.paint_polygon(&inner, stroke_end.inner_color);
+                self.paint_polygon(&verts, stroke_end.inner_color);
+                self.paint_polyline_without_arrows(&verts, &arrow_stroke, true);
             }
 
             StrokeEndType::HalfSquare => {
-                // 3 sides of rectangle (open toward line)
-                let p0 = (x + r * nx, y + r * ny);
-                let p1 = (x + l * dx + r * nx, y + l * dy + r * ny);
-                let p2 = (x + l * dx - r * nx, y + l * dy - r * ny);
-                let p3 = (x - r * nx, y - r * ny);
-                self.paint_polyline(&[p0, p1, p2, p3], stroke_color, thickness);
+                let s = thickness * 0.5;
+                let l_adj = (l * 0.5 - s).max(thickness * 0.0001);
+                let verts = [
+                    (x + s * dx + r * nx, y + s * dy + r * ny),
+                    (x + (s + l_adj) * dx + r * nx, y + (s + l_adj) * dy + r * ny),
+                    (x + (s + l_adj) * dx - r * nx, y + (s + l_adj) * dy - r * ny),
+                    (x + s * dx - r * nx, y + s * dy - r * ny),
+                ];
+                let mut hs_stroke = arrow_stroke.clone();
+                hs_stroke.start_end = StrokeEnd::new(StrokeEndType::Cap);
+                hs_stroke.finish_end = StrokeEnd::new(StrokeEndType::Cap);
+                self.paint_polyline_without_arrows(&verts, &hs_stroke, false);
             }
 
             StrokeEndType::Circle => {
-                let center = (x + l * 0.5 * dx, y + l * 0.5 * dy);
-                let verts = Self::ellipse_vertices(
-                    center,
-                    (r, l * 0.5),
-                    (nx, ny),
-                    (dx, dy),
-                    CIRCLE_SEGMENTS,
-                );
-                self.paint_polygon(&verts, stroke_color);
+                // C++ uses 12-point Bezier (4 cubic segments) for exact ellipse.
+                let bezier_pts = [
+                    (x, y),
+                    (x + bc * r * nx, y + bc * r * ny),
+                    (
+                        x + (1.0 - bc) * 0.5 * l * dx + r * nx,
+                        y + (1.0 - bc) * 0.5 * l * dy + r * ny,
+                    ),
+                    (x + 0.5 * l * dx + r * nx, y + 0.5 * l * dy + r * ny),
+                    (
+                        x + (1.0 + bc) * 0.5 * l * dx + r * nx,
+                        y + (1.0 + bc) * 0.5 * l * dy + r * ny,
+                    ),
+                    (x + l * dx + bc * r * nx, y + l * dy + bc * r * ny),
+                    (x + l * dx, y + l * dy),
+                    (x + l * dx - bc * r * nx, y + l * dy - bc * r * ny),
+                    (
+                        x + (1.0 + bc) * 0.5 * l * dx - r * nx,
+                        y + (1.0 + bc) * 0.5 * l * dy - r * ny,
+                    ),
+                    (x + 0.5 * l * dx - r * nx, y + 0.5 * l * dy - r * ny),
+                    (
+                        x + (1.0 - bc) * 0.5 * l * dx - r * nx,
+                        y + (1.0 - bc) * 0.5 * l * dy - r * ny,
+                    ),
+                    (x - bc * r * nx, y - bc * r * ny),
+                ];
+                self.paint_bezier(&bezier_pts, stroke_color);
             }
 
             StrokeEndType::ContourCircle => {
-                let center = (x + l * 0.5 * dx, y + l * 0.5 * dy);
-                let outer = Self::ellipse_vertices(
-                    center,
-                    (r, l * 0.5),
-                    (nx, ny),
-                    (dx, dy),
-                    CIRCLE_SEGMENTS,
-                );
-                let inner = Self::ellipse_vertices(
-                    center,
-                    ((r - half_width).max(0.0), (l * 0.5 - half_width).max(0.0)),
-                    (nx, ny),
-                    (dx, dy),
-                    CIRCLE_SEGMENTS,
-                );
-                self.paint_polygon(&outer, stroke_color);
-                self.paint_polygon(&inner, stroke_end.inner_color);
+                let s = thickness * 0.5;
+                let bezier_pts = [
+                    (x + s * dx, y + s * dy),
+                    (x + s * dx + bc * r * nx, y + s * dy + bc * r * ny),
+                    (
+                        x + (s + (1.0 - bc) * 0.5 * l) * dx + r * nx,
+                        y + (s + (1.0 - bc) * 0.5 * l) * dy + r * ny,
+                    ),
+                    (
+                        x + (s + 0.5 * l) * dx + r * nx,
+                        y + (s + 0.5 * l) * dy + r * ny,
+                    ),
+                    (
+                        x + (s + (1.0 + bc) * 0.5 * l) * dx + r * nx,
+                        y + (s + (1.0 + bc) * 0.5 * l) * dy + r * ny,
+                    ),
+                    (
+                        x + (s + l) * dx + bc * r * nx,
+                        y + (s + l) * dy + bc * r * ny,
+                    ),
+                    (x + (s + l) * dx, y + (s + l) * dy),
+                    (
+                        x + (s + l) * dx - bc * r * nx,
+                        y + (s + l) * dy - bc * r * ny,
+                    ),
+                    (
+                        x + (s + (1.0 + bc) * 0.5 * l) * dx - r * nx,
+                        y + (s + (1.0 + bc) * 0.5 * l) * dy - r * ny,
+                    ),
+                    (
+                        x + (s + 0.5 * l) * dx - r * nx,
+                        y + (s + 0.5 * l) * dy - r * ny,
+                    ),
+                    (
+                        x + (s + (1.0 - bc) * 0.5 * l) * dx - r * nx,
+                        y + (s + (1.0 - bc) * 0.5 * l) * dy - r * ny,
+                    ),
+                    (x + s * dx - bc * r * nx, y + s * dy - bc * r * ny),
+                ];
+                self.paint_bezier(&bezier_pts, stroke_end.inner_color);
+                self.paint_bezier_outline(&bezier_pts, &arrow_stroke);
             }
 
             StrokeEndType::HalfCircle => {
-                let verts = Self::half_ellipse_vertices(
-                    (x, y),
-                    (r, l * 0.5),
-                    (nx, ny),
-                    (dx, dy),
-                    CIRCLE_SEGMENTS,
-                );
-                self.paint_polyline(&verts, stroke_color, thickness);
+                // C++ uses 7-point BezierLine.
+                let s = if rounded { thickness * 0.5 } else { 0.0 };
+                let bezier_pts = [
+                    (x + s * dx + r * nx, y + s * dy + r * ny),
+                    (
+                        x + (s + bc * 0.5 * l) * dx + r * nx,
+                        y + (s + bc * 0.5 * l) * dy + r * ny,
+                    ),
+                    (
+                        x + (s + 0.5 * l) * dx + bc * r * nx,
+                        y + (s + 0.5 * l) * dy + bc * r * ny,
+                    ),
+                    (x + (s + 0.5 * l) * dx, y + (s + 0.5 * l) * dy),
+                    (
+                        x + (s + 0.5 * l) * dx - bc * r * nx,
+                        y + (s + 0.5 * l) * dy - bc * r * ny,
+                    ),
+                    (
+                        x + (s + bc * 0.5 * l) * dx - r * nx,
+                        y + (s + bc * 0.5 * l) * dy - r * ny,
+                    ),
+                    (x + s * dx - r * nx, y + s * dy - r * ny),
+                ];
+                let mut hc_stroke = arrow_stroke.clone();
+                if rounded {
+                    hc_stroke.start_end = StrokeEnd::new(StrokeEndType::Cap);
+                    hc_stroke.finish_end = StrokeEnd::new(StrokeEndType::Cap);
+                }
+                self.paint_bezier_line(&bezier_pts, &hc_stroke);
             }
 
             StrokeEndType::Diamond => {
-                let tip_x = x;
-                let tip_y = y;
-                let mid_px = x + l * 0.5 * dx + r * nx;
-                let mid_py = y + l * 0.5 * dy + r * ny;
-                let back_x = x + l * dx;
-                let back_y = y + l * dy;
-                let mid_mx = x + l * 0.5 * dx - r * nx;
-                let mid_my = y + l * 0.5 * dy - r * ny;
                 self.paint_polygon(
                     &[
-                        (tip_x, tip_y),
-                        (mid_px, mid_py),
-                        (back_x, back_y),
-                        (mid_mx, mid_my),
+                        (x, y),
+                        (x + 0.5 * l * dx + r * nx, y + 0.5 * l * dy + r * ny),
+                        (x + l * dx, y + l * dy),
+                        (x + 0.5 * l * dx - r * nx, y + 0.5 * l * dy - r * ny),
                     ],
                     stroke_color,
                 );
             }
 
             StrokeEndType::ContourDiamond => {
-                let tip_x = x;
-                let tip_y = y;
-                let mid_px = x + l * 0.5 * dx + r * nx;
-                let mid_py = y + l * 0.5 * dy + r * ny;
-                let back_x = x + l * dx;
-                let back_y = y + l * dy;
-                let mid_mx = x + l * 0.5 * dx - r * nx;
-                let mid_my = y + l * 0.5 * dy - r * ny;
-                let outer = [
-                    (tip_x, tip_y),
-                    (mid_px, mid_py),
-                    (back_x, back_y),
-                    (mid_mx, mid_my),
+                let s = {
+                    let mut s = thickness * 0.5;
+                    if !rounded {
+                        let sin_a = r / (l * l * 0.25 + r * r).sqrt();
+                        if MAX_MITER * sin_a < 1.0 {
+                            s *= sin_a;
+                        } else {
+                            s /= sin_a;
+                        }
+                    }
+                    s
+                };
+                let verts = [
+                    (x + s * dx, y + s * dy),
+                    (
+                        x + (s + 0.5 * l) * dx + r * nx,
+                        y + (s + 0.5 * l) * dy + r * ny,
+                    ),
+                    (x + (s + l) * dx, y + (s + l) * dy),
+                    (
+                        x + (s + 0.5 * l) * dx - r * nx,
+                        y + (s + 0.5 * l) * dy - r * ny,
+                    ),
                 ];
-                let inner = inset_polygon(&outer, half_width);
-                self.paint_polygon(&outer, stroke_color);
-                self.paint_polygon(&inner, stroke_end.inner_color);
+                self.paint_polygon(&verts, stroke_end.inner_color);
+                self.paint_polyline_without_arrows(&verts, &arrow_stroke, true);
             }
 
             StrokeEndType::HalfDiamond => {
-                // Half diamond as open polyline
-                let tip_x = x;
-                let tip_y = y;
-                let mid_px = x + l * 0.5 * dx + r * nx;
-                let mid_py = y + l * 0.5 * dy + r * ny;
-                let back_x = x + l * dx;
-                let back_y = y + l * dy;
-                self.paint_polyline(
-                    &[(tip_x, tip_y), (mid_px, mid_py), (back_x, back_y)],
-                    stroke_color,
-                    thickness,
-                );
+                let s = {
+                    let mut s = thickness * 0.5;
+                    if !rounded {
+                        let sin_a = r / (l * l * 0.25 + r * r).sqrt();
+                        s *= sin_a + (1.0 - sin_a).sqrt();
+                    }
+                    s
+                };
+                let verts = [
+                    (x + s * dx + r * nx, y + s * dy + r * ny),
+                    (x + (s + 0.5 * l) * dx, y + (s + 0.5 * l) * dy),
+                    (x + s * dx - r * nx, y + s * dy - r * ny),
+                ];
+                let mut hd_stroke = arrow_stroke.clone();
+                hd_stroke.start_end = StrokeEnd::new(StrokeEndType::Cap);
+                hd_stroke.finish_end = StrokeEnd::new(StrokeEndType::Cap);
+                self.paint_polyline_without_arrows(&verts, &hd_stroke, false);
             }
 
             StrokeEndType::Stroke => {
-                // Perpendicular line at endpoint
-                let stroke_thickness = thickness * stroke_end.length_factor;
-                let p0x = x + r * nx;
-                let p0y = y + r * ny;
-                let p1x = x - r * nx;
-                let p1y = y - r * ny;
-                self.paint_thick_line(p0x, p0y, p1x, p1y, stroke_thickness, stroke_color);
+                let stroke_thickness = thickness * stroke_end.length_factor.abs();
+                let verts = [(x + r * nx, y + r * ny), (x - r * nx, y - r * ny)];
+                let mut st_stroke = arrow_stroke.clone();
+                st_stroke.width = stroke_thickness;
+                st_stroke.start_end = StrokeEnd::new(StrokeEndType::Cap);
+                st_stroke.finish_end = StrokeEnd::new(StrokeEndType::Cap);
+                self.paint_polyline_without_arrows(&verts, &st_stroke, false);
             }
         }
     }
@@ -3591,110 +4212,81 @@ fn adaptive_circle_segments(rx: f64, ry: f64, scale_x: f64, scale_y: f64) -> usi
     }
 }
 
-/// Inset a convex polygon by `distance` toward its centroid.
-/// For each vertex, compute the offset along the bisector of adjacent edges,
-/// clamped to `distance * 5.0` to prevent self-intersection.
-fn inset_polygon(vertices: &[(f64, f64)], distance: f64) -> Vec<(f64, f64)> {
-    let n = vertices.len();
-    if n < 3 {
-        return vertices.to_vec();
-    }
-
-    let mut result = Vec::with_capacity(n);
-    for i in 0..n {
-        let prev = vertices[(i + n - 1) % n];
-        let curr = vertices[i];
-        let next = vertices[(i + 1) % n];
-
-        // Edge normals (pointing inward for CW polygon).
-        let e0 = (curr.0 - prev.0, curr.1 - prev.1);
-        let e1 = (next.0 - curr.0, next.1 - curr.1);
-        let len0 = (e0.0 * e0.0 + e0.1 * e0.1).sqrt();
-        let len1 = (e1.0 * e1.0 + e1.1 * e1.1).sqrt();
-        if len0 < 1e-10 || len1 < 1e-10 {
-            result.push(curr);
-            continue;
-        }
-        // Inward normals.
-        let n0 = (e0.1 / len0, -e0.0 / len0);
-        let n1 = (e1.1 / len1, -e1.0 / len1);
-
-        // Bisector direction.
-        let bx = n0.0 + n1.0;
-        let by = n0.1 + n1.1;
-        let bl = (bx * bx + by * by).sqrt();
-        if bl < 1e-10 {
-            result.push(curr);
-            continue;
-        }
-
-        // sin(half_angle) = cross product magnitude.
-        let dot = n0.0 * n1.0 + n0.1 * n1.1;
-        let half_angle_sin = ((1.0 - dot) / 2.0).sqrt().max(1e-10);
-        let offset = (distance / half_angle_sin).min(distance * 5.0);
-
-        result.push((curr.0 + bx / bl * offset, curr.1 + by / bl * offset));
-    }
-
-    result
-}
-
-/// Adaptive subdivision of a cubic Bezier into line segments.
-fn tessellate_cubic(
+/// Tessellate a cubic Bezier segment using the C++ algorithm: curvature-based
+/// adaptive step count with uniform parametric stepping (Horner evaluation).
+///
+/// `s` is `ScaleX + ScaleY` for scale-aware quality.
+fn tessellate_cubic_cpp(
     out: &mut Vec<(f64, f64)>,
     p0: (f64, f64),
     p1: (f64, f64),
     p2: (f64, f64),
     p3: (f64, f64),
-    flatness: f64,
-    depth: u8,
+    s: f64,
 ) {
-    if depth >= BEZIER_MAX_DEPTH {
-        if out.is_empty() || *out.last().unwrap() != p0 {
-            out.push(p0);
+    let x1 = p0.0;
+    let y1 = p0.1;
+    // Control points relative to P0.
+    let mut x2 = p1.0 - x1;
+    let mut y2 = p1.1 - y1;
+    let mut x3 = p2.0 - x1;
+    let mut y3 = p2.1 - y1;
+    let mut x4 = p3.0 - x1;
+    let mut y4 = p3.1 - y1;
+
+    // Determine segment count m.
+    let m: usize = 'flat: {
+        let ll = x4 * x4 + y4 * y4;
+        if ll > 1e-280 {
+            let l = ll.sqrt();
+            if ((x2 * y4 - y2 * x4).abs() + (x3 * y4 - y3 * x4).abs()) * s <= l * 0.01 {
+                break 'flat 1;
+            }
+        } else {
+            let dx = x3 - x2;
+            let dy = y3 - y2;
+            let l = (dx * dx + dy * dy).sqrt();
+            if l * s <= 0.01 {
+                break 'flat 1;
+            }
+            if (x2 * dy - y2 * dx).abs() * s <= l * 0.01 {
+                break 'flat 1;
+            }
         }
-        out.push(p3);
-        return;
-    }
-
-    // Flatness test: max distance of control points from the line P0-P3.
-    let dx = p3.0 - p0.0;
-    let dy = p3.1 - p0.1;
-    let len_sq = dx * dx + dy * dy;
-
-    let flat = if len_sq < 1e-10 {
-        let d1 = (p1.0 - p0.0).powi(2) + (p1.1 - p0.1).powi(2);
-        let d2 = (p2.0 - p0.0).powi(2) + (p2.1 - p0.1).powi(2);
-        d1.max(d2).sqrt()
-    } else {
-        let inv_len = 1.0 / len_sq.sqrt();
-        let d1 = ((p1.0 - p0.0) * dy - (p1.1 - p0.1) * dx).abs() * inv_len;
-        let d2 = ((p2.0 - p0.0) * dy - (p2.1 - p0.1) * dx).abs() * inv_len;
-        d1.max(d2)
+        // Curvature-based segment count.
+        let bx1 = x3 - 2.0 * x2;
+        let by1 = y3 - 2.0 * y2;
+        let bx2 = x2 - 2.0 * x3 + x4;
+        let by2 = y2 - 2.0 * y3 + y4;
+        let b = ((bx1 * bx1 + by1 * by1).sqrt() + (bx2 * bx2 + by2 * by2).sqrt()) * 3.0;
+        let f = CIRCLE_QUALITY * (b * 0.0228 * s).sqrt();
+        if f >= 500.0 {
+            500
+        } else if f > 1.0 {
+            (f + 0.5) as usize
+        } else {
+            1
+        }
     };
 
-    if flat <= flatness {
-        if out.is_empty() || *out.last().unwrap() != p0 {
-            out.push(p0);
-        }
-        out.push(p3);
-        return;
+    // Convert to power basis for Horner evaluation.
+    x2 *= 3.0;
+    y2 *= 3.0;
+    x3 *= 3.0;
+    y3 *= 3.0;
+    x4 += x2 - x3;
+    y4 += y2 - y3;
+    x3 -= x2 + x2;
+    y3 -= y2 + y2;
+
+    let dt = 1.0 / m as f64;
+    let mut t = 0.0;
+    for _ in 0..m {
+        let px = x1 + t * (x2 + t * (x3 + t * x4));
+        let py = y1 + t * (y2 + t * (y3 + t * y4));
+        out.push((px, py));
+        t += dt;
     }
-
-    // De Casteljau subdivision at t=0.5.
-    let m01 = mid(p0, p1);
-    let m12 = mid(p1, p2);
-    let m23 = mid(p2, p3);
-    let m012 = mid(m01, m12);
-    let m123 = mid(m12, m23);
-    let m0123 = mid(m012, m123);
-
-    tessellate_cubic(out, p0, m01, m012, m0123, flatness, depth + 1);
-    tessellate_cubic(out, m0123, m123, m23, p3, flatness, depth + 1);
-}
-
-fn mid(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
-    ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5)
 }
 
 #[cfg(test)]

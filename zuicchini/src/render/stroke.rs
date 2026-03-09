@@ -16,6 +16,19 @@ pub enum LineCap {
     Square,
 }
 
+/// Dash pattern type matching C++ `emStroke::DashTypeEnum`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum DashType {
+    /// Solid line (no dashes).
+    Solid,
+    /// Dashes only.
+    Dashed,
+    /// Dots only.
+    Dotted,
+    /// Alternating dashes and dots.
+    DashDotted,
+}
+
 /// Stroke end type matching Eagle Mode's 17 `emStrokeEnd` variants.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum StrokeEndType {
@@ -90,9 +103,10 @@ impl StrokeEnd {
         self
     }
 
-    /// Whether this end type draws a decoration (everything except Butt).
+    /// Whether this end type draws a decoration (everything except Butt and Cap).
+    /// Matches C++ `emStrokeEnd::IsDecorated()` which returns `Type >= ARROW`.
     pub fn is_decorated(&self) -> bool {
-        !matches!(self.end_type, StrokeEndType::Butt)
+        !matches!(self.end_type, StrokeEndType::Butt | StrokeEndType::Cap)
     }
 }
 
@@ -112,9 +126,16 @@ pub struct Stroke {
     /// Finish end style.
     pub finish_end: StrokeEnd,
     /// Dash pattern: alternating on/off lengths. Empty = solid line.
+    /// This is the legacy API; prefer `dash_type` + factors for C++ parity.
     pub dash_pattern: Vec<f64>,
-    /// Dash offset.
+    /// Dash offset (legacy pattern API).
     pub dash_offset: f64,
+    /// Dash type (C++ parity API). Overrides `dash_pattern` when not `Solid`.
+    pub dash_type: DashType,
+    /// Dash length factor (C++ `DashLengthFactor`). Default 1.0.
+    pub dash_length_factor: f64,
+    /// Gap length factor (C++ `GapLengthFactor`). Default 1.0.
+    pub gap_length_factor: f64,
 }
 
 impl Default for Stroke {
@@ -128,6 +149,9 @@ impl Default for Stroke {
             finish_end: StrokeEnd::butt(),
             dash_pattern: Vec::new(),
             dash_offset: 0.0,
+            dash_type: DashType::Solid,
+            dash_length_factor: 1.0,
+            gap_length_factor: 1.0,
         }
     }
 }
@@ -140,5 +164,10 @@ impl Stroke {
             width,
             ..Default::default()
         }
+    }
+
+    /// Whether this stroke uses any dash pattern (via either API).
+    pub fn is_dashed(&self) -> bool {
+        self.dash_type != DashType::Solid || !self.dash_pattern.is_empty()
     }
 }
