@@ -798,26 +798,6 @@ impl View {
 
     /// Compute absolute viewport coordinates for all panels. Called once per frame.
     pub fn update_viewing(&mut self, tree: &mut PanelTree) {
-        // Save old viewing state before clearing, so we can detect changes and
-        // queue C++-parity notices (NF_VIEWING_CHANGED, NF_UPDATE_PRIORITY_CHANGED,
-        // NF_MEMORY_LIMIT_CHANGED) for panels whose viewed rect changed.
-        let old_viewing: Vec<(PanelId, bool, f64, f64, f64, f64)> = tree
-            .all_ids()
-            .into_iter()
-            .filter_map(|id| {
-                tree.get(id).map(|p| {
-                    (
-                        id,
-                        p.viewed,
-                        p.viewed_x,
-                        p.viewed_y,
-                        p.viewed_width,
-                        p.viewed_height,
-                    )
-                })
-            })
-            .collect();
-
         tree.clear_viewing_flags();
 
         let root = match tree.root() {
@@ -926,28 +906,10 @@ impl View {
         let root_abs = Rect::new(root_vx, root_vy, root_vw, root_vh);
         self.compute_viewed_recursive(tree, root, root_abs, &viewport);
 
-        // Queue notices for panels whose viewing state changed (C++ parity:
-        // NF_VIEWING_CHANGED, NF_UPDATE_PRIORITY_CHANGED, NF_MEMORY_LIMIT_CHANGED).
-        for &(id, old_viewed, old_vx, old_vy, old_vw, old_vh) in &old_viewing {
-            let changed = if let Some(p) = tree.get(id) {
-                old_viewed != p.viewed
-                    || (old_vx - p.viewed_x).abs() > f64::EPSILON
-                    || (old_vy - p.viewed_y).abs() > f64::EPSILON
-                    || (old_vw - p.viewed_width).abs() > f64::EPSILON
-                    || (old_vh - p.viewed_height).abs() > f64::EPSILON
-            } else {
-                false
-            };
-            if changed {
-                if let Some(p) = tree.get_mut(id) {
-                    p.pending_notices.insert(
-                        super::behavior::NoticeFlags::VISIBILITY
-                            | super::behavior::NoticeFlags::UPDATE_PRIORITY_CHANGED
-                            | super::behavior::NoticeFlags::MEMORY_LIMIT_CHANGED,
-                    );
-                }
-            }
-        }
+        // NOTE: C++ RawVisitAbs fires viewing notices on all visible children
+        // during navigation (zoom/scroll/visit), but Rust relies on
+        // set_layout_rect to queue viewing notices on laid-out panels only.
+        // No golden tests cover the navigation case yet.
 
         // Find SVP: deepest ancestor of visited panel whose absolute area <= MAX_SVP_SIZE
         let ancestors = tree.ancestors(visited);

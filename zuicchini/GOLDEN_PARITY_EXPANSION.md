@@ -748,7 +748,7 @@ Exact match. State transitions are deterministic. Any divergence is a bug.
 
 ---
 
-## Phase 5: Window lifecycle (MOSTLY COMPLETE — behavioral harness extension)
+## Phase 5: Window lifecycle (COMPLETE — behavioral harness extension)
 
 **Effort:** Medium (extends Phase 4 harness).
 **Value:** Validates resize, visibility, multi-window coordination.
@@ -762,9 +762,11 @@ propagation to panels.
 `notice_window_resize` tests viewport resize with `VF_ROOT_SAME_TALLNESS` →
 `NF_LAYOUT_CHANGED` on root. Fixed `set_viewport()` to take `&mut PanelTree`
 and inline-update root layout rect (C++ `SetGeometry` parity). Removed
-redundant per-frame sync in `app.rs`. Uses `NOTICE_RESIZE_MASK` excluding
-VISIBILITY/UPDATE_PRIORITY/MEMORY_LIMIT (known viewing-propagation difference
-between Rust full-recalc and C++ incremental approach).
+redundant per-frame sync in `app.rs`. Viewing-notice propagation gap closed:
+`set_layout_rect` now queues VISIBILITY/UPDATE_PRIORITY/MEMORY_LIMIT alongside
+LAYOUT_CHANGED (matching C++ `Layout()` behavior), and the per-frame
+full-recalc notice loop in `update_viewing` was removed. Test uses
+`NOTICE_FULL_MASK` with no exclusions.
 
 ### Discovery (Phase 5-specific, for `window_resize` only)
 

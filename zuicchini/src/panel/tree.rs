@@ -836,7 +836,12 @@ impl PanelTree {
                 return;
             }
             panel.layout_rect = rect;
-            panel.pending_notices.insert(NoticeFlags::LAYOUT_CHANGED);
+            panel.pending_notices.insert(
+                NoticeFlags::LAYOUT_CHANGED
+                    | NoticeFlags::VISIBILITY
+                    | NoticeFlags::UPDATE_PRIORITY_CHANGED
+                    | NoticeFlags::MEMORY_LIMIT_CHANGED,
+            );
         }
     }
 

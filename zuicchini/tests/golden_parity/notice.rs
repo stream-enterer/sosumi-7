@@ -319,13 +319,6 @@ fn notice_window_focus_lost() {
 // ─── Test 7: notice_window_resize ───────────────────────────────
 // C++ view with VF_ROOT_SAME_TALLNESS → resize viewport → LAYOUT_CHANGED
 // on root (root layout rect updated by SetGeometry).
-//
-// Mask excludes VISIBILITY|UPDATE_PRIORITY_CHANGED|MEMORY_LIMIT_CHANGED:
-// Rust's update_viewing recomputes all viewing from scratch and fires these
-// on every panel whose viewed rect changed (children included), while C++
-// only fires them on the panel whose Layout() was called (root). This is a
-// known viewing-propagation difference, not a resize parity bug.
-const NOTICE_RESIZE_MASK: u32 = NOTICE_FULL_MASK & !(0x0004 | 0x0400 | 0x0800);
 
 #[test]
 fn notice_window_resize() {
@@ -369,7 +362,7 @@ fn notice_window_resize() {
         &actual,
         &expected,
         &["root", "child1", "child2"],
-        NOTICE_RESIZE_MASK,
+        NOTICE_FULL_MASK,
     )
     .unwrap();
 }
