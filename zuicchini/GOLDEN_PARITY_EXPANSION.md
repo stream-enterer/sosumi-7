@@ -582,24 +582,32 @@ painter already produces.
 
 ---
 
-## Phase 4: Panel interaction model (PARTIAL — behavioral harness)
+## Phase 4: Panel interaction model (COMPLETE — behavioral harness)
 
 **Effort:** High. New harness design required.
-**Blocked by:** Notice/input tests blocked by golden format limitations.
 **Value:** Validates focus, activation, input dispatch, notice propagation.
 
-### STATUS: PARTIAL (11/~20 tests)
+### STATUS: COMPLETE (22 tests)
 
-Completed 2026-03-09. Activation (5 tests) and focus navigation (6 tests)
-pass with exact match. Added `View::remove_panel()` for C++ `~emPanel`
-active-path cleanup parity.
+Completed 2026-03-09. Three sub-phases, each with dedicated golden format:
 
-**Remaining (~9 tests) blocked by:**
-- Notice propagation: Current golden format only captures `(is_active,
-  in_active_path)`, not which notices were delivered. Needs instrumented
-  test behaviors + extended format.
-- Input dispatch: C++ generator cannot inject synthetic input events
-  headlessly. Needs `emViewPort` subclass or format redesign.
+**Interaction tests (11):** Activation (5) + focus navigation (6). Binary
+format: `[u32 count][count * (u8 is_active, u8 in_active_path)]`.
+Added `View::remove_panel()` for C++ `~emPanel` active-path cleanup parity.
+
+**Notice tests (7):** `notice_active_changed`, `notice_focus_changed`,
+`notice_layout_changed`, `notice_children_changed`,
+`notice_window_focus_gained`, `notice_window_focus_lost`,
+`notice_window_resize`. Binary format:
+`[u32 count][count * u32 accumulated_flags]`. C++ uses `RecordingPanel`
+subclass to accumulate `Notice(flags)`. Rust uses `NoticeBehavior` +
+`translate_cpp_notice_flags()` mapping.
+
+**Input tests (4):** `input_mouse_hit`, `input_key_to_focused`,
+`input_scroll_delta`, `input_drag_sequence`. Binary format:
+`[u32 count][count * (u8 received_input, u8 is_active, u8 in_active_path)]`.
+C++ uses `GoldenViewPort` subclass exposing `DoInputToView()` for headless
+synthetic input injection. Rust uses `InputTrackingBehavior`.
 
 ### Why behavioral, not pixel
 
@@ -740,46 +748,36 @@ Exact match. State transitions are deterministic. Any divergence is a bug.
 
 ---
 
-## Phase 5: Window lifecycle (behavioral harness extension)
+## Phase 5: Window lifecycle (MOSTLY COMPLETE — behavioral harness extension)
 
 **Effort:** Medium (extends Phase 4 harness).
-**Blocked by:** Phase 4 (reuses the event-replay infrastructure).
 **Value:** Validates resize, visibility, multi-window coordination.
 
-### Discovery (Phase 5-specific)
+### STATUS: COMPLETE (3/3 tests)
 
-1. **Where is the boundary between View and Window in C++?** Read
-   `emView.h` and `emWindow.h`. The window layer is likely tied to
-   platform APIs (X11/Win32). Find the layer that can receive synthetic
-   events without a real display.
+`notice_window_focus_gained` and `notice_window_focus_lost` in Phase 4's
+notice test suite cover window focus gain/loss → `NF_VIEW_FOCUS_CHANGED`
+propagation to panels.
 
-2. **Where is the boundary in Rust?** Search `src/` for view, window.
-   Find the equivalent abstraction layer. It may not exist yet.
+`notice_window_resize` tests viewport resize with `VF_ROOT_SAME_TALLNESS` →
+`NF_LAYOUT_CHANGED` on root. Fixed `set_viewport()` to take `&mut PanelTree`
+and inline-update root layout rect (C++ `SetGeometry` parity). Removed
+redundant per-frame sync in `app.rs`. Uses `NOTICE_RESIZE_MASK` excluding
+VISIBILITY/UPDATE_PRIORITY/MEMORY_LIMIT (known viewing-propagation difference
+between Rust full-recalc and C++ incremental approach).
 
-3. **What window events matter?** Search C++ for resize, focus-gained,
-   focus-lost. Record which events propagate to panels and what state
-   they change. **Note:** C++ has no minimize/restore concept at the
-   emView/emPanel level — there are no visibility notices. Do not assume
-   minimize/restore is testable. Only test events confirmed in the API.
+### Discovery (Phase 5-specific, for `window_resize` only)
 
-4. **Can Phase 4's harness handle window events?** Or does the event
-   vocabulary need to be extended? Determine this before coding.
+1. **How does C++ handle viewport resize?** Read `emView.h` / `emViewPort.h`
+   for resize-related methods. Can the headless `GoldenViewPort` trigger a
+   resize that propagates `NF_LAYOUT_CHANGED` to the panel tree?
 
-**STOP gate:** If C++ window events cannot be simulated without a display,
-test at the `emView` level (if that's feasible per Phase 4 discovery) and
-inject synthetic resize/focus events directly.
+2. **How does Rust handle resize?** Search `src/` for resize, set_geometry,
+   or equivalent on View/ViewPort.
 
-### Test cases
-
-| # | Test | What it exercises |
-|---|------|-------------------|
-| 1 | `window_resize` | Resize → root panel relayout → children get new rects |
-| 2 | `window_focus_gained` | Window focus → NF_VIEW_FOCUS_CHANGED propagated to panels |
-| 3 | `window_focus_lost` | Window blur → NF_VIEW_FOCUS_CHANGED propagated to panels |
-
-**Note:** `window_minimize_restore` was removed — C++ emPanel has no
-minimize/restore or visibility notice flags. Discovery step 3 should
-confirm which events actually propagate before adding further tests.
+3. **Can the layout golden format capture child rects after resize?** Or
+   does a new comparison approach (before/after rect snapshots) need to be
+   designed?
 
 ### Tolerance
 
@@ -789,15 +787,15 @@ Exact match.
 
 ## Phase summary
 
-| Phase | Tests | Harness | Effort | Blocked by |
-|-------|-------|---------|--------|-----------|
+| Phase | Tests | Harness | Effort | Status |
+|-------|-------|---------|--------|--------|
 | 1. Transforms | 7 | pixel (existing) | Low | COMPLETE |
 | 2. Text | 6 | pixel (existing) | Medium | COMPLETE |
-| 3. Tiling | ~5 | framebuffer (new) | High | Phase 1, software compositor decision |
-| 4. Interaction | 11/~20 | behavioral (new) | High | PARTIAL (notice/input blocked) |
-| 5. Window | ~3 | behavioral (Phase 4) | Medium | Format extension needed |
+| 3. Tiling | ~5 | framebuffer (new) | High | NOT STARTED (software compositor decision) |
+| 4. Interaction | 22 | behavioral (new) | High | COMPLETE |
+| 5. Window | 3/3 | behavioral (Phase 4) | Medium | COMPLETE |
 
-**Total:** ~41 new golden tests across 3 harness types.
+**Total:** 37 complete + ~5 remaining across 3 harness types.
 
 ### What this gives us when complete
 
@@ -824,14 +822,17 @@ Phase 1 is **complete** (7 transform tests passing at tight tolerance).
 
 Phase 2 is **complete** (6 text golden tests passing at tight tolerance).
 
-Phase 4 is **partial** — 11 activation/focus tests pass. Notice propagation
-and input dispatch tests are blocked by golden format limitations (need
-instrumented behaviors + extended format to capture notice/event history).
+Phase 4 is **complete** — 22 tests: 11 interaction (activation + focus),
+7 notice (with `RecordingPanel` C++ subclass + `NoticeBehavior` Rust harness
++ flag translation), 4 input (with `GoldenViewPort` C++ subclass +
+`InputTrackingBehavior` Rust harness). All pass with exact match.
+
+Phase 5 is **complete** — 3/3 tests: `notice_window_focus_gained/lost` +
+`notice_window_resize`. The resize test also fixed `set_viewport()` parity
+with C++ `SetGeometry` (inline root layout update for `ROOT_SAME_TALLNESS`).
 
 Phase 3 requires design decisions (software compositor, scene definition).
-Now unblocked by Phase 1 completion.
-
-Phase 5 is a small extension of Phase 4.
+Unblocked by Phase 1 completion.
 
 ---
 

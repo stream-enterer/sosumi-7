@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use zuicchini::panel::{NoticeFlags, PanelId, PanelTree, View};
+use zuicchini::panel::{NoticeFlags, PanelId, PanelTree, View, ViewFlags};
 
 use super::common::*;
 use super::harness::NoticeBehavior;
@@ -314,4 +314,62 @@ fn notice_window_focus_lost() {
 
     let actual = vec![acc_root.borrow().bits(), acc_child1.borrow().bits()];
     compare_notices(&actual, &expected, &["root", "child1"], NOTICE_FULL_MASK).unwrap();
+}
+
+// ─── Test 7: notice_window_resize ───────────────────────────────
+// C++ view with VF_ROOT_SAME_TALLNESS → resize viewport → LAYOUT_CHANGED
+// on root (root layout rect updated by SetGeometry).
+//
+// Mask excludes VISIBILITY|UPDATE_PRIORITY_CHANGED|MEMORY_LIMIT_CHANGED:
+// Rust's update_viewing recomputes all viewing from scratch and fires these
+// on every panel whose viewed rect changed (children included), while C++
+// only fires them on the panel whose Layout() was called (root). This is a
+// known viewing-propagation difference, not a resize parity bug.
+const NOTICE_RESIZE_MASK: u32 = NOTICE_FULL_MASK & !(0x0004 | 0x0400 | 0x0800);
+
+#[test]
+fn notice_window_resize() {
+    require_golden!();
+    let expected = load_notice_golden("notice_window_resize");
+
+    let mut tree = PanelTree::new();
+    let root = tree.create_root("root");
+    tree.set_layout_rect(root, 0.0, 0.0, 1.0, 0.75); // 600/800 tallness
+    let child1 = tree.create_child(root, "child1");
+    tree.set_layout_rect(child1, 0.0, 0.0, 0.5, 1.0);
+    let child2 = tree.create_child(root, "child2");
+    tree.set_layout_rect(child2, 0.5, 0.0, 0.5, 1.0);
+
+    let mut view = View::new(root, 800.0, 600.0);
+    view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
+    view.set_window_focused(&mut tree, false);
+
+    let acc_root = attach_notice(&mut tree, root);
+    let acc_child1 = attach_notice(&mut tree, child1);
+    let acc_child2 = attach_notice(&mut tree, child2);
+
+    // Settle initial notices
+    settle(&mut tree, &mut view);
+    reset(&acc_root);
+    reset(&acc_child1);
+    reset(&acc_child2);
+
+    // Action: resize viewport (triggers root layout update via ROOT_SAME_TALLNESS)
+    view.set_viewport(&mut tree, 1200.0, 800.0);
+
+    // Deliver new notices
+    settle(&mut tree, &mut view);
+
+    let actual = vec![
+        acc_root.borrow().bits(),
+        acc_child1.borrow().bits(),
+        acc_child2.borrow().bits(),
+    ];
+    compare_notices(
+        &actual,
+        &expected,
+        &["root", "child1", "child2"],
+        NOTICE_RESIZE_MASK,
+    )
+    .unwrap();
 }

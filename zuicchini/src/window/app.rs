@@ -6,7 +6,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use crate::input::{InputKey, InputState, InputVariant};
-use crate::panel::{PanelTree, ViewFlags};
+use crate::panel::PanelTree;
 use crate::scheduler::EngineScheduler;
 
 use super::screen::Screen;
@@ -164,7 +164,7 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(size) => {
                 if let Some(win) = self.windows.get_mut(&window_id) {
                     let gpu = self.gpu.as_ref().unwrap();
-                    win.resize(gpu, size.width, size.height);
+                    win.resize(gpu, &mut self.tree, size.width, size.height);
                     // Don't request_redraw here — about_to_wait will detect the
                     // layout change from the new tallness and issue a single
                     // repaint after layout is settled.
@@ -219,15 +219,6 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         // Run one scheduler time slice
         self.scheduler.do_time_slice();
-
-        // Sync root layout_rect for ROOT_SAME_TALLNESS windows before layout
-        for win in self.windows.values() {
-            if win.view().flags.contains(ViewFlags::ROOT_SAME_TALLNESS) {
-                let tallness = win.view().pixel_tallness();
-                let root = win.view().root();
-                self.tree.set_layout_rect(root, 0.0, 0.0, 1.0, tallness);
-            }
-        }
 
         // Deliver notices (includes layout dispatch)
         let window_focused = self.windows.values().any(|w| w.view().window_focused());

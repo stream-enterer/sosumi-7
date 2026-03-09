@@ -328,7 +328,7 @@ impl View {
     // --- Viewport ---
 
     /// D-PANEL-05: Clamp dimensions, preserve zoom state on resize (C++ SetGeometry parity).
-    pub fn set_viewport(&mut self, width: f64, height: f64) {
+    pub fn set_viewport(&mut self, tree: &mut PanelTree, width: f64, height: f64) {
         let width = width.max(MIN_DIMENSION);
         let height = height.max(MIN_DIMENSION);
 
@@ -355,6 +355,12 @@ impl View {
                 state.rel_y = 0.0;
                 state.rel_a = 1.0;
             }
+        }
+
+        // C++ SetGeometry parity: inline-update root panel layout when
+        // VF_ROOT_SAME_TALLNESS is set (mirrors RootPanel->Layout(0,0,1,GetHomeTallness())).
+        if self.flags.contains(ViewFlags::ROOT_SAME_TALLNESS) {
+            tree.set_layout_rect(self.root, 0.0, 0.0, 1.0, self.pixel_tallness);
         }
 
         self.viewport_changed = true;
@@ -2154,14 +2160,14 @@ mod tests {
 
     #[test]
     fn test_pixel_tallness() {
-        let (_tree, root, _c1, _c2) = setup_tree();
+        let (mut tree, root, _c1, _c2) = setup_tree();
         let view = View::new(root, 800.0, 600.0);
         assert!((view.pixel_tallness() - 0.75).abs() < 1e-6);
 
         let mut view2 = View::new(root, 1920.0, 1080.0);
         assert!((view2.pixel_tallness() - 1080.0 / 1920.0).abs() < 1e-6);
 
-        view2.set_viewport(100.0, 200.0);
+        view2.set_viewport(&mut tree, 100.0, 200.0);
         assert!((view2.pixel_tallness() - 2.0).abs() < 1e-6);
     }
 

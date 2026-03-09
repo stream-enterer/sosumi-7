@@ -135,7 +135,7 @@ fn main() {
         let new_tallness = new_h as f64 / vw as f64;
         tree.set_layout_rect(root, 0.0, 0.0, 1.0, new_tallness);
         tree.deliver_notices(true);
-        view.set_viewport(vw as f64, new_h as f64);
+        view.set_viewport(&mut tree, vw as f64, new_h as f64);
         view.update(&mut tree);
 
         tile_cache.resize(vw, new_h);

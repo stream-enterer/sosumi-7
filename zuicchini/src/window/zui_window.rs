@@ -134,7 +134,13 @@ impl ZuiWindow {
     }
 
     /// Handle a resize event.
-    pub fn resize(&mut self, gpu: &GpuContext, width: u32, height: u32) {
+    pub fn resize(
+        &mut self,
+        gpu: &GpuContext,
+        tree: &mut crate::panel::PanelTree,
+        width: u32,
+        height: u32,
+    ) {
         let w = width.max(1);
         let h = height.max(1);
         self.surface_config.width = w;
@@ -143,7 +149,7 @@ impl ZuiWindow {
         self.compositor.resize(w, h);
         self.tile_cache.resize(w, h);
         self.viewport_buffer.setup(w, h, 4);
-        self.view.set_viewport(w as f64, h as f64);
+        self.view.set_viewport(tree, w as f64, h as f64);
     }
 
     /// Render a frame: paint dirty tiles on CPU, upload to GPU, composite.

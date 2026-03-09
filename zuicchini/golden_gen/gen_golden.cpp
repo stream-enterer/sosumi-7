@@ -959,6 +959,9 @@ public:
         SetViewGeometry(0, 0, 800, 600, 1.0);
     }
     void DoSetViewFocused(bool focused) { SetViewFocused(focused); }
+    void DoSetViewGeometry(double x, double y, double w, double h, double pt) {
+        SetViewGeometry(x, y, w, h, pt);
+    }
     void DoInputToView(emInputEvent& event, const emInputState& state) {
         InputToView(event, state);
     }
@@ -1142,6 +1145,31 @@ static void gen_notice_window_focus_lost() {
     // Deliver new notices
     { TerminateEngine ctrl(sched, 30); sched.Run(); }
     dump_notice("notice_window_focus_lost", {root, child1});
+}
+
+// Resize viewport with VF_ROOT_SAME_TALLNESS → LAYOUT_CHANGED on root + children.
+static void gen_notice_window_resize() {
+    emStandardScheduler sched;
+    emRootContext ctx(sched);
+    emView view(ctx, emView::VF_ROOT_SAME_TALLNESS);
+    GoldenViewPort vp(view);
+
+    auto* root = new RecordingPanel(view, "root");
+    auto* child1 = new RecordingPanel(*root, "child1");
+    auto* child2 = new RecordingPanel(*root, "child2");
+
+    // Settle initial notices
+    { TerminateEngine ctrl(sched, 30); sched.Run(); }
+    root->ResetRecording();
+    child1->ResetRecording();
+    child2->ResetRecording();
+
+    // Action: resize viewport
+    vp.DoSetViewGeometry(0, 0, 1200, 800, 1.0);
+
+    // Deliver new notices
+    { TerminateEngine ctrl(sched, 30); sched.Run(); }
+    dump_notice("notice_window_resize", {root, child1, child2});
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1385,6 +1413,7 @@ int main() {
     gen_notice_children_changed();
     gen_notice_window_focus_gained();
     gen_notice_window_focus_lost();
+    gen_notice_window_resize();
 
     printf("Generating input golden files...\n");
     gen_input_mouse_hit();
