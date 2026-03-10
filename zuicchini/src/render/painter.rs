@@ -143,6 +143,11 @@ impl<'a> Painter<'a> {
         self.state = self.state_stack.pop().expect("State stack underflow");
     }
 
+    /// Get the current canvas color.
+    pub fn canvas_color(&self) -> Color {
+        self.state.canvas_color
+    }
+
     /// Set the canvas color used for canvas_blend operations.
     pub fn set_canvas_color(&mut self, color: Color) {
         self.state.canvas_color = color;
@@ -691,9 +696,7 @@ impl<'a> Painter<'a> {
         // Save and temporarily override canvas color and alpha if specified.
         let saved_canvas = self.state.canvas_color;
         let saved_alpha = self.state.alpha;
-        if canvas_color.is_opaque() {
-            self.state.canvas_color = canvas_color;
-        }
+        self.state.canvas_color = canvas_color;
         if alpha < 255 {
             self.state.alpha = ((self.state.alpha as u16 * alpha as u16 + 128) >> 8) as u8;
         }
@@ -772,8 +775,12 @@ impl<'a> Painter<'a> {
 
         let px = dx as i32;
         let py = dy as i32;
-        let pw = dw as i32;
-        let ph = dh as i32;
+        // C++ computes end as floor(dx+dw), NOT floor(dx)+floor(dw).
+        // floor(a+b) >= floor(a)+floor(b), so the old code could be 1px short.
+        let px2 = (dx + dw) as i32;
+        let py2 = (dy + dh) as i32;
+        let pw = px2 - px;
+        let ph = py2 - py;
 
         let PixelRect {
             x: clip_x,
@@ -783,21 +790,15 @@ impl<'a> Painter<'a> {
         } = self.state.clip;
         let start_x = px.max(clip_x).max(0);
         let start_y = py.max(clip_y).max(0);
-        let end_x = (px + pw)
-            .min(clip_x + clip_w)
-            .min(self.target.width() as i32);
-        let end_y = (py + ph)
-            .min(clip_y + clip_h)
-            .min(self.target.height() as i32);
+        let end_x = px2.min(clip_x + clip_w).min(self.target.width() as i32);
+        let end_y = py2.min(clip_y + clip_h).min(self.target.height() as i32);
 
         if pw <= 0 || ph <= 0 || src_w == 0 || src_h == 0 {
             return;
         }
 
         let saved_canvas = self.state.canvas_color;
-        if canvas_color.is_opaque() {
-            self.state.canvas_color = canvas_color;
-        }
+        self.state.canvas_color = canvas_color;
 
         let ch = image.channel_count();
 
@@ -1381,10 +1382,11 @@ impl<'a> Painter<'a> {
     // --- 9-slice border images ---
 
     /// Draw a 9-slice border image stretched to fill a rectangle.
-    /// `border_insets` are (left, top, right, bottom) in source pixel units.
-    /// `which_sub_rects` is a bitmask controlling which of the 9 sub-rects to draw.
-    /// Default `BORDER_EDGES_ONLY` (0o757) draws all except center.
-    /// `alpha` modulates the global alpha for the draw.
+    ///
+    /// `l,t,r,b` are **target** insets (logical coordinates).
+    /// `src_l,src_t,src_r,src_b` are **source** insets (image pixel coordinates).
+    /// `which_sub_rects` bitmask: `BORDER_EDGES_ONLY` (0o757) draws all except center.
+    /// `canvas_color`: when not opaque, target inset boundaries are pixel-rounded.
     #[allow(clippy::too_many_arguments)]
     pub fn paint_border_image(
         &mut self,
@@ -1392,35 +1394,70 @@ impl<'a> Painter<'a> {
         y: f64,
         w: f64,
         h: f64,
+        l: f64,
+        t: f64,
+        r: f64,
+        b: f64,
         image: &Image,
-        border_insets: (f64, f64, f64, f64),
-        which_sub_rects: u16,
+        src_l: i32,
+        src_t: i32,
+        src_r: i32,
+        src_b: i32,
         alpha: u8,
+        canvas_color: Color,
+        which_sub_rects: u16,
     ) {
-        if alpha == 0 {
+        if alpha == 0 || w <= 0.0 || h <= 0.0 {
             return;
         }
-        let (bl, bt, br, bb) = border_insets;
         let iw = image.width() as f64;
         let ih = image.height() as f64;
         let quality = super::texture::ImageQuality::Bilinear;
         let ext = super::texture::ImageExtension::Clamp;
 
-        // Clamp border insets to destination size.
-        let bl = bl.min(w / 2.0);
-        let br = br.min(w / 2.0);
-        let bt = bt.min(h / 2.0);
-        let bb = bb.min(h / 2.0);
+        // Target insets (logical).
+        let mut l = l.min(w / 2.0);
+        let mut r = r.min(w / 2.0);
+        let mut t = t.min(h / 2.0);
+        let mut b = b.min(h / 2.0);
 
-        // Source regions (in source pixel space).
-        let src_cx = iw - bl - br; // center width in source
-        let src_cy = ih - bt - bb; // center height in source
+        // R-6: pixel-round inset boundaries when canvas_color is not opaque.
+        if !canvas_color.is_opaque() {
+            let f = self.round_x(x + l) - x;
+            if f > 0.0 && f < w - r {
+                l = f;
+            }
+            let f = x + w - self.round_x(x + w - r);
+            if f > 0.0 && f < w - l {
+                r = f;
+            }
+            let f = self.round_y(y + t) - y;
+            if f > 0.0 && f < h - b {
+                t = f;
+            }
+            let f = y + h - self.round_y(y + h - b);
+            if f > 0.0 && f < h - t {
+                b = f;
+            }
+        }
 
-        // Destination regions.
-        let dst_cx = w - bl - br;
-        let dst_cy = h - bt - bb;
+        // Source insets (pixel coords).
+        let sl = src_l as f64;
+        let st = src_t as f64;
+        let sr = src_r as f64;
+        let sb = src_b as f64;
+
+        // Source center region.
+        let src_cx = iw - sl - sr;
+        let src_cy = ih - st - sb;
+
+        // Destination center region.
+        let dst_cx = w - l - r;
+        let dst_cy = h - t - b;
 
         let saved_alpha = self.state.alpha;
+        let saved_canvas = self.state.canvas_color;
+        self.state.canvas_color = canvas_color;
         if alpha < 255 {
             self.state.alpha = ((self.state.alpha as u16 * alpha as u16 + 128) >> 8) as u8;
         }
@@ -1432,19 +1469,19 @@ impl<'a> Painter<'a> {
 
         // Corners.
         if which_sub_rects & (1 << 8) != 0 {
-            self.paint_9slice_section(x, y, bl, bt, image, 0.0, 0.0, bl, bt, quality, ext);
+            self.paint_9slice_section(x, y, l, t, image, 0.0, 0.0, sl, st, quality, ext);
         }
         if which_sub_rects & (1 << 2) != 0 {
             self.paint_9slice_section(
-                x + w - br,
+                x + w - r,
                 y,
-                br,
-                bt,
+                r,
+                t,
                 image,
-                iw - br,
+                iw - sr,
                 0.0,
-                br,
-                bt,
+                sr,
+                st,
                 quality,
                 ext,
             );
@@ -1452,29 +1489,29 @@ impl<'a> Painter<'a> {
         if which_sub_rects & (1 << 6) != 0 {
             self.paint_9slice_section(
                 x,
-                y + h - bb,
-                bl,
-                bb,
+                y + h - b,
+                l,
+                b,
                 image,
                 0.0,
-                ih - bb,
-                bl,
-                bb,
+                ih - sb,
+                sl,
+                sb,
                 quality,
                 ext,
             );
         }
         if which_sub_rects & (1 << 0) != 0 {
             self.paint_9slice_section(
-                x + w - br,
-                y + h - bb,
-                br,
-                bb,
+                x + w - r,
+                y + h - b,
+                r,
+                b,
                 image,
-                iw - br,
-                ih - bb,
-                br,
-                bb,
+                iw - sr,
+                ih - sb,
+                sr,
+                sb,
                 quality,
                 ext,
             );
@@ -1484,30 +1521,30 @@ impl<'a> Painter<'a> {
         if dst_cx > 0.0 {
             if which_sub_rects & (1 << 5) != 0 {
                 self.paint_9slice_section(
-                    x + bl,
+                    x + l,
                     y,
                     dst_cx,
-                    bt,
+                    t,
                     image,
-                    bl,
+                    sl,
                     0.0,
                     src_cx,
-                    bt,
+                    st,
                     quality,
                     ext,
                 );
             }
             if which_sub_rects & (1 << 3) != 0 {
                 self.paint_9slice_section(
-                    x + bl,
-                    y + h - bb,
+                    x + l,
+                    y + h - b,
                     dst_cx,
-                    bb,
+                    b,
                     image,
-                    bl,
-                    ih - bb,
+                    sl,
+                    ih - sb,
                     src_cx,
-                    bb,
+                    sb,
                     quality,
                     ext,
                 );
@@ -1517,13 +1554,13 @@ impl<'a> Painter<'a> {
             if which_sub_rects & (1 << 7) != 0 {
                 self.paint_9slice_section(
                     x,
-                    y + bt,
-                    bl,
+                    y + t,
+                    l,
                     dst_cy,
                     image,
                     0.0,
-                    bt,
-                    bl,
+                    st,
+                    sl,
                     src_cy,
                     quality,
                     ext,
@@ -1531,14 +1568,14 @@ impl<'a> Painter<'a> {
             }
             if which_sub_rects & (1 << 1) != 0 {
                 self.paint_9slice_section(
-                    x + w - br,
-                    y + bt,
-                    br,
+                    x + w - r,
+                    y + t,
+                    r,
                     dst_cy,
                     image,
-                    iw - br,
-                    bt,
-                    br,
+                    iw - sr,
+                    st,
+                    sr,
                     src_cy,
                     quality,
                     ext,
@@ -1549,13 +1586,13 @@ impl<'a> Painter<'a> {
         // Center.
         if which_sub_rects & (1 << 4) != 0 && dst_cx > 0.0 && dst_cy > 0.0 {
             self.paint_9slice_section(
-                x + bl,
-                y + bt,
+                x + l,
+                y + t,
                 dst_cx,
                 dst_cy,
                 image,
-                bl,
-                bt,
+                sl,
+                st,
                 src_cx,
                 src_cy,
                 quality,
@@ -1563,13 +1600,14 @@ impl<'a> Painter<'a> {
             );
         }
 
+        self.state.canvas_color = saved_canvas;
         self.state.alpha = saved_alpha;
     }
 
     /// Draw a 9-slice border image with two-color tinting.
-    /// `which_sub_rects` is a bitmask controlling which of the 9 sub-rects to draw.
-    /// Default `BORDER_EDGES_ONLY` (0o757) draws all except center.
-    /// `alpha` modulates the global alpha for the draw.
+    ///
+    /// `l,t,r,b` are **target** insets (logical coordinates).
+    /// `src_l,src_t,src_r,src_b` are **source** insets (image pixel coordinates).
     #[allow(clippy::too_many_arguments)]
     pub fn paint_border_image_colored(
         &mut self,
@@ -1577,55 +1615,79 @@ impl<'a> Painter<'a> {
         y: f64,
         w: f64,
         h: f64,
+        l: f64,
+        t: f64,
+        r: f64,
+        b: f64,
         image: &Image,
-        border_insets: (f64, f64, f64, f64),
+        src_l: i32,
+        src_t: i32,
+        src_r: i32,
+        src_b: i32,
         color1: Color,
         color2: Color,
         canvas_color: Color,
         which_sub_rects: u16,
         alpha: u8,
     ) {
-        if alpha == 0 {
+        if alpha == 0 || w <= 0.0 || h <= 0.0 {
             return;
         }
-        // Draw the 9-slice first, then apply two-color mapping.
-        // For simplicity, draw directly with the two-color method per section.
-        let (bl, bt, br, bb) = border_insets;
         let iw = image.width() as f64;
         let ih = image.height() as f64;
 
-        let bl = bl.min(w / 2.0);
-        let br = br.min(w / 2.0);
-        let bt = bt.min(h / 2.0);
-        let bb = bb.min(h / 2.0);
+        let mut l = l.min(w / 2.0);
+        let mut r = r.min(w / 2.0);
+        let mut t = t.min(h / 2.0);
+        let mut b = b.min(h / 2.0);
 
-        let src_cx = iw - bl - br;
-        let src_cy = ih - bt - bb;
-        let dst_cx = w - bl - br;
-        let dst_cy = h - bt - bb;
+        if !canvas_color.is_opaque() {
+            let f = self.round_x(x + l) - x;
+            if f > 0.0 && f < w - r {
+                l = f;
+            }
+            let f = x + w - self.round_x(x + w - r);
+            if f > 0.0 && f < w - l {
+                r = f;
+            }
+            let f = self.round_y(y + t) - y;
+            if f > 0.0 && f < h - b {
+                t = f;
+            }
+            let f = y + h - self.round_y(y + h - b);
+            if f > 0.0 && f < h - t {
+                b = f;
+            }
+        }
+
+        let sl = src_l as f64;
+        let st = src_t as f64;
+        let sr = src_r as f64;
+        let sb = src_b as f64;
+        let src_cx = iw - sl - sr;
+        let src_cy = ih - st - sb;
+        let dst_cx = w - l - r;
+        let dst_cy = h - t - b;
 
         let saved_alpha = self.state.alpha;
+        let saved_canvas = self.state.canvas_color;
+        self.state.canvas_color = canvas_color;
         if alpha < 255 {
             self.state.alpha = ((self.state.alpha as u16 * alpha as u16 + 128) >> 8) as u8;
         }
-
-        // Bit layout (octal digit positions):
-        //  8=UL  5=U   2=UR
-        //  7=L   4=C   1=R
-        //  6=LL  3=B   0=LR
 
         // Corners.
         if which_sub_rects & (1 << 8) != 0 {
             self.paint_image_colored(
                 x,
                 y,
-                bl,
-                bt,
+                l,
+                t,
                 image,
                 0,
                 0,
-                bl as u32,
-                bt as u32,
+                sl as u32,
+                st as u32,
                 color1,
                 color2,
                 canvas_color,
@@ -1633,15 +1695,15 @@ impl<'a> Painter<'a> {
         }
         if which_sub_rects & (1 << 2) != 0 {
             self.paint_image_colored(
-                x + w - br,
+                x + w - r,
                 y,
-                br,
-                bt,
+                r,
+                t,
                 image,
-                (iw - br) as u32,
+                (iw - sr) as u32,
                 0,
-                br as u32,
-                bt as u32,
+                sr as u32,
+                st as u32,
                 color1,
                 color2,
                 canvas_color,
@@ -1650,14 +1712,14 @@ impl<'a> Painter<'a> {
         if which_sub_rects & (1 << 6) != 0 {
             self.paint_image_colored(
                 x,
-                y + h - bb,
-                bl,
-                bb,
+                y + h - b,
+                l,
+                b,
                 image,
                 0,
-                (ih - bb) as u32,
-                bl as u32,
-                bb as u32,
+                (ih - sb) as u32,
+                sl as u32,
+                sb as u32,
                 color1,
                 color2,
                 canvas_color,
@@ -1665,15 +1727,15 @@ impl<'a> Painter<'a> {
         }
         if which_sub_rects & (1 << 0) != 0 {
             self.paint_image_colored(
-                x + w - br,
-                y + h - bb,
-                br,
-                bb,
+                x + w - r,
+                y + h - b,
+                r,
+                b,
                 image,
-                (iw - br) as u32,
-                (ih - bb) as u32,
-                br as u32,
-                bb as u32,
+                (iw - sr) as u32,
+                (ih - sb) as u32,
+                sr as u32,
+                sb as u32,
                 color1,
                 color2,
                 canvas_color,
@@ -1684,15 +1746,15 @@ impl<'a> Painter<'a> {
         if dst_cx > 0.0 {
             if which_sub_rects & (1 << 5) != 0 {
                 self.paint_image_colored(
-                    x + bl,
+                    x + l,
                     y,
                     dst_cx,
-                    bt,
+                    t,
                     image,
-                    bl as u32,
+                    sl as u32,
                     0,
                     src_cx as u32,
-                    bt as u32,
+                    st as u32,
                     color1,
                     color2,
                     canvas_color,
@@ -1700,15 +1762,15 @@ impl<'a> Painter<'a> {
             }
             if which_sub_rects & (1 << 3) != 0 {
                 self.paint_image_colored(
-                    x + bl,
-                    y + h - bb,
+                    x + l,
+                    y + h - b,
                     dst_cx,
-                    bb,
+                    b,
                     image,
-                    bl as u32,
-                    (ih - bb) as u32,
+                    sl as u32,
+                    (ih - sb) as u32,
                     src_cx as u32,
-                    bb as u32,
+                    sb as u32,
                     color1,
                     color2,
                     canvas_color,
@@ -1719,13 +1781,13 @@ impl<'a> Painter<'a> {
             if which_sub_rects & (1 << 7) != 0 {
                 self.paint_image_colored(
                     x,
-                    y + bt,
-                    bl,
+                    y + t,
+                    l,
                     dst_cy,
                     image,
                     0,
-                    bt as u32,
-                    bl as u32,
+                    st as u32,
+                    sl as u32,
                     src_cy as u32,
                     color1,
                     color2,
@@ -1734,14 +1796,14 @@ impl<'a> Painter<'a> {
             }
             if which_sub_rects & (1 << 1) != 0 {
                 self.paint_image_colored(
-                    x + w - br,
-                    y + bt,
-                    br,
+                    x + w - r,
+                    y + t,
+                    r,
                     dst_cy,
                     image,
-                    (iw - br) as u32,
-                    bt as u32,
-                    br as u32,
+                    (iw - sr) as u32,
+                    st as u32,
+                    sr as u32,
                     src_cy as u32,
                     color1,
                     color2,
@@ -1753,13 +1815,13 @@ impl<'a> Painter<'a> {
         // Center.
         if which_sub_rects & (1 << 4) != 0 && dst_cx > 0.0 && dst_cy > 0.0 {
             self.paint_image_colored(
-                x + bl,
-                y + bt,
+                x + l,
+                y + t,
                 dst_cx,
                 dst_cy,
                 image,
-                bl as u32,
-                bt as u32,
+                sl as u32,
+                st as u32,
                 src_cx as u32,
                 src_cy as u32,
                 color1,
@@ -1768,6 +1830,7 @@ impl<'a> Painter<'a> {
             );
         }
 
+        self.state.canvas_color = saved_canvas;
         self.state.alpha = saved_alpha;
     }
 

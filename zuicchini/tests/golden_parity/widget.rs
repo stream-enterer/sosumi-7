@@ -156,7 +156,7 @@ fn render_and_compare(name: &str, behavior: Box<dyn PanelBehavior>) {
 // ─── Test 1: widget_border_rect ─────────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — text rendering diffs (~1.5%)"]
 fn widget_border_rect() {
     require_golden!();
     let look = Look::new();
@@ -174,7 +174,7 @@ fn widget_border_rect() {
 // ─── Test 2: widget_border_round_rect ───────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — text rendering diffs (~2%)"]
 fn widget_border_round_rect() {
     require_golden!();
     let look = Look::new();
@@ -195,7 +195,7 @@ fn widget_border_round_rect() {
 // ─── Test 3: widget_border_group ────────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — interpolation diffs (~2.7%)"]
 fn widget_border_group() {
     require_golden!();
     let look = Look::new();
@@ -213,7 +213,7 @@ fn widget_border_group() {
 // ─── Test 4: widget_border_instrument ───────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — interpolation diffs (~4.6%)"]
 fn widget_border_instrument() {
     require_golden!();
     let look = Look::new();
@@ -245,7 +245,7 @@ fn widget_label() {
 // ─── Test 6: widget_button_normal ───────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — layout mismatch (~64%)"]
 fn widget_button_normal() {
     require_golden!();
     let look = Look::new();
@@ -260,7 +260,7 @@ fn widget_button_normal() {
 // ─── Test 7: widget_checkbox_unchecked ──────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — layout mismatch (~90%)"]
 fn widget_checkbox_unchecked() {
     require_golden!();
     let look = Look::new();
@@ -275,7 +275,7 @@ fn widget_checkbox_unchecked() {
 // ─── Test 8: widget_checkbox_checked ────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — layout mismatch (~90%)"]
 fn widget_checkbox_checked() {
     require_golden!();
     let look = Look::new();
@@ -290,7 +290,7 @@ fn widget_checkbox_checked() {
 // ─── Test 9: widget_textfield_empty ─────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — field rendering diffs (~22%)"]
 fn widget_textfield_empty() {
     require_golden!();
     let look = Look::new();
@@ -305,7 +305,7 @@ fn widget_textfield_empty() {
 // ─── Test 10: widget_textfield_content ──────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — field rendering diffs (~31%)"]
 fn widget_textfield_content() {
     require_golden!();
     let look = Look::new();
@@ -321,7 +321,7 @@ fn widget_textfield_content() {
 // ─── Test 11: widget_scalarfield ────────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — field rendering diffs (~67%)"]
 fn widget_scalarfield() {
     require_golden!();
     let look = Look::new();
@@ -382,7 +382,7 @@ impl PanelBehavior for SplitterBehavior {
 // ─── Test 12: widget_colorfield ────────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — layout mismatch (~79%)"]
 fn widget_colorfield() {
     require_golden!();
     let look = Look::new();
@@ -397,7 +397,7 @@ fn widget_colorfield() {
 // ─── Test 13: widget_radiobutton ───────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — layout mismatch (~60%)"]
 fn widget_radiobutton() {
     require_golden!();
     let look = Look::new();
@@ -413,7 +413,7 @@ fn widget_radiobutton() {
 // ─── Test 14: widget_listbox ───────────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — layout mismatch (~44%)"]
 fn widget_listbox() {
     require_golden!();
     let look = Look::new();
@@ -430,7 +430,7 @@ fn widget_listbox() {
 // ─── Test 15: widget_splitter_h ────────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — splitter diffs (~1.5%)"]
 fn widget_splitter_h() {
     require_golden!();
     let look = Look::new();
@@ -444,7 +444,7 @@ fn widget_splitter_h() {
 // ─── Test 16: widget_splitter_v ────────────────────────────────
 
 #[test]
-#[ignore = "blocked: PaintBorderImage not implemented in Rust"]
+#[ignore = "WIP: Phase 6 border image parity — splitter diffs (~1.5%)"]
 fn widget_splitter_v() {
     require_golden!();
     let look = Look::new();

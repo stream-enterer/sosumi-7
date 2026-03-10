@@ -12,6 +12,7 @@ mod radio_button;
 mod scalar_field;
 mod splitter;
 mod text_field;
+pub(crate) mod toolkit_images;
 
 pub use border::{Border, InnerBorderType, OuterBorderType};
 pub use button::Button;

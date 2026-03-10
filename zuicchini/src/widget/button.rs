@@ -1,10 +1,12 @@
 use std::rc::Rc;
 
+use crate::foundation::{Color, Rect};
 use crate::input::{Cursor, InputEvent, InputKey, InputVariant};
-use crate::render::Painter;
+use crate::render::{Painter, BORDER_EDGES_ONLY};
 
 use super::border::{Border, OuterBorderType};
 use super::look::Look;
+use super::toolkit_images::with_toolkit_images;
 
 /// Clickable button widget.
 pub struct Button {
@@ -22,7 +24,9 @@ pub struct Button {
 impl Button {
     pub fn new(caption: &str, look: Rc<Look>) -> Self {
         Self {
-            border: Border::new(OuterBorderType::InstrumentMoreRound).with_caption(caption),
+            border: Border::new(OuterBorderType::InstrumentMoreRound)
+                .with_caption(caption)
+                .with_label_in_border(false),
             look,
             pressed: false,
             hovered: false,
@@ -62,19 +66,85 @@ impl Button {
             .paint_border(painter, w, h, &self.look, false, true);
 
         // C++ emButton::DoButton gets content round rect, then insets the face
-        // by d = (1 - 250/264) * r ≈ 0.053 * r.
+        // by d = (1 - 250/264) * r = (14/264) * r.
         let (cr, r) = self.border.content_round_rect(w, h, &self.look);
-        let d = 0.053 * r;
+        let r = r.max(cr.w.min(cr.h) * self.border.border_scaling * 0.223);
+        let d = (14.0 / 264.0) * r;
+        let fx = cr.x + d;
+        let fy = cr.y + d;
+        let fw = cr.w - 2.0 * d;
+        let fh = cr.h - 2.0 * d;
         let fr = (r - d).max(0.0);
-        painter.paint_round_rect(
-            cr.x + d,
-            cr.y + d,
-            cr.w - 2.0 * d,
-            cr.h - 2.0 * d,
-            fr,
-            face_color,
-        );
+        painter.paint_round_rect(fx, fy, fw, fh, fr, face_color);
         painter.set_canvas_color(face_color);
+
+        // C++ DoButton: PaintLabel inside the face area with padding.
+        let d_min = fw.min(fh) * 0.1;
+        let dx = (r * 0.7).max(d_min);
+        let dy = (r * 0.4).max(d_min);
+        let mut lx = fx + dx;
+        let mut ly = fy + dy;
+        let mut lw = fw - 2.0 * dx;
+        let mut lh = fh - 2.0 * dy;
+        if self.pressed {
+            let s = 0.98;
+            lx += (1.0 - s) * 0.5 * lw;
+            lw *= s;
+            ly += (1.0 - s) * 0.5 * lh;
+            lh *= s;
+        }
+        self.border.paint_label_colored(
+            painter,
+            Rect::new(lx, ly, lw, lh),
+            &self.look,
+            self.look.button_fg_color,
+            true,
+        );
+
+        // C++ DoButton paints button image overlay on top of the face.
+        with_toolkit_images(|img| {
+            if self.pressed {
+                painter.paint_border_image(
+                    cr.x,
+                    cr.y,
+                    cr.w,
+                    cr.h,
+                    360.0 / 264.0 * r,
+                    374.0 / 264.0 * r,
+                    r, // C++ 264.0/264.0 = 1.0
+                    r, // C++ 264.0/264.0 = 1.0
+                    &img.button_pressed,
+                    360,
+                    374,
+                    264,
+                    264,
+                    255,
+                    Color::TRANSPARENT,
+                    BORDER_EDGES_ONLY,
+                );
+            } else {
+                // Normal button: image extends slightly beyond content rect.
+                let extra = (658.0 - 648.0) / 264.0 * r;
+                painter.paint_border_image(
+                    cr.x,
+                    cr.y,
+                    cr.w + extra,
+                    cr.h + extra,
+                    278.0 / 264.0 * r,
+                    278.0 / 264.0 * r,
+                    278.0 / 264.0 * r,
+                    278.0 / 264.0 * r,
+                    &img.button,
+                    278,
+                    278,
+                    278,
+                    278,
+                    255,
+                    Color::TRANSPARENT,
+                    BORDER_EDGES_ONLY,
+                );
+            }
+        });
     }
 
     /// Update hover state based on mouse position within button bounds.

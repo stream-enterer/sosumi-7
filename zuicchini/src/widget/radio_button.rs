@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::foundation::Color;
 use crate::input::{Cursor, InputEvent, InputKey, InputVariant};
 use crate::layout::linear::LinearLayout;
 use crate::layout::raster::RasterLayout;
@@ -8,6 +9,7 @@ use crate::render::Painter;
 
 use super::border::{Border, OuterBorderType};
 use super::look::Look;
+use super::toolkit_images::with_toolkit_images;
 
 /// Shared state for a group of radio buttons enforcing mutual exclusion.
 ///
@@ -141,7 +143,7 @@ impl RadioButton {
     ) -> Self {
         group.borrow_mut().count += 1;
         Self {
-            border: Border::new(OuterBorderType::RoundRect).with_caption(caption),
+            border: Border::new(OuterBorderType::InstrumentMoreRound).with_caption(caption),
             look,
             group,
             index,
@@ -179,14 +181,36 @@ impl RadioButton {
     }
 
     pub fn paint(&self, painter: &mut Painter, w: f64, h: f64) {
-        let face_color = if self.is_selected() {
-            self.look.button_pressed()
-        } else {
-            self.look.button_bg_color
-        };
-        painter.paint_round_rect(1.0, 1.0, w - 2.0, h - 2.0, 3.0, face_color);
         self.border
             .paint_border(painter, w, h, &self.look, false, true);
+
+        // C++ DoButton: content round rect, face, then radio image.
+        let (cr, r) = self.border.content_round_rect(w, h, &self.look);
+        let d = (1.0 - 250.0 / 264.0) * r;
+        let fr = (r - d).max(0.0);
+        let face_color = self.look.button_bg_color;
+        painter.paint_round_rect(
+            cr.x + d,
+            cr.y + d,
+            cr.w - 2.0 * d,
+            cr.h - 2.0 * d,
+            fr,
+            face_color,
+        );
+        painter.set_canvas_color(face_color);
+
+        // C++ DoButton ShowBox: paint radio image.
+        let bw = cr.w.min(cr.h) * 0.7;
+        let bx = cr.x + (cr.w - bw) * 0.5;
+        let by = cr.y + (cr.h - bw) * 0.5;
+        with_toolkit_images(|img| {
+            let image = if self.is_selected() {
+                &img.radio_box_pressed
+            } else {
+                &img.radio_box
+            };
+            painter.paint_image_full(bx, by, bw, bw, image, 255, Color::TRANSPARENT);
+        });
     }
 
     pub fn input(&mut self, event: &InputEvent) -> bool {

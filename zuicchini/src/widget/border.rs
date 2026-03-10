@@ -1,5 +1,5 @@
 use crate::foundation::{Color, Image, Rect};
-use crate::render::{Painter, Stroke, TextAlignment, VAlign};
+use crate::render::{Painter, Stroke, TextAlignment, VAlign, BORDER_EDGES_ONLY};
 
 use super::look::Look;
 
@@ -413,20 +413,6 @@ impl Border {
             InnerBorderType::InputField | InnerBorderType::OutputField => s * 0.094,
             InnerBorderType::CustomRect => s * 0.0125,
             InnerBorderType::None => 0.0,
-        }
-    }
-
-    /// Stroke width for outer border outlines.
-    fn outer_stroke_width(&self, w: f64, h: f64) -> f64 {
-        let s = self.base_unit(w, h);
-        match self.outer {
-            OuterBorderType::PopupRoot => s * 0.012,
-            OuterBorderType::None
-            | OuterBorderType::Filled
-            | OuterBorderType::Margin
-            | OuterBorderType::MarginFilled => 0.0,
-            OuterBorderType::Rect | OuterBorderType::RoundRect => s * 0.02,
-            _ => (s * 0.006).max(0.5),
         }
     }
 
@@ -992,6 +978,25 @@ impl Border {
         self.paint_label_impl(painter, area, look, &dim_color);
     }
 
+    /// Paint the label with a custom text color (used by Button for button_fg_color).
+    pub fn paint_label_colored(
+        &self,
+        painter: &mut Painter,
+        area: Rect,
+        look: &Look,
+        color: Color,
+        enabled: bool,
+    ) {
+        let dim_color = move |_c: Color| -> Color {
+            if enabled {
+                color
+            } else {
+                color.with_alpha((color.a() as u16 * 64 / 255) as u8)
+            }
+        };
+        self.paint_label_impl(painter, area, look, &dim_color);
+    }
+
     /// Internal helper that paints the label components (icon, caption,
     /// description) into the given area.
     fn paint_label_impl(
@@ -1100,8 +1105,6 @@ impl Border {
             }
         };
 
-        let stroke_w = self.outer_stroke_width(w, h);
-
         // Outer border
         match self.outer {
             OuterBorderType::None => {}
@@ -1152,69 +1155,187 @@ impl Border {
                 );
             }
             OuterBorderType::Group => {
-                // C++ uses PaintBorderImage(ImgGroup) — a 9-patch textured border
-                // that fills the entire interior with a gradient/texture. Approximate
-                // with a flat bg_color fill matching the C++ canvasColor update.
                 let s = self.base_unit(w, h);
                 let d = s * 0.0104;
                 let rnd_r = s * 0.0188;
-                let r = rnd_r * (280.0 / 209.0);
+                let rnd_x = d;
+                let rnd_y = d;
+                let rnd_w = w - 2.0 * d;
+                let rnd_h = h - 2.0 * d;
+                let color = look.bg_color;
+                let mut color2 = painter.canvas_color();
+                if !color.is_transparent() && (!color2.is_opaque() || color2 != color) {
+                    let r = rnd_r * (280.0 / 209.0);
+                    let e = r - rnd_r;
+                    painter.paint_round_rect(
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        color,
+                    );
+                    color2 = Color::TRANSPARENT;
+                }
+                let r = rnd_r * (286.0 / 209.0);
                 let e = r - rnd_r;
-                painter.paint_round_rect(
-                    d - e,
-                    d - e,
-                    w - 2.0 * (d - e),
-                    h - 2.0 * (d - e),
-                    r,
-                    look.bg_color,
-                );
-                painter.set_canvas_color(look.bg_color);
+                super::toolkit_images::with_toolkit_images(|img| {
+                    painter.paint_border_image(
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        r,
+                        r,
+                        r,
+                        &img.group_border,
+                        286,
+                        286,
+                        286,
+                        286,
+                        255,
+                        color2,
+                        BORDER_EDGES_ONLY,
+                    );
+                });
+                if !color.is_transparent() {
+                    painter.set_canvas_color(color);
+                }
             }
             OuterBorderType::Instrument => {
-                // C++ uses PaintBorderImage(ImgInstrument) — a 9-patch textured border.
-                // Approximate with a flat bg_color fill.
                 let s = self.base_unit(w, h);
                 let d = s * 0.052;
                 let rnd_r = s * 0.094;
-                let r = rnd_r * (280.0 / 209.0);
+                let rnd_x = d;
+                let rnd_y = d;
+                let rnd_w = w - 2.0 * d;
+                let rnd_h = h - 2.0 * d;
+                let color = look.bg_color;
+                let mut color2 = painter.canvas_color();
+                if !color.is_transparent() && (!color2.is_opaque() || color2 != color) {
+                    let r = rnd_r * (280.0 / 209.0);
+                    let e = r - rnd_r;
+                    painter.paint_round_rect(
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        color,
+                    );
+                    color2 = Color::TRANSPARENT;
+                }
+                let r = rnd_r * (286.0 / 209.0);
                 let e = r - rnd_r;
-                painter.paint_round_rect(
-                    d - e,
-                    d - e,
-                    w - 2.0 * (d - e),
-                    h - 2.0 * (d - e),
-                    r,
-                    look.bg_color,
-                );
-                painter.set_canvas_color(look.bg_color);
+                super::toolkit_images::with_toolkit_images(|img| {
+                    painter.paint_border_image(
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        r,
+                        r,
+                        r,
+                        &img.group_border,
+                        286,
+                        286,
+                        286,
+                        286,
+                        255,
+                        color2,
+                        BORDER_EDGES_ONLY,
+                    );
+                });
+                if !color.is_transparent() {
+                    painter.set_canvas_color(color);
+                }
             }
             OuterBorderType::InstrumentMoreRound => {
-                // C++ uses PaintBorderImage(ImgButtonBorder) — a 9-patch textured border.
-                // Approximate with a flat bg_color fill.
                 let s = self.base_unit(w, h);
                 let d = s * 0.052;
                 let rnd_r = s * 0.223;
-                let r = rnd_r * (336.0 / 293.4);
+                let rnd_x = d;
+                let rnd_y = d;
+                let rnd_w = w - 2.0 * d;
+                let rnd_h = h - 2.0 * d;
+                let color = look.bg_color;
+                let mut color2 = painter.canvas_color();
+                if !color.is_transparent() && (!color2.is_opaque() || color2 != color) {
+                    let r = rnd_r * (336.0 / 293.4);
+                    let e = r - rnd_r;
+                    painter.paint_round_rect(
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        color,
+                    );
+                    color2 = Color::TRANSPARENT;
+                }
+                let r = rnd_r * (340.0 / 293.4);
                 let e = r - rnd_r;
-                painter.paint_round_rect(
-                    d - e,
-                    d - e,
-                    w - 2.0 * (d - e),
-                    h - 2.0 * (d - e),
-                    r,
-                    look.bg_color,
-                );
-                painter.set_canvas_color(look.bg_color);
+                super::toolkit_images::with_toolkit_images(|img| {
+                    painter.paint_border_image(
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        r,
+                        r,
+                        r,
+                        &img.button_border,
+                        340,
+                        340,
+                        340,
+                        340,
+                        255,
+                        color2,
+                        BORDER_EDGES_ONLY,
+                    );
+                });
+                if !color.is_transparent() {
+                    painter.set_canvas_color(color);
+                }
             }
             OuterBorderType::PopupRoot => {
-                painter.paint_rect(0.0, 0.0, w, h, look.bg_color);
-                painter.paint_rect_outlined(
-                    0.0,
-                    0.0,
-                    w,
-                    h,
-                    &Stroke::new(dim_color(look.border_tint()), stroke_w),
-                );
+                let s = self.base_unit(w, h);
+                let d = s * 0.006;
+                let color = look.bg_color;
+                let canvas = painter.canvas_color();
+                if !color.is_transparent() {
+                    painter.paint_rect(0.0, 0.0, w, h, color);
+                    painter.set_canvas_color(color);
+                }
+                let r = d; // C++ ratio 159.0/159.0 = 1.0
+                let cc = if !color.is_transparent() {
+                    color
+                } else {
+                    canvas
+                };
+                super::toolkit_images::with_toolkit_images(|img| {
+                    painter.paint_border_image(
+                        0.0,
+                        0.0,
+                        w,
+                        h,
+                        r,
+                        r,
+                        r,
+                        r,
+                        &img.popup_border,
+                        159,
+                        159,
+                        159,
+                        159,
+                        255,
+                        cc,
+                        BORDER_EDGES_ONLY,
+                    );
+                });
             }
         }
 
@@ -1244,22 +1365,31 @@ impl Border {
         let inner_w = (w - ox * 2.0).max(0.0);
         let inner_h = (h - oy * 2.0 - ls).max(0.0);
         let inner_r = self.inner_radius(inner_w, inner_h);
-        let inner_stroke_w = {
-            let s = inner_w.min(inner_h) * self.border_scaling;
-            (s * 0.006).max(0.5)
-        };
 
         match self.inner {
             InnerBorderType::None => {}
             InnerBorderType::Group => {
-                painter.paint_round_rect_outlined(
-                    inner_x,
-                    inner_y,
-                    inner_w,
-                    inner_h,
-                    inner_r,
-                    &Stroke::new(dim_color(look.border_tint()), inner_stroke_w),
-                );
+                let canvas = painter.canvas_color();
+                super::toolkit_images::with_toolkit_images(|img| {
+                    painter.paint_border_image(
+                        inner_x,
+                        inner_y,
+                        inner_w,
+                        inner_h,
+                        inner_r,
+                        inner_r,
+                        inner_r,
+                        inner_r,
+                        &img.group_inner_border,
+                        225,
+                        225,
+                        225,
+                        225,
+                        255,
+                        canvas,
+                        BORDER_EDGES_ONLY,
+                    );
+                });
             }
             InnerBorderType::InputField => {
                 let bg = if enabled {
@@ -1267,15 +1397,30 @@ impl Border {
                 } else {
                     look.input_bg_color.lerp(look.bg_color, 0.80)
                 };
+                let canvas = painter.canvas_color();
                 painter.paint_round_rect(inner_x, inner_y, inner_w, inner_h, inner_r, bg);
-                painter.paint_round_rect_outlined(
-                    inner_x,
-                    inner_y,
-                    inner_w,
-                    inner_h,
-                    inner_r,
-                    &Stroke::new(dim_color(look.border_tint()), inner_stroke_w),
-                );
+                painter.set_canvas_color(bg);
+                super::toolkit_images::with_toolkit_images(|img| {
+                    painter.paint_border_image(
+                        inner_x,
+                        inner_y,
+                        inner_w,
+                        inner_h,
+                        300.0 / 216.0 * inner_r,
+                        346.0 / 216.0 * inner_r,
+                        inner_r, // C++ 216.0/216.0 = 1.0
+                        inner_r, // C++ 216.0/216.0 = 1.0
+                        &img.io_field,
+                        300,
+                        346,
+                        216,
+                        216,
+                        255,
+                        Color::TRANSPARENT,
+                        BORDER_EDGES_ONLY,
+                    );
+                });
+                let _ = canvas;
             }
             InnerBorderType::OutputField => {
                 let bg = if enabled {
@@ -1283,25 +1428,53 @@ impl Border {
                 } else {
                     look.output_bg_color.lerp(look.bg_color, 0.80)
                 };
+                let canvas = painter.canvas_color();
                 painter.paint_round_rect(inner_x, inner_y, inner_w, inner_h, inner_r, bg);
-                painter.paint_round_rect_outlined(
-                    inner_x,
-                    inner_y,
-                    inner_w,
-                    inner_h,
-                    inner_r,
-                    &Stroke::new(dim_color(look.border_tint()), inner_stroke_w),
-                );
+                painter.set_canvas_color(bg);
+                super::toolkit_images::with_toolkit_images(|img| {
+                    painter.paint_border_image(
+                        inner_x,
+                        inner_y,
+                        inner_w,
+                        inner_h,
+                        300.0 / 216.0 * inner_r,
+                        346.0 / 216.0 * inner_r,
+                        inner_r, // C++ 216.0/216.0 = 1.0
+                        inner_r, // C++ 216.0/216.0 = 1.0
+                        &img.io_field,
+                        300,
+                        346,
+                        216,
+                        216,
+                        255,
+                        Color::TRANSPARENT,
+                        BORDER_EDGES_ONLY,
+                    );
+                });
+                let _ = canvas;
             }
             InnerBorderType::CustomRect => {
-                painter.paint_round_rect_outlined(
-                    inner_x,
-                    inner_y,
-                    inner_w,
-                    inner_h,
-                    inner_r,
-                    &Stroke::new(dim_color(look.border_tint()), inner_stroke_w),
-                );
+                let canvas = painter.canvas_color();
+                super::toolkit_images::with_toolkit_images(|img| {
+                    painter.paint_border_image(
+                        inner_x,
+                        inner_y,
+                        inner_w,
+                        inner_h,
+                        inner_r,
+                        inner_r,
+                        inner_r,
+                        inner_r,
+                        &img.custom_rect_border,
+                        200,
+                        200,
+                        200,
+                        200,
+                        255,
+                        canvas,
+                        BORDER_EDGES_ONLY,
+                    );
+                });
             }
         }
     }

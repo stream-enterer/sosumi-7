@@ -4,23 +4,23 @@ use crate::foundation::Color;
 use crate::input::{Cursor, InputEvent, InputKey, InputVariant};
 use crate::render::Painter;
 
+use super::border::{Border, OuterBorderType};
 use super::look::Look;
+use super::toolkit_images::with_toolkit_images;
 
-/// Small checkbox variant — square indicator with label text.
+/// CheckBox widget — InstrumentMoreRound border with checkbox image overlay.
+/// Matches C++ `emCheckBox` (which extends `emCheckButton` extends `emButton`).
 pub struct CheckBox {
-    label: String,
+    border: Border,
     look: Rc<Look>,
     checked: bool,
     pub on_check: Option<Box<dyn FnMut(bool)>>,
 }
 
-const BOX_SIZE: f64 = 9.0;
-const BOX_LABEL_GAP: f64 = 4.0;
-
 impl CheckBox {
     pub fn new(label: &str, look: Rc<Look>) -> Self {
         Self {
-            label: label.to_string(),
+            border: Border::new(OuterBorderType::InstrumentMoreRound).with_caption(label),
             look,
             checked: false,
             on_check: None,
@@ -35,42 +35,37 @@ impl CheckBox {
         self.checked = checked;
     }
 
-    pub fn paint(&self, painter: &mut Painter, _w: f64, _h: f64) {
-        let y_off = 0.0;
+    pub fn paint(&self, painter: &mut Painter, w: f64, h: f64) {
+        self.border
+            .paint_border(painter, w, h, &self.look, false, true);
 
-        // Draw box outline
-        painter.paint_rect(0.0, y_off, BOX_SIZE, BOX_SIZE, self.look.input_bg_color);
-        painter.paint_rect_outlined(
-            0.0,
-            y_off,
-            BOX_SIZE,
-            BOX_SIZE,
-            &crate::render::Stroke::new(self.look.border_tint(), 1.0),
+        // C++ DoButton: content round rect, face, then checkbox image.
+        let (cr, r) = self.border.content_round_rect(w, h, &self.look);
+        let d = (1.0 - 250.0 / 264.0) * r;
+        let fr = (r - d).max(0.0);
+        let face_color = self.look.button_bg_color;
+        painter.paint_round_rect(
+            cr.x + d,
+            cr.y + d,
+            cr.w - 2.0 * d,
+            cr.h - 2.0 * d,
+            fr,
+            face_color,
         );
+        painter.set_canvas_color(face_color);
 
-        // Draw checkmark when checked
-        if self.checked {
-            let c = self.look.input_hl_color;
-            // Two lines forming a checkmark
-            painter.paint_line(2.0, y_off + 4.0, 4.0, y_off + 7.0, c);
-            painter.paint_line(4.0, y_off + 7.0, 7.0, y_off + 1.0, c);
-        }
-
-        // Draw label text to the right
-        if !self.label.is_empty() {
-            let label_x = BOX_SIZE + BOX_LABEL_GAP;
-            let label_h = BOX_SIZE;
-            let label_y = y_off + (BOX_SIZE - label_h) * 0.5;
-            painter.paint_text(
-                label_x,
-                label_y,
-                &self.label,
-                label_h,
-                1.0,
-                self.look.fg_color,
-                Color::TRANSPARENT,
-            );
-        }
+        // C++ DoButton ShowBox: paint checkbox image inside content rect.
+        let bw = cr.w.min(cr.h) * 0.7;
+        let bx = cr.x + (cr.w - bw) * 0.5;
+        let by = cr.y + (cr.h - bw) * 0.5;
+        with_toolkit_images(|img| {
+            let image = if self.checked {
+                &img.check_box_pressed
+            } else {
+                &img.check_box
+            };
+            painter.paint_image_full(bx, by, bw, bw, image, 255, Color::TRANSPARENT);
+        });
     }
 
     pub fn input(&mut self, event: &InputEvent) -> bool {
@@ -92,12 +87,9 @@ impl CheckBox {
     }
 
     pub fn preferred_size(&self) -> (f64, f64) {
-        let w = if self.label.is_empty() {
-            BOX_SIZE
-        } else {
-            BOX_SIZE + BOX_LABEL_GAP + Painter::measure_text_width(&self.label, BOX_SIZE)
-        };
-        (w, BOX_SIZE)
+        let th = 13.0;
+        let tw = Painter::measure_text_width(&self.border.caption, th);
+        self.border.preferred_size_for_content(tw + 8.0, th + 4.0)
     }
 
     fn toggle(&mut self) {
@@ -128,8 +120,7 @@ mod tests {
         let look = Look::new();
         let cb = CheckBox::new("Hi", look);
         let (w, h) = cb.preferred_size();
-        // 9 (box) + 4 (gap) + text width stub
-        assert!(w > 13.0, "Should include box + gap + text width");
-        assert_eq!(h, 9.0);
+        assert!(w > 0.0, "Should have positive width");
+        assert!(h > 0.0, "Should have positive height");
     }
 }

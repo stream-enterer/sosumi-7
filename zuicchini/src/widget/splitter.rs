@@ -1,9 +1,10 @@
 use crate::input::{Cursor, InputEvent, InputKey, InputVariant};
 use crate::layout::{Orientation, ResolvedOrientation};
 use crate::panel::PanelCtx;
-use crate::render::Painter;
+use crate::render::{Painter, BORDER_EDGES_ONLY};
 
 use super::look::Look;
+use super::toolkit_images::with_toolkit_images;
 use std::rc::Rc;
 
 /// C++ emSplitter grip fraction: 0.015 * borderScaling (=1.0 for default look).
@@ -78,11 +79,40 @@ impl Splitter {
         self.last_h = h;
 
         let resolved = self.orientation.resolve(w, h);
-        // C++ emSplitter::PaintContent paints the grip rect in button_bg_color.
         let color = self.look.button_bg_color;
+        let canvas = painter.canvas_color();
 
         let (gx, gy, gw, gh) = self.calc_grip_rect(w, h, resolved);
         painter.paint_rect(gx, gy, gw, gh, color);
+
+        // C++ emSplitter: PaintBorderImage overlay on grip.
+        let d = gw.min(gh) * 0.5;
+        with_toolkit_images(|img| {
+            let image = if self.dragging {
+                &img.splitter_pressed
+            } else {
+                &img.splitter
+            };
+            painter.paint_border_image(
+                gx,
+                gy,
+                gw,
+                gh,
+                d,
+                d,
+                d,
+                d,
+                image,
+                150,
+                150,
+                149,
+                149,
+                255,
+                color,
+                BORDER_EDGES_ONLY,
+            );
+        });
+        let _ = canvas;
     }
 
     /// Compute grip rectangle matching C++ emSplitter::CalcGripRect.
