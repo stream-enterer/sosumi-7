@@ -251,6 +251,57 @@ fn interaction_focus_nested() {
     compare_behavioral(&actual, &expected, &["root", "child1", "gc", "child2"]).unwrap();
 }
 
+// ─── Test 10b: focus_visit_out ──────────────────────────────────
+#[test]
+fn interaction_focus_visit_out() {
+    require_golden!();
+    let expected = load_behavioral_golden("focus_visit_out");
+
+    let mut tree = PanelTree::new();
+    let root = tree.create_root("root");
+    tree.set_layout_rect(root, 0.0, 0.0, 1.0, 1.0);
+    let child1 = tree.create_child(root, "child1");
+    tree.set_layout_rect(child1, 0.0, 0.0, 0.5, 1.0);
+    let gc = tree.create_child(child1, "gc");
+    tree.set_layout_rect(gc, 0.0, 0.0, 1.0, 1.0);
+    let child2 = tree.create_child(root, "child2");
+    tree.set_layout_rect(child2, 0.5, 0.0, 0.5, 1.0);
+
+    let mut view = View::new(root, 100.0, 100.0);
+    view.update_viewing(&mut tree);
+
+    view.set_window_focused(&mut tree, true);
+    view.set_active_panel(&mut tree, gc, true);
+    view.visit_out(&mut tree);
+
+    let actual = vec![
+        panel_state(&tree, root),
+        panel_state(&tree, child1),
+        panel_state(&tree, gc),
+        panel_state(&tree, child2),
+    ];
+    compare_behavioral(&actual, &expected, &["root", "child1", "gc", "child2"]).unwrap();
+}
+
+// ─── Test 10c: focus_tab_wrap ───────────────────────────────────
+#[test]
+fn interaction_focus_tab_wrap() {
+    require_golden!();
+    let expected = load_behavioral_golden("focus_tab_wrap");
+    let (mut tree, mut view, root, child1, child2) = three_panel_tree();
+
+    view.set_window_focused(&mut tree, true);
+    view.set_active_panel(&mut tree, child2, true);
+    view.visit_next(&mut tree);
+
+    let actual = vec![
+        panel_state(&tree, root),
+        panel_state(&tree, child1),
+        panel_state(&tree, child2),
+    ];
+    compare_behavioral(&actual, &expected, &["root", "child1", "child2"]).unwrap();
+}
+
 // ─── Test 11: focus_remove_focused ────────────────────────────
 #[test]
 fn interaction_focus_remove_focused() {

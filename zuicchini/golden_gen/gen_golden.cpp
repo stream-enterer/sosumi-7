@@ -991,6 +991,54 @@ static void gen_focus_remove_focused() {
     dump_behavioral("focus_remove_focused", {root, child2});
 }
 
+// Visit out from grandchild → focus moves to parent.
+static void gen_focus_visit_out() {
+    emStandardScheduler sched;
+    emRootContext ctx(sched);
+    emView view(ctx, 0);
+
+    emPanel* root = new emPanel(view, "root");
+    emPanel* child1 = new emPanel(*root, "child1");
+    emPanel* gc = new emPanel(*child1, "gc");
+    emPanel* child2 = new emPanel(*root, "child2");
+
+    gc->Focus();
+    // Simulate visit_out: go to focusable parent
+    emPanel* parent = gc->GetFocusableParent();
+    if (parent) parent->Focus();
+
+    // child1 should be active, root in path, gc and child2 inactive
+    dump_behavioral("focus_visit_out", {root, child1, gc, child2});
+}
+
+// Tab wrap: from last child → wraps to first child.
+static void gen_focus_tab_wrap() {
+    emStandardScheduler sched;
+    emRootContext ctx(sched);
+    emView view(ctx, 0);
+
+    emPanel* root = new emPanel(view, "root");
+    emPanel* child1 = new emPanel(*root, "child1");
+    emPanel* child2 = new emPanel(*root, "child2");
+
+    child2->Focus();
+    // GetFocusableNext should return NULL (no next sibling)
+    emPanel* next = child2->GetFocusableNext();
+    if (next) {
+        next->Focus();
+    } else {
+        // Wrap: go to parent's first focusable child
+        emPanel* p = child2->GetFocusableParent();
+        if (p) {
+            emPanel* fc = p->GetFocusableFirstChild();
+            if (fc) fc->Focus();
+        }
+    }
+
+    // child1 should be active after wrap
+    dump_behavioral("focus_tab_wrap", {root, child1, child2});
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // RecordingPanel — accumulates notice flags and tracks input receipt
 // ═══════════════════════════════════════════════════════════════════
@@ -1256,6 +1304,30 @@ static void gen_notice_window_resize() {
     // Deliver new notices
     { TerminateEngine ctrl(sched, 30); sched.Run(); }
     dump_notice("notice_window_resize", {root, child1, child2});
+}
+
+// SetEnableSwitch(false) → NF_ENABLE_CHANGED.
+static void gen_notice_enable_changed() {
+    emStandardScheduler sched;
+    emRootContext ctx(sched);
+    emView view(ctx, 0);
+
+    auto* root = new RecordingPanel(view, "root");
+    auto* child1 = new RecordingPanel(*root, "child1");
+    auto* child2 = new RecordingPanel(*root, "child2");
+
+    // Settle initial notices
+    { TerminateEngine ctrl(sched, 30); sched.Run(); }
+    root->ResetRecording();
+    child1->ResetRecording();
+    child2->ResetRecording();
+
+    // Action: disable child1
+    child1->SetEnableSwitch(false);
+
+    // Deliver new notices
+    { TerminateEngine ctrl(sched, 30); sched.Run(); }
+    dump_notice("notice_enable_changed", {root, child1, child2});
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3080,6 +3152,8 @@ int main() {
     gen_focus_unfocusable_skip();
     gen_focus_nested();
     gen_focus_remove_focused();
+    gen_focus_visit_out();
+    gen_focus_tab_wrap();
 
     printf("Generating notice golden files...\n");
     gen_notice_active_changed();
@@ -3089,6 +3163,7 @@ int main() {
     gen_notice_window_focus_gained();
     gen_notice_window_focus_lost();
     gen_notice_window_resize();
+    gen_notice_enable_changed();
 
     printf("Generating input golden files...\n");
     gen_input_mouse_hit();
