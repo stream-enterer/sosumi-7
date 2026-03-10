@@ -4,6 +4,7 @@ mod compositor;
 #[path = "../harness/mod.rs"]
 mod harness;
 mod input;
+mod input_filter;
 mod interaction;
 mod layout;
 mod notice;

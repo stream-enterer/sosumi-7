@@ -1761,11 +1761,11 @@ impl ViewAnimator for VisitingViewAnimator {
 
             // Convert curve deltas back to raw_scroll_and_zoom units.
             // Scroll: curve scroll distance → pixel scroll via /zflpp (matching C++).
-            // Zoom: curve z-delta → Rust log-zoom via *2.0. The factor of 2 inverts
-            // the 0.5 from the distance formula (area → linear scale mapping).
+            // Zoom: curve z-delta → deltaZ for raw_scroll_and_zoom (matching C++
+            // convention: reFac = exp(-deltaZ * zflpp), ra *= reFac^2).
             let zflpp = view.get_zoom_factor_log_per_pixel();
             let delta_xy_px = delta_xy / zflpp;
-            let delta_z_view = 2.0 * delta_z;
+            let delta_z_view = delta_z / zflpp;
             let delta_x = dir_x * delta_xy_px;
             let delta_y = dir_y * delta_xy_px;
 
@@ -2123,11 +2123,11 @@ mod tests {
         view.update_viewing(&mut tree);
         let initial_a = view.current_visit().rel_a;
 
-        let mut anim = KineticViewAnimator::new(0.0, 0.0, 1.0, 1000.0);
+        let mut anim = KineticViewAnimator::new(0.0, 0.0, 100.0, 1000.0);
         // friction_enabled defaults to false — just test that zoom scroll works
         anim.animate(&mut view, &mut tree, 0.1);
 
-        // Zoom velocity should have changed rel_a
+        // Zoom velocity should have changed rel_a (dz = 100 * 0.1 = 10)
         assert!((view.current_visit().rel_a - initial_a).abs() > 0.001);
     }
 

@@ -26,6 +26,7 @@
 #include <emCore/emTexture.h>
 #include <emCore/emView.h>
 #include <emCore/emViewAnimator.h>
+#include <emCore/emViewInputFilter.h>
 
 // Widget headers for Phase 6 golden tests
 #include <emCore/emBorder.h>
@@ -2627,6 +2628,325 @@ static void gen_animator_visiting_zoom() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Phase 9: ViewInputFilter trajectory golden masters
+// ═══════════════════════════════════════════════════════════════════
+
+// TimedGoldenViewPort: override GetInputClockMS for deterministic dt.
+class TimedGoldenViewPort : public GoldenViewPort {
+    emUInt64 mFakeClock;
+    emUInt64 mClockStep;
+public:
+    TimedGoldenViewPort(emView& view, emUInt64 step_ms = 16)
+        : GoldenViewPort(view), mFakeClock(1000000), mClockStep(step_ms) {}
+    virtual emUInt64 GetInputClockMS() const override { return mFakeClock; }
+    void AdvanceClock() { mFakeClock += mClockStep; }
+};
+
+// View setup for VIF testing: 800x600, root panel, zoomed 100x, focused.
+struct VIFTestSetup {
+    emStandardScheduler sched;
+    emRootContext* ctx;
+    emView* view;
+    TimedGoldenViewPort* vp;
+
+    VIFTestSetup() {
+        ctx = new emRootContext(sched);
+        view = new emView(*ctx, emView::VF_ROOT_SAME_TALLNESS);
+        vp = new TimedGoldenViewPort(*view, 16);
+        auto* root = new Testable<PaintingPanel>(*view, "root",
+                                                 emColor(200, 200, 200, 255));
+        root->DoLayout(0, 0, 1, 0.75);
+        { TerminateEngine ctrl(sched, 30); sched.Run(); }
+        view->Zoom(400, 300, 100.0);
+        { TerminateEngine ctrl(sched, 10); sched.Run(); }
+        vp->DoSetViewFocused(true);
+        { TerminateEngine ctrl(sched, 5); sched.Run(); }
+    }
+    ~VIFTestSetup() {
+        delete vp;
+        delete view;
+        delete ctx;
+    }
+
+    void step() {
+        vp->AdvanceClock();
+        TerminateEngine ctrl(sched, 1);
+        sched.Run();
+    }
+
+    void read_state(double& rx, double& ry, double& ra) {
+        view->GetVisitedPanel(&rx, &ry, &ra);
+    }
+};
+
+// ─── Mouse VIF tests ──────────────────────────────────────────────
+
+static void gen_filter_wheel_zoom_in() {
+    VIFTestSetup s;
+    // NOTE: The view already has a default emMouseZoomScrollVIF installed
+    // (from the emView constructor). We use that one, not a new one.
+
+    std::vector<double> data;
+    const int steps = 60;
+
+    // Frame 0: single wheel up at center
+    {
+        emInputEvent event;
+        event.Setup(EM_KEY_WHEEL_UP, emString(), 0, 0);
+        emInputState state;
+        state.SetMouse(400, 300);
+        s.vp->DoInputToView(event, state);
+    }
+
+    for (int i = 0; i < steps; i++) {
+        s.step();
+        double rx, ry, ra;
+        s.read_state(rx, ry, ra);
+        data.push_back(rx);
+        data.push_back(ry);
+        data.push_back(ra > 1e-100 ? 1.0 / ra : 1000.0);
+    }
+    dump_trajectory("filter_wheel_zoom_in", data.data(), steps);
+}
+
+static void gen_filter_wheel_zoom_out() {
+    VIFTestSetup s;
+    // The view's default emMouseZoomScrollVIF handles the events.
+
+    std::vector<double> data;
+    const int steps = 60;
+
+    {
+        emInputEvent event;
+        event.Setup(EM_KEY_WHEEL_DOWN, emString(), 0, 0);
+        emInputState state;
+        state.SetMouse(400, 300);
+        s.vp->DoInputToView(event, state);
+    }
+
+    for (int i = 0; i < steps; i++) {
+        s.step();
+        double rx, ry, ra;
+        s.read_state(rx, ry, ra);
+        data.push_back(rx);
+        data.push_back(ry);
+        data.push_back(ra > 1e-100 ? 1.0 / ra : 1000.0);
+    }
+    dump_trajectory("filter_wheel_zoom_out", data.data(), steps);
+}
+
+static void gen_filter_wheel_acceleration() {
+    VIFTestSetup s;
+    // The view's default emMouseZoomScrollVIF handles the events.
+
+    std::vector<double> data;
+    const int steps = 60;
+
+    // 5 wheel-up events every 3 frames (48ms intervals)
+    for (int i = 0; i < steps; i++) {
+        if (i == 0 || i == 3 || i == 6 || i == 9 || i == 12) {
+            emInputEvent event;
+            event.Setup(EM_KEY_WHEEL_UP, emString(), 0, 0);
+            emInputState state;
+            state.SetMouse(400, 300);
+            s.vp->DoInputToView(event, state);
+        }
+        s.step();
+        double rx, ry, ra;
+        s.read_state(rx, ry, ra);
+        data.push_back(rx);
+        data.push_back(ry);
+        data.push_back(ra > 1e-100 ? 1.0 / ra : 1000.0);
+    }
+    dump_trajectory("filter_wheel_acceleration", data.data(), steps);
+}
+
+static void gen_filter_middle_pan() {
+    VIFTestSetup s;
+    // The view's default emMouseZoomScrollVIF handles the events.
+
+    std::vector<double> data;
+    const int steps = 60;
+
+    // Frame 0: middle press at (400,300)
+    {
+        emInputEvent event;
+        event.Setup(EM_KEY_MIDDLE_BUTTON, emString(), 0, 0);
+        emInputState state;
+        state.SetMouse(400, 300);
+        state.Set(EM_KEY_MIDDLE_BUTTON, true);
+        s.vp->DoInputToView(event, state);
+    }
+
+    for (int i = 0; i < steps; i++) {
+        // Frames 1-10: move mouse from (400,300) to (500,400), 10px/frame
+        if (i >= 1 && i <= 10) {
+            double mx = 400.0 + i * 10.0;
+            double my = 300.0 + i * 10.0;
+            emInputEvent event;
+            event.Setup(EM_KEY_NONE, emString(), 0, 0);
+            emInputState state;
+            state.SetMouse(mx, my);
+            state.Set(EM_KEY_MIDDLE_BUTTON, true);
+            s.vp->DoInputToView(event, state);
+        }
+
+        s.step();
+        double rx, ry, ra;
+        s.read_state(rx, ry, ra);
+        data.push_back(rx);
+        data.push_back(ry);
+        data.push_back(ra > 1e-100 ? 1.0 / ra : 1000.0);
+    }
+    dump_trajectory("filter_middle_pan", data.data(), steps);
+}
+
+static void gen_filter_middle_fling() {
+    VIFTestSetup s;
+    // The view's default emMouseZoomScrollVIF handles the events.
+
+    std::vector<double> data;
+    const int steps = 60;
+
+    // Frame 0: middle press at (400,300)
+    {
+        emInputEvent event;
+        event.Setup(EM_KEY_MIDDLE_BUTTON, emString(), 0, 0);
+        emInputState state;
+        state.SetMouse(400, 300);
+        state.Set(EM_KEY_MIDDLE_BUTTON, true);
+        s.vp->DoInputToView(event, state);
+    }
+
+    for (int i = 0; i < steps; i++) {
+        // Frames 1-10: move mouse 10px/frame
+        if (i >= 1 && i <= 10) {
+            double mx = 400.0 + i * 10.0;
+            double my = 300.0 + i * 10.0;
+            emInputEvent event;
+            event.Setup(EM_KEY_NONE, emString(), 0, 0);
+            emInputState state;
+            state.SetMouse(mx, my);
+            state.Set(EM_KEY_MIDDLE_BUTTON, true);
+            s.vp->DoInputToView(event, state);
+        }
+
+        // Frame 10: release middle button
+        if (i == 10) {
+            emInputEvent event;
+            event.Setup(EM_KEY_NONE, emString(), 0, 0);
+            emInputState state;
+            state.SetMouse(500, 400);
+            // Middle button NOT set → release
+            s.vp->DoInputToView(event, state);
+        }
+
+        s.step();
+        double rx, ry, ra;
+        s.read_state(rx, ry, ra);
+        data.push_back(rx);
+        data.push_back(ry);
+        data.push_back(ra > 1e-100 ? 1.0 / ra : 1000.0);
+    }
+    dump_trajectory("filter_middle_fling", data.data(), steps);
+}
+
+// ─── Keyboard VIF tests ──────────────────────────────────────────
+
+static void gen_filter_keyboard_scroll() {
+    VIFTestSetup s;
+    // The view's default emKeyboardZoomScrollVIF handles the events.
+
+    std::vector<double> data;
+    const int steps = 60;
+
+    // Frame 0: Alt+Right press (held for all 60 frames)
+    {
+        emInputEvent event;
+        event.Setup(EM_KEY_CURSOR_RIGHT, emString(), 0, 0);
+        emInputState state;
+        state.Set(EM_KEY_ALT, true);
+        state.Set(EM_KEY_CURSOR_RIGHT, true);
+        s.vp->DoInputToView(event, state);
+    }
+
+    for (int i = 0; i < steps; i++) {
+        s.step();
+        double rx, ry, ra;
+        s.read_state(rx, ry, ra);
+        data.push_back(rx);
+        data.push_back(ry);
+        data.push_back(ra > 1e-100 ? 1.0 / ra : 1000.0);
+    }
+    dump_trajectory("filter_keyboard_scroll", data.data(), steps);
+}
+
+static void gen_filter_keyboard_zoom() {
+    VIFTestSetup s;
+    // The view's default emKeyboardZoomScrollVIF handles the events.
+
+    std::vector<double> data;
+    const int steps = 60;
+
+    // Frame 0: Alt+PageUp press
+    {
+        emInputEvent event;
+        event.Setup(EM_KEY_PAGE_UP, emString(), 0, 0);
+        emInputState state;
+        state.Set(EM_KEY_ALT, true);
+        state.Set(EM_KEY_PAGE_UP, true);
+        s.vp->DoInputToView(event, state);
+    }
+
+    for (int i = 0; i < steps; i++) {
+        s.step();
+        double rx, ry, ra;
+        s.read_state(rx, ry, ra);
+        data.push_back(rx);
+        data.push_back(ry);
+        data.push_back(ra > 1e-100 ? 1.0 / ra : 1000.0);
+    }
+    dump_trajectory("filter_keyboard_zoom", data.data(), steps);
+}
+
+static void gen_filter_keyboard_release() {
+    VIFTestSetup s;
+    // The view's default emKeyboardZoomScrollVIF handles the events.
+
+    std::vector<double> data;
+    const int steps = 60;
+
+    // Frame 0: Alt+Right press
+    {
+        emInputEvent event;
+        event.Setup(EM_KEY_CURSOR_RIGHT, emString(), 0, 0);
+        emInputState state;
+        state.Set(EM_KEY_ALT, true);
+        state.Set(EM_KEY_CURSOR_RIGHT, true);
+        s.vp->DoInputToView(event, state);
+    }
+
+    for (int i = 0; i < steps; i++) {
+        // Frame 30: release Right (Alt still held)
+        if (i == 30) {
+            emInputEvent event;
+            event.Setup(EM_KEY_NONE, emString(), 0, 0);
+            emInputState state;
+            state.Set(EM_KEY_ALT, true);
+            // CURSOR_RIGHT not set → key released
+            s.vp->DoInputToView(event, state);
+        }
+        s.step();
+        double rx, ry, ra;
+        s.read_state(rx, ry, ra);
+        data.push_back(rx);
+        data.push_back(ry);
+        data.push_back(ra > 1e-100 ? 1.0 / ra : 1000.0);
+    }
+    dump_trajectory("filter_keyboard_release", data.data(), steps);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════════
 
@@ -2776,6 +3096,16 @@ int main() {
     gen_animator_swiping_release();
     gen_animator_visiting_short();
     gen_animator_visiting_zoom();
+
+    printf("Generating input filter trajectory golden files...\n");
+    gen_filter_wheel_zoom_in();
+    gen_filter_wheel_zoom_out();
+    gen_filter_wheel_acceleration();
+    gen_filter_middle_pan();
+    gen_filter_middle_fling();
+    gen_filter_keyboard_scroll();
+    gen_filter_keyboard_zoom();
+    gen_filter_keyboard_release();
 
     printf("Done!\n");
 

@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::input::{InputEvent, InputKey, InputState, InputVariant};
 
 use super::view::{View, ViewFlags};
@@ -56,6 +58,30 @@ pub struct MouseZoomScrollVIF {
     /// Zoom fix point for grip-drag operations.
     grip_fix_x: f64,
     grip_fix_y: f64,
+    /// Whether wheel zoom spring is active.
+    wheel_active: bool,
+    /// Wheel spring extension on z-axis (log-zoom units).
+    wheel_spring_z: f64,
+    /// Internal spring velocity for z-axis.
+    wheel_inst_vel_z: f64,
+    /// Output zoom velocity from wheel spring.
+    wheel_velocity_z: f64,
+    /// Zoom fix point for wheel operations.
+    wheel_fix_x: f64,
+    wheel_fix_y: f64,
+    /// Whether wheel animation is in coasting phase (friction-based decay
+    /// after VIF stop condition triggers: vel < 10, ext < 0.5).
+    /// In C++, this transition activates the magnetic animator which coasts
+    /// with the transferred velocity. In Rust, we replicate the coast
+    /// directly.
+    wheel_coasting: bool,
+    /// Scroll speed factor applied to mouse deltas (C++ GetMouseScrollSpeed = 6.0).
+    scroll_speed_factor: f64,
+    /// Monotonic clock reference for wheel zoom timestamps.
+    clock_start: Instant,
+    /// Override clock for deterministic testing (ms). When set, `filter()` uses
+    /// this value instead of `clock_start.elapsed()`.
+    test_clock_ms: Option<u64>,
 }
 
 impl MouseZoomScrollVIF {
@@ -85,6 +111,16 @@ impl MouseZoomScrollVIF {
             grip_active: false,
             grip_fix_x: 0.0,
             grip_fix_y: 0.0,
+            wheel_active: false,
+            wheel_spring_z: 0.0,
+            wheel_inst_vel_z: 0.0,
+            wheel_velocity_z: 0.0,
+            wheel_fix_x: 0.0,
+            wheel_fix_y: 0.0,
+            wheel_coasting: false,
+            scroll_speed_factor: 6.0,
+            clock_start: Instant::now(),
+            test_clock_ms: None,
         }
     }
 
@@ -295,24 +331,35 @@ impl MouseZoomScrollVIF {
             let w = self.mouse_spring_const.sqrt();
             let decay = (-w * dt).exp();
 
-            // Process X spring
+            // Process X spring — snap to zero when extension is small (C++ parity)
             let e0x = self.grip_spring_x;
             let v0x = self.grip_inst_vel_x;
-            let e1x = (e0x + (e0x * w + v0x) * dt) * decay;
-            let v1x = (v0x - (e0x * w + v0x) * w * dt) * decay;
-            self.grip_spring_x = e1x;
-            self.grip_inst_vel_x = v1x;
-            // Output velocity = spring displacement per dt
-            self.grip_velocity_x = (e0x - e1x) / dt;
+            if self.mouse_spring_const < 1e5 && (e0x / dt).abs() > 20.0 {
+                let e1x = (e0x + (e0x * w + v0x) * dt) * decay;
+                let v1x = (v0x - (e0x * w + v0x) * w * dt) * decay;
+                self.grip_spring_x = e1x;
+                self.grip_inst_vel_x = v1x;
+                self.grip_velocity_x = (e0x - e1x) / dt;
+            } else {
+                self.grip_spring_x = 0.0;
+                self.grip_inst_vel_x = 0.0;
+                self.grip_velocity_x = e0x / dt;
+            }
 
-            // Process Y spring
+            // Process Y spring — same snap condition per-axis
             let e0y = self.grip_spring_y;
             let v0y = self.grip_inst_vel_y;
-            let e1y = (e0y + (e0y * w + v0y) * dt) * decay;
-            let v1y = (v0y - (e0y * w + v0y) * w * dt) * decay;
-            self.grip_spring_y = e1y;
-            self.grip_inst_vel_y = v1y;
-            self.grip_velocity_y = (e0y - e1y) / dt;
+            if self.mouse_spring_const < 1e5 && (e0y / dt).abs() > 20.0 {
+                let e1y = (e0y + (e0y * w + v0y) * dt) * decay;
+                let v1y = (v0y - (e0y * w + v0y) * w * dt) * decay;
+                self.grip_spring_y = e1y;
+                self.grip_inst_vel_y = v1y;
+                self.grip_velocity_y = (e0y - e1y) / dt;
+            } else {
+                self.grip_spring_y = 0.0;
+                self.grip_inst_vel_y = 0.0;
+                self.grip_velocity_y = e0y / dt;
+            }
 
             // Apply velocity as scroll (without friction during grip, per C++)
             let dx = self.grip_velocity_x * dt;
@@ -362,6 +409,116 @@ impl MouseZoomScrollVIF {
                 self.grip_active = false;
                 return false;
             }
+        }
+
+        true
+    }
+
+    /// Set a deterministic clock for testing. When set, `filter()` uses this
+    /// value (in milliseconds) instead of wall-clock time.
+    pub fn set_test_clock(&mut self, ms: u64) {
+        self.test_clock_ms = Some(ms);
+    }
+
+    /// Whether wheel zoom spring animation is active.
+    pub fn is_wheel_animating(&self) -> bool {
+        self.wheel_active
+    }
+
+    /// Advance wheel zoom spring animation by one frame.
+    ///
+    /// Two phases mirror the C++ VIF → MagneticViewAnimator handoff:
+    ///
+    /// **Spring phase** (wheel_coasting=false): Critically-damped spring
+    /// decays the extension and produces velocity. When the VIF stop
+    /// condition triggers (vel < 10, ext < 0.5), transitions to coast.
+    ///
+    /// **Coast phase** (wheel_coasting=true): Linear friction decays the
+    /// velocity (matching C++ KineticViewAnimator / MagneticViewAnimator
+    /// behavior after the VIF deactivates the wheel swiping animator).
+    ///
+    /// Returns true if animation should continue.
+    pub fn animate_wheel(
+        &mut self,
+        view: &mut View,
+        tree: &mut super::tree::PanelTree,
+        dt: f64,
+    ) -> bool {
+        if !self.wheel_active {
+            return false;
+        }
+
+        if self.wheel_coasting {
+            // ── Coast phase: friction-decayed velocity ──
+            // Matches C++ MagneticViewAnimator coasting with friction
+            // transferred from the WheelAnim.
+            let v = self.wheel_velocity_z.abs();
+            let f = if self.wheel_friction_enabled && v > 1e-10 {
+                let new_v = (v - self.wheel_friction * dt).max(0.0);
+                new_v / v
+            } else {
+                1.0
+            };
+            let v1 = self.wheel_velocity_z;
+            self.wheel_velocity_z *= f;
+            let dz = (v1 + self.wheel_velocity_z) * 0.5 * dt;
+            if dz.abs() >= 0.01 {
+                view.raw_scroll_and_zoom(tree, self.wheel_fix_x, self.wheel_fix_y, 0.0, 0.0, dz);
+            }
+            if self.wheel_velocity_z.abs() < 0.01 {
+                self.wheel_velocity_z = 0.0;
+                self.wheel_active = false;
+                self.wheel_coasting = false;
+                return false;
+            }
+            return true;
+        }
+
+        // ── Spring phase: critically-damped spring ──
+        // C++ snaps extension to zero when |extension/dt| <= 20 — avoids
+        // lingering tiny velocities from near-zero spring decay.
+        let e0 = self.wheel_spring_z;
+        let v0 = self.wheel_inst_vel_z;
+
+        if self.wheel_spring_const < 1e5 && (e0 / dt).abs() > 20.0 {
+            let w = self.wheel_spring_const.sqrt();
+            let decay = (-w * dt).exp();
+            let e1 = (e0 + (e0 * w + v0) * dt) * decay;
+            let v1 = (v0 - (e0 * w + v0) * w * dt) * decay;
+            self.wheel_spring_z = e1;
+            self.wheel_inst_vel_z = v1;
+            self.wheel_velocity_z = (e0 - e1) / dt;
+        } else {
+            self.wheel_spring_z = 0.0;
+            self.wheel_inst_vel_z = 0.0;
+            self.wheel_velocity_z = e0 / dt;
+        }
+
+        // Apply zoom velocity via raw_scroll_and_zoom
+        let dz = self.wheel_velocity_z * dt;
+        if dz.abs() > 0.001 {
+            view.raw_scroll_and_zoom(tree, self.wheel_fix_x, self.wheel_fix_y, 0.0, 0.0, dz);
+        }
+
+        // C++ VIF stop condition: when velocity and extension are both low,
+        // the VIF activates the MagneticViewAnimator (which coasts with
+        // friction). We replicate this as a transition to the coast phase.
+        if self.wheel_velocity_z.abs() < 10.0 && self.wheel_spring_z.abs() < 0.5 {
+            self.wheel_spring_z = 0.0;
+            self.wheel_inst_vel_z = 0.0;
+            self.wheel_coasting = true;
+            return true;
+        }
+
+        // C++ UpdateBusyState: stop when BOTH extension AND velocity are tiny.
+        let abs_ext = self.wheel_spring_z.abs();
+        let abs_vel = self.wheel_velocity_z.abs();
+        if abs_ext <= 0.01 && abs_vel <= 0.01 {
+            self.wheel_spring_z = 0.0;
+            self.wheel_inst_vel_z = 0.0;
+            self.wheel_velocity_z = 0.0;
+            self.wheel_active = false;
+            return false;
         }
 
         true
@@ -426,17 +583,27 @@ impl ViewInputFilter for MouseZoomScrollVIF {
             }
         }
 
-        // Wheel zoom
+        // Wheel zoom — route through spring physics (C++ SwipingViewAnimator)
         if matches!(event.key, InputKey::WheelUp | InputKey::WheelDown)
             && event.variant == InputVariant::Press
         {
             let down = event.key == InputKey::WheelDown;
-            let factor = if down {
-                1.0 / self.zoom_speed
-            } else {
-                self.zoom_speed
-            };
-            view.zoom(factor, state.mouse_x, state.mouse_y);
+            let clock_ms = self
+                .test_clock_ms
+                .unwrap_or_else(|| self.clock_start.elapsed().as_millis() as u64);
+            self.update_wheel_zoom_speed(
+                down,
+                state.shift(),
+                clock_ms,
+                1.0,  // MouseWheelZoomAcceleration default
+                0.25, // min value
+            );
+            self.wheel_fix_x = state.mouse_x;
+            self.wheel_fix_y = state.mouse_y;
+            let zflpp = view.get_zoom_factor_log_per_pixel();
+            self.wheel_spring_z += self.wheel_zoom_speed / zflpp;
+            self.wheel_active = true;
+            self.wheel_coasting = false;
             return true;
         }
 
@@ -453,8 +620,8 @@ impl ViewInputFilter for MouseZoomScrollVIF {
                     // D-PANEL-10: Accumulate spring extension (C++ MoveGrip).
                     // The spring physics in animate_grip() convert this into
                     // smoothed velocity and scroll. No direct scroll here.
-                    self.grip_spring_x += dmx;
-                    self.grip_spring_y += dmy;
+                    self.grip_spring_x += dmx * self.scroll_speed_factor;
+                    self.grip_spring_y += dmy * self.scroll_speed_factor;
                 }
                 self.last_x = state.mouse_x;
                 self.last_y = state.mouse_y;
@@ -503,6 +670,12 @@ pub struct KeyboardZoomScrollVIF {
     acceleration: f64,
     /// Deceleration rate when key released (pixels/second^2).
     deceleration: f64,
+    /// Reverse acceleration for opposing-direction deceleration.
+    reverse_acceleration: f64,
+    /// Friction for above-target deceleration.
+    friction: f64,
+    /// Whether friction-based deceleration is enabled.
+    friction_enabled: bool,
 }
 
 impl KeyboardZoomScrollVIF {
@@ -517,6 +690,9 @@ impl KeyboardZoomScrollVIF {
             key_state: KeyState::empty(),
             acceleration: 200.0,
             deceleration: 400.0,
+            reverse_acceleration: 400.0,
+            friction: 200.0,
+            friction_enabled: false,
         }
     }
 
@@ -528,6 +704,36 @@ impl KeyboardZoomScrollVIF {
     /// Set the deceleration rate (pixels/second^2).
     pub fn set_deceleration(&mut self, decel: f64) {
         self.deceleration = decel;
+    }
+
+    /// Configure parameters matching C++ SetAnimatorParameters().
+    /// `kinetic`: KineticZoomingAndScrolling config (default 1.0)
+    /// `min_kinetic`: minimum config value (default 0.25)
+    /// `keyboard_scroll_speed`: KeyboardScrollSpeed config (default 1.0)
+    /// `keyboard_zoom_speed`: KeyboardZoomSpeed config (default 1.0)
+    /// `zflpp`: zoom factor log per pixel from view
+    pub fn set_animator_params(
+        &mut self,
+        kinetic: f64,
+        min_kinetic: f64,
+        keyboard_scroll_speed: f64,
+        keyboard_zoom_speed: f64,
+        zflpp: f64,
+    ) {
+        let mut k = kinetic;
+        if k < min_kinetic * 1.0001 {
+            k = 0.001;
+        }
+        let ss = keyboard_scroll_speed / zflpp * 2.0;
+        let zs = keyboard_zoom_speed / zflpp * 2.0;
+        let v = (ss + zs) * 0.5;
+        self.scroll_speed = ss;
+        self.zoom_speed = zs;
+        self.acceleration = v / (k * 0.6);
+        self.reverse_acceleration = v / (k * 0.2);
+        self.deceleration = v / (k * 0.2);
+        self.friction = v / (k * 1.6);
+        self.friction_enabled = true;
     }
 
     /// Whether the continuous animation is currently active (has velocity or held keys).
@@ -542,8 +748,8 @@ impl KeyboardZoomScrollVIF {
     ///
     /// Called each frame when `is_animating()` returns true.
     /// `dt` is the time delta in seconds.
-    pub fn animate(&mut self, view: &mut View, dt: f64) {
-        // Compute target velocities from held keys
+    pub fn animate(&mut self, view: &mut View, tree: &mut super::tree::PanelTree, dt: f64) {
+        // Compute target velocities from held keys (in pixels/sec, matching C++)
         let target_vx = if self.key_state.contains(KeyState::RIGHT) {
             self.scroll_speed
         } else if self.key_state.contains(KeyState::LEFT) {
@@ -560,48 +766,51 @@ impl KeyboardZoomScrollVIF {
             0.0
         };
 
-        let zoom_log_speed = self.zoom_speed.ln().max(0.1);
         let target_vz = if self.key_state.contains(KeyState::ZOOM_IN) {
-            zoom_log_speed
+            self.zoom_speed
         } else if self.key_state.contains(KeyState::ZOOM_OUT) {
-            -zoom_log_speed
+            -self.zoom_speed
         } else {
             0.0
         };
 
-        // Accelerate/decelerate toward target velocity
-        self.scroll_velocity_x = approach(
+        // Three-mode speeding step per dimension
+        self.scroll_velocity_x = speeding_step(
             self.scroll_velocity_x,
             target_vx,
             self.acceleration,
-            self.deceleration,
+            self.reverse_acceleration,
+            self.friction,
+            self.friction_enabled,
             dt,
         );
-        self.scroll_velocity_y = approach(
+        self.scroll_velocity_y = speeding_step(
             self.scroll_velocity_y,
             target_vy,
             self.acceleration,
-            self.deceleration,
+            self.reverse_acceleration,
+            self.friction,
+            self.friction_enabled,
             dt,
         );
-        self.zoom_velocity = approach(
+        self.zoom_velocity = speeding_step(
             self.zoom_velocity,
             target_vz,
-            self.acceleration * 0.01,
-            self.deceleration * 0.01,
+            self.acceleration,
+            self.reverse_acceleration,
+            self.friction,
+            self.friction_enabled,
             dt,
         );
 
-        // Apply motion
+        // Apply motion via raw_scroll_and_zoom (matches C++ KineticViewAnimator base).
+        // dz = velocity * dt in the same units as C++ — raw_scroll_and_zoom applies zflpp.
         let dx = self.scroll_velocity_x * dt;
         let dy = self.scroll_velocity_y * dt;
-        if dx.abs() > 0.001 || dy.abs() > 0.001 {
-            view.scroll(dx, dy);
-        }
-        if self.zoom_velocity.abs() > 0.001 {
-            let factor = (self.zoom_velocity * dt).exp();
+        let dz = self.zoom_velocity * dt;
+        if dx.abs() > 0.001 || dy.abs() > 0.001 || dz.abs() > 0.0001 {
             let (vw, vh) = view.viewport_size();
-            view.zoom(factor, vw * 0.5, vh * 0.5);
+            view.raw_scroll_and_zoom(tree, vw * 0.5, vh * 0.5, dx, dy, dz);
         }
     }
 
@@ -822,27 +1031,35 @@ impl ViewInputFilter for KeyboardZoomScrollVIF {
     }
 }
 
-/// Accelerate or decelerate a value toward a target.
+/// Three-mode velocity step matching C++ SpeedingViewAnimator::CycleAnimation.
 ///
-/// Uses `accel` rate when moving toward the target (speeding up or
-/// changing direction), `decel` rate when the target is zero and we're
-/// slowing down. Returns the updated value.
-fn approach(current: f64, target: f64, accel: f64, decel: f64, dt: f64) -> f64 {
-    let diff = target - current;
-    if diff.abs() < 0.001 {
-        return target;
-    }
-    let rate = if target.abs() < 0.001 {
-        // Decelerating toward zero
-        decel
+/// Mode 1 (reverse): v and target in opposite directions -> use reverse_accel
+/// Mode 2 (accelerate): |v| < |target| -> use accel with dt capped at 0.1
+/// Mode 3 (friction): |v| >= |target| with friction -> use friction
+fn speeding_step(
+    v: f64,
+    target: f64,
+    accel: f64,
+    reverse_accel: f64,
+    friction: f64,
+    friction_enabled: bool,
+    dt: f64,
+) -> f64 {
+    let adt = if v * target < -0.1 {
+        reverse_accel * dt
+    } else if v.abs() < target.abs() {
+        accel * dt.min(0.1)
+    } else if friction_enabled {
+        friction * dt
     } else {
-        accel
+        0.0
     };
-    let step = rate * dt;
-    if diff > 0.0 {
-        (current + step).min(target)
+    if v - adt > target {
+        v - adt
+    } else if v + adt < target {
+        v + adt
     } else {
-        (current - step).max(target)
+        target
     }
 }
 
@@ -1340,7 +1557,7 @@ mod tests {
 
         // Animate several frames
         for _ in 0..10 {
-            vif.animate(&mut view, 0.016);
+            vif.animate(&mut view, &mut tree, 0.016);
         }
 
         let after = view.current_visit().rel_x;
@@ -1349,21 +1566,23 @@ mod tests {
 
     #[test]
     fn test_keyboard_deceleration() {
-        let (mut _tree, mut view) = setup();
-        view.update_viewing(&mut _tree);
+        let (mut tree, mut view) = setup();
+        view.update_viewing(&mut tree);
 
         let mut vif = KeyboardZoomScrollVIF::new();
+        // Enable friction so release decelerates (C++ parity requires set_animator_params)
+        vif.friction_enabled = true;
         // Ramp up velocity
         vif.key_state.insert(KeyState::DOWN);
         for _ in 0..20 {
-            vif.animate(&mut view, 0.016);
+            vif.animate(&mut view, &mut tree, 0.016);
         }
         assert!(vif.scroll_velocity_y.abs() > 0.1, "Should have velocity");
 
-        // Release key — should decelerate
+        // Release key — should decelerate via friction
         vif.key_state.remove(KeyState::DOWN);
         for _ in 0..100 {
-            vif.animate(&mut view, 0.016);
+            vif.animate(&mut view, &mut tree, 0.016);
         }
         assert!(
             vif.scroll_velocity_y.abs() < 0.1,
@@ -1373,15 +1592,19 @@ mod tests {
 
     #[test]
     fn test_keyboard_zoom_continuous() {
-        let (mut _tree, mut view) = setup();
-        view.update_viewing(&mut _tree);
+        let (mut tree, mut view) = setup();
+        view.update_viewing(&mut tree);
 
         let mut vif = KeyboardZoomScrollVIF::new();
+        // Use set_animator_params to compute zoom_speed in correct units for
+        // the zflpp-based raw_scroll_and_zoom path (C++ parity).
+        let zflpp = view.get_zoom_factor_log_per_pixel();
+        vif.set_animator_params(1.0, 0.25, 1.0, 1.0, zflpp);
         vif.key_state.insert(KeyState::ZOOM_IN);
 
         let before = view.current_visit().rel_a;
         for _ in 0..20 {
-            vif.animate(&mut view, 0.016);
+            vif.animate(&mut view, &mut tree, 0.016);
         }
 
         let after = view.current_visit().rel_a;
@@ -1519,18 +1742,22 @@ mod tests {
     }
 
     #[test]
-    fn test_approach_function() {
-        // Accelerating toward target
-        let v = approach(0.0, 100.0, 200.0, 400.0, 0.1);
-        assert!((v - 20.0).abs() < 0.01); // 200 * 0.1 = 20
+    fn test_speeding_step_function() {
+        // Mode 2: accelerating toward target (|v| < |target|)
+        let v = speeding_step(0.0, 100.0, 200.0, 400.0, 200.0, false, 0.1);
+        assert!((v - 20.0).abs() < 0.01); // 200 * min(0.1, 0.1) = 20
 
-        // Decelerating toward zero
-        let v2 = approach(50.0, 0.0, 200.0, 400.0, 0.1);
+        // Mode 1: reverse direction (v * target < -0.1)
+        let v2 = speeding_step(50.0, -50.0, 200.0, 400.0, 200.0, false, 0.1);
         assert!((v2 - 10.0).abs() < 0.01); // 50 - 400*0.1 = 10
 
         // Already at target
-        let v3 = approach(100.0, 100.0, 200.0, 400.0, 0.1);
+        let v3 = speeding_step(100.0, 100.0, 200.0, 400.0, 200.0, false, 0.1);
         assert!((v3 - 100.0).abs() < 0.01);
+
+        // Mode 3: friction enabled, |v| >= |target|
+        let v4 = speeding_step(100.0, 0.0, 200.0, 400.0, 200.0, true, 0.1);
+        assert!((v4 - 80.0).abs() < 0.01); // 100 - 200*0.1 = 80
     }
 
     #[test]

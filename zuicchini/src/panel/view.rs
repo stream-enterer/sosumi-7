@@ -382,7 +382,7 @@ impl View {
         self.needs_animator_abort = true;
         if let Some(state) = self.visit_stack.last_mut() {
             let old_a = state.rel_a;
-            let new_a = (old_a * factor).clamp(0.001, 1000.0);
+            let new_a = (old_a * factor).clamp(0.001, MAX_SVP_SIZE);
             if (new_a - old_a).abs() < 1e-15 {
                 return;
             }
@@ -453,8 +453,12 @@ impl View {
             self.scroll(dx, dy);
         }
         if dz != 0.0 {
-            let factor = dz.exp();
-            self.zoom(factor, fix_x, fix_y);
+            // C++: reFac = exp(-deltaZ * zflpp), ra *= reFac^2
+            // Since rel_a = 1/ra: rel_a *= 1/reFac^2 = exp(2 * dz * zflpp)
+            let zflpp = self.get_zoom_factor_log_per_pixel();
+            let re_fac = (-dz * zflpp).exp();
+            let area_factor = 1.0 / (re_fac * re_fac);
+            self.zoom(area_factor, fix_x, fix_y);
         }
         self.update_viewing(tree);
         let after = self.visit_stack.last().cloned();
@@ -467,8 +471,10 @@ impl View {
                 let scale = b.rel_a.sqrt().max(1e-10);
                 let done_x = (a.rel_x - b.rel_x) * self.viewport_width.max(1.0) * scale;
                 let done_y = (a.rel_y - b.rel_y) * self.viewport_height.max(1.0) * scale;
-                let done_z = if b.rel_a > 0.0 {
-                    (a.rel_a / b.rel_a).ln()
+                // C++: done_z = -ln(reFac)/zflpp = 0.5 * ln(rel_a_new/rel_a_old) / zflpp
+                let zflpp = self.get_zoom_factor_log_per_pixel();
+                let done_z = if b.rel_a > 0.0 && zflpp > 1e-15 {
+                    0.5 * (a.rel_a / b.rel_a).ln() / zflpp
                 } else {
                     0.0
                 };
@@ -562,7 +568,7 @@ impl View {
             let scale = target_fraction / ph.max(MIN_DIMENSION);
             scale * scale * (pw * ph).max(MIN_DIMENSION * MIN_DIMENSION)
         };
-        let rel_a = rel_a.clamp(0.001, 1000.0);
+        let rel_a = rel_a.clamp(0.001, MAX_SVP_SIZE);
 
         // Center the panel in the viewport
         let scale = rel_a.sqrt();
@@ -623,8 +629,8 @@ impl View {
             1.0 / ph.max(MIN_DIMENSION)
         };
 
-        let rel_a =
-            (scale * scale * (pw * ph).max(MIN_DIMENSION * MIN_DIMENSION)).clamp(0.001, 1000.0);
+        let rel_a = (scale * scale * (pw * ph).max(MIN_DIMENSION * MIN_DIMENSION))
+            .clamp(0.001, MAX_SVP_SIZE);
         let s = rel_a.sqrt();
         let rel_x = 0.5 - (px + pw * 0.5) * s;
         let rel_y = 0.5 - (py + ph * 0.5) * s;
