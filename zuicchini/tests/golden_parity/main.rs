@@ -1,3 +1,4 @@
+mod animator;
 mod common;
 mod compositor;
 #[path = "../harness/mod.rs"]

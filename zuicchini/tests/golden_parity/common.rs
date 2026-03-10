@@ -426,6 +426,88 @@ pub fn compare_input(
     Ok(())
 }
 
+// ────────────────────── Trajectory golden files ──────────────────
+
+/// A single trajectory step: (vel_x, vel_y, vel_z) velocity in pixels/second.
+#[derive(Debug, Clone)]
+pub struct TrajectoryStep {
+    pub vel_x: f64,
+    pub vel_y: f64,
+    pub vel_z: f64,
+}
+
+/// Load a trajectory golden file.
+/// Format: [u32 step_count][step_count * (f64 vel_x, f64 vel_y, f64 vel_z)]
+pub fn load_trajectory_golden(name: &str) -> Vec<TrajectoryStep> {
+    let path = golden_dir()
+        .join("trajectory")
+        .join(format!("{name}.trajectory.golden"));
+    let data =
+        std::fs::read(&path).unwrap_or_else(|e| panic!("Cannot read {}: {e}", path.display()));
+    assert!(
+        data.len() >= 4,
+        "Trajectory golden too short: {}",
+        path.display()
+    );
+    let step_count = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+    let expected_len = 4 + step_count * 24; // 3 * f64 = 24 bytes per step
+    assert_eq!(
+        data.len(),
+        expected_len,
+        "Trajectory golden size mismatch for {name}: got {} expected {expected_len}",
+        data.len()
+    );
+    let mut steps = Vec::with_capacity(step_count);
+    for i in 0..step_count {
+        let off = 4 + i * 24;
+        let vel_x = f64::from_le_bytes(data[off..off + 8].try_into().unwrap());
+        let vel_y = f64::from_le_bytes(data[off + 8..off + 16].try_into().unwrap());
+        let vel_z = f64::from_le_bytes(data[off + 16..off + 24].try_into().unwrap());
+        steps.push(TrajectoryStep {
+            vel_x,
+            vel_y,
+            vel_z,
+        });
+    }
+    steps
+}
+
+/// Compare trajectory against golden data. Returns error with details on first mismatch.
+pub fn compare_trajectory(
+    actual: &[TrajectoryStep],
+    expected: &[TrajectoryStep],
+    tolerance: f64,
+) -> Result<(), CompareError> {
+    if actual.len() != expected.len() {
+        return Err(CompareError {
+            message: format!(
+                "Trajectory length mismatch: actual={} expected={}",
+                actual.len(),
+                expected.len()
+            ),
+        });
+    }
+    for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
+        let dx = (a.vel_x - e.vel_x).abs();
+        let dy = (a.vel_y - e.vel_y).abs();
+        let dz = (a.vel_z - e.vel_z).abs();
+        if dx > tolerance || dy > tolerance || dz > tolerance {
+            return Err(CompareError {
+                message: format!(
+                    "Trajectory step {i} mismatch (tol={tolerance:.2e}):\n  \
+                     actual  =({:.10e}, {:.10e}, {:.10e})\n  \
+                     expected=({:.10e}, {:.10e}, {:.10e})\n  \
+                     diff    =({dx:.2e}, {dy:.2e}, {dz:.2e})",
+                    a.vel_x, a.vel_y, a.vel_z, e.vel_x, e.vel_y, e.vel_z
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+// ────────────────────── Rect comparison ──────────────────────────
+
 pub fn compare_rects(
     actual: &[(f64, f64, f64, f64)],
     expected: &[GoldenRect],

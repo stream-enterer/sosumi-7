@@ -407,22 +407,16 @@ impl View {
             // After zoom, we need: f = (panel_point - new_abs_x) / new_abs_w
             // which should equal: f = (panel_point - old_abs_x) / old_abs_w
             //
-            // Simplest correct formulation using rel_a as linear scale on each axis:
+            // C++ formula: rx += (fixX - hmx) * (1 - reFac) / ViewedWidth
+            // In Rust terms: ViewedWidth = viewport_width * sqrt(rel_a),
+            // reFac = sqrt(old_a) / sqrt(new_a), hmx = viewport_width / 2.
             let sqrt_old = old_a.sqrt();
             let sqrt_new = new_a.sqrt();
             let ratio = sqrt_old / sqrt_new;
-            let ncx = if self.viewport_width > 0.0 {
-                center_x / self.viewport_width
-            } else {
-                0.5
-            };
-            let ncy = if self.viewport_height > 0.0 {
-                center_y / self.viewport_height
-            } else {
-                0.5
-            };
-            state.rel_x = ncx + (state.rel_x - ncx) * ratio;
-            state.rel_y = ncy + (state.rel_y - ncy) * ratio;
+            let vw = self.viewport_width.max(1.0);
+            let vh = self.viewport_height.max(1.0);
+            state.rel_x += (center_x / vw - 0.5) * (1.0 - ratio) / sqrt_old;
+            state.rel_y += (center_y / vh - 0.5) * (1.0 - ratio) / sqrt_old;
             state.rel_a = new_a;
             self.viewport_changed = true;
         }
@@ -466,8 +460,13 @@ impl View {
         let after = self.visit_stack.last().cloned();
         match (before, after) {
             (Some(b), Some(a)) => {
-                let done_x = (a.rel_x - b.rel_x) * self.viewport_width.max(1.0);
-                let done_y = (a.rel_y - b.rel_y) * self.viewport_height.max(1.0);
+                // Convert rel_x/rel_y deltas back to pixel units.
+                // scroll() divides by (viewport * sqrt(rel_a)), so multiply
+                // back by the same scale. Uses before rel_a since scroll()
+                // runs before zoom() in this function.
+                let scale = b.rel_a.sqrt().max(1e-10);
+                let done_x = (a.rel_x - b.rel_x) * self.viewport_width.max(1.0) * scale;
+                let done_y = (a.rel_y - b.rel_y) * self.viewport_height.max(1.0) * scale;
                 let done_z = if b.rel_a > 0.0 {
                     (a.rel_a / b.rel_a).ln()
                 } else {

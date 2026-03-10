@@ -53,6 +53,14 @@ impl KineticViewAnimator {
         (self.velocity_x, self.velocity_y, self.velocity_z)
     }
 
+    /// Absolute velocity magnitude (sqrt of sum of squares).
+    pub fn abs_velocity(&self) -> f64 {
+        (self.velocity_x * self.velocity_x
+            + self.velocity_y * self.velocity_y
+            + self.velocity_z * self.velocity_z)
+            .sqrt()
+    }
+
     pub fn set_friction_enabled(&mut self, enabled: bool) {
         self.friction_enabled = enabled;
     }
@@ -139,12 +147,24 @@ impl ViewAnimator for KineticViewAnimator {
         let vy_before = self.velocity_y;
         let vz_before = self.velocity_z;
 
-        // Apply linear friction per-dimension independently
+        // Apply uniform magnitude-based friction (C++ parity):
+        // compute single scale factor from velocity magnitude, apply to all axes.
         if self.friction_enabled {
+            let v = (self.velocity_x * self.velocity_x
+                + self.velocity_y * self.velocity_y
+                + self.velocity_z * self.velocity_z)
+                .sqrt();
             let a = self.friction;
-            self.velocity_x = apply_friction_1d(self.velocity_x, a, dt);
-            self.velocity_y = apply_friction_1d(self.velocity_y, a, dt);
-            self.velocity_z = apply_friction_1d(self.velocity_z, a, dt);
+            let f = if v - a * dt > 0.0 {
+                (v - a * dt) / v
+            } else if v + a * dt < 0.0 {
+                (v + a * dt) / v
+            } else {
+                0.0
+            };
+            self.velocity_x *= f;
+            self.velocity_y *= f;
+            self.velocity_z *= f;
         }
 
         // Compute distances using average of pre/post-friction velocity
@@ -377,74 +397,93 @@ pub(crate) enum VisitingState {
     GoalReached,
 }
 
-/// Visiting view animator — smoothly animates the camera to a target visit state.
-/// Uses S-curve velocity profile with acceleration/deceleration ramps and
-/// logarithmic interpolation for zoom dimension.
-pub struct VisitingViewAnimator {
+/// Result of walking the panel tree to find the nearest existing panel.
+struct NearestPanel {
+    panel: super::tree::PanelId,
     target_x: f64,
     target_y: f64,
     target_a: f64,
-    speed: f64,
-    active: bool,
-    /// Whether smooth animation is enabled (false = instant visit).
+    depth: usize,
+    panels_after: usize,
+    dist_final: f64,
+}
+
+/// How the target panel should be displayed.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum VisitType {
+    /// Auto-position: compute natural viewing coordinates.
+    Visit,
+    /// Explicit relative coordinates (rel_x, rel_y, rel_a).
+    VisitRel,
+    /// Fill the viewport with the panel.
+    VisitFullsized,
+}
+
+/// Visiting view animator — navigates the camera along an optimal-cost curve
+/// to a target panel. Matches C++ `emVisitingViewAnimator`.
+///
+/// The curve minimizes visual travel cost: scrolling at high zoom costs more
+/// than scrolling at low zoom, so the optimal path zooms out, scrolls, then
+/// zooms in — producing the characteristic Eagle Mode navigation feel.
+///
+/// Uses precomputed curve tables for the optimal (scroll, zoom) path, with
+/// Catmull-Rom spline interpolation and speed management (acceleration,
+/// cusp speed limits, distance-based deceleration).
+pub struct VisitingViewAnimator {
+    // Configuration
     animated: bool,
-    /// Acceleration for speed ramping (units/s^2).
     acceleration: f64,
-    /// Maximum speed at zoom cusp (zoom-out-then-in transition).
     max_cusp_speed: f64,
-    /// Maximum absolute animation speed.
     max_absolute_speed: f64,
-    /// Current state in the seek/navigation state machine.
+
+    // Goal
     state: VisitingState,
-    /// Target panel identity string (slash-separated path).
+    visit_type: VisitType,
     identity: String,
-    /// Human-readable subject description for seek overlay.
+    names: Vec<String>,
+    rel_x: f64,
+    rel_y: f64,
+    rel_a: f64,
+    adherent: bool,
+    utilize_view: bool,
     subject: String,
-    /// Current animation speed (ramps up then down via S-curve).
-    current_speed: f64,
-    /// Total elapsed animation time in seconds.
-    elapsed: f64,
-    /// Frames with no significant progress (blocked-movement detection).
-    stall_frames: u32,
-    /// Previous position for blocked-movement detection.
-    prev_x: f64,
-    prev_y: f64,
-    prev_log_a: f64,
+
+    // Animation state
+    active: bool,
+    max_depth_seen: i32,
+    speed: f64,
+    time_slices_without_hope: u32,
+    give_up_clock: f64,
 }
 
 impl VisitingViewAnimator {
-    pub fn new(target_x: f64, target_y: f64, target_a: f64, speed: f64) -> Self {
+    pub fn new(target_x: f64, target_y: f64, target_a: f64, _speed: f64) -> Self {
         Self {
-            target_x,
-            target_y,
-            target_a,
-            speed,
-            active: true,
-            animated: false,
+            animated: true,
             acceleration: 5.0,
             max_cusp_speed: 2.0,
             max_absolute_speed: 5.0,
             state: VisitingState::Curve,
+            visit_type: VisitType::VisitRel,
             identity: String::new(),
+            names: Vec::new(),
+            rel_x: target_x,
+            rel_y: target_y,
+            rel_a: target_a,
+            adherent: false,
+            utilize_view: false,
             subject: String::new(),
-            current_speed: 0.0,
-            elapsed: 0.0,
-            stall_frames: 0,
-            prev_x: f64::NAN,
-            prev_y: f64::NAN,
-            prev_log_a: f64::NAN,
+            active: true,
+            max_depth_seen: -1,
+            speed: 0.0,
+            time_slices_without_hope: 0,
+            give_up_clock: 0.0,
         }
     }
 
     /// Configure animation parameters from a speed config value.
     ///
     /// Mirrors C++ `emVisitingViewAnimator::SetAnimParamsByCoreConfig`.
-    /// `speed_factor` is the user's configured visit speed (typically 0..max).
-    /// `max_speed_factor` is the maximum value of that config range.
-    ///
-    /// When `speed_factor` is near `max_speed_factor`, animation is disabled
-    /// (instant visit). Otherwise, acceleration and max speeds are scaled by
-    /// `35.0 * speed_factor`, and cusp speed is half of max absolute speed.
     pub fn set_anim_params_by_speed_config(&mut self, speed_factor: f64, max_speed_factor: f64) {
         self.animated = speed_factor < max_speed_factor * 0.99999;
         self.acceleration = 35.0 * speed_factor;
@@ -452,33 +491,124 @@ impl VisitingViewAnimator {
         self.max_cusp_speed = self.max_absolute_speed * 0.5;
     }
 
-    /// Returns the current visiting state.
-    pub(crate) fn visiting_state(&self) -> VisitingState {
+    pub fn set_animated(&mut self, animated: bool) {
+        self.animated = animated;
+    }
+
+    pub fn set_acceleration(&mut self, acceleration: f64) {
+        self.acceleration = acceleration;
+    }
+
+    pub fn set_max_cusp_speed(&mut self, max_cusp_speed: f64) {
+        self.max_cusp_speed = max_cusp_speed;
+    }
+
+    pub fn set_max_absolute_speed(&mut self, max_absolute_speed: f64) {
+        self.max_absolute_speed = max_absolute_speed;
+    }
+
+    #[cfg(test)]
+    fn visiting_state(&self) -> VisitingState {
         self.state
     }
 
-    /// Set state (used by seek logic / tests).
-    pub(crate) fn set_visiting_state(&mut self, state: VisitingState) {
+    #[cfg(test)]
+    fn set_visiting_state(&mut self, state: VisitingState) {
         self.state = state;
+    }
+
+    /// Set goal: visit panel by identity path with auto-positioning.
+    pub fn set_goal(&mut self, identity: &str, adherent: bool, subject: &str) {
+        self.visit_type = VisitType::Visit;
+        self.rel_x = 0.0;
+        self.rel_y = 0.0;
+        self.rel_a = 0.0;
+        self.adherent = adherent;
+        self.utilize_view = false;
+        self.subject = subject.to_string();
+        self.activate_goal(identity);
+    }
+
+    /// Set goal: visit panel at explicit relative coordinates.
+    pub fn set_goal_rel(
+        &mut self,
+        identity: &str,
+        rel_x: f64,
+        rel_y: f64,
+        rel_a: f64,
+        adherent: bool,
+        subject: &str,
+    ) {
+        self.visit_type = VisitType::VisitRel;
+        self.rel_x = rel_x;
+        self.rel_y = rel_y;
+        self.rel_a = rel_a;
+        self.adherent = adherent;
+        self.utilize_view = false;
+        self.subject = subject.to_string();
+        self.activate_goal(identity);
+    }
+
+    /// Set goal: visit panel fullsized.
+    pub fn set_goal_fullsized(
+        &mut self,
+        identity: &str,
+        adherent: bool,
+        utilize_view: bool,
+        subject: &str,
+    ) {
+        self.visit_type = VisitType::VisitFullsized;
+        self.rel_x = 0.0;
+        self.rel_y = 0.0;
+        self.rel_a = 0.0;
+        self.adherent = adherent;
+        self.utilize_view = utilize_view;
+        self.subject = subject.to_string();
+        self.activate_goal(identity);
+    }
+
+    fn activate_goal(&mut self, identity: &str) {
+        if self.state == VisitingState::NoGoal || self.identity != identity {
+            self.state = VisitingState::Curve;
+            self.identity = identity.to_string();
+            self.names = super::tree::decode_identity(&self.identity);
+            self.max_depth_seen = -1;
+            self.time_slices_without_hope = 0;
+            self.give_up_clock = 0.0;
+        }
+    }
+
+    /// Clear the goal and stop animation.
+    pub fn clear_goal(&mut self) {
+        if self.state != VisitingState::NoGoal {
+            self.state = VisitingState::NoGoal;
+            self.visit_type = VisitType::Visit;
+            self.identity.clear();
+            self.names.clear();
+            self.rel_x = 0.0;
+            self.rel_y = 0.0;
+            self.rel_a = 0.0;
+            self.adherent = false;
+            self.utilize_view = false;
+            self.subject.clear();
+            self.max_depth_seen = -1;
+            self.time_slices_without_hope = 0;
+            self.give_up_clock = 0.0;
+        }
     }
 
     /// Set the identity and subject for seek overlay display.
     pub fn set_identity(&mut self, identity: &str, subject: &str) {
         self.identity = identity.to_string();
         self.subject = subject.to_string();
+        self.names = super::tree::decode_identity(&self.identity);
     }
 
-    /// Returns the identity string being visited.
     pub fn identity(&self) -> &str {
         &self.identity
     }
 
     /// Handle input during visiting animation.
-    ///
-    /// Mirrors C++ `emVisitingViewAnimator::Input`.
-    /// During seek or giving-up states, any key/mouse event aborts the
-    /// seek and deactivates the animator. Returns true if the event was
-    /// consumed (eaten).
     pub fn handle_input(&mut self, event: &crate::input::InputEvent) -> bool {
         if !self.active {
             return false;
@@ -486,11 +616,9 @@ impl VisitingViewAnimator {
         if self.state != VisitingState::Seek && self.state != VisitingState::GivingUp {
             return false;
         }
-        // Any non-empty event aborts the seek
         if event.key != crate::input::InputKey::MouseLeft
             || event.variant != crate::input::InputVariant::Move
         {
-            // An actual key/button event (not just mouse move) — abort
             self.active = false;
             self.state = VisitingState::GivenUp;
             return true;
@@ -499,10 +627,6 @@ impl VisitingViewAnimator {
     }
 
     /// Paint the seek progress overlay.
-    ///
-    /// Mirrors C++ `emVisitingViewAnimator::Paint`.
-    /// Shows a semi-transparent overlay with the target identity and a
-    /// progress bar when in Seek or GivingUp state.
     pub fn paint_seek_overlay(&self, painter: &mut crate::render::Painter<'_>, view: &View) {
         if !self.active {
             return;
@@ -514,16 +638,13 @@ impl VisitingViewAnimator {
         let (vw, vh) = view.viewport_size();
         let w = (vw.max(vh) * 0.6).min(vw);
         let mut h = w * 0.25;
-
         let f = vh * 0.8 / h;
         if f < 1.0 {
             h *= f;
         }
-
         let x = (vw - w) * 0.5;
         let y = (vh - h) * 0.5;
 
-        // Shadow
         let shadow_off = w * 0.03;
         painter.paint_round_rect(
             x + shadow_off,
@@ -533,8 +654,6 @@ impl VisitingViewAnimator {
             h * 0.2,
             crate::foundation::Color::rgba(0, 0, 0, 160),
         );
-
-        // Background box
         painter.paint_round_rect(
             x,
             y,
@@ -545,7 +664,6 @@ impl VisitingViewAnimator {
         );
 
         let ch_size = h * 0.22;
-
         if self.state == VisitingState::GivingUp {
             painter.paint_text_boxed(
                 x,
@@ -566,7 +684,6 @@ impl VisitingViewAnimator {
             return;
         }
 
-        // "Seeking..." text
         let mut seeking_text = String::from("Seeking...");
         if !self.subject.is_empty() {
             seeking_text.push_str(" for ");
@@ -589,13 +706,11 @@ impl VisitingViewAnimator {
             0.0,
         );
 
-        // Progress bar background
         let bar_x = x + w * 0.05;
         let bar_y = y + h * 0.45;
         let bar_w = w * 0.9;
         let bar_h = h * 0.15;
 
-        // Compute progress from identity match
         let seek_id = view
             .seek_pos_panel()
             .map(|_| view.seek_pos_child_name())
@@ -612,7 +727,6 @@ impl VisitingViewAnimator {
         };
         let progress = found_len as f64 / total_len as f64;
 
-        // Found portion (green)
         if progress > 0.0 {
             painter.paint_rect(
                 bar_x,
@@ -622,7 +736,6 @@ impl VisitingViewAnimator {
                 crate::foundation::Color::rgba(136, 255, 136, 80),
             );
         }
-        // Remaining portion (gray)
         if progress < 1.0 {
             painter.paint_rect(
                 bar_x + bar_w * progress,
@@ -633,7 +746,6 @@ impl VisitingViewAnimator {
             );
         }
 
-        // Identity label below the progress bar
         let id_y = bar_y + bar_h + h * 0.02;
         let id_h = h * 0.15;
         let id_ch = ch_size * 0.6;
@@ -654,7 +766,6 @@ impl VisitingViewAnimator {
             0.0,
         );
 
-        // "Press any key to abort" hint at the bottom
         let abort_y = y + h * 0.8;
         let abort_h = h * 0.15;
         painter.paint_text_boxed(
@@ -676,25 +787,903 @@ impl VisitingViewAnimator {
     }
 }
 
+// ─── Optimal-cost curve math (C++ parity) ──────────────────────────────
+
+/// A point on the optimal-cost curve: (x = scroll, z = log-zoom).
+#[derive(Copy, Clone)]
+struct CurvePoint {
+    x: f64,
+    z: f64,
+}
+
+/// Step size in curve-distance units between precomputed points.
+const CURVE_DELTA_DIST: f64 = 0.0703125;
+
+/// Precomputed optimal-cost curve: 128 points mapping arc-length distance
+/// to (scroll_x, log_zoom_z) coordinates. The curve minimizes total cost
+/// where scrolling at zoom level z costs exp(z) per unit distance.
+/// Ported directly from C++ emVisitingViewAnimator::CurvePoints[].
+const CURVE_POINTS: [CurvePoint; 128] = [
+    CurvePoint {
+        x: 0.000000000000,
+        z: 0.00000000,
+    },
+    CurvePoint {
+        x: 0.070196996568,
+        z: 0.00246786,
+    },
+    CurvePoint {
+        x: 0.139706409829,
+        z: 0.00984731,
+    },
+    CurvePoint {
+        x: 0.207867277855,
+        z: 0.02206685,
+    },
+    CurvePoint {
+        x: 0.274069721820,
+        z: 0.03901038,
+    },
+    CurvePoint {
+        x: 0.337775385698,
+        z: 0.06052148,
+    },
+    CurvePoint {
+        x: 0.398532523720,
+        z: 0.08640897,
+    },
+    CurvePoint {
+        x: 0.455985066529,
+        z: 0.11645328,
+    },
+    CurvePoint {
+        x: 0.509875667166,
+        z: 0.15041328,
+    },
+    CurvePoint {
+        x: 0.560043303236,
+        z: 0.18803304,
+    },
+    CurvePoint {
+        x: 0.606416423020,
+        z: 0.22904841,
+    },
+    CurvePoint {
+        x: 0.649002844597,
+        z: 0.27319286,
+    },
+    CurvePoint {
+        x: 0.687877659276,
+        z: 0.32020270,
+    },
+    CurvePoint {
+        x: 0.723170290571,
+        z: 0.36982132,
+    },
+    CurvePoint {
+        x: 0.755051666347,
+        z: 0.42180262,
+    },
+    CurvePoint {
+        x: 0.783722223449,
+        z: 0.47591350,
+    },
+    CurvePoint {
+        x: 0.809401221691,
+        z: 0.53193559,
+    },
+    CurvePoint {
+        x: 0.832317626300,
+        z: 0.58966630,
+    },
+    CurvePoint {
+        x: 0.852702640725,
+        z: 0.64891924,
+    },
+    CurvePoint {
+        x: 0.870783840857,
+        z: 0.70952419,
+    },
+    CurvePoint {
+        x: 0.886780775044,
+        z: 0.77132669,
+    },
+    CurvePoint {
+        x: 0.900901845307,
+        z: 0.83418737,
+    },
+    CurvePoint {
+        x: 0.913342265529,
+        z: 0.89798109,
+    },
+    CurvePoint {
+        x: 0.924282893555,
+        z: 0.96259598,
+    },
+    CurvePoint {
+        x: 0.933889748709,
+        z: 1.02793239,
+    },
+    CurvePoint {
+        x: 0.942314048229,
+        z: 1.09390185,
+    },
+    CurvePoint {
+        x: 0.949692621183,
+        z: 1.16042604,
+    },
+    CurvePoint {
+        x: 0.956148583577,
+        z: 1.22743579,
+    },
+    CurvePoint {
+        x: 0.961792181829,
+        z: 1.29487016,
+    },
+    CurvePoint {
+        x: 0.966721732461,
+        z: 1.36267553,
+    },
+    CurvePoint {
+        x: 0.971024603574,
+        z: 1.43080482,
+    },
+    CurvePoint {
+        x: 0.974778198188,
+        z: 1.49921674,
+    },
+    CurvePoint {
+        x: 0.978050911290,
+        z: 1.56787514,
+    },
+    CurvePoint {
+        x: 0.980903041613,
+        z: 1.63674836,
+    },
+    CurvePoint {
+        x: 0.983387646274,
+        z: 1.70580876,
+    },
+    CurvePoint {
+        x: 0.985551331675,
+        z: 1.77503218,
+    },
+    CurvePoint {
+        x: 0.987434978026,
+        z: 1.84439754,
+    },
+    CurvePoint {
+        x: 0.989074397556,
+        z: 1.91388643,
+    },
+    CurvePoint {
+        x: 0.990500928466,
+        z: 1.98348284,
+    },
+    CurvePoint {
+        x: 0.991741967860,
+        z: 2.05317279,
+    },
+    CurvePoint {
+        x: 0.992821447684,
+        z: 2.12294410,
+    },
+    CurvePoint {
+        x: 0.993760258098,
+        z: 2.19278617,
+    },
+    CurvePoint {
+        x: 0.994576622816,
+        z: 2.26268978,
+    },
+    CurvePoint {
+        x: 0.995286430928,
+        z: 2.33264690,
+    },
+    CurvePoint {
+        x: 0.995903529539,
+        z: 2.40265055,
+    },
+    CurvePoint {
+        x: 0.996439981325,
+        z: 2.47269463,
+    },
+    CurvePoint {
+        x: 0.996906290795,
+        z: 2.54277387,
+    },
+    CurvePoint {
+        x: 0.997311602787,
+        z: 2.61288367,
+    },
+    CurvePoint {
+        x: 0.997663876350,
+        z: 2.68302002,
+    },
+    CurvePoint {
+        x: 0.997970036920,
+        z: 2.75317946,
+    },
+    CurvePoint {
+        x: 0.998236109346,
+        z: 2.82335896,
+    },
+    CurvePoint {
+        x: 0.998467334097,
+        z: 2.89355590,
+    },
+    CurvePoint {
+        x: 0.998668268700,
+        z: 2.96376798,
+    },
+    CurvePoint {
+        x: 0.998842876218,
+        z: 3.03399323,
+    },
+    CurvePoint {
+        x: 0.998994602405,
+        z: 3.10422992,
+    },
+    CurvePoint {
+        x: 0.999126442933,
+        z: 3.17447655,
+    },
+    CurvePoint {
+        x: 0.999241001961,
+        z: 3.24473182,
+    },
+    CurvePoint {
+        x: 0.999340543132,
+        z: 3.31499459,
+    },
+    CurvePoint {
+        x: 0.999427033975,
+        z: 3.38526388,
+    },
+    CurvePoint {
+        x: 0.999502184543,
+        z: 3.45553885,
+    },
+    CurvePoint {
+        x: 0.999567481032,
+        z: 3.52581873,
+    },
+    CurvePoint {
+        x: 0.999624215036,
+        z: 3.59610289,
+    },
+    CurvePoint {
+        x: 0.999673508983,
+        z: 3.66639077,
+    },
+    CurvePoint {
+        x: 0.999716338261,
+        z: 3.73668188,
+    },
+    CurvePoint {
+        x: 0.999753550459,
+        z: 3.80697579,
+    },
+    CurvePoint {
+        x: 0.999785882091,
+        z: 3.87727215,
+    },
+    CurvePoint {
+        x: 0.999813973141,
+        z: 3.94757062,
+    },
+    CurvePoint {
+        x: 0.999838379703,
+        z: 4.01787093,
+    },
+    CurvePoint {
+        x: 0.999859584970,
+        z: 4.08817284,
+    },
+    CurvePoint {
+        x: 0.999878008788,
+        z: 4.15847614,
+    },
+    CurvePoint {
+        x: 0.999894015951,
+        z: 4.22878064,
+    },
+    CurvePoint {
+        x: 0.999907923421,
+        z: 4.29908620,
+    },
+    CurvePoint {
+        x: 0.999920006597,
+        z: 4.36939266,
+    },
+    CurvePoint {
+        x: 0.999930504759,
+        z: 4.43969992,
+    },
+    CurvePoint {
+        x: 0.999939625809,
+        z: 4.51000786,
+    },
+    CurvePoint {
+        x: 0.999947550381,
+        z: 4.58031641,
+    },
+    CurvePoint {
+        x: 0.999954435420,
+        z: 4.65062547,
+    },
+    CurvePoint {
+        x: 0.999960417283,
+        z: 4.72093498,
+    },
+    CurvePoint {
+        x: 0.999965614444,
+        z: 4.79124489,
+    },
+    CurvePoint {
+        x: 0.999970129838,
+        z: 4.86155513,
+    },
+    CurvePoint {
+        x: 0.999974052897,
+        z: 4.93186567,
+    },
+    CurvePoint {
+        x: 0.999977461322,
+        z: 5.00217647,
+    },
+    CurvePoint {
+        x: 0.999980422622,
+        z: 5.07248749,
+    },
+    CurvePoint {
+        x: 0.999982995451,
+        z: 5.14279871,
+    },
+    CurvePoint {
+        x: 0.999985230769,
+        z: 5.21311009,
+    },
+    CurvePoint {
+        x: 0.999987172851,
+        z: 5.28342162,
+    },
+    CurvePoint {
+        x: 0.999988860164,
+        z: 5.35373328,
+    },
+    CurvePoint {
+        x: 0.999990326129,
+        z: 5.42404505,
+    },
+    CurvePoint {
+        x: 0.999991599784,
+        z: 5.49435691,
+    },
+    CurvePoint {
+        x: 0.999992706355,
+        z: 5.56466886,
+    },
+    CurvePoint {
+        x: 0.999993667762,
+        z: 5.63498088,
+    },
+    CurvePoint {
+        x: 0.999994503048,
+        z: 5.70529296,
+    },
+    CurvePoint {
+        x: 0.999995228757,
+        z: 5.77560510,
+    },
+    CurvePoint {
+        x: 0.999995859265,
+        z: 5.84591728,
+    },
+    CurvePoint {
+        x: 0.999996407059,
+        z: 5.91622951,
+    },
+    CurvePoint {
+        x: 0.999996882992,
+        z: 5.98654177,
+    },
+    CurvePoint {
+        x: 0.999997296489,
+        z: 6.05685406,
+    },
+    CurvePoint {
+        x: 0.999997655742,
+        z: 6.12716639,
+    },
+    CurvePoint {
+        x: 0.999997967867,
+        z: 6.19747873,
+    },
+    CurvePoint {
+        x: 0.999998239046,
+        z: 6.26779109,
+    },
+    CurvePoint {
+        x: 0.999998474650,
+        z: 6.33810348,
+    },
+    CurvePoint {
+        x: 0.999998679346,
+        z: 6.40841587,
+    },
+    CurvePoint {
+        x: 0.999998857189,
+        z: 6.47872829,
+    },
+    CurvePoint {
+        x: 0.999999011703,
+        z: 6.54904071,
+    },
+    CurvePoint {
+        x: 0.999999145946,
+        z: 6.61935314,
+    },
+    CurvePoint {
+        x: 0.999999262578,
+        z: 6.68966558,
+    },
+    CurvePoint {
+        x: 0.999999363911,
+        z: 6.75997803,
+    },
+    CurvePoint {
+        x: 0.999999451949,
+        z: 6.83029049,
+    },
+    CurvePoint {
+        x: 0.999999528439,
+        z: 6.90060295,
+    },
+    CurvePoint {
+        x: 0.999999594894,
+        z: 6.97091542,
+    },
+    CurvePoint {
+        x: 0.999999652632,
+        z: 7.04122789,
+    },
+    CurvePoint {
+        x: 0.999999702795,
+        z: 7.11154036,
+    },
+    CurvePoint {
+        x: 0.999999746377,
+        z: 7.18185284,
+    },
+    CurvePoint {
+        x: 0.999999784242,
+        z: 7.25216532,
+    },
+    CurvePoint {
+        x: 0.999999817140,
+        z: 7.32247781,
+    },
+    CurvePoint {
+        x: 0.999999845722,
+        z: 7.39279029,
+    },
+    CurvePoint {
+        x: 0.999999870554,
+        z: 7.46310278,
+    },
+    CurvePoint {
+        x: 0.999999892129,
+        z: 7.53341527,
+    },
+    CurvePoint {
+        x: 0.999999910874,
+        z: 7.60372776,
+    },
+    CurvePoint {
+        x: 0.999999927159,
+        z: 7.67404025,
+    },
+    CurvePoint {
+        x: 0.999999941309,
+        z: 7.74435274,
+    },
+    CurvePoint {
+        x: 0.999999953602,
+        z: 7.81466524,
+    },
+    CurvePoint {
+        x: 0.999999964282,
+        z: 7.88497773,
+    },
+    CurvePoint {
+        x: 0.999999973561,
+        z: 7.95529023,
+    },
+    CurvePoint {
+        x: 0.999999981623,
+        z: 8.02560272,
+    },
+    CurvePoint {
+        x: 0.999999988627,
+        z: 8.09591522,
+    },
+    CurvePoint {
+        x: 0.999999994713,
+        z: 8.16622772,
+    },
+    CurvePoint {
+        x: 1.000000000000,
+        z: 8.23654021,
+    },
+];
+
+const CURVE_MAX_INDEX: usize = CURVE_POINTS.len() - 1;
+
+/// Interpolate a point on the optimal-cost curve at arc-length distance `d`.
+/// Uses quadratic Bézier interpolation with Catmull-Rom tangent estimation.
+fn get_curve_point(d: f64) -> CurvePoint {
+    let max_d = CURVE_MAX_INDEX as f64 * CURVE_DELTA_DIST;
+    if d.abs() >= max_d {
+        let mut cp = CURVE_POINTS[CURVE_MAX_INDEX];
+        if d < 0.0 {
+            cp.x = -cp.x;
+        }
+        cp.z += d.abs() - max_d;
+        return cp;
+    }
+
+    let t_raw = d.abs() / CURVE_DELTA_DIST;
+    let (i, t) = if t_raw.is_nan() || t_raw <= 0.0 {
+        (0, 0.0)
+    } else if t_raw >= CURVE_MAX_INDEX as f64 {
+        (CURVE_MAX_INDEX - 1, 1.0)
+    } else {
+        let i = (t_raw as usize).min(CURVE_MAX_INDEX - 1);
+        (i, t_raw - i as f64)
+    };
+
+    let x1 = CURVE_POINTS[i].x;
+    let z1 = CURVE_POINTS[i].z;
+    let x2 = CURVE_POINTS[i + 1].x;
+    let z2 = CURVE_POINTS[i + 1].z;
+
+    // Catmull-Rom tangent estimation
+    let (dx1, dz1) = if i == 0 {
+        (CURVE_DELTA_DIST * 0.5, 0.0)
+    } else {
+        (
+            (x2 - CURVE_POINTS[i - 1].x) * 0.25,
+            (z2 - CURVE_POINTS[i - 1].z) * 0.25,
+        )
+    };
+
+    let (dx2, dz2) = if i + 2 > CURVE_MAX_INDEX {
+        (0.0, CURVE_DELTA_DIST * 0.5)
+    } else {
+        (
+            (CURVE_POINTS[i + 2].x - x1) * 0.25,
+            (CURVE_POINTS[i + 2].z - z1) * 0.25,
+        )
+    };
+
+    // Quadratic Bézier with mid-control point from tangents
+    let x3 = (x1 + dx1 + x2 - dx2) * 0.5;
+    let z3 = (z1 + dz1 + z2 - dz2) * 0.5;
+
+    let c1 = (1.0 - t) * (1.0 - t);
+    let c2 = t * t;
+    let c3 = 2.0 * t * (1.0 - t);
+
+    let mut cp = CurvePoint {
+        x: x1 * c1 + x2 * c2 + x3 * c3,
+        z: z1 * c1 + z2 * c2 + z3 * c3,
+    };
+    if d < 0.0 {
+        cp.x = -cp.x;
+    }
+    cp
+}
+
+/// Find curve position and remaining distance for target at (x, z).
+/// Returns (curve_pos, curve_dist) where curve_pos is arc-length position
+/// on the curve at the "start" point, and curve_dist is the remaining
+/// arc-length to the "end" point.
+fn get_curve_pos_dist(mut x: f64, mut z: f64) -> (f64, f64) {
+    let mut neg = false;
+    let mut swap = false;
+
+    if z < 0.0 {
+        z = -z;
+        x /= z.exp();
+        neg = true;
+        swap = true;
+    }
+    if x < 0.0 {
+        x = -x;
+        neg = !neg;
+    }
+
+    let max_curve_d = CURVE_MAX_INDEX as f64 * CURVE_DELTA_DIST;
+
+    // Binary search for curve position `a` and end position `b`
+    let mut a_min = -x;
+    let mut a_max = max_curve_d;
+
+    let mut a = 0.0_f64;
+    let mut tp = CurvePoint { x: 0.0, z: 0.0 };
+
+    for i in 0..49 {
+        a = (a_min + a_max) * 0.5;
+        let ap = get_curve_point(a);
+        tp.x = ap.x + x / ap.z.exp();
+        tp.z = ap.z + z;
+
+        if a_max - a_min < 1e-12 || i >= 48 {
+            break;
+        }
+        if tp.x <= 0.0 {
+            a_min = a;
+            continue;
+        }
+        if tp.x >= CURVE_POINTS[CURVE_MAX_INDEX].x {
+            a_max = a;
+            continue;
+        }
+
+        let mut b_min = tp.z;
+        let mut b_max = tp.z + tp.x;
+        for j in 0..49 {
+            let b = (b_min + b_max) * 0.5;
+            let bp = get_curve_point(b);
+            if b_max - b_min < 1e-12 || j >= 48 {
+                break;
+            }
+            if tp.z > bp.z {
+                if tp.x <= bp.x {
+                    break;
+                }
+                b_min = b;
+            } else {
+                if tp.x >= bp.x {
+                    break;
+                }
+                b_max = b;
+            }
+        }
+        let bp = get_curve_point((b_min + b_max) * 0.5);
+        if tp.z > bp.z {
+            a_min = a;
+        } else {
+            a_max = a;
+        }
+    }
+
+    // Final binary search for b
+    let mut b_min = tp.z;
+    let mut b_max = tp.z + tp.x;
+    if b_min < a + z {
+        b_min = a + z;
+    }
+    if b_max < b_min {
+        b_max = b_min;
+    }
+    for j in 0..49 {
+        let b = (b_min + b_max) * 0.5;
+        if b_max - b_min < 1e-12 || j >= 48 {
+            break;
+        }
+        let bp = get_curve_point(b);
+        if tp.z > bp.z {
+            b_min = b;
+        } else {
+            b_max = b;
+        }
+    }
+    let b = (b_min + b_max) * 0.5;
+
+    let (mut a_out, mut b_out) = (a, b);
+    if neg {
+        a_out = -a_out;
+        b_out = -b_out;
+    }
+    if swap {
+        (b_out, a_out - b_out)
+    } else {
+        (a_out, b_out - a_out)
+    }
+}
+
+/// Direct-line distance from origin to (x, z) in the cost metric.
+fn get_direct_dist(x: f64, z: f64) -> f64 {
+    if z.abs() < 0.1 {
+        (x * x + z * z).sqrt()
+    } else {
+        let fix_x = x / (1.0 - (-z).exp());
+        z.abs() * (fix_x * fix_x + 1.0).sqrt()
+    }
+}
+
+/// Point on direct line from origin to (x, z) at distance d.
+fn get_direct_point(x: f64, z: f64, d: f64) -> (f64, f64) {
+    if z.abs() < 0.1 {
+        let dist = (x * x + z * z).sqrt();
+        let t = if dist < 1e-100 { 0.0 } else { d / dist };
+        (x * t, z * t)
+    } else {
+        let fix_x = x / (1.0 - (-z).exp());
+        let dist = z.abs() * (fix_x * fix_x + 1.0).sqrt();
+        let t = d / dist;
+        (fix_x * (1.0 - (-z * t).exp()), z * t)
+    }
+}
+
+// ─── Speed management ──────────────────────────────────────────
+
 impl VisitingViewAnimator {
-    /// Compute the S-curve speed factor for the current animation progress.
-    ///
-    /// Uses a smoothstep-like profile: accelerate during the first half of
-    /// the remaining distance, then decelerate during the second half.
-    /// `remaining` is the normalised distance to target (0..inf),
-    /// returns a speed multiplier in 0..1.
-    fn s_curve_speed(&self, remaining: f64) -> f64 {
-        // Ramp up from 0 to 1 over the range 0..1, stay at 1 for 1..large,
-        // then decelerate as remaining shrinks below a threshold.
-        // We blend acceleration (near start) with deceleration (near end).
-        let accel_factor = (self.elapsed * self.acceleration).min(1.0);
-        // Deceleration: as remaining distance shrinks, slow down proportionally
-        let decel_factor = remaining.min(1.0);
-        // S-curve: the effective factor is the minimum of both ramps,
-        // smoothed with a cubic Hermite (smoothstep).
-        let raw = accel_factor.min(decel_factor);
-        // Smoothstep for a nicer S-curve profile
-        raw * raw * (3.0 - 2.0 * raw)
+    fn update_speed(&mut self, pos: f64, dist: f64, panels_after: usize, dist_final: f64, dt: f64) {
+        self.speed += self.acceleration * dt;
+
+        // Limit by remaining distance (avoid overshoot)
+        let s = (dist + panels_after as f64 * 2.0_f64.ln() + dist_final).max(0.0);
+        let v = (self.acceleration * s * 2.0).sqrt();
+        if self.speed > v {
+            self.speed = v;
+        }
+
+        // Limit at cusp
+        if pos < 0.0 {
+            let v = (self.acceleration * (-pos) * 2.0 + self.max_cusp_speed * self.max_cusp_speed)
+                .sqrt();
+            if self.speed > v {
+                self.speed = v;
+            }
+        }
+
+        if self.speed > self.max_absolute_speed {
+            self.speed = self.max_absolute_speed;
+        }
+
+        if self.speed > dist / dt {
+            self.speed = dist / dt;
+        }
+    }
+
+    /// Walk the panel tree identity path, returning the deepest existing panel,
+    /// target coordinates, depth reached, and panels remaining.
+    fn get_nearest_existing_panel(&self, view: &View, tree: &PanelTree) -> Option<NearestPanel> {
+        let root = view.root();
+        if self.names.is_empty() {
+            return None;
+        }
+        let root_name = tree.get(root).map(|p| p.name.as_str()).unwrap_or("");
+        if self.names[0] != root_name {
+            return None;
+        }
+
+        let mut panel = root;
+        let mut i = 1;
+        while i < self.names.len() {
+            if let Some(child) = tree.find_child_by_name(panel, &self.names[i]) {
+                panel = child;
+                i += 1;
+            } else {
+                break;
+            }
+        }
+
+        let depth = i - 1;
+        let panels_after = self.names.len() - i;
+
+        let (target_x, target_y, target_a, dist_final);
+        if panels_after > 0 {
+            // Didn't reach the goal — visit nearest existing panel fullsized
+            let coords = view.calc_visit_fullsized_coords(tree, panel, false);
+            target_x = coords.0;
+            target_y = coords.1;
+            target_a = coords.2;
+            dist_final = match self.visit_type {
+                VisitType::VisitRel if self.rel_a > 0.0 && self.rel_a < 1.0 => {
+                    (1.0 / self.rel_a.sqrt()).ln()
+                }
+                _ => 0.0,
+            };
+        } else {
+            // Reached the goal panel
+            match self.visit_type {
+                VisitType::Visit => {
+                    let coords = view.calc_visit_coords(tree, panel);
+                    target_x = coords.0;
+                    target_y = coords.1;
+                    target_a = coords.2;
+                }
+                VisitType::VisitRel => {
+                    if self.rel_a <= 0.0 {
+                        let coords =
+                            view.calc_visit_fullsized_coords(tree, panel, self.rel_a < -0.9);
+                        target_x = coords.0;
+                        target_y = coords.1;
+                        target_a = coords.2;
+                    } else {
+                        target_x = self.rel_x;
+                        target_y = self.rel_y;
+                        target_a = self.rel_a;
+                    }
+                }
+                VisitType::VisitFullsized => {
+                    let coords = view.calc_visit_fullsized_coords(tree, panel, self.utilize_view);
+                    target_x = coords.0;
+                    target_y = coords.1;
+                    target_a = coords.2;
+                }
+            }
+            dist_final = 0.0;
+        }
+
+        Some(NearestPanel {
+            panel,
+            target_x,
+            target_y,
+            target_a,
+            depth,
+            panels_after,
+            dist_final,
+        })
+    }
+
+    /// Compute 3D distance from current view state to target panel coordinates.
+    /// Returns (dir_x, dir_y, dist_xy, dist_z) in the curve's cost space.
+    fn get_distance_to(
+        &self,
+        view: &View,
+        _tree: &PanelTree,
+        _panel: super::tree::PanelId,
+        target_x: f64,
+        target_y: f64,
+        target_a: f64,
+    ) -> (f64, f64, f64, f64) {
+        let (vw, vh) = view.viewport_size();
+        let zflpp = view.get_zoom_factor_log_per_pixel();
+
+        // Current view state
+        let current = view.current_visit();
+
+        // Compute where the panel IS in current viewport (via viewed coords)
+        // and where it SHOULD BE (target), then compute the distance.
+
+        // Target: compute the viewport rect that the visited panel would occupy
+        // at (target_x, target_y, target_a)
+        let current_scale = current.rel_a.max(1e-100).sqrt();
+
+        // Distance in rel_x, rel_y space — convert to pixel-based distance
+        let dx_rel = target_x - current.rel_x;
+        let dy_rel = target_y - current.rel_y;
+
+        // Convert to pixel distance, normalized by zflpp
+        let dx = dx_rel * vw * current_scale * zflpp;
+        let dy = dy_rel * vh * current_scale * zflpp;
+
+        // Zoom distance in curve space: 0.5 * ln(target/current).
+        // The factor of 0.5 maps the area ratio to linear scale (C++ uses sqrt
+        // of area fraction internally). No zflpp scaling — the curve operates
+        // in abstract (scroll, log-zoom) space, not pixel space.
+        let dz = if current.rel_a > 1e-100 && target_a > 1e-100 {
+            0.5 * (target_a / current.rel_a).ln()
+        } else {
+            0.0
+        };
+
+        let extreme_dist = 50.0;
+        let dz = dz.clamp(-extreme_dist, extreme_dist);
+
+        let dxy = (dx * dx + dy * dy).sqrt();
+        let (dir_x, dir_y) = if dxy < 1e-100 {
+            (1.0, 0.0)
+        } else {
+            (dx / dxy, dy / dxy)
+        };
+
+        (dir_x, dir_y, dxy, dz)
     }
 }
 
@@ -704,319 +1693,306 @@ impl ViewAnimator for VisitingViewAnimator {
             return false;
         }
 
-        match self.visiting_state() {
+        match self.state {
             VisitingState::NoGoal | VisitingState::GivenUp | VisitingState::GoalReached => {
                 return false;
             }
             VisitingState::GivingUp => {
-                // Still showing "Not found" — just stay active
-                return true;
-            }
-            VisitingState::Seek => {
-                // Seek state — track elapsed for give-up timeout
-                self.elapsed += dt;
-                if self.elapsed > 3.0 {
-                    self.state = VisitingState::GivingUp;
-                }
-                return true;
-            }
-            VisitingState::Curve | VisitingState::Direct => {
-                // Continue with animation below
-            }
-        }
-
-        self.elapsed += dt;
-
-        // Give-up timeout: after 3 seconds, snap to target
-        if self.elapsed > 3.0 {
-            if let Some(state) = view.visit_stack().last().cloned() {
-                let log_target = self.target_a.max(0.001).ln();
-                let dx = (self.target_x - state.rel_x) * view.viewport_size().0.max(1.0);
-                let dy = (self.target_y - state.rel_y) * view.viewport_size().1.max(1.0);
-                let dz = if state.rel_a > 0.0 {
-                    log_target - state.rel_a.ln()
-                } else {
-                    0.0
-                };
-                let (vw, vh) = view.viewport_size();
-                view.raw_scroll_and_zoom(tree, vw * 0.5, vh * 0.5, dx, dy, dz);
-            }
-            self.active = false;
-            self.set_visiting_state(VisitingState::GoalReached);
-            return false;
-        }
-
-        if let Some(state) = view.visit_stack().last().cloned() {
-            let log_a = state.rel_a.ln();
-            let log_target = self.target_a.max(0.001).ln();
-
-            // Compute remaining distance (normalised)
-            let dx_rem = (self.target_x - state.rel_x).abs();
-            let dy_rem = (self.target_y - state.rel_y).abs();
-            let dz_rem = (log_target - log_a).abs();
-            let remaining = dx_rem + dy_rem + dz_rem;
-
-            // S-curve speed: ramp up then decelerate
-            let s_factor = self.s_curve_speed(remaining);
-            // Effective speed blends base speed with S-curve modulation
-            let effective_speed = self.speed * (0.1 + 0.9 * s_factor);
-            self.current_speed = effective_speed;
-
-            // Exponential decay interpolation (framerate-independent)
-            // t approaches 1 as effective_speed * dt grows
-            let t = (1.0 - (-effective_speed * dt).exp()).min(1.0);
-
-            let new_x = lerp(state.rel_x, self.target_x, t);
-            let new_y = lerp(state.rel_y, self.target_y, t);
-            let new_log_a = lerp(log_a, log_target, t);
-            let new_a = new_log_a.exp();
-
-            let dx = (new_x - state.rel_x) * view.viewport_size().0.max(1.0);
-            let dy = (new_y - state.rel_y) * view.viewport_size().1.max(1.0);
-            let dz = if state.rel_a > 0.0 {
-                (new_a / state.rel_a).ln()
-            } else {
-                0.0
-            };
-
-            let (vw, vh) = view.viewport_size();
-            view.raw_scroll_and_zoom(tree, vw * 0.5, vh * 0.5, dx, dy, dz);
-
-            // Transition from Curve to Direct when close enough
-            if self.visiting_state() == VisitingState::Curve {
-                let dist = (new_x - self.target_x).abs()
-                    + (new_y - self.target_y).abs()
-                    + (new_log_a - log_target).abs();
-                if dist < 0.1 {
-                    self.set_visiting_state(VisitingState::Direct);
-                }
-            }
-
-            // Blocked-movement detection: if position barely changed for 3+ frames, give up
-            if self.prev_x.is_finite() {
-                let progress = (new_x - self.prev_x).abs()
-                    + (new_y - self.prev_y).abs()
-                    + (new_log_a - self.prev_log_a).abs();
-                if progress < 1e-10 {
-                    self.stall_frames += 1;
-                } else {
-                    self.stall_frames = 0;
-                }
-                if self.stall_frames >= 3 {
-                    self.active = false;
-                    self.set_visiting_state(VisitingState::GoalReached);
+                self.give_up_clock += dt;
+                if self.give_up_clock > 1.5 {
+                    self.state = VisitingState::GivenUp;
                     return false;
                 }
+                return true;
             }
-            self.prev_x = new_x;
-            self.prev_y = new_y;
-            self.prev_log_a = new_log_a;
+            VisitingState::Curve | VisitingState::Direct | VisitingState::Seek => {}
+        }
 
-            // Tight convergence thresholds (C++ parity: pos < 1e-6, area < 1e-12)
-            if (new_x - self.target_x).abs() < 1e-6
-                && (new_y - self.target_y).abs() < 1e-6
-                && (new_log_a - log_target).abs() < 1e-12
-            {
-                self.active = false;
-                self.set_visiting_state(VisitingState::GoalReached);
+        // Find nearest existing panel on the identity path
+        let nep = match self.get_nearest_existing_panel(view, tree) {
+            Some(v) => v,
+            None => {
+                self.state = VisitingState::GivingUp;
+                self.give_up_clock = 0.0;
+                return true;
+            }
+        };
+
+        if self.animated {
+            if self.max_depth_seen < nep.depth as i32 {
+                if self.state == VisitingState::Seek {
+                    view.set_seek_pos(tree, None, "");
+                    self.state = VisitingState::Curve;
+                }
+                self.max_depth_seen = nep.depth as i32;
+            }
+        } else {
+            self.state = VisitingState::Seek;
+            if self.max_depth_seen < nep.depth as i32 {
+                self.max_depth_seen = nep.depth as i32;
             }
         }
 
-        self.active
+        if self.state == VisitingState::Curve || self.state == VisitingState::Direct {
+            let (dir_x, dir_y, dist_xy, dist_z) = self.get_distance_to(
+                view,
+                tree,
+                nep.panel,
+                nep.target_x,
+                nep.target_y,
+                nep.target_a,
+            );
+
+            let (curve_pos, curve_dist) = if self.state == VisitingState::Direct {
+                (0.0, get_direct_dist(dist_xy, dist_z))
+            } else {
+                get_curve_pos_dist(dist_xy, dist_z)
+            };
+
+            self.update_speed(curve_pos, curve_dist, nep.panels_after, nep.dist_final, dt);
+
+            let (delta_xy, delta_z) = if self.state == VisitingState::Direct {
+                get_direct_point(dist_xy, dist_z, self.speed * dt)
+            } else {
+                let cp1 = get_curve_point(curve_pos);
+                let cp2 = get_curve_point(curve_pos + self.speed * dt);
+                ((cp2.x - cp1.x) * cp1.z.exp(), cp2.z - cp1.z)
+            };
+
+            // Convert curve deltas back to raw_scroll_and_zoom units.
+            // Scroll: curve scroll distance → pixel scroll via /zflpp (matching C++).
+            // Zoom: curve z-delta → Rust log-zoom via *2.0. The factor of 2 inverts
+            // the 0.5 from the distance formula (area → linear scale mapping).
+            let zflpp = view.get_zoom_factor_log_per_pixel();
+            let delta_xy_px = delta_xy / zflpp;
+            let delta_z_view = 2.0 * delta_z;
+            let delta_x = dir_x * delta_xy_px;
+            let delta_y = dir_y * delta_xy_px;
+
+            let (vw, vh) = view.viewport_size();
+            let done =
+                view.raw_scroll_and_zoom(tree, vw * 0.5, vh * 0.5, delta_x, delta_y, delta_z_view);
+
+            let delta_mag =
+                (delta_x * delta_x + delta_y * delta_y + delta_z_view * delta_z_view).sqrt();
+            let done_mag = (done[0] * done[0] + done[1] * done[1] + done[2] * done[2]).sqrt();
+
+            if curve_dist <= 1e-6 {
+                if nep.panels_after > 0 {
+                    self.state = VisitingState::Seek;
+                } else {
+                    self.state = VisitingState::GoalReached;
+                    return false;
+                }
+            } else if done_mag < delta_mag * 0.2 {
+                if self.state == VisitingState::Curve {
+                    self.state = VisitingState::Direct;
+                } else {
+                    self.state = VisitingState::Seek;
+                }
+            }
+        }
+
+        if self.state == VisitingState::Seek {
+            if nep.depth + 1 >= self.names.len() {
+                // All panels exist — visit the target
+                view.visit(nep.panel, nep.target_x, nep.target_y, nep.target_a);
+                view.update_viewing(tree);
+                self.state = VisitingState::GoalReached;
+                return false;
+            } else if view.seek_pos_panel() != Some(nep.panel) {
+                view.set_seek_pos(tree, Some(nep.panel), &self.names[nep.depth + 1]);
+                view.visit_fullsized(tree, nep.panel);
+                view.update_viewing(tree);
+                self.time_slices_without_hope = 4;
+            } else if view.is_hope_for_seeking(tree) {
+                self.time_slices_without_hope = 0;
+            } else {
+                self.time_slices_without_hope += 1;
+                if self.time_slices_without_hope > 10 {
+                    self.state = VisitingState::GivingUp;
+                    self.give_up_clock = 0.0;
+                }
+            }
+        }
+
+        true
     }
 
     fn is_active(&self) -> bool {
         self.active
+            && !matches!(
+                self.state,
+                VisitingState::NoGoal | VisitingState::GoalReached | VisitingState::GivenUp
+            )
     }
 
     fn stop(&mut self) {
         self.active = false;
-        self.current_speed = 0.0;
-        self.set_visiting_state(VisitingState::NoGoal);
+        self.speed = 0.0;
+        self.state = VisitingState::NoGoal;
     }
 }
 
-/// Per-dimension linear friction: reduces signed velocity toward zero by `a * dt`.
-fn apply_friction_1d(v: f64, a: f64, dt: f64) -> f64 {
-    if v - a * dt > 0.0 {
-        v - a * dt
-    } else if v + a * dt < 0.0 {
-        v + a * dt
-    } else {
-        0.0
-    }
-}
-
-fn lerp(a: f64, b: f64, t: f64) -> f64 {
-    a + (b - a) * t
-}
-
-/// State for the swiping (touch/mouse drag) animator.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum SwipingState {
-    /// No active swipe.
-    Inactive,
-    /// Finger/mouse is down, following the drag.
-    Tracking,
-    /// Released with velocity, coasting to a stop.
-    Coasting,
-}
-
-/// Swiping view animator — handles touch/mouse drag with kinetic coasting.
+/// Swiping view animator — spring-based drag with kinetic coasting.
 ///
-/// During tracking, accumulates velocity from position deltas.
-/// On release, coasts with friction deceleration until velocity drops below threshold.
+/// Matches C++ `emSwipingViewAnimator` architecture: composes a
+/// `KineticViewAnimator` with a critically-damped spring model.
+///
+/// **Gripped**: User drags the view. Accumulated grip distance is stored as
+/// spring extension. Each frame, the spring converts extension into kinetic
+/// velocity. Friction is disabled during grip.
+///
+/// **Released**: Spring extension zeroed, velocity transferred to kinetic
+/// animator which coasts with friction deceleration.
+///
+/// Supports 3D (scroll X, scroll Y, zoom Z).
 pub struct SwipingViewAnimator {
-    state: SwipingState,
-    velocity_x: f64,
-    velocity_y: f64,
-    /// Friction factor applied per frame (typical: 0.95).
-    friction_factor: f64,
-    /// Velocity threshold below which coasting stops.
-    stop_threshold: f64,
-    /// Previous tracking position for delta computation.
-    last_x: f64,
-    last_y: f64,
-    /// Smoothed velocity accumulator (exponential moving average).
-    smoothed_vx: f64,
-    smoothed_vy: f64,
+    inner: KineticViewAnimator,
+    gripped: bool,
+    spring_extension: [f64; 3],
+    instantaneous_velocity: [f64; 3],
+    spring_constant: f64,
+    busy: bool,
 }
 
 impl SwipingViewAnimator {
-    pub fn new() -> Self {
+    pub fn new(friction: f64) -> Self {
         Self {
-            state: SwipingState::Inactive,
-            velocity_x: 0.0,
-            velocity_y: 0.0,
-            friction_factor: 0.95,
-            stop_threshold: 0.5,
-            last_x: 0.0,
-            last_y: 0.0,
-            smoothed_vx: 0.0,
-            smoothed_vy: 0.0,
+            inner: KineticViewAnimator::new(0.0, 0.0, 0.0, friction),
+            gripped: false,
+            spring_extension: [0.0; 3],
+            instantaneous_velocity: [0.0; 3],
+            spring_constant: 1.0,
+            busy: false,
         }
     }
 
-    /// Current swiping state.
-    pub fn state(&self) -> SwipingState {
-        self.state
-    }
-
-    /// Set the friction factor (0..1, higher = less friction).
-    pub fn set_friction_factor(&mut self, factor: f64) {
-        self.friction_factor = factor.clamp(0.0, 1.0);
-    }
-
-    /// Set the velocity threshold below which coasting stops.
-    pub fn set_stop_threshold(&mut self, threshold: f64) {
-        self.stop_threshold = threshold;
-    }
-
-    /// Begin tracking a drag at the given position.
-    pub fn begin_tracking(&mut self, x: f64, y: f64) {
-        self.state = SwipingState::Tracking;
-        self.last_x = x;
-        self.last_y = y;
-        self.smoothed_vx = 0.0;
-        self.smoothed_vy = 0.0;
-        self.velocity_x = 0.0;
-        self.velocity_y = 0.0;
-    }
-
-    /// Update tracking position. Call each frame while dragging.
-    /// `dt` is the frame delta in seconds (must be > 0).
-    pub fn update_tracking(&mut self, x: f64, y: f64, dt: f64) {
-        if self.state != SwipingState::Tracking {
-            return;
+    /// Toggle grip state. On release, spring extension is zeroed and
+    /// instantaneous velocity copies from kinetic velocity for coasting.
+    pub fn set_gripped(&mut self, gripped: bool) {
+        if self.gripped != gripped {
+            self.gripped = gripped;
+            if !self.gripped {
+                self.spring_extension = [0.0; 3];
+                let (vx, vy, vz) = self.inner.velocity();
+                self.instantaneous_velocity = [vx, vy, vz];
+            }
         }
-        let dt_safe = dt.max(1e-6);
-        let instant_vx = (x - self.last_x) / dt_safe;
-        let instant_vy = (y - self.last_y) / dt_safe;
-        // Exponential moving average for smooth velocity
-        let alpha = 0.3;
-        self.smoothed_vx = lerp(self.smoothed_vx, instant_vx, alpha);
-        self.smoothed_vy = lerp(self.smoothed_vy, instant_vy, alpha);
-        self.last_x = x;
-        self.last_y = y;
     }
 
-    /// End tracking and begin coasting with the accumulated velocity.
-    pub fn end_tracking(&mut self) {
-        if self.state != SwipingState::Tracking {
-            return;
+    /// Whether the view is currently gripped.
+    pub fn is_gripped(&self) -> bool {
+        self.gripped
+    }
+
+    /// Add distance to spring extension in the given dimension (0=X, 1=Y, 2=Z).
+    pub fn move_grip(&mut self, dimension: usize, distance: f64) {
+        if self.gripped && dimension < 3 {
+            self.spring_extension[dimension] += distance;
+            self.update_busy_state();
         }
-        self.velocity_x = self.smoothed_vx;
-        self.velocity_y = self.smoothed_vy;
-        let speed = (self.velocity_x * self.velocity_x + self.velocity_y * self.velocity_y).sqrt();
-        if speed < self.stop_threshold {
-            self.state = SwipingState::Inactive;
+    }
+
+    /// Set the spring constant (stiffness). Higher = stiffer, less lag.
+    pub fn set_spring_constant(&mut self, k: f64) {
+        self.spring_constant = k;
+    }
+
+    /// Absolute spring extension magnitude.
+    pub fn abs_spring_extension(&self) -> f64 {
+        (self.spring_extension[0] * self.spring_extension[0]
+            + self.spring_extension[1] * self.spring_extension[1]
+            + self.spring_extension[2] * self.spring_extension[2])
+            .sqrt()
+    }
+
+    /// Access the inner kinetic animator.
+    pub fn inner(&self) -> &KineticViewAnimator {
+        &self.inner
+    }
+
+    /// Mutable access to the inner kinetic animator.
+    pub fn inner_mut(&mut self) -> &mut KineticViewAnimator {
+        &mut self.inner
+    }
+
+    fn update_busy_state(&mut self) {
+        if self.gripped && (self.abs_spring_extension() > 0.01 || self.inner.abs_velocity() > 0.01)
+        {
+            self.busy = true;
         } else {
-            self.state = SwipingState::Coasting;
+            self.spring_extension = [0.0; 3];
+            self.busy = false;
         }
-    }
-
-    /// Current velocity.
-    pub fn velocity(&self) -> (f64, f64) {
-        (self.velocity_x, self.velocity_y)
-    }
-}
-
-impl Default for SwipingViewAnimator {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
 impl ViewAnimator for SwipingViewAnimator {
     fn animate(&mut self, view: &mut View, tree: &mut PanelTree, dt: f64) -> bool {
-        match self.state {
-            SwipingState::Inactive => false,
-            SwipingState::Tracking => {
-                // During tracking, the caller drives position via update_tracking.
-                // Scroll is applied externally. We just stay active.
-                true
+        let base_busy;
+
+        if self.busy && self.gripped {
+            // Critically-damped spring physics per dimension.
+            // Converts spring extension into kinetic velocity.
+            let mut new_vel = [0.0_f64; 3];
+
+            for ((ext, inst_vel), nv) in self
+                .spring_extension
+                .iter_mut()
+                .zip(self.instantaneous_velocity.iter_mut())
+                .zip(new_vel.iter_mut())
+            {
+                let e1 = *ext;
+                let v1 = *inst_vel;
+
+                let (e2, v2) = if self.spring_constant < 1e5 && (e1 / dt).abs() > 20.0 {
+                    // Critically damped spring:
+                    //   e(t) = (e₀ + (e₀ω - v₀)t) · exp(-ωt)
+                    //   v(t) = (v₀ + (e₀ω - v₀)ωt) · exp(-ωt)
+                    // (C++ sign convention: v is retraction velocity)
+                    let w = self.spring_constant.sqrt();
+                    let decay = (-w * dt).exp();
+                    (
+                        (e1 + (e1 * w - v1) * dt) * decay,
+                        (v1 + (e1 * w - v1) * dt * w) * decay,
+                    )
+                } else {
+                    // Spring is too stiff or extension rate too low — snap rigid
+                    (0.0, 0.0)
+                };
+
+                *ext = e2;
+                *inst_vel = v2;
+                *nv = (e1 - e2) / dt;
             }
-            SwipingState::Coasting => {
-                // Apply friction each frame
-                self.velocity_x *= self.friction_factor;
-                self.velocity_y *= self.friction_factor;
 
-                let dx = self.velocity_x * dt;
-                let dy = self.velocity_y * dt;
+            self.inner.set_velocity(new_vel[0], new_vel[1], new_vel[2]);
 
-                if dx.abs() > 0.001 || dy.abs() > 0.001 {
-                    let (vw, vh) = view.viewport_size();
-                    let done = view.raw_scroll_and_zoom(tree, vw * 0.5, vh * 0.5, dx, dy, 0.0);
-                    // Zero blocked dimensions
-                    if done[0].abs() < 0.99 * dx.abs() {
-                        self.velocity_x = 0.0;
-                    }
-                    if done[1].abs() < 0.99 * dy.abs() {
-                        self.velocity_y = 0.0;
-                    }
-                }
-
-                let speed =
-                    (self.velocity_x * self.velocity_x + self.velocity_y * self.velocity_y).sqrt();
-                if speed < self.stop_threshold {
-                    self.velocity_x = 0.0;
-                    self.velocity_y = 0.0;
-                    self.state = SwipingState::Inactive;
-                    return false;
-                }
-                true
-            }
+            // Disable friction during grip, delegate to kinetic for scroll/zoom
+            let saved_friction = self.inner.is_friction_enabled();
+            self.inner.set_friction_enabled(false);
+            base_busy = self.inner.animate(view, tree, dt);
+            self.inner.set_friction_enabled(saved_friction);
+        } else {
+            // Not gripped or not busy — pure kinetic coasting with friction
+            base_busy = self.inner.animate(view, tree, dt);
         }
+
+        self.update_busy_state();
+        self.busy || base_busy
     }
 
     fn is_active(&self) -> bool {
-        self.state != SwipingState::Inactive
+        self.busy || self.inner.is_active()
     }
 
     fn stop(&mut self) {
-        self.velocity_x = 0.0;
-        self.velocity_y = 0.0;
-        self.state = SwipingState::Inactive;
+        self.inner.stop();
+        self.gripped = false;
+        self.spring_extension = [0.0; 3];
+        self.instantaneous_velocity = [0.0; 3];
+        self.busy = false;
     }
 }
 
@@ -1178,8 +2154,12 @@ mod tests {
         view.update_viewing(&mut tree);
 
         let mut anim = VisitingViewAnimator::new(0.1, 0.1, 2.0, 10.0);
+        anim.set_identity("root", "");
+        anim.set_animated(true);
+        anim.set_acceleration(5.0);
+        anim.set_max_absolute_speed(5.0);
 
-        for _ in 0..300 {
+        for _ in 0..500 {
             if !anim.animate(&mut view, &mut tree, 0.016) {
                 break;
             }
@@ -1309,98 +2289,98 @@ mod tests {
     }
 
     #[test]
-    fn visiting_give_up_timeout() {
+    fn visiting_goal_reached_on_target() {
         let (mut tree, mut view) = setup();
         view.update_viewing(&mut tree);
 
-        // Target a position that cannot converge quickly with very low speed
-        let mut anim = VisitingViewAnimator::new(0.5, 0.5, 5.0, 0.001);
+        // Target is the root at current coords — should reach goal quickly
+        let state = view.current_visit().clone();
+        let mut anim = VisitingViewAnimator::new(state.rel_x, state.rel_y, state.rel_a, 5.0);
+        anim.set_identity("root", "");
+        anim.set_animated(true);
+        anim.set_acceleration(5.0);
+        anim.set_max_absolute_speed(5.0);
 
-        // Simulate 4 seconds of frames — should hit the 3s give-up timeout
-        let mut converged = false;
-        for _ in 0..250 {
+        let mut reached = false;
+        for _ in 0..20 {
             if !anim.animate(&mut view, &mut tree, 0.016) {
-                converged = true;
+                reached = true;
                 break;
             }
         }
-        assert!(converged, "Should give up after 3s timeout");
+        assert!(reached, "Should reach goal when already at target");
         assert_eq!(anim.visiting_state(), VisitingState::GoalReached);
     }
 
     #[test]
-    fn visiting_blocked_movement_gives_up() {
+    fn visiting_giving_up_no_panel() {
         let (mut tree, mut view) = setup();
         view.update_viewing(&mut tree);
 
-        // Start at the target — should detect stall and stop
-        let state = view.current_visit().clone();
-        let mut anim = VisitingViewAnimator::new(state.rel_x, state.rel_y, state.rel_a, 10.0);
+        // Target a non-existent panel
+        let mut anim = VisitingViewAnimator::new(0.5, 0.5, 2.0, 5.0);
+        anim.set_identity("nonexistent", "");
+        anim.set_animated(true);
 
-        let mut stopped = false;
-        for _ in 0..20 {
+        anim.animate(&mut view, &mut tree, 0.016);
+        assert_eq!(
+            anim.visiting_state(),
+            VisitingState::GivingUp,
+            "Should give up when panel doesn't exist"
+        );
+
+        // Run through the 1.5s give-up display
+        for _ in 0..200 {
             if !anim.animate(&mut view, &mut tree, 0.016) {
-                stopped = true;
                 break;
             }
         }
-        assert!(stopped, "Should stop when blocked (already at target)");
+        assert_eq!(anim.visiting_state(), VisitingState::GivenUp);
     }
 
     #[test]
-    fn visiting_s_curve_speed_ramps() {
-        let anim = VisitingViewAnimator::new(0.5, 0.5, 2.0, 5.0);
-        // At elapsed=0 (start), s-curve factor should be very small
-        let s0 = anim.s_curve_speed(1.0);
-        assert!(s0 < 0.01, "S-curve should start near zero");
-    }
-
-    #[test]
-    fn visiting_seek_timeout() {
+    fn swiping_grip_spring() {
         let (mut tree, mut view) = setup();
         view.update_viewing(&mut tree);
 
-        let mut anim = VisitingViewAnimator::new(0.5, 0.5, 2.0, 5.0);
-        anim.set_visiting_state(VisitingState::Seek);
-
-        // Run for 4 seconds — should transition to GivingUp
-        for _ in 0..250 {
-            anim.animate(&mut view, &mut tree, 0.016);
-        }
-        assert_eq!(anim.visiting_state(), VisitingState::GivingUp);
-    }
-
-    #[test]
-    fn swiping_tracking_and_coasting() {
-        let (mut tree, mut view) = setup();
-        view.update_viewing(&mut tree);
-
-        let mut anim = SwipingViewAnimator::new();
-        assert_eq!(anim.state(), SwipingState::Inactive);
+        let mut anim = SwipingViewAnimator::new(2.0);
+        anim.inner_mut().set_friction_enabled(true);
+        anim.set_spring_constant(100.0);
         assert!(!anim.is_active());
 
-        // Begin tracking
-        anim.begin_tracking(100.0, 100.0);
-        assert_eq!(anim.state(), SwipingState::Tracking);
+        // Grip and move
+        anim.set_gripped(true);
+        anim.move_grip(0, 50.0); // 50px spring extension in X
         assert!(anim.is_active());
 
-        // Simulate drag with velocity
-        anim.update_tracking(120.0, 100.0, 0.016);
-        anim.update_tracking(140.0, 100.0, 0.016);
-        anim.update_tracking(160.0, 100.0, 0.016);
+        // Animate — spring should produce kinetic velocity
+        anim.animate(&mut view, &mut tree, 0.016);
+        let (vx, _, _) = anim.inner().velocity();
+        assert!(vx.abs() > 0.0, "Spring should produce X velocity");
+    }
 
-        // Release — should enter coasting
-        anim.end_tracking();
-        assert_eq!(anim.state(), SwipingState::Coasting);
-        let (vx, _vy) = anim.velocity();
-        assert!(
-            vx > 0.0,
-            "Should have positive X velocity after rightward drag"
-        );
+    #[test]
+    fn swiping_release_coasts() {
+        let (mut tree, mut view) = setup();
+        view.update_viewing(&mut tree);
 
-        // Run coasting frames until stopped
-        for _ in 0..500 {
-            if !anim.animate(&mut view, &mut tree, 0.016) {
+        let mut anim = SwipingViewAnimator::new(2.0);
+        anim.inner_mut().set_friction_enabled(true);
+        anim.set_spring_constant(100.0);
+        anim.set_gripped(true);
+
+        // Build up velocity via spring
+        for _ in 0..10 {
+            anim.move_grip(0, 5.0);
+            anim.animate(&mut view, &mut tree, 1.0 / 60.0);
+        }
+        let (vx_before, _, _) = anim.inner().velocity();
+        assert!(vx_before.abs() > 1.0, "Should have built up velocity");
+
+        // Release — should coast with friction
+        anim.set_gripped(false);
+        for _ in 0..5000 {
+            if !anim.animate(&mut view, &mut tree, 1.0 / 60.0) {
                 break;
             }
         }
@@ -1408,29 +2388,18 @@ mod tests {
     }
 
     #[test]
-    fn swiping_slow_release_stays_inactive() {
-        let mut anim = SwipingViewAnimator::new();
-        anim.begin_tracking(100.0, 100.0);
-        // No significant movement — velocity stays near zero
-        anim.update_tracking(100.001, 100.0, 0.016);
-        anim.end_tracking();
-        // Should go directly to inactive since velocity is below threshold
-        assert_eq!(anim.state(), SwipingState::Inactive);
-    }
-
-    #[test]
     fn swiping_stop() {
-        let mut anim = SwipingViewAnimator::new();
-        anim.begin_tracking(100.0, 100.0);
-        anim.update_tracking(200.0, 100.0, 0.016);
-        anim.end_tracking();
+        let mut anim = SwipingViewAnimator::new(2.0);
+        anim.set_gripped(true);
+        anim.move_grip(0, 50.0);
         assert!(anim.is_active());
 
         anim.stop();
         assert!(!anim.is_active());
-        let (vx, vy) = anim.velocity();
+        let (vx, vy, vz) = anim.inner().velocity();
         assert_eq!(vx, 0.0);
         assert_eq!(vy, 0.0);
+        assert_eq!(vz, 0.0);
     }
 
     #[test]

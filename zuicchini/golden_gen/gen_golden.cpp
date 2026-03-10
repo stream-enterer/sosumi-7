@@ -25,6 +25,7 @@
 #include <emCore/emStrokeEnd.h>
 #include <emCore/emTexture.h>
 #include <emCore/emView.h>
+#include <emCore/emViewAnimator.h>
 
 // Widget headers for Phase 6 golden tests
 #include <emCore/emBorder.h>
@@ -2302,26 +2303,328 @@ static void gen_widget_splitter_drag() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Phase 8 (Animator trajectory) — PARKED
-//
-// Blocker: C++ emKineticViewAnimator produces zero view state changes in
-// the headless GoldenViewPort setup. Direct view.Scroll() works (changes
-// rel_x via GetVisitedPanel), but the kinetic animator's CycleAnimation()
-// does not produce any scroll delta — even when:
-//   1. The view is zoomed in (rel_a << 1.0, room to scroll)
-//   2. The animator is activated via emViewAnimator::Activate()
-//   3. The scheduler runs 10+ cycles after each step
-//   4. CycleAnimation(dt) is called directly with fixed dt=1/60
-//
-// Root cause is likely that CycleAnimation internally calls
-// emView::RawScrollAndZoom() which requires view-animator interaction
-// state that isn't properly set up in the headless viewport. The view's
-// deferred update architecture (UpdateEngine) may also interfere.
-//
-// Phase 8 cannot proceed without resolving this infrastructure gap.
-// Recommend investigating emViewAnimator::CycleAnimation source code
-// (emViewAnimator.cpp) for the exact early-return condition.
+// Phase 8 — Animator trajectory golden tests
 // ═══════════════════════════════════════════════════════════════════
+
+// Testable subclasses exposing protected CycleAnimation as public.
+
+class TestableKineticAnimator : public emKineticViewAnimator {
+public:
+    TestableKineticAnimator(emView& view) : emKineticViewAnimator(view) {}
+    bool DoCycleAnimation(double dt) { return CycleAnimation(dt); }
+};
+
+class TestableSpeedingAnimator : public emSpeedingViewAnimator {
+public:
+    TestableSpeedingAnimator(emView& view) : emSpeedingViewAnimator(view) {}
+    bool DoCycleAnimation(double dt) { return CycleAnimation(dt); }
+};
+
+class TestableSwipingAnimator : public emSwipingViewAnimator {
+public:
+    TestableSwipingAnimator(emView& view) : emSwipingViewAnimator(view) {}
+    bool DoCycleAnimation(double dt) { return CycleAnimation(dt); }
+};
+
+// Helper: set up a view zoomed in deeply, ready for animator testing.
+// Returns the initial view state (rx, ry, ra) after zoom.
+struct AnimViewSetup {
+    emStandardScheduler sched;
+    emRootContext* ctx;
+    emView* view;
+    GoldenViewPort* vp;
+
+    AnimViewSetup() {
+        ctx = new emRootContext(sched);
+        view = new emView(*ctx, emView::VF_ROOT_SAME_TALLNESS);
+        vp = new GoldenViewPort(*view);
+        auto* root = new Testable<PaintingPanel>(*view, "root",
+                                                 emColor(200, 200, 200, 255));
+        root->DoLayout(0, 0, 1, 0.75);
+        { TerminateEngine ctrl(sched, 30); sched.Run(); }
+        // Zoom in deeply to give room for scrolling
+        view->Zoom(400, 300, 100.0);
+        { TerminateEngine ctrl(sched, 10); sched.Run(); }
+    }
+
+    ~AnimViewSetup() {
+        delete vp;
+        delete view;
+        delete ctx;
+    }
+};
+
+// Run kinetic animator for N steps, collecting VELOCITY trajectory data.
+// Records velocity (not position) to avoid coordinate system differences.
+// Returns [step_count * 3] doubles: (vel_x, vel_y, vel_z) per step.
+static std::vector<double> run_kinetic_trajectory(
+    AnimViewSetup& s, int steps, double vx, double vy, double vz,
+    double friction, bool friction_enabled)
+{
+    TestableKineticAnimator anim(*s.view);
+    anim.Activate();
+    anim.SetFriction(friction);
+    anim.SetFrictionEnabled(friction_enabled);
+    anim.SetVelocity(0, vx);
+    anim.SetVelocity(1, vy);
+    anim.SetVelocity(2, vz);
+
+    std::vector<double> data;
+    data.reserve(steps * 3);
+    const double dt = 1.0 / 60.0;
+
+    for (int i = 0; i < steps; i++) {
+        anim.DoCycleAnimation(dt);
+        data.push_back(anim.GetVelocity(0));
+        data.push_back(anim.GetVelocity(1));
+        data.push_back(anim.GetVelocity(2));
+    }
+
+    anim.Deactivate();
+    return data;
+}
+
+// ─── Kinetic trajectory tests ──────────────────────────────────
+
+static void gen_animator_kinetic_fling_x() {
+    AnimViewSetup s;
+    auto data = run_kinetic_trajectory(s, 60, 100.0, 0.0, 0.0, 2.0, true);
+    dump_trajectory("animator_kinetic_fling_x", data.data(), 60);
+}
+
+static void gen_animator_kinetic_fling_xy() {
+    AnimViewSetup s;
+    auto data = run_kinetic_trajectory(s, 60, 100.0, 50.0, 0.0, 2.0, true);
+    dump_trajectory("animator_kinetic_fling_xy", data.data(), 60);
+}
+
+static void gen_animator_kinetic_zoom() {
+    AnimViewSetup s;
+    auto data = run_kinetic_trajectory(s, 60, 0.0, 0.0, 5.0, 2.0, true);
+    dump_trajectory("animator_kinetic_zoom", data.data(), 60);
+}
+
+// ─── Speeding trajectory tests ──────────────────────────────────
+
+static void gen_animator_speeding_ramp() {
+    AnimViewSetup s;
+    TestableSpeedingAnimator anim(*s.view);
+    anim.Activate();
+    anim.SetFriction(2.0);
+    anim.SetFrictionEnabled(true);
+    anim.SetAcceleration(500.0);
+    anim.SetReverseAcceleration(1000.0);
+    anim.SetTargetVelocity(0, 200.0);
+
+    std::vector<double> data;
+    const double dt = 1.0 / 60.0;
+    for (int i = 0; i < 60; i++) {
+        anim.DoCycleAnimation(dt);
+        data.push_back(anim.GetVelocity(0));
+        data.push_back(anim.GetVelocity(1));
+        data.push_back(anim.GetVelocity(2));
+    }
+    anim.Deactivate();
+    dump_trajectory("animator_speeding_ramp", data.data(), 60);
+}
+
+static void gen_animator_speeding_reverse() {
+    AnimViewSetup s;
+    TestableSpeedingAnimator anim(*s.view);
+    anim.Activate();
+    anim.SetFriction(2.0);
+    anim.SetFrictionEnabled(true);
+    anim.SetAcceleration(500.0);
+    anim.SetReverseAcceleration(1000.0);
+    // Start with positive velocity, target negative
+    anim.SetVelocity(0, 100.0);
+    anim.SetTargetVelocity(0, -200.0);
+
+    std::vector<double> data;
+    const double dt = 1.0 / 60.0;
+    for (int i = 0; i < 60; i++) {
+        anim.DoCycleAnimation(dt);
+        data.push_back(anim.GetVelocity(0));
+        data.push_back(anim.GetVelocity(1));
+        data.push_back(anim.GetVelocity(2));
+    }
+    anim.Deactivate();
+    dump_trajectory("animator_speeding_reverse", data.data(), 60);
+}
+
+static void gen_animator_speeding_release() {
+    AnimViewSetup s;
+    TestableSpeedingAnimator anim(*s.view);
+    anim.Activate();
+    anim.SetFriction(2.0);
+    anim.SetFrictionEnabled(true);
+    anim.SetAcceleration(500.0);
+    anim.SetReverseAcceleration(1000.0);
+    // Ramp up for 30 steps then release (set target to 0)
+    anim.SetTargetVelocity(0, 200.0);
+
+    std::vector<double> data;
+    const double dt = 1.0 / 60.0;
+    for (int i = 0; i < 60; i++) {
+        if (i == 30) {
+            // Release: clear target, let friction decelerate
+            anim.SetTargetVelocity(0, 0.0);
+        }
+        anim.DoCycleAnimation(dt);
+        data.push_back(anim.GetVelocity(0));
+        data.push_back(anim.GetVelocity(1));
+        data.push_back(anim.GetVelocity(2));
+    }
+    anim.Deactivate();
+    dump_trajectory("animator_speeding_release", data.data(), 60);
+}
+
+// ─── Swiping trajectory tests ──────────────────────────────────
+
+static void gen_animator_swiping_grip() {
+    AnimViewSetup s;
+    TestableSwipingAnimator anim(*s.view);
+    anim.Activate();
+    anim.SetFriction(2.0);
+    anim.SetFrictionEnabled(true);
+    anim.SetSpringConstant(100.0);
+    anim.SetGripped(true);
+
+    std::vector<double> data;
+    const double dt = 1.0 / 60.0;
+    // Move grip in X, let spring track
+    for (int i = 0; i < 60; i++) {
+        if (i < 10) {
+            anim.MoveGrip(0, 5.0); // Apply 5px grip per frame for first 10 frames
+        }
+        anim.DoCycleAnimation(dt);
+        data.push_back(anim.GetVelocity(0));
+        data.push_back(anim.GetVelocity(1));
+        data.push_back(anim.GetVelocity(2));
+    }
+    anim.Deactivate();
+    dump_trajectory("animator_swiping_grip", data.data(), 60);
+}
+
+static void gen_animator_swiping_release() {
+    AnimViewSetup s;
+    TestableSwipingAnimator anim(*s.view);
+    anim.Activate();
+    anim.SetFriction(2.0);
+    anim.SetFrictionEnabled(true);
+    anim.SetSpringConstant(100.0);
+    anim.SetGripped(true);
+
+    std::vector<double> data;
+    const double dt = 1.0 / 60.0;
+    // Grip, move, then release
+    for (int i = 0; i < 60; i++) {
+        if (i < 10) {
+            anim.MoveGrip(0, 5.0);
+        }
+        if (i == 20) {
+            anim.SetGripped(false); // Release — coast with kinetic friction
+        }
+        anim.DoCycleAnimation(dt);
+        data.push_back(anim.GetVelocity(0));
+        data.push_back(anim.GetVelocity(1));
+        data.push_back(anim.GetVelocity(2));
+    }
+    anim.Deactivate();
+    dump_trajectory("animator_swiping_release", data.data(), 60);
+}
+
+// ─── Visiting trajectory tests ──────────────────────────────────
+
+class TestableVisitingAnimator : public emVisitingViewAnimator {
+public:
+    TestableVisitingAnimator(emView& view) : emVisitingViewAnimator(view) {}
+    bool DoCycleAnimation(double dt) { return CycleAnimation(dt); }
+};
+
+// Setup for visiting tests — moderate zoom (factor 2) to stay within Rust
+// clamps while still having room to navigate.
+struct VisitAnimViewSetup {
+    emStandardScheduler sched;
+    emRootContext* ctx;
+    emView* view;
+    GoldenViewPort* vp;
+
+    VisitAnimViewSetup() {
+        ctx = new emRootContext(sched);
+        view = new emView(*ctx, emView::VF_ROOT_SAME_TALLNESS);
+        vp = new GoldenViewPort(*view);
+        auto* root = new Testable<PaintingPanel>(*view, "root",
+                                                 emColor(200, 200, 200, 255));
+        root->DoLayout(0, 0, 1, 0.75);
+        { TerminateEngine ctrl(sched, 30); sched.Run(); }
+        // Moderate zoom in: factor 2 (C++ rel_a ≈ 0.25, Rust rel_a ≈ 4)
+        view->Zoom(400, 300, 2.0);
+        { TerminateEngine ctrl(sched, 10); sched.Run(); }
+    }
+
+    ~VisitAnimViewSetup() {
+        delete vp;
+        delete view;
+        delete ctx;
+    }
+};
+
+// Helper to record view state trajectory for visiting animator.
+// Records (rel_x, rel_y, 1/rel_a) per step — the 1/rel_a converts
+// C++ area-fraction to Rust scale-factor convention.
+static void gen_animator_visiting_short() {
+    VisitAnimViewSetup s;
+    TestableVisitingAnimator anim(*s.view);
+    anim.Activate();
+    anim.SetAnimated(true);
+    anim.SetAcceleration(5.0);
+    anim.SetMaxAbsoluteSpeed(5.0);
+    anim.SetMaxCuspSpeed(2.5);
+    // Visit root at (0.1, 0.1, 0.5) — C++ rel_a = 0.5 means moderate zoom in
+    // (Rust rel_a = 2.0)
+    anim.SetGoal("root", 0.1, 0.1, 0.5, false);
+
+    std::vector<double> data;
+    const double dt = 1.0 / 60.0;
+    for (int i = 0; i < 60; i++) {
+        anim.DoCycleAnimation(dt);
+        double rx, ry, ra;
+        anim.GetView().GetVisitedPanel(&rx, &ry, &ra);
+        data.push_back(rx);
+        data.push_back(ry);
+        // Convert C++ rel_a (area fraction) to Rust rel_a (scale factor)
+        data.push_back(ra > 1e-100 ? 1.0 / ra : 1000.0);
+    }
+    anim.Deactivate();
+    dump_trajectory("animator_visiting_short", data.data(), 60);
+}
+
+static void gen_animator_visiting_zoom() {
+    VisitAnimViewSetup s;
+    TestableVisitingAnimator anim(*s.view);
+    anim.Activate();
+    anim.SetAnimated(true);
+    anim.SetAcceleration(5.0);
+    anim.SetMaxAbsoluteSpeed(5.0);
+    anim.SetMaxCuspSpeed(2.5);
+    // Pure zoom: visit root at center (0, 0) but more zoom in
+    // C++ rel_a = 0.0625 (Rust rel_a = 16.0) — zoom to 4x from 2x start
+    anim.SetGoal("root", 0.0, 0.0, 0.0625, false);
+
+    std::vector<double> data;
+    const double dt = 1.0 / 60.0;
+    for (int i = 0; i < 60; i++) {
+        anim.DoCycleAnimation(dt);
+        double rx, ry, ra;
+        anim.GetView().GetVisitedPanel(&rx, &ry, &ra);
+        data.push_back(rx);
+        data.push_back(ry);
+        data.push_back(ra > 1e-100 ? 1.0 / ra : 1000.0);
+    }
+    anim.Deactivate();
+    dump_trajectory("animator_visiting_zoom", data.data(), 60);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Main
@@ -2461,6 +2764,18 @@ int main() {
     gen_widget_listbox_toggle();
     gen_widget_textfield_cursor_nav();
     gen_widget_splitter_drag();
+
+    printf("Generating animator trajectory golden files...\n");
+    gen_animator_kinetic_fling_x();
+    gen_animator_kinetic_fling_xy();
+    gen_animator_kinetic_zoom();
+    gen_animator_speeding_ramp();
+    gen_animator_speeding_reverse();
+    gen_animator_speeding_release();
+    gen_animator_swiping_grip();
+    gen_animator_swiping_release();
+    gen_animator_visiting_short();
+    gen_animator_visiting_zoom();
 
     printf("Done!\n");
 
