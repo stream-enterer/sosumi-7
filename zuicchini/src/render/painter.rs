@@ -1858,10 +1858,16 @@ impl<'a> Painter<'a> {
             return;
         }
 
-        let px = self.to_pixel_x(dx);
-        let py = self.to_pixel_y(dy);
-        let pw = (dw * self.state.scale_x) as i32;
-        let ph = (dh * self.state.scale_y) as i32;
+        let dx_px = dx * self.state.scale_x + self.state.offset_x;
+        let dy_px = dy * self.state.scale_y + self.state.offset_y;
+        let dw_px = dw * self.state.scale_x;
+        let dh_px = dh * self.state.scale_y;
+        let px = dx_px as i32;
+        let py = dy_px as i32;
+        let px2 = (dx_px + dw_px) as i32;
+        let py2 = (dy_px + dh_px) as i32;
+        let pw = px2 - px;
+        let ph = py2 - py;
         if pw <= 0 || ph <= 0 {
             return;
         }
@@ -1874,17 +1880,13 @@ impl<'a> Painter<'a> {
         } = self.state.clip;
         let start_x = px.max(clip_x).max(0);
         let start_y = py.max(clip_y).max(0);
-        let end_x = (px + pw)
-            .min(clip_x + clip_w)
-            .min(self.target.width() as i32);
-        let end_y = (py + ph)
-            .min(clip_y + clip_h)
-            .min(self.target.height() as i32);
+        let end_x = px2.min(clip_x + clip_w).min(self.target.width() as i32);
+        let end_y = py2.min(clip_y + clip_h).min(self.target.height() as i32);
 
         // Match C++ emPainter scaling: pre-reduced area sampling for downscaling,
         // bilinear for upscaling, nearest for 1:1.
-        let ratio_x = sw / pw as f64;
-        let ratio_y = sh / ph as f64;
+        let ratio_x = sw / dw_px;
+        let ratio_y = sh / dh_px;
         let downscaling = ratio_x > 1.0 || ratio_y > 1.0;
 
         if downscaling {
@@ -1898,16 +1900,16 @@ impl<'a> Painter<'a> {
             // C++ centers the reduced grid
             let off_x = (sw_u as i32 - (red_w as i32 - 1) * stride_x as i32 - 1) / 2;
             let off_y = (sh_u as i32 - (red_h as i32 - 1) * stride_y as i32 - 1) / 2;
-            let red_ratio_x = red_w as f64 / pw as f64;
-            let red_ratio_y = red_h as f64 / ph as f64;
+            let red_ratio_x = red_w as f64 / dw_px;
+            let red_ratio_y = red_h as f64 / dh_px;
             let sx_u = sx as u32;
             let sy_u = sy as u32;
 
             for row in start_y..end_y {
                 for col in start_x..end_x {
-                    let rx0 = (col - px) as f64 * red_ratio_x;
+                    let rx0 = (col as f64 - dx_px) * red_ratio_x;
                     let rx1 = rx0 + red_ratio_x;
-                    let ry0 = (row - py) as f64 * red_ratio_y;
+                    let ry0 = (row as f64 - dy_px) * red_ratio_y;
                     let ry1 = ry0 + red_ratio_y;
 
                     let ix0 = (rx0.floor() as i32).max(0) as u32;
@@ -1994,16 +1996,19 @@ impl<'a> Painter<'a> {
         } else {
             // Upscaling or 1:1: 24-bit fixed-point bilinear matching C++ emPainter_ScTl.
             let sxfm = self.scale_transform_24(sw as u32, sh as u32, dx, dy, dw, dh);
-            let src_ox = sx as i32;
-            let src_oy = sy as i32;
+            let sec = interpolation::SectionBounds {
+                ox: sx as i32,
+                oy: sy as i32,
+                w: sw as i32,
+                h: sh as i32,
+            };
 
             for row in start_y..end_y {
                 for col in start_x..end_x {
                     let tx = (col - px) as i64 * sxfm.tdx + sxfm.base_x - 0x80_0000;
                     let ty = (row - py) as i64 * sxfm.tdy + sxfm.base_y - 0x80_0000;
-                    let color = interpolation::sample_bilinear_premul_fp(
-                        image, tx, ty, src_ox, src_oy, extension,
-                    );
+                    let color =
+                        interpolation::sample_bilinear_premul_fp(image, tx, ty, &sec, extension);
                     self.blend_pixel(col, row, color);
                 }
             }

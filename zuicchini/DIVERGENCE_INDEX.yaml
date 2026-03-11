@@ -128,25 +128,23 @@
 
 - id: DIV-025
   area: painter/9slice-section-boundary
-  kind: expected-divergence
+  kind: bug-fixed
   tests: [widget_button_normal, widget_radiobutton]
-  status: ignored
+  status: partially-fixed
   evidence:
-    widget_button_normal: { ch_tol: 1, max_pct: 0.5, max_diff: 174, pct_differ_at_1: 59.51 }
-    widget_radiobutton: { ch_tol: 1, max_pct: 0.5, max_diff: 174, pct_differ_at_1: 57.22 }
-  source: [src/render/painter.rs (paint_border_image, paint_9slice_section, round_x, round_y, to_pixel_x)]
+    widget_button_normal: { ch_tol: 1, max_diff: 174, pct_differ_at_1: "55.57% (was 59.51%)" }
+    widget_radiobutton: { ch_tol: 1, max_diff: 174, pct_differ_at_1: "53.30% (was 57.22%)" }
+    widget_listbox: { ch_tol: 3, max_pct: 27.0, pct_differ_at_1: "25.79% (was 31%)" }
+  source: [src/render/painter.rs (paint_9slice_section), src/render/interpolation.rs (sample_bilinear_premul_fp)]
   notes: >
-    paint_border_image divides the dest rect into 9 sections. Each section
-    computes its own pixel rect via to_pixel_x(dx) + (dw * scale) as i32.
-    If the logical section boundaries (inset rounding via round_x/round_y,
-    or the inset values themselves) differ from C++, each section's
-    ScaleTransform24 gets different inputs (px, py, dw, dh), producing
-    different bilinear sample points despite the per-pixel formula being
-    identical. Diff distribution: ~28% of pixels differ by 2-7 (nearby
-    sample points from shifted section origin), ~11% differ by 64+
-    (section boundary crossings where the two implementations sample from
-    different 9-slice regions). Measured post-DIV-005 fix; this is the
-    dominant remaining source of widget rendering divergence.
+    Fixed 4 bugs in paint_9slice_section aligning it with paint_image_colored:
+    (1) pixel width from floor(dx+dw)-floor(dx) instead of floor(dw*scale),
+    (2) float-based ratio computation using dw_px instead of integer pw,
+    (3) float sub-pixel coordinate mapping (col as f64 - dx_px) instead of
+    (col - px) as f64, (4) section-scoped bilinear clamping via new
+    sample_pixel_section helper (clamps to section bounds, not full image).
+    Remaining diff dominated by overlay face texture rendering path
+    (button/radiobutton) which covers nearly the entire widget area.
 
 - id: DIV-006
   area: painter/stroke-ends
@@ -324,15 +322,14 @@
   tests: [widget_button_normal]
   status: ignored
   evidence:
-    widget_button_normal: { approx_diff: "~60%" }
+    widget_button_normal: { approx_diff: "~56% (was ~60%)" }
   source: [src/widget/button.rs]
   related: [DIV-025]
   notes: >
     Button renders an overlay face texture via PaintBorderImage that covers nearly
     the entire widget area. Unlike border-only widgets where 9-slice covers just
-    the frame, the button face is a full-coverage scaled image. This amplifies
-    section boundary rounding diffs (DIV-025) from ~1-7% (frame-only) to ~60%
-    (full area).
+    the frame, the button face is a full-coverage scaled image. Reduced from ~60%
+    to ~56% by DIV-025 fix (pixel rect + ratio + coordinate + section clamping).
 
 - id: DIV-019
   area: widget/radiobutton
@@ -340,13 +337,13 @@
   tests: [widget_radiobutton]
   status: ignored
   evidence:
-    widget_radiobutton: { approx_diff: "~57%" }
+    widget_radiobutton: { approx_diff: "~53% (was ~57%)" }
   source: [src/widget/radio_button.rs]
   related: [DIV-025]
   notes: >
     Same mechanism as DIV-018 (button): radiobutton renders an overlay face texture
-    via PaintBorderImage covering nearly the entire widget area, amplifying
-    section boundary rounding diffs (DIV-025) to ~57%.
+    via PaintBorderImage covering nearly the entire widget area. Reduced from ~57%
+    to ~53% by DIV-025 fix.
 
 - id: DIV-020
   area: widget/colorfield-rendering
@@ -369,18 +366,17 @@
   area: widget/listbox-rendering
   kind: expected-divergence
   tests: [widget_listbox]
-  status: ignored
+  status: passing
   evidence:
-    widget_listbox: { approx_diff: "~31%" }
+    widget_listbox: { ch_tol: 3, max_pct: 27.0, approx_diff: "~26% (was ~31%)" }
   source: [src/widget/list_box.rs]
   related: [DIV-025, GAP-002]
   notes: >
     Two independent sources: (1) 9-slice section boundary rounding diffs
-    (DIV-025), and (2) GAP-002's architectural difference where C++ renders
-    items as child panels in a multi-column RasterGroup grid while Rust paints
-    items inline as single-column rows. The layout difference means item
-    positions, sizes, and clipping all differ, contributing most of the ~31%
-    diff.
+    (DIV-025, partially fixed), and (2) GAP-002's architectural difference
+    where C++ renders items as child panels in a multi-column RasterGroup grid
+    while Rust paints items inline as single-column rows. Reduced from ~31%
+    to ~26% by DIV-025 fix. Un-ignored with ch_tol=3, max_pct=27.0.
 
 # ═══════════════════════════════════════════════════════════════════
 # INTEGRATION — Compound divergences

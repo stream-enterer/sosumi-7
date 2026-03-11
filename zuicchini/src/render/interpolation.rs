@@ -93,17 +93,61 @@ pub(crate) struct ScaleTransform24 {
     pub base_y: i64,
 }
 
+/// Source section bounds for 9-slice sub-region sampling.
+pub(crate) struct SectionBounds {
+    /// Pixel X offset into the full image for the section start.
+    pub ox: i32,
+    /// Pixel Y offset into the full image for the section start.
+    pub oy: i32,
+    /// Section width in pixels.
+    pub w: i32,
+    /// Section height in pixels.
+    pub h: i32,
+}
+
+/// Sample a pixel with extension mode scoped to a section sub-region.
+/// `ix`, `iy`: coordinates relative to the section origin (can be negative / out of bounds).
+fn sample_pixel_section(
+    image: &Image,
+    ix: i32,
+    iy: i32,
+    sec: &SectionBounds,
+    ext: ImageExtension,
+) -> [u8; 4] {
+    let (sx, sy) = match ext {
+        ImageExtension::Clamp => (ix.clamp(0, sec.w - 1), iy.clamp(0, sec.h - 1)),
+        ImageExtension::Repeat => {
+            let sx = ((ix % sec.w) + sec.w) % sec.w;
+            let sy = ((iy % sec.h) + sec.h) % sec.h;
+            (sx, sy)
+        }
+        ImageExtension::Zero => {
+            if ix < 0 || ix >= sec.w || iy < 0 || iy >= sec.h {
+                return [0, 0, 0, 0];
+            }
+            (ix, iy)
+        }
+    };
+    let p = image.pixel((sec.ox + sx) as u32, (sec.oy + sy) as u32);
+    let ch = image.channel_count();
+    match ch {
+        1 => [p[0], p[0], p[0], 255],
+        3 => [p[0], p[1], p[2], 255],
+        4 => [p[0], p[1], p[2], p[3]],
+        _ => [0, 0, 0, 0],
+    }
+}
+
 /// Bilinear interpolation with premultiplied alpha, 24-bit fixed-point coordinates.
 /// Matches C++ emPainter_ScTlIntImg bilinear inner loop exactly.
 ///
 /// `tx`, `ty`: source position in 24fp, with method offset (-0x80_0000) already applied.
-/// `src_ox`, `src_oy`: pixel offset into the full image (for 9-slice sub-region fetch).
+/// `sec`: section bounds for sub-region clamping.
 pub(crate) fn sample_bilinear_premul_fp(
     image: &Image,
     tx: i64,
     ty: i64,
-    src_ox: i32,
-    src_oy: i32,
+    sec: &SectionBounds,
     ext: ImageExtension,
 ) -> Color {
     // Integer source position (arithmetic right shift preserves sign).
@@ -118,10 +162,10 @@ pub(crate) fn sample_bilinear_premul_fp(
     let ox1 = (((tx & 0xFF_FFFF) as u32) + 0x7FFF) >> 16;
     let ox0 = 256 - ox1;
 
-    let p00 = sample_pixel(image, src_ox + ix, src_oy + iy, ext);
-    let p10 = sample_pixel(image, src_ox + ix + 1, src_oy + iy, ext);
-    let p01 = sample_pixel(image, src_ox + ix, src_oy + iy + 1, ext);
-    let p11 = sample_pixel(image, src_ox + ix + 1, src_oy + iy + 1, ext);
+    let p00 = sample_pixel_section(image, ix, iy, sec, ext);
+    let p10 = sample_pixel_section(image, ix + 1, iy, sec, ext);
+    let p01 = sample_pixel_section(image, ix, iy + 1, sec, ext);
+    let p11 = sample_pixel_section(image, ix + 1, iy + 1, sec, ext);
 
     // Fast path: all opaque — premultiplication is identity.
     if p00[3] == 255 && p10[3] == 255 && p01[3] == 255 && p11[3] == 255 {
