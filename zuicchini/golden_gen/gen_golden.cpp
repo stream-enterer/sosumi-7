@@ -41,6 +41,9 @@
 #include <emCore/emSplitter.h>
 #include <emCore/emTextField.h>
 
+// TestPanel integration tests
+#include <emTest/emTestPanel.h>
+
 #include "golden_format.h"
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3724,6 +3727,61 @@ static void gen_filter_keyboard_release() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Phase 10 — TestPanel integration golden tests
+// ═══════════════════════════════════════════════════════════════════
+
+// Render a view into an image of specified size and dump as compositor golden.
+static void render_and_dump_sized(const char* name, GoldenViewPort& vp,
+                                   emRootContext& ctx, int w, int h) {
+    emImage img(w, h, 4);
+    emPainter p;
+    if (!img.PreparePainter(&p, ctx, 0.0, 0.0, (double)w, (double)h)) {
+        fprintf(stderr, "PreparePainter failed for %s\n", name);
+        exit(1);
+    }
+    vp.DoPaintView(p, 0);
+    dump_compositor(name, img);
+}
+
+// Root panel paint only — high AE threshold prevents auto-expansion,
+// so only the root TestPanel's own Paint() fires (primitives, text, etc.).
+static void gen_testpanel_root() {
+    emStandardScheduler sched;
+    emRootContext ctx(sched);
+    StubClipboard::Setup(ctx);
+    emView view(ctx, emView::VF_NO_ACTIVE_HIGHLIGHT);
+    GoldenViewPort vp(view);
+    vp.DoSetViewGeometry(0, 0, 1000, 1000, 1.0);
+
+    auto* tp = new emTestPanel(view, "test");
+    tp->SetAutoExpansionThreshold(1e9); // prevent auto-expansion
+    tp->Layout(0, 0, 1.0, 1.0);
+
+    { TerminateEngine ctrl(sched, 30); sched.Run(); }
+    render_and_dump_sized("testpanel_root", vp, ctx, 1000, 1000);
+}
+
+// Full TestPanel tree with auto-expansion — exercises the complete panel
+// hierarchy including TkTest widget grid, recursive TestPanels, ColorField,
+// and PolyDrawPanel.
+static void gen_testpanel_expanded() {
+    emStandardScheduler sched;
+    emRootContext ctx(sched);
+    StubClipboard::Setup(ctx);
+    emView view(ctx, emView::VF_NO_ACTIVE_HIGHLIGHT);
+    GoldenViewPort vp(view);
+    vp.DoSetViewGeometry(0, 0, 1000, 1000, 1.0);
+
+    auto* tp = new emTestPanel(view, "test");
+    // Default AE threshold 900 (VCT_AREA). At 1000x1000, vc=1e6 > 900 → expands.
+    tp->Layout(0, 0, 1.0, 1.0);
+
+    // Run enough scheduler cycles for deep auto-expansion cascade
+    { TerminateEngine ctrl(sched, 200); sched.Run(); }
+    render_and_dump_sized("testpanel_expanded", vp, ctx, 1000, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════════
 
@@ -3927,6 +3985,10 @@ int main() {
     gen_filter_keyboard_scroll();
     gen_filter_keyboard_zoom();
     gen_filter_keyboard_release();
+
+    printf("Generating TestPanel integration golden files...\n");
+    gen_testpanel_root();
+    gen_testpanel_expanded();
 
     printf("Done!\n");
 

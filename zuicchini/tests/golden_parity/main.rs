@@ -10,5 +10,6 @@ mod layout;
 mod notice;
 mod painter;
 mod scheduler;
+mod test_panel;
 mod widget;
 mod widget_interaction;
