@@ -109,6 +109,31 @@ impl RadioGroup {
         }
     }
 
+    /// Add multiple buttons to the group at once.
+    ///
+    /// Port of C++ `emRadioButton::Mechanism::AddAll(emPanel* parent)`.
+    /// In C++, this iterates panel children and dynamic_casts to RadioButton.
+    /// In Rust, since buttons register themselves in `RadioButton::new()`,
+    /// this method registers `n` additional button slots for buttons that
+    /// were created outside the normal constructor flow.
+    pub fn add_all(&mut self, n: usize) {
+        self.count += n;
+    }
+
+    /// Get the button index at the given position in the group.
+    ///
+    /// Port of C++ `emRadioButton::Mechanism::GetButton(int)`.
+    /// In C++, returns a pointer to the RadioButton at `index`.
+    /// In Rust, validates the index and returns it (since buttons are
+    /// identified by their index in the group).
+    pub fn get_button(&self, index: usize) -> Option<usize> {
+        if index < self.count {
+            Some(index)
+        } else {
+            None
+        }
+    }
+
     /// Remove all buttons from the group.
     ///
     /// If a button was checked, clears the selection and fires the signal.

@@ -3,7 +3,7 @@ use std::rc::Rc;
 use crate::foundation::Color;
 
 /// Theme configuration matching emLook's 10-color system.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Look {
     pub bg_color: Color,
     pub fg_color: Color,
@@ -46,6 +46,27 @@ impl Look {
     /// Button pressed: button_bg darkened ~15%.
     pub fn button_pressed(&self) -> Color {
         self.button_bg_color.darken(0.15)
+    }
+
+    /// Apply this look to a target look reference, optionally for recursive use.
+    ///
+    /// Port of C++ `emLook::Apply(emPanel*, bool recursively)`.
+    /// In C++, Apply walks a panel tree and calls `emBorder::SetLook()` on each
+    /// emBorder descendant. In Rust, widgets store `Rc<Look>` directly, so
+    /// `apply` replaces the target reference with a clone of this look.
+    /// When `recursively` is true, the caller should propagate to child panels.
+    pub fn apply(&self, target: &mut Rc<Look>, _recursively: bool) {
+        *target = Rc::new(self.clone());
+    }
+
+    /// Apply this look to multiple targets at once.
+    ///
+    /// Convenience for recursive application across a widget subtree.
+    pub fn apply_all(&self, targets: &mut [&mut Rc<Look>]) {
+        let shared = Rc::new(self.clone());
+        for t in targets {
+            **t = shared.clone();
+        }
     }
 }
 

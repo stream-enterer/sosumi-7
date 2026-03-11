@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
+use crate::model::clipboard::Clipboard;
+
 /// A tree node for service/singleton lookup.
 ///
 /// Typed singletons (e.g. `Clipboard`, `CoreConfig`) are added as
@@ -13,10 +15,7 @@ use std::rc::{Rc, Weak};
 pub struct Context {
     parent: Option<Weak<Context>>,
     children: RefCell<Vec<Weak<Context>>>,
-    // Typed singletons will be added here as the framework develops.
-    // Example:
-    //   clipboard: RefCell<Option<Rc<Clipboard>>>,
-    //   core_config: RefCell<Option<Rc<CoreConfig>>>,
+    clipboard: RefCell<Option<Rc<RefCell<dyn Clipboard>>>>,
 }
 
 impl Context {
@@ -24,6 +23,7 @@ impl Context {
         Rc::new(Self {
             parent: None,
             children: RefCell::new(Vec::new()),
+            clipboard: RefCell::new(None),
         })
     }
 
@@ -31,6 +31,7 @@ impl Context {
         let child = Rc::new(Self {
             parent: Some(Rc::downgrade(parent)),
             children: RefCell::new(Vec::new()),
+            clipboard: RefCell::new(None),
         });
         parent.children.borrow_mut().push(Rc::downgrade(&child));
         child
@@ -52,5 +53,22 @@ impl Context {
     /// Purge expired weak references from the children list.
     pub fn purge_dead_children(&self) {
         self.children.borrow_mut().retain(|w| w.strong_count() > 0);
+    }
+
+    /// Install a clipboard into this context node.
+    pub fn set_clipboard(&self, clipboard: Rc<RefCell<dyn Clipboard>>) {
+        *self.clipboard.borrow_mut() = Some(clipboard);
+    }
+
+    /// Look up the installed clipboard by walking the parent chain.
+    /// Port of C++ emClipboard::LookupInherited.
+    pub fn lookup_clipboard(&self) -> Option<Rc<RefCell<dyn Clipboard>>> {
+        if let Some(cb) = self.clipboard.borrow().as_ref() {
+            return Some(Rc::clone(cb));
+        }
+        if let Some(parent) = self.parent() {
+            return parent.lookup_clipboard();
+        }
+        None
     }
 }

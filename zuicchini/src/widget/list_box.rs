@@ -16,6 +16,7 @@ const KEYWALK_TIMEOUT_MS: u128 = 1000;
 
 type SelectionCb = Box<dyn FnMut(&[usize])>;
 type TriggerCb = Box<dyn FnMut(usize)>;
+type ItemPanelFactory = Box<dyn Fn(usize, String, bool) -> Box<dyn ItemPanelInterface>>;
 
 /// Selection mode for list box items.
 ///
@@ -32,6 +33,91 @@ pub enum SelectionMode {
     Toggle,
 }
 
+/// Interface for custom item panel implementations.
+/// Port of C++ emListBox::ItemPanelInterface.
+///
+/// Implementors receive notifications when item properties change.
+pub trait ItemPanelInterface {
+    /// Called when the item's display text changes.
+    fn item_text_changed(&mut self, text: &str);
+
+    /// Called when the item's data changes.
+    fn item_data_changed(&mut self);
+
+    /// Called when the item's selection state changes.
+    fn item_selection_changed(&mut self, selected: bool);
+
+    /// Get the item's index within the list box.
+    fn item_index(&self) -> usize;
+
+    /// Set the item's index (called after reindexing).
+    fn set_item_index(&mut self, index: usize);
+
+    /// Get the display text.
+    fn text(&self) -> &str;
+
+    /// Whether selected.
+    fn is_selected(&self) -> bool;
+}
+
+/// Default item panel that displays item text with selection highlight.
+/// Port of C++ emListBox::DefaultItemPanel.
+pub struct DefaultItemPanel {
+    index: usize,
+    text: String,
+    selected: bool,
+}
+
+impl DefaultItemPanel {
+    pub fn new(index: usize, text: String, selected: bool) -> Self {
+        Self {
+            index,
+            text,
+            selected,
+        }
+    }
+
+    /// Get the display text.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Whether selected.
+    pub fn is_selected(&self) -> bool {
+        self.selected
+    }
+}
+
+impl ItemPanelInterface for DefaultItemPanel {
+    fn item_text_changed(&mut self, text: &str) {
+        self.text = text.to_string();
+    }
+
+    fn item_data_changed(&mut self) {
+        // Default panel doesn't use data
+    }
+
+    fn item_selection_changed(&mut self, selected: bool) {
+        self.selected = selected;
+    }
+
+    fn item_index(&self) -> usize {
+        self.index
+    }
+
+    fn set_item_index(&mut self, index: usize) {
+        self.index = index;
+    }
+
+    fn text(&self) -> &str {
+        &self.text
+    }
+
+    fn is_selected(&self) -> bool {
+        self.selected
+    }
+}
+
 /// Internal item representation for the list box.
 struct Item {
     /// Unique identifier for lookup.
@@ -42,6 +128,9 @@ struct Item {
     data: Option<Box<dyn Any>>,
     /// Whether this item is currently selected.
     selected: bool,
+    /// Item panel interface, created during auto-expand.
+    /// Port of C++ Item::Interface.
+    interface: Option<Box<dyn ItemPanelInterface>>,
 }
 
 /// Selectable item list widget.
@@ -70,6 +159,11 @@ pub struct ListBox {
 
     pub on_selection: Option<SelectionCb>,
     pub on_trigger: Option<TriggerCb>,
+
+    /// Custom item panel factory. Port of C++ virtual CreateItemPanel.
+    item_panel_factory: Option<ItemPanelFactory>,
+    /// Whether item panels are currently expanded.
+    expanded: bool,
 }
 
 impl ListBox {
@@ -90,6 +184,8 @@ impl ListBox {
             keywalk_time: None,
             on_selection: None,
             on_trigger: None,
+            item_panel_factory: None,
+            expanded: false,
         }
     }
 
@@ -163,6 +259,7 @@ impl ListBox {
             text,
             data: None,
             selected: false,
+            interface: None,
         };
 
         self.items.insert(index, item);
@@ -374,7 +471,10 @@ impl ListBox {
     pub fn set_item_text(&mut self, index: usize, text: String) {
         if let Some(item) = self.items.get_mut(index) {
             if item.text != text {
-                item.text = text;
+                item.text = text.clone();
+                if let Some(iface) = &mut item.interface {
+                    iface.item_text_changed(&text);
+                }
                 self.keywalk_chars.clear();
             }
         }
@@ -389,6 +489,9 @@ impl ListBox {
     pub fn set_item_data(&mut self, index: usize, data: Option<Box<dyn Any>>) {
         if let Some(item) = self.items.get_mut(index) {
             item.data = data;
+            if let Some(iface) = &mut item.interface {
+                iface.item_data_changed();
+            }
             // Note: does NOT clear keywalk_chars (data doesn't affect search).
         }
     }
@@ -449,6 +552,9 @@ impl ListBox {
             }
             if !self.items[index].selected {
                 self.items[index].selected = true;
+                if let Some(iface) = &mut self.items[index].interface {
+                    iface.item_selection_changed(true);
+                }
                 // Binary insert into sorted selected_indices.
                 let pos = self
                     .selected_indices
@@ -467,6 +573,9 @@ impl ListBox {
     pub fn deselect(&mut self, index: usize) {
         if index < self.items.len() && self.items[index].selected {
             self.items[index].selected = false;
+            if let Some(iface) = &mut self.items[index].interface {
+                iface.item_selection_changed(false);
+            }
             if let Ok(pos) = self.selected_indices.binary_search(&index) {
                 self.selected_indices.remove(pos);
             }
@@ -513,6 +622,9 @@ impl ListBox {
         for &idx in &self.selected_indices {
             if idx < self.items.len() {
                 self.items[idx].selected = false;
+                if let Some(iface) = &mut self.items[idx].interface {
+                    iface.item_selection_changed(false);
+                }
             }
         }
         // Build new sorted selection.
@@ -525,6 +637,9 @@ impl ListBox {
         new_sel.dedup();
         for &idx in &new_sel {
             self.items[idx].selected = true;
+            if let Some(iface) = &mut self.items[idx].interface {
+                iface.item_selection_changed(true);
+            }
         }
         if self.selected_indices != new_sel {
             self.selected_indices = new_sel;
@@ -547,6 +662,86 @@ impl ListBox {
     /// Index of the last triggered item, or `None`.
     pub fn triggered_index(&self) -> Option<usize> {
         self.triggered_index
+    }
+
+    // ── Item Panel Interface ─────────────────────────────────────────
+
+    /// Get the item panel interface at the given index.
+    /// Port of C++ emListBox::GetItemPanelInterface(int).
+    pub fn get_item_panel_interface(&self, index: usize) -> Option<&dyn ItemPanelInterface> {
+        self.items
+            .get(index)
+            .and_then(|item| item.interface.as_deref())
+    }
+
+    /// Get a mutable reference to the item panel interface at the given index.
+    pub fn get_item_panel_interface_mut(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut dyn ItemPanelInterface> {
+        match self.items.get_mut(index) {
+            Some(item) => match &mut item.interface {
+                Some(iface) => Some(iface.as_mut()),
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    /// Get the item panel at the given index (returns the interface).
+    /// Port of C++ emListBox::GetItemPanel(int).
+    pub fn get_item_panel(&self, index: usize) -> Option<&dyn ItemPanelInterface> {
+        self.get_item_panel_interface(index)
+    }
+
+    /// Create an item panel for the item at the given index.
+    /// Port of C++ emListBox::CreateItemPanel(name, itemIndex).
+    ///
+    /// Override point: the default creates a DefaultItemPanel.
+    /// Custom ListBox implementations can override this by setting
+    /// a factory function.
+    pub fn create_item_panel(&mut self, index: usize) {
+        if let Some(item) = self.items.get_mut(index) {
+            let panel = if let Some(factory) = &self.item_panel_factory {
+                factory(index, item.text.clone(), item.selected)
+            } else {
+                Box::new(DefaultItemPanel::new(
+                    index,
+                    item.text.clone(),
+                    item.selected,
+                ))
+            };
+            item.interface = Some(panel);
+        }
+    }
+
+    /// Set a custom factory for creating item panels.
+    /// Port of C++ virtual CreateItemPanel override mechanism.
+    pub fn set_item_panel_factory<F>(&mut self, factory: F)
+    where
+        F: Fn(usize, String, bool) -> Box<dyn ItemPanelInterface> + 'static,
+    {
+        self.item_panel_factory = Some(Box::new(factory));
+    }
+
+    /// Create item panels for all items. Called when the list box expands.
+    /// Port of C++ emListBox::AutoExpand().
+    pub fn auto_expand_items(&mut self) {
+        self.expanded = true;
+        for i in 0..self.items.len() {
+            if self.items[i].interface.is_none() {
+                self.create_item_panel(i);
+            }
+        }
+    }
+
+    /// Destroy all item panels. Called when the list box shrinks.
+    /// Port of C++ emListBox::AutoShrink().
+    pub fn auto_shrink_items(&mut self) {
+        self.expanded = false;
+        for item in &mut self.items {
+            item.interface = None;
+        }
     }
 
     // ── Paint ───────────────────────────────────────────────────────

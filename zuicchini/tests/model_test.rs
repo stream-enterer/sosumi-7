@@ -66,7 +66,7 @@ fn context_children_are_weak() {
 #[test]
 fn file_model_state_machine() {
     let sig = make_signal();
-    let mut fm = FileModel::<Vec<u8>>::new(PathBuf::from("/tmp/test"), sig);
+    let mut fm = FileModel::<Vec<u8>>::new(PathBuf::from("/tmp/test"), sig, sig);
 
     assert_eq!(*fm.state(), FileState::Waiting);
     assert_eq!(fm.progress(), 0.0);
@@ -110,7 +110,7 @@ fn file_model_state_machine() {
 #[test]
 fn file_model_too_costly() {
     let sig = make_signal();
-    let mut fm = FileModel::<String>::new(PathBuf::from("/tmp/test"), sig);
+    let mut fm = FileModel::<String>::new(PathBuf::from("/tmp/test"), sig, sig);
 
     fm.mark_too_costly();
     assert_eq!(*fm.state(), FileState::TooCostly);
