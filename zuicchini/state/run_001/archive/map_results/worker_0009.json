@@ -1,0 +1,613 @@
+{
+  "worker": "W-0009",
+  "item_range": "ITEM-080001..ITEM-089999",
+  "files_analyzed": [
+    "include/emCore/emWindow.h",
+    "include/emCore/emScreen.h",
+    "include/emCore/emWindowStateSaver.h",
+    "include/emCore/emGUIFramework.h",
+    "include/emCore/emDialog.h",
+    "include/emCore/emErrorPanel.h"
+  ],
+  "symbols": [
+    {
+      "id": "ITEM-080001",
+      "cpp_class": "emWindow",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "Core class ported as ZuiWindow struct"
+    },
+    {
+      "id": "ITEM-080002",
+      "cpp_symbol": "emWindow::WindowFlags (WF_MODAL, WF_UNDECORATED, WF_POPUP, WF_MAXIMIZED, WF_FULLSCREEN, WF_AUTO_DELETE)",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "Ported as bitflags! WindowFlags with identical flag set: MODAL, UNDECORATED, POPUP, MAXIMIZED, FULLSCREEN, AUTO_DELETE"
+    },
+    {
+      "id": "ITEM-080003",
+      "cpp_symbol": "emWindow::emWindow(parentContext, viewFlags, windowFlags, wmResName)",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "Ported as ZuiWindow::create(). Takes event_loop, gpu, root_panel, flags, close_signal instead of C++ context model. No wmResName parameter."
+    },
+    {
+      "id": "ITEM-080004",
+      "cpp_symbol": "emWindow::GetScreen()",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/app.rs",
+      "status": "ambiguous",
+      "notes": "No direct method on ZuiWindow. Screen is owned by App, accessed via App::screen(). Structural difference."
+    },
+    {
+      "id": "ITEM-080005",
+      "cpp_symbol": "emWindow::GetWindowFlags() / SetWindowFlags()",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "flags field is pub (get). set_window_flags() method ported with decoration/maximized/fullscreen winit updates."
+    },
+    {
+      "id": "ITEM-080006",
+      "cpp_symbol": "emWindow::GetWindowFlagsSignal()",
+      "cpp_file": "emWindow.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No WindowFlagsSignal equivalent. Rust uses direct mutation, no signal/observer pattern for flag changes."
+    },
+    {
+      "id": "ITEM-080007",
+      "cpp_symbol": "emWindow::GetWMResName()",
+      "cpp_file": "emWindow.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No WM resource name concept in Rust port. Winit does not expose this X11-specific feature."
+    },
+    {
+      "id": "ITEM-080008",
+      "cpp_symbol": "emWindow::GetCloseSignal() / SignalClosing()",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "close_signal field (pub SignalId) + signal_closing() method. Fired by App on CloseRequested."
+    },
+    {
+      "id": "ITEM-080009",
+      "cpp_symbol": "emWindow::SetViewPos(x, y)",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "set_view_pos() method using winit set_outer_position"
+    },
+    {
+      "id": "ITEM-080010",
+      "cpp_symbol": "emWindow::SetViewSize(w, h)",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "set_view_size() method using winit request_inner_size"
+    },
+    {
+      "id": "ITEM-080011",
+      "cpp_symbol": "emWindow::SetViewPosSize(x, y, w, h)",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "set_view_pos_size() method"
+    },
+    {
+      "id": "ITEM-080012",
+      "cpp_symbol": "emWindow::SetWinPos(x, y)",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "set_win_pos() method"
+    },
+    {
+      "id": "ITEM-080013",
+      "cpp_symbol": "emWindow::SetWinSize(w, h)",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "set_win_size() method. Note: uses request_inner_size as approximation since winit has no set_outer_size."
+    },
+    {
+      "id": "ITEM-080014",
+      "cpp_symbol": "emWindow::SetWinPosSize(x, y, w, h)",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "set_win_pos_size() method"
+    },
+    {
+      "id": "ITEM-080015",
+      "cpp_symbol": "emWindow::SetWinPosViewSize(x, y, w, h) (two overloads: coords and geometry string)",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ambiguous",
+      "notes": "Coordinate overload ported as set_win_pos_view_size(). X11 geometry string parser overload NOT ported."
+    },
+    {
+      "id": "ITEM-080016",
+      "cpp_symbol": "emWindow::GetBorderSizes(pL, pT, pR, pB)",
+      "cpp_file": "emWindow.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No border size query. Winit does not expose window decoration sizes on all platforms."
+    },
+    {
+      "id": "ITEM-080017",
+      "cpp_symbol": "emWindow::GetMonitorIndex()",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "get_monitor_index(&self, screen) delegates to Screen::monitor_index_of_rect"
+    },
+    {
+      "id": "ITEM-080018",
+      "cpp_symbol": "emWindow::GetWindowIcon() / SetWindowIcon()",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "window_icon() getter, set_window_icon() setter with RGBA conversion and winit icon creation"
+    },
+    {
+      "id": "ITEM-080019",
+      "cpp_symbol": "emWindow::Raise()",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ported",
+      "notes": "raise() method using winit focus_window()"
+    },
+    {
+      "id": "ITEM-080020",
+      "cpp_symbol": "emWindow::InhibitScreensaver() / AllowScreensaver()",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ambiguous",
+      "notes": "inhibit_screensaver()/allow_screensaver() methods ported with counter tracking, but actual platform inhibition is TODO stub (no-op)."
+    },
+    {
+      "id": "ITEM-080021",
+      "cpp_symbol": "emWindow::InvalidateTitle()",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/zui_window.rs",
+      "status": "ambiguous",
+      "notes": "set_title() exists but no InvalidateTitle override pattern. Title is set directly rather than pulled from view."
+    },
+    {
+      "id": "ITEM-080022",
+      "cpp_symbol": "emWindow::AutoDeleteEngineClass",
+      "cpp_file": "emWindow.h",
+      "rust_file": "window/app.rs",
+      "status": "ambiguous",
+      "notes": "Auto-delete handled inline in App::window_event CloseRequested handler checking AUTO_DELETE flag. No separate engine class."
+    },
+    {
+      "id": "ITEM-080023",
+      "cpp_symbol": "emWindow::LinkCrossPtr()",
+      "cpp_file": "emWindow.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No CrossPtr system in Rust. Uses Rust ownership model instead."
+    },
+    {
+      "id": "ITEM-080030",
+      "cpp_class": "emWindowPort",
+      "cpp_file": "emWindow.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Abstract window port layer eliminated. Rust uses winit directly in ZuiWindow, no port abstraction needed."
+    },
+    {
+      "id": "ITEM-080031",
+      "cpp_symbol": "emWindowPort::WindowFlagsChanged()",
+      "cpp_file": "emWindow.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No port abstraction. Flag changes applied directly in set_window_flags()."
+    },
+    {
+      "id": "ITEM-080032",
+      "cpp_symbol": "emWindowPort::SetPosSize() / PosSizeArgSpec",
+      "cpp_file": "emWindow.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No PosSizeArgSpec enum. Separate methods (set_view_pos, set_win_pos, etc.) replace the combined SetPosSize dispatcher."
+    },
+    {
+      "id": "ITEM-080033",
+      "cpp_symbol": "emWindowPort::GetBorderSizes()",
+      "cpp_file": "emWindow.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No border size query in Rust. Winit limitation."
+    },
+    {
+      "id": "ITEM-080034",
+      "cpp_symbol": "emWindowPort::InvalidateTitle() / InvalidateIcon()",
+      "cpp_file": "emWindow.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No port invalidation pattern. Title/icon set directly on winit window."
+    },
+    {
+      "id": "ITEM-080040",
+      "cpp_class": "emScreen",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/screen.rs",
+      "status": "ported",
+      "notes": "Ported as Screen struct with MonitorInfo"
+    },
+    {
+      "id": "ITEM-080041",
+      "cpp_symbol": "emScreen::LookupInherited(context)",
+      "cpp_file": "emScreen.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No context-based model lookup. Screen owned directly by App."
+    },
+    {
+      "id": "ITEM-080042",
+      "cpp_symbol": "emScreen::GetDesktopRect()",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/screen.rs",
+      "status": "ported",
+      "notes": "virtual_bounds field (pub) stores (x, y, w, h) of virtual desktop, computed in from_event_loop()"
+    },
+    {
+      "id": "ITEM-080043",
+      "cpp_symbol": "emScreen::GetMonitorCount()",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/screen.rs",
+      "status": "ported",
+      "notes": "monitors().len() via the monitors() accessor returning &[MonitorInfo]"
+    },
+    {
+      "id": "ITEM-080044",
+      "cpp_symbol": "emScreen::GetMonitorRect(index)",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/screen.rs",
+      "status": "ported",
+      "notes": "monitors()[index].position and .size fields. Not a single method but data accessible."
+    },
+    {
+      "id": "ITEM-080045",
+      "cpp_symbol": "emScreen::GetMonitorIndexOfRect(x, y, w, h)",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/screen.rs",
+      "status": "ported",
+      "notes": "monitor_index_of_rect() method with maximum overlap algorithm. Returns Option<usize> instead of defaulting to 0."
+    },
+    {
+      "id": "ITEM-080046",
+      "cpp_symbol": "emScreen::GetDPI()",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/screen.rs",
+      "status": "ported",
+      "notes": "get_dpi() method using primary monitor scale_factor * 96.0"
+    },
+    {
+      "id": "ITEM-080047",
+      "cpp_symbol": "emScreen::GetGeometrySignal() / SignalGeometrySignal()",
+      "cpp_file": "emScreen.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No geometry change signal. Screen is built once from event loop, no dynamic updates."
+    },
+    {
+      "id": "ITEM-080048",
+      "cpp_symbol": "emScreen::CanMoveMousePointer()",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/screen.rs",
+      "status": "ported",
+      "notes": "can_move_mouse_pointer() always returns false (winit limitation)"
+    },
+    {
+      "id": "ITEM-080049",
+      "cpp_symbol": "emScreen::MoveMousePointer(dx, dy)",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/screen.rs",
+      "status": "ambiguous",
+      "notes": "move_mouse_pointer() exists on both Screen and ZuiWindow but is a no-op stub (winit limitation)"
+    },
+    {
+      "id": "ITEM-080050",
+      "cpp_symbol": "emScreen::Beep()",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/screen.rs",
+      "status": "ambiguous",
+      "notes": "beep() method exists on both Screen and ZuiWindow but is a no-op stub (winit limitation)"
+    },
+    {
+      "id": "ITEM-080051",
+      "cpp_symbol": "emScreen::GetWindows() / GetWindowsSignal()",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/app.rs",
+      "status": "ambiguous",
+      "notes": "App::windows HashMap is pub, no signal for window list changes. Structural difference from C++ signal model."
+    },
+    {
+      "id": "ITEM-080052",
+      "cpp_symbol": "emScreen::LeaveFullscreenModes(exceptForWindow)",
+      "cpp_file": "emScreen.h",
+      "rust_file": "window/screen.rs",
+      "status": "ported",
+      "notes": "leave_fullscreen_modes() method on Screen, takes &mut windows HashMap and optional except WindowId"
+    },
+    {
+      "id": "ITEM-080053",
+      "cpp_symbol": "emScreen::Install() / CreateWindowPort(window)",
+      "cpp_file": "emScreen.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No Install/CreateWindowPort pattern. Window creation done directly via ZuiWindow::create()."
+    },
+    {
+      "id": "ITEM-080060",
+      "cpp_class": "emWindowStateSaver",
+      "cpp_file": "emWindowStateSaver.h",
+      "rust_file": "window/state_saver.rs",
+      "status": "ported",
+      "notes": "Ported as WindowStateSaver struct with WindowGeometry record"
+    },
+    {
+      "id": "ITEM-080061",
+      "cpp_symbol": "emWindowStateSaver::emWindowStateSaver(window, filePath, allowRestoreFullscreen)",
+      "cpp_file": "emWindowStateSaver.h",
+      "rust_file": "window/state_saver.rs",
+      "status": "ambiguous",
+      "notes": "Constructor ported as WindowStateSaver::new(path, signal_id). No allowRestoreFullscreen parameter."
+    },
+    {
+      "id": "ITEM-080062",
+      "cpp_symbol": "emWindowStateSaver::Cycle()",
+      "cpp_file": "emWindowStateSaver.h",
+      "rust_file": "window/state_saver.rs",
+      "status": "ported",
+      "notes": "cycle() method takes window ref and focused bool, saves geometry on change when focused"
+    },
+    {
+      "id": "ITEM-080063",
+      "cpp_symbol": "emWindowStateSaver::Save() / Restore()",
+      "cpp_file": "emWindowStateSaver.h",
+      "rust_file": "window/state_saver.rs",
+      "status": "ported",
+      "notes": "save_from() saves from window. geometry() returns stored geometry for restoring. Normal-mode tracking matches C++ OwnNormalX/Y/W/H."
+    },
+    {
+      "id": "ITEM-080064",
+      "cpp_symbol": "emWindowStateSaver::ModelClass (ViewX, ViewY, ViewWidth, ViewHeight, Maximized, Fullscreen)",
+      "cpp_file": "emWindowStateSaver.h",
+      "rust_file": "window/state_saver.rs",
+      "status": "ported",
+      "notes": "Ported as WindowGeometry struct with x, y, width, height, maximized, fullscreen fields. Uses KDL format instead of emRec."
+    },
+    {
+      "id": "ITEM-080070",
+      "cpp_class": "emGUIFramework",
+      "cpp_file": "emGUIFramework.h",
+      "rust_file": "window/app.rs",
+      "status": "ported",
+      "notes": "Ported as App struct. Owns GPU context, Screen, scheduler, tree, windows."
+    },
+    {
+      "id": "ITEM-080071",
+      "cpp_symbol": "emGUIFramework::GetScheduler()",
+      "cpp_file": "emGUIFramework.h",
+      "rust_file": "window/app.rs",
+      "status": "ported",
+      "notes": "App::scheduler field is pub EngineScheduler"
+    },
+    {
+      "id": "ITEM-080072",
+      "cpp_symbol": "emGUIFramework::GetRootContext()",
+      "cpp_file": "emGUIFramework.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No root context concept. Rust uses flat ownership in App (tree, scheduler, etc. are direct fields)."
+    },
+    {
+      "id": "ITEM-080073",
+      "cpp_symbol": "emGUIFramework::EnableAutoTermination()",
+      "cpp_file": "emGUIFramework.h",
+      "rust_file": "window/app.rs",
+      "status": "ambiguous",
+      "notes": "Auto-termination hardcoded: App exits event loop when windows HashMap is empty (in CloseRequested handler). No toggle API."
+    },
+    {
+      "id": "ITEM-080074",
+      "cpp_symbol": "emGUIFramework::Run()",
+      "cpp_file": "emGUIFramework.h",
+      "rust_file": "window/app.rs",
+      "status": "ported",
+      "notes": "App::run() calls winit event_loop.run_app(). Equivalent to Scheduler->Run()."
+    },
+    {
+      "id": "ITEM-080075",
+      "cpp_symbol": "emGUIFramework::AutoTerminatorClass",
+      "cpp_file": "emGUIFramework.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No separate auto-terminator engine. Logic inlined in App::window_event."
+    },
+    {
+      "id": "ITEM-080076",
+      "cpp_symbol": "MAIN_OR_WINMAIN_HERE macro",
+      "cpp_file": "emGUIFramework.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Not needed in Rust. Standard fn main() with no platform-specific entry point macro."
+    },
+    {
+      "id": "ITEM-080080",
+      "cpp_class": "emDialog",
+      "cpp_file": "emDialog.h",
+      "rust_file": "widget/dialog.rs",
+      "status": "ported",
+      "notes": "Ported as Dialog struct with Border, buttons, result, on_finish callback"
+    },
+    {
+      "id": "ITEM-080081",
+      "cpp_symbol": "emDialog::emDialog(parentContext, viewFlags, windowFlags, wmResName)",
+      "cpp_file": "emDialog.h",
+      "rust_file": "widget/dialog.rs",
+      "status": "ambiguous",
+      "notes": "Dialog::new(title, look) is a widget constructor, NOT a window subclass. C++ emDialog extends emWindow; Rust Dialog is a standalone widget."
+    },
+    {
+      "id": "ITEM-080082",
+      "cpp_symbol": "emDialog::SetRootTitle(title)",
+      "cpp_file": "emDialog.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No SetRootTitle equivalent. Title set via Border caption in constructor."
+    },
+    {
+      "id": "ITEM-080083",
+      "cpp_symbol": "emDialog::GetContentPanel()",
+      "cpp_file": "emDialog.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No content panel accessor. Layout handled by layout_children() which lays out child panels in the border content area."
+    },
+    {
+      "id": "ITEM-080084",
+      "cpp_symbol": "emDialog::AddPositiveButton() / AddNegativeButton() / AddCustomButton()",
+      "cpp_file": "emDialog.h",
+      "rust_file": "widget/dialog.rs",
+      "status": "ambiguous",
+      "notes": "add_button(label, result) is generic. No positive/negative/custom distinction in the API. DialogResult enum has Ok/Cancel/Custom(u32)."
+    },
+    {
+      "id": "ITEM-080085",
+      "cpp_symbol": "emDialog::AddOKButton() / AddCancelButton() / AddOKCancelButtons()",
+      "cpp_file": "emDialog.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No convenience methods. Caller uses add_button() with DialogResult::Ok / DialogResult::Cancel."
+    },
+    {
+      "id": "ITEM-080086",
+      "cpp_symbol": "emDialog::GetButton(index) / GetButtonForResult(result) / GetOKButton() / GetCancelButton()",
+      "cpp_file": "emDialog.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No button accessor methods. buttons field is private Vec."
+    },
+    {
+      "id": "ITEM-080087",
+      "cpp_symbol": "emDialog::GetFinishSignal()",
+      "cpp_file": "emDialog.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No signal. Uses on_finish callback (Box<dyn FnMut>) instead of signal pattern."
+    },
+    {
+      "id": "ITEM-080088",
+      "cpp_symbol": "emDialog::GetResult() / POSITIVE/NEGATIVE/CUSTOM results",
+      "cpp_file": "emDialog.h",
+      "rust_file": "widget/dialog.rs",
+      "status": "ported",
+      "notes": "result() returns Option<&DialogResult>. DialogResult enum: Ok (=POSITIVE), Cancel (=NEGATIVE), Custom(u32) (=CUSTOM1..N)"
+    },
+    {
+      "id": "ITEM-080089",
+      "cpp_symbol": "emDialog::Finish(result)",
+      "cpp_file": "emDialog.h",
+      "rust_file": "widget/dialog.rs",
+      "status": "ambiguous",
+      "notes": "finish() method exists but does not return bool (no CheckFinish gate). Always succeeds."
+    },
+    {
+      "id": "ITEM-080090",
+      "cpp_symbol": "emDialog::CheckFinish(result)",
+      "cpp_file": "emDialog.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No CheckFinish hook. finish() always succeeds."
+    },
+    {
+      "id": "ITEM-080091",
+      "cpp_symbol": "emDialog::Finished(result)",
+      "cpp_file": "emDialog.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No virtual Finished callback. Uses on_finish closure instead."
+    },
+    {
+      "id": "ITEM-080092",
+      "cpp_symbol": "emDialog::EnableAutoDeletion() / IsAutoDeletionEnabled()",
+      "cpp_file": "emDialog.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No auto-deletion flag. Rust dialog is not a window subclass, lifetime managed by owner."
+    },
+    {
+      "id": "ITEM-080093",
+      "cpp_symbol": "emDialog::ShowMessage(parentContext, title, message, description, icon)",
+      "cpp_file": "emDialog.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No static ShowMessage convenience function."
+    },
+    {
+      "id": "ITEM-080094",
+      "cpp_symbol": "emDialog::DlgButton / DlgPanel (private inner classes)",
+      "cpp_file": "emDialog.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No inner DlgButton/DlgPanel classes. Dialog manages buttons as (String, DialogResult) tuples."
+    },
+    {
+      "id": "ITEM-080095",
+      "cpp_symbol": "emDialog::layout_children()",
+      "cpp_file": "emDialog.h",
+      "rust_file": "widget/dialog.rs",
+      "status": "ported",
+      "notes": "layout_children() method with content area + button row layout. Also preferred_size()."
+    },
+    {
+      "id": "ITEM-080096",
+      "cpp_symbol": "emDialog::paint()",
+      "cpp_file": "emDialog.h",
+      "rust_file": "widget/dialog.rs",
+      "status": "ported",
+      "notes": "paint() method delegates to border.paint_border()"
+    },
+    {
+      "id": "ITEM-080100",
+      "cpp_class": "emErrorPanel",
+      "cpp_file": "emErrorPanel.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No ErrorPanel in Rust codebase. Simple red error message panel not implemented."
+    },
+    {
+      "id": "ITEM-080101",
+      "cpp_symbol": "emErrorPanel::IsOpaque()",
+      "cpp_file": "emErrorPanel.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Part of unimplemented emErrorPanel"
+    },
+    {
+      "id": "ITEM-080102",
+      "cpp_symbol": "emErrorPanel::Paint(painter, canvasColor)",
+      "cpp_file": "emErrorPanel.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Part of unimplemented emErrorPanel"
+    }
+  ],
+  "summary": {
+    "total_symbols": 58,
+    "ported": 28,
+    "not_ported": 21,
+    "ambiguous": 9,
+    "notes": "emWindow well-ported as ZuiWindow (winit backend replaces emWindowPort abstraction). emScreen ported as Screen (monitor enumeration, DPI, overlap). emWindowStateSaver fully ported with KDL persistence. emGUIFramework ported as App (winit event loop). emDialog partially ported as widget (not window subclass). emErrorPanel not ported. emWindowPort abstraction layer intentionally eliminated. Signal/observer patterns replaced with direct mutation and callbacks."
+  }
+}

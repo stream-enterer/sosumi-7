@@ -1,0 +1,833 @@
+{
+  "worker_id": "W-0004",
+  "domain": "rendering",
+  "item_range": "ITEM-030001 to ITEM-039999",
+  "timestamp": "2026-03-10",
+  "items": [
+    {
+      "id": "ITEM-030001",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter",
+      "status": "ported",
+      "notes": "Class maps to Painter struct. C++ uses origin/scale transform; Rust uses offset/scale with push/pop state stack."
+    },
+    {
+      "id": "ITEM-030002",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::SetClipping / GetClipX1..Y2",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::clip_rect",
+      "status": "ported",
+      "notes": "C++ has get/set on 4 doubles; Rust uses clip_rect() that intersects with current clip stored as PixelRect."
+    },
+    {
+      "id": "ITEM-030003",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::GetUserClipX1..Y2",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "No user-coordinate clip getters in Rust. Rust painter stores clip in pixel coords only."
+    },
+    {
+      "id": "ITEM-030004",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::GetOriginX/Y, SetOrigin",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::offset / set_offset",
+      "status": "ported",
+      "notes": "C++ OriginX/Y maps to Rust offset_x/offset_y."
+    },
+    {
+      "id": "ITEM-030005",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::GetScaleX/Y, SetScaling",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::scale",
+      "status": "ported",
+      "notes": "C++ SetScaling sets absolute; Rust scale() multiplies cumulatively. Both store scale_x/scale_y."
+    },
+    {
+      "id": "ITEM-030006",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::SetTransformation",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::set_offset + Painter::scale",
+      "status": "ported",
+      "notes": "Combined setter in C++; split into separate calls in Rust, used via push/pop state."
+    },
+    {
+      "id": "ITEM-030007",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::RoundX/Y, RoundDownX/Y, RoundUpX/Y",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::round_x/round_y/round_down_x/round_down_y/round_up_x/round_up_y",
+      "status": "ported",
+      "notes": "All six rounding helpers ported."
+    },
+    {
+      "id": "ITEM-030008",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::SetUserSpaceMutex / LeaveUserSpace / EnterUserSpace / UserSpaceLeaveGuard",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Threading/mutex infrastructure. Rust is single-threaded; no user-space mutex needed."
+    },
+    {
+      "id": "ITEM-030009",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::Clear",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::clear",
+      "status": "ported",
+      "notes": "Fills clip region with color."
+    },
+    {
+      "id": "ITEM-030010",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintRect",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_rect",
+      "status": "ported",
+      "notes": "Solid color rect. C++ also supports texture arg; Rust has separate paint_polygon_textured for textured fills."
+    },
+    {
+      "id": "ITEM-030011",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintPolygon",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_polygon / paint_polygon_textured / paint_polygon_even_odd / paint_polygon_textured_even_odd",
+      "status": "ported",
+      "notes": "Polygon fill with color or texture, both winding rules."
+    },
+    {
+      "id": "ITEM-030012",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintEdgeCorrection",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_edge_correction",
+      "status": "ported",
+      "notes": "Anti-aliasing edge correction for adjacent polygons."
+    },
+    {
+      "id": "ITEM-030013",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintBezier",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_bezier",
+      "status": "ported",
+      "notes": "Filled bezier area."
+    },
+    {
+      "id": "ITEM-030014",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintEllipse",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_ellipse",
+      "status": "ported",
+      "notes": "Filled ellipse."
+    },
+    {
+      "id": "ITEM-030015",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintEllipseSector",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_ellipse_sector",
+      "status": "ported",
+      "notes": "Filled ellipse sector."
+    },
+    {
+      "id": "ITEM-030016",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintRoundRect",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_round_rect",
+      "status": "ported",
+      "notes": "Filled rounded rectangle."
+    },
+    {
+      "id": "ITEM-030017",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintLine (stroke API)",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_line_stroked",
+      "status": "ported",
+      "notes": "Stroked line with stroke ends. C++ signature uses emStroke + emStrokeEnd args."
+    },
+    {
+      "id": "ITEM-030018",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintPolyline",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_polyline / paint_polyline_with_arrows / paint_polyline_without_arrows",
+      "status": "ported",
+      "notes": "Full polyline pipeline with arrow/dash support."
+    },
+    {
+      "id": "ITEM-030019",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintBezierLine",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_bezier_line",
+      "status": "ported",
+      "notes": "Stroked bezier line."
+    },
+    {
+      "id": "ITEM-030020",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintEllipseArc",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_ellipse_arc",
+      "status": "ported",
+      "notes": "Stroked ellipse arc."
+    },
+    {
+      "id": "ITEM-030021",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintRectOutline",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_rect_outlined",
+      "status": "ported",
+      "notes": "Outlined rectangle."
+    },
+    {
+      "id": "ITEM-030022",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintPolygonOutline",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_polygon_outlined",
+      "status": "ported",
+      "notes": "Outlined polygon."
+    },
+    {
+      "id": "ITEM-030023",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintBezierOutline",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_bezier_outline",
+      "status": "ported",
+      "notes": "Outlined bezier."
+    },
+    {
+      "id": "ITEM-030024",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintEllipseOutline",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_ellipse_outlined",
+      "status": "ported",
+      "notes": "Outlined ellipse."
+    },
+    {
+      "id": "ITEM-030025",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintEllipseSectorOutline",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_ellipse_sector_outlined",
+      "status": "ported",
+      "notes": "Outlined ellipse sector."
+    },
+    {
+      "id": "ITEM-030026",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintRoundRectOutline",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_round_rect_outlined",
+      "status": "ported",
+      "notes": "Outlined rounded rectangle."
+    },
+    {
+      "id": "ITEM-030027",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintImage (both overloads)",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_image / paint_image_full / paint_image_scaled",
+      "status": "ported",
+      "notes": "Image painting with scaling/extension. C++ overloads for sub-image rects."
+    },
+    {
+      "id": "ITEM-030028",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintImageColored (both overloads)",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_image_colored",
+      "status": "ported",
+      "notes": "Image with color gradient mapping."
+    },
+    {
+      "id": "ITEM-030029",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintBorderImage (both overloads)",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_border_image",
+      "status": "ported",
+      "notes": "9-slice border image painting with whichSubRects bitmask."
+    },
+    {
+      "id": "ITEM-030030",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintBorderImageColored (both overloads)",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_border_image_colored",
+      "status": "ported",
+      "notes": "9-slice border image with color gradient."
+    },
+    {
+      "id": "ITEM-030031",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintText",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_text",
+      "status": "ported",
+      "notes": "Single-line text rendering."
+    },
+    {
+      "id": "ITEM-030032",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintTextBoxed",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_text_boxed",
+      "status": "ported",
+      "notes": "Multi-line boxed text with alignment."
+    },
+    {
+      "id": "ITEM-030033",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::GetTextSize (static)",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::get_text_size",
+      "status": "ported",
+      "notes": "Text measurement. C++ is static; Rust is a method."
+    },
+    {
+      "id": "ITEM-030034",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::SharedPixelFormat / SharedModel / ScanlineTool",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Internal C++ implementation details (pixel format hashing, thread model, scanline tool). Rust uses Image with fixed RGBA8 format."
+    },
+    {
+      "id": "ITEM-030035",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintLinearGradient (via PaintRect+emLinearGradientTexture)",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_linear_gradient",
+      "status": "ported",
+      "notes": "C++ uses PaintRect with gradient texture; Rust has dedicated method."
+    },
+    {
+      "id": "ITEM-030036",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter::PaintRadialGradient (via PaintRect+emRadialGradientTexture)",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_radial_gradient",
+      "status": "ported",
+      "notes": "C++ uses PaintRect with gradient texture; Rust has dedicated method."
+    },
+    {
+      "id": "ITEM-030037",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter private: PaintDashedPolyline / PaintSolidPolyline",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_dashed_polyline / paint_solid_polyline",
+      "status": "ported",
+      "notes": "Internal polyline pipeline (dash decomposition and solid rendering). Made pub in Rust."
+    },
+    {
+      "id": "ITEM-030038",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter private: PaintArrow / CutLineAtArrow / CalculateLinePointMinMaxRadius",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Painter::paint_stroke_end (and internal arrow logic)",
+      "status": "ported",
+      "notes": "Arrow/decoration rendering. Rust has paint_stroke_end covering all emStrokeEnd types."
+    },
+    {
+      "id": "ITEM-030039",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter deprecated: PaintLine(LineCap), PaintEllipse(startAngle), PaintEllipseOutline(startAngle)",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Deprecated C++ overloads. Not ported; Rust uses the modern stroke API."
+    },
+    {
+      "id": "ITEM-030040",
+      "cpp_file": "include/emCore/emPainter.h",
+      "cpp_symbol": "emPainter constants: CharBoxTallness, CircleQuality, MaxMiter, ArrowBaseSize, ArrowNotch, MaxDashes, MinRelSegLen",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "ARROW_BASE_SIZE, ARROW_NOTCH, CIRCLE_QUALITY, MAX_MITER, MIN_REL_SEG_LEN, BORDER_EDGES_ONLY",
+      "status": "ported",
+      "notes": "Most constants ported. MaxDashes and CharBoxTallness may be embedded inline."
+    },
+
+    {
+      "id": "ITEM-030101",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emTexture",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": "Texture",
+      "status": "ported",
+      "notes": "C++ class with TextureType enum; Rust uses enum with variants. Different structure but same semantics."
+    },
+    {
+      "id": "ITEM-030102",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emTexture::TextureType (COLOR, IMAGE, IMAGE_COLORED, LINEAR_GRADIENT, RADIAL_GRADIENT)",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": "Texture::SolidColor / Image / ImageColored / LinearGradient / RadialGradient",
+      "status": "ported",
+      "notes": "All 5 texture types ported as enum variants."
+    },
+    {
+      "id": "ITEM-030103",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emTexture::ExtensionType (EXTEND_TILED, EXTEND_EDGE, EXTEND_ZERO, EXTEND_EDGE_OR_ZERO)",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": "ImageExtension (Repeat, Clamp, Zero)",
+      "status": "ported",
+      "notes": "EXTEND_EDGE_OR_ZERO not separately enumerated; resolved at call site. 3 of 4 variants mapped."
+    },
+    {
+      "id": "ITEM-030104",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emTexture::DownscaleQualityType (DQ_BY_CONFIG, DQ_NEAREST_PIXEL..DQ_6X6)",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": "ImageQuality",
+      "status": "ambiguous",
+      "notes": "C++ has separate downscale/upscale quality enums with config-driven defaults. Rust has a single ImageQuality enum. No config-driven default."
+    },
+    {
+      "id": "ITEM-030105",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emTexture::UpscaleQualityType (UQ_BY_CONFIG..UQ_ADAPTIVE)",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": "ImageQuality (Nearest, Bilinear, AreaSampled, Bicubic, Lanczos, Adaptive)",
+      "status": "ported",
+      "notes": "All upscale quality levels present. BY_CONFIG / BY_CONFIG_FOR_VIDEO not ported (no config system)."
+    },
+    {
+      "id": "ITEM-030106",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emTexture getters/setters (GetX/SetX, GetImage/SetImage, etc.)",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "C++ has many get/set accessors. Rust enum variants have public fields, no accessors needed."
+    },
+    {
+      "id": "ITEM-030107",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emColorTexture",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": "Texture::SolidColor / Texture::color()",
+      "status": "ported",
+      "notes": "Convenience subclass in C++; Rust has constructor fn and enum variant."
+    },
+    {
+      "id": "ITEM-030108",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emImageTexture",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": "Texture::Image",
+      "status": "ported",
+      "notes": "C++ convenience subclass; Rust enum variant."
+    },
+    {
+      "id": "ITEM-030109",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emImageColoredTexture",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": "Texture::ImageColored",
+      "status": "ported",
+      "notes": "C++ convenience subclass; Rust enum variant."
+    },
+    {
+      "id": "ITEM-030110",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emLinearGradientTexture",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": "Texture::LinearGradient",
+      "status": "ported",
+      "notes": "C++ convenience subclass; Rust enum variant."
+    },
+    {
+      "id": "ITEM-030111",
+      "cpp_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emRadialGradientTexture",
+      "rust_file": "src/render/texture.rs",
+      "rust_symbol": "Texture::RadialGradient",
+      "status": "ported",
+      "notes": "C++ convenience subclass; Rust enum variant."
+    },
+
+    {
+      "id": "ITEM-030201",
+      "cpp_file": "include/emCore/emStroke.h",
+      "cpp_symbol": "emStroke",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": "Stroke",
+      "status": "ported",
+      "notes": "All fields mapped: Color, Rounded (via join/cap), DashType, DashLengthFactor, GapLengthFactor."
+    },
+    {
+      "id": "ITEM-030202",
+      "cpp_file": "include/emCore/emStroke.h",
+      "cpp_symbol": "emStroke::DashTypeEnum (SOLID, DASHED, DOTTED, DASH_DOTTED)",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": "DashType (Solid, Dashed, Dotted, DashDotted)",
+      "status": "ported",
+      "notes": "All 4 variants ported."
+    },
+    {
+      "id": "ITEM-030203",
+      "cpp_file": "include/emCore/emStroke.h",
+      "cpp_symbol": "emStroke::GetColor/SetColor, IsRounded/SetRounded, GetDashType/SetDashType, GetDashLengthFactor/SetDashLengthFactor, GetGapLengthFactor/SetGapLengthFactor",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": "Stroke public fields: color, dash_type, dash_length_factor, gap_length_factor, join, cap",
+      "status": "ported",
+      "notes": "C++ uses get/set accessors; Rust has public fields. Rounded bool maps to join=Round/cap=Round."
+    },
+    {
+      "id": "ITEM-030204",
+      "cpp_file": "include/emCore/emStroke.h",
+      "cpp_symbol": "emRoundedStroke",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "C++ convenience subclass. Rust users set join=Round directly on Stroke."
+    },
+    {
+      "id": "ITEM-030205",
+      "cpp_file": "include/emCore/emStroke.h",
+      "cpp_symbol": "emDashedStroke",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "C++ convenience subclass. Rust users set dash_type=Dashed directly on Stroke."
+    },
+    {
+      "id": "ITEM-030206",
+      "cpp_file": "include/emCore/emStroke.h",
+      "cpp_symbol": "emRoundedDashedStroke",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "C++ convenience subclass. Not needed in Rust; combine join=Round + dash_type=Dashed."
+    },
+    {
+      "id": "ITEM-030207",
+      "cpp_file": "include/emCore/emStroke.h",
+      "cpp_symbol": "emDottedStroke",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "C++ convenience subclass. Rust users set dash_type=Dotted directly."
+    },
+    {
+      "id": "ITEM-030208",
+      "cpp_file": "include/emCore/emStroke.h",
+      "cpp_symbol": "emRoundedDottedStroke",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "C++ convenience subclass."
+    },
+    {
+      "id": "ITEM-030209",
+      "cpp_file": "include/emCore/emStroke.h",
+      "cpp_symbol": "emDashDottedStroke",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "C++ convenience subclass."
+    },
+    {
+      "id": "ITEM-030210",
+      "cpp_file": "include/emCore/emStroke.h",
+      "cpp_symbol": "emRoundedDashDottedStroke",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "C++ convenience subclass."
+    },
+
+    {
+      "id": "ITEM-030301",
+      "cpp_file": "include/emCore/emStrokeEnd.h",
+      "cpp_symbol": "emStrokeEnd",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": "StrokeEnd",
+      "status": "ported",
+      "notes": "All fields: Type, InnerColor, WidthFactor, LengthFactor."
+    },
+    {
+      "id": "ITEM-030302",
+      "cpp_file": "include/emCore/emStrokeEnd.h",
+      "cpp_symbol": "emStrokeEnd::TypeEnum (BUTT..NO_END, 17 variants)",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": "StrokeEndType (Butt..Stroke, 17 variants)",
+      "status": "ported",
+      "notes": "All 17 variants ported (NO_END excluded as internal). Rust has 17 public variants: Butt, Cap, Arrow, ContourArrow, LineArrow, Triangle, ContourTriangle, Square, ContourSquare, HalfSquare, Circle, ContourCircle, HalfCircle, Diamond, ContourDiamond, HalfDiamond, Stroke."
+    },
+    {
+      "id": "ITEM-030303",
+      "cpp_file": "include/emCore/emStrokeEnd.h",
+      "cpp_symbol": "emStrokeEnd::IsDecorated",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": "StrokeEnd::is_decorated",
+      "status": "ported",
+      "notes": "Same logic: true for everything except Butt and Cap."
+    },
+    {
+      "id": "ITEM-030304",
+      "cpp_file": "include/emCore/emStrokeEnd.h",
+      "cpp_symbol": "emStrokeEnd getters/setters (GetType/SetType, GetInnerColor/SetInnerColor, GetWidthFactor/SetWidthFactor, GetLengthFactor/SetLengthFactor)",
+      "rust_file": "src/render/stroke.rs",
+      "rust_symbol": "StrokeEnd public fields + builder methods (with_inner_color, with_width_factor, with_length_factor)",
+      "status": "ported",
+      "notes": "C++ uses get/set; Rust uses public fields + builder pattern."
+    },
+
+    {
+      "id": "ITEM-030401",
+      "cpp_file": "include/emCore/emClipRects.h",
+      "cpp_symbol": "emClipRects<NUM>",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "C++ template class for disjoint clip rectangle sets with unite/intersect/subtract operations and copy-on-write. No Rust equivalent; Rust uses simple PixelRect for clipping."
+    },
+    {
+      "id": "ITEM-030402",
+      "cpp_file": "include/emCore/emClipRects.h",
+      "cpp_symbol": "emClipRects::Unite / operator+= / operator|=",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "Set union operation."
+    },
+    {
+      "id": "ITEM-030403",
+      "cpp_file": "include/emCore/emClipRects.h",
+      "cpp_symbol": "emClipRects::Intersect / operator&=",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "Set intersection operation."
+    },
+    {
+      "id": "ITEM-030404",
+      "cpp_file": "include/emCore/emClipRects.h",
+      "cpp_symbol": "emClipRects::Subtract / operator-=",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "Set subtraction operation."
+    },
+    {
+      "id": "ITEM-030405",
+      "cpp_file": "include/emCore/emClipRects.h",
+      "cpp_symbol": "emClipRects::Sort / GetFirst / GetCount / GetMinMax / IsEmpty / IsSubsetOf / IsSupersetOf / Clear / Set / SetToMinMax",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "Utility methods for clip rect set management."
+    },
+    {
+      "id": "ITEM-030406",
+      "cpp_file": "include/emCore/emClipRects.h",
+      "cpp_symbol": "emClipRects::Rect (inner class)",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_ported",
+      "notes": "Inner class representing one rectangle in the linked list. Rust has no equivalent data structure."
+    },
+    {
+      "id": "ITEM-030407",
+      "cpp_file": "include/emCore/emClipRects.h",
+      "cpp_symbol": "emClipRects::MakeNonShared / GetDataRefCount (copy-on-write)",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Copy-on-write optimization. Not needed in Rust ownership model."
+    },
+
+    {
+      "id": "ITEM-030501",
+      "cpp_file": "include/emCore/emViewRenderer.h",
+      "cpp_symbol": "emViewRenderer",
+      "rust_file": "src/render/software_compositor.rs",
+      "rust_symbol": "SoftwareCompositor",
+      "status": "ported",
+      "notes": "C++ multi-threaded tile renderer; Rust single-threaded compositor. Different architecture but same role: orchestrate view rendering into a framebuffer."
+    },
+    {
+      "id": "ITEM-030502",
+      "cpp_file": "include/emCore/emViewRenderer.h",
+      "cpp_symbol": "emViewRenderer::RenderView",
+      "rust_file": "src/render/software_compositor.rs",
+      "rust_symbol": "SoftwareCompositor::render",
+      "status": "ported",
+      "notes": "Main entry point. C++ takes invalidRects (emClipRects<int>); Rust re-renders everything."
+    },
+    {
+      "id": "ITEM-030503",
+      "cpp_file": "include/emCore/emViewRenderer.h",
+      "cpp_symbol": "emViewRenderer::PrepareBuffers (virtual)",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Multi-thread buffer management. Rust uses single Image framebuffer."
+    },
+    {
+      "id": "ITEM-030504",
+      "cpp_file": "include/emCore/emViewRenderer.h",
+      "cpp_symbol": "emViewRenderer::GetBufferPainter (virtual)",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Per-thread painter allocation. Rust creates one Painter on the framebuffer."
+    },
+    {
+      "id": "ITEM-030505",
+      "cpp_file": "include/emCore/emViewRenderer.h",
+      "cpp_symbol": "emViewRenderer::AsyncFlushBuffer (virtual)",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Async buffer flushing for multi-threaded rendering. Not applicable to single-threaded Rust."
+    },
+
+    {
+      "id": "ITEM-030601",
+      "cpp_file": "include/emCore/emRenderThreadPool.h",
+      "cpp_symbol": "emRenderThreadPool",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Thread pool for concurrent rendering. Rust zuicchini is single-threaded by design."
+    },
+    {
+      "id": "ITEM-030602",
+      "cpp_file": "include/emCore/emRenderThreadPool.h",
+      "cpp_symbol": "emRenderThreadPool::GetThreadCount",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Thread count query. Single-threaded in Rust."
+    },
+    {
+      "id": "ITEM-030603",
+      "cpp_file": "include/emCore/emRenderThreadPool.h",
+      "cpp_symbol": "emRenderThreadPool::CallParallel",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Parallel function dispatch. Single-threaded in Rust."
+    },
+    {
+      "id": "ITEM-030604",
+      "cpp_file": "include/emCore/emRenderThreadPool.h",
+      "cpp_symbol": "emRenderThreadPool::Acquire (model)",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "Model acquisition pattern. Single-threaded in Rust."
+    },
+
+    {
+      "id": "ITEM-030701",
+      "cpp_file": "src/emCore/emPainter_ScTl.h",
+      "cpp_symbol": "emPainter::ScanlineTool (internal scanline rasterizer)",
+      "rust_file": "src/render/scanline.rs",
+      "rust_symbol": "rasterize / Span / WindingRule",
+      "status": "ported",
+      "notes": "Internal scanline rasterizer. C++ uses ScanlineTool class; Rust uses free functions with Span output."
+    },
+    {
+      "id": "ITEM-030702",
+      "cpp_file": "src/emCore/emPainter_ScTl.cpp",
+      "cpp_symbol": "ScanlineTool implementation (polygon rasterization, AA coverage)",
+      "rust_file": "src/render/scanline.rs",
+      "rust_symbol": "rasterize_polynomial / rasterize_edge_crossing",
+      "status": "ported",
+      "notes": "Two rasterization algorithms ported: polynomial coverage (NonZero) and edge-crossing (EvenOdd)."
+    },
+    {
+      "id": "ITEM-030703",
+      "cpp_file": "src/emCore/emPainter_ScTlIntGra.cpp",
+      "cpp_symbol": "Scanline gradient interpolation internals",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "PixelTexture::LinearGradient / RadialGradient handling in textured polygon fill",
+      "status": "ported",
+      "notes": "Gradient interpolation during scanline fill. Implemented inline in Rust painter's textured polygon rendering."
+    },
+    {
+      "id": "ITEM-030704",
+      "cpp_file": "src/emCore/emPainter_ScTlIntImg.cpp",
+      "cpp_symbol": "Scanline image interpolation internals",
+      "rust_file": "src/render/interpolation.rs",
+      "rust_symbol": "sample_nearest / sample_bilinear / sample_bilinear_premul / sample_bicubic / sample_lanczos / sample_adaptive / sample_area",
+      "status": "ported",
+      "notes": "Image sampling during scanline fill. Multiple interpolation modes implemented."
+    },
+    {
+      "id": "ITEM-030705",
+      "cpp_file": "src/emCore/emPainter_ScTlIntImg_AVX2.cpp",
+      "cpp_symbol": "AVX2-optimized image interpolation",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "x86 AVX2 SIMD intrinsics for image interpolation. Rust uses scalar code; no SIMD specialization."
+    },
+    {
+      "id": "ITEM-030706",
+      "cpp_file": "src/emCore/emPainter_ScTlPSCol.cpp",
+      "cpp_symbol": "Scanline solid color pixel span rendering",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "blend_span_solid / blend_pixel_canvas",
+      "status": "ported",
+      "notes": "Solid color blending into target pixels with AA coverage. Implemented in Rust painter."
+    },
+    {
+      "id": "ITEM-030707",
+      "cpp_file": "src/emCore/emPainter_ScTlPSCol_AVX2.cpp",
+      "cpp_symbol": "AVX2-optimized solid color pixel span",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "AVX2 SIMD specialization. Not applicable in Rust."
+    },
+    {
+      "id": "ITEM-030708",
+      "cpp_file": "src/emCore/emPainter_ScTlPSInt.cpp",
+      "cpp_symbol": "Scanline interpolated pixel span rendering",
+      "rust_file": "src/render/painter.rs",
+      "rust_symbol": "Textured polygon fill path in Painter",
+      "status": "ported",
+      "notes": "Interpolated (texture/gradient) pixel span rendering. Implemented inline in Rust painter."
+    },
+    {
+      "id": "ITEM-030709",
+      "cpp_file": "src/emCore/emPainter_ScTlPSInt_AVX2.cpp",
+      "cpp_symbol": "AVX2-optimized interpolated pixel span",
+      "rust_file": null,
+      "rust_symbol": null,
+      "status": "not_applicable",
+      "notes": "AVX2 SIMD specialization. Not applicable in Rust."
+    }
+  ],
+  "summary": {
+    "total_items": 79,
+    "ported": 50,
+    "not_ported": 10,
+    "not_applicable": 17,
+    "ambiguous": 2,
+    "notes": "emPainter is extensively ported with all major paint methods present. emStroke/emStrokeEnd types are fully ported. emTexture is ported as a Rust enum. emClipRects is not ported (Rust uses simple PixelRect). emViewRenderer maps to SoftwareCompositor (single-threaded). emRenderThreadPool is not applicable (single-threaded). Scanline/interpolation internals are ported. All AVX2 variants are not applicable. Convenience stroke subclasses (emRoundedStroke etc.) are not ported as separate types (Rust uses field configuration instead)."
+  }
+}

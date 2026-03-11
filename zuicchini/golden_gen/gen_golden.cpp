@@ -783,6 +783,215 @@ static void gen_pack_extreme() {
     });
 }
 
+// ─── Layout expansion: spacing, alignment, adaptive, min_cell_count, tallness constraints ───
+
+static void gen_linear_h_spacing() {
+    gen_layout_test<emLinearLayout>("linear_h_spacing", [](emLinearLayout* l) {
+        l->SetHorizontal();
+        for (int i = 0; i < 4; i++)
+            new emPanel(*l, emString::Format("c%d", i));
+        l->SetChildWeight(1.0);
+        // C++ SetSpace(l, t, h, v, r, b) — SpaceL=0.5, SpaceT=0.3, SpaceH=1.0, SpaceV=0, SpaceR=0.5, SpaceB=0.3
+        l->SetSpace(0.5, 0.3, 1.0, 0.0, 0.5, 0.3);
+    });
+}
+
+static void gen_linear_v_spacing() {
+    gen_layout_test<emLinearLayout>("linear_v_spacing", [](emLinearLayout* l) {
+        l->SetVertical();
+        for (int i = 0; i < 4; i++)
+            new emPanel(*l, emString::Format("c%d", i));
+        l->SetChildWeight(1.0);
+        l->SetSpace(0.3, 0.5, 0.0, 1.0, 0.3, 0.5);
+    });
+}
+
+static void gen_linear_h_align_right() {
+    gen_layout_test<emLinearLayout>("linear_h_align_right", [](emLinearLayout* l) {
+        l->SetHorizontal();
+        l->SetAlignment(EM_ALIGN_BOTTOM_RIGHT);
+        // Fixed tallness forces children narrower than parent, creating surplus
+        double t[] = {2.0, 2.0, 2.0};
+        for (int i = 0; i < 3; i++) {
+            new emPanel(*l, emString::Format("c%d", i));
+            l->SetChildTallness(i, t[i]);
+        }
+        l->SetChildWeight(1.0);
+    });
+}
+
+static void gen_linear_h_align_center() {
+    gen_layout_test<emLinearLayout>("linear_h_align_center", [](emLinearLayout* l) {
+        l->SetHorizontal();
+        l->SetAlignment(EM_ALIGN_CENTER);
+        double t[] = {2.0, 2.0, 2.0};
+        for (int i = 0; i < 3; i++) {
+            new emPanel(*l, emString::Format("c%d", i));
+            l->SetChildTallness(i, t[i]);
+        }
+        l->SetChildWeight(1.0);
+    });
+}
+
+static void gen_linear_v_align_bottom() {
+    gen_layout_test<emLinearLayout>("linear_v_align_bottom", [](emLinearLayout* l) {
+        l->SetVertical();
+        l->SetAlignment(EM_ALIGN_BOTTOM_RIGHT);
+        double t[] = {0.25, 0.25, 0.25};
+        for (int i = 0; i < 3; i++) {
+            new emPanel(*l, emString::Format("c%d", i));
+            l->SetChildTallness(i, t[i]);
+        }
+        l->SetChildWeight(1.0);
+    });
+}
+
+static void gen_linear_adaptive_wide() {
+    // Parent is wider than tall → tallness < threshold → horizontal
+    gen_layout_test<emLinearLayout>("linear_adaptive_wide", [](emLinearLayout* l) {
+        l->SetOrientationThresholdTallness(1.0);
+        for (int i = 0; i < 4; i++)
+            new emPanel(*l, emString::Format("c%d", i));
+        l->SetChildWeight(1.0);
+    });
+}
+
+static void gen_linear_adaptive_tall() {
+    // Uses a tall parent rect (1000x2000) → tallness > threshold → vertical
+    // Can't use gen_layout_test since it hardcodes 1000x500.
+    emStandardScheduler sched;
+    emRootContext ctx(sched);
+    emView view(ctx, 0);
+    auto* l = new emLinearLayout(view, "layout");
+    l->SetOrientationThresholdTallness(1.0);
+    for (int i = 0; i < 4; i++)
+        new emPanel(*l, emString::Format("c%d", i));
+    l->SetChildWeight(1.0);
+    l->Layout(0.0, 0.0, 1000.0, 2000.0);
+    TerminateEngine ctrl(sched, 30);
+    sched.Run();
+    dump_layout("linear_adaptive_tall", l);
+}
+
+static void gen_linear_min_cell_count() {
+    gen_layout_test<emLinearLayout>("linear_min_cell_count", [](emLinearLayout* l) {
+        l->SetHorizontal();
+        l->SetMinCellCount(6);
+        // Only 3 actual children, but min_cell_count=6 allocates space for 6
+        for (int i = 0; i < 3; i++)
+            new emPanel(*l, emString::Format("c%d", i));
+        l->SetChildWeight(1.0);
+    });
+}
+
+static void gen_linear_min_max_tallness() {
+    gen_layout_test<emLinearLayout>("linear_min_max_tallness", [](emLinearLayout* l) {
+        l->SetHorizontal();
+        for (int i = 0; i < 4; i++) {
+            new emPanel(*l, emString::Format("c%d", i));
+            l->SetChildWeight(i, 1.0);
+        }
+        // Child 0: unconstrained
+        // Child 1: min tallness 1.0
+        l->SetMinChildTallness(1, 1.0);
+        // Child 2: max tallness 0.1
+        l->SetMaxChildTallness(2, 0.1);
+        // Child 3: both min=0.5 max=0.5 (fixed)
+        l->SetChildTallness(3, 0.5);
+    });
+}
+
+static void gen_raster_alignment_br() {
+    gen_layout_test<emRasterLayout>("raster_alignment_br", [](emRasterLayout* l) {
+        l->SetFixedColumnCount(2);
+        l->SetAlignment(EM_ALIGN_BOTTOM_RIGHT);
+        l->SetChildTallness(2.0); // tall cells → surplus in x
+        for (int i = 0; i < 4; i++)
+            new emPanel(*l, emString::Format("c%d", i));
+    });
+}
+
+static void gen_raster_alignment_center() {
+    gen_layout_test<emRasterLayout>("raster_alignment_center", [](emRasterLayout* l) {
+        l->SetFixedColumnCount(2);
+        l->SetAlignment(EM_ALIGN_CENTER);
+        l->SetChildTallness(2.0);
+        for (int i = 0; i < 4; i++)
+            new emPanel(*l, emString::Format("c%d", i));
+    });
+}
+
+static void gen_raster_spacing() {
+    gen_layout_test<emRasterLayout>("raster_spacing", [](emRasterLayout* l) {
+        l->SetFixedColumnCount(3);
+        l->SetSpace(0.5, 0.3, 0.8, 0.6, 0.5, 0.3);
+        for (int i = 0; i < 9; i++)
+            new emPanel(*l, emString::Format("c%d", i));
+    });
+}
+
+static void gen_raster_min_cell_count() {
+    gen_layout_test<emRasterLayout>("raster_min_cell_count", [](emRasterLayout* l) {
+        l->SetFixedColumnCount(3);
+        l->SetMinCellCount(9);
+        // Only 5 actual children, min_cell_count=9 allocates space for 9
+        for (int i = 0; i < 5; i++)
+            new emPanel(*l, emString::Format("c%d", i));
+    });
+}
+
+static void gen_raster_min_max_tallness() {
+    gen_layout_test<emRasterLayout>("raster_min_max_tallness", [](emRasterLayout* l) {
+        l->SetFixedColumnCount(3);
+        l->SetMinChildTallness(0.5);
+        l->SetMaxChildTallness(2.0);
+        l->SetPrefChildTallness(3.0); // pref exceeds max → clamped
+        for (int i = 0; i < 6; i++)
+            new emPanel(*l, emString::Format("c%d", i));
+    });
+}
+
+static void gen_pack_min_cell_count() {
+    gen_layout_test<emPackLayout>("pack_min_cell_count", [](emPackLayout* l) {
+        l->SetMinCellCount(8);
+        // Only 4 actual children
+        for (int i = 0; i < 4; i++) {
+            new emPanel(*l, emString::Format("c%d", i));
+            l->SetChildWeight(i, 1.0);
+            l->SetPrefChildTallness(i, 1.0);
+        }
+    });
+}
+
+static void gen_linear_mixed_weights() {
+    gen_layout_test<emLinearLayout>("linear_mixed_weights", [](emLinearLayout* l) {
+        l->SetHorizontal();
+        // Mix of very different weights — tests distribution precision
+        double w[] = {0.1, 1.0, 10.0, 0.5, 5.0};
+        for (int i = 0; i < 5; i++) {
+            new emPanel(*l, emString::Format("c%d", i));
+            l->SetChildWeight(i, w[i]);
+        }
+    });
+}
+
+static void gen_raster_auto_cols() {
+    // No fixed column/row count — auto-compute from tallness
+    gen_layout_test<emRasterLayout>("raster_auto_cols", [](emRasterLayout* l) {
+        l->SetPrefChildTallness(1.0);
+        for (int i = 0; i < 12; i++)
+            new emPanel(*l, emString::Format("c%d", i));
+    });
+}
+
+static void gen_pack_single() {
+    gen_layout_test<emPackLayout>("pack_single", [](emPackLayout* l) {
+        new emPanel(*l, "c0");
+        l->SetChildWeight(0, 1.0);
+        l->SetPrefChildTallness(0, 1.0);
+    });
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Behavioral golden generators
 // ═══════════════════════════════════════════════════════════════════
@@ -3584,6 +3793,25 @@ int main() {
     gen_pack_equal();
     gen_pack_weighted();
     gen_pack_extreme();
+    // ─── Layout expansion tests ───
+    gen_linear_h_spacing();
+    gen_linear_v_spacing();
+    gen_linear_h_align_right();
+    gen_linear_h_align_center();
+    gen_linear_v_align_bottom();
+    gen_linear_adaptive_wide();
+    gen_linear_adaptive_tall();
+    gen_linear_min_cell_count();
+    gen_linear_min_max_tallness();
+    gen_linear_mixed_weights();
+    gen_raster_alignment_br();
+    gen_raster_alignment_center();
+    gen_raster_spacing();
+    gen_raster_min_cell_count();
+    gen_raster_min_max_tallness();
+    gen_raster_auto_cols();
+    gen_pack_min_cell_count();
+    gen_pack_single();
 
     printf("Generating behavioral golden files...\n");
     gen_activate_click();

@@ -1,0 +1,1197 @@
+{
+  "worker_id": "W-0003",
+  "source_file": "include/emCore/{emColor.h,emImage.h,emImageFile.h,emFontCache.h,emLook.h}",
+  "started_at": "2026-03-10T00:00:00Z",
+  "completed_at": "2026-03-10T00:30:00Z",
+  "items": [
+    {
+      "id": "ITEM-020001",
+      "source": "emColor.h",
+      "symbol": "emColor (class)",
+      "kind": "class",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color"
+    },
+    {
+      "id": "ITEM-020002",
+      "source": "emColor.h",
+      "symbol": "emColor::BLACK",
+      "kind": "constant",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::BLACK"
+    },
+    {
+      "id": "ITEM-020003",
+      "source": "emColor.h",
+      "symbol": "emColor::WHITE",
+      "kind": "constant",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::WHITE"
+    },
+    {
+      "id": "ITEM-020004",
+      "source": "emColor.h",
+      "symbol": "emColor::GRAY",
+      "kind": "constant",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::GRAY"
+    },
+    {
+      "id": "ITEM-020005",
+      "source": "emColor.h",
+      "symbol": "emColor::RED",
+      "kind": "constant",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::RED"
+    },
+    {
+      "id": "ITEM-020006",
+      "source": "emColor.h",
+      "symbol": "emColor::GREEN",
+      "kind": "constant",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::GREEN"
+    },
+    {
+      "id": "ITEM-020007",
+      "source": "emColor.h",
+      "symbol": "emColor::BLUE",
+      "kind": "constant",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::BLUE"
+    },
+    {
+      "id": "ITEM-020008",
+      "source": "emColor.h",
+      "symbol": "emColor::YELLOW",
+      "kind": "constant",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::YELLOW"
+    },
+    {
+      "id": "ITEM-020009",
+      "source": "emColor.h",
+      "symbol": "emColor::CYAN",
+      "kind": "constant",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::CYAN"
+    },
+    {
+      "id": "ITEM-020010",
+      "source": "emColor.h",
+      "symbol": "emColor::MAGENTA",
+      "kind": "constant",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::MAGENTA"
+    },
+    {
+      "id": "ITEM-020011",
+      "source": "emColor.h",
+      "symbol": "emColor::emColor() [default]",
+      "kind": "constructor",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Rust Color is Copy+Clone, no uninitialized state needed"
+    },
+    {
+      "id": "ITEM-020012",
+      "source": "emColor.h",
+      "symbol": "emColor::emColor(emUInt32 packed)",
+      "kind": "constructor",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color(u32) [struct field, via Color::rgba or direct]"
+    },
+    {
+      "id": "ITEM-020013",
+      "source": "emColor.h",
+      "symbol": "emColor::emColor(emByte r, emByte g, emByte b, emByte a)",
+      "kind": "constructor",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::rgba"
+    },
+    {
+      "id": "ITEM-020014",
+      "source": "emColor.h",
+      "symbol": "emColor::emColor(const emColor & rgb, emByte alpha)",
+      "kind": "constructor",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::with_alpha"
+    },
+    {
+      "id": "ITEM-020015",
+      "source": "emColor.h",
+      "symbol": "emColor::ToString",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::impl Display for Color"
+    },
+    {
+      "id": "ITEM-020016",
+      "source": "emColor.h",
+      "symbol": "emColor::TryParse",
+      "kind": "method",
+      "classification": "ambiguous",
+      "rust_equivalent": "foundation/color.rs::impl FromStr for Color",
+      "confidence": 0.7,
+      "ambiguity_reason": "Rust only parses #RRGGBB/#RRGGBBAA hex. C++ also parses X11 named colors (e.g. 'Powder Blue'), short hex (#RGB), and other hex lengths."
+    },
+    {
+      "id": "ITEM-020017",
+      "source": "emColor.h",
+      "symbol": "emColor::operator emUInt32 / Get()",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::as_u32"
+    },
+    {
+      "id": "ITEM-020018",
+      "source": "emColor.h",
+      "symbol": "emColor::Set(emUInt32)",
+      "kind": "method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Color is immutable Copy type in Rust; construct new instead"
+    },
+    {
+      "id": "ITEM-020019",
+      "source": "emColor.h",
+      "symbol": "emColor::Set(emByte r, emByte g, emByte b, emByte a)",
+      "kind": "method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Color is immutable Copy type in Rust; use Color::rgba() constructor"
+    },
+    {
+      "id": "ITEM-020020",
+      "source": "emColor.h",
+      "symbol": "emColor::GetRed",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::r"
+    },
+    {
+      "id": "ITEM-020021",
+      "source": "emColor.h",
+      "symbol": "emColor::GetGreen",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::g"
+    },
+    {
+      "id": "ITEM-020022",
+      "source": "emColor.h",
+      "symbol": "emColor::GetBlue",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::b"
+    },
+    {
+      "id": "ITEM-020023",
+      "source": "emColor.h",
+      "symbol": "emColor::GetAlpha",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::a"
+    },
+    {
+      "id": "ITEM-020024",
+      "source": "emColor.h",
+      "symbol": "emColor::SetRed",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::with_red"
+    },
+    {
+      "id": "ITEM-020025",
+      "source": "emColor.h",
+      "symbol": "emColor::SetGreen",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::with_green"
+    },
+    {
+      "id": "ITEM-020026",
+      "source": "emColor.h",
+      "symbol": "emColor::SetBlue",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::with_blue"
+    },
+    {
+      "id": "ITEM-020027",
+      "source": "emColor.h",
+      "symbol": "emColor::SetAlpha",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::with_alpha"
+    },
+    {
+      "id": "ITEM-020028",
+      "source": "emColor.h",
+      "symbol": "emColor::IsTotallyTransparent",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::is_transparent"
+    },
+    {
+      "id": "ITEM-020029",
+      "source": "emColor.h",
+      "symbol": "emColor::IsOpaque",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::is_opaque"
+    },
+    {
+      "id": "ITEM-020030",
+      "source": "emColor.h",
+      "symbol": "emColor::IsGrey",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::is_grey"
+    },
+    {
+      "id": "ITEM-020031",
+      "source": "emColor.h",
+      "symbol": "emColor::GetGrey",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::to_grey"
+    },
+    {
+      "id": "ITEM-020032",
+      "source": "emColor.h",
+      "symbol": "emColor::SetGrey",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::grey"
+    },
+    {
+      "id": "ITEM-020033",
+      "source": "emColor.h",
+      "symbol": "emColor::GetHue",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::to_hsv (returns h as first tuple element)",
+      "notes": "C++ returns degrees 0-360, percent 0-100 for sat/val. Rust to_hsv returns h in degrees but s/v in 0-1 range."
+    },
+    {
+      "id": "ITEM-020034",
+      "source": "emColor.h",
+      "symbol": "emColor::GetSat",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::to_hsv (returns s as second tuple element)",
+      "notes": "C++ returns percent 0-100, Rust returns 0.0-1.0"
+    },
+    {
+      "id": "ITEM-020035",
+      "source": "emColor.h",
+      "symbol": "emColor::GetVal",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::to_hsv (returns v as third tuple element)",
+      "notes": "C++ returns percent 0-100, Rust returns 0.0-1.0"
+    },
+    {
+      "id": "ITEM-020036",
+      "source": "emColor.h",
+      "symbol": "emColor::SetHue",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::with_hue"
+    },
+    {
+      "id": "ITEM-020037",
+      "source": "emColor.h",
+      "symbol": "emColor::SetSat",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::with_saturation"
+    },
+    {
+      "id": "ITEM-020038",
+      "source": "emColor.h",
+      "symbol": "emColor::SetVal",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::with_value"
+    },
+    {
+      "id": "ITEM-020039",
+      "source": "emColor.h",
+      "symbol": "emColor::SetHSVA",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::from_hsv + with_alpha",
+      "notes": "C++ takes sat/val as percent 0-100, Rust from_hsv takes 0.0-1.0"
+    },
+    {
+      "id": "ITEM-020040",
+      "source": "emColor.h",
+      "symbol": "emColor::GetBlended",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::lerp",
+      "notes": "C++ weight is 0-100 percent, Rust t is 0.0-1.0. Precision differs: C++ uses 16-bit fixed point, Rust uses 8-bit."
+    },
+    {
+      "id": "ITEM-020041",
+      "source": "emColor.h",
+      "symbol": "emColor::GetLighted",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::lighten / Color::darken",
+      "notes": "C++ single method with -100..100 range. Rust splits into lighten(0..1) and darken(0..1)."
+    },
+    {
+      "id": "ITEM-020042",
+      "source": "emColor.h",
+      "symbol": "emColor::GetTransparented",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::Color::transparented"
+    },
+    {
+      "id": "ITEM-020043",
+      "source": "emColor.h",
+      "symbol": "emColor::operator==",
+      "kind": "operator",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::derive(PartialEq, Eq) on Color"
+    },
+    {
+      "id": "ITEM-020044",
+      "source": "emColor.h",
+      "symbol": "emColor::operator!=",
+      "kind": "operator",
+      "classification": "ported",
+      "rust_equivalent": "foundation/color.rs::derive(PartialEq, Eq) on Color"
+    },
+
+    {
+      "id": "ITEM-020100",
+      "source": "emImage.h",
+      "symbol": "emImage (class)",
+      "kind": "class",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image"
+    },
+    {
+      "id": "ITEM-020101",
+      "source": "emImage.h",
+      "symbol": "emImage::emImage() [default]",
+      "kind": "constructor",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::new(0,0,1)",
+      "notes": "Rust has no Default impl but Image::new(0,0,cc) is equivalent"
+    },
+    {
+      "id": "ITEM-020102",
+      "source": "emImage.h",
+      "symbol": "emImage::emImage(int w, int h, int cc)",
+      "kind": "constructor",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::new"
+    },
+    {
+      "id": "ITEM-020103",
+      "source": "emImage.h",
+      "symbol": "emImage::emImage(const emImage &) [copy]",
+      "kind": "constructor",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::derive(Clone) on Image",
+      "notes": "C++ has copy-on-write; Rust does a deep clone"
+    },
+    {
+      "id": "ITEM-020104",
+      "source": "emImage.h",
+      "symbol": "emImage::operator==",
+      "kind": "operator",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::derive(PartialEq) on Image"
+    },
+    {
+      "id": "ITEM-020105",
+      "source": "emImage.h",
+      "symbol": "emImage::Setup",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::setup"
+    },
+    {
+      "id": "ITEM-020106",
+      "source": "emImage.h",
+      "symbol": "emImage::SetUserMap",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null,
+      "notes": "Shared-memory user map feature not needed in Rust port"
+    },
+    {
+      "id": "ITEM-020107",
+      "source": "emImage.h",
+      "symbol": "emImage::HasUserMap",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020108",
+      "source": "emImage.h",
+      "symbol": "emImage::TryParseXpm",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null,
+      "notes": "XPM parsing not needed in Rust port"
+    },
+    {
+      "id": "ITEM-020109",
+      "source": "emImage.h",
+      "symbol": "emImage::Clear",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::clear"
+    },
+    {
+      "id": "ITEM-020110",
+      "source": "emImage.h",
+      "symbol": "emImage::IsEmpty",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::is_empty"
+    },
+    {
+      "id": "ITEM-020111",
+      "source": "emImage.h",
+      "symbol": "emImage::GetWidth",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::width"
+    },
+    {
+      "id": "ITEM-020112",
+      "source": "emImage.h",
+      "symbol": "emImage::GetHeight",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::height"
+    },
+    {
+      "id": "ITEM-020113",
+      "source": "emImage.h",
+      "symbol": "emImage::GetChannelCount",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::channel_count"
+    },
+    {
+      "id": "ITEM-020114",
+      "source": "emImage.h",
+      "symbol": "emImage::GetMap",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::data"
+    },
+    {
+      "id": "ITEM-020115",
+      "source": "emImage.h",
+      "symbol": "emImage::GetWritableMap",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::data_mut"
+    },
+    {
+      "id": "ITEM-020116",
+      "source": "emImage.h",
+      "symbol": "emImage::GetPixel",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::pixel",
+      "notes": "C++ returns emColor; Rust returns &[u8] slice"
+    },
+    {
+      "id": "ITEM-020117",
+      "source": "emImage.h",
+      "symbol": "emImage::SetPixel",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::pixel_mut",
+      "notes": "Rust returns &mut [u8] for caller to write into"
+    },
+    {
+      "id": "ITEM-020118",
+      "source": "emImage.h",
+      "symbol": "emImage::GetPixelChannel",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::get_pixel_channel"
+    },
+    {
+      "id": "ITEM-020119",
+      "source": "emImage.h",
+      "symbol": "emImage::SetPixelChannel",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::set_pixel_channel"
+    },
+    {
+      "id": "ITEM-020120",
+      "source": "emImage.h",
+      "symbol": "emImage::GetPixelInterpolated",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::get_pixel_interpolated"
+    },
+    {
+      "id": "ITEM-020121",
+      "source": "emImage.h",
+      "symbol": "emImage::Fill(emColor)",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::fill",
+      "notes": "Rust requires 4-channel image; C++ handles any channel count"
+    },
+    {
+      "id": "ITEM-020122",
+      "source": "emImage.h",
+      "symbol": "emImage::Fill(x,y,w,h,color)",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::fill_rect",
+      "notes": "Rust requires 4-channel image; C++ handles any channel count"
+    },
+    {
+      "id": "ITEM-020123",
+      "source": "emImage.h",
+      "symbol": "emImage::FillChannel(channel,value)",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::fill_channel"
+    },
+    {
+      "id": "ITEM-020124",
+      "source": "emImage.h",
+      "symbol": "emImage::FillChannel(x,y,w,h,channel,value)",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::fill_channel_rect"
+    },
+    {
+      "id": "ITEM-020125",
+      "source": "emImage.h",
+      "symbol": "emImage::Copy(x,y,img)",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::copy_from"
+    },
+    {
+      "id": "ITEM-020126",
+      "source": "emImage.h",
+      "symbol": "emImage::Copy(x,y,img,srcX,srcY,w,h)",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::copy_from_rect"
+    },
+    {
+      "id": "ITEM-020127",
+      "source": "emImage.h",
+      "symbol": "emImage::CopyChannel",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::copy_channel"
+    },
+    {
+      "id": "ITEM-020128",
+      "source": "emImage.h",
+      "symbol": "emImage::CopyTransformed",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::copy_transformed"
+    },
+    {
+      "id": "ITEM-020129",
+      "source": "emImage.h",
+      "symbol": "emImage::GetTransformed",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null,
+      "notes": "Convenience wrapper around CopyTransformed that allocates a new image. Not needed — callers use copy_transformed directly."
+    },
+    {
+      "id": "ITEM-020130",
+      "source": "emImage.h",
+      "symbol": "emImage::CalcMinMaxRect",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::calc_min_max_rect"
+    },
+    {
+      "id": "ITEM-020131",
+      "source": "emImage.h",
+      "symbol": "emImage::CalcChannelMinMaxRect",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::calc_channel_min_max_rect"
+    },
+    {
+      "id": "ITEM-020132",
+      "source": "emImage.h",
+      "symbol": "emImage::CalcAlphaMinMaxRect",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::calc_alpha_min_max_rect"
+    },
+    {
+      "id": "ITEM-020133",
+      "source": "emImage.h",
+      "symbol": "emImage::GetConverted",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::get_converted"
+    },
+    {
+      "id": "ITEM-020134",
+      "source": "emImage.h",
+      "symbol": "emImage::GetCropped",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::get_cropped"
+    },
+    {
+      "id": "ITEM-020135",
+      "source": "emImage.h",
+      "symbol": "emImage::GetCroppedByAlpha",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::get_cropped_by_alpha"
+    },
+    {
+      "id": "ITEM-020136",
+      "source": "emImage.h",
+      "symbol": "emImage::HasAnyNonGreyPixel",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::has_any_non_grey_pixel"
+    },
+    {
+      "id": "ITEM-020137",
+      "source": "emImage.h",
+      "symbol": "emImage::HasAnyTransparentPixel",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::has_any_transparent_pixel"
+    },
+    {
+      "id": "ITEM-020138",
+      "source": "emImage.h",
+      "symbol": "emImage::DetermineAllColorsSorted",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "foundation/image.rs::Image::determine_all_colors_sorted",
+      "notes": "C++ has a limit parameter to abort early; Rust version always collects all"
+    },
+    {
+      "id": "ITEM-020139",
+      "source": "emImage.h",
+      "symbol": "emImage::PreparePainter",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null,
+      "notes": "Rust painter uses a different architecture (direct rendering to Image)"
+    },
+    {
+      "id": "ITEM-020140",
+      "source": "emImage.h",
+      "symbol": "emImage::IsChannelCountPaintable",
+      "kind": "static_method",
+      "classification": "not_ported",
+      "rust_equivalent": null,
+      "notes": "Related to PreparePainter which is not ported"
+    },
+    {
+      "id": "ITEM-020141",
+      "source": "emImage.h",
+      "symbol": "emImage::GetDataRefCount",
+      "kind": "method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Copy-on-write refcount not applicable; Rust Image owns its data uniquely"
+    },
+    {
+      "id": "ITEM-020142",
+      "source": "emImage.h",
+      "symbol": "emImage::MakeNonShared",
+      "kind": "method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Copy-on-write / thread-safety concern; Rust Image is not shared"
+    },
+
+    {
+      "id": "ITEM-020200",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel (class)",
+      "kind": "class",
+      "classification": "not_ported",
+      "rust_equivalent": null,
+      "notes": "model/file_model.rs has generic FileModel but no image-specific subclass. Phase 10 (file/model) is parked."
+    },
+    {
+      "id": "ITEM-020201",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel::GetImage",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020202",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel::SetImage",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020203",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel::GetComment",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020204",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel::SetComment",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020205",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel::GetFileFormatInfo",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020206",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel::SetFileFormatInfo",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020207",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel::GetSavingQuality",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020208",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel::SetSavingQuality",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020209",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel::GetChangeSignal",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020210",
+      "source": "emImageFile.h",
+      "symbol": "emImageFileModel::ResetData",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020211",
+      "source": "emImageFile.h",
+      "symbol": "emImageFilePanel (class)",
+      "kind": "class",
+      "classification": "not_ported",
+      "rust_equivalent": null,
+      "notes": "No image file panel widget in Rust port"
+    },
+    {
+      "id": "ITEM-020212",
+      "source": "emImageFile.h",
+      "symbol": "emImageFilePanel::SetFileModel",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020213",
+      "source": "emImageFile.h",
+      "symbol": "emImageFilePanel::GetIconFileName",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020214",
+      "source": "emImageFile.h",
+      "symbol": "emImageFilePanel::GetEssenceRect",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020215",
+      "source": "emImageFile.h",
+      "symbol": "emImageFilePanel::Cycle",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020216",
+      "source": "emImageFile.h",
+      "symbol": "emImageFilePanel::IsOpaque",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020217",
+      "source": "emImageFile.h",
+      "symbol": "emImageFilePanel::Paint",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+    {
+      "id": "ITEM-020218",
+      "source": "emImageFile.h",
+      "symbol": "emImageFilePanel::CreateControlPanel",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null
+    },
+
+    {
+      "id": "ITEM-020300",
+      "source": "emFontCache.h",
+      "symbol": "emFontCache (class)",
+      "kind": "class",
+      "classification": "ported",
+      "rust_equivalent": "render/em_font.rs (module-level functions + static ATLAS)",
+      "notes": "C++ is a Model with Acquire/Cycle; Rust uses a static OnceLock atlas with module-level functions"
+    },
+    {
+      "id": "ITEM-020301",
+      "source": "emFontCache.h",
+      "symbol": "emFontCache::Acquire",
+      "kind": "static_method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Rust uses static OnceLock; no explicit acquire needed"
+    },
+    {
+      "id": "ITEM-020302",
+      "source": "emFontCache.h",
+      "symbol": "emFontCache::GetChar",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "render/em_font.rs::get_glyph + atlas()",
+      "notes": "C++ returns scaled image pointer; Rust returns atlas coordinates for the caller to sample"
+    },
+    {
+      "id": "ITEM-020303",
+      "source": "emFontCache.h",
+      "symbol": "emFontCache::Cycle",
+      "kind": "method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Memory management cycle not needed; Rust atlas is static and always loaded"
+    },
+    {
+      "id": "ITEM-020304",
+      "source": "emFontCache.h",
+      "symbol": "emFontCache::Entry (struct)",
+      "kind": "struct",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Internal cache entry; Rust loads single atlas statically"
+    },
+    {
+      "id": "ITEM-020305",
+      "source": "emFontCache.h",
+      "symbol": "emFontCache::LoadEntry",
+      "kind": "method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Internal; Rust uses decode_tga_rle_grayscale in OnceLock::get_or_init"
+    },
+    {
+      "id": "ITEM-020306",
+      "source": "emFontCache.h",
+      "symbol": "emFontCache::UnloadEntry",
+      "kind": "method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Internal cache eviction; not needed in Rust static atlas"
+    },
+    {
+      "id": "ITEM-020307",
+      "source": "emFontCache.h",
+      "symbol": "emFontCache::LoadFontDir",
+      "kind": "method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Rust embeds font atlas via include_bytes! at compile time"
+    },
+    {
+      "id": "ITEM-020308",
+      "source": "emFontCache.h",
+      "symbol": "emFontCache constants (CHAR_WIDTH, CHAR_HEIGHT, etc.)",
+      "kind": "constant",
+      "classification": "ported",
+      "rust_equivalent": "render/em_font.rs::CHAR_WIDTH, CHAR_HEIGHT, FIRST_CODE, LAST_CODE, COLUMN_COUNT, CHAR_BOX_TALLNESS"
+    },
+    {
+      "id": "ITEM-020309",
+      "source": "emFontCache.h",
+      "symbol": "emFontCache::Stress / StressHalfLifePeriodMS / StressSensitivity / MaxMegabytes",
+      "kind": "constant",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Cache pressure management; Rust loads full atlas once, no eviction needed"
+    },
+
+    {
+      "id": "ITEM-020400",
+      "source": "emLook.h",
+      "symbol": "emLook (class)",
+      "kind": "class",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look"
+    },
+    {
+      "id": "ITEM-020401",
+      "source": "emLook.h",
+      "symbol": "emLook::emLook() [default]",
+      "kind": "constructor",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::impl Default for Look"
+    },
+    {
+      "id": "ITEM-020402",
+      "source": "emLook.h",
+      "symbol": "emLook::emLook(const emLook &) [copy]",
+      "kind": "constructor",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "C++ has copy-on-write; Rust Look is typically behind Rc, cloned when needed"
+    },
+    {
+      "id": "ITEM-020403",
+      "source": "emLook.h",
+      "symbol": "emLook::operator==",
+      "kind": "operator",
+      "classification": "not_ported",
+      "rust_equivalent": null,
+      "notes": "Look does not derive PartialEq"
+    },
+    {
+      "id": "ITEM-020404",
+      "source": "emLook.h",
+      "symbol": "emLook::Apply",
+      "kind": "method",
+      "classification": "not_ported",
+      "rust_equivalent": null,
+      "notes": "Recursive look application to panel tree not implemented"
+    },
+    {
+      "id": "ITEM-020405",
+      "source": "emLook.h",
+      "symbol": "emLook::GetBgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::bg_color (pub field)"
+    },
+    {
+      "id": "ITEM-020406",
+      "source": "emLook.h",
+      "symbol": "emLook::GetFgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::fg_color (pub field)"
+    },
+    {
+      "id": "ITEM-020407",
+      "source": "emLook.h",
+      "symbol": "emLook::SetBgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::bg_color (pub field, direct assignment)"
+    },
+    {
+      "id": "ITEM-020408",
+      "source": "emLook.h",
+      "symbol": "emLook::SetFgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::fg_color (pub field, direct assignment)"
+    },
+    {
+      "id": "ITEM-020409",
+      "source": "emLook.h",
+      "symbol": "emLook::GetButtonBgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::button_bg_color (pub field)"
+    },
+    {
+      "id": "ITEM-020410",
+      "source": "emLook.h",
+      "symbol": "emLook::GetButtonFgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::button_fg_color (pub field)"
+    },
+    {
+      "id": "ITEM-020411",
+      "source": "emLook.h",
+      "symbol": "emLook::SetButtonBgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::button_bg_color (pub field, direct assignment)"
+    },
+    {
+      "id": "ITEM-020412",
+      "source": "emLook.h",
+      "symbol": "emLook::SetButtonFgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::button_fg_color (pub field, direct assignment)"
+    },
+    {
+      "id": "ITEM-020413",
+      "source": "emLook.h",
+      "symbol": "emLook::GetInputBgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::input_bg_color (pub field)"
+    },
+    {
+      "id": "ITEM-020414",
+      "source": "emLook.h",
+      "symbol": "emLook::GetInputFgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::input_fg_color (pub field)"
+    },
+    {
+      "id": "ITEM-020415",
+      "source": "emLook.h",
+      "symbol": "emLook::GetInputHlColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::input_hl_color (pub field)"
+    },
+    {
+      "id": "ITEM-020416",
+      "source": "emLook.h",
+      "symbol": "emLook::SetInputBgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::input_bg_color (pub field, direct assignment)"
+    },
+    {
+      "id": "ITEM-020417",
+      "source": "emLook.h",
+      "symbol": "emLook::SetInputFgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::input_fg_color (pub field, direct assignment)"
+    },
+    {
+      "id": "ITEM-020418",
+      "source": "emLook.h",
+      "symbol": "emLook::SetInputHlColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::input_hl_color (pub field, direct assignment)"
+    },
+    {
+      "id": "ITEM-020419",
+      "source": "emLook.h",
+      "symbol": "emLook::GetOutputBgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::output_bg_color (pub field)"
+    },
+    {
+      "id": "ITEM-020420",
+      "source": "emLook.h",
+      "symbol": "emLook::GetOutputFgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::output_fg_color (pub field)"
+    },
+    {
+      "id": "ITEM-020421",
+      "source": "emLook.h",
+      "symbol": "emLook::GetOutputHlColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::output_hl_color (pub field)"
+    },
+    {
+      "id": "ITEM-020422",
+      "source": "emLook.h",
+      "symbol": "emLook::SetOutputBgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::output_bg_color (pub field, direct assignment)"
+    },
+    {
+      "id": "ITEM-020423",
+      "source": "emLook.h",
+      "symbol": "emLook::SetOutputFgColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::output_fg_color (pub field, direct assignment)"
+    },
+    {
+      "id": "ITEM-020424",
+      "source": "emLook.h",
+      "symbol": "emLook::SetOutputHlColor",
+      "kind": "method",
+      "classification": "ported",
+      "rust_equivalent": "widget/look.rs::Look::output_hl_color (pub field, direct assignment)"
+    },
+    {
+      "id": "ITEM-020425",
+      "source": "emLook.h",
+      "symbol": "emLook::GetDataRefCount",
+      "kind": "method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Copy-on-write refcount; Rust uses Rc<Look> instead"
+    },
+    {
+      "id": "ITEM-020426",
+      "source": "emLook.h",
+      "symbol": "emLook::MakeNonShared",
+      "kind": "method",
+      "classification": "not_applicable",
+      "rust_equivalent": null,
+      "notes": "Thread-safety concern for COW; not needed with Rust ownership model"
+    }
+  ]
+}

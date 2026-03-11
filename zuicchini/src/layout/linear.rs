@@ -165,6 +165,12 @@ impl LinearLayout {
                 length += ch;
             }
         }
+        // Include min_cell_count padding cells in total length (C++ parity:
+        // padding cells use default_constraint.weight and no tallness clamping).
+        if cells > children.len() {
+            let pad_count = (cells - children.len()) as f64;
+            length += pad_count * self.default_constraint.weight * force;
+        }
 
         // C++ lines 405-412: convert bounding box to pixel dimensions
         let (total_cw, total_ch) = if horizontal {

@@ -1,0 +1,806 @@
+{
+  "worker": "W-0010",
+  "scope": "file I/O, system utilities (emRec, emFileModel, emRes, emProcess, emThread, etc.)",
+  "items": [
+    {
+      "id": "ITEM-090001",
+      "cpp_symbol": "emFileModel",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "model::FileModel<T>",
+      "rust_file": "src/model/file_model.rs",
+      "notes": "Simplified generic version. Has FileState enum (8 states), state machine methods (request_load, complete_load, fail_load, request_save, etc.), memory limit, path. Missing: Cycle-based loading, priority scheduling, IsOutOfDate/TryFetchDate, client management."
+    },
+    {
+      "id": "ITEM-090002",
+      "cpp_symbol": "emFileModel::FileState",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "model::FileState",
+      "rust_file": "src/model/file_model.rs",
+      "notes": "All 8 states ported: Waiting, Loading, Loaded, Unsaved, Saving, LoadError, SaveError, TooCostly."
+    },
+    {
+      "id": "ITEM-090003",
+      "cpp_symbol": "emFileModel::GetFilePath",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "FileModel::path()",
+      "rust_file": "src/model/file_model.rs"
+    },
+    {
+      "id": "ITEM-090004",
+      "cpp_symbol": "emFileModel::GetFileState",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "FileModel::state()",
+      "rust_file": "src/model/file_model.rs"
+    },
+    {
+      "id": "ITEM-090005",
+      "cpp_symbol": "emFileModel::GetFileProgress",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "FileModel::progress()",
+      "rust_file": "src/model/file_model.rs"
+    },
+    {
+      "id": "ITEM-090006",
+      "cpp_symbol": "emFileModel::GetMemoryNeed",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ambiguous",
+      "rust_equivalent": "FileModel::memory_limit()",
+      "rust_file": "src/model/file_model.rs",
+      "notes": "Rust has memory_limit (max allowed) but not memory_need (actual need reported by loader)."
+    },
+    {
+      "id": "ITEM-090007",
+      "cpp_symbol": "emFileModel::GetFileStateSignal",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "FileModel::change_signal()",
+      "rust_file": "src/model/file_model.rs"
+    },
+    {
+      "id": "ITEM-090008",
+      "cpp_symbol": "emFileModel::GetErrorText",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "FileState::LoadError(String) / FileState::SaveError(String)",
+      "rust_file": "src/model/file_model.rs",
+      "notes": "Error text embedded in enum variant instead of separate accessor."
+    },
+    {
+      "id": "ITEM-090009",
+      "cpp_symbol": "emFileModel::Update",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090010",
+      "cpp_symbol": "emFileModel::Load",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "FileModel::request_load()",
+      "rust_file": "src/model/file_model.rs",
+      "notes": "No 'immediately' blocking mode in Rust."
+    },
+    {
+      "id": "ITEM-090011",
+      "cpp_symbol": "emFileModel::Save",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "FileModel::request_save()",
+      "rust_file": "src/model/file_model.rs"
+    },
+    {
+      "id": "ITEM-090012",
+      "cpp_symbol": "emFileModel::HardResetFileState",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "FileModel::reset()",
+      "rust_file": "src/model/file_model.rs"
+    },
+    {
+      "id": "ITEM-090013",
+      "cpp_symbol": "emFileModel::SetUnsavedState",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "ported",
+      "rust_equivalent": "FileModel::mark_unsaved()",
+      "rust_file": "src/model/file_model.rs"
+    },
+    {
+      "id": "ITEM-090014",
+      "cpp_symbol": "emFileModel::ResetData",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported",
+      "notes": "Abstract virtual in C++. Rust FileModel uses Option<T> instead."
+    },
+    {
+      "id": "ITEM-090015",
+      "cpp_symbol": "emFileModel::TryStartLoading / TryContinueLoading / QuitLoading",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported",
+      "notes": "Incremental loading protocol not ported; Rust uses synchronous load."
+    },
+    {
+      "id": "ITEM-090016",
+      "cpp_symbol": "emFileModel::TryStartSaving / TryContinueSaving / QuitSaving",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported",
+      "notes": "Incremental saving protocol not ported."
+    },
+    {
+      "id": "ITEM-090017",
+      "cpp_symbol": "emFileModel::CalcMemoryNeed",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090018",
+      "cpp_symbol": "emFileModel::CalcFileProgress",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090019",
+      "cpp_symbol": "emFileModel::TryFetchDate / IsOutOfDate",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090020",
+      "cpp_symbol": "emFileModel::AcquireUpdateSignalModel",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090021",
+      "cpp_symbol": "emFileModel::GetIgnoreUpdateSignal / SetIgnoreUpdateSignal",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090022",
+      "cpp_symbol": "emFileModel::ClearSaveError",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090023",
+      "cpp_symbol": "emFileModelClient",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported",
+      "notes": "Client-based memory limit / priority system not ported."
+    },
+    {
+      "id": "ITEM-090024",
+      "cpp_symbol": "emAbsoluteFileModelClient",
+      "cpp_file": "include/emCore/emFileModel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090025",
+      "cpp_symbol": "emFilePanel",
+      "cpp_file": "include/emCore/emFilePanel.h",
+      "status": "not_ported",
+      "notes": "Panel subclass for file model viewing. No equivalent in Rust."
+    },
+    {
+      "id": "ITEM-090026",
+      "cpp_symbol": "emFilePanel::VirtualFileState",
+      "cpp_file": "include/emCore/emFilePanel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090027",
+      "cpp_symbol": "emFilePanel::GetVirFileState / IsVFSGood",
+      "cpp_file": "include/emCore/emFilePanel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090028",
+      "cpp_symbol": "emFilePanel::SetCustomError / ClearCustomError / GetCustomError",
+      "cpp_file": "include/emCore/emFilePanel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090029",
+      "cpp_symbol": "emFilePanel::SetFileModel",
+      "cpp_file": "include/emCore/emFilePanel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090030",
+      "cpp_symbol": "emFileStream",
+      "cpp_file": "include/emCore/emFileStream.h",
+      "status": "not_applicable",
+      "notes": "Buffered FILE* wrapper. Rust uses std::io::BufReader/BufWriter."
+    },
+    {
+      "id": "ITEM-090031",
+      "cpp_symbol": "emFileStream::TryOpen / TryClose / Close",
+      "cpp_file": "include/emCore/emFileStream.h",
+      "status": "not_applicable",
+      "notes": "Covered by std::fs::File."
+    },
+    {
+      "id": "ITEM-090032",
+      "cpp_symbol": "emFileStream::TryRead* / TryWrite* (integer endian methods)",
+      "cpp_file": "include/emCore/emFileStream.h",
+      "status": "not_applicable",
+      "notes": "Covered by Rust byteorder crate or std::io::Read/Write + from_le_bytes."
+    },
+    {
+      "id": "ITEM-090033",
+      "cpp_symbol": "emFileStream::TrySeek / TryTell / TrySkip",
+      "cpp_file": "include/emCore/emFileStream.h",
+      "status": "not_applicable",
+      "notes": "Covered by std::io::Seek."
+    },
+    {
+      "id": "ITEM-090034",
+      "cpp_symbol": "emFileDialog",
+      "cpp_file": "include/emCore/emFileDialog.h",
+      "status": "not_ported",
+      "notes": "File chooser dialog. Complex UI component not needed by zuicchini."
+    },
+    {
+      "id": "ITEM-090035",
+      "cpp_symbol": "emFileDialog::ModeType",
+      "cpp_file": "include/emCore/emFileDialog.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090036",
+      "cpp_symbol": "emFileSelectionBox",
+      "cpp_file": "include/emCore/emFileSelectionBox.h",
+      "status": "not_ported",
+      "notes": "File browser widget. Complex UI component not needed by zuicchini."
+    },
+    {
+      "id": "ITEM-090037",
+      "cpp_symbol": "emFileSelectionBox (all methods)",
+      "cpp_file": "include/emCore/emFileSelectionBox.h",
+      "status": "not_ported",
+      "notes": "~30 methods for directory listing, selection, filtering. Not ported."
+    },
+    {
+      "id": "ITEM-090038",
+      "cpp_symbol": "emConfigModel",
+      "cpp_file": "include/emCore/emConfigModel.h",
+      "status": "ported",
+      "rust_equivalent": "model::ConfigModel<T>",
+      "rust_file": "src/model/config_model.rs",
+      "notes": "Config record backed by file. Has load, save, load_or_install, dirty flag, change_signal. Uses KDL format instead of emRec text format."
+    },
+    {
+      "id": "ITEM-090039",
+      "cpp_symbol": "emConfigModel::GetInstallPath",
+      "cpp_file": "include/emCore/emConfigModel.h",
+      "status": "ported",
+      "rust_equivalent": "ConfigModel::path()",
+      "rust_file": "src/model/config_model.rs"
+    },
+    {
+      "id": "ITEM-090040",
+      "cpp_symbol": "emConfigModel::IsUnsaved",
+      "cpp_file": "include/emCore/emConfigModel.h",
+      "status": "ported",
+      "rust_equivalent": "ConfigModel::is_dirty()",
+      "rust_file": "src/model/config_model.rs"
+    },
+    {
+      "id": "ITEM-090041",
+      "cpp_symbol": "emConfigModel::GetChangeSignal",
+      "cpp_file": "include/emCore/emConfigModel.h",
+      "status": "ported",
+      "rust_equivalent": "ConfigModel::change_signal()",
+      "rust_file": "src/model/config_model.rs"
+    },
+    {
+      "id": "ITEM-090042",
+      "cpp_symbol": "emConfigModel::TrySave / Save",
+      "cpp_file": "include/emCore/emConfigModel.h",
+      "status": "ported",
+      "rust_equivalent": "ConfigModel::save()",
+      "rust_file": "src/model/config_model.rs"
+    },
+    {
+      "id": "ITEM-090043",
+      "cpp_symbol": "emConfigModel::TryLoad / Load",
+      "cpp_file": "include/emCore/emConfigModel.h",
+      "status": "ported",
+      "rust_equivalent": "ConfigModel::load()",
+      "rust_file": "src/model/config_model.rs"
+    },
+    {
+      "id": "ITEM-090044",
+      "cpp_symbol": "emConfigModel::TryLoadOrInstall / LoadOrInstall",
+      "cpp_file": "include/emCore/emConfigModel.h",
+      "status": "ported",
+      "rust_equivalent": "ConfigModel::load_or_install()",
+      "rust_file": "src/model/config_model.rs"
+    },
+    {
+      "id": "ITEM-090045",
+      "cpp_symbol": "emConfigModel::GetAutoSaveDelaySeconds / SetAutoSaveDelaySeconds",
+      "cpp_file": "include/emCore/emConfigModel.h",
+      "status": "not_ported",
+      "notes": "Auto-save timer feature not implemented in Rust."
+    },
+    {
+      "id": "ITEM-090046",
+      "cpp_symbol": "emConfigModel::PostConstruct",
+      "cpp_file": "include/emCore/emConfigModel.h",
+      "status": "not_applicable",
+      "notes": "Rust uses generic T: Record with ConfigModel::new() constructor."
+    },
+    {
+      "id": "ITEM-090047",
+      "cpp_symbol": "emCoreConfig",
+      "cpp_file": "include/emCore/emCoreConfig.h",
+      "status": "not_ported",
+      "notes": "Global config singleton with MouseZoomSpeed, VisitSpeed, etc. Referenced in Rust comments but not implemented as a struct."
+    },
+    {
+      "id": "ITEM-090048",
+      "cpp_symbol": "emCoreConfig::StickMouseWhenNavigating",
+      "cpp_file": "include/emCore/emCoreConfig.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090049",
+      "cpp_symbol": "emCoreConfig::EmulateMiddleButton",
+      "cpp_file": "include/emCore/emCoreConfig.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090050",
+      "cpp_symbol": "emCoreConfig::PanFunction",
+      "cpp_file": "include/emCore/emCoreConfig.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090051",
+      "cpp_symbol": "emCoreConfig::MouseZoomSpeed / MouseScrollSpeed / MouseWheelZoomSpeed / MouseWheelZoomAcceleration",
+      "cpp_file": "include/emCore/emCoreConfig.h",
+      "status": "not_ported",
+      "notes": "Values hardcoded in Rust VIF code rather than configurable."
+    },
+    {
+      "id": "ITEM-090052",
+      "cpp_symbol": "emCoreConfig::KeyboardZoomSpeed / KeyboardScrollSpeed",
+      "cpp_file": "include/emCore/emCoreConfig.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090053",
+      "cpp_symbol": "emCoreConfig::KineticZoomingAndScrolling / MagnetismRadius / MagnetismSpeed / VisitSpeed",
+      "cpp_file": "include/emCore/emCoreConfig.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090054",
+      "cpp_symbol": "emCoreConfig::MaxMegabytesPerView / MaxRenderThreads / AllowSIMD / DownscaleQuality / UpscaleQuality",
+      "cpp_file": "include/emCore/emCoreConfig.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090055",
+      "cpp_symbol": "emCoreConfigPanel",
+      "cpp_file": "include/emCore/emCoreConfigPanel.h",
+      "status": "not_ported",
+      "notes": "Config editor UI panel. Not needed without emCoreConfig."
+    },
+    {
+      "id": "ITEM-090056",
+      "cpp_symbol": "emRecFileModel",
+      "cpp_file": "include/emCore/emRecFileModel.h",
+      "status": "not_ported",
+      "notes": "emFileModel subclass using emRec for data. Rust FileModel<T> is a flat generic instead."
+    },
+    {
+      "id": "ITEM-090057",
+      "cpp_symbol": "emRecFileModel::GetChangeSignal",
+      "cpp_file": "include/emCore/emRecFileModel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090058",
+      "cpp_symbol": "emRecFileModel::PostConstruct",
+      "cpp_file": "include/emCore/emRecFileModel.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090059",
+      "cpp_symbol": "emRec (base class)",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "ambiguous",
+      "rust_equivalent": "model::Record trait",
+      "rust_file": "src/model/record.rs",
+      "notes": "C++ emRec is a class hierarchy with TryStartReading/TryContinueReading serialization. Rust Record is a trait with from_kdl/to_kdl. Very different architecture but same purpose."
+    },
+    {
+      "id": "ITEM-090060",
+      "cpp_symbol": "emRecNode",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported",
+      "notes": "Tree-based change notification. Rust uses different patterns."
+    },
+    {
+      "id": "ITEM-090061",
+      "cpp_symbol": "emRecListener",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported",
+      "notes": "Observer pattern for record changes. Not needed with Rust ownership."
+    },
+    {
+      "id": "ITEM-090062",
+      "cpp_symbol": "emBoolRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported",
+      "notes": "Typed record field. Rust uses native bool inside Record structs."
+    },
+    {
+      "id": "ITEM-090063",
+      "cpp_symbol": "emIntRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported",
+      "notes": "Typed record field. Rust uses native i64 inside Record structs."
+    },
+    {
+      "id": "ITEM-090064",
+      "cpp_symbol": "emDoubleRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported",
+      "notes": "Typed record field. Rust uses native f64 inside Record structs."
+    },
+    {
+      "id": "ITEM-090065",
+      "cpp_symbol": "emEnumRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090066",
+      "cpp_symbol": "emFlagsRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090067",
+      "cpp_symbol": "emAlignmentRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090068",
+      "cpp_symbol": "emStringRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported",
+      "notes": "Typed record field. Rust uses native String."
+    },
+    {
+      "id": "ITEM-090069",
+      "cpp_symbol": "emColorRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090070",
+      "cpp_symbol": "emStructRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported",
+      "notes": "Composite record. Rust Record trait uses manual struct implementations."
+    },
+    {
+      "id": "ITEM-090071",
+      "cpp_symbol": "emUnionRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090072",
+      "cpp_symbol": "emArrayRec / emTArrayRec",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported",
+      "notes": "Dynamic array of records. Rust uses native Vec."
+    },
+    {
+      "id": "ITEM-090073",
+      "cpp_symbol": "emRecReader",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported",
+      "notes": "Incremental reader for emRec text format. Rust uses KDL parsing instead."
+    },
+    {
+      "id": "ITEM-090074",
+      "cpp_symbol": "emRecWriter",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported",
+      "notes": "Incremental writer for emRec text format."
+    },
+    {
+      "id": "ITEM-090075",
+      "cpp_symbol": "emRecFileReader",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090076",
+      "cpp_symbol": "emRecFileWriter",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090077",
+      "cpp_symbol": "emRecMemReader",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090078",
+      "cpp_symbol": "emRecMemWriter",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090079",
+      "cpp_symbol": "emRec::SetToDefault / IsSetToDefault",
+      "cpp_file": "include/emCore/emRec.h",
+      "status": "ported",
+      "rust_equivalent": "Record::set_to_default() / Record::is_default()",
+      "rust_file": "src/model/record.rs"
+    },
+    {
+      "id": "ITEM-090080",
+      "cpp_symbol": "emGetResImage / emTryGetResImage",
+      "cpp_file": "include/emCore/emRes.h",
+      "status": "ambiguous",
+      "rust_equivalent": "model::ResourceCache<V>",
+      "rust_file": "src/model/resource_cache.rs",
+      "notes": "Rust has generic ResourceCache with get_or_insert_with and purge_unused. Not image-specific. Loading TGA files handled elsewhere."
+    },
+    {
+      "id": "ITEM-090081",
+      "cpp_symbol": "emGetInsResImage / emTryGetInsResImage",
+      "cpp_file": "include/emCore/emRes.h",
+      "status": "not_ported",
+      "notes": "Depends on emGetInstallPath which is not ported."
+    },
+    {
+      "id": "ITEM-090082",
+      "cpp_symbol": "emResModelBase",
+      "cpp_file": "include/emCore/emRes.h",
+      "status": "ambiguous",
+      "rust_equivalent": "model::ResourceCache<V>",
+      "rust_file": "src/model/resource_cache.rs",
+      "notes": "Rust ResourceCache provides similar auto-eviction via purge_unused(). Different architecture (no emModel base)."
+    },
+    {
+      "id": "ITEM-090083",
+      "cpp_symbol": "emResModel<CLS>",
+      "cpp_file": "include/emCore/emRes.h",
+      "status": "ambiguous",
+      "rust_equivalent": "model::ResourceCache<V>",
+      "rust_file": "src/model/resource_cache.rs",
+      "notes": "Template cache using ref-counted data. Rust equivalent uses Rc<V> with purge_unused."
+    },
+    {
+      "id": "ITEM-090084",
+      "cpp_symbol": "emInstallDirType / emGetInstallPath",
+      "cpp_file": "include/emCore/emInstallInfo.h",
+      "status": "not_ported",
+      "notes": "Installation path resolution. Eagle Mode-specific directory layout not applicable to zuicchini."
+    },
+    {
+      "id": "ITEM-090085",
+      "cpp_symbol": "emGetConfigDirOverloadable",
+      "cpp_file": "include/emCore/emInstallInfo.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090086",
+      "cpp_symbol": "emTmpFile",
+      "cpp_file": "include/emCore/emTmpFile.h",
+      "status": "not_applicable",
+      "notes": "RAII temp file management. Rust has tempfile crate and std::env::temp_dir()."
+    },
+    {
+      "id": "ITEM-090087",
+      "cpp_symbol": "emTmpFileMaster",
+      "cpp_file": "include/emCore/emTmpFile.h",
+      "status": "not_applicable",
+      "notes": "Temp directory management with cross-process cleanup via IPC. OS/application-level concern."
+    },
+    {
+      "id": "ITEM-090088",
+      "cpp_symbol": "emFpPlugin",
+      "cpp_file": "include/emCore/emFpPlugin.h",
+      "status": "not_ported",
+      "notes": "File panel plugin system for dynamic library loading. Eagle Mode-specific extensibility not needed."
+    },
+    {
+      "id": "ITEM-090089",
+      "cpp_symbol": "emFpPluginFunc / emFpPluginModelFunc",
+      "cpp_file": "include/emCore/emFpPlugin.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090090",
+      "cpp_symbol": "emFpPluginList",
+      "cpp_file": "include/emCore/emFpPlugin.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090091",
+      "cpp_symbol": "emFpPluginList::CreateFilePanel",
+      "cpp_file": "include/emCore/emFpPlugin.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090092",
+      "cpp_symbol": "emFpPluginList::SearchPlugin / SearchPlugins",
+      "cpp_file": "include/emCore/emFpPlugin.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090093",
+      "cpp_symbol": "emProcess",
+      "cpp_file": "include/emCore/emProcess.h",
+      "status": "not_applicable",
+      "notes": "Child process management. Rust has std::process::Command. Single-threaded UI app doesn't use this."
+    },
+    {
+      "id": "ITEM-090094",
+      "cpp_symbol": "emProcess::TryStart / TryStartUnmanaged",
+      "cpp_file": "include/emCore/emProcess.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090095",
+      "cpp_symbol": "emProcess::TryRead / TryWrite / TryReadErr",
+      "cpp_file": "include/emCore/emProcess.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090096",
+      "cpp_symbol": "emProcess::SendTerminationSignal / SendKillSignal / Terminate",
+      "cpp_file": "include/emCore/emProcess.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090097",
+      "cpp_symbol": "emJob",
+      "cpp_file": "include/emCore/emJob.h",
+      "status": "not_ported",
+      "notes": "Priority job queue system. Not needed in current Rust architecture."
+    },
+    {
+      "id": "ITEM-090098",
+      "cpp_symbol": "emJob::StateEnum",
+      "cpp_file": "include/emCore/emJob.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090099",
+      "cpp_symbol": "emJobQueue",
+      "cpp_file": "include/emCore/emJob.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090100",
+      "cpp_symbol": "emJobQueue (all methods: EnqueueJob, StartNextJob, AbortJob, SucceedJob, FailJob, etc.)",
+      "cpp_file": "include/emCore/emJob.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090101",
+      "cpp_symbol": "emMiniIpcClient",
+      "cpp_file": "include/emCore/emMiniIpc.h",
+      "status": "not_applicable",
+      "notes": "Interprocess communication. Single-process UI app; Rust has IPC crates if needed."
+    },
+    {
+      "id": "ITEM-090102",
+      "cpp_symbol": "emMiniIpcClient::TrySend",
+      "cpp_file": "include/emCore/emMiniIpc.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090103",
+      "cpp_symbol": "emMiniIpcServer",
+      "cpp_file": "include/emCore/emMiniIpc.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090104",
+      "cpp_symbol": "emMiniIpcServer::StartServing / StopServing / OnReception",
+      "cpp_file": "include/emCore/emMiniIpc.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090105",
+      "cpp_symbol": "emThread",
+      "cpp_file": "include/emCore/emThread.h",
+      "status": "not_applicable",
+      "notes": "Threading primitives. Rust has std::thread. App is single-threaded per CLAUDE.md rules (no Arc/Mutex)."
+    },
+    {
+      "id": "ITEM-090106",
+      "cpp_symbol": "emThreadId",
+      "cpp_file": "include/emCore/emThread.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090107",
+      "cpp_symbol": "emThread::Start / StartUnmanaged / WaitForTermination / IsRunning",
+      "cpp_file": "include/emCore/emThread.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090108",
+      "cpp_symbol": "emThreadMutexLocker",
+      "cpp_file": "include/emCore/emThread.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090109",
+      "cpp_symbol": "emThreadMiniMutex",
+      "cpp_file": "include/emCore/emThread.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090110",
+      "cpp_symbol": "emThreadEvent",
+      "cpp_file": "include/emCore/emThread.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090111",
+      "cpp_symbol": "emThreadMutex",
+      "cpp_file": "include/emCore/emThread.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090112",
+      "cpp_symbol": "emThreadRecursiveMutex",
+      "cpp_file": "include/emCore/emThread.h",
+      "status": "not_applicable"
+    },
+    {
+      "id": "ITEM-090113",
+      "cpp_symbol": "emTunnel",
+      "cpp_file": "include/emCore/emTunnel.h",
+      "status": "not_ported",
+      "notes": "UI panel that shows child content through a 'tunnel' effect. Specialized rendering widget."
+    },
+    {
+      "id": "ITEM-090114",
+      "cpp_symbol": "emTunnel::GetChildTallness / SetChildTallness",
+      "cpp_file": "include/emCore/emTunnel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090115",
+      "cpp_symbol": "emTunnel::GetDepth / SetDepth",
+      "cpp_file": "include/emCore/emTunnel.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-090116",
+      "cpp_symbol": "emTunnel::GetChildRect",
+      "cpp_file": "include/emCore/emTunnel.h",
+      "status": "not_ported"
+    }
+  ],
+  "summary": {
+    "total_items": 116,
+    "ported": 16,
+    "not_ported": 52,
+    "not_applicable": 26,
+    "ambiguous": 5,
+    "notes": "Core file model (FileModel<T>) and config model (ConfigModel<T>) are ported with simplified Rust-idiomatic APIs. The emRec serialization system is replaced by a Record trait using KDL format. ResourceCache provides emRes-like caching. OS/threading utilities (emThread, emProcess, emMiniIpc, emTmpFile, emFileStream) are not_applicable as Rust std provides equivalents and the app is single-threaded. Complex UI components (emFilePanel, emFileDialog, emFileSelectionBox, emCoreConfigPanel, emTunnel) and plugin systems (emFpPlugin) are not_ported. emCoreConfig fields are hardcoded in Rust rather than configurable."
+  }
+}

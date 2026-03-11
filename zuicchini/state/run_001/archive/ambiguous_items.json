@@ -1,0 +1,476 @@
+{
+  "source_run_id": "ee56e34f-b1cc-46c5-90ef-69d43922f764",
+  "generated_at": "2026-03-11T01:59:28.221528+00:00",
+  "total_mapped": 1372,
+  "total_ambiguous": 52,
+  "items": [
+    {
+      "item_id": "ITEM-020016",
+      "source_file": "emColor.h",
+      "cpp_symbol": "emColor::TryParse",
+      "kind": "method",
+      "confidence": 0.7,
+      "ambiguity_reason": "Rust only parses #RRGGBB/#RRGGBBAA hex. C++ also parses X11 named colors (e.g. 'Powder Blue'), short hex (#RGB), and other hex lengths.",
+      "raw_output": "Rust only parses #RRGGBB/#RRGGBBAA hex. C++ also parses X11 named colors (e.g. 'Powder Blue'), short hex (#RGB), and other hex lengths."
+    },
+    {
+      "item_id": "ITEM-030104",
+      "source_file": "include/emCore/emTexture.h",
+      "cpp_symbol": "emTexture::DownscaleQualityType (DQ_BY_CONFIG, DQ_NEAREST_PIXEL..DQ_6X6)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "C++ has separate downscale/upscale quality enums with config-driven defaults. Rust has a single ImageQuality enum. No config-driven default."
+    },
+    {
+      "item_id": "ITEM-040098",
+      "source_file": "include/emCore/emPanel.h",
+      "cpp_symbol": "emPanel::AutoExpand()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Rust has auto_expand() returning bool (whether to expand), not the action itself; expansion logic is in tree.rs"
+    },
+    {
+      "item_id": "ITEM-040099",
+      "source_file": "include/emCore/emPanel.h",
+      "cpp_symbol": "emPanel::AutoShrink()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Rust has auto_shrink() returning bool; expansion/shrink mechanism differs"
+    },
+    {
+      "item_id": "ITEM-040219",
+      "source_file": "include/emCore/emView.h",
+      "cpp_symbol": "emView::GetCurrentX/Y/Width/Height/PixelTallness/Tallness()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Rust has viewport dimensions but no absolute screen position or pixel tallness"
+    },
+    {
+      "item_id": "ITEM-040237",
+      "source_file": "include/emCore/emView.h",
+      "cpp_symbol": "emView::RawVisit(panel) (auto-coords)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Auto-coordinate raw visit partially covered by visit_fullsized"
+    },
+    {
+      "item_id": "ITEM-040266",
+      "source_file": "include/emCore/emView.h",
+      "cpp_symbol": "emView::Input() (protected)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Input dispatch exists but architecture differs significantly"
+    },
+    {
+      "item_id": "ITEM-040275",
+      "source_file": "include/emCore/emView.h",
+      "cpp_symbol": "emView::FindBestSVP()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "SVP selection logic exists in update_viewing but not as a separate public/private method"
+    },
+    {
+      "item_id": "ITEM-040277",
+      "source_file": "include/emCore/emView.h",
+      "cpp_symbol": "emView::RecurseInput()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Input recursion exists but structured differently in Rust"
+    },
+    {
+      "item_id": "ITEM-040283",
+      "source_file": "include/emCore/emView.h",
+      "cpp_symbol": "emView::SetFocused()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "View focus managed via view_focused field, set externally by ZuiWindow"
+    },
+    {
+      "item_id": "ITEM-040404",
+      "source_file": "include/emCore/emViewAnimator.h",
+      "cpp_symbol": "emViewAnimator::Activate() / Deactivate()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Only stop(); activation is implicit by setting velocity/goal"
+    },
+    {
+      "item_id": "ITEM-040601",
+      "source_file": "include/emCore/emViewAnimator.h",
+      "cpp_symbol": "emSpeedingViewAnimator::GetTargetVelocity(dim) / GetAbsTargetVelocity()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Target velocity is set but no public getter"
+    },
+    {
+      "item_id": "ITEM-040803",
+      "source_file": "include/emCore/emViewAnimator.h",
+      "cpp_symbol": "emMagneticViewAnimator::CalculateDistance()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Distance calculation exists internally but may differ in structure"
+    },
+    {
+      "item_id": "ITEM-040915",
+      "source_file": "include/emCore/emViewAnimator.h",
+      "cpp_symbol": "emVisitingViewAnimator::CurvePoint / CurvePoints[]",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "S-curve path computation exists but may use different data structures"
+    },
+    {
+      "item_id": "ITEM-050076",
+      "source_file": "include/emCore/emBorder.h",
+      "cpp_symbol": "emBorder::GetLook / SetLook",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Look is stored per-widget, but SetLook(recursively=true) propagation is not implemented"
+    },
+    {
+      "item_id": "ITEM-050087",
+      "source_file": "include/emCore/emBorder.h",
+      "cpp_symbol": "emBorder::PaintContent (protected virtual)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "No explicit PaintContent override hook; widgets paint their own content directly"
+    },
+    {
+      "item_id": "ITEM-060014",
+      "source_file": "",
+      "cpp_symbol": "emButton::PaintBoxSymbol(emPainter, ...)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "The box symbol painting (checkmark) is implemented in CheckBox::paint, not as a separate method."
+    },
+    {
+      "item_id": "ITEM-060019",
+      "source_file": "",
+      "cpp_symbol": "emButton::DoButton() (private paint/hittest dispatch)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Combined paint+hittest dispatch doesn't exist as a single function. Logic is split across separate widget types."
+    },
+    {
+      "item_id": "ITEM-060105",
+      "source_file": "",
+      "cpp_symbol": "emCheckButton::Clicked() (virtual toggle)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Toggle logic is in private toggle() method, not a virtual override."
+    },
+    {
+      "item_id": "ITEM-060303",
+      "source_file": "",
+      "cpp_symbol": "emRadioButton::Mechanism::Add(emRadioButton*)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Rust tracks count via constructor/destructor rather than explicit Add. RadioButton::new increments count."
+    },
+    {
+      "item_id": "ITEM-060305",
+      "source_file": "",
+      "cpp_symbol": "emRadioButton::Mechanism::Remove(emRadioButton*)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Rust uses remove_by_index(usize) and Drop trait on RadioButton. No Remove-by-pointer."
+    },
+    {
+      "item_id": "ITEM-060320",
+      "source_file": "",
+      "cpp_symbol": "emRadioButton::Clicked() (virtual)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Click logic is in RadioButton::input which calls group.select()."
+    },
+    {
+      "item_id": "ITEM-060600",
+      "source_file": "include/emCore/emGroup.h",
+      "cpp_symbol": "emGroup (deprecated)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "emGroup is deprecated in C++. Its visual (group border + tiling) is split: Border handles the visual, layout types handle tiling. No direct emGroup struct in Rust."
+    },
+    {
+      "item_id": "ITEM-060924",
+      "source_file": "",
+      "cpp_symbol": "emTextField::CutSelectedTextToClipboard()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Clipboard integration uses on_clipboard_copy/on_clipboard_paste callbacks. Cut is handled in input() via Ctrl+X."
+    },
+    {
+      "item_id": "ITEM-060925",
+      "source_file": "",
+      "cpp_symbol": "emTextField::CopySelectedTextToClipboard()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Handled via on_clipboard_copy callback in input() Ctrl+C path."
+    },
+    {
+      "item_id": "ITEM-060926",
+      "source_file": "",
+      "cpp_symbol": "emTextField::PasteSelectedTextFromClipboard()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Handled via on_clipboard_paste callback in input() Ctrl+V path."
+    },
+    {
+      "item_id": "ITEM-060928",
+      "source_file": "",
+      "cpp_symbol": "emTextField::DeleteSelectedText()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Delete logic is internal to input handling and paste_text; no separate public method."
+    },
+    {
+      "item_id": "ITEM-060935",
+      "source_file": "",
+      "cpp_symbol": "emTextField::Validate(int&, int&, emString&) (virtual)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Rust has on_validate callback but it takes &str -> bool (simpler than C++ pos/removeLen/insertText mutation)."
+    },
+    {
+      "item_id": "ITEM-060936",
+      "source_file": "",
+      "cpp_symbol": "emTextField::SetValidateFunc(...)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Rust uses on_validate callback field directly instead of SetValidateFunc."
+    },
+    {
+      "item_id": "ITEM-061018",
+      "source_file": "",
+      "cpp_symbol": "emListBox::GetSelectionCount()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "No direct GetSelectionCount; use selected().len() or selected_indices().len()."
+    },
+    {
+      "item_id": "ITEM-061111",
+      "source_file": "",
+      "cpp_symbol": "emColorField::AutoExpand() / AutoShrink()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "no_match",
+      "raw_output": "Rust has is_expanded/set_expanded and layout_children for child scalar fields, but no auto-expand lifecycle."
+    },
+    {
+      "item_id": "ITEM-070033",
+      "source_file": "include/emCore/emInput.h",
+      "cpp_symbol": "emInputEvent::GetRepeat()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "C++ Repeat is an int (0=first, 1=double-click, etc). Rust is_repeat is a bool. Repeat count not preserved."
+    },
+    {
+      "item_id": "ITEM-070034",
+      "source_file": "include/emCore/emInput.h",
+      "cpp_symbol": "emInputEvent::GetVariant()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "C++ Variant is int (0=normal, 1=numpad/right-side). Rust InputVariant is Press/Release/Repeat/Move -- a different concept (event type, not source variant). C++ source-variant info is not preserved."
+    },
+    {
+      "item_id": "ITEM-070061",
+      "source_file": "src/emCore/emInput.cpp",
+      "cpp_symbol": "emInputHotkey constructors (key, modifier+key, etc.)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Only single-key constructor. No constructor with modifiers -- must set fields directly. C++ has 5 overloaded constructors."
+    },
+    {
+      "item_id": "ITEM-080004",
+      "source_file": "emWindow.h",
+      "cpp_symbol": "emWindow::GetScreen()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "No direct method on ZuiWindow. Screen is owned by App, accessed via App::screen(). Structural difference."
+    },
+    {
+      "item_id": "ITEM-080015",
+      "source_file": "emWindow.h",
+      "cpp_symbol": "emWindow::SetWinPosViewSize(x, y, w, h) (two overloads: coords and geometry string)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Coordinate overload ported as set_win_pos_view_size(). X11 geometry string parser overload NOT ported."
+    },
+    {
+      "item_id": "ITEM-080020",
+      "source_file": "emWindow.h",
+      "cpp_symbol": "emWindow::InhibitScreensaver() / AllowScreensaver()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "inhibit_screensaver()/allow_screensaver() methods ported with counter tracking, but actual platform inhibition is TODO stub (no-op)."
+    },
+    {
+      "item_id": "ITEM-080021",
+      "source_file": "emWindow.h",
+      "cpp_symbol": "emWindow::InvalidateTitle()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "set_title() exists but no InvalidateTitle override pattern. Title is set directly rather than pulled from view."
+    },
+    {
+      "item_id": "ITEM-080022",
+      "source_file": "emWindow.h",
+      "cpp_symbol": "emWindow::AutoDeleteEngineClass",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Auto-delete handled inline in App::window_event CloseRequested handler checking AUTO_DELETE flag. No separate engine class."
+    },
+    {
+      "item_id": "ITEM-080049",
+      "source_file": "emScreen.h",
+      "cpp_symbol": "emScreen::MoveMousePointer(dx, dy)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "move_mouse_pointer() exists on both Screen and ZuiWindow but is a no-op stub (winit limitation)"
+    },
+    {
+      "item_id": "ITEM-080050",
+      "source_file": "emScreen.h",
+      "cpp_symbol": "emScreen::Beep()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "beep() method exists on both Screen and ZuiWindow but is a no-op stub (winit limitation)"
+    },
+    {
+      "item_id": "ITEM-080051",
+      "source_file": "emScreen.h",
+      "cpp_symbol": "emScreen::GetWindows() / GetWindowsSignal()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "App::windows HashMap is pub, no signal for window list changes. Structural difference from C++ signal model."
+    },
+    {
+      "item_id": "ITEM-080061",
+      "source_file": "emWindowStateSaver.h",
+      "cpp_symbol": "emWindowStateSaver::emWindowStateSaver(window, filePath, allowRestoreFullscreen)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Constructor ported as WindowStateSaver::new(path, signal_id). No allowRestoreFullscreen parameter."
+    },
+    {
+      "item_id": "ITEM-080073",
+      "source_file": "emGUIFramework.h",
+      "cpp_symbol": "emGUIFramework::EnableAutoTermination()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Auto-termination hardcoded: App exits event loop when windows HashMap is empty (in CloseRequested handler). No toggle API."
+    },
+    {
+      "item_id": "ITEM-080081",
+      "source_file": "emDialog.h",
+      "cpp_symbol": "emDialog::emDialog(parentContext, viewFlags, windowFlags, wmResName)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Dialog::new(title, look) is a widget constructor, NOT a window subclass. C++ emDialog extends emWindow; Rust Dialog is a standalone widget."
+    },
+    {
+      "item_id": "ITEM-080084",
+      "source_file": "emDialog.h",
+      "cpp_symbol": "emDialog::AddPositiveButton() / AddNegativeButton() / AddCustomButton()",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "add_button(label, result) is generic. No positive/negative/custom distinction in the API. DialogResult enum has Ok/Cancel/Custom(u32)."
+    },
+    {
+      "item_id": "ITEM-080089",
+      "source_file": "emDialog.h",
+      "cpp_symbol": "emDialog::Finish(result)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "finish() method exists but does not return bool (no CheckFinish gate). Always succeeds."
+    },
+    {
+      "item_id": "ITEM-090006",
+      "source_file": "include/emCore/emFileModel.h",
+      "cpp_symbol": "emFileModel::GetMemoryNeed",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Rust has memory_limit (max allowed) but not memory_need (actual need reported by loader)."
+    },
+    {
+      "item_id": "ITEM-090059",
+      "source_file": "include/emCore/emRec.h",
+      "cpp_symbol": "emRec (base class)",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "C++ emRec is a class hierarchy with TryStartReading/TryContinueReading serialization. Rust Record is a trait with from_kdl/to_kdl. Very different architecture but same purpose."
+    },
+    {
+      "item_id": "ITEM-090080",
+      "source_file": "include/emCore/emRes.h",
+      "cpp_symbol": "emGetResImage / emTryGetResImage",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Rust has generic ResourceCache with get_or_insert_with and purge_unused. Not image-specific. Loading TGA files handled elsewhere."
+    },
+    {
+      "item_id": "ITEM-090082",
+      "source_file": "include/emCore/emRes.h",
+      "cpp_symbol": "emResModelBase",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Rust ResourceCache provides similar auto-eviction via purge_unused(). Different architecture (no emModel base)."
+    },
+    {
+      "item_id": "ITEM-090083",
+      "source_file": "include/emCore/emRes.h",
+      "cpp_symbol": "emResModel<CLS>",
+      "kind": "symbol",
+      "confidence": 0.5,
+      "ambiguity_reason": "low_confidence",
+      "raw_output": "Template cache using ref-counted data. Rust equivalent uses Rc<V> with purge_unused."
+    }
+  ]
+}

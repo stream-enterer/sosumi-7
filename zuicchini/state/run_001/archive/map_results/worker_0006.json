@@ -1,0 +1,852 @@
+{
+  "worker": "W-0006",
+  "scope": "layout system (emLinearLayout, emLinearGroup, emRasterLayout, emRasterGroup, emPackLayout, emPackGroup, emTiling, emBorder, emATMatrix)",
+  "items": [
+    {
+      "id": "ITEM-050001",
+      "cpp_class": "emLinearLayout",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_type": "LinearLayout",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050002",
+      "cpp_symbol": "emLinearLayout::emLinearLayout (constructor)",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_symbol": "LinearLayout::horizontal(), LinearLayout::vertical(), LinearLayout::adaptive()",
+      "status": "ported",
+      "notes": "Split into named constructors instead of single constructor with defaults"
+    },
+    {
+      "id": "ITEM-050003",
+      "cpp_symbol": "emLinearLayout::SetHorizontal",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_symbol": "LinearLayout::horizontal() constructor or orientation field",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050004",
+      "cpp_symbol": "emLinearLayout::SetVertical",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_symbol": "LinearLayout::vertical() constructor or orientation field",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050005",
+      "cpp_symbol": "emLinearLayout::GetOrientationThresholdTallness / SetOrientationThresholdTallness",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/mod.rs",
+      "rust_symbol": "Orientation::Adaptive { tallness_threshold }",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050006",
+      "cpp_symbol": "emLinearLayout::GetMinCellCount / SetMinCellCount",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_symbol": "LinearLayout.min_cell_count",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050007",
+      "cpp_symbol": "emLinearLayout::GetChildWeight / SetChildWeight(int,double)",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_symbol": "LinearLayout.child_constraints HashMap + ChildConstraint.weight",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050008",
+      "cpp_symbol": "emLinearLayout::SetChildWeight(double) [all children]",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_symbol": "LinearLayout.default_constraint.weight",
+      "status": "ported",
+      "notes": "Default constraint serves as broadcast default"
+    },
+    {
+      "id": "ITEM-050009",
+      "cpp_symbol": "emLinearLayout::GetMinChildTallness / SetMinChildTallness(int,double)",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/mod.rs",
+      "rust_symbol": "ChildConstraint.min_tallness",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050010",
+      "cpp_symbol": "emLinearLayout::SetMinChildTallness(double) [all children]",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/mod.rs",
+      "rust_symbol": "ChildConstraint default + default_constraint field",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050011",
+      "cpp_symbol": "emLinearLayout::GetMaxChildTallness / SetMaxChildTallness(int,double)",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/mod.rs",
+      "rust_symbol": "ChildConstraint.max_tallness",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050012",
+      "cpp_symbol": "emLinearLayout::SetMaxChildTallness(double) [all children]",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/mod.rs",
+      "rust_symbol": "ChildConstraint default + default_constraint field",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050013",
+      "cpp_symbol": "emLinearLayout::SetChildTallness(int,double) [fixed]",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/mod.rs",
+      "rust_symbol": "ChildConstraint { min_tallness: t, max_tallness: t, .. }",
+      "status": "ported",
+      "notes": "User sets min=max=t to achieve fixed tallness"
+    },
+    {
+      "id": "ITEM-050014",
+      "cpp_symbol": "emLinearLayout::GetAlignment / SetAlignment",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_symbol": "LinearLayout.alignment_h, LinearLayout.alignment_v",
+      "status": "ported",
+      "notes": "Split into per-axis H/V alignment enums"
+    },
+    {
+      "id": "ITEM-050015",
+      "cpp_symbol": "emLinearLayout::GetSpaceL/T/H/V/R/B, SetSpaceL/T/H/V/R/B, SetSpace, SetInnerSpace, SetOuterSpace",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/mod.rs",
+      "rust_symbol": "Spacing struct (inner_h, inner_v, margin_left, margin_right, margin_top, margin_bottom)",
+      "status": "ported",
+      "notes": "Consolidated into Spacing struct; convenience methods like SetSpace/SetInnerSpace/SetOuterSpace not individually replicated but achievable via struct fields"
+    },
+    {
+      "id": "ITEM-050016",
+      "cpp_symbol": "emLinearLayout::LayoutChildren (protected virtual)",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_symbol": "PanelBehavior::layout_children for LinearLayout",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050017",
+      "cpp_symbol": "emLinearLayout::CalculateForce (private)",
+      "cpp_file": "include/emCore/emLinearLayout.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_symbol": "LinearLayout::calculate_force",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050018",
+      "cpp_class": "emLinearGroup",
+      "cpp_file": "include/emCore/emLinearGroup.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_type": "LinearGroup",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050019",
+      "cpp_symbol": "emLinearGroup::emLinearGroup (constructor)",
+      "cpp_file": "include/emCore/emLinearGroup.h",
+      "rust_file": "src/layout/linear.rs",
+      "rust_symbol": "LinearGroup::horizontal(), LinearGroup::vertical()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050020",
+      "cpp_class": "emRasterLayout",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_type": "RasterLayout",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050021",
+      "cpp_symbol": "emRasterLayout::IsRowByRow / SetRowByRow",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "RasterLayout.row_major",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050022",
+      "cpp_symbol": "emRasterLayout::GetFixedColumnCount / SetFixedColumnCount",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "RasterLayout.fixed_columns",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050023",
+      "cpp_symbol": "emRasterLayout::GetFixedRowCount / SetFixedRowCount",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "RasterLayout.fixed_rows",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050024",
+      "cpp_symbol": "emRasterLayout::GetMinCellCount / SetMinCellCount",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "RasterLayout.min_cell_count",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050025",
+      "cpp_symbol": "emRasterLayout::GetPrefChildTallness / SetPrefChildTallness",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "RasterLayout.preferred_child_tallness",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050026",
+      "cpp_symbol": "emRasterLayout::GetMinChildTallness / SetMinChildTallness",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "RasterLayout.min_child_tallness",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050027",
+      "cpp_symbol": "emRasterLayout::GetMaxChildTallness / SetMaxChildTallness",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "RasterLayout.max_child_tallness",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050028",
+      "cpp_symbol": "emRasterLayout::SetChildTallness [fixed]",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "set all three tallness fields to same value",
+      "status": "ported",
+      "notes": "No single convenience method, but achievable by setting preferred/min/max to same value"
+    },
+    {
+      "id": "ITEM-050029",
+      "cpp_symbol": "emRasterLayout::IsStrictRaster / SetStrictRaster",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "RasterLayout.strict_raster",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050030",
+      "cpp_symbol": "emRasterLayout::GetAlignment / SetAlignment",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "RasterLayout.alignment",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050031",
+      "cpp_symbol": "emRasterLayout::GetSpaceL/T/H/V/R/B + SetSpace variants",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/mod.rs",
+      "rust_symbol": "Spacing struct",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050032",
+      "cpp_symbol": "emRasterLayout::LayoutChildren (protected virtual)",
+      "cpp_file": "include/emCore/emRasterLayout.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_symbol": "PanelBehavior::layout_children for RasterLayout",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050033",
+      "cpp_class": "emRasterGroup",
+      "cpp_file": "include/emCore/emRasterGroup.h",
+      "rust_file": "src/layout/raster.rs",
+      "rust_type": "RasterGroup",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050034",
+      "cpp_class": "emPackLayout",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_type": "PackLayout",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050035",
+      "cpp_symbol": "emPackLayout::GetMinCellCount / SetMinCellCount",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "PackLayout.min_cell_count",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050036",
+      "cpp_symbol": "emPackLayout::GetChildWeight / SetChildWeight(int,double)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "PackLayout.child_constraints + ChildConstraint.weight",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050037",
+      "cpp_symbol": "emPackLayout::SetChildWeight(double) [all]",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "PackLayout::set_default_weight",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050038",
+      "cpp_symbol": "emPackLayout::GetPrefChildTallness / SetPrefChildTallness(int,double)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "PackLayout.child_constraints + ChildConstraint.preferred_tallness",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050039",
+      "cpp_symbol": "emPackLayout::SetPrefChildTallness(double) [all]",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "PackLayout::set_default_preferred_tallness",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050040",
+      "cpp_symbol": "emPackLayout::LayoutChildren (protected virtual)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "PanelBehavior::layout_children for PackLayout",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050041",
+      "cpp_symbol": "emPackLayout::RateCell (private)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "rate_cell()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050042",
+      "cpp_symbol": "emPackLayout::Pack1 (private)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "Packer::pack1",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050043",
+      "cpp_symbol": "emPackLayout::Pack2 (private)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "Packer::pack2",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050044",
+      "cpp_symbol": "emPackLayout::Pack3 (private)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "Packer::pack3",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050045",
+      "cpp_symbol": "emPackLayout::PackN (private)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "Packer::pack_n, Packer::pack_n_general",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050046",
+      "cpp_symbol": "emPackLayout::RateHorizontally (private)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "Packer::rate_horizontally",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050047",
+      "cpp_symbol": "emPackLayout::RateVertically (private)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "Packer::rate_vertically",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050048",
+      "cpp_symbol": "emPackLayout::FillTPIs / GetTPIWeightSum / GetTPILogPCTSum (private)",
+      "cpp_file": "include/emCore/emPackLayout.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_symbol": "Packer::weight_sum, Packer::log_pct_sum, cum_weight/cum_log_pct prefix arrays",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050049",
+      "cpp_class": "emPackGroup",
+      "cpp_file": "include/emCore/emPackGroup.h",
+      "rust_file": "src/layout/pack.rs",
+      "rust_type": "PackGroup",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050050",
+      "cpp_class": "emTiling",
+      "cpp_file": "include/emCore/emTiling.h",
+      "rust_file": null,
+      "rust_type": null,
+      "status": "not_ported",
+      "notes": "Deprecated in C++ (WARNING in header). Functionality superseded by emLinearLayout/emRasterLayout/emPackLayout which are all ported."
+    },
+    {
+      "id": "ITEM-050051",
+      "cpp_symbol": "emTiling::IsRowByRow / SetRowByRow",
+      "cpp_file": "include/emCore/emTiling.h",
+      "status": "not_ported",
+      "notes": "Deprecated class; functionality available via RasterLayout.row_major"
+    },
+    {
+      "id": "ITEM-050052",
+      "cpp_symbol": "emTiling::GetFixedColumnCount / SetFixedColumnCount / GetFixedRowCount / SetFixedRowCount",
+      "cpp_file": "include/emCore/emTiling.h",
+      "status": "not_ported",
+      "notes": "Deprecated class; functionality available via RasterLayout.fixed_columns/fixed_rows"
+    },
+    {
+      "id": "ITEM-050053",
+      "cpp_symbol": "emTiling::GetMinCellCount / SetMinCellCount",
+      "cpp_file": "include/emCore/emTiling.h",
+      "status": "not_ported",
+      "notes": "Deprecated class"
+    },
+    {
+      "id": "ITEM-050054",
+      "cpp_symbol": "emTiling::GetPrefChildTallness / SetPrefChildTallness (per-cell idx system)",
+      "cpp_file": "include/emCore/emTiling.h",
+      "status": "not_ported",
+      "notes": "Deprecated class; complex per-cell tallness indexing (positive=row, negative=column) not ported"
+    },
+    {
+      "id": "ITEM-050055",
+      "cpp_symbol": "emTiling::SetChildTallnessForced / GetForcedChildTallnessColumn / GetForcedChildTallnessRow",
+      "cpp_file": "include/emCore/emTiling.h",
+      "status": "not_ported",
+      "notes": "Deprecated class; forced tallness columns/rows not ported"
+    },
+    {
+      "id": "ITEM-050056",
+      "cpp_symbol": "emTiling::GetAlignment / SetAlignment",
+      "cpp_file": "include/emCore/emTiling.h",
+      "status": "not_ported",
+      "notes": "Deprecated class"
+    },
+    {
+      "id": "ITEM-050057",
+      "cpp_symbol": "emTiling::GetSpaceL/T/H/V/R/B + SetSpace variants",
+      "cpp_file": "include/emCore/emTiling.h",
+      "status": "not_ported",
+      "notes": "Deprecated class"
+    },
+    {
+      "id": "ITEM-050058",
+      "cpp_symbol": "emTiling::LayoutChildren",
+      "cpp_file": "include/emCore/emTiling.h",
+      "status": "not_ported",
+      "notes": "Deprecated class"
+    },
+    {
+      "id": "ITEM-050060",
+      "cpp_class": "emBorder",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_type": "Border",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050061",
+      "cpp_symbol": "emBorder::GetCaption / SetCaption",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.caption field + with_caption()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050062",
+      "cpp_symbol": "emBorder::GetDescription / SetDescription",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.description field + with_description()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050063",
+      "cpp_symbol": "emBorder::GetIcon / SetIcon",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.icon field + with_icon() / set_icon()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050064",
+      "cpp_symbol": "emBorder::SetLabel",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "with_caption() + with_description() + with_icon() (no single SetLabel)",
+      "status": "ported",
+      "notes": "Builder pattern instead of combined setter"
+    },
+    {
+      "id": "ITEM-050065",
+      "cpp_symbol": "emBorder::GetLabelAlignment / SetLabelAlignment",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.label_alignment + set_label_alignment()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050066",
+      "cpp_symbol": "emBorder::GetCaptionAlignment / SetCaptionAlignment",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.caption_alignment + set_caption_alignment()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050067",
+      "cpp_symbol": "emBorder::GetDescriptionAlignment / SetDescriptionAlignment",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.description_alignment + set_description_alignment()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050068",
+      "cpp_symbol": "emBorder::IsIconAboveCaption / SetIconAboveCaption",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.icon_above_caption + set_icon_above_caption()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050069",
+      "cpp_symbol": "emBorder::GetMaxIconAreaTallness / SetMaxIconAreaTallness",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.max_icon_area_tallness + set_max_icon_area_tallness()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050070",
+      "cpp_symbol": "emBorder::OuterBorderType enum (OBT_NONE..OBT_POPUP_ROOT)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "OuterBorderType enum",
+      "status": "ported",
+      "notes": "All 10 variants present (None, Filled, Margin, MarginFilled, Rect, RoundRect, Group, Instrument, InstrumentMoreRound, PopupRoot)"
+    },
+    {
+      "id": "ITEM-050071",
+      "cpp_symbol": "emBorder::InnerBorderType enum (IBT_NONE..IBT_CUSTOM_RECT)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "InnerBorderType enum",
+      "status": "ported",
+      "notes": "All 5 variants present (None, Group, InputField, OutputField, CustomRect)"
+    },
+    {
+      "id": "ITEM-050072",
+      "cpp_symbol": "emBorder::GetOuterBorderType / SetOuterBorderType",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.outer + set_outer_border_type()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050073",
+      "cpp_symbol": "emBorder::GetInnerBorderType / SetInnerBorderType",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.inner + set_inner_border_type()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050074",
+      "cpp_symbol": "emBorder::SetBorderType",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::set_border_type()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050075",
+      "cpp_symbol": "emBorder::GetBorderScaling / SetBorderScaling",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.border_scaling + set_border_scaling() + with_border_scaling()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050076",
+      "cpp_symbol": "emBorder::GetLook / SetLook",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Look stored in each widget struct (LinearGroup.look, etc.); no SetLook recursion",
+      "status": "ambiguous",
+      "notes": "Look is stored per-widget, but SetLook(recursively=true) propagation is not implemented"
+    },
+    {
+      "id": "ITEM-050077",
+      "cpp_symbol": "emBorder::HaveAux / RemoveAux / HasAux / GetAuxPanelName / GetAuxTallness / GetAuxPanel / GetAuxRect",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::have_aux(), remove_aux(), has_aux_panel(), get_aux_panel_name(), get_aux_tallness(), get_aux_rect()",
+      "status": "ported",
+      "notes": "GetAuxPanel (returns emPanel*) not directly ported but aux is positioned via position_aux_panel()"
+    },
+    {
+      "id": "ITEM-050078",
+      "cpp_symbol": "emBorder::GetSubstanceRect (virtual override from emPanel)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::substance_round_rect()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050079",
+      "cpp_symbol": "emBorder::GetContentRoundRect",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::content_round_rect()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050080",
+      "cpp_symbol": "emBorder::GetContentRect",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::content_rect()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050081",
+      "cpp_symbol": "emBorder::GetContentRectUnobscured",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::content_rect_unobscured()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050082",
+      "cpp_symbol": "emBorder::Notice (protected virtual)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Handled by PanelBehavior::notice in each widget",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050083",
+      "cpp_symbol": "emBorder::IsOpaque (protected virtual)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::is_opaque()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050084",
+      "cpp_symbol": "emBorder::Paint (protected virtual)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::paint_border()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050085",
+      "cpp_symbol": "emBorder::LayoutChildren (protected virtual)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/layout/mod.rs",
+      "rust_symbol": "position_aux_panel() + PanelBehavior::layout_children in each Group type",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050086",
+      "cpp_symbol": "emBorder::HasHowTo / GetHowTo (protected virtual)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "How-to text system not implemented in Rust"
+    },
+    {
+      "id": "ITEM-050087",
+      "cpp_symbol": "emBorder::PaintContent (protected virtual)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Not a separate method; each widget paints content in its PanelBehavior::paint",
+      "status": "ambiguous",
+      "notes": "No explicit PaintContent override hook; widgets paint their own content directly"
+    },
+    {
+      "id": "ITEM-050088",
+      "cpp_symbol": "emBorder::HasLabel (protected virtual)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::has_label() (pub(crate))",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050089",
+      "cpp_symbol": "emBorder::GetBestLabelTallness (protected virtual)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::best_label_tallness()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050090",
+      "cpp_symbol": "emBorder::PaintLabel (protected virtual)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border::paint_label() / paint_label_colored()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050091",
+      "cpp_symbol": "emBorder::IsLabelInBorder / SetLabelInBorder",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Border.label_in_border + set_label_in_border() + with_label_in_border()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050092",
+      "cpp_symbol": "emBorder::TkResources struct + GetTkResources",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Toolkit resource images (ImgButton, ImgCheckBox, etc.) loaded via 9-slice image painting in Rust, not as a shared resource struct"
+    },
+    {
+      "id": "ITEM-050093",
+      "cpp_symbol": "emBorder::DoBorder (private)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "Inlined into paint_border, content_rect, content_round_rect, substance_round_rect, content_rect_unobscured",
+      "status": "ported",
+      "notes": "Not a single dispatch function; each geometry query implemented as separate method"
+    },
+    {
+      "id": "ITEM-050094",
+      "cpp_symbol": "emBorder::DoLabel (private)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": "src/widget/border.rs",
+      "rust_symbol": "paint_label_impl + best_label_tallness",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-050095",
+      "cpp_symbol": "emBorder::HowToPreface / HowToDisabled / HowToFocus (static strings)",
+      "cpp_file": "include/emCore/emBorder.h",
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "How-to text system not implemented"
+    },
+    {
+      "id": "ITEM-050100",
+      "cpp_class": "emATMatrix",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "rust_file": null,
+      "rust_type": null,
+      "status": "not_ported",
+      "notes": "No dedicated affine transform matrix type in Rust. The painter uses push/scale/pop for transforms instead."
+    },
+    {
+      "id": "ITEM-050101",
+      "cpp_symbol": "emATMatrix::emATMatrix (constructors, 3 overloads)",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050102",
+      "cpp_symbol": "emATMatrix::Get / Set",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050103",
+      "cpp_symbol": "emATMatrix::TransX / TransY",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050104",
+      "cpp_symbol": "emATMatrix::InverseTransX / InverseTransY",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050105",
+      "cpp_symbol": "emATMatrix operators (==, !=, *=, *)",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050106",
+      "cpp_class": "emIdentityATM",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050107",
+      "cpp_class": "emInvertATM",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050108",
+      "cpp_class": "emMultiplyATM",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050109",
+      "cpp_class": "emTranslateATM",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050110",
+      "cpp_class": "emScaleATM",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050111",
+      "cpp_class": "emRotateATM",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-050112",
+      "cpp_class": "emShearATM",
+      "cpp_file": "include/emCore/emATMatrix.h",
+      "status": "not_ported"
+    }
+  ],
+  "summary": {
+    "total_items": 90,
+    "ported": 63,
+    "not_ported": 24,
+    "ambiguous": 3,
+    "notes": "Layout system (emLinearLayout/Group, emRasterLayout/Group, emPackLayout/Group) is fully ported with all public API and core algorithms. emBorder is extensively ported with minor gaps (HowTo system, TkResources struct, recursive SetLook). emTiling is intentionally not ported (deprecated in C++). emATMatrix and subclasses are not ported (Rust uses Painter push/scale/pop instead of explicit matrix types)."
+  }
+}

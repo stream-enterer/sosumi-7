@@ -1,0 +1,727 @@
+{
+  "worker": "W-0008",
+  "scope": "input system (emInput, emCursor, emClipboard)",
+  "cpp_files": [
+    "include/emCore/emInput.h",
+    "src/emCore/emInput.cpp",
+    "include/emCore/emCursor.h",
+    "src/emCore/emCursor.cpp",
+    "include/emCore/emClipboard.h",
+    "src/emCore/emClipboard.cpp"
+  ],
+  "rust_files": [
+    "src/input/mod.rs",
+    "src/input/event.rs",
+    "src/input/state.rs",
+    "src/input/hotkey.rs",
+    "src/input/cursor.rs"
+  ],
+  "items": [
+    {
+      "id": "ITEM-070001",
+      "cpp_symbol": "emInputKey (enum)",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey (enum)",
+      "rust_file": "src/input/event.rs",
+      "status": "ported",
+      "notes": "All key variants ported. C++ uses integer constants (0x00-0xAC), Rust uses enum variants. Key(char) covers alphanumeric. EM_KEY_NONE has no direct variant (Option<InputKey> used instead)."
+    },
+    {
+      "id": "ITEM-070002",
+      "cpp_symbol": "EM_KEY_NONE",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "ported",
+      "notes": "Represented by absence (Option::None) rather than an explicit variant."
+    },
+    {
+      "id": "ITEM-070003",
+      "cpp_symbol": "EM_KEY_LEFT_BUTTON",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::MouseLeft",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070004",
+      "cpp_symbol": "EM_KEY_MIDDLE_BUTTON",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::MouseMiddle",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070005",
+      "cpp_symbol": "EM_KEY_RIGHT_BUTTON",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::MouseRight",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070006",
+      "cpp_symbol": "EM_KEY_WHEEL_UP",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::WheelUp",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070007",
+      "cpp_symbol": "EM_KEY_WHEEL_DOWN",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::WheelDown",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070008",
+      "cpp_symbol": "EM_KEY_WHEEL_LEFT",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::WheelLeft",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070009",
+      "cpp_symbol": "EM_KEY_WHEEL_RIGHT",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::WheelRight",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070010",
+      "cpp_symbol": "EM_KEY_BACK_BUTTON",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::MouseX1",
+      "rust_file": "src/input/event.rs",
+      "status": "ported",
+      "notes": "Renamed to MouseX1 (winit convention)."
+    },
+    {
+      "id": "ITEM-070011",
+      "cpp_symbol": "EM_KEY_FORWARD_BUTTON",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::MouseX2",
+      "rust_file": "src/input/event.rs",
+      "status": "ported",
+      "notes": "Renamed to MouseX2 (winit convention)."
+    },
+    {
+      "id": "ITEM-070012",
+      "cpp_symbol": "EM_KEY_TOUCH",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No Touch key variant in InputKey. Touch is handled via InputState::touches() but no key event for touch press/release."
+    },
+    {
+      "id": "ITEM-070013",
+      "cpp_symbol": "EM_KEY_ALT_GR",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No AltGr variant in InputKey."
+    },
+    {
+      "id": "ITEM-070014",
+      "cpp_symbol": "EM_KEY_PRINT",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No Print key variant."
+    },
+    {
+      "id": "ITEM-070015",
+      "cpp_symbol": "EM_KEY_PAUSE",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No Pause key variant."
+    },
+    {
+      "id": "ITEM-070016",
+      "cpp_symbol": "EM_KEY_MENU",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No Menu key variant."
+    },
+    {
+      "id": "ITEM-070017",
+      "cpp_symbol": "EM_KEY_SHIFT .. EM_KEY_META (modifiers)",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::Shift, Ctrl, Alt, Meta",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070018",
+      "cpp_symbol": "EM_KEY_CURSOR_UP/DOWN/LEFT/RIGHT",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::ArrowUp/Down/Left/Right",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070019",
+      "cpp_symbol": "EM_KEY_0..9, EM_KEY_A..Z",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::Key(char)",
+      "rust_file": "src/input/event.rs",
+      "status": "ported",
+      "notes": "Collapsed into Key(char) variant rather than individual enum values."
+    },
+    {
+      "id": "ITEM-070020",
+      "cpp_symbol": "EM_KEY_F1..F12",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputKey::F1..F12",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070021",
+      "cpp_symbol": "emIsMouseInputKey()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No free function or method equivalent. Can be pattern-matched but no explicit helper."
+    },
+    {
+      "id": "ITEM-070022",
+      "cpp_symbol": "emIsTouchInputKey()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No Touch key, so no classifier needed."
+    },
+    {
+      "id": "ITEM-070023",
+      "cpp_symbol": "emIsKeyboardInputKey()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No explicit helper function."
+    },
+    {
+      "id": "ITEM-070024",
+      "cpp_symbol": "emIsModifierInputKey()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No explicit helper function."
+    },
+    {
+      "id": "ITEM-070025",
+      "cpp_symbol": "emInputKeyToString()",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No Display/ToString impl on InputKey. Debug derive exists but not the same format."
+    },
+    {
+      "id": "ITEM-070026",
+      "cpp_symbol": "emStringToInputKey()",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No FromStr impl on InputKey. parse_key_name() in hotkey.rs is private and partial."
+    },
+    {
+      "id": "ITEM-070030",
+      "cpp_symbol": "emInputEvent (class)",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputEvent (struct)",
+      "rust_file": "src/input/event.rs",
+      "status": "ported",
+      "notes": "Redesigned: C++ has key+chars+repeat+variant fields. Rust has key+variant(enum)+chars+is_repeat+mouse_x/y+modifier bools. Mouse pos and modifiers inlined into event (C++ keeps them in InputState)."
+    },
+    {
+      "id": "ITEM-070031",
+      "cpp_symbol": "emInputEvent::GetKey()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputEvent.key (pub field)",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070032",
+      "cpp_symbol": "emInputEvent::GetChars()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputEvent.chars (pub field)",
+      "rust_file": "src/input/event.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070033",
+      "cpp_symbol": "emInputEvent::GetRepeat()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputEvent.is_repeat (pub field)",
+      "rust_file": "src/input/event.rs",
+      "status": "ambiguous",
+      "notes": "C++ Repeat is an int (0=first, 1=double-click, etc). Rust is_repeat is a bool. Repeat count not preserved."
+    },
+    {
+      "id": "ITEM-070034",
+      "cpp_symbol": "emInputEvent::GetVariant()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputEvent.variant (InputVariant enum)",
+      "rust_file": "src/input/event.rs",
+      "status": "ambiguous",
+      "notes": "C++ Variant is int (0=normal, 1=numpad/right-side). Rust InputVariant is Press/Release/Repeat/Move -- a different concept (event type, not source variant). C++ source-variant info is not preserved."
+    },
+    {
+      "id": "ITEM-070035",
+      "cpp_symbol": "emInputEvent::Setup()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputEvent::press(), InputEvent::release()",
+      "rust_file": "src/input/event.rs",
+      "status": "ported",
+      "notes": "Split into constructor functions + builder methods (with_chars, with_mouse, with_modifiers)."
+    },
+    {
+      "id": "ITEM-070036",
+      "cpp_symbol": "emInputEvent::Eat()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No Eat/consume mechanism on InputEvent."
+    },
+    {
+      "id": "ITEM-070037",
+      "cpp_symbol": "emInputEvent::IsEmpty()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No empty state concept (Rust events always have a key)."
+    },
+    {
+      "id": "ITEM-070038",
+      "cpp_symbol": "emInputEvent::IsMouseEvent()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No classifier method on InputEvent."
+    },
+    {
+      "id": "ITEM-070039",
+      "cpp_symbol": "emInputEvent::IsTouchEvent()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-070040",
+      "cpp_symbol": "emInputEvent::IsKeyboardEvent()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-070041",
+      "cpp_symbol": "emInputEvent::IsKey()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Direct field comparison used instead (event.key == key)."
+    },
+    {
+      "id": "ITEM-070042",
+      "cpp_symbol": "emInputEvent::IsLeftButton/IsMiddleButton/IsRightButton",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No convenience methods; direct pattern match used."
+    },
+    {
+      "id": "ITEM-070050",
+      "cpp_symbol": "emInputState (class)",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputState (struct)",
+      "rust_file": "src/input/state.rs",
+      "status": "ported",
+      "notes": "C++ uses bitfield array for keys, Rust uses HashSet<InputKey>. Core API equivalent."
+    },
+    {
+      "id": "ITEM-070051",
+      "cpp_symbol": "emInputState::GetMouseX/GetMouseY/SetMouse",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputState.mouse_x/mouse_y (pub fields), InputState::set_mouse()",
+      "rust_file": "src/input/state.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070052",
+      "cpp_symbol": "emInputState::Get(key)/Set(key, pressed)",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputState::is_pressed(), InputState::press(), InputState::release()",
+      "rust_file": "src/input/state.rs",
+      "status": "ported",
+      "notes": "Set(key, bool) split into press()/release() methods."
+    },
+    {
+      "id": "ITEM-070053",
+      "cpp_symbol": "emInputState::GetShift/GetCtrl/GetAlt/GetMeta",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputState::shift()/ctrl()/alt()/meta()",
+      "rust_file": "src/input/state.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070054",
+      "cpp_symbol": "emInputState::GetLeftButton/GetMiddleButton/GetRightButton",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No convenience methods; use is_pressed(InputKey::MouseLeft) etc."
+    },
+    {
+      "id": "ITEM-070055",
+      "cpp_symbol": "emInputState::IsNoMod/IsShiftMod/IsCtrlMod/... (16 modifier combos)",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No compound modifier test methods. Callers check individual modifiers."
+    },
+    {
+      "id": "ITEM-070056",
+      "cpp_symbol": "emInputState::ClearKeyStates()",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No method to clear all key states at once."
+    },
+    {
+      "id": "ITEM-070057",
+      "cpp_symbol": "emInputState::GetKeyStates() (raw bitfield access)",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputState::pressed_keys()",
+      "rust_file": "src/input/state.rs",
+      "status": "ported",
+      "notes": "Returns &HashSet<InputKey> instead of raw byte array. Different representation, same capability."
+    },
+    {
+      "id": "ITEM-070058",
+      "cpp_symbol": "emInputState touch API (GetTouchCount/SearchTouch/GetTouchId/GetTouchX/GetTouchY/AddTouch/SetTouch/RemoveTouch/ClearTouches)",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "InputState::set_touch/remove_touch/touches()",
+      "rust_file": "src/input/state.rs",
+      "status": "ported",
+      "notes": "Simplified API: set_touch() combines Add+Set (upsert). SearchTouch/GetTouchId/ClearTouches not directly exposed but functionality covered."
+    },
+    {
+      "id": "ITEM-070059",
+      "cpp_symbol": "emInputState operator==/operator!=",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No PartialEq impl on InputState (HashSet makes this tricky)."
+    },
+    {
+      "id": "ITEM-070060",
+      "cpp_symbol": "emInputHotkey (class)",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "Hotkey (struct)",
+      "rust_file": "src/input/hotkey.rs",
+      "status": "ported",
+      "notes": "Same concept: modifier flags + key. C++ uses packed u16 bitfield, Rust uses bool fields."
+    },
+    {
+      "id": "ITEM-070061",
+      "cpp_symbol": "emInputHotkey constructors (key, modifier+key, etc.)",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": "Hotkey::new(key)",
+      "rust_file": "src/input/hotkey.rs",
+      "status": "ambiguous",
+      "notes": "Only single-key constructor. No constructor with modifiers -- must set fields directly. C++ has 5 overloaded constructors."
+    },
+    {
+      "id": "ITEM-070062",
+      "cpp_symbol": "emInputHotkey(event, state) constructor",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No from-event-and-state constructor."
+    },
+    {
+      "id": "ITEM-070063",
+      "cpp_symbol": "emInputHotkey::TryParse()",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": "Hotkey::parse()",
+      "rust_file": "src/input/hotkey.rs",
+      "status": "ported",
+      "notes": "Returns Option instead of throwing. Parses same 'Ctrl+C' format."
+    },
+    {
+      "id": "ITEM-070064",
+      "cpp_symbol": "emInputHotkey::GetString()",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No to-string/Display impl on Hotkey."
+    },
+    {
+      "id": "ITEM-070065",
+      "cpp_symbol": "emInputHotkey::IsValid()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No validity concept -- Hotkey always has a key (no EM_KEY_NONE equivalent)."
+    },
+    {
+      "id": "ITEM-070066",
+      "cpp_symbol": "emInputHotkey::GetShift/GetCtrl/GetAlt/GetMeta",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "Hotkey.shift/ctrl/alt/meta (pub fields)",
+      "rust_file": "src/input/hotkey.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070067",
+      "cpp_symbol": "emInputHotkey::GetKey()",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "Hotkey.key (pub field)",
+      "rust_file": "src/input/hotkey.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070068",
+      "cpp_symbol": "emInputHotkey::Match(event, state)",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": "Hotkey::matches(key, state)",
+      "rust_file": "src/input/hotkey.rs",
+      "status": "ported",
+      "notes": "Takes key+state instead of event+state. Same modifier matching logic."
+    },
+    {
+      "id": "ITEM-070069",
+      "cpp_symbol": "emInputHotkey::ClearModifiers/AddModifier/SetKey",
+      "cpp_file": "src/emCore/emInput.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No mutation methods. Fields are pub so direct assignment is used instead."
+    },
+    {
+      "id": "ITEM-070070",
+      "cpp_symbol": "emInputHotkey operator==/operator!=",
+      "cpp_file": "include/emCore/emInput.h",
+      "rust_symbol": "Hotkey derives PartialEq, Eq",
+      "rust_file": "src/input/hotkey.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070080",
+      "cpp_symbol": "emCursor (class)",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": "Cursor (enum)",
+      "rust_file": "src/input/cursor.rs",
+      "status": "ported",
+      "notes": "C++ uses integer IDs (9 values), Rust uses enum with 18 variants (superset -- adds directional arrows, diagonal resize)."
+    },
+    {
+      "id": "ITEM-070081",
+      "cpp_symbol": "emCursor::NORMAL",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": "Cursor::Normal",
+      "rust_file": "src/input/cursor.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070082",
+      "cpp_symbol": "emCursor::INVISIBLE",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": "Cursor::Invisible",
+      "rust_file": "src/input/cursor.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070083",
+      "cpp_symbol": "emCursor::WAIT",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": "Cursor::Wait",
+      "rust_file": "src/input/cursor.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070084",
+      "cpp_symbol": "emCursor::CROSSHAIR",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": "Cursor::Crosshair",
+      "rust_file": "src/input/cursor.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070085",
+      "cpp_symbol": "emCursor::TEXT",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": "Cursor::Text",
+      "rust_file": "src/input/cursor.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070086",
+      "cpp_symbol": "emCursor::HAND",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": "Cursor::Hand",
+      "rust_file": "src/input/cursor.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-070087",
+      "cpp_symbol": "emCursor::LEFT_RIGHT_ARROW",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": "Cursor::ResizeEW",
+      "rust_file": "src/input/cursor.rs",
+      "status": "ported",
+      "notes": "Renamed to ResizeEW (standard naming)."
+    },
+    {
+      "id": "ITEM-070088",
+      "cpp_symbol": "emCursor::UP_DOWN_ARROW",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": "Cursor::ResizeNS",
+      "rust_file": "src/input/cursor.rs",
+      "status": "ported",
+      "notes": "Renamed to ResizeNS."
+    },
+    {
+      "id": "ITEM-070089",
+      "cpp_symbol": "emCursor::LEFT_RIGHT_UP_DOWN_ARROW",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": "Cursor::Move",
+      "rust_file": "src/input/cursor.rs",
+      "status": "ported",
+      "notes": "Renamed to Move (4-way arrow)."
+    },
+    {
+      "id": "ITEM-070090",
+      "cpp_symbol": "emCursor::Get()",
+      "cpp_file": "include/emCore/emCursor.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No integer ID accessor. Enum variant is the identity."
+    },
+    {
+      "id": "ITEM-070091",
+      "cpp_symbol": "emCursor::ToString()",
+      "cpp_file": "src/emCore/emCursor.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No Display impl. Debug derive exists."
+    },
+    {
+      "id": "ITEM-070100",
+      "cpp_symbol": "emClipboard (abstract class)",
+      "cpp_file": "include/emCore/emClipboard.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No emClipboard abstraction. Clipboard access is via callbacks on TextField (on_clipboard_copy/on_clipboard_paste) -- ad-hoc, not a model."
+    },
+    {
+      "id": "ITEM-070101",
+      "cpp_symbol": "emClipboard::LookupInherited()",
+      "cpp_file": "src/emCore/emClipboard.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-070102",
+      "cpp_symbol": "emClipboard::PutText()",
+      "cpp_file": "include/emCore/emClipboard.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No centralized PutText. TextField has copy_to_clipboard() calling on_clipboard_copy callback."
+    },
+    {
+      "id": "ITEM-070103",
+      "cpp_symbol": "emClipboard::Clear()",
+      "cpp_file": "include/emCore/emClipboard.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-070104",
+      "cpp_symbol": "emClipboard::GetText()",
+      "cpp_file": "include/emCore/emClipboard.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No centralized GetText. TextField has paste_from_clipboard() calling on_clipboard_paste callback."
+    },
+    {
+      "id": "ITEM-070105",
+      "cpp_symbol": "emClipboard::Install()",
+      "cpp_file": "src/emCore/emClipboard.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-070110",
+      "cpp_symbol": "emPrivateClipboard (class)",
+      "cpp_file": "include/emCore/emClipboard.h",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No private clipboard implementation."
+    },
+    {
+      "id": "ITEM-070111",
+      "cpp_symbol": "emPrivateClipboard::Install(context)",
+      "cpp_file": "src/emCore/emClipboard.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-070112",
+      "cpp_symbol": "emPrivateClipboard::PutText/Clear/GetText",
+      "cpp_file": "src/emCore/emClipboard.cpp",
+      "rust_symbol": null,
+      "rust_file": null,
+      "status": "not_ported"
+    }
+  ],
+  "summary": {
+    "total_items": 56,
+    "ported": 31,
+    "not_ported": 22,
+    "ambiguous": 3,
+    "notes": "emInputKey and emInputState are well-ported with idiomatic Rust redesign (enum variants, HashSet). emInputEvent is ported but restructured (modifiers+mouse inlined into event). emInputHotkey core functionality ported. emCursor fully ported with expanded variant set. emClipboard is entirely not_ported -- no model/abstraction exists; clipboard access is ad-hoc via TextField callbacks. Key classifier functions (IsMouseInputKey etc.), modifier combo tests (IsShiftCtrlMod etc.), and event consumption (Eat) are not ported. Missing keys: EM_KEY_TOUCH, EM_KEY_ALT_GR, EM_KEY_PRINT, EM_KEY_PAUSE, EM_KEY_MENU."
+  }
+}

@@ -1,0 +1,2438 @@
+{
+  "worker": "W-0005",
+  "scope": "panel, view system (emPanel, emView, emViewAnimator, emViewInputFilter, emSubViewPanel)",
+  "cpp_root": "/home/ar/.local/git/eaglemode-0.96.4/",
+  "rust_root": "/home/ar/Development/egopol/zuicchini/src/",
+  "items": [
+    {
+      "id": "ITEM-040001",
+      "cpp_symbol": "emPanel (class)",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree + PanelBehavior trait + PanelState struct",
+      "rust_file": "panel/tree.rs, panel/behavior.rs",
+      "status": "ported",
+      "notes": "Decomposed: tree node data in PanelTree (SlotMap), behavior in trait, read-only state snapshot in PanelState"
+    },
+    {
+      "id": "ITEM-040002",
+      "cpp_symbol": "emPanel::ParentArgClass",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelCtx / PanelId parent parameter",
+      "rust_file": "panel/ctx.rs",
+      "status": "ported",
+      "notes": "Rust uses PanelId parent param + PanelCtx for tree mutation"
+    },
+    {
+      "id": "ITEM-040003",
+      "cpp_symbol": "emPanel::emPanel(ParentArg, name)",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::create_child(), PanelCtx::create_child(), PanelCtx::create_child_with()",
+      "rust_file": "panel/tree.rs, panel/ctx.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040004",
+      "cpp_symbol": "emPanel::~emPanel()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::remove()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040005",
+      "cpp_symbol": "emPanel::LinkCrossPtr()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "C++ cross-pointer mechanism; Rust uses PanelId (slotmap key) instead"
+    },
+    {
+      "id": "ITEM-040006",
+      "cpp_symbol": "emPanel::GetName()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelNode.name field, PanelCtx::name()",
+      "rust_file": "panel/tree.rs, panel/ctx.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040007",
+      "cpp_symbol": "emPanel::GetIdentity()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_identity()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040008",
+      "cpp_symbol": "emPanel::EncodeIdentity()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "encode_identity()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040009",
+      "cpp_symbol": "emPanel::DecodeIdentity()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "decode_identity()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040010",
+      "cpp_symbol": "emPanel::GetTitle()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::get_title(), PanelTree::get_title()",
+      "rust_file": "panel/behavior.rs, panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040011",
+      "cpp_symbol": "emPanel::GetIconFileName()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::get_icon_file_name(), PanelTree::get_icon_file_name()",
+      "rust_file": "panel/behavior.rs, panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040012",
+      "cpp_symbol": "emPanel::GetView()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Rust architecture separates View from PanelTree; no per-panel view reference"
+    },
+    {
+      "id": "ITEM-040013",
+      "cpp_symbol": "emPanel::GetViewContext()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "C++ emContext hierarchy not replicated in Rust"
+    },
+    {
+      "id": "ITEM-040014",
+      "cpp_symbol": "emPanel::GetRootContext()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "C++ emContext hierarchy not replicated"
+    },
+    {
+      "id": "ITEM-040015",
+      "cpp_symbol": "emPanel::GetWindow()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Shortcut to view.GetWindow(); Rust ZuiWindow is separate"
+    },
+    {
+      "id": "ITEM-040016",
+      "cpp_symbol": "emPanel::GetScreen()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Shortcut to view.GetScreen(); Rust has no emScreen equivalent"
+    },
+    {
+      "id": "ITEM-040017",
+      "cpp_symbol": "emPanel::GetParent()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::parent(), PanelCtx::parent()",
+      "rust_file": "panel/tree.rs, panel/ctx.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040018",
+      "cpp_symbol": "emPanel::GetChild(name)",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::find_child_by_name()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040019",
+      "cpp_symbol": "emPanel::GetFirstChild()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::first_child()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040020",
+      "cpp_symbol": "emPanel::GetLastChild()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::last_child()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040021",
+      "cpp_symbol": "emPanel::GetPrev()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::prev_sibling()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040022",
+      "cpp_symbol": "emPanel::GetNext()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::next_sibling()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040023",
+      "cpp_symbol": "emPanel::BeFirst()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::be_first()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040024",
+      "cpp_symbol": "emPanel::BeLast()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::be_last()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040025",
+      "cpp_symbol": "emPanel::BePrevOf()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::be_prev_of()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040026",
+      "cpp_symbol": "emPanel::BeNextOf()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::be_next_of()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040027",
+      "cpp_symbol": "emPanel::SortChildren()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::sort_children()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040028",
+      "cpp_symbol": "emPanel::DeleteAllChildren()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::delete_all_children(), PanelCtx::delete_all_children()",
+      "rust_file": "panel/tree.rs, panel/ctx.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040029",
+      "cpp_symbol": "emPanel::Layout()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::set_layout_rect(), PanelCtx::layout_child()",
+      "rust_file": "panel/tree.rs, panel/ctx.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040030",
+      "cpp_symbol": "emPanel::GetLayoutX/Y/Width/Height()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::layout_rect(), PanelCtx::layout_rect() → Rect",
+      "rust_file": "panel/tree.rs, panel/ctx.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040031",
+      "cpp_symbol": "emPanel::GetCanvasColor()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelNode.canvas_color, PanelCtx::canvas_color()",
+      "rust_file": "panel/tree.rs, panel/ctx.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040032",
+      "cpp_symbol": "emPanel::GetWidth() (always 1.0)",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Constant 1.0; Rust does not have a dedicated getter (layout_rect provides actual dimensions)"
+    },
+    {
+      "id": "ITEM-040033",
+      "cpp_symbol": "emPanel::GetHeight()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_height()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040034",
+      "cpp_symbol": "emPanel::GetTallness()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_tallness()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040035",
+      "cpp_symbol": "emPanel::GetSubstanceRect()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_substance_rect()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040036",
+      "cpp_symbol": "emPanel::IsPointInSubstanceRect()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::is_point_in_substance_rect()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040037",
+      "cpp_symbol": "emPanel::GetEssenceRect()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_essence_rect()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040038",
+      "cpp_symbol": "emPanel::IsViewed()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelNode.viewed field, PanelState.viewed",
+      "rust_file": "panel/tree.rs, panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040039",
+      "cpp_symbol": "emPanel::IsInViewedPath()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelNode.in_viewed_path field",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040040",
+      "cpp_symbol": "emPanel::GetViewedPixelTallness()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Pixel tallness concept not needed in Rust (assumes square pixels)"
+    },
+    {
+      "id": "ITEM-040041",
+      "cpp_symbol": "emPanel::GetViewedX/Y/Width/Height()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelNode.viewed_rect, PanelState.viewed_rect",
+      "rust_file": "panel/tree.rs, panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040042",
+      "cpp_symbol": "emPanel::GetClipX1/Y1/X2/Y2()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelNode.clip_rect, PanelState.clip_rect",
+      "rust_file": "panel/tree.rs, panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040043",
+      "cpp_symbol": "emPanel::PanelToViewX/Y()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::panel_to_view_x/y()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040044",
+      "cpp_symbol": "emPanel::ViewToPanelX/Y()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::view_to_panel_x/y()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040045",
+      "cpp_symbol": "emPanel::PanelToViewDeltaX/Y()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::panel_to_view_delta_x/y()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040046",
+      "cpp_symbol": "emPanel::ViewToPanelDeltaX/Y()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::view_to_panel_delta_x/y()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040047",
+      "cpp_symbol": "emPanel::ViewConditionType (enum)",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "ViewConditionType enum",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040048",
+      "cpp_symbol": "emPanel::GetViewCondition()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_view_condition()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040049",
+      "cpp_symbol": "emPanel::GetAutoExpansionThresholdValue()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_auto_expansion_threshold_value()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040050",
+      "cpp_symbol": "emPanel::GetAutoExpansionThresholdType()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_auto_expansion_threshold_type()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040051",
+      "cpp_symbol": "emPanel::SetAutoExpansionThreshold()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::set_auto_expansion_threshold()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040052",
+      "cpp_symbol": "emPanel::IsAutoExpanded()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::is_auto_expanded()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040053",
+      "cpp_symbol": "emPanel::SetEnableSwitch()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::set_enable_switch(), PanelCtx::set_enable_switch()",
+      "rust_file": "panel/tree.rs, panel/ctx.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040054",
+      "cpp_symbol": "emPanel::GetEnableSwitch()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelNode.enable_switch field",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040055",
+      "cpp_symbol": "emPanel::IsEnabled()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelNode.enabled, PanelState.enabled, PanelCtx::is_enabled()",
+      "rust_file": "panel/tree.rs, panel/behavior.rs, panel/ctx.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040056",
+      "cpp_symbol": "emPanel::SetFocusable()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::set_focusable(), PanelCtx::set_focusable()",
+      "rust_file": "panel/tree.rs, panel/ctx.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040057",
+      "cpp_symbol": "emPanel::IsFocusable()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::focusable()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040058",
+      "cpp_symbol": "emPanel::GetFocusableParent()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::focusable_ancestor()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040059",
+      "cpp_symbol": "emPanel::GetFocusableFirstChild()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::focusable_first_child()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040060",
+      "cpp_symbol": "emPanel::GetFocusableLastChild()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::focusable_last_child()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040061",
+      "cpp_symbol": "emPanel::GetFocusablePrev()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::focusable_prev()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040062",
+      "cpp_symbol": "emPanel::GetFocusableNext()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::focusable_next()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040063",
+      "cpp_symbol": "emPanel::IsActive()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelState.is_active",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040064",
+      "cpp_symbol": "emPanel::IsInActivePath()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelState.in_active_path",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040065",
+      "cpp_symbol": "emPanel::IsActivatedAdherent()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "View::is_activation_adherent()",
+      "rust_file": "panel/view.rs",
+      "status": "ported",
+      "notes": "On view rather than per-panel (same semantics)"
+    },
+    {
+      "id": "ITEM-040066",
+      "cpp_symbol": "emPanel::Activate()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "View::activate_panel()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040067",
+      "cpp_symbol": "emPanel::IsFocused()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelState::is_focused()",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040068",
+      "cpp_symbol": "emPanel::IsInFocusedPath()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelState::in_focused_path()",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040069",
+      "cpp_symbol": "emPanel::IsViewFocused()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelState.window_focused, View::is_view_focused()",
+      "rust_file": "panel/behavior.rs, panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040070",
+      "cpp_symbol": "emPanel::Focus()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "View::focus_panel()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040071",
+      "cpp_symbol": "emPanel::GetUpdatePriority()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_update_priority(), PanelState.priority",
+      "rust_file": "panel/tree.rs, panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040072",
+      "cpp_symbol": "emPanel::GetMemoryLimit()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_memory_limit(), PanelState.memory_limit",
+      "rust_file": "panel/tree.rs, panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040073",
+      "cpp_symbol": "emPanel::GetInputClockMS()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "View::get_input_clock_ms()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040074",
+      "cpp_symbol": "emPanel::GetTouchEventPriority()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_touch_event_priority()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040075",
+      "cpp_symbol": "emPanel::AutoplayHandlingFlags (enum)",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "AutoplayHandlingFlags bitflags",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040076",
+      "cpp_symbol": "emPanel::SetAutoplayHandling()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::set_autoplay_handling()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040077",
+      "cpp_symbol": "emPanel::GetAutoplayHandling()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_autoplay_handling()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040078",
+      "cpp_symbol": "emPanel::IsContentReady()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::is_content_ready()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040079",
+      "cpp_symbol": "emPanel::GetPlaybackState()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::get_playback_state(), PanelTree::get_playback_state()",
+      "rust_file": "panel/behavior.rs, panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040080",
+      "cpp_symbol": "emPanel::SetPlaybackState()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::set_playback_state(), PanelTree::set_playback_state()",
+      "rust_file": "panel/behavior.rs, panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040081",
+      "cpp_symbol": "emPanel::Cycle() (engine callback)",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "C++ emEngine::Cycle mechanism not replicated; Rust uses scheduler signals"
+    },
+    {
+      "id": "ITEM-040082",
+      "cpp_symbol": "emPanel::NoticeFlags (enum)",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags bitflags",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040083",
+      "cpp_symbol": "emPanel::NF_CHILD_LIST_CHANGED",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags::CHILDREN_CHANGED",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040084",
+      "cpp_symbol": "emPanel::NF_LAYOUT_CHANGED",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags::LAYOUT_CHANGED",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040085",
+      "cpp_symbol": "emPanel::NF_VIEWING_CHANGED",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags::VIEW_CHANGED",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040086",
+      "cpp_symbol": "emPanel::NF_ENABLE_CHANGED",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags::ENABLE_CHANGED",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040087",
+      "cpp_symbol": "emPanel::NF_ACTIVE_CHANGED",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags::ACTIVE_CHANGED",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040088",
+      "cpp_symbol": "emPanel::NF_FOCUS_CHANGED",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags::FOCUS_CHANGED",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040089",
+      "cpp_symbol": "emPanel::NF_VIEW_FOCUS_CHANGED",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags::VIEW_FOCUS_CHANGED",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040090",
+      "cpp_symbol": "emPanel::NF_UPDATE_PRIORITY_CHANGED",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags::UPDATE_PRIORITY_CHANGED",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040091",
+      "cpp_symbol": "emPanel::NF_MEMORY_LIMIT_CHANGED",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags::MEMORY_LIMIT_CHANGED",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040092",
+      "cpp_symbol": "emPanel::NF_SOUGHT_NAME_CHANGED",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "NoticeFlags::SOUGHT_NAME_CHANGED",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040093",
+      "cpp_symbol": "emPanel::Notice()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::notice()",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040094",
+      "cpp_symbol": "emPanel::Input(event, state, mx, my)",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::input()",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported",
+      "notes": "Rust signature differs: no mx/my params (mouse coords in InputState)"
+    },
+    {
+      "id": "ITEM-040095",
+      "cpp_symbol": "emPanel::GetCursor()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::get_cursor()",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040096",
+      "cpp_symbol": "emPanel::IsOpaque()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::is_opaque()",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040097",
+      "cpp_symbol": "emPanel::Paint(painter, canvasColor)",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::paint()",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040098",
+      "cpp_symbol": "emPanel::AutoExpand()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::auto_expand()",
+      "rust_file": "panel/behavior.rs",
+      "status": "ambiguous",
+      "notes": "Rust has auto_expand() returning bool (whether to expand), not the action itself; expansion logic is in tree.rs"
+    },
+    {
+      "id": "ITEM-040099",
+      "cpp_symbol": "emPanel::AutoShrink()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::auto_shrink()",
+      "rust_file": "panel/behavior.rs",
+      "status": "ambiguous",
+      "notes": "Rust has auto_shrink() returning bool; expansion/shrink mechanism differs"
+    },
+    {
+      "id": "ITEM-040100",
+      "cpp_symbol": "emPanel::LayoutChildren()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::layout_children()",
+      "rust_file": "panel/behavior.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040101",
+      "cpp_symbol": "emPanel::CreateControlPanel()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::create_control_panel(), PanelTree::create_control_panel()",
+      "rust_file": "panel/behavior.rs, panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040102",
+      "cpp_symbol": "emPanel::GetSoughtName()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::get_sought_name()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040103",
+      "cpp_symbol": "emPanel::IsHopeForSeeking()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelBehavior::is_hope_for_seeking(), PanelTree::is_hope_for_seeking()",
+      "rust_file": "panel/behavior.rs, panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040104",
+      "cpp_symbol": "emPanel::InvalidateTitle()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "View::invalidate_title()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040105",
+      "cpp_symbol": "emPanel::InvalidateCursor()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "View::invalidate_cursor()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040106",
+      "cpp_symbol": "emPanel::InvalidatePainting()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "View::invalidate_painting(), View::invalidate_painting_rect()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040107",
+      "cpp_symbol": "emPanel::InvalidateAutoExpansion()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::invalidate_auto_expansion()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040108",
+      "cpp_symbol": "emPanel::InvalidateChildrenLayout()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "PanelTree::invalidate_children_layout()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040109",
+      "cpp_symbol": "emPanel::InvalidateControlPanel()",
+      "cpp_file": "include/emCore/emPanel.h",
+      "rust_equivalent": "View::invalidate_control_panel()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+
+    {
+      "id": "ITEM-040200",
+      "cpp_symbol": "emView (class)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View struct",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040201",
+      "cpp_symbol": "emView::ViewFlags (VF_POPUP_ZOOM, VF_ROOT_SAME_TALLNESS, etc.)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "ViewFlags bitflags",
+      "rust_file": "panel/view.rs",
+      "status": "ported",
+      "notes": "Most flags mapped; VF_EGO_MODE and VF_STRESS_TEST not ported"
+    },
+    {
+      "id": "ITEM-040202",
+      "cpp_symbol": "emView::VF_EGO_MODE",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-040203",
+      "cpp_symbol": "emView::VF_STRESS_TEST",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-040204",
+      "cpp_symbol": "emView::GetViewFlags()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View.flags field (pub)",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040205",
+      "cpp_symbol": "emView::SetViewFlags()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::set_view_flags()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040206",
+      "cpp_symbol": "emView::GetViewFlagsSignal()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "C++ signal mechanism not replicated in Rust"
+    },
+    {
+      "id": "ITEM-040207",
+      "cpp_symbol": "emView::GetBackgroundColor()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View.background_color field",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040208",
+      "cpp_symbol": "emView::SetBackgroundColor()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Field exists but no dedicated setter method; set directly"
+    },
+    {
+      "id": "ITEM-040209",
+      "cpp_symbol": "emView::GetTitle()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "PanelTree::get_title() (via active panel chain)",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040210",
+      "cpp_symbol": "emView::GetTitleSignal()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "C++ signal mechanism"
+    },
+    {
+      "id": "ITEM-040211",
+      "cpp_symbol": "emView::CreateControlPanel()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "PanelTree::create_control_panel()",
+      "rust_file": "panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040212",
+      "cpp_symbol": "emView::GetControlPanelSignal()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "C++ signal mechanism"
+    },
+    {
+      "id": "ITEM-040213",
+      "cpp_symbol": "emView::IsFocused()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::is_view_focused()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040214",
+      "cpp_symbol": "emView::GetFocusSignal()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "C++ signal mechanism"
+    },
+    {
+      "id": "ITEM-040215",
+      "cpp_symbol": "emView::Focus()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::focus_panel() (combined with panel activation)",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040216",
+      "cpp_symbol": "emView::GetWindow()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Rust ZuiWindow is separate; no view→window lookup"
+    },
+    {
+      "id": "ITEM-040217",
+      "cpp_symbol": "emView::GetScreen()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No emScreen equivalent in Rust"
+    },
+    {
+      "id": "ITEM-040218",
+      "cpp_symbol": "emView::GetHomeX/Y/Width/Height/PixelTallness/Tallness()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Home geometry for popup-zoom; popup-zoom feature not implemented"
+    },
+    {
+      "id": "ITEM-040219",
+      "cpp_symbol": "emView::GetCurrentX/Y/Width/Height/PixelTallness/Tallness()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View.viewport_width/viewport_height",
+      "rust_file": "panel/view.rs",
+      "status": "ambiguous",
+      "notes": "Rust has viewport dimensions but no absolute screen position or pixel tallness"
+    },
+    {
+      "id": "ITEM-040220",
+      "cpp_symbol": "emView::GetGeometrySignal()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "C++ signal mechanism"
+    },
+    {
+      "id": "ITEM-040221",
+      "cpp_symbol": "emView::GetMaxPopupViewRect()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Popup-zoom feature not implemented"
+    },
+    {
+      "id": "ITEM-040222",
+      "cpp_symbol": "emView::GetFirstVIF() / GetLastVIF()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Rust VIFs are not a linked list on View; they're managed separately in ZuiWindow"
+    },
+    {
+      "id": "ITEM-040223",
+      "cpp_symbol": "emView::GetRootPanel()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::root(), PanelTree::root()",
+      "rust_file": "panel/view.rs, panel/tree.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040224",
+      "cpp_symbol": "emView::GetSupremeViewedPanel()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "SVP concept exists internally in update_viewing but no public getter"
+    },
+    {
+      "id": "ITEM-040225",
+      "cpp_symbol": "emView::GetActivePanel()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::active()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040226",
+      "cpp_symbol": "emView::IsActivationAdherent()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::is_activation_adherent()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040227",
+      "cpp_symbol": "emView::SetActivePanel()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::set_active_panel()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040228",
+      "cpp_symbol": "emView::SetActivePanelBestPossible()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::set_active_panel_best_possible()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040229",
+      "cpp_symbol": "emView::GetPanelByIdentity()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No identity-based panel lookup on View; VisitingViewAnimator walks the identity path internally"
+    },
+    {
+      "id": "ITEM-040230",
+      "cpp_symbol": "emView::GetPanelAt()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::get_panel_at()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040231",
+      "cpp_symbol": "emView::GetFocusablePanelAt()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::get_focusable_panel_at()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040232",
+      "cpp_symbol": "emView::GetVisitedPanel()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_stack() (top of stack is visited panel)",
+      "rust_file": "panel/view.rs",
+      "status": "ported",
+      "notes": "Visit state stored in stack rather than single panel pointer"
+    },
+    {
+      "id": "ITEM-040233",
+      "cpp_symbol": "emView::Visit(panel, relX, relY, relA, adherent)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040234",
+      "cpp_symbol": "emView::Visit(identity, ...) (string-based)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "VisitingViewAnimator::set_goal()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported",
+      "notes": "Identity-based visiting goes through the animator"
+    },
+    {
+      "id": "ITEM-040235",
+      "cpp_symbol": "emView::VisitFullsized()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_fullsized()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040236",
+      "cpp_symbol": "emView::RawVisit(panel, relX, relY, relA)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit() (immediate, no animation)",
+      "rust_file": "panel/view.rs",
+      "status": "ported",
+      "notes": "Rust visit() is immediate; animation done through animator"
+    },
+    {
+      "id": "ITEM-040237",
+      "cpp_symbol": "emView::RawVisit(panel) (auto-coords)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "ambiguous",
+      "notes": "Auto-coordinate raw visit partially covered by visit_fullsized"
+    },
+    {
+      "id": "ITEM-040238",
+      "cpp_symbol": "emView::RawVisitFullsized()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_fullsized()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040239",
+      "cpp_symbol": "emView::VisitNext()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_next()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040240",
+      "cpp_symbol": "emView::VisitPrev()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_prev()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040241",
+      "cpp_symbol": "emView::VisitFirst()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_first()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040242",
+      "cpp_symbol": "emView::VisitLast()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_last()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040243",
+      "cpp_symbol": "emView::VisitLeft()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_left()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040244",
+      "cpp_symbol": "emView::VisitRight()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_right()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040245",
+      "cpp_symbol": "emView::VisitUp()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_up()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040246",
+      "cpp_symbol": "emView::VisitDown()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_down()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040247",
+      "cpp_symbol": "emView::VisitNeighbour(direction)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_neighbour() (private), Direction enum",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040248",
+      "cpp_symbol": "emView::VisitIn()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_in()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040249",
+      "cpp_symbol": "emView::VisitOut()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::visit_out()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040250",
+      "cpp_symbol": "emView::Scroll()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::scroll()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040251",
+      "cpp_symbol": "emView::Zoom()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::zoom()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040252",
+      "cpp_symbol": "emView::RawScrollAndZoom()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::raw_scroll_and_zoom()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040253",
+      "cpp_symbol": "emView::GetZoomFactorLogarithmPerPixel()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::get_zoom_factor_log_per_pixel()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040254",
+      "cpp_symbol": "emView::ZoomOut()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::zoom_out()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040255",
+      "cpp_symbol": "emView::RawZoomOut()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::raw_zoom_out()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040256",
+      "cpp_symbol": "emView::IsZoomedOut()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::is_zoomed_out()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040257",
+      "cpp_symbol": "emView::IsPoppedUp()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Popup-zoom feature not implemented"
+    },
+    {
+      "id": "ITEM-040258",
+      "cpp_symbol": "emView::SignalEOIDelayed()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "End-Of-Interaction signal not implemented"
+    },
+    {
+      "id": "ITEM-040259",
+      "cpp_symbol": "emView::GetEOISignal()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "End-Of-Interaction signal not implemented"
+    },
+    {
+      "id": "ITEM-040260",
+      "cpp_symbol": "emView::IsSoftKeyboardShown() / ShowSoftKeyboard()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-040261",
+      "cpp_symbol": "emView::GetInputClockMS()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::get_input_clock_ms()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040262",
+      "cpp_symbol": "emView::GetTouchEventPriority()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "View-level touch priority not exposed; PanelTree has per-panel version"
+    },
+    {
+      "id": "ITEM-040263",
+      "cpp_symbol": "emView::GetActiveAnimator()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No active animator getter on View; animators managed by ZuiWindow"
+    },
+    {
+      "id": "ITEM-040264",
+      "cpp_symbol": "emView::ActivateMagneticViewAnimator()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Managed at ZuiWindow level, not on View"
+    },
+    {
+      "id": "ITEM-040265",
+      "cpp_symbol": "emView::AbortActiveAnimator()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Managed at ZuiWindow level"
+    },
+    {
+      "id": "ITEM-040266",
+      "cpp_symbol": "emView::Input() (protected)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View dispatches input to panels in ZuiWindow",
+      "rust_file": "panel/view.rs",
+      "status": "ambiguous",
+      "notes": "Input dispatch exists but architecture differs significantly"
+    },
+    {
+      "id": "ITEM-040267",
+      "cpp_symbol": "emView::GetCursor() (protected)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Cursor aggregation done differently in Rust"
+    },
+    {
+      "id": "ITEM-040268",
+      "cpp_symbol": "emView::Paint() (protected)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::paint() / paint_panel_recursive()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040269",
+      "cpp_symbol": "emView::InvalidateTitle()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::invalidate_title()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040270",
+      "cpp_symbol": "emView::InvalidateCursor()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::invalidate_cursor()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040271",
+      "cpp_symbol": "emView::InvalidatePainting()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::invalidate_painting(), View::invalidate_painting_rect()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040272",
+      "cpp_symbol": "emView::DoCustomCheat()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-040273",
+      "cpp_symbol": "emView::CalcVisitCoords()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::calc_visit_coords()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040274",
+      "cpp_symbol": "emView::CalcVisitFullsizedCoords()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::calc_visit_fullsized_coords()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040275",
+      "cpp_symbol": "emView::FindBestSVP()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "ambiguous",
+      "notes": "SVP selection logic exists in update_viewing but not as a separate public/private method"
+    },
+    {
+      "id": "ITEM-040276",
+      "cpp_symbol": "emView::SwapViewPorts()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Popup-zoom viewport swap not implemented"
+    },
+    {
+      "id": "ITEM-040277",
+      "cpp_symbol": "emView::RecurseInput()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "ambiguous",
+      "notes": "Input recursion exists but structured differently in Rust"
+    },
+    {
+      "id": "ITEM-040278",
+      "cpp_symbol": "emView::PaintHighlight()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::paint_highlight()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040279",
+      "cpp_symbol": "emView::SetSeekPos()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::set_seek_pos()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040280",
+      "cpp_symbol": "emView::IsHopeForSeeking()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::is_hope_for_seeking()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040281",
+      "cpp_symbol": "emView::Update()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::update_viewing()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040282",
+      "cpp_symbol": "emView::SetGeometry()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::set_viewport()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040283",
+      "cpp_symbol": "emView::SetFocused()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "ambiguous",
+      "notes": "View focus managed via view_focused field, set externally by ZuiWindow"
+    },
+    {
+      "id": "ITEM-040284",
+      "cpp_symbol": "emView::UpdateEngineClass",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "C++ emEngine Cycle pattern; Rust drives updates from ZuiWindow event loop"
+    },
+    {
+      "id": "ITEM-040285",
+      "cpp_symbol": "emView::EOIEngineClass",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "EOI signal not implemented"
+    },
+    {
+      "id": "ITEM-040286",
+      "cpp_symbol": "emView::StressTestClass",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-040287",
+      "cpp_symbol": "emView::ScrollToVisible (scroll_to_panel_rect)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::scroll_to_panel_rect()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+
+    {
+      "id": "ITEM-040300",
+      "cpp_symbol": "emViewPort (class)",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Rust ZuiWindow integrates view port functionality directly"
+    },
+    {
+      "id": "ITEM-040301",
+      "cpp_symbol": "emViewPort::SetViewGeometry()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::set_viewport() (called by ZuiWindow::resize)",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040302",
+      "cpp_symbol": "emViewPort::SetViewFocused()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View.view_focused field set by ZuiWindow",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040303",
+      "cpp_symbol": "emViewPort::RequestFocus()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Focus request goes through winit directly"
+    },
+    {
+      "id": "ITEM-040304",
+      "cpp_symbol": "emViewPort::InputToView()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "ZuiWindow handles input dispatch",
+      "rust_file": null,
+      "status": "ported",
+      "notes": "Functionality exists but in ZuiWindow rather than ViewPort"
+    },
+    {
+      "id": "ITEM-040305",
+      "cpp_symbol": "emViewPort::InvalidateCursor/Painting()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::invalidate_cursor/painting()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040306",
+      "cpp_symbol": "emViewPort::GetInputClockMS()",
+      "cpp_file": "include/emCore/emView.h",
+      "rust_equivalent": "View::get_input_clock_ms()",
+      "rust_file": "panel/view.rs",
+      "status": "ported"
+    },
+
+    {
+      "id": "ITEM-040400",
+      "cpp_symbol": "emViewAnimator (class)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "ViewAnimator trait",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040401",
+      "cpp_symbol": "emViewAnimator::GetView()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "View passed as &mut to animate(); no stored reference"
+    },
+    {
+      "id": "ITEM-040402",
+      "cpp_symbol": "emViewAnimator::SetMaster() / GetMaster() / GetActiveSlave()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Master/slave hierarchy not replicated; animators are standalone"
+    },
+    {
+      "id": "ITEM-040403",
+      "cpp_symbol": "emViewAnimator::IsActive()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "ViewAnimator::is_active()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040404",
+      "cpp_symbol": "emViewAnimator::Activate() / Deactivate()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "ViewAnimator::stop()",
+      "rust_file": "panel/animator.rs",
+      "status": "ambiguous",
+      "notes": "Only stop(); activation is implicit by setting velocity/goal"
+    },
+    {
+      "id": "ITEM-040405",
+      "cpp_symbol": "emViewAnimator::IsDeactivatingWhenIdle() / SetDeactivateWhenIdle()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-040406",
+      "cpp_symbol": "emViewAnimator::Input()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Animator input handled at VIF level"
+    },
+    {
+      "id": "ITEM-040407",
+      "cpp_symbol": "emViewAnimator::Paint()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Animator paint overlay not implemented"
+    },
+    {
+      "id": "ITEM-040408",
+      "cpp_symbol": "emViewAnimator::CycleAnimation(dt)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "ViewAnimator::animate(view, tree, dt)",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040409",
+      "cpp_symbol": "emViewAnimator::InvalidatePainting()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Painting invalidation handled at View level"
+    },
+
+    {
+      "id": "ITEM-040500",
+      "cpp_symbol": "emKineticViewAnimator (class)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "KineticViewAnimator struct",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040501",
+      "cpp_symbol": "emKineticViewAnimator::GetVelocity(dim) / GetAbsVelocity()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "KineticViewAnimator::velocity() → (f64,f64,f64)",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040502",
+      "cpp_symbol": "emKineticViewAnimator::SetVelocity(dim, vel)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "KineticViewAnimator::set_velocity(vx,vy,vz)",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040503",
+      "cpp_symbol": "emKineticViewAnimator::CenterZoomFixPoint()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "KineticViewAnimator::center_zoom_fix_point()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040504",
+      "cpp_symbol": "emKineticViewAnimator::SetZoomFixPoint()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "KineticViewAnimator::set_zoom_fix_point()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040505",
+      "cpp_symbol": "emKineticViewAnimator::SetFrictionEnabled() / IsFrictionEnabled()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "KineticViewAnimator::set_friction_enabled()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040506",
+      "cpp_symbol": "emKineticViewAnimator::GetFriction() / SetFriction()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "KineticViewAnimator::set_friction()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040507",
+      "cpp_symbol": "emKineticViewAnimator::CycleAnimation(dt)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "KineticViewAnimator::animate()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+
+    {
+      "id": "ITEM-040600",
+      "cpp_symbol": "emSpeedingViewAnimator (class)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "SpeedingViewAnimator struct",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040601",
+      "cpp_symbol": "emSpeedingViewAnimator::GetTargetVelocity(dim) / GetAbsTargetVelocity()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "ambiguous",
+      "notes": "Target velocity is set but no public getter"
+    },
+    {
+      "id": "ITEM-040602",
+      "cpp_symbol": "emSpeedingViewAnimator::SetTargetVelocity(dim, vel)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "SpeedingViewAnimator target_velocity field + VIF sets it",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040603",
+      "cpp_symbol": "emSpeedingViewAnimator::GetAcceleration() / SetAcceleration()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "SpeedingViewAnimator::set_acceleration()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040604",
+      "cpp_symbol": "emSpeedingViewAnimator::GetReverseAcceleration() / SetReverseAcceleration()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "SpeedingViewAnimator::set_reverse_acceleration()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040605",
+      "cpp_symbol": "emSpeedingViewAnimator::CycleAnimation(dt)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "SpeedingViewAnimator::animate()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+
+    {
+      "id": "ITEM-040700",
+      "cpp_symbol": "emSwipingViewAnimator (class)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "SwipingViewAnimator struct",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040701",
+      "cpp_symbol": "emSwipingViewAnimator::IsGripped() / SetGripped()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "SwipingViewAnimator::is_gripped() / set_gripped()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040702",
+      "cpp_symbol": "emSwipingViewAnimator::MoveGrip(dim, distance)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "SwipingViewAnimator::move_grip()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040703",
+      "cpp_symbol": "emSwipingViewAnimator::GetSpringConstant() / SetSpringConstant()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "SwipingViewAnimator::set_spring_constant()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040704",
+      "cpp_symbol": "emSwipingViewAnimator::GetAbsSpringExtension()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No public getter for spring extension magnitude"
+    },
+    {
+      "id": "ITEM-040705",
+      "cpp_symbol": "emSwipingViewAnimator::CycleAnimation(dt)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "SwipingViewAnimator::animate()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+
+    {
+      "id": "ITEM-040800",
+      "cpp_symbol": "emMagneticViewAnimator (class)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "MagneticViewAnimator struct",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040801",
+      "cpp_symbol": "emMagneticViewAnimator::Activate() / Deactivate()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "MagneticViewAnimator: ViewAnimator trait impl",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040802",
+      "cpp_symbol": "emMagneticViewAnimator::CycleAnimation(dt)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "MagneticViewAnimator::animate()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040803",
+      "cpp_symbol": "emMagneticViewAnimator::CalculateDistance()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "ambiguous",
+      "notes": "Distance calculation exists internally but may differ in structure"
+    },
+
+    {
+      "id": "ITEM-040900",
+      "cpp_symbol": "emVisitingViewAnimator (class)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator struct",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040901",
+      "cpp_symbol": "emVisitingViewAnimator::IsAnimated() / SetAnimated()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator::set_animated()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040902",
+      "cpp_symbol": "emVisitingViewAnimator::GetAcceleration() / SetAcceleration()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator::set_acceleration()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040903",
+      "cpp_symbol": "emVisitingViewAnimator::GetMaxCuspSpeed() / SetMaxCuspSpeed()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator::set_max_cusp_speed()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040904",
+      "cpp_symbol": "emVisitingViewAnimator::GetMaxAbsoluteSpeed() / SetMaxAbsoluteSpeed()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator::set_max_absolute_speed()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040905",
+      "cpp_symbol": "emVisitingViewAnimator::SetAnimParamsByCoreConfig()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator::set_anim_params_by_speed_config()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040906",
+      "cpp_symbol": "emVisitingViewAnimator::SetGoal(identity, adherent, subject)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator::set_goal()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040907",
+      "cpp_symbol": "emVisitingViewAnimator::SetGoal(identity, relX, relY, relA, ...)",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator::set_goal_rel()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040908",
+      "cpp_symbol": "emVisitingViewAnimator::SetGoalFullsized()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator::set_goal_fullsized()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040909",
+      "cpp_symbol": "emVisitingViewAnimator::ClearGoal()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator::clear_goal()",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040910",
+      "cpp_symbol": "emVisitingViewAnimator::HasGoal()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator state != NoGoal check",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040911",
+      "cpp_symbol": "emVisitingViewAnimator::HasReachedGoal()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator state == GoalReached check",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040912",
+      "cpp_symbol": "emVisitingViewAnimator::HasGivenUp()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingViewAnimator state == GivenUp check",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040913",
+      "cpp_symbol": "emVisitingViewAnimator::StateEnum",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitingState enum",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040914",
+      "cpp_symbol": "emVisitingViewAnimator::VisitTypeEnum",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": "VisitType enum (or equivalent field)",
+      "rust_file": "panel/animator.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-040915",
+      "cpp_symbol": "emVisitingViewAnimator::CurvePoint / CurvePoints[]",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "ambiguous",
+      "notes": "S-curve path computation exists but may use different data structures"
+    },
+    {
+      "id": "ITEM-040916",
+      "cpp_symbol": "emVisitingViewAnimator::Input() / Paint()",
+      "cpp_file": "include/emCore/emViewAnimator.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Visiting animator input/paint overlay (seek info box) not ported"
+    },
+
+    {
+      "id": "ITEM-041000",
+      "cpp_symbol": "emViewInputFilter (class)",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "ViewInputFilter trait",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041001",
+      "cpp_symbol": "emViewInputFilter::GetView()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "View passed as &mut to filter()",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041002",
+      "cpp_symbol": "emViewInputFilter::GetPrev() / GetNext()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "No linked-list traversal; VIFs stored in Vec in ZuiWindow"
+    },
+    {
+      "id": "ITEM-041003",
+      "cpp_symbol": "emViewInputFilter::GetTouchEventPriority()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-041004",
+      "cpp_symbol": "emViewInputFilter::Input()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "ViewInputFilter::filter()",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041005",
+      "cpp_symbol": "emViewInputFilter::ForwardInput()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Forwarding done by returning false from filter() (event not consumed)"
+    },
+    {
+      "id": "ITEM-041006",
+      "cpp_symbol": "emViewInputFilter::GetForwardTouchEventPriority()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+
+    {
+      "id": "ITEM-041100",
+      "cpp_symbol": "emMouseZoomScrollVIF (class)",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "MouseZoomScrollVIF struct",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041101",
+      "cpp_symbol": "emMouseZoomScrollVIF::Input()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "MouseZoomScrollVIF: ViewInputFilter::filter()",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041102",
+      "cpp_symbol": "emMouseZoomScrollVIF::EmulateMiddleButton()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "MouseZoomScrollVIF emulate_middle_button fields",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041103",
+      "cpp_symbol": "emMouseZoomScrollVIF::MoveMousePointerBackIntoView()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Mouse pointer warping not implemented"
+    },
+    {
+      "id": "ITEM-041104",
+      "cpp_symbol": "emMouseZoomScrollVIF::MouseAnim / WheelAnim (SwipingViewAnimator)",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "MouseZoomScrollVIF spring/friction/velocity fields",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported",
+      "notes": "Rust inlines spring physics rather than using SwipingViewAnimator instances"
+    },
+
+    {
+      "id": "ITEM-041200",
+      "cpp_symbol": "emKeyboardZoomScrollVIF (class)",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "KeyboardZoomScrollVIF struct",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041201",
+      "cpp_symbol": "emKeyboardZoomScrollVIF::Input()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "KeyboardZoomScrollVIF: ViewInputFilter::filter()",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041202",
+      "cpp_symbol": "emKeyboardZoomScrollVIF::NavigateByProgram()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Programmatic navigation not ported"
+    },
+    {
+      "id": "ITEM-041203",
+      "cpp_symbol": "emKeyboardZoomScrollVIF::SetAnimatorParameters()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "KeyboardZoomScrollVIF::set_acceleration() and related",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041204",
+      "cpp_symbol": "emKeyboardZoomScrollVIF::Animator (SpeedingViewAnimator)",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "KeyboardZoomScrollVIF embeds speeding physics fields",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+
+    {
+      "id": "ITEM-041300",
+      "cpp_symbol": "emCheatVIF (class)",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Cheat code VIF not implemented"
+    },
+
+    {
+      "id": "ITEM-041400",
+      "cpp_symbol": "emDefaultTouchVIF (class)",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "DefaultTouchVIF struct",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041401",
+      "cpp_symbol": "emDefaultTouchVIF::GetTouchEventPriority()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-041402",
+      "cpp_symbol": "emDefaultTouchVIF::Input()",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "DefaultTouchVIF: ViewInputFilter::filter()",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-041403",
+      "cpp_symbol": "emDefaultTouchVIF::Touch struct / gesture state machine",
+      "cpp_file": "include/emCore/emViewInputFilter.h",
+      "rust_equivalent": "TouchState struct + DefaultTouchVIF gesture handling",
+      "rust_file": "panel/input_filter.rs",
+      "status": "ported"
+    },
+
+    {
+      "id": "ITEM-041500",
+      "cpp_symbol": "emSubViewPanel (class)",
+      "cpp_file": "include/emCore/emSubViewPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported",
+      "notes": "Sub-view panel (panel containing a nested emView) not implemented"
+    },
+    {
+      "id": "ITEM-041501",
+      "cpp_symbol": "emSubViewPanel::GetSubView()",
+      "cpp_file": "include/emCore/emSubViewPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-041502",
+      "cpp_symbol": "emSubViewPanel::SubViewClass / SubViewPortClass",
+      "cpp_file": "include/emCore/emSubViewPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-041503",
+      "cpp_symbol": "emSubViewPanel::Notice() / Input() / GetCursor() / IsOpaque() / Paint()",
+      "cpp_file": "include/emCore/emSubViewPanel.h",
+      "rust_equivalent": null,
+      "rust_file": null,
+      "status": "not_ported"
+    }
+  ],
+  "summary": {
+    "total_items": 135,
+    "ported": 101,
+    "not_ported": 25,
+    "ambiguous": 9,
+    "categories": {
+      "emPanel": {
+        "ported": 52,
+        "not_ported": 5,
+        "ambiguous": 2,
+        "notes": "Nearly complete. Missing: GetView/GetViewContext/GetRootContext (architecture difference), GetWindow/GetScreen (separate in Rust), GetWidth (constant 1.0), Cycle (engine pattern), LinkCrossPtr (uses PanelId). AutoExpand/AutoShrink ambiguous (bool vs action)."
+      },
+      "emView": {
+        "ported": 30,
+        "not_ported": 14,
+        "ambiguous": 4,
+        "notes": "Core navigation/zoom/scroll ported. Not ported: popup-zoom features (Home/Current geometry, IsPoppedUp, SwapViewPorts, GetMaxPopupViewRect), signal mechanism (6 signals), EOI, SoftKeyboard, StressTest, EgoMode, GetCursor, DoCustomCheat, GetSupremeViewedPanel (no getter), GetPanelByIdentity."
+      },
+      "emViewPort": {
+        "ported": 4,
+        "not_ported": 1,
+        "ambiguous": 1,
+        "notes": "ViewPort as a class not ported; functionality absorbed into View + ZuiWindow."
+      },
+      "emViewAnimator": {
+        "ported": 3,
+        "not_ported": 5,
+        "ambiguous": 1,
+        "notes": "Core trait and CycleAnimation ported. Not ported: master/slave hierarchy, deactivate-when-idle, Input/Paint overlays."
+      },
+      "emKineticViewAnimator": {
+        "ported": 8,
+        "not_ported": 0,
+        "ambiguous": 0,
+        "notes": "Fully ported."
+      },
+      "emSpeedingViewAnimator": {
+        "ported": 5,
+        "not_ported": 0,
+        "ambiguous": 1,
+        "notes": "Fully ported except target velocity getter (ambiguous)."
+      },
+      "emSwipingViewAnimator": {
+        "ported": 5,
+        "not_ported": 1,
+        "ambiguous": 0,
+        "notes": "GetAbsSpringExtension not ported."
+      },
+      "emMagneticViewAnimator": {
+        "ported": 3,
+        "not_ported": 0,
+        "ambiguous": 1,
+        "notes": "CalculateDistance internal method ambiguous."
+      },
+      "emVisitingViewAnimator": {
+        "ported": 14,
+        "not_ported": 1,
+        "ambiguous": 2,
+        "notes": "Nearly complete. Input/Paint overlay (seek info box) not ported. CurvePoint data structure ambiguous."
+      },
+      "emViewInputFilter": {
+        "ported": 2,
+        "not_ported": 4,
+        "ambiguous": 0,
+        "notes": "Core filter trait ported. Linked-list traversal (Prev/Next), touch priority, and forward methods not applicable (Rust uses Vec)."
+      },
+      "emMouseZoomScrollVIF": {
+        "ported": 3,
+        "not_ported": 1,
+        "ambiguous": 0,
+        "notes": "Mouse pointer warping not implemented."
+      },
+      "emKeyboardZoomScrollVIF": {
+        "ported": 3,
+        "not_ported": 1,
+        "ambiguous": 0,
+        "notes": "NavigateByProgram not ported."
+      },
+      "emCheatVIF": {
+        "ported": 0,
+        "not_ported": 1,
+        "ambiguous": 0,
+        "notes": "Cheat code VIF not implemented at all."
+      },
+      "emDefaultTouchVIF": {
+        "ported": 3,
+        "not_ported": 1,
+        "ambiguous": 0,
+        "notes": "Touch event priority method not ported."
+      },
+      "emSubViewPanel": {
+        "ported": 0,
+        "not_ported": 4,
+        "ambiguous": 0,
+        "notes": "Entire class not ported."
+      }
+    }
+  }
+}

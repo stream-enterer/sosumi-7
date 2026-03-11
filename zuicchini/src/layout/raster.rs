@@ -264,6 +264,12 @@ impl RasterLayout {
         }
     }
 
+    /// Auto-compute grid dimensions matching C++ emRasterLayout (column-major iteration).
+    ///
+    /// C++ iterates over rows starting at 1, computing cols=ceil(n/rows), and
+    /// picks the rows value that minimizes |ln(pref_ct / ct)|. Uses a skip
+    /// optimization: `rows = (n + cols - 2) / (cols - 1)` to jump past rows
+    /// values that produce the same cols count.
     fn auto_grid_clamped(&self, n: usize, w: f64, h: f64, pref_ct: f64) -> (usize, usize) {
         if n == 0 {
             return (0, 0);
@@ -271,21 +277,34 @@ impl RasterLayout {
         if pref_ct <= 0.0 || w <= 0.0 || h <= 0.0 {
             return (1, n);
         }
-        let mut best_cols = 1;
-        let mut best_score = f64::INFINITY;
 
-        for c in 1..=n {
-            let r = n.div_ceil(c);
-            let tallness = (h * c as f64) / (w * r as f64);
-            let score = (pref_ct / tallness).ln().abs();
-            if score < best_score {
-                best_score = score;
-                best_cols = c;
+        let sp = self.spacing.clamped();
+        let mut rows_best = 1usize;
+        let mut err_best = 0.0f64;
+        let mut rows = 1usize;
+
+        loop {
+            let cols = n.div_ceil(rows);
+            let sx = sp.margin_left + sp.margin_right + sp.inner_h * (cols - 1) as f64;
+            let sy = sp.margin_top + sp.margin_bottom + sp.inner_v * (rows - 1) as f64;
+            let ux = sx / cols as f64 + 1.0;
+            let uy = sy / rows as f64 + 1.0;
+            let ct = h * ux * cols as f64 / (w * uy * rows as f64);
+            let err = (pref_ct / ct).ln().abs();
+
+            if rows == 1 || err < err_best {
+                rows_best = rows;
+                err_best = err;
             }
+            if cols == 1 {
+                break;
+            }
+            // Skip to next rows value that reduces cols (C++ optimization)
+            rows = (n + cols - 2) / (cols - 1);
         }
 
-        let rows = n.div_ceil(best_cols);
-        (best_cols, rows)
+        let cols = n.div_ceil(rows_best);
+        (cols, rows_best)
     }
 }
 

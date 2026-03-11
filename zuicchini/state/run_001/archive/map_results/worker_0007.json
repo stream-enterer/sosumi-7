@@ -1,0 +1,1415 @@
+{
+  "worker_id": "W-0007",
+  "scope": "widget system (emButton, emCheckButton, emCheckBox, emRadioButton, emRadioBox, emLabel, emGroup, emSplitter, emScalarField, emTextField, emListBox, emColorField, emToolkit)",
+  "item_id_range": "ITEM-060001 to ITEM-069999",
+  "cpp_source_root": "/home/ar/.local/git/eaglemode-0.96.4/",
+  "rust_target_root": "/home/ar/Development/egopol/zuicchini/src/widget/",
+  "results": [
+    {
+      "id": "ITEM-060001",
+      "cpp_class": "emButton",
+      "cpp_file": "include/emCore/emButton.h",
+      "rust_file": "widget/button.rs",
+      "rust_struct": "Button",
+      "status": "ported",
+      "notes": "Class exists as standalone widget (not panel-based). Inherits from emBorder in C++; Rust embeds Border."
+    },
+    {
+      "id": "ITEM-060002",
+      "cpp_symbol": "emButton::emButton(ParentArg, emString, emString, emString, emImage)",
+      "rust_symbol": "Button::new(caption, look)",
+      "status": "ported",
+      "notes": "Rust constructor takes caption + Look instead of parent/name/caption/description/icon. Description and icon set via Border methods."
+    },
+    {
+      "id": "ITEM-060003",
+      "cpp_symbol": "emButton::IsNoEOI()",
+      "status": "not_ported",
+      "notes": "NoEOI (End Of Interaction) concept not implemented in Rust. No SignalEOIDelayed equivalent."
+    },
+    {
+      "id": "ITEM-060004",
+      "cpp_symbol": "emButton::SetNoEOI(bool)",
+      "status": "not_ported",
+      "notes": "See ITEM-060003."
+    },
+    {
+      "id": "ITEM-060005",
+      "cpp_symbol": "emButton::GetClickSignal()",
+      "rust_symbol": "Button::on_click (callback)",
+      "status": "ported",
+      "notes": "Rust uses closure callback instead of signal pattern. Functionally equivalent."
+    },
+    {
+      "id": "ITEM-060006",
+      "cpp_symbol": "emButton::GetPressStateSignal()",
+      "rust_symbol": "Button::on_press_state (callback)",
+      "status": "ported",
+      "notes": "Rust uses closure callback Option<Box<dyn FnMut(bool)>>."
+    },
+    {
+      "id": "ITEM-060007",
+      "cpp_symbol": "emButton::IsPressed()",
+      "rust_symbol": "Button::is_pressed()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060008",
+      "cpp_symbol": "emButton::Click(bool shift)",
+      "rust_symbol": "Button::click()",
+      "status": "ported",
+      "notes": "Rust version does not take shift parameter."
+    },
+    {
+      "id": "ITEM-060009",
+      "cpp_symbol": "emButton::Clicked() (virtual)",
+      "status": "not_ported",
+      "notes": "No virtual override pattern in Rust; on_click callback serves the same purpose."
+    },
+    {
+      "id": "ITEM-060010",
+      "cpp_symbol": "emButton::PressStateChanged() (virtual)",
+      "status": "not_ported",
+      "notes": "No virtual override; on_press_state callback serves the same purpose."
+    },
+    {
+      "id": "ITEM-060011",
+      "cpp_symbol": "emButton::Input(emInputEvent, emInputState, mx, my)",
+      "rust_symbol": "Button::input(&mut self, event: &InputEvent)",
+      "status": "ported",
+      "notes": "Mouse coords in event struct; handles MouseLeft, Enter, Space."
+    },
+    {
+      "id": "ITEM-060012",
+      "cpp_symbol": "emButton::HasHowTo() / GetHowTo()",
+      "status": "not_ported",
+      "notes": "HowTo help text system not implemented in Rust."
+    },
+    {
+      "id": "ITEM-060013",
+      "cpp_symbol": "emButton::PaintContent(emPainter, x, y, w, h, canvasColor)",
+      "rust_symbol": "Button::paint(&mut self, painter, w, h)",
+      "status": "ported",
+      "notes": "Paint logic matches C++ DoButton path. Includes button face, label, and border image overlay."
+    },
+    {
+      "id": "ITEM-060014",
+      "cpp_symbol": "emButton::PaintBoxSymbol(emPainter, ...)",
+      "status": "ambiguous",
+      "notes": "The box symbol painting (checkmark) is implemented in CheckBox::paint, not as a separate method."
+    },
+    {
+      "id": "ITEM-060015",
+      "cpp_symbol": "emButton::CheckMouse(mx, my, pInBox)",
+      "status": "not_ported",
+      "notes": "No separate CheckMouse method; Rust input() handles hit testing inline."
+    },
+    {
+      "id": "ITEM-060016",
+      "cpp_symbol": "emButton::IsShownChecked() / SetShownChecked()",
+      "status": "not_ported",
+      "notes": "Shown state flags are not in Button. CheckButton/RadioButton handle their own checked paint paths."
+    },
+    {
+      "id": "ITEM-060017",
+      "cpp_symbol": "emButton::IsShownBoxed() / SetShownBoxed()",
+      "status": "not_ported",
+      "notes": "CheckBox has its own paint method that implements the boxed visual. Not a flag on Button."
+    },
+    {
+      "id": "ITEM-060018",
+      "cpp_symbol": "emButton::IsShownRadioed() / SetShownRadioed()",
+      "status": "not_ported",
+      "notes": "RadioBox has its own paint method. Not a flag on Button."
+    },
+    {
+      "id": "ITEM-060019",
+      "cpp_symbol": "emButton::DoButton() (private paint/hittest dispatch)",
+      "status": "ambiguous",
+      "notes": "Combined paint+hittest dispatch doesn't exist as a single function. Logic is split across separate widget types."
+    },
+
+    {
+      "id": "ITEM-060100",
+      "cpp_class": "emCheckButton",
+      "cpp_file": "include/emCore/emCheckButton.h",
+      "rust_file": "widget/check_button.rs",
+      "rust_struct": "CheckButton",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060101",
+      "cpp_symbol": "emCheckButton::emCheckButton(...)",
+      "rust_symbol": "CheckButton::new(caption, look)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060102",
+      "cpp_symbol": "emCheckButton::GetCheckSignal()",
+      "rust_symbol": "CheckButton::on_check (callback)",
+      "status": "ported",
+      "notes": "Callback pattern instead of signal."
+    },
+    {
+      "id": "ITEM-060103",
+      "cpp_symbol": "emCheckButton::IsChecked()",
+      "rust_symbol": "CheckButton::is_checked()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060104",
+      "cpp_symbol": "emCheckButton::SetChecked(bool)",
+      "rust_symbol": "CheckButton::set_checked(bool)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060105",
+      "cpp_symbol": "emCheckButton::Clicked() (virtual toggle)",
+      "status": "ambiguous",
+      "notes": "Toggle logic is in private toggle() method, not a virtual override."
+    },
+    {
+      "id": "ITEM-060106",
+      "cpp_symbol": "emCheckButton::CheckChanged() (virtual)",
+      "status": "not_ported",
+      "notes": "No virtual override; on_check callback replaces it."
+    },
+    {
+      "id": "ITEM-060107",
+      "cpp_symbol": "emCheckButton::GetHowTo()",
+      "status": "not_ported",
+      "notes": "HowTo system not implemented."
+    },
+
+    {
+      "id": "ITEM-060200",
+      "cpp_class": "emCheckBox",
+      "cpp_file": "include/emCore/emCheckBox.h",
+      "rust_file": "widget/check_box.rs",
+      "rust_struct": "CheckBox",
+      "status": "ported",
+      "notes": "Full implementation with boxed paint path matching C++ ShownBoxed visual."
+    },
+    {
+      "id": "ITEM-060201",
+      "cpp_symbol": "emCheckBox::emCheckBox(...)",
+      "rust_symbol": "CheckBox::new(label, look)",
+      "status": "ported",
+      "notes": "Sets OBT_MARGIN, label_in_border=false, left alignment — matches C++ constructor chain."
+    },
+    {
+      "id": "ITEM-060202",
+      "cpp_symbol": "emCheckBox inherits all emCheckButton API",
+      "status": "ported",
+      "notes": "CheckBox has is_checked, set_checked, on_check, input, paint."
+    },
+
+    {
+      "id": "ITEM-060300",
+      "cpp_class": "emRadioButton",
+      "cpp_file": "include/emCore/emRadioButton.h",
+      "rust_file": "widget/radio_button.rs",
+      "rust_struct": "RadioButton",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060301",
+      "cpp_symbol": "emRadioButton::emRadioButton(...)",
+      "rust_symbol": "RadioButton::new(caption, look, group, index)",
+      "status": "ported",
+      "notes": "Rust takes explicit group and index; C++ auto-discovers from parent panel."
+    },
+    {
+      "id": "ITEM-060302",
+      "cpp_symbol": "emRadioButton::Mechanism",
+      "rust_symbol": "RadioGroup",
+      "status": "ported",
+      "notes": "Full mechanism with select, set_check_index, remove_by_index, remove_all, count, on_select callback."
+    },
+    {
+      "id": "ITEM-060303",
+      "cpp_symbol": "emRadioButton::Mechanism::Add(emRadioButton*)",
+      "status": "ambiguous",
+      "notes": "Rust tracks count via constructor/destructor rather than explicit Add. RadioButton::new increments count."
+    },
+    {
+      "id": "ITEM-060304",
+      "cpp_symbol": "emRadioButton::Mechanism::AddAll(emPanel*)",
+      "status": "not_ported",
+      "notes": "No AddAll method. Rust requires explicit group passing at construction."
+    },
+    {
+      "id": "ITEM-060305",
+      "cpp_symbol": "emRadioButton::Mechanism::Remove(emRadioButton*)",
+      "status": "ambiguous",
+      "notes": "Rust uses remove_by_index(usize) and Drop trait on RadioButton. No Remove-by-pointer."
+    },
+    {
+      "id": "ITEM-060306",
+      "cpp_symbol": "emRadioButton::Mechanism::RemoveByIndex(int)",
+      "rust_symbol": "RadioGroup::remove_by_index(usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060307",
+      "cpp_symbol": "emRadioButton::Mechanism::RemoveAll()",
+      "rust_symbol": "RadioGroup::remove_all()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060308",
+      "cpp_symbol": "emRadioButton::Mechanism::GetCheckSignal()",
+      "rust_symbol": "RadioGroup::on_select (callback)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060309",
+      "cpp_symbol": "emRadioButton::Mechanism::GetChecked()",
+      "rust_symbol": "RadioGroup::selected()",
+      "status": "ported",
+      "notes": "Returns Option<usize> instead of pointer."
+    },
+    {
+      "id": "ITEM-060310",
+      "cpp_symbol": "emRadioButton::Mechanism::SetChecked(emRadioButton*)",
+      "rust_symbol": "RadioGroup::select(usize)",
+      "status": "ported",
+      "notes": "Takes index instead of pointer."
+    },
+    {
+      "id": "ITEM-060311",
+      "cpp_symbol": "emRadioButton::Mechanism::GetCheckIndex()",
+      "rust_symbol": "RadioGroup::selected()",
+      "status": "ported",
+      "notes": "Returns Option<usize> (-1 maps to None)."
+    },
+    {
+      "id": "ITEM-060312",
+      "cpp_symbol": "emRadioButton::Mechanism::SetCheckIndex(int)",
+      "rust_symbol": "RadioGroup::set_check_index(Option<usize>)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060313",
+      "cpp_symbol": "emRadioButton::Mechanism::GetCount()",
+      "rust_symbol": "RadioGroup::count()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060314",
+      "cpp_symbol": "emRadioButton::Mechanism::GetButton(int)",
+      "status": "not_ported",
+      "notes": "Rust RadioGroup doesn't store button references, only count and selected index."
+    },
+    {
+      "id": "ITEM-060315",
+      "cpp_symbol": "emRadioButton::Mechanism::GetIndexOf(const emRadioButton*)",
+      "status": "not_ported",
+      "notes": "Not needed — Rust RadioButton knows its own index."
+    },
+    {
+      "id": "ITEM-060316",
+      "cpp_symbol": "emRadioButton::Mechanism::CheckChanged() (virtual)",
+      "status": "not_ported",
+      "notes": "on_select callback replaces it."
+    },
+    {
+      "id": "ITEM-060317",
+      "cpp_symbol": "emRadioButton::LinearGroup",
+      "rust_symbol": "RadioLinearGroup",
+      "status": "ported",
+      "notes": "Combines LinearLayout + RadioGroup."
+    },
+    {
+      "id": "ITEM-060318",
+      "cpp_symbol": "emRadioButton::RasterGroup",
+      "rust_symbol": "RadioRasterGroup",
+      "status": "ported",
+      "notes": "Combines RasterLayout + RadioGroup."
+    },
+    {
+      "id": "ITEM-060319",
+      "cpp_symbol": "emRadioButton::Group (deprecated)",
+      "status": "not_ported",
+      "notes": "Deprecated in C++. Not implemented in Rust."
+    },
+    {
+      "id": "ITEM-060320",
+      "cpp_symbol": "emRadioButton::Clicked() (virtual)",
+      "status": "ambiguous",
+      "notes": "Click logic is in RadioButton::input which calls group.select()."
+    },
+    {
+      "id": "ITEM-060321",
+      "cpp_symbol": "emRadioButton::CheckChanged() (virtual)",
+      "status": "not_ported",
+      "notes": "No virtual override; group callback handles notification."
+    },
+
+    {
+      "id": "ITEM-060400",
+      "cpp_class": "emRadioBox",
+      "cpp_file": "include/emCore/emRadioBox.h",
+      "rust_file": "widget/radio_box.rs",
+      "rust_struct": "RadioBox",
+      "status": "ported",
+      "notes": "Separate struct with circle indicator + label text paint."
+    },
+    {
+      "id": "ITEM-060401",
+      "cpp_symbol": "emRadioBox::emRadioBox(...)",
+      "rust_symbol": "RadioBox::new(label, look, group, index)",
+      "status": "ported"
+    },
+
+    {
+      "id": "ITEM-060500",
+      "cpp_class": "emLabel",
+      "cpp_file": "include/emCore/emLabel.h",
+      "rust_file": "widget/label.rs",
+      "rust_struct": "Label",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060501",
+      "cpp_symbol": "emLabel::emLabel(...)",
+      "rust_symbol": "Label::new(caption, look)",
+      "status": "ported",
+      "notes": "Sets OBT_MARGIN, label_in_border=false matching C++."
+    },
+    {
+      "id": "ITEM-060502",
+      "cpp_symbol": "emLabel::PaintContent(emPainter, ...)",
+      "rust_symbol": "Label::paint(&self, painter, w, h)",
+      "status": "ported",
+      "notes": "Implements C++ DoLabel text fitting logic with squeeze and centering."
+    },
+
+    {
+      "id": "ITEM-060600",
+      "cpp_class": "emGroup (deprecated)",
+      "cpp_file": "include/emCore/emGroup.h",
+      "rust_file": "widget/border.rs",
+      "status": "ambiguous",
+      "notes": "emGroup is deprecated in C++. Its visual (group border + tiling) is split: Border handles the visual, layout types handle tiling. No direct emGroup struct in Rust."
+    },
+    {
+      "id": "ITEM-060601",
+      "cpp_symbol": "emGroup::emGroup(...) (deprecated)",
+      "status": "not_ported",
+      "notes": "Deprecated constructor. Border + layout combination replaces it."
+    },
+
+    {
+      "id": "ITEM-060700",
+      "cpp_class": "emSplitter",
+      "cpp_file": "include/emCore/emSplitter.h",
+      "rust_file": "widget/splitter.rs",
+      "rust_struct": "Splitter",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060701",
+      "cpp_symbol": "emSplitter::emSplitter(..., vertical, minPos, maxPos, pos)",
+      "rust_symbol": "Splitter::new(orientation, look)",
+      "status": "ported",
+      "notes": "Orientation enum instead of bool vertical. Min/max/pos set via methods."
+    },
+    {
+      "id": "ITEM-060702",
+      "cpp_symbol": "emSplitter::IsVertical()",
+      "status": "ported",
+      "notes": "Represented as Orientation enum, not bool. set_orientation() available."
+    },
+    {
+      "id": "ITEM-060703",
+      "cpp_symbol": "emSplitter::SetVertical(bool)",
+      "rust_symbol": "Splitter::set_orientation(Orientation)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060704",
+      "cpp_symbol": "emSplitter::GetMinPos()",
+      "rust_symbol": "Splitter::min_position()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060705",
+      "cpp_symbol": "emSplitter::GetMaxPos()",
+      "rust_symbol": "Splitter::max_position()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060706",
+      "cpp_symbol": "emSplitter::GetPos()",
+      "rust_symbol": "Splitter::position()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060707",
+      "cpp_symbol": "emSplitter::SetMinMaxPos(double, double)",
+      "rust_symbol": "Splitter::set_limits(min, max)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060708",
+      "cpp_symbol": "emSplitter::SetPos(double)",
+      "rust_symbol": "Splitter::set_position(f64)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060709",
+      "cpp_symbol": "emSplitter::GetPosSignal()",
+      "rust_symbol": "Splitter::on_position (callback)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060710",
+      "cpp_symbol": "emSplitter::Input(...)",
+      "rust_symbol": "Splitter::input(&mut self, event)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060711",
+      "cpp_symbol": "emSplitter::GetCursor()",
+      "rust_symbol": "Splitter::get_cursor()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060712",
+      "cpp_symbol": "emSplitter::PaintContent(...)",
+      "rust_symbol": "Splitter::paint(&mut self, painter, w, h)",
+      "status": "ported",
+      "notes": "Paints grip rect with border image overlay. Uses GRIP_FRACTION matching C++ CalcGripRect."
+    },
+    {
+      "id": "ITEM-060713",
+      "cpp_symbol": "emSplitter::LayoutChildren()",
+      "rust_symbol": "Splitter::layout_children(&self, ctx, w, h)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060714",
+      "cpp_symbol": "emSplitter::CalcGripRect(...) (private)",
+      "rust_symbol": "Splitter::calc_grip_rect(...)",
+      "status": "ported"
+    },
+
+    {
+      "id": "ITEM-060800",
+      "cpp_class": "emScalarField",
+      "cpp_file": "include/emCore/emScalarField.h",
+      "rust_file": "widget/scalar_field.rs",
+      "rust_struct": "ScalarField",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060801",
+      "cpp_symbol": "emScalarField::emScalarField(..., minValue, maxValue, value, editable)",
+      "rust_symbol": "ScalarField::new(min, max, look)",
+      "status": "ported",
+      "notes": "Rust uses f64 instead of emInt64. Value defaults to min."
+    },
+    {
+      "id": "ITEM-060802",
+      "cpp_symbol": "emScalarField::IsEditable()",
+      "rust_symbol": "ScalarField::is_editable()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060803",
+      "cpp_symbol": "emScalarField::SetEditable(bool)",
+      "rust_symbol": "ScalarField::set_editable(bool)",
+      "status": "ported",
+      "notes": "Also switches inner border type between InputField/OutputField."
+    },
+    {
+      "id": "ITEM-060804",
+      "cpp_symbol": "emScalarField::GetMinValue()",
+      "rust_symbol": "ScalarField::min_value()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060805",
+      "cpp_symbol": "emScalarField::GetMaxValue()",
+      "rust_symbol": "ScalarField::max_value()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060806",
+      "cpp_symbol": "emScalarField::SetMinValue(emInt64)",
+      "rust_symbol": "ScalarField::set_min_value(f64)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060807",
+      "cpp_symbol": "emScalarField::SetMaxValue(emInt64)",
+      "rust_symbol": "ScalarField::set_max_value(f64)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060808",
+      "cpp_symbol": "emScalarField::SetMinMaxValues(emInt64, emInt64)",
+      "rust_symbol": "ScalarField::set_min_max_values(f64, f64)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060809",
+      "cpp_symbol": "emScalarField::GetValueSignal()",
+      "rust_symbol": "ScalarField::on_value (callback)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060810",
+      "cpp_symbol": "emScalarField::GetValue()",
+      "rust_symbol": "ScalarField::value()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060811",
+      "cpp_symbol": "emScalarField::SetValue(emInt64)",
+      "rust_symbol": "ScalarField::set_value(f64)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060812",
+      "cpp_symbol": "emScalarField::GetScaleMarkIntervals()",
+      "rust_symbol": "ScalarField::scale_mark_intervals()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060813",
+      "cpp_symbol": "emScalarField::SetScaleMarkIntervals(emArray<emUInt64>)",
+      "rust_symbol": "ScalarField::set_scale_mark_intervals(&[u64])",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060814",
+      "cpp_symbol": "emScalarField::SetScaleMarkIntervals(unsigned, unsigned, ...) (variadic)",
+      "status": "not_ported",
+      "notes": "Variadic version not needed in Rust; slice version covers this."
+    },
+    {
+      "id": "ITEM-060815",
+      "cpp_symbol": "emScalarField::IsNeverHidingMarks()",
+      "rust_symbol": "ScalarField::is_never_hiding_marks()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060816",
+      "cpp_symbol": "emScalarField::SetNeverHideMarks(bool)",
+      "rust_symbol": "ScalarField::set_never_hide_marks(bool)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060817",
+      "cpp_symbol": "emScalarField::TextOfValue(char*, int, emInt64, emUInt64) (virtual)",
+      "rust_symbol": "ScalarField::text_of_value_fn (closure field)",
+      "status": "ported",
+      "notes": "Rust uses stored closure instead of virtual method. Default is decimal conversion."
+    },
+    {
+      "id": "ITEM-060818",
+      "cpp_symbol": "emScalarField::SetTextOfValueFunc(...)",
+      "rust_symbol": "ScalarField::set_text_of_value_fn(Box<dyn Fn(i64, u64) -> String>)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060819",
+      "cpp_symbol": "emScalarField::DefaultTextOfValue(static)",
+      "rust_symbol": "default_text_of_value() (module-level fn)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060820",
+      "cpp_symbol": "emScalarField::GetTextBoxTallness()",
+      "rust_symbol": "ScalarField::text_box_tallness()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060821",
+      "cpp_symbol": "emScalarField::SetTextBoxTallness(double)",
+      "rust_symbol": "ScalarField::set_text_box_tallness(f64)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060822",
+      "cpp_symbol": "emScalarField::GetKeyboardInterval()",
+      "rust_symbol": "ScalarField::keyboard_interval()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060823",
+      "cpp_symbol": "emScalarField::SetKeyboardInterval(emUInt64)",
+      "rust_symbol": "ScalarField::set_keyboard_interval(u64)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060824",
+      "cpp_symbol": "emScalarField::ValueChanged() (virtual)",
+      "status": "not_ported",
+      "notes": "on_value callback replaces virtual override."
+    },
+    {
+      "id": "ITEM-060825",
+      "cpp_symbol": "emScalarField::Input(...)",
+      "rust_symbol": "ScalarField::input(&mut self, event)",
+      "status": "ported",
+      "notes": "Handles mouse drag, arrow keys, +/- keys."
+    },
+    {
+      "id": "ITEM-060826",
+      "cpp_symbol": "emScalarField::HasHowTo() / GetHowTo()",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-060827",
+      "cpp_symbol": "emScalarField::PaintContent(...)",
+      "rust_symbol": "ScalarField::paint(&mut self, painter, w, h)",
+      "status": "ported",
+      "notes": "Implements C++ DoScalarField layout: side bars, value arrow, scale marks with text."
+    },
+    {
+      "id": "ITEM-060828",
+      "cpp_symbol": "emScalarField::CheckMouse(mx, my, pValue)",
+      "status": "not_ported",
+      "notes": "No separate CheckMouse; input() handles hit testing."
+    },
+    {
+      "id": "ITEM-060829",
+      "cpp_symbol": "emScalarField::StepByKeyboard(int dir) (private)",
+      "rust_symbol": "ScalarField::step_by_keyboard(i32)",
+      "status": "ported",
+      "notes": "Matches C++ logic: auto-interval from range/129, snap to grid."
+    },
+
+    {
+      "id": "ITEM-060900",
+      "cpp_class": "emTextField",
+      "cpp_file": "include/emCore/emTextField.h",
+      "rust_file": "widget/text_field.rs",
+      "rust_struct": "TextField",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060901",
+      "cpp_symbol": "emTextField::emTextField(..., text, editable)",
+      "rust_symbol": "TextField::new(look)",
+      "status": "ported",
+      "notes": "Text and editable set via methods after construction."
+    },
+    {
+      "id": "ITEM-060902",
+      "cpp_symbol": "emTextField::IsEditable()",
+      "rust_symbol": "TextField::is_editable()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060903",
+      "cpp_symbol": "emTextField::SetEditable(bool)",
+      "rust_symbol": "TextField::set_editable(bool)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060904",
+      "cpp_symbol": "emTextField::GetMultiLineMode()",
+      "rust_symbol": "TextField::is_multi_line()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060905",
+      "cpp_symbol": "emTextField::SetMultiLineMode(bool)",
+      "rust_symbol": "TextField::set_multi_line(bool)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060906",
+      "cpp_symbol": "emTextField::GetPasswordMode()",
+      "rust_symbol": "TextField::password_mode()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060907",
+      "cpp_symbol": "emTextField::SetPasswordMode(bool)",
+      "rust_symbol": "TextField::set_password_mode(bool)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060908",
+      "cpp_symbol": "emTextField::GetOverwriteMode()",
+      "rust_symbol": "TextField::is_overwrite_mode()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060909",
+      "cpp_symbol": "emTextField::SetOverwriteMode(bool)",
+      "rust_symbol": "TextField::set_overwrite_mode(bool)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060910",
+      "cpp_symbol": "emTextField::GetTextSignal()",
+      "rust_symbol": "TextField::on_text (callback)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060911",
+      "cpp_symbol": "emTextField::GetText()",
+      "rust_symbol": "TextField::text()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060912",
+      "cpp_symbol": "emTextField::SetText(emString)",
+      "rust_symbol": "TextField::set_text(&str)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060913",
+      "cpp_symbol": "emTextField::GetTextLen()",
+      "rust_symbol": "TextField::text_len()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060914",
+      "cpp_symbol": "emTextField::GetCursorIndex()",
+      "rust_symbol": "TextField::cursor_pos()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060915",
+      "cpp_symbol": "emTextField::SetCursorIndex(int)",
+      "rust_symbol": "TextField::set_cursor_index(usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060916",
+      "cpp_symbol": "emTextField::GetSelectionSignal()",
+      "rust_symbol": "TextField::on_selection / on_selection_signal (callbacks)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060917",
+      "cpp_symbol": "emTextField::GetSelectionStartIndex()",
+      "rust_symbol": "TextField::selection_start()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060918",
+      "cpp_symbol": "emTextField::GetSelectionEndIndex()",
+      "rust_symbol": "TextField::selection_end()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060919",
+      "cpp_symbol": "emTextField::IsSelectionEmpty()",
+      "rust_symbol": "TextField::is_selection_empty()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060920",
+      "cpp_symbol": "emTextField::Select(int, int, bool)",
+      "rust_symbol": "TextField::select(usize, usize)",
+      "status": "ported",
+      "notes": "No publish parameter; publish_selection() is separate."
+    },
+    {
+      "id": "ITEM-060921",
+      "cpp_symbol": "emTextField::SelectAll(bool)",
+      "rust_symbol": "TextField::select_all()",
+      "status": "ported",
+      "notes": "No publish parameter."
+    },
+    {
+      "id": "ITEM-060922",
+      "cpp_symbol": "emTextField::EmptySelection()",
+      "rust_symbol": "TextField::deselect()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060923",
+      "cpp_symbol": "emTextField::PublishSelection()",
+      "rust_symbol": "TextField::publish_selection()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060924",
+      "cpp_symbol": "emTextField::CutSelectedTextToClipboard()",
+      "status": "ambiguous",
+      "notes": "Clipboard integration uses on_clipboard_copy/on_clipboard_paste callbacks. Cut is handled in input() via Ctrl+X."
+    },
+    {
+      "id": "ITEM-060925",
+      "cpp_symbol": "emTextField::CopySelectedTextToClipboard()",
+      "status": "ambiguous",
+      "notes": "Handled via on_clipboard_copy callback in input() Ctrl+C path."
+    },
+    {
+      "id": "ITEM-060926",
+      "cpp_symbol": "emTextField::PasteSelectedTextFromClipboard()",
+      "status": "ambiguous",
+      "notes": "Handled via on_clipboard_paste callback in input() Ctrl+V path."
+    },
+    {
+      "id": "ITEM-060927",
+      "cpp_symbol": "emTextField::PasteSelectedText(emString)",
+      "rust_symbol": "TextField::paste_text(&str)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060928",
+      "cpp_symbol": "emTextField::DeleteSelectedText()",
+      "status": "ambiguous",
+      "notes": "Delete logic is internal to input handling and paste_text; no separate public method."
+    },
+    {
+      "id": "ITEM-060929",
+      "cpp_symbol": "emTextField::IsCursorBlinkOn()",
+      "rust_symbol": "TextField::is_cursor_blink_on()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060930",
+      "cpp_symbol": "emTextField::GetCanUndoRedoSignal()",
+      "rust_symbol": "TextField::on_can_undo_redo (callback)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060931",
+      "cpp_symbol": "emTextField::CanUndo()",
+      "rust_symbol": "TextField::can_undo()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060932",
+      "cpp_symbol": "emTextField::CanRedo()",
+      "rust_symbol": "TextField::can_redo()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060933",
+      "cpp_symbol": "emTextField::Undo()",
+      "rust_symbol": "TextField::undo()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060934",
+      "cpp_symbol": "emTextField::Redo()",
+      "rust_symbol": "TextField::redo()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060935",
+      "cpp_symbol": "emTextField::Validate(int&, int&, emString&) (virtual)",
+      "rust_symbol": "TextField::on_validate (callback)",
+      "status": "ambiguous",
+      "notes": "Rust has on_validate callback but it takes &str -> bool (simpler than C++ pos/removeLen/insertText mutation)."
+    },
+    {
+      "id": "ITEM-060936",
+      "cpp_symbol": "emTextField::SetValidateFunc(...)",
+      "status": "ambiguous",
+      "notes": "Rust uses on_validate callback field directly instead of SetValidateFunc."
+    },
+    {
+      "id": "ITEM-060937",
+      "cpp_symbol": "emTextField::TextChanged() (virtual)",
+      "status": "not_ported",
+      "notes": "on_text callback replaces it."
+    },
+    {
+      "id": "ITEM-060938",
+      "cpp_symbol": "emTextField::SelectionChanged() (virtual)",
+      "rust_symbol": "TextField::selection_changed()",
+      "status": "ported",
+      "notes": "Public method exists but fires callback rather than being a virtual override."
+    },
+    {
+      "id": "ITEM-060939",
+      "cpp_symbol": "emTextField::Input(...)",
+      "rust_symbol": "TextField::input(&mut self, event)",
+      "status": "ported",
+      "notes": "Full keyboard/mouse input: arrows, home/end, shift-select, ctrl+a/c/v/x/z/y, backspace, delete, insert, multi-click selection."
+    },
+    {
+      "id": "ITEM-060940",
+      "cpp_symbol": "emTextField::PaintContent(...)",
+      "rust_symbol": "TextField::paint(&mut self, painter, w, h)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060941",
+      "cpp_symbol": "emTextField::CheckMouse(mx, my, pCol, pRow)",
+      "rust_symbol": "TextField::check_mouse(mx, my, w, h)",
+      "status": "ported",
+      "notes": "Returns (usize, bool) = (char_index, hit)."
+    },
+    {
+      "id": "ITEM-060942",
+      "cpp_symbol": "emTextField::ScrollToCursor() (private)",
+      "rust_symbol": "TextField::scroll_to_cursor()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060943",
+      "cpp_symbol": "emTextField::ColRow2Index(double, double, bool)",
+      "rust_symbol": "TextField::col_row_to_index(usize, usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060944",
+      "cpp_symbol": "emTextField::RestartCursorBlinking() (private)",
+      "rust_symbol": "TextField::restart_cursor_blinking()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060945",
+      "cpp_symbol": "emTextField::CalcTotalColsRows(int*, int*)",
+      "rust_symbol": "TextField::calc_total_cols_rows()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060946",
+      "cpp_symbol": "emTextField DragMode enum (DM_NONE..DM_MOVE)",
+      "rust_symbol": "DragMode enum (None..Move)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060947",
+      "cpp_symbol": "emTextField UndoMergeType enum",
+      "rust_symbol": "UndoMergeType enum",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060948",
+      "cpp_symbol": "emTextField::GetNextWordIndex / GetPrevWordIndex",
+      "rust_symbol": "TextField::next_word_index / prev_word_index",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060949",
+      "cpp_symbol": "emTextField::Cycle() (virtual, cursor blink timer)",
+      "rust_symbol": "TextField::cycle_blink(focused)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-060950",
+      "cpp_symbol": "emTextField::HasHowTo() / GetHowTo()",
+      "status": "not_ported"
+    },
+
+    {
+      "id": "ITEM-061000",
+      "cpp_class": "emListBox",
+      "cpp_file": "include/emCore/emListBox.h",
+      "rust_file": "widget/list_box.rs",
+      "rust_struct": "ListBox",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061001",
+      "cpp_symbol": "emListBox::SelectionType enum (READ_ONLY_SELECTION..TOGGLE_SELECTION)",
+      "rust_symbol": "SelectionMode enum (ReadOnly..Toggle)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061002",
+      "cpp_symbol": "emListBox::emListBox(..., selType)",
+      "rust_symbol": "ListBox::new(look)",
+      "status": "ported",
+      "notes": "Selection mode set via set_selection_mode()."
+    },
+    {
+      "id": "ITEM-061003",
+      "cpp_symbol": "emListBox::GetSelectionType()",
+      "rust_symbol": "ListBox::selection_mode()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061004",
+      "cpp_symbol": "emListBox::SetSelectionType(SelectionType)",
+      "rust_symbol": "ListBox::set_selection_mode(SelectionMode)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061005",
+      "cpp_symbol": "emListBox::GetItemCount()",
+      "rust_symbol": "ListBox::item_count()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061006",
+      "cpp_symbol": "emListBox::AddItem(emString name, emString text, emAnything data)",
+      "rust_symbol": "ListBox::add_item(String, String)",
+      "status": "ported",
+      "notes": "Data parameter available via set_item_data() separately."
+    },
+    {
+      "id": "ITEM-061007",
+      "cpp_symbol": "emListBox::InsertItem(int, emString, emString, emAnything)",
+      "rust_symbol": "ListBox::insert_item(usize, String, String)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061008",
+      "cpp_symbol": "emListBox::MoveItem(int, int)",
+      "rust_symbol": "ListBox::move_item(usize, usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061009",
+      "cpp_symbol": "emListBox::SortItems(compare, context)",
+      "rust_symbol": "ListBox::sort_items(compare)",
+      "status": "ported",
+      "notes": "Uses Rust closure instead of function pointer + context."
+    },
+    {
+      "id": "ITEM-061010",
+      "cpp_symbol": "emListBox::RemoveItem(int)",
+      "rust_symbol": "ListBox::remove_item(usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061011",
+      "cpp_symbol": "emListBox::ClearItems()",
+      "rust_symbol": "ListBox::clear_items()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061012",
+      "cpp_symbol": "emListBox::GetItemName(int)",
+      "rust_symbol": "ListBox::get_item_name(usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061013",
+      "cpp_symbol": "emListBox::GetItemIndex(const char*)",
+      "rust_symbol": "ListBox::get_item_index(&str)",
+      "status": "ported",
+      "notes": "Returns Option<usize> instead of -1."
+    },
+    {
+      "id": "ITEM-061014",
+      "cpp_symbol": "emListBox::GetItemText(int)",
+      "rust_symbol": "ListBox::get_item_text(usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061015",
+      "cpp_symbol": "emListBox::SetItemText(int, emString)",
+      "rust_symbol": "ListBox::set_item_text(usize, String)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061016",
+      "cpp_symbol": "emListBox::GetItemData(int)",
+      "rust_symbol": "ListBox::get_item_data(usize)",
+      "status": "ported",
+      "notes": "Returns Option<&dyn Any> instead of emAnything."
+    },
+    {
+      "id": "ITEM-061017",
+      "cpp_symbol": "emListBox::SetItemData(int, emAnything)",
+      "rust_symbol": "ListBox::set_item_data(usize, Option<Box<dyn Any>>)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061018",
+      "cpp_symbol": "emListBox::GetSelectionCount()",
+      "status": "ambiguous",
+      "notes": "No direct GetSelectionCount; use selected().len() or selected_indices().len()."
+    },
+    {
+      "id": "ITEM-061019",
+      "cpp_symbol": "emListBox::GetSelectedIndices()",
+      "rust_symbol": "ListBox::selected_indices()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061020",
+      "cpp_symbol": "emListBox::SetSelectedIndices(emArray<int>)",
+      "status": "not_ported",
+      "notes": "No bulk SetSelectedIndices. Use select/deselect individually or set_selected_index."
+    },
+    {
+      "id": "ITEM-061021",
+      "cpp_symbol": "emListBox::GetSelectedIndex()",
+      "rust_symbol": "ListBox::selected_index()",
+      "status": "ported",
+      "notes": "Returns Option<usize> instead of -1."
+    },
+    {
+      "id": "ITEM-061022",
+      "cpp_symbol": "emListBox::SetSelectedIndex(int)",
+      "rust_symbol": "ListBox::set_selected_index(usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061023",
+      "cpp_symbol": "emListBox::IsSelected(int)",
+      "rust_symbol": "ListBox::is_selected(usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061024",
+      "cpp_symbol": "emListBox::Select(int, bool solely)",
+      "rust_symbol": "ListBox::select(usize, bool)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061025",
+      "cpp_symbol": "emListBox::Deselect(int)",
+      "rust_symbol": "ListBox::deselect(usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061026",
+      "cpp_symbol": "emListBox::ToggleSelection(int)",
+      "rust_symbol": "ListBox::toggle_selection(usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061027",
+      "cpp_symbol": "emListBox::SelectAll()",
+      "rust_symbol": "ListBox::select_all()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061028",
+      "cpp_symbol": "emListBox::ClearSelection()",
+      "rust_symbol": "ListBox::clear_selection()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061029",
+      "cpp_symbol": "emListBox::GetSelectionSignal()",
+      "status": "ported",
+      "notes": "ListBox has on_selection callback."
+    },
+    {
+      "id": "ITEM-061030",
+      "cpp_symbol": "emListBox::GetItemTriggerSignal()",
+      "status": "ported",
+      "notes": "ListBox has on_trigger callback."
+    },
+    {
+      "id": "ITEM-061031",
+      "cpp_symbol": "emListBox::GetTriggeredItemIndex()",
+      "rust_symbol": "ListBox::triggered_index()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061032",
+      "cpp_symbol": "emListBox::TriggerItem(int)",
+      "rust_symbol": "ListBox::trigger_item(usize)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061033",
+      "cpp_symbol": "emListBox::ItemPanelInterface (inner class)",
+      "status": "not_ported",
+      "notes": "No item panel interface. Rust ListBox paints items directly, not via child panels."
+    },
+    {
+      "id": "ITEM-061034",
+      "cpp_symbol": "emListBox::DefaultItemPanel (inner class)",
+      "status": "not_ported",
+      "notes": "No DefaultItemPanel. Rust paints items inline."
+    },
+    {
+      "id": "ITEM-061035",
+      "cpp_symbol": "emListBox::GetItemPanel(int)",
+      "status": "not_ported",
+      "notes": "No item panels."
+    },
+    {
+      "id": "ITEM-061036",
+      "cpp_symbol": "emListBox::GetItemPanelInterface(int)",
+      "status": "not_ported",
+      "notes": "No item panel interface."
+    },
+    {
+      "id": "ITEM-061037",
+      "cpp_symbol": "emListBox::CreateItemPanel(emString, int) (virtual)",
+      "status": "not_ported",
+      "notes": "No virtual item panel creation. Items rendered directly."
+    },
+    {
+      "id": "ITEM-061038",
+      "cpp_symbol": "emListBox::HasHowTo() / GetHowTo()",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-061039",
+      "cpp_symbol": "emListBox::AutoExpand() / AutoShrink()",
+      "status": "not_ported",
+      "notes": "Panel auto-expand/shrink lifecycle not applicable to Rust widget model."
+    },
+    {
+      "id": "ITEM-061040",
+      "cpp_symbol": "emListBox::KeyWalk (type-to-search)",
+      "status": "ported",
+      "notes": "Rust has keywalk_chars, KEYWALK_TIMEOUT_MS and type-to-search in input()."
+    },
+
+    {
+      "id": "ITEM-061100",
+      "cpp_class": "emColorField",
+      "cpp_file": "include/emCore/emColorField.h",
+      "rust_file": "widget/color_field.rs",
+      "rust_struct": "ColorField",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061101",
+      "cpp_symbol": "emColorField::emColorField(..., color, editable, alphaEnabled)",
+      "rust_symbol": "ColorField::new(look)",
+      "status": "ported",
+      "notes": "Color, editable, alpha set via methods."
+    },
+    {
+      "id": "ITEM-061102",
+      "cpp_symbol": "emColorField::IsEditable()",
+      "rust_symbol": "ColorField::is_editable()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061103",
+      "cpp_symbol": "emColorField::SetEditable(bool)",
+      "rust_symbol": "ColorField::set_editable(bool)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061104",
+      "cpp_symbol": "emColorField::IsAlphaEnabled()",
+      "rust_symbol": "ColorField::is_alpha_enabled()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061105",
+      "cpp_symbol": "emColorField::SetAlphaEnabled(bool)",
+      "rust_symbol": "ColorField::set_alpha_enabled(bool)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061106",
+      "cpp_symbol": "emColorField::GetColorSignal()",
+      "rust_symbol": "ColorField::on_color (callback)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061107",
+      "cpp_symbol": "emColorField::GetColor()",
+      "rust_symbol": "ColorField::color()",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061108",
+      "cpp_symbol": "emColorField::SetColor(emColor)",
+      "rust_symbol": "ColorField::set_color(Color)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061109",
+      "cpp_symbol": "emColorField::ColorChanged() (virtual)",
+      "status": "not_ported",
+      "notes": "on_color callback replaces it."
+    },
+    {
+      "id": "ITEM-061110",
+      "cpp_symbol": "emColorField::Cycle() (virtual)",
+      "status": "not_ported",
+      "notes": "No cycle method; expansion state is manual."
+    },
+    {
+      "id": "ITEM-061111",
+      "cpp_symbol": "emColorField::AutoExpand() / AutoShrink()",
+      "status": "ambiguous",
+      "notes": "Rust has is_expanded/set_expanded and layout_children for child scalar fields, but no auto-expand lifecycle."
+    },
+    {
+      "id": "ITEM-061112",
+      "cpp_symbol": "emColorField::LayoutChildren()",
+      "rust_symbol": "ColorField::layout_children(&self, ctx, w, h)",
+      "status": "ported"
+    },
+    {
+      "id": "ITEM-061113",
+      "cpp_symbol": "emColorField::HasHowTo() / GetHowTo()",
+      "status": "not_ported"
+    },
+    {
+      "id": "ITEM-061114",
+      "cpp_symbol": "emColorField::PaintContent(...)",
+      "rust_symbol": "ColorField::paint(&self, painter, w, h)",
+      "status": "ported",
+      "notes": "Paints color swatch with outline matching C++ PaintContent."
+    },
+    {
+      "id": "ITEM-061115",
+      "cpp_symbol": "emColorField::Expansion struct (SfRed/Green/Blue/Alpha/Hue/Sat/Val, TfName)",
+      "status": "not_ported",
+      "notes": "No child scalar field expansion. Rust has layout_children() stub but no actual R/G/B/A/H/S/V child panels."
+    },
+    {
+      "id": "ITEM-061116",
+      "cpp_symbol": "emColorField::UpdateRGBAOutput / UpdateHSVOutput / UpdateNameOutput",
+      "status": "not_ported",
+      "notes": "No HSV or color name display."
+    },
+
+    {
+      "id": "ITEM-061200",
+      "cpp_class": "emToolkit (header-only includes)",
+      "cpp_file": "include/emCore/emToolkit.h",
+      "rust_file": "widget/mod.rs",
+      "status": "ported",
+      "notes": "Rust mod.rs re-exports all widget types. emToolkit.h is just an umbrella include."
+    },
+    {
+      "id": "ITEM-061201",
+      "cpp_symbol": "emToolkit includes emFileSelectionBox",
+      "status": "not_ported",
+      "notes": "emFileSelectionBox not implemented in Rust."
+    },
+    {
+      "id": "ITEM-061202",
+      "cpp_symbol": "emToolkit includes emDialog",
+      "rust_symbol": "widget::Dialog",
+      "status": "ported",
+      "notes": "Rust has Dialog and DialogResult in widget/dialog.rs."
+    },
+    {
+      "id": "ITEM-061203",
+      "cpp_symbol": "emToolkit includes emFileDialog",
+      "status": "not_ported",
+      "notes": "emFileDialog not implemented in Rust."
+    }
+  ],
+  "summary": {
+    "total_items": 130,
+    "ported": 93,
+    "not_ported": 24,
+    "ambiguous": 13,
+    "key_gaps": [
+      "HowTo help text system (all widgets)",
+      "NoEOI / SignalEOIDelayed (emButton)",
+      "emButton::ShownChecked/ShownBoxed/ShownRadioed flags (split across separate types)",
+      "emRadioButton::Mechanism::GetButton / AddAll (Rust uses index-based approach)",
+      "emRadioButton::Group (deprecated in C++)",
+      "emListBox item panel system (ItemPanelInterface, DefaultItemPanel, CreateItemPanel)",
+      "emListBox::SetSelectedIndices (bulk)",
+      "emColorField expansion child panels (RGB/HSV ScalarFields, name TextField)",
+      "emFileSelectionBox / emFileDialog",
+      "Virtual override pattern replaced by callbacks throughout"
+    ],
+    "design_notes": [
+      "All C++ emSignal patterns replaced with Option<Box<dyn FnMut(...)>> callbacks",
+      "All C++ virtual overrides replaced with stored closures or direct method implementations",
+      "C++ parent-based auto-discovery (emRadioButton auto-adds to parent Mechanism) replaced by explicit group parameter",
+      "C++ emInt64 value type in ScalarField replaced with f64",
+      "C++ emAnything replaced with Box<dyn Any>",
+      "C++ emListBox item panels replaced with direct inline painting"
+    ]
+  }
+}
