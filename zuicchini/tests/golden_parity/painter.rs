@@ -504,9 +504,9 @@ fn painter_image_scaled() {
         let mut p = white_painter(&mut img);
         p.paint_image_full(28.0, 28.0, 200.0, 200.0, &src, 255, Color::TRANSPARENT);
     }
-    // Separable bicubic + premul blend match C++ pipeline structurally, but
-    // remaining coordinate/weight divergence produces max_diff=19 (~11.5% pixels).
-    compare_images(img.data(), &expected, ew, eh, 19, 0.5).unwrap();
+    // Adaptive interpolation matches C++ UQ_ADAPTIVE; remaining ±1 diffs from
+    // FP rounding in Hermite factor table computation.
+    compare_images(img.data(), &expected, ew, eh, 1, 0.5).unwrap();
 }
 
 // ─── Test 27: multi_compose ─────────────────────────────────────

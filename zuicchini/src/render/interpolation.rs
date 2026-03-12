@@ -607,83 +607,6 @@ pub(crate) fn sample_bilinear_premul_fp(
     Color::rgba(sr, sg, sb, final_a as u8)
 }
 
-/// Bicubic sampling with premultiplied alpha, 24-bit fixed-point coordinates.
-/// Matches C++ emPainter_ScTlIntImg bicubic inner loop exactly.
-///
-/// `tx`, `ty`: source position in 24fp, with method offset (-0x180_0000) already applied.
-/// The -1.5 offset means `ty >> 24` is already shifted so rows [iy..iy+3] are centered.
-pub(crate) fn sample_bicubic_premul_fp(
-    image: &Image,
-    tx: i64,
-    ty: i64,
-    ext: ImageExtension,
-) -> [u8; 4] {
-    let iy = (ty >> 24) as i32;
-    let ix = (tx >> 24) as i32;
-
-    let oy = (((ty & 0xFF_FFFF) as u32) + 0x7FFF) >> 16;
-    let ox = (((tx & 0xFF_FFFF) as u32) + 0x7FFF) >> 16;
-    let wy = bicubic_factors_hi()[oy as usize];
-    let wx = bicubic_factors_hi()[ox as usize];
-
-    // Separable bicubic matching C++ InterpolateImageBicubic exactly:
-    // Step 1: Y-interpolate each of 4 columns, with intermediate unpremultiply.
-    // Step 2: X-interpolate the 4 column results.
-    //
-    // C++ does per-column: accumulate (R * alpha * fy) across 4 rows, then
-    // FINPREMUL_SIGNED_COLOR divides RGB by 255 (with rounding). This quantizes
-    // each column result before X-interpolation. Matching this is required for
-    // bit-exact parity at EXTEND_ZERO boundaries.
-    let mut col_rgb = [[0i64; 3]; 4];
-    let mut col_a = [0i64; 4];
-    for col in 0..4 {
-        let mut pm_r = 0i64;
-        let mut pm_g = 0i64;
-        let mut pm_b = 0i64;
-        let mut pm_a = 0i64;
-        for (row, &yw_val) in wy.iter().enumerate() {
-            let p = sample_pixel(image, ix + col as i32, iy + row as i32, ext);
-            let a = p[3] as i64;
-            let yw = yw_val as i64;
-            let aw = a * yw;
-            pm_a += aw;
-            pm_r += p[0] as i64 * aw;
-            pm_g += p[1] as i64 * aw;
-            pm_b += p[2] as i64 * aw;
-        }
-        // C++ FINPREMUL_SIGNED_COLOR: round(rgb / 255) to undo premul.
-        col_rgb[col][0] = (pm_r + 0x7f) / 0xff;
-        col_rgb[col][1] = (pm_g + 0x7f) / 0xff;
-        col_rgb[col][2] = (pm_b + 0x7f) / 0xff;
-        col_a[col] = pm_a;
-    }
-
-    // Step 2: X-interpolation of column results.
-    let mut final_rgb = [0i64; 3];
-    let mut final_a = 0i64;
-    for col in 0..4 {
-        let xw = wx[col] as i64;
-        final_rgb[0] += col_rgb[col][0] * xw;
-        final_rgb[1] += col_rgb[col][1] * xw;
-        final_rgb[2] += col_rgb[col][2] * xw;
-        final_a += col_a[col] * xw;
-    }
-
-    // C++ WRITE_SHR_CLIP_SIGNED_COLOR: >>20 with rounding, clamp(rgb, 0, alpha).
-    let rnd = (1i64 << 19) - 1; // (1<<20)/2 - 1 = 524287
-    let a = ((final_a + rnd) >> 20).clamp(0, 255);
-    let mut result = [0u8; 4];
-    for c in 0..3 {
-        let v = ((final_rgb[c] + rnd) >> 20).clamp(0, a);
-        result[c] = v as u8;
-    }
-    result[3] = a as u8;
-
-    // Return premultiplied RGBA — caller uses premultiplied blending to avoid
-    // the quantization error from an unpremultiply/repremultiply round-trip.
-    result
-}
-
 /// Scaling context for area sampling.
 pub(crate) struct ScaleContext {
     pub src_w: f64,
@@ -781,29 +704,216 @@ fn bicubic_factors() -> &'static [[i16; 4]; 257] {
     })
 }
 
-/// High-precision bicubic factor table (scale 1024) matching C++ BicubicFactorsTable.
-static BICUBIC_TABLE_HI: OnceLock<[[i32; 4]; 257]> = OnceLock::new();
+/// Hermite basis factor table for adaptive interpolation (scale 1024).
+/// Each entry: [fv1, fv2, fs1, fs2] matching C++ InterpolateFourValuesAdaptive.
+static ADAPTIVE_TABLE: OnceLock<[[i32; 4]; 257]> = OnceLock::new();
 
-fn bicubic_factors_hi() -> &'static [[i32; 4]; 257] {
-    BICUBIC_TABLE_HI.get_or_init(|| {
+fn adaptive_factors() -> &'static [[i32; 4]; 257] {
+    ADAPTIVE_TABLE.get_or_init(|| {
         let mut table = [[0i32; 4]; 257];
         for (i, entry) in table.iter_mut().enumerate() {
-            let t = i as f64 / 256.0;
-            let t2 = t * t;
-            let t3 = t2 * t;
-            let w0 = -0.5 * t3 + t2 - 0.5 * t;
-            let w1 = 1.5 * t3 - 2.5 * t2 + 1.0;
-            let w2 = -1.5 * t3 + 2.0 * t2 + 0.5 * t;
-            let w3 = 0.5 * t3 - 0.5 * t2;
+            let o = i as f64 / 256.0;
+            let o2 = o * o;
+            let o3 = o2 * o;
+            let fv1 = (2.0 * o3 - 3.0 * o2 + 1.0) * 1024.0;
+            let fv2 = (-2.0 * o3 + 3.0 * o2) * 1024.0;
+            let fs1 = (o3 - 2.0 * o2 + o) * 1024.0;
+            let fs2 = (o3 - o2) * 1024.0;
             *entry = [
-                (w0 * 1024.0).round() as i32,
-                (w1 * 1024.0).round() as i32,
-                (w2 * 1024.0).round() as i32,
-                (w3 * 1024.0).round() as i32,
+                fv1.round() as i32,
+                fv2.round() as i32,
+                fs1.round() as i32,
+                fs2.round() as i32,
             ];
         }
         table
     })
+}
+
+/// Adaptive 4-value interpolation with anti-ringing slope/peak adaptation.
+/// Matches C++ `InterpolateFourValuesAdaptive` optimized branch exactly.
+/// Returns interpolated value at scale 1024.
+fn interpolate_four_values_adaptive(v0: i32, mut v1: i32, mut v2: i32, v3: i32, o: u32) -> i64 {
+    let s01 = v1 - v0;
+    let s12 = v2 - v1;
+    let s32 = v2 - v3;
+
+    let mut s1: i32 = 0;
+    let mut s2: i32 = 0;
+
+    if s12 < 0 {
+        if s01 < 0 {
+            s1 = s01 << 1;
+            if s1 < s12 {
+                s1 = s12;
+            }
+            let mut t = s12 << 1;
+            if t < s01 {
+                t = s01;
+            }
+            if s1 > t {
+                s1 = t;
+            }
+            let q = s1 + (s32 << 1);
+            if q < 0 {
+                s1 += if q > s1 { q } else { s1 };
+            }
+        } else if s01 > 0 {
+            let s21 = -s12;
+            let t = (s01 + s21 + 7) >> 4;
+            let s = if s21 < s01 { s21 } else { s01 };
+            v1 += if s < t { s } else { t };
+        }
+        if s32 > 0 {
+            let s23 = -s32;
+            s2 = s23 << 1;
+            if s2 < s12 {
+                s2 = s12;
+            }
+            let mut t = s12 << 1;
+            if t < s23 {
+                t = s23;
+            }
+            if s2 > t {
+                s2 = t;
+            }
+            let q = s2 - (s01 << 1);
+            if q < 0 {
+                s2 += if q > s2 { q } else { s2 };
+            }
+        } else if s32 < 0 {
+            let t = (s12 + s32 + 7) >> 4;
+            let s = if s12 > s32 { s12 } else { s32 };
+            v2 += if s > t { s } else { t };
+        }
+    } else if s12 > 0 {
+        if s01 > 0 {
+            s1 = s01 << 1;
+            if s1 > s12 {
+                s1 = s12;
+            }
+            let mut t = s12 << 1;
+            if t > s01 {
+                t = s01;
+            }
+            if s1 < t {
+                s1 = t;
+            }
+            let q = s1 + (s32 << 1);
+            if q > 0 {
+                s1 += if q < s1 { q } else { s1 };
+            }
+        } else if s01 < 0 {
+            let s21 = -s12;
+            let t = (s21 + s01 + 7) >> 4;
+            let s = if s21 > s01 { s21 } else { s01 };
+            v1 += if s > t { s } else { t };
+        }
+        if s32 < 0 {
+            let s23 = -s32;
+            s2 = s23 << 1;
+            if s2 > s12 {
+                s2 = s12;
+            }
+            let mut t = s12 << 1;
+            if t > s23 {
+                t = s23;
+            }
+            if s2 < t {
+                s2 = t;
+            }
+            let q = s2 - (s01 << 1);
+            if q > 0 {
+                s2 += if q < s2 { q } else { s2 };
+            }
+        } else if s32 > 0 {
+            let t = (s32 + s12 + 7) >> 4;
+            let s = if s12 < s32 { s12 } else { s32 };
+            v2 += if s < t { s } else { t };
+        }
+    }
+
+    let f = &adaptive_factors()[o as usize];
+    v1 as i64 * f[0] as i64
+        + v2 as i64 * f[1] as i64
+        + s1 as i64 * f[2] as i64
+        + s2 as i64 * f[3] as i64
+}
+
+/// Adaptive sampling with premultiplied alpha, 24-bit fixed-point coordinates.
+/// Matches C++ InterpolateImageAdaptive for CHANNELS==4, EXTEND_ZERO.
+///
+/// Same separable structure as bicubic: Y-interpolate 4 columns, then X-interpolate.
+/// But uses anti-ringing adaptive interpolation instead of fixed Catmull-Rom weights.
+pub(crate) fn sample_adaptive_premul_fp(
+    image: &Image,
+    tx: i64,
+    ty: i64,
+    ext: ImageExtension,
+) -> [u8; 4] {
+    let iy = (ty >> 24) as i32;
+    let ix = (tx >> 24) as i32;
+
+    let oy = (((ty & 0xFF_FFFF) as u32) + 0x7FFF) >> 16;
+    let ox = (((tx & 0xFF_FFFF) as u32) + 0x7FFF) >> 16;
+
+    // Y-pass: for each of 4 columns, read premul values and adaptively interpolate.
+    // C++ reads: Ca = pixel_alpha, Cr = R*Ca, Cg = G*Ca, Cb = B*Ca
+    // Then calls InterpolateFourValuesAdaptive per channel.
+    let mut col_rgb = [[0i64; 3]; 4];
+    let mut col_a = [0i64; 4];
+
+    for col in 0..4 {
+        let mut pm = [[0i32; 4]; 4]; // pm[row] = [r*a, g*a, b*a, a]
+        for (row, pm_row) in pm.iter_mut().enumerate() {
+            let p = sample_pixel(image, ix + col as i32, iy + row as i32, ext);
+            let a = p[3] as i32;
+            *pm_row = [p[0] as i32 * a, p[1] as i32 * a, p[2] as i32 * a, a];
+        }
+
+        // Adaptive interpolation per channel (result at scale 1024)
+        for ch in 0..3 {
+            col_rgb[col][ch] =
+                interpolate_four_values_adaptive(pm[0][ch], pm[1][ch], pm[2][ch], pm[3][ch], oy);
+        }
+        let a_interp = interpolate_four_values_adaptive(pm[0][3], pm[1][3], pm[2][3], pm[3][3], oy);
+
+        // FINPREMUL: divide RGB by 255 to undo premultiplication.
+        col_rgb[col][0] = (col_rgb[col][0] + 0x7f) / 0xff;
+        col_rgb[col][1] = (col_rgb[col][1] + 0x7f) / 0xff;
+        col_rgb[col][2] = (col_rgb[col][2] + 0x7f) / 0xff;
+        col_a[col] = a_interp;
+    }
+
+    // X-pass: adaptively interpolate the 4 column results.
+    let mut final_rgb = [0i64; 3];
+    for ch in 0..3 {
+        final_rgb[ch] = interpolate_four_values_adaptive(
+            col_rgb[0][ch] as i32,
+            col_rgb[1][ch] as i32,
+            col_rgb[2][ch] as i32,
+            col_rgb[3][ch] as i32,
+            ox,
+        );
+    }
+    let final_a = interpolate_four_values_adaptive(
+        col_a[0] as i32,
+        col_a[1] as i32,
+        col_a[2] as i32,
+        col_a[3] as i32,
+        ox,
+    );
+
+    // WRITE_SHR_CLIP: >>20 with rounding, clamp(rgb, 0, alpha).
+    let rnd = (1i64 << 19) - 1;
+    let a = ((final_a + rnd) >> 20).clamp(0, 255);
+    let mut result = [0u8; 4];
+    for c in 0..3 {
+        let v = ((final_rgb[c] + rnd) >> 20).clamp(0, a);
+        result[c] = v as u8;
+    }
+    result[3] = a as u8;
+    result
 }
 
 /// Bicubic (Catmull-Rom) sampling with 4x4 kernel.

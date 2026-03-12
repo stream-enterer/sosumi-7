@@ -800,11 +800,12 @@ impl<'a> Painter<'a> {
             for row in start_y..end_y {
                 for col in start_x..end_x {
                     if upscaling {
-                        // Bicubic: returns premultiplied RGBA, use premul blend path
+                        // Adaptive: anti-ringing Hermite spline matching C++ UQ_ADAPTIVE.
+                        // Returns premultiplied RGBA, use premul blend path
                         // to avoid unpremultiply/repremultiply round-trip error.
                         let tx = (col - px) as i64 * sxfm.tdx + sxfm.base_x - 0x180_0000;
                         let ty = (row - py) as i64 * sxfm.tdy + sxfm.base_y - 0x180_0000;
-                        let pm = interpolation::sample_bicubic_premul_fp(image, tx, ty, ext);
+                        let pm = interpolation::sample_adaptive_premul_fp(image, tx, ty, ext);
                         self.blend_premul_with_coverage(col, row, pm, sp.coverage(col, row));
                     } else {
                         // Nearest: returns straight Color, use normal blend.

@@ -100,35 +100,24 @@
     Residual image_scaled divergence reclassified as DIV-024 (boundary premul).
 
 - id: DIV-024
-  area: painter/image-bicubic
-  kind: expected-divergence
+  area: painter/image-upscale-interpolation
+  kind: bug-fixed
   tests: [image_scaled]
   status: passing
   evidence:
-    image_scaled: { ch_tol: 19, max_pct: 0.5, max_diff: 19, pct_differ_at_1: 11.49 }
-  source: [src/render/interpolation.rs (sample_bicubic_premul_fp, bicubic_factors_hi), src/render/painter.rs (blend_pixel_premul, blend_premul_with_coverage, scale_transform_24)]
-  analysis: tests/golden_parity/PARITY_STATUS.md section C5
+    image_scaled: { ch_tol: 1, max_pct: 0.5, max_diff: 1, pct_differ_at_1: "~1.2%" }
+  source: [src/render/interpolation.rs (sample_adaptive_premul_fp, interpolate_four_values_adaptive, adaptive_factors), src/render/painter.rs (paint_image_full)]
+  analysis: DIV-024_FINDINGS.md
   notes: >
-    Investigation status — three structural fixes applied, none resolved the divergence:
-    (1) Separable column-first Y-interpolation with FINPREMUL_SIGNED_COLOR intermediate
-    quantization ((pm_rgb + 0x7f) / 0xff) matching C++ InterpolateImageBicubic. ✓ Applied.
-    (2) Premultiplied blend path (blend_pixel_premul, blend_premul_with_coverage) that
-    avoids unpremultiply/repremultiply round-trip quantization error, matching C++
-    PaintScanlineInt non-CVC CHANNELS==4 formula. ✓ Applied, zero effect on output.
-    (3) WRITE_SHR_CLIP_SIGNED_COLOR with rounding constant (1<<19)-1 = 524287 and
-    clamp(rgb, 0, alpha). ✓ Applied.
-    Ruled out: (a) premul blend round-trip error (premul path produces identical pixels),
-    (b) non-separable vs separable interpolation structure, (c) FINPREMUL rounding,
-    (d) WRITE_SHR_CLIP rounding constant.
-    Remaining suspects: (1) Bicubic weight table — Rust computes at runtime via f64 Catmull-Rom
-    formula while C++ uses a hardcoded 257-entry table; formulas are algebraically equivalent
-    but floating-point rounding at half-integer boundaries could produce ±1 weight diffs.
-    (2) Coordinate transform origin — Rust scale_transform_24 computes base_x/base_y via
-    ((tx_sub - 0.5) * tdx_f64) while C++ uses ((tx - 0.5) * tdx); tx_sub includes
-    sub-pixel offset that tx may not, potentially shifting all sample positions.
-    (3) Some other upstream difference in paint_image_full's dest rect → source coord mapping.
-    Max_diff=19 with 11.49% affected pixels is too large for pure rounding; this suggests
-    a systematic coordinate offset shifting all interpolation sample positions.
+    Root cause: C++ defaults to UQ_ADAPTIVE (anti-ringing Hermite spline with slope/peak
+    adaptation via InterpolateFourValuesAdaptive) on AVX2 machines, not UQ_BICUBIC.
+    Rust was using Catmull-Rom bicubic, which rings at EXTEND_ZERO boundaries (e.g.
+    B channel constant 128 became 147). Fix: ported InterpolateImageAdaptive as
+    sample_adaptive_premul_fp with exact slope-limiting/peak-adaptation logic,
+    Hermite basis factor table (adaptive_factors, 257 entries), and separable
+    Y-then-X structure with FINPREMUL intermediate. Removed dead bicubic code
+    (sample_bicubic_premul_fp, bicubic_factors_hi, BICUBIC_TABLE_HI).
+    Max diff reduced from 19 to 1, affected pixels from 11.49% to ~1.2%.
 
 - id: DIV-025
   area: painter/9slice-section-boundary
@@ -579,8 +568,8 @@
 # ═══════════════════════════════════════════════════════════════════
 #
 # Total entries:       35
-#   expected-divergence: 11 (DIV-001, DIV-007, DIV-013..017, DIV-020, DIV-021, DIV-023, DIV-024)
-#   bug-fixed/resolved:  20  (DIV-002..006, DIV-008..012, DIV-018, DIV-019, DIV-022, DIV-025, GAP-001..005)
+#   expected-divergence: 10 (DIV-001, DIV-007, DIV-013..017, DIV-020, DIV-021, DIV-023)
+#   bug-fixed/resolved:  21  (DIV-002..006, DIV-008..012, DIV-018, DIV-019, DIV-022, DIV-024, DIV-025, GAP-001..005)
 #   missing-impl:         0
 #   out-of-scope:         4  (OOS-001, OOS-002, OOS-003, GAP-003c)
 #
