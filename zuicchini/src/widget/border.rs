@@ -6,9 +6,6 @@ use super::look::Look;
 /// Minimum font size in pixels — below this the text is too small to read.
 const MIN_FONT_SIZE: f64 = 4.0;
 
-/// 1 - 1/sqrt(2), used for round-rect corner inset computation.
-const CORNER_INSET_FACTOR: f64 = 1.0 - std::f64::consts::FRAC_1_SQRT_2;
-
 /// Outer border style.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum OuterBorderType {
@@ -386,13 +383,18 @@ impl Border {
     }
 
     /// Outer border insets `(x, y, w_total, h_total)` — proportional to dimensions.
+    ///
+    /// Matches C++ `rndX`/`rndY` for each border type. For Rect and RoundRect,
+    /// C++ sets `rndX = d + e` where `d = margin`, `e = stroke_width`.
     fn outer_insets(&self, w: f64, h: f64) -> (f64, f64, f64, f64) {
         let s = self.base_unit(w, h);
         let d = match self.outer {
             OuterBorderType::None | OuterBorderType::Filled => 0.0,
             OuterBorderType::Margin | OuterBorderType::MarginFilled => s * 0.04,
+            // C++ OBT_RECT: rndX = d + e = s*0.023 + s*0.02 = s*0.043.
             OuterBorderType::Rect => s * 0.023 + s * 0.02,
-            OuterBorderType::RoundRect => s * 0.22 * CORNER_INSET_FACTOR + s * 0.02,
+            // C++ OBT_ROUND_RECT: rndX = g = d + e = s*0.023 + s*0.02 = s*0.043.
+            OuterBorderType::RoundRect => s * 0.023 + s * 0.02,
             OuterBorderType::Group => s * 0.0104,
             OuterBorderType::Instrument => s * 0.052,
             OuterBorderType::InstrumentMoreRound => s * 0.052,
@@ -428,10 +430,14 @@ impl Border {
     }
 
     /// Corner radius for outer border types.
+    ///
+    /// Returns C++ `rndR` at label-placement time, which for RoundRect is
+    /// `f - e = s*0.22 - s*0.02 = s*0.20` (inner edge of the stroke).
     fn outer_radius(&self, w: f64, h: f64) -> f64 {
         let s = self.base_unit(w, h);
         match self.outer {
-            OuterBorderType::RoundRect => s * 0.22,
+            // C++ OBT_ROUND_RECT: rndR = f - e = s*0.22 - s*0.02 = s*0.20.
+            OuterBorderType::RoundRect => s * 0.20,
             OuterBorderType::Group => s * 0.0188,
             OuterBorderType::Instrument => s * 0.094,
             OuterBorderType::InstrumentMoreRound => s * 0.223,
@@ -923,20 +929,25 @@ How to move or set the focus:\n\
         };
 
         // Round rect after outer insets + label.
-        let rnd_x0 = ox;
-        let rnd_y0 = oy + label_h;
-        let rnd_w0 = (w - ow).max(0.0);
-        let rnd_h0 = (h - oh - label_h).max(0.0);
-        // minSpace: padding between decoration and content area.
-        let ms = rnd_w0.min(rnd_h0) * self.border_scaling * self.min_space_factor();
-        let rnd_x = rnd_x0 + ms;
-        let rnd_y = rnd_y0 + ms;
-        let rnd_w = (rnd_w0 - 2.0 * ms).max(0.0);
-        let rnd_h = (rnd_h0 - 2.0 * ms).max(0.0);
+        // `rnd_h` (from above) = h - oh, the pre-label outer height.
+        let rnd_h_after_label = (rnd_h - label_h).max(0.0);
+        // minSpace: C++ computes s = min(rndW, rndH)*BorderScaling BEFORE label
+        // subtraction (line 901), so ms uses the pre-label dimensions.
+        let ms = label_area_w.min(rnd_h) * self.border_scaling * self.min_space_factor();
+        let rnd_x = ox + ms;
+        let rnd_w = (label_area_w - 2.0 * ms).max(0.0);
+        // C++ lines 983-987 (has-label) vs 1047-1050 (no-label):
+        //   has-label: rndY+=labelSpace (no ms on top), rndH-=labelSpace+ms (1 ms, bottom only)
+        //   no-label:  rndY+=ms (symmetric top+bottom), rndH-=2*ms
+        let (rnd_y, rnd_h_inner) = if label_h > 0.0 {
+            (oy + label_h, (rnd_h_after_label - ms).max(0.0))
+        } else {
+            (oy + ms, (rnd_h_after_label - 2.0 * ms).max(0.0))
+        };
         let mut rnd_r = (self.outer_radius(w, h) - ms).max(0.0);
 
         // Inner border processing: adjust round rect.
-        let inner_s = rnd_w.min(rnd_h) * self.border_scaling;
+        let inner_s = rnd_w.min(rnd_h_inner) * self.border_scaling;
         match self.inner {
             InnerBorderType::None => {}
             InnerBorderType::Group => {
@@ -947,16 +958,19 @@ How to move or set the focus:\n\
             }
             InnerBorderType::InputField | InnerBorderType::OutputField => {
                 let r = inner_s * 0.094;
-                // For IO fields, the content round rect is the inner field area.
-                let (ix, iy, iw, ih) = self.inner_insets(rnd_w, rnd_h);
+                // C++ line 1093: if (rndR<r) rndR=r;
+                let adjusted_r = rnd_r.max(r);
+                // C++ line 1094: d=(1-(216.0-16.0)/216.0)*rndR = (16/216)*rndR
+                let d = (16.0 / 216.0) * adjusted_r;
+                // C++ lines 1095-1099: tx=rndX+d; ty=rndY+d; tw=rndW-2*d; th=rndH-2*d; tr=rndR-d
                 return (
                     Rect {
-                        x: rnd_x + ix,
-                        y: rnd_y + iy,
-                        w: (rnd_w - iw).max(0.0),
-                        h: (rnd_h - ih).max(0.0),
+                        x: rnd_x + d,
+                        y: rnd_y + d,
+                        w: (rnd_w - 2.0 * d).max(0.0),
+                        h: (rnd_h_inner - 2.0 * d).max(0.0),
                     },
-                    r,
+                    adjusted_r - d,
                 );
             }
             InnerBorderType::CustomRect => {
@@ -967,8 +981,8 @@ How to move or set the focus:\n\
             }
         }
 
-        let (ix, iy, iw, ih) = self.inner_insets(rnd_w, rnd_h);
-        let ir = self.inner_radius(rnd_w, rnd_h);
+        let (ix, iy, iw, ih) = self.inner_insets(rnd_w, rnd_h_inner);
+        let ir = self.inner_radius(rnd_w, rnd_h_inner);
         let final_r = if self.inner != InnerBorderType::None {
             ir
         } else {
@@ -979,7 +993,7 @@ How to move or set the focus:\n\
                 x: rnd_x + ix,
                 y: rnd_y + iy,
                 w: (rnd_w - iw).max(0.0),
-                h: (rnd_h - ih).max(0.0),
+                h: (rnd_h_inner - ih).max(0.0),
             },
             final_r.max(0.0),
         )
@@ -1463,11 +1477,36 @@ How to move or set the focus:\n\
             0.0
         };
 
+        // minSpace: C++ emBorder.cpp line 901-902: s=emMin(rndW,rndH)*BorderScaling; minSpace*=s.
+        let ms = label_area_w.min(rnd_h) * self.border_scaling * self.min_space_factor();
+
         if self.label_in_border && self.has_label() {
             let lch = self.label_content_height(label_area_w, rnd_h);
+            // C++ emBorder.cpp lines 939-951:
+            //   d = labelSpace*0.1; ty = rndY+d; th = labelSpace-2*d;
+            //   e = emMax(d, minSpace); [corner-clearance]; tx = rndX+e; tw = rndW-2*e
+            let d_label = ls * 0.1;
+            let mut e_label = d_label.max(ms);
+            // Corner-clearance: for rounded borders, e must clear the rounded corner
+            // so the label text doesn't overlap the corner arc. C++ lines 943-948.
+            let rnd_r = self.outer_radius(w, h);
+            if e_label < rnd_r {
+                let f = d_label * 0.77;
+                let r = rnd_r - f;
+                let g = r - d_label + f;
+                let f2 = rnd_r - (r * r - g * g).sqrt();
+                if e_label < f2 {
+                    e_label = f2;
+                }
+            }
             self.paint_label_impl(
                 painter,
-                Rect::new(ox, oy, label_area_w, lch),
+                Rect::new(
+                    ox + e_label,
+                    oy + d_label,
+                    (label_area_w - 2.0 * e_label).max(0.0),
+                    lch,
+                ),
                 look,
                 &dim_color,
             );
@@ -1476,9 +1515,6 @@ How to move or set the focus:\n\
         // Inner border — apply minSpace (C++ DoBorder lines 983-987).
         // C++: rndX += minSpace, rndW -= 2*minSpace, rndY += labelSpace,
         //      rndH -= labelSpace + minSpace, rndR -= minSpace.
-        // minSpace is left+right padding; labelSpace already accounts for top;
-        // minSpace is bottom-only on the Y axis.
-        let ms = label_area_w.min(rnd_h) * self.border_scaling * self.min_space_factor();
         let inner_x = ox + ms;
         let inner_y = oy + ls;
         let inner_w = (w - ox * 2.0 - 2.0 * ms).max(0.0);
