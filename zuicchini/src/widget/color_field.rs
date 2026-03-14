@@ -390,6 +390,11 @@ impl ColorField {
         let mut layout = RasterLayout::new();
         layout.fixed_columns = Some(2);
         layout.preferred_child_tallness = 0.2;
+        // C++ SetChildTallness(0.2) sets PrefCT=MinCT=MaxCT=0.2, locking cell
+        // aspect ratio.  Without clamping, cells fill the available height
+        // instead of being compact with centered vertical surplus.
+        layout.min_child_tallness = 0.2;
+        layout.max_child_tallness = 0.2;
         // C++ EM_ALIGN_RIGHT = right horizontally, center vertically
         layout.alignment_h = AlignmentH::Right;
         layout.alignment_v = AlignmentV::Center;
