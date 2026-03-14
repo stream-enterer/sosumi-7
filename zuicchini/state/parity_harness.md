@@ -110,18 +110,32 @@ the rounding direction.
 
 ---
 
-## Baseline (R20, 2026-03-14, post TestPanel canvas + winding fix)
+## Baseline (R21, 2026-03-14, post ScalarField/TextField canvas propagation)
 
 | Test | Pixels | Total | Pct | max_diff |
 |------|--------|-------|-----|----------|
-| widget_colorfield | 2,867 | 480,000 | 0.60% | 185 |
-| colorfield_expanded | 12,089 | 640,000 | 1.89% | 158 |
+| widget_colorfield | 2,664 | 480,000 | 0.56% | 185 |
+| colorfield_expanded | 11,986 | 640,000 | 1.87% | 158 |
 | widget_scalarfield | 98 | 480,000 | 0.020% | 56 |
 | listbox_expanded | 314 | 640,000 | 0.049% | 33 |
-| testpanel_expanded | 59,466 | 1,000,000 | 5.95% | 255 |
+| testpanel_expanded | 59,460 | 1,000,000 | 5.95% | 255 |
 | testpanel_root | 81,418 | 1,000,000 | 8.14% | 255 |
 
-Rolling divergence log: `state/post_r20_testpanel_canvas.jsonl`
+Rolling divergence log: `state/post_r21_widget_canvas.jsonl`
+
+### R21 Three-Number Dashboard (ScalarField/TextField canvas propagation)
+
+| # | Metric | Value |
+|---|--------|-------|
+| 1 | Fix description | ScalarField side bar rects and TextField selection/text now use painter canvas_color (set by border paint) instead of TRANSPARENT, matching C++ canvasColor propagation pattern |
+| 2 | Total divergent pixels | 158,188 → 157,876 (-312 net) |
+| 3 | Net regression | 0 (no test regressed) |
+
+**Acceptance:** Fix accepted. After border.paint_border() sets canvas_color on the painter,
+ScalarField captures it for its two side bar rects (C++ emScalarField.cpp:419-420 pass
+canvasColor, then reset to 0). TextField captures it for selection highlight and text
+rendering (C++ emTextField.cpp:990 and 1013-1026). Key improvements: widget_colorfield
+-203 px, colorfield_expanded -103 px (ScalarField children in ColorField).
 
 ### R20 Three-Number Dashboard (TestPanel canvas + winding fix)
 
@@ -653,6 +667,7 @@ the pixel landscape is re-measured.
 | S5-outline-canvas | 5 | RESOLVED R17: ColorField outline uses TRANSPARENT canvas |
 | S5-per-call-canvas | 5 | RESOLVED R18: per-call canvas_color on 26 paint functions, -57,550 px |
 | TP-canvas-winding | test | RESOLVED R20: TestPanel winding rule + canvas_color fix, -1,158 px |
+| S5-widget-canvas | 5 | RESOLVED R21: ScalarField/TextField canvas propagation, -312 px |
 
 ### Low Priority (independent, defer until active items resolved)
 
@@ -668,10 +683,7 @@ Investigation confirmed testpanel divergence is primarily EVAL_ORDER (coordinate
 FP), same root cause as S4-interp. The R20 fix addressed the two FORMULA differences
 found in the TestPanel test code itself: winding rule and canvas_color propagation.
 
-**Widget canvas_color audit complete:** ScalarField and TextField have missing
-canvas_color propagation (hardcode TRANSPARENT instead of receiving from border).
-Estimated impact: ~200-500 px. Requires signature changes to `ScalarField::paint`
-and `TextField::paint` to accept `canvas_color: Color`, plus caller updates.
+**All known FORMULA and canvas_color differences resolved.**
 
 Remaining options for further parity improvement:
 
@@ -679,16 +691,13 @@ Remaining options for further parity improvement:
    to use C++-style normalized panel coordinates internally, applying ScaleX/Y
    at the same point in the computation as C++. This would eliminate the FP
    differences that cause all remaining S4 divergence. Estimated impact:
-   ~15,000 pixels (widget_colorfield 2,867 + colorfield_expanded 12,089)
-   plus significant testpanel reduction.
+   ~15,000 pixels (widget_colorfield 2,664 + colorfield_expanded 11,986)
+   plus significant testpanel reduction (~141k px).
 
-2. **ScalarField/TextField canvas propagation** (low effort, low impact): Add
-   `canvas_color: Color` parameter to ScalarField::paint and TextField::paint,
-   pass through to paint calls instead of TRANSPARENT. ~200-500 px potential.
-
-3. **Testpanel remaining** (141k px): Now confirmed as EVAL_ORDER — same root
-   cause as S4-interp. Requires coordinate-space alignment (option 1) for
-   substantial improvement.
+2. **Accept current parity**: All TYPE_REPR, FORMULA, and canvas_color
+   differences are resolved. Remaining divergence is EVAL_ORDER (identical
+   source formulas, different FP accumulation due to coordinate-space
+   architecture). Total: 157,876 px across all tests.
 
 ### Historical Next Steps (post R16):
 

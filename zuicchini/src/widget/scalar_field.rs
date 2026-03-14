@@ -304,6 +304,7 @@ impl ScalarField {
         }
         self.border
             .paint_border(painter, w, h, &self.look, false, enabled);
+        let canvas_color = painter.canvas_color();
 
         let (content, radius) = self.border.content_round_rect(w, h, &self.look);
         let Rect { x, y, w: cw, h: ch } = content;
@@ -395,17 +396,10 @@ impl ScalarField {
         // Side bars — C++: col = bgCol.GetBlended(fgCol, 25)
         let side_col = bg_col.lerp(fg_col, 0.25);
         if ax > rx {
-            painter.paint_rect(rx, ry, ax - rx, rh, side_col, Color::TRANSPARENT);
+            painter.paint_rect(rx, ry, ax - rx, rh, side_col, canvas_color);
         }
         if ax + aw < rx + rw {
-            painter.paint_rect(
-                ax + aw,
-                ry,
-                rx + rw - ax - aw,
-                rh,
-                side_col,
-                Color::TRANSPARENT,
-            );
+            painter.paint_rect(ax + aw, ry, rx + rw - ax - aw, rh, side_col, canvas_color);
         }
 
         // Value arrow polygon (5-point downward arrow)

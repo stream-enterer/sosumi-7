@@ -937,7 +937,6 @@ impl TextField {
 
         self.border
             .paint_border(painter, w, h, &self.look, false, enabled);
-
         let (content, radius) = self.border.content_round_rect(w, h, &self.look);
         let Rect {
             x: cx,
@@ -970,6 +969,7 @@ impl TextField {
         ch: f64,
         radius: f64,
     ) {
+        let canvas_color = painter.canvas_color();
         let display_text = if self.password_mode {
             "*".repeat(self.text.chars().count())
         } else {
@@ -1062,7 +1062,7 @@ impl TextField {
                 sw,
                 effective_ch,
                 self.look.input_hl_color,
-                Color::TRANSPARENT,
+                canvas_color,
             );
         }
 
@@ -1085,7 +1085,7 @@ impl TextField {
             effective_ch,
             ws,
             fg,
-            Color::TRANSPARENT,
+            canvas_color,
         );
 
         // Cursor — C++ only renders when panel is in focused path
@@ -1117,6 +1117,7 @@ impl TextField {
     }
 
     fn paint_multi_line(&mut self, painter: &mut Painter, cx: f64, cy: f64, _cw: f64, ch: f64) {
+        let canvas_color = painter.canvas_color();
         let rows: Vec<&str> = self.text.split('\n').collect();
         let total_rows = rows.len();
 
@@ -1176,7 +1177,7 @@ impl TextField {
                     ex - sx,
                     LINE_HEIGHT,
                     self.look.input_hl_color,
-                    Color::TRANSPARENT,
+                    canvas_color,
                 );
             }
 
@@ -1187,7 +1188,7 @@ impl TextField {
                 TEXT_SIZE,
                 1.0,
                 fg,
-                Color::TRANSPARENT,
+                canvas_color,
             );
 
             byte_offset = row_byte_end + 1; // +1 for \n
