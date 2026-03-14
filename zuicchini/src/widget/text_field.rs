@@ -931,12 +931,12 @@ impl TextField {
 
     // ── Paint ───────────────────────────────────────────────────────────
 
-    pub fn paint(&mut self, painter: &mut Painter, w: f64, h: f64) {
+    pub fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, enabled: bool) {
         self.last_w = w;
         self.last_h = h;
 
         self.border
-            .paint_border(painter, w, h, &self.look, false, self.editable);
+            .paint_border(painter, w, h, &self.look, false, enabled);
 
         let (content, radius) = self.border.content_round_rect(w, h, &self.look);
         let Rect {

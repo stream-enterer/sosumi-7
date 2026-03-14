@@ -1,10 +1,20 @@
-use crate::foundation::{Fixed12, PixelRect};
+use crate::foundation::Fixed12;
 
 /// Winding rule for polygon fill.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum WindingRule {
     EvenOdd,
     NonZero,
+}
+
+/// f64 clip bounds for scanline rasterization, matching C++ emPainter's
+/// `double ClipX1, ClipY1, ClipX2, ClipY2`.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct ClipBounds {
+    pub x1: f64,
+    pub y1: f64,
+    pub x2: f64,
+    pub y2: f64,
 }
 
 /// A horizontal span with per-pixel opacity for AA.
@@ -31,7 +41,7 @@ pub(crate) struct Span {
 /// polynomial coverage algorithm; EvenOdd uses edge-crossing with Fixed12.
 pub(crate) fn rasterize(
     vertices: &[(f64, f64)],
-    clip: PixelRect,
+    clip: ClipBounds,
     winding_rule: WindingRule,
 ) -> Vec<(i32, Vec<Span>)> {
     match winding_rule {
@@ -108,7 +118,7 @@ fn make_poly_span(x: i32, w: i32, alpha: i32, alpha2: i32, alpha3: i32) -> Span 
 }
 
 /// Polynomial AA coverage rasterizer, ported from C++ emPainter::PaintPolygon.
-fn rasterize_polynomial(vertices: &[(f64, f64)], clip: PixelRect) -> Vec<(i32, Vec<Span>)> {
+fn rasterize_polynomial(vertices: &[(f64, f64)], clip: ClipBounds) -> Vec<(i32, Vec<Span>)> {
     let n = vertices.len();
     if n < 3 {
         return Vec::new();
@@ -132,11 +142,11 @@ fn rasterize_polynomial(vertices: &[(f64, f64)], clip: PixelRect) -> Vec<(i32, V
         }
     }
 
-    // Intersect with clip rect.
-    let clip_x1 = clip.x as f64;
-    let clip_y1 = clip.y as f64;
-    let clip_x2 = (clip.x + clip.w) as f64;
-    let clip_y2 = (clip.y + clip.h) as f64;
+    // Intersect with clip bounds (f64, matching C++ emPainter).
+    let clip_x1 = clip.x1;
+    let clip_y1 = clip.y1;
+    let clip_x2 = clip.x2;
+    let clip_y2 = clip.y2;
 
     if min_y < clip_y1 {
         min_y = clip_y1;
@@ -533,16 +543,16 @@ fn build_edges(vertices: &[(f64, f64)]) -> Vec<(i32, Edge)> {
 }
 
 /// Edge-crossing rasterizer for EvenOdd winding rule.
-fn rasterize_edge_crossing(vertices: &[(f64, f64)], clip: PixelRect) -> Vec<(i32, Vec<Span>)> {
+fn rasterize_edge_crossing(vertices: &[(f64, f64)], clip: ClipBounds) -> Vec<(i32, Vec<Span>)> {
     let edges = build_edges(vertices);
     if edges.is_empty() {
         return Vec::new();
     }
 
-    let clip_y_start = clip.y;
-    let clip_y_end = clip.y + clip.h;
-    let clip_x_start = clip.x;
-    let clip_x_end = clip.x + clip.w;
+    let clip_y_start = clip.y1 as i32;
+    let clip_y_end = clip.y2.ceil() as i32;
+    let clip_x_start = clip.x1 as i32;
+    let clip_x_end = clip.x2.ceil() as i32;
 
     let y_min = edges.first().map(|(y, _)| *y).unwrap_or(0);
     let y_max = edges.iter().map(|(_, e)| e.y_bot).max().unwrap_or(0);
@@ -689,11 +699,11 @@ mod tests {
     #[test]
     fn pixel_aligned_rect() {
         let verts = rect_vertices(10.0, 10.0, 5.0, 3.0);
-        let clip = PixelRect {
-            x: 0,
-            y: 0,
-            w: 100,
-            h: 100,
+        let clip = ClipBounds {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 100.0,
+            y2: 100.0,
         };
         let rows = rasterize(&verts, clip, WindingRule::EvenOdd);
 
@@ -710,11 +720,11 @@ mod tests {
     #[test]
     fn sub_pixel_rect_has_partial_opacity() {
         let verts = rect_vertices(10.5, 10.0, 5.0, 2.0);
-        let clip = PixelRect {
-            x: 0,
-            y: 0,
-            w: 100,
-            h: 100,
+        let clip = ClipBounds {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 100.0,
+            y2: 100.0,
         };
         let rows = rasterize(&verts, clip, WindingRule::EvenOdd);
 
@@ -728,11 +738,11 @@ mod tests {
     #[test]
     fn clipping() {
         let verts = rect_vertices(0.0, 0.0, 100.0, 100.0);
-        let clip = PixelRect {
-            x: 10,
-            y: 10,
-            w: 5,
-            h: 5,
+        let clip = ClipBounds {
+            x1: 10.0,
+            y1: 10.0,
+            x2: 15.0,
+            y2: 15.0,
         };
         let rows = rasterize(&verts, clip, WindingRule::EvenOdd);
 
@@ -748,11 +758,11 @@ mod tests {
     #[test]
     fn empty_polygon() {
         let verts: Vec<(f64, f64)> = vec![];
-        let clip = PixelRect {
-            x: 0,
-            y: 0,
-            w: 100,
-            h: 100,
+        let clip = ClipBounds {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 100.0,
+            y2: 100.0,
         };
         let rows = rasterize(&verts, clip, WindingRule::NonZero);
         assert!(rows.is_empty());
@@ -761,11 +771,11 @@ mod tests {
     #[test]
     fn triangle() {
         let verts = vec![(50.0, 10.0), (90.0, 90.0), (10.0, 90.0)];
-        let clip = PixelRect {
-            x: 0,
-            y: 0,
-            w: 100,
-            h: 100,
+        let clip = ClipBounds {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 100.0,
+            y2: 100.0,
         };
         let rows = rasterize(&verts, clip, WindingRule::EvenOdd);
         assert!(!rows.is_empty());
@@ -797,11 +807,11 @@ mod tests {
             (15.0, 5.0),
             (5.0, 5.0),
         ];
-        let clip = PixelRect {
-            x: 0,
-            y: 0,
-            w: 30,
-            h: 30,
+        let clip = ClipBounds {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 30.0,
+            y2: 30.0,
         };
 
         let rows = rasterize(&verts, clip, WindingRule::NonZero);
@@ -822,11 +832,11 @@ mod tests {
             (52.0, 90.0), // bottom-right
             (48.0, 90.0), // bottom-left
         ];
-        let clip = PixelRect {
-            x: 0,
-            y: 0,
-            w: 100,
-            h: 100,
+        let clip = ClipBounds {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 100.0,
+            y2: 100.0,
         };
         let rows = rasterize(&verts, clip, WindingRule::EvenOdd);
         assert!(!rows.is_empty());
@@ -843,11 +853,11 @@ mod tests {
     #[test]
     fn bowtie_quad_two_span_groups() {
         let verts = vec![(10.0, 10.0), (90.0, 90.0), (90.0, 10.0), (10.0, 90.0)];
-        let clip = PixelRect {
-            x: 0,
-            y: 0,
-            w: 100,
-            h: 100,
+        let clip = ClipBounds {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 100.0,
+            y2: 100.0,
         };
         let rows = rasterize(&verts, clip, WindingRule::EvenOdd);
         assert!(!rows.is_empty());
@@ -864,11 +874,11 @@ mod tests {
     fn nonzero_filled_rect() {
         // Verify the polynomial rasterizer fills a simple rectangle correctly.
         let verts = rect_vertices(10.0, 10.0, 5.0, 3.0);
-        let clip = PixelRect {
-            x: 0,
-            y: 0,
-            w: 100,
-            h: 100,
+        let clip = ClipBounds {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 100.0,
+            y2: 100.0,
         };
         let rows = rasterize(&verts, clip, WindingRule::NonZero);
         assert_eq!(rows.len(), 3, "Should have 3 scanlines for height=3");
@@ -890,11 +900,11 @@ mod tests {
     #[test]
     fn nonzero_triangle() {
         let verts = vec![(50.0, 10.0), (90.0, 90.0), (10.0, 90.0)];
-        let clip = PixelRect {
-            x: 0,
-            y: 0,
-            w: 100,
-            h: 100,
+        let clip = ClipBounds {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 100.0,
+            y2: 100.0,
         };
         let rows = rasterize(&verts, clip, WindingRule::NonZero);
         assert!(!rows.is_empty());

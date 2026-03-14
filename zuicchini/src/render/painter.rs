@@ -6,7 +6,7 @@ use super::interpolation;
 use super::scanline::{self, WindingRule};
 use super::stroke::{Stroke, StrokeEnd, StrokeEndType};
 use super::texture::{ImageExtension, ImageQuality, Texture};
-use crate::foundation::{Color, Fixed12, Image, PixelRect};
+use crate::foundation::{Color, Fixed12, Image};
 
 /// Base multiplier for decoration size.
 const ARROW_BASE_SIZE: f64 = 10.0;
@@ -104,6 +104,33 @@ pub enum VAlign {
     Bottom,
 }
 
+/// Clip rectangle stored as f64 pixel-space edges, matching C++ emPainter's
+/// `double ClipX1, ClipY1, ClipX2, ClipY2`.  Truncation to integer happens
+/// only at each paint operation's point of use, avoiding the independent-
+/// truncation bug where `floor(x) + floor(w) < floor(x + w)`.
+#[derive(Copy, Clone, Debug)]
+struct ClipRect {
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+}
+
+impl ClipRect {
+    fn is_empty(&self) -> bool {
+        self.x1 >= self.x2 || self.y1 >= self.y2
+    }
+
+    fn to_scanline_clip(self) -> scanline::ClipBounds {
+        scanline::ClipBounds {
+            x1: self.x1,
+            y1: self.y1,
+            x2: self.x2,
+            y2: self.y2,
+        }
+    }
+}
+
 /// Coordinate transform state.
 #[derive(Clone, Debug)]
 struct PainterState {
@@ -113,8 +140,8 @@ struct PainterState {
     /// Scale factor.
     scale_x: f64,
     scale_y: f64,
-    /// Clip rectangle in pixel coordinates.
-    clip: PixelRect,
+    /// Clip rectangle in pixel coordinates (f64, matching C++ emPainter).
+    clip: ClipRect,
     /// Canvas color for canvas_blend operations.
     canvas_color: Color,
     /// Global alpha multiplier (0–255).
@@ -209,8 +236,8 @@ impl<'a> Painter<'a> {
             4,
             "Painter requires a 4-channel RGBA image"
         );
-        let w = target.width() as i32;
-        let h = target.height() as i32;
+        let w = target.width() as f64;
+        let h = target.height() as f64;
         Self {
             target,
             state: PainterState {
@@ -218,7 +245,12 @@ impl<'a> Painter<'a> {
                 offset_y: 0.0,
                 scale_x: 1.0,
                 scale_y: 1.0,
-                clip: PixelRect { x: 0, y: 0, w, h },
+                clip: ClipRect {
+                    x1: 0.0,
+                    y1: 0.0,
+                    x2: w,
+                    y2: h,
+                },
                 canvas_color: Color::BLACK,
                 alpha: 255,
             },
@@ -278,34 +310,40 @@ impl<'a> Painter<'a> {
     }
 
     /// Set the clip rectangle (intersection with current clip).
+    /// Computes and stores clip edges in f64, matching C++ emPanel.cpp:1478-1495.
+    /// Truncation to i32 happens only at each paint operation's point of use.
     pub fn clip_rect(&mut self, x: f64, y: f64, w: f64, h: f64) {
-        let px = self.to_pixel_x(x);
-        let py = self.to_pixel_y(y);
-        let pw = (w * self.state.scale_x) as i32;
-        let ph = (h * self.state.scale_y) as i32;
+        let px = x * self.state.scale_x + self.state.offset_x;
+        let py = y * self.state.scale_y + self.state.offset_y;
+        let px2 = px + w * self.state.scale_x;
+        let py2 = py + h * self.state.scale_y;
 
-        let PixelRect {
-            x: cx,
-            y: cy,
-            w: cw,
-            h: ch,
-        } = self.state.clip;
-        // Intersect
-        let nx = px.max(cx);
-        let ny = py.max(cy);
-        let nx2 = (px + pw).min(cx + cw);
-        let ny2 = (py + ph).min(cy + ch);
-        self.state.clip = PixelRect {
-            x: nx,
-            y: ny,
-            w: (nx2 - nx).max(0),
-            h: (ny2 - ny).max(0),
-        };
+        let clip = self.state.clip;
+        // Intersect in f64 (no intermediate i32 truncation).
+        let nx1 = px.max(clip.x1);
+        let ny1 = py.max(clip.y1);
+        let nx2 = px2.min(clip.x2);
+        let ny2 = py2.min(clip.y2);
+        if nx1 >= nx2 || ny1 >= ny2 {
+            self.state.clip = ClipRect {
+                x1: 0.0,
+                y1: 0.0,
+                x2: 0.0,
+                y2: 0.0,
+            };
+        } else {
+            self.state.clip = ClipRect {
+                x1: nx1,
+                y1: ny1,
+                x2: nx2,
+                y2: ny2,
+            };
+        }
     }
 
     /// Returns true if the current clip region has zero area.
     pub fn clip_is_empty(&self) -> bool {
-        self.state.clip.w <= 0 || self.state.clip.h <= 0
+        self.state.clip.is_empty()
     }
 
     /// Set origin (absolute offset, replaces current offset).
@@ -366,29 +404,24 @@ impl<'a> Painter<'a> {
             / self.state.scale_y
     }
 
-    /// Get the current clip rectangle.
-    pub fn clip(&self) -> PixelRect {
-        self.state.clip
-    }
-
     /// Get the left edge of the clip rectangle in user coordinates.
     pub fn get_user_clip_x1(&self) -> f64 {
-        (self.state.clip.x as f64 - self.state.offset_x) / self.state.scale_x
+        (self.state.clip.x1 - self.state.offset_x) / self.state.scale_x
     }
 
     /// Get the top edge of the clip rectangle in user coordinates.
     pub fn get_user_clip_y1(&self) -> f64 {
-        (self.state.clip.y as f64 - self.state.offset_y) / self.state.scale_y
+        (self.state.clip.y1 - self.state.offset_y) / self.state.scale_y
     }
 
     /// Get the right edge of the clip rectangle in user coordinates.
     pub fn get_user_clip_x2(&self) -> f64 {
-        ((self.state.clip.x + self.state.clip.w) as f64 - self.state.offset_x) / self.state.scale_x
+        (self.state.clip.x2 - self.state.offset_x) / self.state.scale_x
     }
 
     /// Get the bottom edge of the clip rectangle in user coordinates.
     pub fn get_user_clip_y2(&self) -> f64 {
-        ((self.state.clip.y + self.state.clip.h) as f64 - self.state.offset_y) / self.state.scale_y
+        (self.state.clip.y2 - self.state.offset_y) / self.state.scale_y
     }
 
     // --- Drawing API ---
@@ -405,13 +438,12 @@ impl<'a> Painter<'a> {
         let dh_px = h * self.state.scale_y;
         let sp = SubPixelEdges::new(dx_px, dy_px, dw_px, dh_px);
 
-        let clip = self.state.clip;
         let tw = self.target.width() as i32;
         let th = self.target.height() as i32;
-        let cx1 = clip.x.max(0);
-        let cy1 = clip.y.max(0);
-        let cx2 = (clip.x + clip.w).min(tw);
-        let cy2 = (clip.y + clip.h).min(th);
+        let cx1 = (self.state.clip.x1 as i32).max(0);
+        let cy1 = (self.state.clip.y1 as i32).max(0);
+        let cx2 = (self.state.clip.x2.ceil() as i32).min(tw);
+        let cy2 = (self.state.clip.y2.ceil() as i32).min(th);
 
         let start_x = sp.ix1.max(cx1);
         let start_y = sp.iy1.max(cy1);
@@ -519,20 +551,14 @@ impl<'a> Painter<'a> {
         let pw = (w * self.state.scale_x) as i32;
         let ph = (h * self.state.scale_y) as i32;
 
-        let PixelRect {
-            x: clip_x,
-            y: clip_y,
-            w: clip_w,
-            h: clip_h,
-        } = self.state.clip;
-        let start_x = px.max(clip_x).max(0);
-        let start_y = py.max(clip_y).max(0);
-        let end_x = (px + pw)
-            .min(clip_x + clip_w)
-            .min(self.target.width() as i32);
-        let end_y = (py + ph)
-            .min(clip_y + clip_h)
-            .min(self.target.height() as i32);
+        let cx1 = (self.state.clip.x1 as i32).max(0);
+        let cy1 = (self.state.clip.y1 as i32).max(0);
+        let cx2 = (self.state.clip.x2.ceil() as i32).min(self.target.width() as i32);
+        let cy2 = (self.state.clip.y2.ceil() as i32).min(self.target.height() as i32);
+        let start_x = px.max(cx1);
+        let start_y = py.max(cy1);
+        let end_x = (px + pw).min(cx2);
+        let end_y = (py + ph).min(cy2);
 
         let (start, end) = if horizontal {
             ((px as f64, py as f64), ((px + pw) as f64, py as f64))
@@ -584,7 +610,11 @@ impl<'a> Painter<'a> {
             })
             .collect();
 
-        let rows = scanline::rasterize(&pixel_verts, self.state.clip, WindingRule::NonZero);
+        let rows = scanline::rasterize(
+            &pixel_verts,
+            self.state.clip.to_scanline_clip(),
+            WindingRule::NonZero,
+        );
 
         let pcx = cx * self.state.scale_x + self.state.offset_x;
         let pcy = cy * self.state.scale_y + self.state.offset_y;
@@ -763,20 +793,14 @@ impl<'a> Painter<'a> {
         let src_w = image.width() as f64;
         let src_h = image.height() as f64;
 
-        let PixelRect {
-            x: clip_x,
-            y: clip_y,
-            w: clip_w,
-            h: clip_h,
-        } = self.state.clip;
-        let start_x = px.max(clip_x).max(0);
-        let start_y = py.max(clip_y).max(0);
-        let end_x = (sp.ix2)
-            .min(clip_x + clip_w)
-            .min(self.target.width() as i32);
-        let end_y = (sp.iy2)
-            .min(clip_y + clip_h)
-            .min(self.target.height() as i32);
+        let cx1 = (self.state.clip.x1 as i32).max(0);
+        let cy1 = (self.state.clip.y1 as i32).max(0);
+        let cx2 = (self.state.clip.x2.ceil() as i32).min(self.target.width() as i32);
+        let cy2 = (self.state.clip.y2.ceil() as i32).min(self.target.height() as i32);
+        let start_x = px.max(cx1);
+        let start_y = py.max(cy1);
+        let end_x = sp.ix2.min(cx2);
+        let end_y = sp.iy2.min(cy2);
 
         // Save and temporarily override canvas color and alpha if specified.
         let saved_canvas = self.state.canvas_color;
@@ -912,16 +936,14 @@ impl<'a> Painter<'a> {
         let pw = px2 - px;
         let ph = py2 - py;
 
-        let PixelRect {
-            x: clip_x,
-            y: clip_y,
-            w: clip_w,
-            h: clip_h,
-        } = self.state.clip;
-        let start_x = px.max(clip_x).max(0);
-        let start_y = py.max(clip_y).max(0);
-        let end_x = px2.min(clip_x + clip_w).min(self.target.width() as i32);
-        let end_y = py2.min(clip_y + clip_h).min(self.target.height() as i32);
+        let cx1 = (self.state.clip.x1 as i32).max(0);
+        let cy1 = (self.state.clip.y1 as i32).max(0);
+        let cx2 = (self.state.clip.x2.ceil() as i32).min(self.target.width() as i32);
+        let cy2 = (self.state.clip.y2.ceil() as i32).min(self.target.height() as i32);
+        let start_x = px.max(cx1);
+        let start_y = py.max(cy1);
+        let end_x = px2.min(cx2);
+        let end_y = py2.min(cy2);
 
         if pw <= 0 || ph <= 0 || src_w == 0 || src_h == 0 {
             return;
@@ -1410,20 +1432,14 @@ impl<'a> Painter<'a> {
             super::texture::ImageQuality::Adaptive => interpolation::InterpolationQuality::Adaptive,
         };
 
-        let PixelRect {
-            x: clip_x,
-            y: clip_y,
-            w: clip_w,
-            h: clip_h,
-        } = self.state.clip;
-        let start_x = px.max(clip_x).max(0);
-        let start_y = py.max(clip_y).max(0);
-        let end_x = (px + pw)
-            .min(clip_x + clip_w)
-            .min(self.target.width() as i32);
-        let end_y = (py + ph)
-            .min(clip_y + clip_h)
-            .min(self.target.height() as i32);
+        let cx1 = (self.state.clip.x1 as i32).max(0);
+        let cy1 = (self.state.clip.y1 as i32).max(0);
+        let cx2 = (self.state.clip.x2.ceil() as i32).min(self.target.width() as i32);
+        let cy2 = (self.state.clip.y2.ceil() as i32).min(self.target.height() as i32);
+        let start_x = px.max(cx1);
+        let start_y = py.max(cy1);
+        let end_x = (px + pw).min(cx2);
+        let end_y = (py + ph).min(cy2);
 
         let ctx = interpolation::ScaleContext {
             src_w,
@@ -2027,16 +2043,14 @@ impl<'a> Painter<'a> {
             return;
         }
 
-        let PixelRect {
-            x: clip_x,
-            y: clip_y,
-            w: clip_w,
-            h: clip_h,
-        } = self.state.clip;
-        let start_x = px.max(clip_x).max(0);
-        let start_y = py.max(clip_y).max(0);
-        let end_x = px2.min(clip_x + clip_w).min(self.target.width() as i32);
-        let end_y = py2.min(clip_y + clip_h).min(self.target.height() as i32);
+        let cx1 = (self.state.clip.x1 as i32).max(0);
+        let cy1 = (self.state.clip.y1 as i32).max(0);
+        let cx2 = (self.state.clip.x2.ceil() as i32).min(self.target.width() as i32);
+        let cy2 = (self.state.clip.y2.ceil() as i32).min(self.target.height() as i32);
+        let start_x = px.max(cx1);
+        let start_y = py.max(cy1);
+        let end_x = px2.min(cx2);
+        let end_y = py2.min(cy2);
 
         // Match C++ emPainter scaling: pre-reduced area sampling for downscaling,
         // adaptive for upscaling (UQ_ADAPTIVE default).
@@ -2411,11 +2425,10 @@ impl<'a> Painter<'a> {
         let gx = if dy >= 0.0001 { dx / dy } else { 0.0 };
         let gy = if adx >= 0.0001 { dy / adx } else { 0.0 };
 
-        let clip = self.state.clip;
-        let clip_x1f = clip.x as f64;
-        let clip_y1f = clip.y as f64;
-        let clip_x2f = (clip.x + clip.w) as f64;
-        let clip_y2f = (clip.y + clip.h) as f64;
+        let clip_x1f = self.state.clip.x1;
+        let clip_y1f = self.state.clip.y1;
+        let clip_x2f = self.state.clip.x2;
+        let clip_y2f = self.state.clip.y2;
 
         if y1 < clip_y1f {
             x1 += gx * (clip_y1f - y1);
@@ -2547,8 +2560,11 @@ impl<'a> Painter<'a> {
 
     /// Fill the current clip rect with a solid color.
     pub fn clear(&mut self, color: Color) {
-        let clip = self.state.clip;
-        self.fill_rect_pixels(clip.x, clip.y, clip.w, clip.h, color);
+        let x = self.state.clip.x1 as i32;
+        let y = self.state.clip.y1 as i32;
+        let w = self.state.clip.x2.ceil() as i32 - x;
+        let h = self.state.clip.y2.ceil() as i32 - y;
+        self.fill_rect_pixels(x, y, w, h, color);
     }
 
     /// Draw a dashed polyline by splitting the path into dash/gap segments
@@ -4349,7 +4365,7 @@ impl<'a> Painter<'a> {
             })
             .collect();
 
-        let rows = scanline::rasterize(&pixel_verts, self.state.clip, rule);
+        let rows = scanline::rasterize(&pixel_verts, self.state.clip.to_scanline_clip(), rule);
 
         for (y, spans) in &rows {
             for span in spans {
@@ -4428,13 +4444,12 @@ impl<'a> Painter<'a> {
     /// When canvas_color is transparent, uses standard source-over:
     ///   `dst = bg * (1-a/255) + pm_rgba`
     fn blend_pixel_premul(&mut self, x: i32, y: i32, pm: [u8; 4]) {
-        let PixelRect {
-            x: cx,
-            y: cy,
-            w: cw,
-            h: ch,
-        } = self.state.clip;
-        if x < cx || x >= cx + cw || y < cy || y >= cy + ch {
+        let clip = self.state.clip;
+        if (x as f64) < clip.x1
+            || (x as f64) >= clip.x2
+            || (y as f64) < clip.y1
+            || (y as f64) >= clip.y2
+        {
             return;
         }
         if x < 0 || y < 0 || x >= self.target.width() as i32 || y >= self.target.height() as i32 {
@@ -4531,7 +4546,7 @@ impl<'a> Painter<'a> {
             })
             .collect();
 
-        let rows = scanline::rasterize(&pixel_verts, self.state.clip, rule);
+        let rows = scanline::rasterize(&pixel_verts, self.state.clip.to_scanline_clip(), rule);
 
         // Pre-transform texture coordinates to pixel space.
         // Extract state values to avoid borrowing self through the loop.
@@ -4911,13 +4926,12 @@ impl<'a> Painter<'a> {
     // --- Pixel-level operations ---
 
     fn blend_pixel(&mut self, x: i32, y: i32, color: Color) {
-        let PixelRect {
-            x: cx,
-            y: cy,
-            w: cw,
-            h: ch,
-        } = self.state.clip;
-        if x < cx || x >= cx + cw || y < cy || y >= cy + ch {
+        let clip = self.state.clip;
+        if (x as f64) < clip.x1
+            || (x as f64) >= clip.x2
+            || (y as f64) < clip.y1
+            || (y as f64) >= clip.y2
+        {
             return;
         }
         if x < 0 || y < 0 || x >= self.target.width() as i32 || y >= self.target.height() as i32 {
@@ -4998,16 +5012,14 @@ impl<'a> Painter<'a> {
     }
 
     fn fill_rect_pixels(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
-        let PixelRect {
-            x: cx,
-            y: cy,
-            w: cw,
-            h: ch,
-        } = self.state.clip;
-        let start_x = x.max(cx).max(0);
-        let start_y = y.max(cy).max(0);
-        let end_x = (x + w).min(cx + cw).min(self.target.width() as i32);
-        let end_y = (y + h).min(cy + ch).min(self.target.height() as i32);
+        let cx1 = (self.state.clip.x1 as i32).max(0);
+        let cy1 = (self.state.clip.y1 as i32).max(0);
+        let cx2 = (self.state.clip.x2.ceil() as i32).min(self.target.width() as i32);
+        let cy2 = (self.state.clip.y2.ceil() as i32).min(self.target.height() as i32);
+        let start_x = x.max(cx1);
+        let start_y = y.max(cy1);
+        let end_x = (x + w).min(cx2);
+        let end_y = (y + h).min(cy2);
 
         if start_x >= end_x || start_y >= end_y {
             return;

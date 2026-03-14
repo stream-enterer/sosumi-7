@@ -98,7 +98,7 @@ struct TextFieldBehavior {
 
 impl PanelBehavior for TextFieldBehavior {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
-        self.text_field.paint(painter, w, h);
+        self.text_field.paint(painter, w, h, _state.enabled);
     }
 }
 
