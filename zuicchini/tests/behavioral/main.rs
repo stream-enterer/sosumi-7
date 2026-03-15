@@ -4,6 +4,7 @@ mod config_model;
 mod cursor;
 mod default_item_panel;
 mod file_model;
+mod fp_plugin;
 mod image_file_model;
 mod install_info;
 mod job;

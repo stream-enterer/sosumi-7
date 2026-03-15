@@ -12,6 +12,7 @@ rand = "0.9"
 bitflags = "2"
 bytemuck = { version = "1", features = ["derive"] }
 libc = "0.2.183"
+libloading = "0.9.0"
 log = "0.4"
 nix = { version = "0.31.2", features = ["fs"] }
 pollster = "0.4"
