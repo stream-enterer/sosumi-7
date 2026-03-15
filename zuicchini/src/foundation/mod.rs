@@ -7,6 +7,7 @@ mod em_rec;
 mod fixed;
 mod image;
 mod install_info;
+mod mini_ipc;
 mod process;
 mod rect;
 mod tga;
@@ -25,6 +26,9 @@ pub use image::Image;
 pub use install_info::{
     get_config_dir_overloadable, get_install_path, InstallDirType, InstallInfoError,
 };
+#[cfg(target_os = "linux")]
+pub use mini_ipc::MiniIpcServer;
+pub use mini_ipc::{decode_message, encode_message, MiniIpcClient, MiniIpcError};
 pub use process::{PipeResult, Process, ProcessError, StartFlags};
 pub use rect::{PixelRect, Rect};
 pub use tga::{load_tga, TgaError};

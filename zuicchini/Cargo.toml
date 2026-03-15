@@ -11,7 +11,9 @@ rand = "0.9"
 [dependencies]
 bitflags = "2"
 bytemuck = { version = "1", features = ["derive"] }
+libc = "0.2.183"
 log = "0.4"
+nix = { version = "0.31.2", features = ["fs"] }
 pollster = "0.4"
 slotmap = "1"
 wgpu = "28"

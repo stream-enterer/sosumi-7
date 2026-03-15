@@ -8,6 +8,7 @@ mod image_file_model;
 mod install_info;
 mod job;
 mod look;
+mod mini_ipc;
 mod pri_sched_agent;
 mod radio_button;
 mod state_saver;
