@@ -2,6 +2,7 @@ mod clipboard;
 mod color_field;
 mod config_model;
 mod core_config;
+mod core_config_panel;
 mod cursor;
 mod default_item_panel;
 mod file_model;

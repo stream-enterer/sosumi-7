@@ -686,7 +686,7 @@ struct TunnelBehavior {
 
 impl PanelBehavior for TunnelBehavior {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
-        self.tunnel.paint(painter, w, h);
+        self.tunnel.paint_tunnel(painter, w, h);
     }
 }
 

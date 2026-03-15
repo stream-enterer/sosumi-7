@@ -2,6 +2,7 @@ use std::cell::OnceCell;
 use std::rc::Rc;
 
 use crate::foundation::{Color, Image, Rect};
+use crate::panel::{PanelBehavior, PanelCtx, PanelState};
 use crate::render::Painter;
 
 use super::border::{Border, OuterBorderType};
@@ -94,6 +95,10 @@ impl Tunnel {
         self.depth = depth;
     }
 
+    pub(crate) fn border_mut(&mut self) -> &mut Border {
+        &mut self.border
+    }
+
     /// Compute the geometry of the tunnel's inner (child) rectangle.
     pub fn child_rect(&self, w: f64, h: f64) -> TunnelChildRect {
         let (rect, ar) = self.content_round_rect(w, h);
@@ -115,7 +120,7 @@ impl Tunnel {
     }
 
     /// Paint the tunnel decoration.
-    pub fn paint(&self, painter: &mut Painter, w: f64, h: f64) {
+    pub fn paint_tunnel(&self, painter: &mut Painter, w: f64, h: f64) {
         // Paint the border chrome first.
         self.border
             .paint_border(painter, w, h, &self.look, false, true);
@@ -257,6 +262,30 @@ impl Tunnel {
         let by = ay + (ah - bh) * 0.5;
 
         (bx, by, bw, bh, br)
+    }
+}
+
+impl PanelBehavior for Tunnel {
+    fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
+        self.paint_tunnel(painter, w, h);
+    }
+
+    fn auto_expand(&self) -> bool {
+        true
+    }
+
+    fn layout_children(&mut self, ctx: &mut PanelCtx) {
+        if !ctx.tree.is_auto_expanded(ctx.id) {
+            return;
+        }
+
+        let rect = ctx.layout_rect();
+        let cr = self.child_rect(rect.w, rect.h);
+
+        if let Some(&child) = ctx.children().first() {
+            ctx.layout_child(child, cr.x, cr.y, cr.w, cr.h);
+            ctx.tree.set_canvas_color(child, cr.canvas_color);
+        }
     }
 }
 
