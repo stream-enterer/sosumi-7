@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::input::{Cursor, InputEvent, InputState};
-use crate::panel::{PanelBehavior, PanelState};
+use crate::panel::{NoticeFlags, PanelBehavior, PanelState};
 use crate::render::Painter;
 
 use super::border::{InnerBorderType, OuterBorderType};
@@ -113,6 +113,15 @@ pub(crate) struct ListBoxPanel {
 impl PanelBehavior for ListBoxPanel {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         self.list_box.paint(painter, w, h);
+    }
+
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+        if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
+            self.list_box.on_focus_changed(state.in_active_path);
+        }
+        if flags.intersects(NoticeFlags::ENABLE_CHANGED) {
+            self.list_box.on_enable_changed(state.enabled);
+        }
     }
 }
 

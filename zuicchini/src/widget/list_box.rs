@@ -128,14 +128,24 @@ pub(crate) struct DefaultItemPanelBehavior {
     text: String,
     selected: bool,
     look: Rc<Look>,
+    selection_mode: SelectionMode,
+    enabled: bool,
 }
 
 impl DefaultItemPanelBehavior {
-    pub fn new(text: String, selected: bool, look: Rc<Look>) -> Self {
+    pub fn new(
+        text: String,
+        selected: bool,
+        look: Rc<Look>,
+        selection_mode: SelectionMode,
+        enabled: bool,
+    ) -> Self {
         Self {
             text,
             selected,
             look,
+            selection_mode,
+            enabled,
         }
     }
 }
@@ -143,30 +153,45 @@ impl DefaultItemPanelBehavior {
 impl PanelBehavior for DefaultItemPanelBehavior {
     fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, _state: &PanelState) {
         let s = w.min(h);
-        let mut item_canvas = self.look.input_bg_color;
+
+        // Select color set based on ReadOnly vs editable (C++ emListBox.cpp:554-608)
+        let (bg, fg, hl) = if self.selection_mode == SelectionMode::ReadOnly {
+            (
+                self.look.output_bg_color,
+                self.look.output_fg_color,
+                self.look.output_hl_color,
+            )
+        } else {
+            (
+                self.look.input_bg_color,
+                self.look.input_fg_color,
+                self.look.input_hl_color,
+            )
+        };
+        let (bg, fg, hl) = if !self.enabled {
+            let base = self.look.bg_color;
+            (
+                bg.lerp(base, 0.80),
+                fg.lerp(base, 0.80),
+                hl.lerp(base, 0.80),
+            )
+        } else {
+            (bg, fg, hl)
+        };
+
+        let mut item_canvas = bg;
 
         if self.selected {
             let rdx = s * 0.015;
             let rdy = s * 0.015;
             let r = s * 0.15;
-            painter.paint_round_rect(
-                rdx,
-                rdy,
-                w - 2.0 * rdx,
-                h - 2.0 * rdy,
-                r,
-                self.look.input_hl_color,
-            );
-            item_canvas = self.look.input_hl_color;
+            painter.paint_round_rect(rdx, rdy, w - 2.0 * rdx, h - 2.0 * rdy, r, hl);
+            item_canvas = hl;
         }
 
         let dx = s * 0.15;
         let dy = s * 0.03;
-        let text_color = if self.selected {
-            self.look.input_bg_color
-        } else {
-            self.look.input_fg_color
-        };
+        let text_color = if self.selected { bg } else { fg };
         painter.paint_text_boxed(
             dx,
             dy,
@@ -186,7 +211,11 @@ impl PanelBehavior for DefaultItemPanelBehavior {
     }
 
     fn canvas_color(&self) -> Color {
-        self.look.input_bg_color
+        if self.selection_mode == SelectionMode::ReadOnly {
+            self.look.output_bg_color
+        } else {
+            self.look.input_bg_color
+        }
     }
 }
 
@@ -239,6 +268,12 @@ pub struct ListBox {
     /// Fixed number of columns for the item grid layout.
     /// Port of C++ `emListBox::SetFixedColumnCount`.
     fixed_column_count: Option<usize>,
+    /// Last known viewport height (set during paint). Used by scroll_to_index.
+    visible_height: f64,
+    /// Whether the list box is enabled. Updated from PanelState.
+    enabled: bool,
+    /// Whether the list box is in the focused panel path.
+    in_focused_path: bool,
 }
 
 impl ListBox {
@@ -263,6 +298,9 @@ impl ListBox {
             item_panel_factory: None,
             expanded: false,
             fixed_column_count: None,
+            visible_height: 0.0,
+            enabled: true,
+            in_focused_path: false,
         }
     }
 
@@ -852,6 +890,8 @@ impl ListBox {
 
         // Create a child panel for each item under the layout.
         let look = self.look.clone();
+        let sel_mode = self.selection_mode;
+        let enabled = self.enabled;
         for item in &self.items {
             let child = ctx.tree.create_child(layout_id, &item.name);
             ctx.tree.set_behavior(
@@ -860,6 +900,8 @@ impl ListBox {
                     item.text.clone(),
                     item.selected,
                     look.clone(),
+                    sel_mode,
+                    enabled,
                 )),
             );
         }
@@ -888,7 +930,7 @@ impl ListBox {
 
     // ── Paint ───────────────────────────────────────────────────────
 
-    pub fn paint(&self, painter: &mut Painter, w: f64, h: f64) {
+    pub fn paint(&mut self, painter: &mut Painter, w: f64, h: f64) {
         self.border
             .paint_border(painter, w, h, &self.look, false, true);
 
@@ -906,8 +948,36 @@ impl ListBox {
             h: ch,
         } = self.border.content_rect_unobscured(w, h, &self.look);
 
+        // Store visible height for scroll_to_index
+        self.visible_height = ch;
+
         painter.push_state();
         painter.clip_rect(cx, cy, cw, ch);
+
+        // Determine colors based on selection mode and enabled state (C++ lines 562-577)
+        let (bg, fg, hl) = if self.selection_mode == SelectionMode::ReadOnly {
+            (
+                self.look.output_bg_color,
+                self.look.output_fg_color,
+                self.look.output_hl_color,
+            )
+        } else {
+            (
+                self.look.input_bg_color,
+                self.look.input_fg_color,
+                self.look.input_hl_color,
+            )
+        };
+        let (bg, fg, hl) = if !self.enabled {
+            let base = self.look.bg_color;
+            (
+                bg.lerp(base, 0.80),
+                fg.lerp(base, 0.80),
+                hl.lerp(base, 0.80),
+            )
+        } else {
+            (bg, fg, hl)
+        };
 
         // C++ emListBox lays out items as child panels that fill the content
         // area.  Compute row height dynamically so items scale with the widget.
@@ -930,7 +1000,7 @@ impl ListBox {
             // C++ DefaultItemPanel::Paint: canvasColor starts as parent canvas
             // (InputField bg). After painting selection highlight, canvasColor
             // changes to hlColor for selected items.
-            let mut item_canvas = self.look.input_bg_color;
+            let mut item_canvas = bg;
 
             if item.selected {
                 let rdx = s * 0.015;
@@ -942,18 +1012,14 @@ impl ListBox {
                     item_w - 2.0 * rdx,
                     item_h - 2.0 * rdy,
                     r,
-                    self.look.input_hl_color,
+                    hl,
                 );
-                item_canvas = self.look.input_hl_color;
+                item_canvas = hl;
             }
 
             let dx = s * 0.15;
             let dy = s * 0.03;
-            let text_color = if item.selected {
-                self.look.input_bg_color
-            } else {
-                self.look.input_fg_color
-            };
+            let text_color = if item.selected { bg } else { fg };
             painter.paint_text_boxed(
                 cx + dx,
                 iy + dy,
@@ -981,6 +1047,9 @@ impl ListBox {
     // ── Input ───────────────────────────────────────────────────────
 
     pub fn input(&mut self, event: &InputEvent) -> bool {
+        if !self.enabled {
+            return false;
+        }
         if self.items.is_empty() {
             return false;
         }
@@ -1323,17 +1392,28 @@ impl ListBox {
         true
     }
 
+    /// Notify the list box of a focus path change.
+    /// Clears keywalk state when focus is lost. Matches C++ emListBox::Notice
+    /// `NF_FOCUS_CHANGED` handler (emListBox.cpp:647-656).
+    pub fn on_focus_changed(&mut self, in_focused_path: bool) {
+        self.in_focused_path = in_focused_path;
+        if !in_focused_path {
+            self.keywalk_chars.clear();
+        }
+    }
+
+    /// Notify the list box of an enabled state change.
+    pub fn on_enable_changed(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
     fn scroll_to_index(&mut self, index: usize) {
-        // Ensure the item at `index` is visible within the content area.
         let item_top = index as f64 * ROW_HEIGHT;
         let item_bottom = item_top + ROW_HEIGHT;
         if item_top < self.scroll_y {
             self.scroll_y = item_top;
-        } else {
-            // We don't know the viewport height here, but we can at least
-            // ensure the top of the item is in view.
-            // A full implementation would use the widget's actual height.
-            let _ = item_bottom;
+        } else if self.visible_height > 0.0 && item_bottom > self.scroll_y + self.visible_height {
+            self.scroll_y = item_bottom - self.visible_height;
         }
     }
 }
