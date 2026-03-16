@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use super::tree::{PanelId, PanelTree};
 use crate::foundation::{ClipRects, Color, Rect};
 use crate::input::Cursor;
-use crate::render::{Painter, Stroke};
+use crate::render::Painter;
 
 bitflags! {
     /// Flags controlling view behavior.
@@ -1991,20 +1991,99 @@ impl View {
 
         let color = Color::rgba(base_color.r(), base_color.g(), base_color.b(), alpha);
 
-        // Stroke width scales with the viewport size for visibility
-        let stroke_w = 2.0_f64
-            .max((self.viewport_width + self.viewport_height) * 0.002)
-            .min(4.0);
+        // Shadow color: black with alpha 192 normally, alpha/3 when unfocused
+        let shadow_alpha =
+            if !self.window_focused || self.flags.contains(ViewFlags::NO_FOCUS_HIGHLIGHT) {
+                64
+            } else {
+                192
+            };
+        let shadow_color = Color::rgba(0, 0, 0, shadow_alpha);
+
+        // C++ constants
+        let arrow_size = 11.0;
+        let arrow_distance = 55.0;
+
+        // Corner radius — C++ uses substance_rect rounding scaled to viewport
+        let (_sx2, _sy2, _sw2, _sh2, sr) = tree.get_substance_rect(active_id);
+        let corner_r = (sr * panel.viewed_width).max(0.0);
+
+        // Goal point: center of the highlight rect
+        let goal_x = hx + hw * 0.5;
+        let goal_y = hy + hh * 0.5;
+
+        // Pixel tallness correction for arrow rendering
+        let pt = self.pixel_tallness;
+
+        // Build the perimeter as 8 segments: 4 bows + 4 lines
+        // Walk clockwise starting from top-right corner midpoint
+        // Segment order: top-right bow, right line, bottom-right bow,
+        //                bottom line, bottom-left bow, left line,
+        //                top-left bow, top line
+        let r = corner_r.min(hw * 0.5).min(hh * 0.5);
+
+        // Line segments (after accounting for corner radii)
+        let segments: [(f64, f64, f64, f64, bool); 8] = [
+            // top-right bow: center (hx+hw-r, hy+r), start angle -PI/2, quarter CW
+            (hx + hw - r, hy + r, r, 0.0, true),
+            // right line: top to bottom
+            (hx + hw, hy + r, hx + hw, hy + hh - r, false),
+            // bottom-right bow
+            (hx + hw - r, hy + hh - r, r, 1.0, true),
+            // bottom line: right to left
+            (hx + hw - r, hy + hh, hx + r, hy + hh, false),
+            // bottom-left bow
+            (hx + r, hy + hh - r, r, 2.0, true),
+            // left line: bottom to top
+            (hx, hy + hh - r, hx, hy + r, false),
+            // top-left bow
+            (hx + r, hy + r, r, 3.0, true),
+            // top line: left to right
+            (hx + r, hy, hx + hw - r, hy, false),
+        ];
 
         painter.push_state();
-        painter.paint_rect_outlined(
-            hx,
-            hy,
-            hw,
-            hh,
-            &Stroke::new(color, stroke_w),
-            Color::TRANSPARENT,
-        );
+
+        for &(a, b, c, d, is_bow) in &segments {
+            if is_bow {
+                // Bow: (cx, cy, radius, quadrant)
+                paint_highlight_arrows_on_bow(
+                    painter,
+                    a,
+                    b,
+                    c,
+                    d as usize,
+                    goal_x,
+                    goal_y,
+                    arrow_size,
+                    arrow_distance,
+                    color,
+                    shadow_color,
+                    pt,
+                    self.viewport_width,
+                    self.viewport_height,
+                );
+            } else {
+                // Line: (x1, y1, x2, y2)
+                paint_highlight_arrows_on_line(
+                    painter,
+                    a,
+                    b,
+                    c,
+                    d,
+                    goal_x,
+                    goal_y,
+                    arrow_size,
+                    arrow_distance,
+                    color,
+                    shadow_color,
+                    pt,
+                    self.viewport_width,
+                    self.viewport_height,
+                );
+            }
+        }
+
         painter.pop_state();
     }
 
@@ -2108,6 +2187,195 @@ impl View {
         }
 
         painter.pop_state();
+    }
+}
+
+// ── Highlight arrow helpers (C++ emView.cpp:2300-2479) ──
+
+/// Compute the 4 vertices of a highlight arrow chevron.
+/// Returns [(tip), (right wing), (notch), (left wing)].
+fn compute_arrow_vertices(
+    x: f64,
+    y: f64,
+    goal_x: f64,
+    goal_y: f64,
+    arrow_size: f64,
+) -> [(f64, f64); 4] {
+    let gdx = goal_x - x;
+    let gdy = goal_y - y;
+    let glen = (gdx * gdx + gdy * gdy).sqrt().max(1e-10);
+    let dx = gdx / glen;
+    let dy = gdy / glen;
+
+    let ah = arrow_size; // arrow head length
+    let aw = arrow_size * 0.5; // arrow half-width
+    let ag = ah * 0.8; // notch depth
+
+    let tip = (x, y);
+    let right = (x + dx * ah - dy * aw * 0.5, y + dy * ah + dx * aw * 0.5);
+    let notch = (x + dx * ag, y + dy * ag);
+    let left = (x + dx * ah + dy * aw * 0.5, y + dy * ah - dx * aw * 0.5);
+
+    [tip, right, notch, left]
+}
+
+/// Round arrow count to a "nice" number per C++ formula.
+fn compute_arrow_count(len: f64, arrow_distance: f64) -> usize {
+    if len < arrow_distance * 0.5 {
+        return 0;
+    }
+    let mut n = (len / arrow_distance).round() as usize;
+    if n == 0 {
+        return 0;
+    }
+    // Find smallest power of 2 >= n
+    let mut m = 1usize;
+    while m < n {
+        m <<= 1;
+    }
+    n &= m | (m >> 1) | (m >> 2);
+    n.max(1)
+}
+
+/// Paint a single highlight arrow (shadow + arrow polygon).
+#[allow(clippy::too_many_arguments)]
+fn paint_highlight_arrow(
+    painter: &mut Painter,
+    x: f64,
+    y: f64,
+    goal_x: f64,
+    goal_y: f64,
+    arrow_size: f64,
+    color: Color,
+    shadow_color: Color,
+    pt: f64,
+) {
+    let sd = arrow_size * 0.2;
+
+    // Shadow polygon (offset toward bottom-right)
+    let shadow_verts = compute_arrow_vertices(x + sd, y + sd * pt, goal_x, goal_y, arrow_size);
+    painter.paint_polygon(&shadow_verts, shadow_color, Color::TRANSPARENT);
+
+    // Arrow polygon
+    let verts = compute_arrow_vertices(x, y, goal_x, goal_y, arrow_size);
+    painter.paint_polygon(&verts, color, Color::TRANSPARENT);
+}
+
+/// Paint arrows along a straight line segment.
+#[allow(clippy::too_many_arguments)]
+fn paint_highlight_arrows_on_line(
+    painter: &mut Painter,
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+    goal_x: f64,
+    goal_y: f64,
+    arrow_size: f64,
+    arrow_distance: f64,
+    color: Color,
+    shadow_color: Color,
+    pt: f64,
+    vw: f64,
+    vh: f64,
+) {
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1.0 {
+        return;
+    }
+
+    let n = compute_arrow_count(len, arrow_distance);
+    if n == 0 {
+        return;
+    }
+
+    let margin = arrow_size * 1.5;
+
+    for i in 0..n {
+        let t = (i as f64 + 0.5) / n as f64;
+        let ax = x1 + dx * t;
+        let ay = y1 + dy * t;
+
+        // Clip to viewport (with margin for arrow size)
+        if ax < -margin || ax > vw + margin || ay < -margin || ay > vh + margin {
+            continue;
+        }
+
+        paint_highlight_arrow(
+            painter,
+            ax,
+            ay,
+            goal_x,
+            goal_y,
+            arrow_size,
+            color,
+            shadow_color,
+            pt,
+        );
+    }
+}
+
+/// Paint arrows along a quarter-circle arc (bow).
+#[allow(clippy::too_many_arguments)]
+fn paint_highlight_arrows_on_bow(
+    painter: &mut Painter,
+    cx: f64,
+    cy: f64,
+    radius: f64,
+    quadrant: usize,
+    goal_x: f64,
+    goal_y: f64,
+    arrow_size: f64,
+    arrow_distance: f64,
+    color: Color,
+    shadow_color: Color,
+    pt: f64,
+    vw: f64,
+    vh: f64,
+) {
+    if radius < 1.0 {
+        return;
+    }
+
+    let arc_len = radius * std::f64::consts::FRAC_PI_2;
+    let n = compute_arrow_count(arc_len, arrow_distance);
+    if n == 0 {
+        return;
+    }
+
+    // Start angle for each quadrant (clockwise from top-right)
+    let start_angle = match quadrant {
+        0 => -std::f64::consts::FRAC_PI_2, // top-right: -90° to 0°
+        1 => 0.0,                          // bottom-right: 0° to 90°
+        2 => std::f64::consts::FRAC_PI_2,  // bottom-left: 90° to 180°
+        _ => std::f64::consts::PI,         // top-left: 180° to 270°
+    };
+
+    let margin = arrow_size * 1.5;
+
+    for i in 0..n {
+        let t = (i as f64 + 0.5) / n as f64;
+        let angle = start_angle + t * std::f64::consts::FRAC_PI_2;
+        let ax = cx + radius * angle.cos();
+        let ay = cy + radius * angle.sin();
+
+        if ax < -margin || ax > vw + margin || ay < -margin || ay > vh + margin {
+            continue;
+        }
+
+        paint_highlight_arrow(
+            painter,
+            ax,
+            ay,
+            goal_x,
+            goal_y,
+            arrow_size,
+            color,
+            shadow_color,
+            pt,
+        );
     }
 }
 
@@ -2551,5 +2819,36 @@ mod tests {
             "Root layout_h should match pixel_tallness (0.75), got {}",
             rect.h
         );
+    }
+
+    #[test]
+    fn test_highlight_arrow_vertices() {
+        // Arrow at (100, 100) pointing toward goal at (100, 50) — straight up.
+        let verts = compute_arrow_vertices(100.0, 100.0, 100.0, 50.0, 11.0);
+        // dx=0, dy=-1
+        // tip: (100, 100)
+        assert!((verts[0].0 - 100.0).abs() < 0.01);
+        assert!((verts[0].1 - 100.0).abs() < 0.01);
+        // right: (100 + 0*11 - (-1)*5.5*0.5, 100 + (-1)*11 + 0*5.5*0.5) = (102.75, 89)
+        assert!((verts[1].0 - 102.75).abs() < 0.01);
+        assert!((verts[1].1 - 89.0).abs() < 0.01);
+        // notch: (100, 100 + (-1)*8.8) = (100, 91.2)
+        assert!((verts[2].0 - 100.0).abs() < 0.01);
+        assert!((verts[2].1 - 91.2).abs() < 0.01);
+        // left: (100 + 0*11 + (-1)*5.5*0.5, 100 + (-1)*11 - 0*5.5*0.5) = (97.25, 89)
+        assert!((verts[3].0 - 97.25).abs() < 0.01);
+        assert!((verts[3].1 - 89.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_highlight_arrow_count_rounding() {
+        assert_eq!(compute_arrow_count(55.0, 55.0), 1);
+        assert_eq!(compute_arrow_count(110.0, 55.0), 2);
+        assert_eq!(compute_arrow_count(165.0, 55.0), 3);
+        assert_eq!(compute_arrow_count(220.0, 55.0), 4);
+        assert_eq!(compute_arrow_count(385.0, 55.0), 6);
+        assert_eq!(compute_arrow_count(440.0, 55.0), 8);
+        // Too short — no arrows
+        assert_eq!(compute_arrow_count(20.0, 55.0), 0);
     }
 }
