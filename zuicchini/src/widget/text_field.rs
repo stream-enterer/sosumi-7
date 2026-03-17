@@ -65,6 +65,9 @@ pub struct TextField {
 
     // Phase 1 fields
     editable: bool,
+    /// Whether the widget is enabled (receives editing input). Updated during paint
+    /// from PanelState.enabled. Matches C++ `IsEnabled()` guard on editing operations.
+    enabled: bool,
     multi_line: bool,
     overwrite_mode: bool,
     scroll_y: f64,
@@ -122,6 +125,7 @@ impl TextField {
             redo_stack: Vec::new(),
             on_text: None,
             editable: true,
+            enabled: true,
             multi_line: false,
             overwrite_mode: false,
             scroll_y: 0.0,
@@ -887,11 +891,18 @@ impl TextField {
         let tx = content.x + d;
         let ty = content.y + d;
         let th = (content.h - 2.0 * d).max(0.0);
-        let (_, total_rows) = self.calc_total_cols_rows();
+        let (cols, total_rows) = self.calc_total_cols_rows();
         let cell_h = if total_rows > 0 { th / total_rows as f64 } else { return 0; };
         if cell_h <= 0.0 {
             return 0;
         }
+        let tw = (content.w - 2.0 * d).max(0.0);
+        let cell_w = Painter::measure_text_width("X", cell_h);
+        let ws = if cell_w * cols as f64 > tw {
+            (tw / (cell_w * cols as f64)).max(0.66)
+        } else {
+            1.0
+        };
 
         let row = ((y - ty + self.scroll_y) / cell_h).floor().max(0.0) as usize;
         let rows: Vec<&str> = self.text.split('\n').collect();
@@ -909,8 +920,8 @@ impl TextField {
         let mut byte_offset = 0usize;
         for ch in row_text.chars() {
             let next = byte_offset + ch.len_utf8();
-            let w_before = Painter::measure_text_width(&row_text[..byte_offset], cell_h);
-            let w_after = Painter::measure_text_width(&row_text[..next], cell_h);
+            let w_before = Painter::measure_text_width(&row_text[..byte_offset], cell_h) * ws;
+            let w_after = Painter::measure_text_width(&row_text[..next], cell_h) * ws;
             if x_in_row < (w_before + w_after) * 0.5 {
                 return row_start + byte_offset;
             }
@@ -1011,6 +1022,7 @@ impl TextField {
     pub fn paint(&mut self, painter: &mut Painter, w: f64, h: f64, enabled: bool) {
         self.last_w = w;
         self.last_h = h;
+        self.enabled = enabled;
 
         self.border
             .paint_border(painter, w, h, &self.look, false, enabled);
@@ -1255,12 +1267,27 @@ impl TextField {
         let tw = (cw - 2.0 * d).max(0.0);
         let th = (ch - 2.0 * d).max(0.0);
 
-        let (_, total_rows) = self.calc_total_cols_rows();
+        let (cols, total_rows) = self.calc_total_cols_rows();
         let cell_h = if total_rows > 0 {
             th / total_rows as f64
         } else {
             th
         };
+        let cell_w = Painter::measure_text_width("X", cell_h);
+
+        // C++ width scaling: ws=1.0; if(cw*cols>tw) ws=tw/(cw*cols); ...
+        let mut ws = 1.0;
+        let mut effective_ty = ty;
+        let mut effective_ch = cell_h;
+        if cell_w * cols as f64 > tw {
+            ws = tw / (cell_w * cols as f64);
+            if ws < 0.66 {
+                let shrink = effective_ch - effective_ch * ws / 0.66;
+                effective_ty += shrink * 0.5;
+                effective_ch -= shrink;
+                ws = 0.66;
+            }
+        }
 
         // Select colors based on editable state (C++ emTextField.cpp:956-965)
         // Select colors based on editable state (C++ emTextField.cpp:956-965)
@@ -1317,30 +1344,30 @@ impl TextField {
             let sel_end_row = self.row_start(sel_end);
             let start_text = &self.text[sel_start_row..sel_start];
             let end_text = &self.text[sel_end_row..sel_end];
-            let x0 = Painter::measure_text_width(start_text, cell_h);
-            let x1 = Painter::measure_text_width(end_text, cell_h);
+            let x0 = Painter::measure_text_width(start_text, cell_h) * ws;
+            let x1 = Painter::measure_text_width(end_text, cell_h) * ws;
 
-            let scroll_ty = ty - self.scroll_y;
+            let scroll_ty = effective_ty - self.scroll_y;
 
             if row0 == row1 {
                 painter.paint_rect(
                     tx + x0,
-                    scroll_ty + row0 as f64 * cell_h,
+                    scroll_ty + row0 as f64 * effective_ch,
                     x1 - x0,
-                    cell_h,
+                    effective_ch,
                     sel_color,
                     canvas_color,
                 );
             } else {
                 let vertices = [
-                    (tx + x0, scroll_ty + row0 as f64 * cell_h),
-                    (tx + tw, scroll_ty + row0 as f64 * cell_h),
-                    (tx + tw, scroll_ty + row1 as f64 * cell_h),
-                    (tx + x1, scroll_ty + row1 as f64 * cell_h),
-                    (tx + x1, scroll_ty + (row1 + 1) as f64 * cell_h),
-                    (tx, scroll_ty + (row1 + 1) as f64 * cell_h),
-                    (tx, scroll_ty + (row0 + 1) as f64 * cell_h),
-                    (tx + x0, scroll_ty + (row0 + 1) as f64 * cell_h),
+                    (tx + x0, scroll_ty + row0 as f64 * effective_ch),
+                    (tx + tw, scroll_ty + row0 as f64 * effective_ch),
+                    (tx + tw, scroll_ty + row1 as f64 * effective_ch),
+                    (tx + x1, scroll_ty + row1 as f64 * effective_ch),
+                    (tx + x1, scroll_ty + (row1 + 1) as f64 * effective_ch),
+                    (tx, scroll_ty + (row1 + 1) as f64 * effective_ch),
+                    (tx, scroll_ty + (row0 + 1) as f64 * effective_ch),
+                    (tx + x0, scroll_ty + (row0 + 1) as f64 * effective_ch),
                 ];
                 painter.paint_polygon(&vertices, sel_color, canvas_color);
             }
@@ -1351,12 +1378,12 @@ impl TextField {
         // C++ line 1023: selected ? bgColor : fgColor; line 1024: selected ? selColor : canvasColor
         let mut byte_offset = 0usize;
         for (row_idx, row_text) in rows.iter().enumerate() {
-            let row_y = ty + row_idx as f64 * cell_h - self.scroll_y;
+            let row_y = effective_ty + row_idx as f64 * effective_ch - self.scroll_y;
             let row_start_byte = byte_offset;
             let _row_end_byte = byte_offset + row_text.len();
             byte_offset += row_text.len() + 1; // +1 for '\n'
 
-            if row_y + cell_h < cy || row_y > cy + ch {
+            if row_y + effective_ch < cy || row_y > cy + ch {
                 continue;
             }
 
@@ -1367,20 +1394,20 @@ impl TextField {
 
                 if rs < re {
                     // Row has a selection segment: paint pre / selected / post
-                    let x_rs = Painter::measure_text_width(&row_text[..rs], cell_h);
-                    let x_re = Painter::measure_text_width(&row_text[..re], cell_h);
+                    let x_rs = Painter::measure_text_width(&row_text[..rs], cell_h) * ws;
+                    let x_re = Painter::measure_text_width(&row_text[..re], cell_h) * ws;
                     if rs > 0 {
-                        painter.paint_text(tx, row_y, &row_text[..rs], cell_h, 1.0, fg, canvas_color);
+                        painter.paint_text(tx, row_y, &row_text[..rs], effective_ch, ws, fg, canvas_color);
                     }
-                    painter.paint_text(tx + x_rs, row_y, &row_text[rs..re], cell_h, 1.0, bg, sel_color);
+                    painter.paint_text(tx + x_rs, row_y, &row_text[rs..re], effective_ch, ws, bg, sel_color);
                     if re < row_text.len() {
-                        painter.paint_text(tx + x_re, row_y, &row_text[re..], cell_h, 1.0, fg, canvas_color);
+                        painter.paint_text(tx + x_re, row_y, &row_text[re..], effective_ch, ws, fg, canvas_color);
                     }
                     continue;
                 }
             }
 
-            painter.paint_text(tx, row_y, row_text, cell_h, 1.0, fg, canvas_color);
+            painter.paint_text(tx, row_y, row_text, effective_ch, ws, fg, canvas_color);
         }
 
         // Cursor — C++ only renders when panel is in focused path
@@ -1389,9 +1416,9 @@ impl TextField {
         }
         let cursor_row_start = self.row_start(self.cursor);
         let cursor_in_row = &self.text[cursor_row_start..self.cursor];
-        let cursor_x_px = Painter::measure_text_width(cursor_in_row, cell_h);
+        let cursor_x_px = Painter::measure_text_width(cursor_in_row, cell_h) * ws;
         let cursor_x = tx + cursor_x_px;
-        let cursor_screen_y = ty + cursor_row as f64 * cell_h - self.scroll_y;
+        let cursor_screen_y = effective_ty + cursor_row as f64 * effective_ch - self.scroll_y;
         let _ = cursor_col;
 
         // Compute cursor color with transparency (C++ emTextField.cpp:1056-1059)
@@ -1407,8 +1434,8 @@ impl TextField {
         {
             let cxp = cursor_x;
             let cyp = cursor_screen_y;
-            let ch_w = Painter::measure_text_width("X", cell_h);
-            let chp = cell_h;
+            let ch_w = Painter::measure_text_width("X", cell_h) * ws;
+            let chp = effective_ch;
             let dd = chp * 0.07;
             let vertices = [
                 (cxp - dd, cyp - dd),
@@ -1426,7 +1453,7 @@ impl TextField {
         } else {
             let cxp = cursor_x;
             let cyp = cursor_screen_y;
-            let chp = cell_h;
+            let chp = effective_ch;
             let dd = chp * 0.07;
             let d1 = dd * 0.5;
             let d2 = dd * 2.2;
@@ -1510,10 +1537,12 @@ impl TextField {
 
         let shift = event.shift;
         let ctrl = event.ctrl;
+        let alt = event.alt;
+        let meta = event.meta;
 
         let consumed = match event.key {
-            // ── Navigation ──────────────────────────────────────────
-            InputKey::ArrowLeft => {
+            // ── Navigation (C++ rejects Alt/Meta on all nav keys) ───
+            InputKey::ArrowLeft if !alt && !meta => {
                 self.magic_col = None;
                 let new_pos = if ctrl {
                     self.prev_word_boundary(self.cursor)
@@ -1525,7 +1554,7 @@ impl TextField {
                 self.modify_selection(new_pos, shift);
                 true
             }
-            InputKey::ArrowRight => {
+            InputKey::ArrowRight if !alt && !meta => {
                 self.magic_col = None;
                 let new_pos = if ctrl {
                     self.next_word_boundary(self.cursor)
@@ -1537,7 +1566,7 @@ impl TextField {
                 self.modify_selection(new_pos, shift);
                 true
             }
-            InputKey::Home => {
+            InputKey::Home if !alt && !meta => {
                 self.magic_col = None;
                 let new_pos = if ctrl || !self.multi_line {
                     0
@@ -1547,7 +1576,7 @@ impl TextField {
                 self.modify_selection(new_pos, shift);
                 true
             }
-            InputKey::End => {
+            InputKey::End if !alt && !meta => {
                 self.magic_col = None;
                 let new_pos = if ctrl || !self.multi_line {
                     self.text.len()
@@ -1557,7 +1586,7 @@ impl TextField {
                 self.modify_selection(new_pos, shift);
                 true
             }
-            InputKey::ArrowUp if self.multi_line => {
+            InputKey::ArrowUp if self.multi_line && !alt && !meta => {
                 let new_pos = if ctrl {
                     self.prev_paragraph_index(self.cursor)
                 } else {
@@ -1569,7 +1598,7 @@ impl TextField {
                 self.modify_selection(new_pos, shift);
                 true
             }
-            InputKey::ArrowDown if self.multi_line => {
+            InputKey::ArrowDown if self.multi_line && !alt && !meta => {
                 let new_pos = if ctrl {
                     self.next_paragraph_index(self.cursor)
                 } else {
@@ -1582,22 +1611,22 @@ impl TextField {
                 true
             }
 
-            // ── Editing (guarded by editable) ───────────────────────
+            // ── Editing (guarded by editable && enabled) ─────────────
             InputKey::Key('z') if ctrl && !shift => {
-                if self.editable {
+                if self.editable && self.enabled {
                     self.undo();
                 }
                 true
             }
             InputKey::Key('y') if ctrl && !shift => {
-                if self.editable {
+                if self.editable && self.enabled {
                     self.redo();
                 }
                 true
             }
             InputKey::Key('z') if ctrl && shift => {
                 // Ctrl+Shift+Z = redo
-                if self.editable {
+                if self.editable && self.enabled {
                     self.redo();
                 }
                 true
@@ -1617,11 +1646,15 @@ impl TextField {
                 true
             }
             InputKey::Key('x') if ctrl && !shift => {
-                self.cut_to_clipboard();
+                if self.editable && self.enabled {
+                    self.cut_to_clipboard();
+                }
                 true
             }
             InputKey::Key('v') if ctrl && !shift => {
-                self.paste_from_clipboard();
+                if self.editable && self.enabled {
+                    self.paste_from_clipboard();
+                }
                 true
             }
             InputKey::Insert if ctrl && !shift => {
@@ -1629,11 +1662,15 @@ impl TextField {
                 true
             }
             InputKey::Insert if shift && !ctrl => {
-                self.paste_from_clipboard();
+                if self.editable && self.enabled {
+                    self.paste_from_clipboard();
+                }
                 true
             }
             InputKey::Delete if shift && !ctrl => {
-                self.cut_to_clipboard();
+                if self.editable && self.enabled {
+                    self.cut_to_clipboard();
+                }
                 true
             }
 
@@ -1643,7 +1680,7 @@ impl TextField {
             }
 
             InputKey::Backspace => {
-                if !self.editable {
+                if !self.editable || !self.enabled {
                     return true;
                 }
                 if self.delete_selection() {
@@ -1678,7 +1715,7 @@ impl TextField {
                 true
             }
             InputKey::Delete => {
-                if !self.editable {
+                if !self.editable || !self.enabled {
                     return true;
                 }
                 if self.delete_selection() {
@@ -1712,7 +1749,7 @@ impl TextField {
                 true
             }
 
-            InputKey::Enter if self.multi_line && self.editable => {
+            InputKey::Enter if self.multi_line && self.editable && self.enabled => {
                 self.magic_col = None;
                 let pre_text = self.text.clone();
                 let pre_cursor = self.cursor;
@@ -1735,7 +1772,7 @@ impl TextField {
             }
 
             _ => {
-                if !event.chars.is_empty() && self.editable {
+                if !event.chars.is_empty() && self.editable && self.enabled {
                     self.magic_col = None;
                     // D-WIDGET-03: Classify the edit for undo merge.
                     let first_ch = event.chars.chars().next().unwrap_or('\0');
@@ -1754,8 +1791,8 @@ impl TextField {
                     };
                     for ch in event.chars.chars() {
                         if ch.is_control() {
-                            if ch == '\n' && self.multi_line {
-                                // allow
+                            if (ch == '\n' || ch == '\t') && self.multi_line {
+                                // allow newlines and tabs in multi-line mode
                             } else {
                                 continue;
                             }
@@ -1788,6 +1825,7 @@ impl TextField {
             }
         };
         if consumed {
+            self.restart_cursor_blinking();
             self.scroll_to_cursor();
         }
         consumed
@@ -2268,7 +2306,7 @@ impl TextField {
                 '\t' => {
                     row_cols = (row_cols / 8 + 1) * 8;
                 }
-                '\n' | '\r' => {
+                '\n' => {
                     if cols < row_cols {
                         cols = row_cols;
                     }
