@@ -146,13 +146,17 @@ impl RadioBox {
         painter.set_canvas_color(face_color);
 
         // Paint radio dot if selected (C++ PaintBoxSymbol, lines 161-167).
+        // C++ PaintEllipse takes bounding rect (x, y, w, h).
+        // Rust paint_ellipse takes center + radii (cx, cy, rx, ry).
         if self.is_selected() {
             let dot_d = fw * 0.25;
+            let dot_w = fw - 2.0 * dot_d;
+            let dot_h = fh - 2.0 * dot_d;
             painter.paint_ellipse(
-                fx + dot_d,
-                fy + dot_d,
-                fw - 2.0 * dot_d,
-                fh - 2.0 * dot_d,
+                fx + dot_d + dot_w * 0.5,
+                fy + dot_d + dot_h * 0.5,
+                dot_w * 0.5,
+                dot_h * 0.5,
                 self.look.input_fg_color,
                 Color::TRANSPARENT,
             );
