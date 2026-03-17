@@ -687,6 +687,8 @@ impl ZuiWindow {
                     let consumed = behavior.input(&panel_ev, &panel_state, state);
                     self.control_tree.put_behavior(panel_id, behavior);
                     if consumed {
+                        self.control_view
+                            .invalidate_painting(&self.control_tree, panel_id);
                         break;
                     }
                 }
@@ -761,6 +763,7 @@ impl ZuiWindow {
                         let name = tree.get(panel_id).map(|p| p.name.as_str()).unwrap_or("?");
                         eprintln!("  >>> CONSUMED by {:?}", name);
                     }
+                    self.view.invalidate_painting(tree, panel_id);
                     break;
                 }
             }
