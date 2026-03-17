@@ -1,29 +1,30 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::foundation::Color;
+use crate::foundation::{Color, Rect};
 use crate::input::{Cursor, InputEvent, InputKey, InputVariant};
-use crate::render::Painter;
+use crate::render::{Painter, BORDER_EDGES_ONLY};
 
 use super::border::{Border, OuterBorderType};
 use super::look::Look;
 use super::radio_button::RadioGroup;
+use super::toolkit_images::with_toolkit_images;
 
-const CIRCLE_SIZE: f64 = 9.0;
-const CIRCLE_LABEL_GAP: f64 = 4.0;
-
-/// Small radio button variant — circle indicator with label text.
+/// Small radio box widget — box indicator with label text.
 ///
 /// C++ `emRadioBox` inherits `emRadioButton : emCheckButton : emButton : emBorder`.
-/// Constructor sets: `OBT_MARGIN`, `LabelAlignment=LEFT`, `ShownBoxed=true`.
-/// The border is used for hit-test geometry (CheckMouse) even though the visual
-/// is a custom circle + label paint.
+/// Constructor sets: `OBT_MARGIN`, `LabelAlignment=LEFT`, `ShownBoxed=true`,
+/// `ShownRadioed=true`.
+///
+/// Paint uses the C++ DoButton boxed+radioed path (emButton.cpp:233-341):
+/// content_rect → box geometry → circular face → radio dot → RadioBox image overlay.
 pub struct RadioBox {
     border: Border,
-    label: String,
     look: Rc<Look>,
     group: Rc<RefCell<RadioGroup>>,
     index: usize,
+    pressed: bool,
+    box_pressed: bool,
     last_w: f64,
     last_h: f64,
 }
@@ -36,10 +37,11 @@ impl RadioBox {
                 .with_label_in_border(false)
                 .with_label_alignment(crate::render::TextAlignment::Left)
                 .with_how_to(true),
-            label: label.to_string(),
             look,
             group,
             index,
+            pressed: false,
+            box_pressed: false,
             last_w: 0.0,
             last_h: 0.0,
         }
@@ -65,58 +67,135 @@ impl RadioBox {
         }
     }
 
-    pub fn paint(&mut self, painter: &mut Painter, _w: f64, _h: f64) {
-        self.last_w = _w;
-        self.last_h = _h;
-
-        let cx = CIRCLE_SIZE / 2.0;
-        let cy = CIRCLE_SIZE / 2.0;
-        let r = CIRCLE_SIZE / 2.0;
-
-        // Outer circle
-        painter.paint_ellipse(cx, cy, r, r, self.look.input_bg_color, Color::TRANSPARENT);
-
-        // Border ring — approximate with a slightly larger ellipse underneath
-        painter.paint_ellipse(cx, cy, r, r, self.look.border_tint(), Color::TRANSPARENT);
-        painter.paint_ellipse(
-            cx,
-            cy,
-            r - 1.0,
-            r - 1.0,
-            self.look.input_bg_color,
-            Color::TRANSPARENT,
-        );
-
-        // Filled dot when selected
-        if self.is_selected() {
-            painter.paint_ellipse(
-                cx,
-                cy,
-                r - 2.5,
-                r - 2.5,
-                self.look.input_hl_color,
-                Color::TRANSPARENT,
-            );
-        }
-
-        // Label
-        if !self.label.is_empty() {
-            let label_x = CIRCLE_SIZE + CIRCLE_LABEL_GAP;
-            let label_h = CIRCLE_SIZE;
-            let label_y = (CIRCLE_SIZE - label_h) * 0.5;
-            painter.paint_text(
-                label_x,
-                label_y,
-                &self.label,
-                label_h,
-                1.0,
-                self.look.fg_color,
-                Color::TRANSPARENT,
-            );
+    /// Compute the box + label geometry from the content rect (C++ lines 235-260).
+    /// Returns (bx0, by0, bw0, lx, ly, lw, lh).
+    fn box_label_geometry(
+        &self,
+        cr: &Rect,
+    ) -> (f64, f64, f64, f64, f64, f64, f64) {
+        let has_label = self.border.has_label();
+        if has_label {
+            let label_tallness = self.border.best_label_tallness().max(0.2);
+            let mut box_w = label_tallness;
+            let mut d = box_w * 0.1;
+            let f = (cr.w / (box_w + d + 1.0)).min(cr.h / label_tallness);
+            box_w *= f;
+            d *= f;
+            let lw = cr.w - box_w - d;
+            let lh = box_w;
+            let lx = cr.x + cr.w - lw;
+            let ly = cr.y + (cr.h - lh) * 0.5;
+            let bw0 = box_w;
+            let bx0 = cr.x;
+            let by0 = cr.y + (cr.h - bw0) * 0.5;
+            (bx0, by0, bw0, lx, ly, lw, lh)
+        } else {
+            let bw0 = cr.w.min(cr.h);
+            let bx0 = cr.x;
+            let by0 = cr.y + (cr.h - bw0) * 0.5;
+            (bx0, by0, bw0, cr.x, cr.y, 0.0, 0.0)
         }
     }
 
-    /// Rounded-rect hit test matching C++ `emButton::CheckMouse`.
+    /// Paint using the C++ DoButton ShownBoxed=true, ShownRadioed=true path.
+    pub fn paint(&mut self, painter: &mut Painter, w: f64, h: f64) {
+        self.last_w = w;
+        self.last_h = h;
+        self.border
+            .paint_border(painter, w, h, &self.look, false, true);
+
+        let cr = self.border.content_rect(w, h, &self.look);
+        let (bx0, by0, bw0, mut lx, mut ly, mut lw, mut lh) =
+            self.box_label_geometry(&cr);
+
+        // Inset for image area: d = bw * 0.13 (C++ line 262).
+        let d = bw0 * 0.13;
+        let mut bx = bx0 + d;
+        let by = by0 + d;
+        let bw = bw0 - 2.0 * d;
+        let bh = bw;
+
+        // Face inset: d = bw * 30/380 (C++ line 268).
+        let d2 = bw * 30.0 / 380.0;
+        let mut fx = bx + d2;
+        let fy = by + d2;
+        let fw = bw - 2.0 * d2;
+        let fh = bh - 2.0 * d2;
+        // C++ line 273: ShownRadioed → fr = fw * 0.5 (fully circular).
+        let fr = fw * 0.5;
+
+        // C++ lines 294-300: Pressed && !BoxPressed nudges box/label.
+        if self.pressed && !self.box_pressed {
+            bx += lw * 0.003;
+            fx += lw * 0.003;
+            lx += lw * 0.003;
+            ly += lh * 0.007;
+            lw *= 0.986;
+            lh *= 0.986;
+        }
+
+        // Paint label to the right of the box.
+        if self.border.has_label() {
+            self.border
+                .paint_label(painter, Rect::new(lx, ly, lw, lh), &self.look, true);
+        }
+
+        // Paint face (InputBgColor) — circular for radio.
+        let face_color = self.look.input_bg_color;
+        painter.paint_round_rect(fx, fy, fw, fh, fr, face_color);
+        painter.set_canvas_color(face_color);
+
+        // Paint radio dot if selected (C++ PaintBoxSymbol, lines 161-167).
+        if self.is_selected() {
+            let dot_d = fw * 0.25;
+            painter.paint_ellipse(
+                fx + dot_d,
+                fy + dot_d,
+                fw - 2.0 * dot_d,
+                fh - 2.0 * dot_d,
+                self.look.input_fg_color,
+                Color::TRANSPARENT,
+            );
+        }
+
+        // Paint radio box image overlay (C++ lines 318-331).
+        // BoxPressed → RadioBoxPressed image, else → RadioBox image.
+        with_toolkit_images(|img| {
+            let box_img = if self.box_pressed {
+                &img.radio_box_pressed
+            } else {
+                &img.radio_box
+            };
+            painter.paint_image_full(bx, by, bw, bh, box_img, 255, Color::TRANSPARENT);
+        });
+
+        // C++ lines 333-340: Pressed && !BoxPressed → GroupInnerBorder overlay.
+        if self.pressed && !self.box_pressed {
+            let r = cr.h * 0.2;
+            with_toolkit_images(|img| {
+                painter.paint_border_image(
+                    cr.x,
+                    cr.y,
+                    cr.w,
+                    cr.h,
+                    r,
+                    r,
+                    r,
+                    r,
+                    &img.group_inner_border,
+                    225,
+                    225,
+                    225,
+                    225,
+                    255,
+                    Color::TRANSPARENT,
+                    BORDER_EDGES_ONLY,
+                );
+            });
+        }
+    }
+
+    /// Rounded-rect hit test matching C++ `emButton::CheckMouse` outer hit.
     fn hit_test(&self, mx: f64, my: f64) -> bool {
         if self.last_w <= 0.0 || self.last_h <= 0.0 {
             return false;
@@ -126,27 +205,90 @@ impl RadioBox {
         super::check_mouse_round_rect(mx, my, &rect, r)
     }
 
+    /// Box-specific hit test matching C++ `emButton::CheckMouse` inBox check.
+    /// Tests whether (mx, my) is within the radio circle's face area.
+    fn box_hit_test(&self, mx: f64, my: f64) -> bool {
+        if self.last_w <= 0.0 || self.last_h <= 0.0 {
+            return false;
+        }
+        let tallness = self.last_h / self.last_w;
+        let cr = self.border.content_rect(1.0, tallness, &self.look);
+        let (_bx0, _by0, bw0, _lx, _ly, _lw, _lh) = self.box_label_geometry(&cr);
+
+        let d = bw0 * 0.13;
+        let bx = cr.x + d;
+        let by = cr.y + (cr.h - bw0) * 0.5 + d;
+        let bw = bw0 - 2.0 * d;
+        let bh = bw;
+
+        let d2 = bw * 30.0 / 380.0;
+        let fx = bx + d2;
+        let fy = by + d2;
+        let fw = bw - 2.0 * d2;
+        let fh = bh - 2.0 * d2;
+        // ShownRadioed: fr = fw * 0.5 (fully circular).
+        let fr = fw * 0.5;
+
+        let dx = ((fx - mx).max(mx - fx - fw) + fr).max(0.0);
+        let dy = ((fy - my).max(my - fy - fh) + fr).max(0.0);
+        dx * dx + dy * dy <= fr * fr
+    }
+
     pub fn input(&mut self, event: &InputEvent) -> bool {
         let trace = super::trace_input_enabled();
         match event.key {
-            InputKey::MouseLeft if event.variant == InputVariant::Release => {
-                let hit = self.hit_test(event.mouse_x, event.mouse_y);
-                if trace {
-                    eprintln!(
-                        "    [RadioBox {:?}] Release mouse=({:.4},{:.4}) last=({:.4},{:.4}) hit={} selected_before={}",
-                        self.label, event.mouse_x, event.mouse_y, self.last_w, self.last_h, hit, self.is_selected()
-                    );
+            InputKey::MouseLeft => match event.variant {
+                InputVariant::Press => {
+                    let hit = self.hit_test(event.mouse_x, event.mouse_y);
+                    if trace {
+                        eprintln!(
+                            "    [RadioBox {:?}] Press mouse=({:.4},{:.4}) last=({:.4},{:.4}) hit={} pressed_before={}",
+                            self.border.caption, event.mouse_x, event.mouse_y, self.last_w, self.last_h, hit, self.pressed
+                        );
+                    }
+                    if !hit {
+                        return false;
+                    }
+                    self.pressed = true;
+                    self.box_pressed =
+                        self.box_hit_test(event.mouse_x, event.mouse_y);
+                    true
                 }
-                if !hit {
-                    return false;
+                InputVariant::Release => {
+                    let hit = self.hit_test(event.mouse_x, event.mouse_y);
+                    if trace {
+                        eprintln!(
+                            "    [RadioBox {:?}] Release mouse=({:.4},{:.4}) last=({:.4},{:.4}) hit={} pressed={} box_pressed={} selected_before={}",
+                            self.border.caption, event.mouse_x, event.mouse_y, self.last_w, self.last_h, hit, self.pressed, self.box_pressed, self.is_selected()
+                        );
+                    }
+                    if !hit {
+                        return false;
+                    }
+                    if self.pressed {
+                        self.pressed = false;
+                        self.box_pressed = false;
+                        self.group.borrow_mut().select(self.index);
+                    }
+                    true
                 }
-                self.group.borrow_mut().select(self.index);
-                true
-            }
-            InputKey::Space if event.variant == InputVariant::Release => {
-                self.group.borrow_mut().select(self.index);
-                true
-            }
+                _ => false,
+            },
+            InputKey::Space => match event.variant {
+                InputVariant::Press => {
+                    self.pressed = true;
+                    true
+                }
+                InputVariant::Release => {
+                    if self.pressed {
+                        self.pressed = false;
+                        self.box_pressed = false;
+                        self.group.borrow_mut().select(self.index);
+                    }
+                    true
+                }
+                _ => false,
+            },
             _ => false,
         }
     }
@@ -156,12 +298,9 @@ impl RadioBox {
     }
 
     pub fn preferred_size(&self) -> (f64, f64) {
-        let w = if self.label.is_empty() {
-            CIRCLE_SIZE
-        } else {
-            CIRCLE_SIZE + CIRCLE_LABEL_GAP + Painter::measure_text_width(&self.label, CIRCLE_SIZE)
-        };
-        (w, CIRCLE_SIZE)
+        let th = 13.0;
+        let tw = Painter::measure_text_width(&self.border.caption, th);
+        self.border.preferred_size_for_content(tw + 8.0, th + 4.0)
     }
 }
 
@@ -181,12 +320,27 @@ mod tests {
         assert!(!rb1.is_selected());
 
         // Mouse clicks require paint; use Space for unit test.
+        rb0.input(&InputEvent::press(InputKey::Space));
+        assert!(!rb0.is_selected()); // Not selected yet on press
         rb0.input(&InputEvent::release(InputKey::Space));
         assert!(rb0.is_selected());
         assert!(!rb1.is_selected());
 
+        rb1.input(&InputEvent::press(InputKey::Space));
         rb1.input(&InputEvent::release(InputKey::Space));
         assert!(!rb0.is_selected());
         assert!(rb1.is_selected());
+    }
+
+    #[test]
+    fn pressed_state_tracks_press_release() {
+        let look = Look::new();
+        let group = RadioGroup::new();
+        let mut rb = RadioBox::new("X", look, group.clone(), 0);
+        assert!(!rb.pressed);
+        rb.input(&InputEvent::press(InputKey::Space));
+        assert!(rb.pressed);
+        rb.input(&InputEvent::release(InputKey::Space));
+        assert!(!rb.pressed);
     }
 }

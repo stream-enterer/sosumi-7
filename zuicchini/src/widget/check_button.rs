@@ -13,6 +13,7 @@ pub struct CheckButton {
     border: Border,
     look: Rc<Look>,
     checked: bool,
+    pressed: bool,
     last_w: f64,
     last_h: f64,
     pub on_check: Option<Box<dyn FnMut(bool)>>,
@@ -27,6 +28,7 @@ impl CheckButton {
                 .with_how_to(true),
             look,
             checked: false,
+            pressed: false,
             last_w: 0.0,
             last_h: 0.0,
             on_check: None,
@@ -64,7 +66,12 @@ impl CheckButton {
         let fh = cr.h - 2.0 * d;
         let fr = (r - d).max(0.0);
 
-        let face_color = self.look.button_bg_color;
+        // C++ non-boxed: face color changes when pressed.
+        let face_color = if self.pressed {
+            self.look.button_pressed()
+        } else {
+            self.look.button_bg_color
+        };
         painter.paint_round_rect(fx, fy, fw, fh, fr, face_color);
         painter.set_canvas_color(face_color);
 
@@ -77,9 +84,10 @@ impl CheckButton {
         let mut lw = fw - 2.0 * dx;
         let mut lh = fh - 2.0 * dy;
 
-        if self.checked {
-            // C++ line 378: ShownChecked → scale 0.983.
-            let s = 0.983;
+        // C++ line 377-382: Pressed → 0.98, ShownChecked → 0.983.
+        // Pressed takes priority.
+        if self.pressed || self.checked {
+            let s = if self.pressed { 0.98 } else { 0.983 };
             lx += (1.0 - s) * 0.5 * lw;
             lw *= s;
             ly += (1.0 - s) * 0.5 * lh;
@@ -94,8 +102,29 @@ impl CheckButton {
         );
 
         // Button overlay image (C++ lines 393-421).
+        // Priority: Pressed → ButtonPressed, ShownChecked → ButtonChecked, else → Button.
         with_toolkit_images(|img| {
-            if self.checked {
+            if self.pressed {
+                // Pressed: ButtonPressed overlay (C++ lines 393-401).
+                painter.paint_border_image(
+                    cr.x,
+                    cr.y,
+                    cr.w,
+                    cr.h,
+                    360.0 / 264.0 * r,
+                    374.0 / 264.0 * r,
+                    r,
+                    r,
+                    &img.button_pressed,
+                    360,
+                    374,
+                    264,
+                    264,
+                    255,
+                    Color::TRANSPARENT,
+                    BORDER_EDGES_ONLY,
+                );
+            } else if self.checked {
                 // ShownChecked: ButtonChecked overlay (C++ lines 402-409).
                 painter.paint_border_image(
                     cr.x,
@@ -153,24 +182,54 @@ impl CheckButton {
     pub fn input(&mut self, event: &InputEvent) -> bool {
         let trace = super::trace_input_enabled();
         match event.key {
-            InputKey::MouseLeft if event.variant == InputVariant::Release => {
-                let hit = self.hit_test(event.mouse_x, event.mouse_y);
-                if trace {
-                    eprintln!(
-                        "    [CheckButton {:?}] Release mouse=({:.4},{:.4}) last=({:.4},{:.4}) hit={} checked_before={}",
-                        self.border.caption, event.mouse_x, event.mouse_y, self.last_w, self.last_h, hit, self.checked
-                    );
+            InputKey::MouseLeft => match event.variant {
+                InputVariant::Press => {
+                    let hit = self.hit_test(event.mouse_x, event.mouse_y);
+                    if trace {
+                        eprintln!(
+                            "    [CheckButton {:?}] Press mouse=({:.4},{:.4}) last=({:.4},{:.4}) hit={} pressed_before={}",
+                            self.border.caption, event.mouse_x, event.mouse_y, self.last_w, self.last_h, hit, self.pressed
+                        );
+                    }
+                    if !hit {
+                        return false;
+                    }
+                    self.pressed = true;
+                    true
                 }
-                if !hit {
-                    return false;
+                InputVariant::Release => {
+                    let hit = self.hit_test(event.mouse_x, event.mouse_y);
+                    if trace {
+                        eprintln!(
+                            "    [CheckButton {:?}] Release mouse=({:.4},{:.4}) last=({:.4},{:.4}) hit={} pressed={} checked_before={}",
+                            self.border.caption, event.mouse_x, event.mouse_y, self.last_w, self.last_h, hit, self.pressed, self.checked
+                        );
+                    }
+                    if !hit {
+                        return false;
+                    }
+                    if self.pressed {
+                        self.pressed = false;
+                        self.toggle();
+                    }
+                    true
                 }
-                self.toggle();
-                true
-            }
-            InputKey::Space if event.variant == InputVariant::Release => {
-                self.toggle();
-                true
-            }
+                _ => false,
+            },
+            InputKey::Space => match event.variant {
+                InputVariant::Press => {
+                    self.pressed = true;
+                    true
+                }
+                InputVariant::Release => {
+                    if self.pressed {
+                        self.pressed = false;
+                        self.toggle();
+                    }
+                    true
+                }
+                _ => false,
+            },
             _ => false,
         }
     }
@@ -240,14 +299,25 @@ mod tests {
         let look = Look::new();
         let mut btn = CheckButton::new("Toggle", look);
         assert!(!btn.is_checked());
-        btn.input(&InputEvent::release(InputKey::MouseLeft));
-        // No paint call → last_w/last_h are 0 → check_mouse returns false
-        // so mouse click is ignored. Use Space (keyboard, no hit test).
-        assert!(!btn.is_checked());
+        // Mouse clicks require paint for hit test; use Space (keyboard).
+        btn.input(&InputEvent::press(InputKey::Space));
+        assert!(!btn.is_checked()); // Not toggled yet on press
         btn.input(&InputEvent::release(InputKey::Space));
-        assert!(btn.is_checked());
+        assert!(btn.is_checked()); // Toggled on release
+        btn.input(&InputEvent::press(InputKey::Space));
         btn.input(&InputEvent::release(InputKey::Space));
         assert!(!btn.is_checked());
+    }
+
+    #[test]
+    fn pressed_state_tracks_press_release() {
+        let look = Look::new();
+        let mut btn = CheckButton::new("CB", look);
+        assert!(!btn.pressed);
+        btn.input(&InputEvent::press(InputKey::Space));
+        assert!(btn.pressed);
+        btn.input(&InputEvent::release(InputKey::Space));
+        assert!(!btn.pressed);
     }
 
     #[test]
@@ -261,7 +331,9 @@ mod tests {
             states_clone.borrow_mut().push(checked);
         }));
 
+        btn.input(&InputEvent::press(InputKey::Space));
         btn.input(&InputEvent::release(InputKey::Space));
+        btn.input(&InputEvent::press(InputKey::Space));
         btn.input(&InputEvent::release(InputKey::Space));
         assert_eq!(*states.borrow(), vec![true, false]);
     }

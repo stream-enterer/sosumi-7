@@ -171,6 +171,7 @@ pub struct RadioButton {
     look: Rc<Look>,
     group: Rc<RefCell<RadioGroup>>,
     index: usize,
+    pressed: bool,
     last_w: f64,
     last_h: f64,
 }
@@ -191,6 +192,7 @@ impl RadioButton {
             look,
             group,
             index,
+            pressed: false,
             last_w: 0.0,
             last_h: 0.0,
         }
@@ -249,7 +251,12 @@ impl RadioButton {
         let fh = cr.h - 2.0 * d;
         let fr = (r - d).max(0.0);
 
-        let face_color = self.look.button_bg_color;
+        // C++ non-boxed: face color changes when pressed.
+        let face_color = if self.pressed {
+            self.look.button_pressed()
+        } else {
+            self.look.button_bg_color
+        };
         painter.paint_round_rect(fx, fy, fw, fh, fr, face_color);
         painter.set_canvas_color(face_color);
 
@@ -263,9 +270,10 @@ impl RadioButton {
         let mut lh = fh - 2.0 * dy;
 
         let checked = self.is_selected();
-        if checked {
-            // C++ line 378: ShownChecked → scale 0.983.
-            let s = 0.983;
+        // C++ line 377-382: Pressed → 0.98, ShownChecked → 0.983.
+        // Pressed takes priority.
+        if self.pressed || checked {
+            let s = if self.pressed { 0.98 } else { 0.983 };
             lx += (1.0 - s) * 0.5 * lw;
             lw *= s;
             ly += (1.0 - s) * 0.5 * lh;
@@ -280,8 +288,29 @@ impl RadioButton {
         );
 
         // Button overlay image (C++ lines 393-421).
+        // Priority: Pressed → ButtonPressed, ShownChecked → ButtonChecked, else → Button.
         with_toolkit_images(|img| {
-            if checked {
+            if self.pressed {
+                // Pressed: ButtonPressed overlay (C++ lines 393-401).
+                painter.paint_border_image(
+                    cr.x,
+                    cr.y,
+                    cr.w,
+                    cr.h,
+                    360.0 / 264.0 * r,
+                    374.0 / 264.0 * r,
+                    r,
+                    r,
+                    &img.button_pressed,
+                    360,
+                    374,
+                    264,
+                    264,
+                    255,
+                    Color::TRANSPARENT,
+                    BORDER_EDGES_ONLY,
+                );
+            } else if checked {
                 // ShownChecked: ButtonChecked overlay (C++ lines 402-409).
                 painter.paint_border_image(
                     cr.x,
@@ -339,24 +368,54 @@ impl RadioButton {
     pub fn input(&mut self, event: &InputEvent) -> bool {
         let trace = super::trace_input_enabled();
         match event.key {
-            InputKey::MouseLeft if event.variant == InputVariant::Release => {
-                let hit = self.hit_test(event.mouse_x, event.mouse_y);
-                if trace {
-                    eprintln!(
-                        "    [RadioButton {:?}] Release mouse=({:.4},{:.4}) last=({:.4},{:.4}) hit={} selected_before={}",
-                        self.border.caption, event.mouse_x, event.mouse_y, self.last_w, self.last_h, hit, self.is_selected()
-                    );
+            InputKey::MouseLeft => match event.variant {
+                InputVariant::Press => {
+                    let hit = self.hit_test(event.mouse_x, event.mouse_y);
+                    if trace {
+                        eprintln!(
+                            "    [RadioButton {:?}] Press mouse=({:.4},{:.4}) last=({:.4},{:.4}) hit={} pressed_before={}",
+                            self.border.caption, event.mouse_x, event.mouse_y, self.last_w, self.last_h, hit, self.pressed
+                        );
+                    }
+                    if !hit {
+                        return false;
+                    }
+                    self.pressed = true;
+                    true
                 }
-                if !hit {
-                    return false;
+                InputVariant::Release => {
+                    let hit = self.hit_test(event.mouse_x, event.mouse_y);
+                    if trace {
+                        eprintln!(
+                            "    [RadioButton {:?}] Release mouse=({:.4},{:.4}) last=({:.4},{:.4}) hit={} pressed={} selected_before={}",
+                            self.border.caption, event.mouse_x, event.mouse_y, self.last_w, self.last_h, hit, self.pressed, self.is_selected()
+                        );
+                    }
+                    if !hit {
+                        return false;
+                    }
+                    if self.pressed {
+                        self.pressed = false;
+                        self.group.borrow_mut().select(self.index);
+                    }
+                    true
                 }
-                self.group.borrow_mut().select(self.index);
-                true
-            }
-            InputKey::Space if event.variant == InputVariant::Release => {
-                self.group.borrow_mut().select(self.index);
-                true
-            }
+                _ => false,
+            },
+            InputKey::Space => match event.variant {
+                InputVariant::Press => {
+                    self.pressed = true;
+                    true
+                }
+                InputVariant::Release => {
+                    if self.pressed {
+                        self.pressed = false;
+                        self.group.borrow_mut().select(self.index);
+                    }
+                    true
+                }
+                _ => false,
+            },
             _ => false,
         }
     }
@@ -485,18 +544,34 @@ mod tests {
         assert!(!r1.is_selected());
         assert!(!r2.is_selected());
 
+        r0.input(&InputEvent::press(InputKey::Space));
+        assert!(!r0.is_selected()); // Not selected yet on press
         r0.input(&InputEvent::release(InputKey::Space));
         assert!(r0.is_selected());
         assert!(!r1.is_selected());
 
+        r2.input(&InputEvent::press(InputKey::Space));
         r2.input(&InputEvent::release(InputKey::Space));
         assert!(!r0.is_selected());
         assert!(r2.is_selected());
 
+        r1.input(&InputEvent::press(InputKey::Space));
         r1.input(&InputEvent::release(InputKey::Space));
         assert!(!r0.is_selected());
         assert!(r1.is_selected());
         assert!(!r2.is_selected());
+    }
+
+    #[test]
+    fn pressed_state_tracks_press_release() {
+        let look = Look::new();
+        let group = RadioGroup::new();
+        let mut r0 = RadioButton::new("A", look, group.clone(), 0);
+        assert!(!r0.pressed);
+        r0.input(&InputEvent::press(InputKey::Space));
+        assert!(r0.pressed);
+        r0.input(&InputEvent::release(InputKey::Space));
+        assert!(!r0.pressed);
     }
 
     #[test]
@@ -512,7 +587,9 @@ mod tests {
         let mut r0 = RadioButton::new("A", look.clone(), group.clone(), 0);
         let mut r1 = RadioButton::new("B", look, group.clone(), 1);
 
+        r0.input(&InputEvent::press(InputKey::Space));
         r0.input(&InputEvent::release(InputKey::Space));
+        r1.input(&InputEvent::press(InputKey::Space));
         r1.input(&InputEvent::release(InputKey::Space));
         assert_eq!(*selections.borrow(), vec![Some(0), Some(1)]);
     }

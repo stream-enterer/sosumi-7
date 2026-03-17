@@ -15,9 +15,9 @@ pub(crate) struct ToolkitImages {
     pub splitter: Image,
     pub splitter_pressed: Image,
     pub check_box: Image,
-    pub _check_box_pressed: Image,
-    pub _radio_box: Image,
-    pub _radio_box_pressed: Image,
+    pub check_box_pressed: Image,
+    pub radio_box: Image,
+    pub radio_box_pressed: Image,
 }
 
 fn decode(data: &[u8], name: &str, expected_w: u32, expected_h: u32) -> Image {
@@ -107,19 +107,19 @@ impl ToolkitImages {
                 380,
                 380,
             ),
-            _check_box_pressed: decode(
+            check_box_pressed: decode(
                 include_bytes!("../../res/toolkit/CheckBoxPressed.tga"),
                 "CheckBoxPressed",
                 380,
                 380,
             ),
-            _radio_box: decode(
+            radio_box: decode(
                 include_bytes!("../../res/toolkit/RadioBox.tga"),
                 "RadioBox",
                 380,
                 380,
             ),
-            _radio_box_pressed: decode(
+            radio_box_pressed: decode(
                 include_bytes!("../../res/toolkit/RadioBoxPressed.tga"),
                 "RadioBoxPressed",
                 380,
