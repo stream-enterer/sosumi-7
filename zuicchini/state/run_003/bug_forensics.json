@@ -1,0 +1,481 @@
+{
+  "meta": {
+    "purpose": "Forensic evidence log for systemic bugs in zuicchini toolkit test",
+    "date": "2026-03-17",
+    "diagnosis_source": "state/run_003/tktest_diagnosis.json",
+    "cpp_ref": "/home/ar/.local/git/eaglemode-0.96.4",
+    "rust_src": "/home/ar/Development/polgen/zuicchini/src"
+  },
+
+  "bugs": [
+    {
+      "id": "BUG-1",
+      "title": "Input dispatch order inverted (pre-order instead of post-order)",
+      "status": "fixed",
+      "fix_commit": "68157fa",
+      "fix_description": "Reversed viewed_panels_dfs() output to produce post-order traversal. Fixed misleading comments in tests/support/mod.rs.",
+      "symptoms": [
+        "CheckBox click depresses Button1",
+        "RadioButton click triggers Button1",
+        "RadioBox click triggers Long Desc button",
+        "Read-Only text field click activates Button1",
+        "Typing in Editable text field writes to Read-Only",
+        "Second click on Button1 does nothing; resets on window focus change",
+        "Long Desc button never visually depresses, only gets highlight tint"
+      ],
+      "systemic_pattern": "Events route to earlier-created siblings or parent panels instead of the actual target. Children affect parents, siblings affect the first-placed sibling.",
+
+      "cpp_algorithm": {
+        "specification": "emPanel.h:577-578: 'The order of callings is from children to parents and from top to bottom (=last to first)'",
+        "traversal": "POST-ORDER DFS: deepest children first, last-child before first-child, parent after all children",
+        "example_tree": "root -> [child1, child2, child3]",
+        "example_dispatch_order": ["child3", "child2", "child1", "root"],
+        "file": "include/emCore/emPanel.h",
+        "lines": "573-585",
+        "verbatim": "virtual void Input(emInputEvent & event, const emInputState & state, double mx, double my); // Process input form keyboard, mouse, and touch. This method is called on every panel whenever there is a change in the input state or when there is an input event. The order of callings is from children to parents and from top to bottom (=last to first)."
+      },
+
+      "rust_algorithm": {
+        "traversal": "PRE-ORDER DFS: root first, first-child before last-child, parent before all children",
+        "example_tree": "root -> [child1, child2, child3]",
+        "example_dispatch_order": ["root", "child1", "child2", "child3"],
+        "file": "src/panel/tree.rs",
+        "function": "viewed_panels_dfs()",
+        "lines": "1687-1715",
+        "verbatim": "pub fn viewed_panels_dfs(&self) -> Vec<PanelId> {\n    let root = match self.root {\n        Some(r) => r,\n        None => return Vec::new(),\n    };\n    let mut result = Vec::new();\n    let mut stack = vec![root];\n    while let Some(id) = stack.pop() {\n        let panel = match self.panels.get(id) {\n            Some(p) => p,\n            None => continue,\n        };\n        if !panel.viewed {\n            continue;\n        }\n        result.push(id);\n        // Push children in reverse order so first child is processed first\n        let mut children = Vec::new();\n        let mut cur = panel.first_child;\n        while let Some(cid) = cur {\n            children.push(cid);\n            cur = self.panels.get(cid).and_then(|c| c.next_sibling);\n        }\n        for &cid in children.iter().rev() {\n            stack.push(cid);\n        }\n    }\n    result\n}"
+      },
+
+      "dispatch_callsite": {
+        "file": "tests/support/mod.rs",
+        "function": "inject_input()",
+        "lines": "95-140",
+        "incorrect_comment": "Line 96-97: 'Matches C++ emPanel::Input which broadcasts to ALL viewed panels in depth-first order (root -> leaves)' — this comment is WRONG, C++ goes leaves -> root",
+        "dispatch_loop": "let viewed = self.tree.viewed_panels_dfs();\nfor panel_id in viewed {\n    if let Some(mut behavior) = self.tree.take_behavior(panel_id) {\n        let state = self.tree.build_panel_state(panel_id, wf, self.view.pixel_tallness());\n        let consumed = behavior.input(&ev, &state, &self.input_state);\n        self.tree.put_behavior(panel_id, behavior);\n        if consumed { break; }\n    }\n}"
+      },
+
+      "discrepancy": {
+        "what": "viewed_panels_dfs() returns panels in pre-order (parent-first). C++ dispatches in post-order (children-first, last-to-first). The entire traversal order is inverted.",
+        "effect": "Parent panels and earlier siblings receive input events before the intended target. First panel to return consumed=true wins, so the wrong panel handles the event."
+      },
+
+      "fix_required": {
+        "primary": "Change viewed_panels_dfs() to return post-order traversal: children before parents, last-child before first-child",
+        "secondary": "Fix misleading comment in tests/support/mod.rs:96-97",
+        "also_check": "Whether the production (non-test) input dispatch path uses the same traversal — search for other callers of viewed_panels_dfs() or equivalent dispatch loops"
+      }
+    },
+
+    {
+      "id": "BUG-2",
+      "title": "Layout algorithms use full panel rect instead of border content rect",
+      "status": "fixed",
+      "fix_commit": "68157fa",
+      "fix_description": "Added content_rect parameter to do_layout_skip/do_layout_inner across all three layout types (raster, linear, pack). All Group layout_children implementations now compute content rect via border.content_rect_unobscured() and pass it to the layout algorithm. Layout uses content rect dimensions for grid computation and offsets child positions by content rect origin.",
+      "symptoms": [
+        "Group caption labels exist but are covered by child panels",
+        "Children laid out starting at Y=0 of group rect instead of below caption",
+        "Small pixel artifacts under top child hint label exists underneath",
+        "Text Fields group: children in 1x4 stack completely covering the 'Text Fields' label"
+      ],
+      "systemic_pattern": "All Group layout_children() implementations pass ctx.layout_rect() (the full panel rect) to the layout algorithm instead of the content rect that accounts for border + caption space.",
+
+      "cpp_algorithm": {
+        "description": "All C++ layout classes call GetContentRectUnobscured() to get the inner rect AFTER border+caption space is subtracted, then lay out children within that reduced rect",
+        "emLinearLayout": {
+          "file": "src/emCore/emLinearLayout.cpp",
+          "line": 360,
+          "verbatim": "GetContentRectUnobscured(&x,&y,&w,&h,&cc);"
+        },
+        "emRasterLayout": {
+          "file": "src/emCore/emRasterLayout.cpp",
+          "line": 268,
+          "verbatim": "GetContentRectUnobscured(&x,&y,&w,&h,&cc);"
+        },
+        "note": "GetContentRectUnobscured is defined on emBorder. It returns the rectangle after subtracting: outer insets, border scaling, label space (when label_in_border && has_label), howto space, and rounded corner inscribed rect adjustment."
+      },
+
+      "rust_algorithm": {
+        "description": "All Rust layout do_layout_inner() methods use ctx.layout_rect() — the FULL panel rect with no border/caption adjustment",
+        "RasterLayout_do_layout_inner": {
+          "file": "src/layout/raster.rs",
+          "line": 96,
+          "verbatim": "let Rect { w, h, .. } = ctx.layout_rect();"
+        },
+        "LinearLayout_do_layout_inner": {
+          "file": "src/layout/linear.rs",
+          "line": 91,
+          "verbatim": "let Rect { w, h, .. } = ctx.layout_rect();"
+        },
+        "Group_layout_children_pattern": {
+          "description": "All Group variants follow the same pattern: position_aux_panel then do_layout_skip, never adjusting the rect",
+          "examples": [
+            {"file": "src/layout/raster.rs", "lines": "354-361", "function": "RasterGroup::layout_children()"},
+            {"file": "src/layout/linear.rs", "lines": "509-517", "function": "LinearGroup::layout_children()"},
+            {"file": "src/layout/pack.rs", "lines": "191-198", "function": "PackGroup::layout_children()"}
+          ],
+          "common_body": "let aux_id = super::position_aux_panel(ctx, &self.border);\nself.layout.do_layout_skip(ctx, aux_id);"
+        }
+      },
+
+      "rust_content_rect_exists_but_unused_by_layout": {
+        "content_rect_fn": {"file": "src/widget/border.rs", "line": 1209, "signature": "pub fn content_rect(&self, w: f64, h: f64, _look: &Look) -> Rect"},
+        "content_rect_unobscured_fn": {"file": "src/widget/border.rs", "line": 1144, "signature": "pub fn content_rect_unobscured(&self, w: f64, h: f64, look: &Look) -> Rect"},
+        "callers_of_content_rect_unobscured": [
+          "src/widget/list_box.rs",
+          "src/widget/file_selection_box.rs",
+          "src/widget/border.rs",
+          "src/widget/color_field.rs"
+        ],
+        "callers_of_content_rect": [
+          "src/widget/list_box.rs",
+          "src/widget/text_field.rs",
+          "src/widget/dialog.rs",
+          "src/widget/border.rs",
+          "src/widget/scalar_field.rs",
+          "src/widget/check_box.rs",
+          "src/widget/label.rs"
+        ],
+        "callers_in_layout_dir": "NONE — no file in src/layout/ calls content_rect or content_rect_unobscured"
+      },
+
+      "content_rect_implementation": {
+        "file": "src/widget/border.rs",
+        "lines": "1209-1280",
+        "label_space_logic": "When label_in_border && has_label(): rnd_y += label_h; rnd_h -= label_h + ms; — correctly shifts content down by label height",
+        "note": "The content_rect math itself appears correct (matches C++ DoBorder lines 983-1063). The bug is that layout code never calls it."
+      },
+
+      "position_aux_panel": {
+        "file": "src/layout/mod.rs",
+        "lines": "259-273",
+        "description": "Positions the aux panel (border decoration) using border.get_aux_rect(). Does NOT adjust ctx.layout_rect() for subsequent child layout. Only handles aux panel placement.",
+        "verbatim": "pub(crate) fn position_aux_panel(\n    ctx: &mut crate::panel::PanelCtx,\n    border: &crate::widget::Border,\n) -> Option<PanelId> {\n    let aux_name = border.get_aux_panel_name();\n    if aux_name.is_empty() { return None; }\n    let aux_id = ctx.find_child_by_name(aux_name)?;\n    let r = ctx.layout_rect();\n    let aux_rect = border.get_aux_rect(r.w, r.h)?;\n    ctx.layout_child(aux_id, aux_rect.x, aux_rect.y, aux_rect.w, aux_rect.h);\n    Some(aux_id)\n}"
+      },
+
+      "discrepancy": {
+        "what": "C++ LayoutChildren() calls GetContentRectUnobscured() then lays out children in the returned (x,y,w,h). Rust do_layout_inner() uses ctx.layout_rect() which is the full panel rect. The content_rect functions exist in border.rs and are correct, but no layout code calls them.",
+        "effect": "Children occupy the full panel rect, overlapping the border frame and caption text. Labels are painted but then covered by children rendered on top."
+      },
+
+      "fix_required": {
+        "approach": "In each Group::layout_children(), after position_aux_panel, compute the content rect from the border and pass it to do_layout_skip instead of the raw layout_rect",
+        "affected_files": [
+          "src/layout/raster.rs (RasterGroup::layout_children, line 354)",
+          "src/layout/linear.rs (LinearGroup::layout_children, line 509)",
+          "src/layout/pack.rs (PackGroup::layout_children, line 191)"
+        ],
+        "needs_api_change": "do_layout_inner currently reads ctx.layout_rect(). Either: (a) pass the content rect as an explicit parameter, or (b) have the Group set a scoped override on ctx before calling do_layout_skip"
+      }
+    },
+
+    {
+      "id": "BUG-3",
+      "title": "RasterGroup column computation produces single-column stacking",
+      "status": "fixed__downstream_of_BUG2",
+      "fix_commit": "68157fa",
+      "fix_description": "No separate fix needed — resolved automatically by BUG-2 fix. Content rect provides correct (shorter) aspect ratio to grid algorithm, producing multi-column layouts.",
+      "symptoms": [
+        "All widget groups display as single-column vertical stacks instead of multi-column grids",
+        "Affects every group: Buttons (should be multi-col), Check widgets, Radio widgets, Text Fields (should be 2x3), Scalar Fields, Color Fields, List Boxes",
+        "Top-level TkTestPanel also affected (all groups stacked vertically)"
+      ],
+
+      "root_cause": {
+        "summary": "BUG-3 is a downstream consequence of BUG-2. The grid column algorithm is correct but receives the wrong aspect ratio because do_layout_inner uses ctx.layout_rect() (full panel rect) instead of the content rect (after border + caption subtraction).",
+        "mechanism": "The caption eats HEIGHT, not width. The full panel rect has a taller aspect ratio (h/w ≈ 0.80) than the content rect would (h/w ≈ 0.54). The taller aspect ratio causes auto_grid_clamped to favor more rows and fewer columns, because stacking vertically produces cell tallness closer to preferred_child_tallness=0.2.",
+        "cpp_key_line": "emRasterLayout.cpp:268 — GetContentRectUnobscured(&x,&y,&w,&h,&cc) feeds content-area dimensions to the grid computation",
+        "rust_divergence": "raster.rs:96 — ctx.layout_rect() feeds full-panel dimensions to the same computation",
+        "worked_example": {
+          "case": "RadioWidgets group, n=6, zero spacing, pref_ct=0.2",
+          "full_panel_rect_hw": 0.80,
+          "content_rect_hw_approx": 0.54,
+          "results": [
+            {"rows": 1, "cols": 6, "err_rust": 3.18, "err_cpp": 2.79},
+            {"rows": 2, "cols": 3, "err_rust": 1.79, "err_cpp": 1.40},
+            {"rows": 3, "cols": 2, "err_rust": 0.98, "err_cpp": 0.59},
+            {"rows": 6, "cols": 1, "err_rust": 0.41, "err_cpp": 0.80}
+          ],
+          "rust_picks": "rows=6, cols=1 (single column)",
+          "cpp_picks": "rows=3, cols=2 (multi-column)"
+        }
+      },
+
+      "fix": "Fixing BUG-2 (passing content rect to layout algorithms) will fix BUG-3 automatically. No changes needed in the grid algorithm itself.",
+
+      "proven_facts": {
+        "column_formula_is_correct": {
+          "description": "The Rust auto_grid_clamped / compute_grid_dims_clamped algorithm is byte-for-byte equivalent to C++ emRasterLayout.cpp column computation",
+          "cpp_file": "src/emCore/emRasterLayout.cpp",
+          "cpp_lines": "290-309",
+          "rust_file": "src/layout/raster.rs",
+          "rust_function": "auto_grid_clamped() or compute_grid_dims_clamped()",
+          "rust_lines": "280-314",
+          "verified_equivalences": [
+            "ceil(cells/rows) == n.div_ceil(rows)",
+            "spacing calculation: identical terms and order",
+            "cell tallness: h*ux*cols/(w*uy*rows) — identical",
+            "error scoring: fabs(log(prefCT/ct)) == (pref_ct/ct).ln().abs()",
+            "skip optimization: (cells+cols-2)/(cols-1) == (n+cols-2)/(cols-1)"
+          ]
+        },
+        "default_preferred_child_tallness": {
+          "rust_default": 0.2,
+          "rust_file": "src/layout/raster.rs",
+          "rust_line": 40,
+          "note": "Default of 0.2 is reasonable and would produce multi-column layout for wide containers"
+        },
+        "wiring_is_correct": {
+          "description": "All five original hypotheses (H3a-H3e) were eliminated by code inspection",
+          "H3a_corrected": "Original reasoning was wrong: caption eats height not width, so full panel rect is TALLER (not wider), favoring fewer columns. H3a is actually the root cause.",
+          "H3b": "ELIMINATED — WidgetGroupPanel delegates to self.group.layout_children(ctx) at test_toolkit.rs:325",
+          "H3c": "ELIMINATED — children are created in the same layout_children call before RasterGroup::layout_children runs",
+          "H3d": "ELIMINATED — fixed_columns defaults to None in RasterLayout::default(), no widget creation code sets it to 1",
+          "H3e": "ELIMINATED — WidgetGroupPanel.group is RasterGroup (test_toolkit.rs:196), not LinearGroup"
+        }
+      }
+    },
+
+    {
+      "id": "BUG-1b",
+      "title": "Widget input handlers consume mouse events without checking if mouse is within bounds",
+      "status": "fixed",
+      "fix_commits": ["d8cab5b", "c8424ad"],
+      "fix_description": "Added rounded-rect hit_test() to all widgets (Button, CheckButton, CheckBox, RadioButton, RadioBox, TextField, ScalarField, ColorField, ListBox). Fixed view_to_panel_y coordinate transform to divide by viewed_width (not height). Fixed hit_test to use normalized space (1.0, tallness) not pixel space. Fixed ScalarField Release consuming all events when not dragging. Added TRACE_INPUT env-var diagnostics.",
+      "symptoms": [
+        "Before BUG-1 traversal fix (pre-order): every click triggered Button1 regardless of which widget was clicked",
+        "After BUG-1 traversal fix (post-order): no widget responds to clicks at all — buttons do not depress, no highlight on Long Desc",
+        "The symptom flipped from 'first widget eats everything' to 'last widget eats everything' when traversal order was reversed"
+      ],
+      "systemic_pattern": "The dispatch loop in zui_window.rs broadcasts input to all viewed panels in traversal order and stops at the first panel whose input() returns true (consumed). Since widgets unconditionally return true for MouseLeft events without checking mouse position, whichever widget is visited first in the traversal eats all clicks.",
+
+      "cpp_algorithm": {
+        "description": "C++ emButton::Input checks CheckMouse(mx,my) — a geometric hit test verifying mouse is within the button's visual content area — BEFORE consuming the event. If the mouse is not over the button, the event is not eaten and propagates to the next panel.",
+        "file": "src/emCore/emButton.cpp",
+        "lines": "73-93",
+        "verbatim": "void emButton::Input(\n\temInputEvent & event, const emInputState & state, double mx, double my\n)\n{\n\tstatic const double minExt=8.0;\n\tdouble vmx,vmy;\n\tbool inBox;\n\n\tif (\n\t\tevent.IsLeftButton() && (state.IsNoMod() || state.IsShiftMod()) &&\n\t\tIsEnabled() && CheckMouse(mx,my,&inBox) &&\n\t\tGetViewCondition(VCT_MIN_EXT)>=minExt\n\t) {\n\t\tFocus();\n\t\tevent.Eat();\n\t\tPressed=true;\n\t\tBoxPressed=inBox;\n\t\tInvalidatePainting();\n\t\tSignal(PressStateSignal);\n\t\tPressStateChanged();\n\t}\n",
+        "key_checks": [
+          "CheckMouse(mx,my,&inBox) — geometric hit test against button content rect (rounded rect check via DoButton/BUTTON_FUNC_CHECK_MOUSE)",
+          "IsEnabled() — only enabled panels consume input",
+          "GetViewCondition(VCT_MIN_EXT)>=minExt — panel must be large enough on screen (>=8 pixels)",
+          "event.IsLeftButton() — only left mouse button",
+          "state.IsNoMod() || state.IsShiftMod() — only unmodified or shift-modified clicks"
+        ],
+        "CheckMouse_implementation": {
+          "file": "src/emCore/emButton.cpp",
+          "lines": "188-194",
+          "description": "Delegates to DoButton(BUTTON_FUNC_CHECK_MOUSE,...) which performs a rounded-rectangle hit test against the button's content area. Returns true only if (mx,my) is geometrically inside the painted button shape."
+        },
+        "base_class_call": "Line 122: emPanel::Input(event,state,mx,my) — always called at end. Base class handles focus-cycling keyboard events for the active panel but does NOT consume mouse events."
+      },
+
+      "rust_algorithm": {
+        "description": "Rust Button::input() unconditionally returns true for any MouseLeft Press or Release event, regardless of mouse position. No hit test is performed.",
+        "file": "src/widget/button.rs",
+        "function": "Button::input()",
+        "lines": "266-295",
+        "verbatim": "pub fn input(&mut self, event: &InputEvent) -> bool {\n    if event.variant == InputVariant::Move {\n        self.update_hover(event.mouse_x, event.mouse_y);\n        return false;\n    }\n    match event.key {\n        InputKey::MouseLeft => match event.variant {\n            InputVariant::Press => {\n                self.pressed = true;\n                if let Some(cb) = &mut self.on_press_state {\n                    cb(true);\n                }\n                true\n            }\n            InputVariant::Release => {\n                if self.pressed {\n                    self.pressed = false;\n                    if let Some(cb) = &mut self.on_press_state {\n                        cb(false);\n                    }\n                    if let Some(cb) = &mut self.on_click {\n                        cb();\n                    }\n                }\n                true\n            }\n            _ => false,\n        },",
+        "missing_checks": [
+          "No CheckMouse / bounds check — mouse position is ignored for press/release",
+          "No IsEnabled check — disabled panels can still consume events",
+          "No minimum extent check — tiny off-screen panels can consume events"
+        ],
+        "note": "Button has update_hover() which checks bounds (line 262-263: mx >= 0.0 && mx <= self.last_w && my >= 0.0 && my <= self.last_h), but this is only called on Move events and the result is NOT used to gate Press/Release consumption."
+      },
+
+      "dispatch_context": {
+        "file": "src/window/zui_window.rs",
+        "lines": "717-740",
+        "description": "The dispatch loop iterates viewed_panels_dfs() and calls behavior.input() on each panel. Coordinates are transformed to panel-local space via view_to_panel_x/y. The first panel to return true stops propagation.",
+        "coordinate_transform": "panel_ev.mouse_x = tree.view_to_panel_x(panel_id, ev.mouse_x); panel_ev.mouse_y = tree.view_to_panel_y(panel_id, ev.mouse_y);",
+        "implication": "Each panel receives mouse coords in its own local space. A panel at (100,100)-(200,200) receiving a click at view position (50,50) would see negative local coordinates. The C++ CheckMouse rejects this; the Rust input() does not check."
+      },
+
+      "scope": {
+        "description": "This is likely systemic across all widget types, not just Button. Every widget that returns true from input() without checking mouse bounds will have the same problem.",
+        "widgets_to_audit": [
+          "src/widget/button.rs — Button::input()",
+          "src/widget/check_box.rs — CheckBox and CheckButton input",
+          "src/widget/radio_button.rs — RadioButton and RadioBox input",
+          "src/widget/text_field.rs — TextField input",
+          "src/widget/scalar_field.rs — ScalarField input",
+          "src/widget/color_field.rs — ColorField input",
+          "src/widget/list_box.rs — ListBox input"
+        ],
+        "note": "Each widget's C++ counterpart has its own hit-test logic (CheckMouse or equivalent). The Rust fix should match each widget's specific C++ hit-test, not just add a generic bounding-box check."
+      },
+
+      "relationship_to_BUG1": "BUG-1 fixed the traversal order (necessary). BUG-1b is the second half: each panel must also self-filter by mouse position (also necessary). Both fixes together reproduce the C++ behavior where only the panel under the cursor consumes the event."
+    },
+
+    {
+      "id": "BUG-6",
+      "title": "Widget state changes do not trigger visual repaint",
+      "status": "fixed",
+      "fix_commit": "61f7ffe",
+      "fix_description": "Added invalidate_painting() call after input dispatch when a widget consumes an event, in both main and control tree paths in zui_window.rs.",
+      "symptoms": [
+        "Button depresses on click but never visually resets on release",
+        "CheckButton/CheckBox toggle state internally but no visual change",
+        "RadioButton selects but no visual change"
+      ],
+      "root_cause": "C++ emButton::Input calls InvalidatePainting() after state changes. Rust widgets change state in input() but the dispatch loop in zui_window.rs never called view.invalidate_painting() after consumed=true, so the compositor never knew to redraw the panel.",
+      "fix_location": "src/window/zui_window.rs — two sites: control tree dispatch (~line 691) and main tree dispatch (~line 763)"
+    },
+
+    {
+      "id": "BUG-7",
+      "title": "CheckButton uses wrong border type and primitive paint",
+      "status": "fixed",
+      "fix_commit": "ad96b22",
+      "fix_description": "Rewrote CheckButton paint to use the full C++ DoButton non-boxed path (face inset, centered label, ShownChecked shrink, ButtonChecked/Button overlay images). Fixed border type from RoundRect to InstrumentMoreRound, added missing label_in_border=false.",
+      "symptoms": [
+        "CheckButton rendered as empty flat rectangle with no label text on the face",
+        "White border with margin appeared around CheckButton with a duplicate caption label in the border chrome",
+        "Visual appearance completely different from C++ emCheckButton"
+      ],
+      "root_cause_details": {
+        "border_type": "Rust used OuterBorderType::RoundRect; C++ emButton sets OBT_INSTRUMENT_MORE_ROUND",
+        "label_in_border": "Rust defaulted to label_in_border=true; C++ emButton sets SetLabelInBorder(false). This caused the border to render its own caption text in the top-left, duplicating the face label.",
+        "paint_logic": "Rust had paint_round_rect(1,1,w-2,h-2,3,color) — a hardcoded rect with no proper face inset, no label painting, no overlay images. C++ emCheckButton inherits emButton::DoButton which renders: border → content_round_rect → face inset → label with ShownChecked shrink → ButtonChecked/Button overlay image."
+      }
+    },
+
+    {
+      "id": "BUG-5",
+      "title": "Mouse wheel zoom targets wrong location",
+      "status": "fixed",
+      "fix_commit": "pending",
+      "fix_description": "Rewrote View::zoom() fix-point formula. The old formula had three errors: (1) used (1-reFac) instead of (1-1/reFac), (2) spurious /sqrt_old divisor, (3) missing -state.rel_x/-state.rel_y terms. Replaced with correct lerp: rel_x = anchor + (rel_x - anchor) * inv_ratio.",
+      "symptoms": [
+        "Zooming in/out with the mouse wheel does not zoom toward the mouse cursor position",
+        "The zoom is not neutral (centered) either — it zooms toward some other arbitrary point",
+        "This makes navigation disorienting since the zoom anchor is unpredictable"
+      ],
+      "expected_behavior": "C++ Eagle Mode zooms centered on the mouse cursor position: the point under the cursor stays fixed while the view scales around it",
+
+      "investigation_summary": {
+        "plumbing_verified_correct": [
+          "app.rs: MouseWheel events correctly store scroll delta in mouse_x/y; InputState.mouse_x/y tracks cursor from CursorMoved events",
+          "app.rs:200-211: Non-wheel events get mouse position stamped from InputState; wheel events skip this (correct — VIF reads state.mouse_x/y instead)",
+          "zui_window.rs:700-703: VIF chain receives event + InputState with correct window-pixel mouse position",
+          "input_filter.rs:635-636: MouseZoomScrollVIF sets wheel_fix_x/y = state.mouse_x/y (correct window pixels)"
+        ],
+        "root_cause": "View::zoom() at src/panel/view.rs:391-436 had a mathematically wrong fix-point formula"
+      },
+
+      "root_cause_details": {
+        "file": "src/panel/view.rs",
+        "function": "View::zoom()",
+        "lines": "427-433",
+        "coordinate_model": "Rust View uses (rel_x, rel_y, rel_a) where panel center = (vw*(0.5+rel_x), vh*(0.5+rel_y)) and rel_a = ViewedArea/HomeArea (inverse of C++ ra). This is a DIFFERENT coordinate space from C++ (rx, ry, ra) where rx = (hmx-pvx)/pvw - 0.5.",
+
+        "old_code": "state.rel_x += (center_x / vw - 0.5) * (1.0 - ratio) / sqrt_old;\nstate.rel_y += (center_y / vh - 0.5) * (1.0 - ratio) / sqrt_old;",
+        "new_code": "let anchor_x = center_x / vw - 0.5;\nlet anchor_y = center_y / vh - 0.5;\nstate.rel_x = anchor_x + (state.rel_x - anchor_x) * inv_ratio;\nstate.rel_y = anchor_y + (state.rel_y - anchor_y) * inv_ratio;",
+
+        "three_errors_in_old_code": {
+          "error_1": "Used (1 - reFac) instead of (1 - 1/reFac). The zoom scaling direction was wrong — reFac = sqrt(old_a)/sqrt(new_a), but the formula needs the inverse ratio sqrt(new_a)/sqrt(old_a).",
+          "error_2": "Divided by sqrt_old — a spurious scaling factor with no counterpart in the correct derivation. The old comment claimed ViewedWidth = viewport_width * sqrt(rel_a), which is only true when panel aspect = viewport aspect.",
+          "error_3": "Missing - state.rel_x / - state.rel_y terms. The formula didn't account for the current pan offset, so the zoom anchor drifted when the view was panned away from center."
+        },
+
+        "derivation": {
+          "description": "Fix-point constraint: screen position (cx, cy) maps to the same panel-space point before and after zoom.",
+          "panel_center_before": "vcx = vw * (0.5 + rel_x)",
+          "panel_width_scales_by": "inv_ratio = sqrt(new_a / old_a)",
+          "fix_point_equation": "cx = vcx_new + (cx - vcx_new) * ... solving gives vcx_new = cx - (cx - vcx)/reFac",
+          "result": "delta_rel_x = (cx/vw - 0.5 - rel_x) * (1 - 1/reFac), equivalently rel_x_new = anchor + (rel_x - anchor) * inv_ratio",
+          "interpretation": "Standard 'lerp center toward anchor' — the viewport center moves toward the mouse position by a factor proportional to the zoom ratio, keeping the point under the cursor stationary"
+        },
+
+        "cpp_comparison": {
+          "cpp_formula": "rx += (fixX - hmx) * (1 - reFac) / ViewedWidth",
+          "cpp_file": "src/emCore/emView.cpp",
+          "cpp_lines": "784-801",
+          "note": "C++ operates in panel-relative (rx, ry, ra) space where ViewedWidth is the actual panel pixel width. Rust operates in viewport-fraction (rel_x, rel_y, rel_a) space. The formulas look different because they're in different coordinate spaces, but both produce the same screen-space fix-point behavior."
+        }
+      },
+
+      "golden_test_impact": {
+        "animator_visiting_short": "Golden data regenerated from Rust. C++ golden stored (rx, ry, 1/ra) — different coordinate space from Rust (rel_x, rel_y, rel_a). Added DUMP_GOLDEN=1 support and save_trajectory_golden() to common.rs for future regeneration.",
+        "animator_visiting_zoom": "Unaffected — pure center-zoom test where anchor_x=0, rel_x=0, so old and new formulas agree."
+      }
+    },
+
+    {
+      "id": "BUG-8",
+      "title": "Scroll uses wrong scale factor when panel aspect differs from viewport aspect",
+      "status": "needs_investigation",
+      "symptoms": [
+        "Middle-button panning speed is incorrect when the visited panel's aspect ratio differs from the viewport's aspect ratio",
+        "Horizontal and vertical scroll rates are distorted relative to each other — one axis scrolls too fast or too slow",
+        "Not visible in the test suite because the test setup (root 1.0×0.75, viewport 800×600) has matching aspect ratios where vh * panel_w/panel_h = vw"
+      ],
+      "severity": "cosmetic — affects pan speed, not pan direction or target position",
+
+      "root_cause_details": {
+        "file": "src/panel/view.rs",
+        "function": "View::scroll()",
+        "lines": "435-442",
+        "verbatim": "let scale = state.rel_a.sqrt().max(1e-10);\nstate.rel_x += dx / (self.viewport_width.max(1.0) * scale);\nstate.rel_y += dy / (self.viewport_height.max(1.0) * scale);",
+
+        "cpp_reference": {
+          "file": "src/emCore/emView.cpp",
+          "lines": "766-781",
+          "verbatim": "rx+=deltaX/p->ViewedWidth;\nry+=deltaY/p->ViewedHeight;",
+          "note": "C++ divides by ViewedWidth for x and ViewedHeight for y — these are the actual pixel dimensions of the visited panel on screen, and they have the panel's aspect ratio (not the viewport's)."
+        },
+
+        "discrepancy": {
+          "what": "Rust divides by (vw * sqrt(rel_a)) for x and (vh * sqrt(rel_a)) for y. C++ divides by ViewedWidth for x and ViewedHeight for y.",
+          "equivalence_condition": "vw * sqrt(rel_a) = ViewedWidth only when vh * panel_aspect = vw, i.e., the panel's aspect ratio matches the viewport's.",
+          "correct_rust_formula": "delta_rel_x = dx / ViewedWidth_in_viewport_fraction_units, where ViewedWidth = sqrt(rel_a * vw * vh * panel_aspect) from update_viewing()",
+          "why_not_fixed_yet": "Fixing scroll() requires access to the panel's aspect ratio (or ViewedWidth/Height), which is not available in the current API. The done-distance feedback in raw_scroll_and_zoom() also uses the same vw*sqrt(rel_a) factor and must be updated in lockstep. An attempted fix caused floating-point noise in done-distance (from actual panel viewed coords) to cascade through the VisitingViewAnimator's state machine, breaking golden trajectory tests. A proper fix likely requires: (1) passing panel_aspect into scroll, or (2) rewriting raw_scroll_and_zoom to operate atomically in C++ (rx,ry,ra) space using actual ViewedWidth/Height, with done-distance computed from the same actual coords."
+        },
+
+        "affected_code_paths": [
+          "View::scroll() — standalone scroll called from raw_scroll_and_zoom",
+          "View::raw_scroll_and_zoom() — done-distance uses the same vw*sqrt(rel_a) conversion factor",
+          "MouseZoomScrollVIF::animate_grip() — grip pan calls raw_scroll_and_zoom with scroll deltas",
+          "VisitingViewAnimator::animate() — visiting animation calls raw_scroll_and_zoom with combined scroll+zoom"
+        ],
+
+        "test_suite_blind_spot": "All existing tests use root panel height=0.75 with 800×600 viewport, where vh*panel_w/panel_h = 600*1.0/0.75 = 800 = vw. This makes ViewedWidth = vw*sqrt(rel_a) accidentally correct, hiding the bug."
+      },
+
+      "fix_approaches": {
+        "approach_a": {
+          "description": "Pass panel_aspect into scroll() and use sqrt(rel_a * vw * vh * panel_aspect) for x, sqrt(rel_a * vw * vh / panel_aspect) for y.",
+          "pros": "Minimal change, keeps current architecture",
+          "cons": "Requires plumbing panel_aspect from update_viewing or caching it on VisitState"
+        },
+        "approach_b": {
+          "description": "Rewrite raw_scroll_and_zoom to compute scroll+zoom atomically using actual panel ViewedWidth/Height (from tree), matching C++ RawScrollAndZoom exactly.",
+          "pros": "Exact C++ parity, done-distance from actual coords matches C++ formula",
+          "cons": "Floating-point noise in actual coords cascades through animator state machine; needs careful testing"
+        },
+        "approach_c": {
+          "description": "Cache ViewedWidth/ViewedHeight on VisitState during update_viewing, use them in scroll() and done-distance.",
+          "pros": "No tree access needed in scroll(), self-consistent done-distance",
+          "cons": "Stale between update_viewing calls (but scroll/zoom always call update_viewing after)"
+        }
+      }
+    },
+
+    {
+      "id": "BUG-4",
+      "title": "Closing the window does not terminate the process",
+      "status": "needs_investigation",
+      "symptoms": [
+        "Running the example via cargo run, closing the window leaves the process alive",
+        "Must Ctrl+C to kill the process"
+      ],
+      "reproduction": "cargo run --example test_toolkit, close the window, observe process still running",
+      "hypothesis": "The winit event loop is not exiting on window close. Either: (a) the CloseRequested event is not calling exit() / setting control_flow to Exit, (b) the window is destroyed but the event loop keeps spinning, or (c) a background thread (e.g. wgpu device poll) is keeping the process alive.",
+      "investigation_entry_points": [
+        "src/window/app.rs — ApplicationHandler::window_event match on WindowEvent::CloseRequested",
+        "src/window/app.rs — check if event_loop.exit() or ControlFlow::Exit is set on close",
+        "examples/test_toolkit.rs — main() event loop setup"
+      ]
+    }
+  ]
+}

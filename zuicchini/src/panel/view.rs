@@ -400,37 +400,27 @@ impl View {
             if (new_a - old_a).abs() < 1e-15 {
                 return;
             }
-            // Fix-point: before zoom, viewport point (center_x, center_y) maps to
-            // panel_point = (center_x - rel_x * vw) / (rel_a * vw)
-            // After zoom with new_a, we want the same panel_point, so solve for new rel_x:
-            // new_rel_x = rel_x + center_x/vw * (1.0 - old_a/new_a) ... simplified:
-            // The key relation: rel_x_new = center_x/vw + (rel_x - center_x/vw) * (old_a / new_a)
-            // But our coords use: panel_abs_x = viewport_origin_x + rel_x * viewport_w
-            // and scale = rel_a (area). Width scale = sqrt(rel_a * aspect_ratio) ... actually
-            // let's use a simpler model: rel_x/rel_y are viewport-relative scroll offsets,
-            // rel_a is an area factor. The actual mapping is that the visited panel's
-            // viewport rect has center at (rel_x, rel_y) offset and area factor rel_a.
+            // Fix-point zoom: the screen point (center_x, center_y) must map to
+            // the same panel-space point before and after the zoom.
             //
-            // For fix-point zoom around (cx, cy) in viewport [0..vw, 0..vh]:
-            // normalize center to [0..1]: ncx = cx / vw, ncy = cy / vh
-            // The visited panel has viewport-space position based on (rel_x, rel_y, rel_a).
-            // After changing rel_a, we adjust rel_x/rel_y to keep the same point under (cx,cy).
+            // Panel center in viewport: (vw*(0.5+rel_x), vh*(0.5+rel_y)).
+            // Visited panel width scales as sqrt(rel_a), so after zoom the
+            // panel grows by inv_ratio = sqrt(new_a)/sqrt(old_a).
+            // Solving the fix-point constraint gives:
+            //   rel_x_new = anchor_x + (rel_x - anchor_x) * inv_ratio
+            // where anchor_x = center_x/vw - 0.5 (fix point in viewport fraction).
             //
-            // In the C++ code, the transform is: abs_x = view_x + rel_x * view_w, etc.
-            // So the point at viewport fraction f maps to panel space via the inverse.
-            // After zoom, we need: f = (panel_point - new_abs_x) / new_abs_w
-            // which should equal: f = (panel_point - old_abs_x) / old_abs_w
-            //
-            // C++ formula: rx += (fixX - hmx) * (1 - reFac) / ViewedWidth
-            // In Rust terms: ViewedWidth = viewport_width * sqrt(rel_a),
-            // reFac = sqrt(old_a) / sqrt(new_a), hmx = viewport_width / 2.
+            // C++ emView::Zoom divides by ViewedWidth/ViewedHeight; here we
+            // work in viewport-fraction space so the panel geometry cancels out.
             let sqrt_old = old_a.sqrt();
             let sqrt_new = new_a.sqrt();
-            let ratio = sqrt_old / sqrt_new;
+            let inv_ratio = sqrt_new / sqrt_old;
             let vw = self.viewport_width.max(1.0);
             let vh = self.viewport_height.max(1.0);
-            state.rel_x += (center_x / vw - 0.5) * (1.0 - ratio) / sqrt_old;
-            state.rel_y += (center_y / vh - 0.5) * (1.0 - ratio) / sqrt_old;
+            let anchor_x = center_x / vw - 0.5;
+            let anchor_y = center_y / vh - 0.5;
+            state.rel_x = anchor_x + (state.rel_x - anchor_x) * inv_ratio;
+            state.rel_y = anchor_y + (state.rel_y - anchor_y) * inv_ratio;
             state.rel_a = new_a;
             self.viewport_changed = true;
         }
@@ -443,8 +433,11 @@ impl View {
         // VIEW-003: Signal abort for any active animator (C++ AbortActiveAnimator)
         self.needs_animator_abort = true;
         if let Some(state) = self.visit_stack.last_mut() {
-            // Convert pixel deltas to view-coordinate space by dividing by the
-            // panel's viewed size (viewport * sqrt(rel_a)), matching C++ Scroll.
+            // Convert pixel deltas to viewport-fraction units by dividing by
+            // the panel's viewed size (viewport * sqrt(rel_a)), matching C++
+            // Scroll which divides by ViewedWidth/ViewedHeight.
+            // NOTE: This is only exact when the panel aspect matches the
+            // viewport aspect.  A general fix requires ViewedWidth/Height.
             let scale = state.rel_a.sqrt().max(1e-10);
             state.rel_x += dx / (self.viewport_width.max(1.0) * scale);
             state.rel_y += dy / (self.viewport_height.max(1.0) * scale);

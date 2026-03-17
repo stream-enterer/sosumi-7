@@ -302,6 +302,9 @@ fn animator_visiting_short() {
     let (mut tree, mut view) = setup_anim_view();
     let actual = run_visiting_trajectory(&mut tree, &mut view, 0.1, 0.1, 2.0, 60);
 
+    if dump_golden_enabled() {
+        save_trajectory_golden("animator_visiting_short", &actual);
+    }
     compare_trajectory(&actual, &golden, 1e-4)
         .unwrap_or_else(|e| panic!("animator_visiting_short: {e}"));
 }

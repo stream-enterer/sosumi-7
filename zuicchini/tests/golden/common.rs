@@ -671,6 +671,22 @@ pub fn load_trajectory_golden(name: &str) -> Vec<TrajectoryStep> {
     steps
 }
 
+/// Save a trajectory as golden data (same binary format as C++ generator).
+pub fn save_trajectory_golden(name: &str, steps: &[TrajectoryStep]) {
+    let dir = golden_dir().join("trajectory");
+    std::fs::create_dir_all(&dir).expect("Cannot create trajectory golden dir");
+    let path = dir.join(format!("{name}.trajectory.golden"));
+    let mut data = Vec::with_capacity(4 + steps.len() * 24);
+    data.extend_from_slice(&(steps.len() as u32).to_le_bytes());
+    for s in steps {
+        data.extend_from_slice(&s.vel_x.to_le_bytes());
+        data.extend_from_slice(&s.vel_y.to_le_bytes());
+        data.extend_from_slice(&s.vel_z.to_le_bytes());
+    }
+    std::fs::write(&path, &data).unwrap_or_else(|e| panic!("Cannot write {}: {e}", path.display()));
+    eprintln!("Saved trajectory golden: {}", path.display());
+}
+
 /// Compare trajectory against golden data. Returns error with details on first mismatch.
 pub fn compare_trajectory(
     actual: &[TrajectoryStep],
