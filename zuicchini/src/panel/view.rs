@@ -66,6 +66,8 @@ pub struct View {
     seek_pos_child_name: String,
     /// Pixel tallness (height/width ratio of a single pixel).
     pixel_tallness: f64,
+    /// Pixel shape ratio (C++ HomePixelTallness). Always 1.0 for square pixels.
+    home_pixel_tallness: f64,
     /// Dirty rectangles accumulated by invalidate_painting calls.
     dirty_rects: Vec<Rect>,
     /// Whether the view title needs to be refreshed.
@@ -126,6 +128,7 @@ impl View {
             } else {
                 1.0
             },
+            home_pixel_tallness: 1.0,
             dirty_rects: Vec::new(),
             title_invalid: false,
             cursor_invalid: false,
@@ -509,8 +512,8 @@ impl View {
     pub fn raw_zoom_out(&mut self, tree: &mut PanelTree) {
         let root_h = tree.get_height(self.root);
         let rel_a = {
-            let a1 = self.viewport_width * root_h / self.pixel_tallness / self.viewport_height;
-            let a2 = self.viewport_height / root_h * self.pixel_tallness / self.viewport_width;
+            let a1 = self.viewport_width * root_h / self.home_pixel_tallness / self.viewport_height;
+            let a2 = self.viewport_height / root_h * self.home_pixel_tallness / self.viewport_width;
             a1.max(a2)
         };
         if let Some(state) = self.visit_stack.last_mut() {
@@ -525,8 +528,8 @@ impl View {
     /// Compute the rel_a that makes the viewport fully contain the root panel.
     fn zoom_out_rel_a(&self, tree: &PanelTree) -> f64 {
         let root_h = tree.get_height(self.root);
-        let a1 = self.viewport_width * root_h / self.pixel_tallness / self.viewport_height;
-        let a2 = self.viewport_height / root_h * self.pixel_tallness / self.viewport_width;
+        let a1 = self.viewport_width * root_h / self.home_pixel_tallness / self.viewport_height;
+        let a2 = self.viewport_height / root_h * self.home_pixel_tallness / self.viewport_width;
         a1.max(a2)
     }
 
@@ -2032,9 +2035,6 @@ impl View {
         let goal_x = hx + hw * 0.5;
         let goal_y = hy + hh * 0.5;
 
-        // Pixel tallness correction for arrow rendering
-        let pt = self.pixel_tallness;
-
         // Build the perimeter as 8 segments: 4 bows + 4 lines
         // Walk clockwise starting from top-right corner midpoint
         // Segment order: top-right bow, right line, bottom-right bow,
@@ -2079,7 +2079,6 @@ impl View {
                     arrow_distance,
                     color,
                     shadow_color,
-                    pt,
                     self.viewport_width,
                     self.viewport_height,
                 );
@@ -2097,7 +2096,6 @@ impl View {
                     arrow_distance,
                     color,
                     shadow_color,
-                    pt,
                     self.viewport_width,
                     self.viewport_height,
                 );
@@ -2221,8 +2219,8 @@ fn compute_arrow_vertices(
     goal_y: f64,
     arrow_size: f64,
 ) -> [(f64, f64); 4] {
-    let gdx = goal_x - x;
-    let gdy = goal_y - y;
+    let gdx = x - goal_x;
+    let gdy = y - goal_y;
     let glen = (gdx * gdx + gdy * gdy).sqrt().max(1e-10);
     let dx = gdx / glen;
     let dy = gdy / glen;
@@ -2268,12 +2266,11 @@ fn paint_highlight_arrow(
     arrow_size: f64,
     color: Color,
     shadow_color: Color,
-    pt: f64,
 ) {
     let sd = arrow_size * 0.2;
 
     // Shadow polygon (offset toward bottom-right)
-    let shadow_verts = compute_arrow_vertices(x + sd, y + sd * pt, goal_x, goal_y, arrow_size);
+    let shadow_verts = compute_arrow_vertices(x + sd, y + sd, goal_x, goal_y, arrow_size);
     painter.paint_polygon(&shadow_verts, shadow_color, Color::TRANSPARENT);
 
     // Arrow polygon
@@ -2295,7 +2292,6 @@ fn paint_highlight_arrows_on_line(
     arrow_distance: f64,
     color: Color,
     shadow_color: Color,
-    pt: f64,
     vw: f64,
     vh: f64,
 ) {
@@ -2332,7 +2328,6 @@ fn paint_highlight_arrows_on_line(
             arrow_size,
             color,
             shadow_color,
-            pt,
         );
     }
 }
@@ -2351,7 +2346,6 @@ fn paint_highlight_arrows_on_bow(
     arrow_distance: f64,
     color: Color,
     shadow_color: Color,
-    pt: f64,
     vw: f64,
     vh: f64,
 ) {
@@ -2394,7 +2388,6 @@ fn paint_highlight_arrows_on_bow(
             arrow_size,
             color,
             shadow_color,
-            pt,
         );
     }
 }
@@ -2798,9 +2791,10 @@ mod tests {
         view.raw_zoom_out(&mut tree);
 
         let state = view.current_visit();
-        // C++ formula: max(W*H_root/pt/H, H/H_root*pt/W)
-        let pt = 600.0 / 800.0;
-        let expected = (800.0 * 0.75 / pt / 600.0_f64).max(600.0 / 0.75 * pt / 800.0);
+        // C++ formula: max(W*H_root/hpt/H, H/H_root*hpt/W)
+        // home_pixel_tallness = 1.0 (square pixels)
+        let hpt = 1.0;
+        let expected = (800.0 * 0.75 / hpt / 600.0_f64).max(600.0 / 0.75 * hpt / 800.0);
         assert!(
             (state.rel_a - expected).abs() < 0.001,
             "rel_a should be {expected}, got {}",
@@ -2846,21 +2840,21 @@ mod tests {
 
     #[test]
     fn test_highlight_arrow_vertices() {
-        // Arrow at (100, 100) pointing toward goal at (100, 50) — straight up.
+        // Arrow at (100, 100) with goal at (100, 50).
+        // C++ direction = away from goal: dx=0, dy=+1 (pointing down).
         let verts = compute_arrow_vertices(100.0, 100.0, 100.0, 50.0, 11.0);
-        // dx=0, dy=-1
         // tip: (100, 100)
         assert!((verts[0].0 - 100.0).abs() < 0.01);
         assert!((verts[0].1 - 100.0).abs() < 0.01);
-        // right: (100 + 0*11 - (-1)*5.5*0.5, 100 + (-1)*11 + 0*5.5*0.5) = (102.75, 89)
-        assert!((verts[1].0 - 102.75).abs() < 0.01);
-        assert!((verts[1].1 - 89.0).abs() < 0.01);
-        // notch: (100, 100 + (-1)*8.8) = (100, 91.2)
+        // right: (100 + 0*11 - 1*5.5*0.5, 100 + 1*11 + 0*5.5*0.5) = (97.25, 111)
+        assert!((verts[1].0 - 97.25).abs() < 0.01);
+        assert!((verts[1].1 - 111.0).abs() < 0.01);
+        // notch: (100, 100 + 1*8.8) = (100, 108.8)
         assert!((verts[2].0 - 100.0).abs() < 0.01);
-        assert!((verts[2].1 - 91.2).abs() < 0.01);
-        // left: (100 + 0*11 + (-1)*5.5*0.5, 100 + (-1)*11 - 0*5.5*0.5) = (97.25, 89)
-        assert!((verts[3].0 - 97.25).abs() < 0.01);
-        assert!((verts[3].1 - 89.0).abs() < 0.01);
+        assert!((verts[2].1 - 108.8).abs() < 0.01);
+        // left: (100 + 0*11 + 1*5.5*0.5, 100 + 1*11 - 0*5.5*0.5) = (102.75, 111)
+        assert!((verts[3].0 - 102.75).abs() < 0.01);
+        assert!((verts[3].1 - 111.0).abs() < 0.01);
     }
 
     #[test]

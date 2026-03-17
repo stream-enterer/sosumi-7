@@ -137,7 +137,13 @@ impl ZuiWindow {
         let control_view = View::new(control_root, w as f64, 0.0);
 
         let vif_chain: Vec<Box<dyn ViewInputFilter>> = vec![
-            Box::new(MouseZoomScrollVIF::new()),
+            {
+                let mut mouse_vif = MouseZoomScrollVIF::new();
+                let zflpp = view.get_zoom_factor_log_per_pixel();
+                mouse_vif.set_mouse_anim_params(1.0, 0.25, zflpp);
+                mouse_vif.set_wheel_anim_params(1.0, 0.25, zflpp);
+                Box::new(mouse_vif)
+            },
             Box::new(KeyboardZoomScrollVIF::new()),
         ];
 

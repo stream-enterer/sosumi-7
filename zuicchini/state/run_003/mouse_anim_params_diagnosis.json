@@ -1,0 +1,58 @@
+{
+  "diagnosed_at": "2026-03-16T18:00:00Z",
+  "context": "Discovered during R2-5 fix implementation. The plan prescribed calling set_mouse_anim_params(1.0, 0.25, zflpp) on grip start, mirroring the wheel fix. This broke test_grip_no_coasting_when_kinetic_disabled because it unconditionally enabled kinetic friction. Investigation revealed the underlying issue is broader: there is no mechanism to pass CoreConfig kinetic settings to the input filter.",
+  "bugs": [
+    {
+      "bug_id": "R3-1",
+      "title": "Mouse spring constant is 0 — set_mouse_anim_params never called in production",
+      "root_cause": "Same class of bug as R2-5 (wheel). MouseZoomScrollVIF::mouse_spring_const is initialized to 0.0 (input_filter.rs:105) and set_mouse_anim_params (input_filter.rs:249) is never called outside tests. With spring_const=0: w=sqrt(0)=0, decay=exp(0)=1.0. The gripped-phase spring equation (input_filter.rs:338-369) degenerates — the spring never damps. The else branch (line 344: mouse_spring_const < 1e5) fires and snaps the spring to zero each frame, so grip dragging still works via the fallback path (velocity = extension / dt), but there is no critically-damped spring smoothing. The drag feels 'instant teleport' rather than the smooth elastic response C++ provides.",
+      "category": "input",
+      "severity": "minor",
+      "severity_rationale": "Grip dragging works functionally via the snap-to-zero fallback. The bug only affects the feel (no spring smoothing during drag, no kinetic coasting after release). This is a polish issue, not a functional break like R2-5 where wheel zoom was completely non-functional.",
+      "rust_source": "src/panel/input_filter.rs:105 (mouse_spring_const: 0.0), src/panel/input_filter.rs:249-263 (set_mouse_anim_params never called in production), src/panel/input_filter.rs:338-369 (spring equation degenerates), src/panel/input_filter.rs:377-395 (coasting phase never reached because mouse_friction_enabled=false)",
+      "cpp_reference": "emViewInputFilter.cpp: C++ calls SetMouseAnimParams with kinetic settings from emCoreConfig during VIF construction/configuration, not hardcoded at grip-start time",
+      "confidence": 0.90,
+      "ruled_out": [
+        "animate_grip never called (it IS called via tick_vif_animations at app.rs:267)",
+        "Grip events not reaching VIF filter (they do reach filter, panning=true is set correctly)"
+      ],
+      "verification_prediction": "Calling set_mouse_anim_params with the correct kinetic factor before grip use will set mouse_spring_const=2500.0 and mouse_friction_enabled=true, enabling spring-damped drag and kinetic coasting after release.",
+      "related_bugs": ["R2-5", "R3-2"],
+      "diagnostic_complete": true,
+      "needs_manual_review": false,
+      "manual_review_reason": null
+    },
+    {
+      "bug_id": "R3-2",
+      "title": "No CoreConfig mechanism to pass kinetic settings to input filter",
+      "root_cause": "C++ emCoreConfig holds user-configurable kinetic parameters (MouseWheelZoomAcceleration, kinetic factor, min kinetic factor) and passes them to SetMouseAnimParams/SetWheelAnimParams during VIF construction or configuration. Rust has no equivalent config propagation. The hardcoded values (1.0, 0.25) used in the R2-5 wheel fix and attempted mouse fix are the C++ defaults, but: (1) they cannot be overridden per-user, (2) calling them at event time rather than construction time means the test that explicitly wants kinetic disabled (test_grip_no_coasting_when_kinetic_disabled) breaks — there is no way to configure the VIF to have kinetic disabled. The R2-5 fix works for wheel because no test exercises 'wheel with kinetic disabled', but the same approach fails for mouse grip.",
+      "category": "missing_feature",
+      "severity": "moderate",
+      "severity_rationale": "Blocks proper fix of R3-1. Also means all kinetic parameters are hardcoded rather than configurable. Affects both mouse grip and wheel zoom behavior configurability.",
+      "rust_source": "src/panel/input_filter.rs:597-613 (wheel path hardcodes 1.0/0.25), src/panel/input_filter.rs:105-110 (mouse/wheel params initialized to 0.0 with no config injection point)",
+      "cpp_reference": "emCoreConfig (kinetic settings), emViewInputFilter construction (receives config and calls SetMouseAnimParams/SetWheelAnimParams)",
+      "confidence": 0.85,
+      "ruled_out": [
+        "Config exists but is unused (no CoreConfig equivalent exists in Rust at all)"
+      ],
+      "fix_approach": "Introduce a VIF config struct (or constructor parameters) that accepts kinetic_factor and min_kinetic. Call set_mouse_anim_params and set_wheel_anim_params during VIF construction with these values. Default to (1.0, 0.25) matching C++ CoreConfig defaults. Tests that want kinetic disabled would construct VIF with kinetic_factor=0.0. This unblocks R3-1 and makes the R2-5 fix more correct (initialize at construction rather than per-event).",
+      "related_bugs": ["R2-5", "R3-1"],
+      "diagnostic_complete": true,
+      "needs_manual_review": false,
+      "manual_review_reason": null
+    }
+  ],
+  "cross_bug_analysis": {
+    "shared_root_causes": [
+      {
+        "bugs": ["R2-5", "R3-1"],
+        "description": "Identical pattern: spring_const initialized to 0.0 and the corresponding set_*_anim_params never called in production. Both degenerate the spring equation. Wheel (R2-5) was completely broken (zero velocity → no zoom). Mouse (R3-1) is partially broken (fallback path works but spring smoothing and coasting are absent)."
+      },
+      {
+        "bugs": ["R2-5", "R3-1", "R3-2"],
+        "description": "All stem from the missing CoreConfig propagation. The R2-5 fix (calling set_wheel_anim_params per-event with hardcoded defaults) is a workaround, not a proper fix. R3-2 is the structural issue underlying both. Proper resolution: introduce VIF config, initialize both mouse and wheel params at construction, remove per-event hardcoded calls."
+      }
+    ],
+    "relationship_to_r2": "R2-5 was fixed with a per-event workaround (hardcoded set_wheel_anim_params call). The same workaround cannot be applied to mouse grip without breaking test_grip_no_coasting_when_kinetic_disabled. R3-2 (CoreConfig) is the proper fix that would resolve both cleanly."
+  }
+}

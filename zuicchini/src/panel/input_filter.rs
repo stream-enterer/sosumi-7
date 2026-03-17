@@ -40,12 +40,18 @@ pub struct MouseZoomScrollVIF {
     mouse_friction: f64,
     /// Whether kinetic mouse behavior is enabled.
     mouse_friction_enabled: bool,
+    /// Stored kinetic config for mouse (used by refresh).
+    mouse_kinetic_factor: f64,
+    mouse_min_kinetic: f64,
     /// Spring constant for the wheel swiping animator.
     wheel_spring_const: f64,
     /// Friction for the wheel swiping animator.
     wheel_friction: f64,
     /// Whether kinetic wheel behavior is enabled.
     wheel_friction_enabled: bool,
+    /// Stored kinetic config for wheel (used by refresh).
+    wheel_kinetic_factor: f64,
+    wheel_min_kinetic: f64,
     /// Output velocity from spring (pixels/second). Drives scroll during grip
     /// and kinetic coasting after release.
     grip_velocity_x: f64,
@@ -105,9 +111,13 @@ impl MouseZoomScrollVIF {
             mouse_spring_const: 0.0,
             mouse_friction: 0.0,
             mouse_friction_enabled: false,
+            mouse_kinetic_factor: 0.0,
+            mouse_min_kinetic: 0.0,
             wheel_spring_const: 0.0,
             wheel_friction: 0.0,
             wheel_friction_enabled: false,
+            wheel_kinetic_factor: 0.0,
+            wheel_min_kinetic: 0.0,
             grip_velocity_x: 0.0,
             grip_velocity_y: 0.0,
             grip_spring_x: 0.0,
@@ -252,6 +262,8 @@ impl MouseZoomScrollVIF {
         min_kinetic: f64,
         zoom_factor_log_per_pixel: f64,
     ) {
+        self.mouse_kinetic_factor = kinetic_factor;
+        self.mouse_min_kinetic = min_kinetic;
         let mut k = kinetic_factor;
         if k < min_kinetic * 1.0001 {
             k = 0.001;
@@ -260,6 +272,11 @@ impl MouseZoomScrollVIF {
         self.mouse_spring_const = 2500.0 / (k * k);
         self.mouse_friction = 2.0 / zflpp / (k * k);
         self.mouse_friction_enabled = k > 0.001;
+    }
+
+    /// Re-derive mouse spring/friction constants for the current zflpp.
+    pub fn refresh_mouse_anim_params(&mut self, zflpp: f64) {
+        self.set_mouse_anim_params(self.mouse_kinetic_factor, self.mouse_min_kinetic, zflpp);
     }
 
     /// Returns the mouse animator parameters (spring_const, friction, friction_enabled).
@@ -282,6 +299,8 @@ impl MouseZoomScrollVIF {
         min_kinetic: f64,
         zoom_factor_log_per_pixel: f64,
     ) {
+        self.wheel_kinetic_factor = kinetic_factor;
+        self.wheel_min_kinetic = min_kinetic;
         let mut k = kinetic_factor;
         if k < min_kinetic * 1.0001 {
             k = 0.001;
@@ -290,6 +309,11 @@ impl MouseZoomScrollVIF {
         self.wheel_spring_const = 480.0 / (k * k);
         self.wheel_friction = 2.0 / zflpp / (k * k);
         self.wheel_friction_enabled = k > 0.001;
+    }
+
+    /// Re-derive wheel spring/friction constants for the current zflpp.
+    pub fn refresh_wheel_anim_params(&mut self, zflpp: f64) {
+        self.set_wheel_anim_params(self.wheel_kinetic_factor, self.wheel_min_kinetic, zflpp);
     }
 
     /// Returns the wheel animator parameters (spring_const, friction, friction_enabled).
@@ -558,6 +582,9 @@ impl ViewInputFilter for MouseZoomScrollVIF {
                     self.last_y = state.mouse_y;
                     self.grip_fix_x = state.mouse_x;
                     self.grip_fix_y = state.mouse_y;
+                    // C++ calls SetMouseAnimParams on every grip to track current zflpp.
+                    let zflpp = view.get_zoom_factor_log_per_pixel();
+                    self.refresh_mouse_anim_params(zflpp);
                     // Reset spring and velocity on new grip
                     self.grip_spring_x = 0.0;
                     self.grip_spring_y = 0.0;
@@ -607,7 +634,9 @@ impl ViewInputFilter for MouseZoomScrollVIF {
             );
             self.wheel_fix_x = state.mouse_x;
             self.wheel_fix_y = state.mouse_y;
+            // C++ calls SetWheelAnimParams on every wheel event to track current zflpp.
             let zflpp = view.get_zoom_factor_log_per_pixel();
+            self.refresh_wheel_anim_params(zflpp);
             self.wheel_spring_z += self.wheel_zoom_speed / zflpp;
             self.wheel_active = true;
             self.wheel_coasting = false;
@@ -1848,7 +1877,8 @@ mod tests {
         view.update_viewing(&mut tree);
 
         let mut vif = MouseZoomScrollVIF::new();
-        // Kinetic disabled (default: mouse_friction_enabled = false)
+        // Explicitly disable kinetic (k=0 → friction_enabled=false)
+        vif.set_mouse_anim_params(0.0, 0.25, 0.01);
 
         let mut state = InputState::new();
 
