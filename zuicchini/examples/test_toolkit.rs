@@ -265,19 +265,23 @@ impl PanelBehavior for WidgetGroupPanel {
                 WidgetCategory::TextFields => {
                     let mut tf1 = TextField::new(look.clone());
                     tf1.set_editable(false);
+                    tf1.set_caption("Read-Only");
                     tf1.set_text("Read-Only");
                     ctx.create_child_with("tf1", Box::new(TextFieldPanel { widget: tf1 }));
                     let mut tf2 = TextField::new(look.clone());
                     tf2.set_editable(true);
+                    tf2.set_caption("Editable");
                     tf2.set_text("Editable");
                     ctx.create_child_with("tf2", Box::new(TextFieldPanel { widget: tf2 }));
                     let mut tf3 = TextField::new(look.clone());
                     tf3.set_editable(true);
+                    tf3.set_caption("Password");
                     tf3.set_text("Password");
                     tf3.set_password_mode(true);
                     ctx.create_child_with("tf3", Box::new(TextFieldPanel { widget: tf3 }));
                     let mut tf4 = TextField::new(look);
                     tf4.set_editable(true);
+                    tf4.set_caption("Multi-Line");
                     tf4.set_multi_line(true);
                     tf4.set_text("first line\nsecond line\n...");
                     ctx.create_child_with("mltf1", Box::new(TextFieldPanel { widget: tf4 }));
