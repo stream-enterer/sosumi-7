@@ -856,6 +856,58 @@ impl TextField {
         self.text.len()
     }
 
+    /// Map (x, y) panel coordinates to a text byte index for multi-line mode.
+    /// Recomputes layout geometry from last paint dimensions (C++ ColRow2Index equivalent).
+    fn xy_to_index_multi_line(&self, x: f64, y: f64) -> usize {
+        if self.last_w <= 0.0 || self.last_h <= 0.0 {
+            return 0;
+        }
+        let (content, radius) = self.border.content_round_rect(self.last_w, self.last_h, &self.look);
+        let d = content.h.min(content.w) * 0.1 + radius * 0.5;
+        let tx = content.x + d;
+        let ty = content.y + d;
+        let th = (content.h - 2.0 * d).max(0.0);
+        let (_, total_rows) = self.calc_total_cols_rows();
+        let cell_h = if total_rows > 0 { th / total_rows as f64 } else { return 0; };
+        if cell_h <= 0.0 {
+            return 0;
+        }
+
+        let row = ((y - ty + self.scroll_y) / cell_h).floor().max(0.0) as usize;
+        let rows: Vec<&str> = self.text.split('\n').collect();
+        let row = row.min(rows.len().saturating_sub(1));
+        let row_text = rows[row];
+
+        // Byte offset of row start in self.text
+        let row_start: usize = rows[..row].iter().map(|r| r.len() + 1).sum();
+
+        // Find character in row closest to x (C++ ColRow2Index col scan)
+        let x_in_row = x - tx;
+        if x_in_row <= 0.0 {
+            return row_start;
+        }
+        let mut byte_offset = 0usize;
+        for ch in row_text.chars() {
+            let next = byte_offset + ch.len_utf8();
+            let w_before = Painter::measure_text_width(&row_text[..byte_offset], cell_h);
+            let w_after = Painter::measure_text_width(&row_text[..next], cell_h);
+            if x_in_row < (w_before + w_after) * 0.5 {
+                return row_start + byte_offset;
+            }
+            byte_offset = next;
+        }
+        row_start + byte_offset
+    }
+
+    /// Dispatch to x-only or xy mapping depending on single/multi-line mode.
+    fn pos_from_event(&self, mouse_x: f64, mouse_y: f64) -> usize {
+        if self.multi_line {
+            self.xy_to_index_multi_line(mouse_x, mouse_y)
+        } else {
+            self.x_to_index_single_line(mouse_x)
+        }
+    }
+
     fn char_index_at(&self, char_idx: usize) -> usize {
         self.text
             .char_indices()
@@ -1019,18 +1071,34 @@ impl TextField {
         }
 
         // Pre-compute selection rect
-        let sel_rect = if let Some(anchor) = self.selection_anchor {
+        // Select colors based on editable state (C++ emTextField.cpp:956-965)
+        let fg = if self.editable {
+            self.look.input_fg_color
+        } else {
+            self.look.output_fg_color
+        };
+        let bg = if self.editable {
+            self.look.input_bg_color
+        } else {
+            self.look.output_bg_color
+        };
+        let hl_color = if self.editable {
+            self.look.input_hl_color
+        } else {
+            self.look.output_hl_color
+        };
+        // When not focused, dim selection: bgColor.GetBlended(fgColor,40) (C++ line 977-978)
+        let sel_color = if self.focused { hl_color } else { bg.lerp(fg, 0.4) };
+
+        // Compute selection pixel extents (C++ DoTextField col/row→xy mapping)
+        let sel_info = if let Some(anchor) = self.selection_anchor {
             let sel_start = anchor.min(self.cursor);
             let sel_end = anchor.max(self.cursor);
-            let sx_px = Painter::measure_text_width(
-                &display_text[..sel_start.min(display_text.len())],
-                cell_h,
-            ) * ws;
-            let ex_px = Painter::measure_text_width(
-                &display_text[..sel_end.min(display_text.len())],
-                cell_h,
-            ) * ws;
-            Some((tx + sx_px - self.scroll_x, ex_px - sx_px))
+            let si = sel_start.min(display_text.len());
+            let ei = sel_end.min(display_text.len());
+            let sx_px = Painter::measure_text_width(&display_text[..si], cell_h) * ws;
+            let ex_px = Painter::measure_text_width(&display_text[..ei], cell_h) * ws;
+            Some((si, ei, sx_px, ex_px))
         } else {
             None
         };
@@ -1054,38 +1122,33 @@ impl TextField {
             self.scroll_x = 0.0;
         }
 
-        // Selection highlight
-        if let Some((sx, sw)) = sel_rect {
+        // Selection highlight rect (C++ line 982-990: PaintPolygon with selColor)
+        if let Some((_, _, sx_px, ex_px)) = sel_info {
             painter.paint_rect(
-                sx,
+                tx + sx_px - self.scroll_x,
                 effective_ty,
-                sw,
+                ex_px - sx_px,
                 effective_ch,
-                self.look.input_hl_color,
+                sel_color,
                 canvas_color,
             );
         }
 
-        // Text — C++: PaintText(tx + col*cw, ty + row*ch, text, ch, ws, ...)
+        // Text — paint in segments so selected text uses bgColor fg on selColor canvas.
+        // C++ line 1023: selected0 ? bgColor : fgColor; line 1024: selected0 ? selColor : canvasColor
         let text_x = tx - self.scroll_x;
         let text_y = effective_ty;
-
-        // Select colors based on editable state (C++ emTextField.cpp:956-965)
-        let fg = if self.editable {
-            self.look.input_fg_color
+        if let Some((si, ei, sx_px, ex_px)) = sel_info.filter(|(si, ei, _, _)| si < ei) {
+            if si > 0 {
+                painter.paint_text(text_x, text_y, &display_text[..si], effective_ch, ws, fg, canvas_color);
+            }
+            painter.paint_text(text_x + sx_px, text_y, &display_text[si..ei], effective_ch, ws, bg, sel_color);
+            if ei < display_text.len() {
+                painter.paint_text(text_x + ex_px, text_y, &display_text[ei..], effective_ch, ws, fg, canvas_color);
+            }
         } else {
-            self.look.output_fg_color
-        };
-
-        painter.paint_text(
-            text_x,
-            text_y,
-            &display_text,
-            effective_ch,
-            ws,
-            fg,
-            canvas_color,
-        );
+            painter.paint_text(text_x, text_y, &display_text, effective_ch, ws, fg, canvas_color);
+        }
 
         // Cursor — C++ only renders when panel is in focused path
         let cursor_x = tx + cursor_x_px - self.scroll_x;
@@ -1175,11 +1238,24 @@ impl TextField {
         };
 
         // Select colors based on editable state (C++ emTextField.cpp:956-965)
+        // Select colors based on editable state (C++ emTextField.cpp:956-965)
         let fg = if self.editable {
             self.look.input_fg_color
         } else {
             self.look.output_fg_color
         };
+        let bg = if self.editable {
+            self.look.input_bg_color
+        } else {
+            self.look.output_bg_color
+        };
+        let hl_color = if self.editable {
+            self.look.input_hl_color
+        } else {
+            self.look.output_hl_color
+        };
+        // When not focused, dim selection: bgColor.GetBlended(fgColor,40) (C++ line 977-978)
+        let sel_color = if self.focused { hl_color } else { bg.lerp(fg, 0.4) };
 
         let rows: Vec<&str> = self.text.split('\n').collect();
 
@@ -1227,7 +1303,7 @@ impl TextField {
                     scroll_ty + row0 as f64 * cell_h,
                     x1 - x0,
                     cell_h,
-                    self.look.input_hl_color,
+                    sel_color,
                     canvas_color,
                 );
             } else {
@@ -1241,16 +1317,44 @@ impl TextField {
                     (tx, scroll_ty + (row0 + 1) as f64 * cell_h),
                     (tx + x0, scroll_ty + (row0 + 1) as f64 * cell_h),
                 ];
-                painter.paint_polygon(&vertices, self.look.input_hl_color, canvas_color);
+                painter.paint_polygon(&vertices, sel_color, canvas_color);
             }
             let _ = (col0, col1);
         }
 
+        // Paint text per row, splitting at selection boundaries for fg/bg swap.
+        // C++ line 1023: selected ? bgColor : fgColor; line 1024: selected ? selColor : canvasColor
+        let mut byte_offset = 0usize;
         for (row_idx, row_text) in rows.iter().enumerate() {
             let row_y = ty + row_idx as f64 * cell_h - self.scroll_y;
+            let row_start_byte = byte_offset;
+            let _row_end_byte = byte_offset + row_text.len();
+            byte_offset += row_text.len() + 1; // +1 for '\n'
+
             if row_y + cell_h < cy || row_y > cy + ch {
                 continue;
             }
+
+            if has_selection {
+                // Clamp selection to this row's byte range
+                let rs = sel_start.saturating_sub(row_start_byte).min(row_text.len());
+                let re = sel_end.saturating_sub(row_start_byte).min(row_text.len());
+
+                if rs < re {
+                    // Row has a selection segment: paint pre / selected / post
+                    let x_rs = Painter::measure_text_width(&row_text[..rs], cell_h);
+                    let x_re = Painter::measure_text_width(&row_text[..re], cell_h);
+                    if rs > 0 {
+                        painter.paint_text(tx, row_y, &row_text[..rs], cell_h, 1.0, fg, canvas_color);
+                    }
+                    painter.paint_text(tx + x_rs, row_y, &row_text[rs..re], cell_h, 1.0, bg, sel_color);
+                    if re < row_text.len() {
+                        painter.paint_text(tx + x_re, row_y, &row_text[re..], cell_h, 1.0, fg, canvas_color);
+                    }
+                    continue;
+                }
+            }
+
             painter.paint_text(tx, row_y, row_text, cell_h, 1.0, fg, canvas_color);
         }
 
@@ -1717,7 +1821,7 @@ impl TextField {
         self.last_click_x = event.mouse_x;
         self.last_click_y = event.mouse_y;
 
-        let pos = self.x_to_index_single_line(event.mouse_x);
+        let pos = self.pos_from_event(event.mouse_x, event.mouse_y);
 
         if event.ctrl && self.editable {
             // Ctrl+click: insert or move mode
@@ -1805,7 +1909,7 @@ impl TextField {
         match self.drag_mode {
             DragMode::None => false,
             DragMode::SelectChars => {
-                let pos = self.x_to_index_single_line(event.mouse_x);
+                let pos = self.pos_from_event(event.mouse_x, event.mouse_y);
                 if self.selection_anchor.is_none() {
                     self.selection_anchor = Some(self.cursor);
                 }
@@ -1814,7 +1918,7 @@ impl TextField {
                 true
             }
             DragMode::SelectWords => {
-                let pos = self.x_to_index_single_line(event.mouse_x);
+                let pos = self.pos_from_event(event.mouse_x, event.mouse_y);
                 if let Some(anchor) = self.selection_anchor {
                     let anchor_ws = self.word_start(anchor);
                     let anchor_we = self.word_end(anchor);
@@ -1830,7 +1934,7 @@ impl TextField {
                 true
             }
             DragMode::SelectRows => {
-                let pos = self.x_to_index_single_line(event.mouse_x);
+                let pos = self.pos_from_event(event.mouse_x, event.mouse_y);
                 if let Some(anchor) = self.selection_anchor {
                     let anchor_rs = self.row_start(anchor);
                     let anchor_re = self.row_end(anchor);
@@ -1853,7 +1957,7 @@ impl TextField {
             }
             DragMode::Insert => {
                 // D-WIDGET-04: Update cursor position during insert drag.
-                let pos = self.x_to_index_single_line(event.mouse_x);
+                let pos = self.pos_from_event(event.mouse_x, event.mouse_y);
                 if pos != self.cursor {
                     self.cursor = pos;
                     self.selection_anchor = None;
@@ -1905,7 +2009,7 @@ impl TextField {
 
         if self.drag_mode == DragMode::Move && self.editable {
             // D-WIDGET-04: Apply drag offset to compute target position.
-            let raw_pos = self.x_to_index_single_line(event.mouse_x);
+            let raw_pos = self.pos_from_event(event.mouse_x, event.mouse_y);
             let offset = self.drag_offset.unwrap_or(0);
             let pos = raw_pos.saturating_sub(offset);
             let sel_start = self.selection_start();
