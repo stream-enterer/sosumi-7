@@ -33,8 +33,8 @@ impl Splitter {
             look,
             orientation,
             position: 0.5,
-            min_position: 0.05,
-            max_position: 0.95,
+            min_position: 0.0,
+            max_position: 1.0,
             dragging: false,
             drag_offset: 0.0,
             last_w: 0.0,
@@ -69,7 +69,18 @@ impl Splitter {
         }
     }
 
+    /// Set min/max position limits with C++ validation.
+    ///
+    /// Clamps both to [0,1]. If min > max, averages them.
+    /// Matches C++ `emSplitter::SetMinMaxPos`.
     pub fn set_limits(&mut self, min: f64, max: f64) {
+        let mut min = min.clamp(0.0, 1.0);
+        let mut max = max.clamp(0.0, 1.0);
+        if min > max {
+            let avg = (min + max) * 0.5;
+            min = avg;
+            max = avg;
+        }
         self.min_position = min;
         self.max_position = max;
         self.set_position(self.position);
@@ -244,10 +255,10 @@ mod tests {
         assert!((sp.position() - 0.3).abs() < 0.001);
 
         sp.set_position(-1.0);
-        assert!((sp.position() - 0.05).abs() < 0.001);
+        assert!((sp.position() - 0.0).abs() < 0.001);
 
         sp.set_position(2.0);
-        assert!((sp.position() - 0.95).abs() < 0.001);
+        assert!((sp.position() - 1.0).abs() < 0.001);
     }
 
     #[test]
