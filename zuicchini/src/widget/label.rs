@@ -1,12 +1,19 @@
 use std::rc::Rc;
 
-use crate::foundation::Color;
-use crate::render::{Painter, TextAlignment, VAlign};
+use crate::foundation::Image;
+use crate::render::{Painter, TextAlignment};
 
 use super::border::{Border, OuterBorderType};
 use super::look::Look;
 
 /// Non-focusable text display widget.
+///
+/// C++ `emLabel` inherits from `emBorder`. Constructor accepts caption,
+/// description, and icon. Paint delegates to `PaintLabel` → `DoLabel`.
+///
+/// This Rust port now delegates painting to `border.paint_label`, which
+/// implements the full DoLabel layout (icon + caption + description with
+/// configurable alignment).
 pub struct Label {
     border: Border,
     look: Rc<Look>,
@@ -22,12 +29,44 @@ impl Label {
         }
     }
 
+    /// Construct with caption, description, and icon.
+    /// Matches C++ `emLabel::emLabel(parent, name, caption, description, icon)`.
+    pub fn with_label(
+        caption: &str,
+        description: &str,
+        icon: Option<Image>,
+        look: Rc<Look>,
+    ) -> Self {
+        let mut border = Border::new(OuterBorderType::Margin)
+            .with_caption(caption)
+            .with_label_in_border(false);
+        if !description.is_empty() {
+            border = border.with_description(description);
+        }
+        if let Some(img) = icon {
+            border = border.with_icon(img);
+        }
+        Self { border, look }
+    }
+
     pub fn set_caption(&mut self, text: &str) {
         self.border.caption = text.to_string();
     }
 
     pub fn caption(&self) -> &str {
         &self.border.caption
+    }
+
+    pub fn set_description(&mut self, text: &str) {
+        self.border.description = text.to_string();
+    }
+
+    pub fn description(&self) -> &str {
+        &self.border.description
+    }
+
+    pub fn set_icon(&mut self, icon: Option<Image>) {
+        self.border.set_icon(icon);
     }
 
     /// Set horizontal alignment of the label block within content area.
@@ -42,95 +81,31 @@ impl Label {
         self.border.set_caption_alignment(Some(a));
     }
 
+    /// Set text line alignment for the description.
+    /// Matches C++ `emBorder::SetDescriptionAlignment`.
+    pub fn set_description_alignment(&mut self, a: TextAlignment) {
+        self.border.set_description_alignment(Some(a));
+    }
+
+    /// Paint the label.
+    ///
+    /// C++ `emLabel::PaintContent` calls `PaintLabel` with the content rect
+    /// and fg_color (dimmed when disabled). The border's `paint_label`
+    /// implements the full DoLabel layout including icon, caption, and
+    /// description with configurable alignment.
     pub fn paint(&self, painter: &mut Painter, w: f64, h: f64, enabled: bool) {
         self.border
             .paint_border(painter, w, h, &self.look, false, enabled);
 
-        if self.border.caption.is_empty() {
-            return;
-        }
-
-        // C++ emLabel::PaintContent → PaintLabel → DoLabel.
-        // DoLabel measures text at unit height, then scales proportionally
-        // to fit the content area.
         let cr = self.border.content_rect(w, h, &self.look);
-        let mut cx = cr.x;
-        let mut cy = cr.y;
-        let mut cw = cr.w;
-        let mut ch = cr.h;
-
-        if cw <= 0.0 || ch <= 0.0 {
+        if cr.w <= 0.0 || cr.h <= 0.0 {
             return;
         }
 
-        let min_ws = 0.5_f64;
-
-        // Measure text at unit height.
-        let (cap_w, cap_h) = Painter::get_text_size(&self.border.caption, 1.0, true, 0.0);
-        if cap_w <= 0.0 || cap_h <= 0.0 {
-            return;
-        }
-
-        // Scale to fill height.
-        let mut f = ch / cap_h;
-        let w2 = f * cap_w;
-
-        if w2 <= cw {
-            // Fits horizontally — apply LabelAlignment (C++ emBorder.cpp:1292-1301).
-            let slack = cw - w2;
-            match self.border.label_alignment {
-                TextAlignment::Left => {}
-                TextAlignment::Center => cx += slack * 0.5,
-                TextAlignment::Right => cx += slack,
-            }
-            cw = w2;
-        } else {
-            // Width constrained — check if min squeeze fits.
-            let min_total_w = cap_w * min_ws;
-            let w2_min = f * min_total_w;
-            if w2_min > cw {
-                // Must reduce height to fit.
-                f = cw / min_total_w;
-                let h2 = f * cap_h;
-                // Center vertically.
-                cy += (ch - h2) * 0.5;
-                ch = h2;
-            }
-        }
-
-        let char_h = cap_h * f;
-        // C++ DoLabel: boxAlignment=EM_ALIGN_CENTER, textAlignment=CaptionAlignment.
-        let cap_align = self
-            .border
-            .caption_alignment
-            .unwrap_or(self.border.label_alignment);
-
-        // C++ emLabel.cpp:44-47: GetTransparented(75.0) when disabled.
-        // 75% transparent → alpha * 0.25 ≈ alpha * 64 / 255.
-        let fg = if enabled {
-            self.look.fg_color
-        } else {
-            self.look
-                .fg_color
-                .with_alpha((self.look.fg_color.a() as u16 * 64 / 255) as u8)
-        };
-
-        painter.paint_text_boxed(
-            cx,
-            cy,
-            cw,
-            ch,
-            &self.border.caption,
-            char_h,
-            fg,
-            Color::TRANSPARENT,
-            TextAlignment::Center,
-            VAlign::Center,
-            cap_align,
-            min_ws,
-            true,
-            0.0,
-        );
+        // C++ emLabel::PaintContent delegates to PaintLabel → DoLabel.
+        // border.paint_label handles the full layout (icon + caption +
+        // description) with alignment and disabled dimming.
+        self.border.paint_label(painter, cr, &self.look, enabled);
     }
 
     pub fn preferred_size(&self) -> (f64, f64) {
@@ -159,8 +134,24 @@ mod tests {
         let look = Look::new();
         let label = Label::new("Test", look);
         let (w, h) = label.preferred_size();
-        // Width = measured text width + 4px padding
         assert!(w > 4.0, "Label should have positive width");
         assert!(h > 0.0, "Label should have positive height");
+    }
+
+    #[test]
+    fn label_with_description() {
+        let look = Look::new();
+        let label = Label::with_label("Title", "A longer description", None, look);
+        assert_eq!(label.caption(), "Title");
+        assert_eq!(label.description(), "A longer description");
+    }
+
+    #[test]
+    fn label_set_description() {
+        let look = Look::new();
+        let mut label = Label::new("Title", look);
+        assert!(label.description().is_empty());
+        label.set_description("Desc");
+        assert_eq!(label.description(), "Desc");
     }
 }
