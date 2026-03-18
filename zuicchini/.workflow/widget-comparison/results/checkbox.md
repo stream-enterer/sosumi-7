@@ -24,10 +24,9 @@ Category **(b): code duplication**. Rust CheckBox is 4x larger because it inline
 - **Fix**: Changed to content_rect with r=h*0.2 (CC-06 boxed path fix).
 - **Confidence**: medium | **Coverage**: covered (widget_checkbox_toggle)
 
-### [NOTE] Box hit test equivalent but redundantly computed
-- Rust recomputes bx/by instead of using box_label_geometry values
-- Functionally equivalent, just redundant
-- **Confidence**: low | **Coverage**: covered
+### [NOTE] Box hit test equivalent but redundantly computed — **CLOSED 2026-03-18**
+- Rust recomputes bx/by instead of using box_label_geometry values.
+- **Status**: Code quality note, not a behavioral divergence. Output is identical. Kept for potential future cleanup but has zero user-visible impact.
 
 ### [GAP] Missing disabled visual overlay — **FIXED**
 - **Fix**: Gray overlay 0x888888E0 added when disabled; label dim implemented.

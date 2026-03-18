@@ -339,18 +339,6 @@ impl Button {
                     if !self.pressed {
                         return false;
                     }
-                    // C++ emButton.cpp:101-106: IsViewed check.
-                    // NOTE: clip rect check skipped — panel-to-view transform
-                    // is not available in input(). The framework only dispatches
-                    // input to viewed panels, so the viewed check is sufficient.
-                    if !state.viewed {
-                        // consumed but don't click
-                        self.pressed = false;
-                        if let Some(cb) = &mut self.on_press_state {
-                            cb(false);
-                        }
-                        return true;
-                    }
                     let hit = self.hit_test(event.mouse_x, event.mouse_y);
                     if trace {
                         let cap = &self.border.caption;
@@ -363,9 +351,20 @@ impl Button {
                     if let Some(cb) = &mut self.on_press_state {
                         cb(false);
                     }
-                    if hit {
-                        if let Some(cb) = &mut self.on_click {
-                            cb();
+                    // C++ emButton.cpp:101-109: CheckMouse && IsEnabled && IsViewed,
+                    // then PanelToViewX/Y against ClipRect.
+                    if hit && state.viewed {
+                        // Panel-to-view transform (C++ emPanel.h:1019-1027):
+                        //   viewX = panelX * ViewedWidth + ViewedX
+                        //   viewY = panelY * ViewedWidth / PixelTallness + ViewedY
+                        let vr = &state.viewed_rect;
+                        let cr = &state.clip_rect;
+                        let vmx = event.mouse_x * vr.w + vr.x;
+                        let vmy = event.mouse_y * vr.w / state.pixel_tallness + vr.y;
+                        if vmx >= cr.x && vmx < cr.x + cr.w && vmy >= cr.y && vmy < cr.y + cr.h {
+                            if let Some(cb) = &mut self.on_click {
+                                cb();
+                            }
                         }
                     }
                     true
