@@ -565,11 +565,8 @@ impl ScalarField {
     }
 
     pub fn get_cursor(&self) -> Cursor {
-        if self.editable {
-            Cursor::ResizeEW
-        } else {
-            Cursor::Normal
-        }
+        // C++ emScalarField doesn't override GetCursor — uses default panel cursor.
+        Cursor::Normal
     }
 
     /// Whether this scalar field provides how-to help text.
@@ -957,10 +954,11 @@ mod tests {
     }
 
     #[test]
-    fn non_editable_cursor_is_default() {
+    fn cursor_is_always_normal() {
+        // C++ doesn't override GetCursor — always default panel cursor.
         let look = Look::new();
         let mut sf = ScalarField::new(0.0, 100.0, look);
-        assert_eq!(sf.get_cursor(), Cursor::ResizeEW);
+        assert_eq!(sf.get_cursor(), Cursor::Normal);
         sf.set_editable(false);
         assert_eq!(sf.get_cursor(), Cursor::Normal);
     }

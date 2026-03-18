@@ -2213,7 +2213,8 @@ impl TextField {
     }
 
     pub fn get_cursor(&self) -> Cursor {
-        Cursor::Text
+        // C++ emTextField doesn't override GetCursor — uses default panel cursor.
+        Cursor::Normal
     }
 
     pub fn preferred_size(&self) -> (f64, f64) {
@@ -2586,9 +2587,10 @@ mod tests {
 
     #[test]
     fn cursor_type() {
+        // C++ doesn't override GetCursor — always default panel cursor.
         let look = Look::new();
         let tf = TextField::new(look);
-        assert_eq!(tf.get_cursor(), Cursor::Text);
+        assert_eq!(tf.get_cursor(), Cursor::Normal);
     }
 
     #[test]
