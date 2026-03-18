@@ -677,8 +677,11 @@ impl ScalarField {
     }
 
     pub fn preferred_size(&self) -> (f64, f64) {
+        // C++ emScalarField inherits emBorder::GetBestTallness which uses
+        // the label tallness. Compute content size from tallness-based ratio.
+        let tallness = self.border.best_label_tallness().max(0.1);
         let cw = 100.0;
-        let ch = 13.0 + 4.0;
+        let ch = cw * tallness;
         self.border.preferred_size_for_content(cw, ch)
     }
 

@@ -6,11 +6,10 @@ use crate::render::{Painter, BORDER_EDGES_ONLY};
 
 use super::look::Look;
 use super::toolkit_images::with_toolkit_images;
-use crate::foundation::Color;
 use std::rc::Rc;
 
-/// C++ emSplitter grip fraction: 0.015 * borderScaling (=1.0 for default look).
-const GRIP_FRACTION: f64 = 0.015;
+/// C++ emSplitter grip base fraction before borderScaling.
+const GRIP_BASE: f64 = 0.015;
 
 /// Resizable two-panel divider widget.
 pub struct Splitter {
@@ -19,14 +18,15 @@ pub struct Splitter {
     position: f64,
     min_position: f64,
     max_position: f64,
+    /// C++ `GetBorderScaling()` — multiplied into grip size.
+    border_scaling: f64,
     dragging: bool,
     drag_offset: f64,
     /// C++ `MouseInGrip` — true when mouse is over the grip area.
     mouse_in_grip: bool,
     /// Cached enabled state from last paint (for input gating).
     enabled: bool,
-    /// Cached dimensions from the last paint call (like Eagle Mode's
-    /// GetContentRect pattern — widgets query their own dimensions during input).
+    /// Cached dimensions from the last paint call.
     last_w: f64,
     last_h: f64,
     pub on_position: Option<Box<dyn FnMut(f64)>>,
@@ -40,6 +40,7 @@ impl Splitter {
             position: 0.5,
             min_position: 0.0,
             max_position: 1.0,
+            border_scaling: 1.0,
             dragging: false,
             drag_offset: 0.0,
             mouse_in_grip: false,
@@ -60,6 +61,12 @@ impl Splitter {
 
     pub fn max_position(&self) -> f64 {
         self.max_position
+    }
+
+    /// Set the border scaling factor. C++ `emSplitter` inherits
+    /// `GetBorderScaling()` from `emBorder`; default is 1.0.
+    pub fn set_border_scaling(&mut self, s: f64) {
+        self.border_scaling = s.max(1e-10);
     }
 
     pub fn set_orientation(&mut self, orientation: Orientation) {
@@ -103,7 +110,7 @@ impl Splitter {
         let canvas = painter.canvas_color();
 
         let (gx, gy, gw, gh) = self.calc_grip_rect(w, h, resolved);
-        painter.paint_rect(gx, gy, gw, gh, color, Color::TRANSPARENT);
+        painter.paint_rect(gx, gy, gw, gh, color, canvas);
 
         // C++ emSplitter: PaintBorderImage overlay on grip.
         let d = gw.min(gh) * 0.5;
@@ -144,7 +151,7 @@ impl Splitter {
     ) -> (f64, f64, f64, f64) {
         match resolved {
             ResolvedOrientation::Horizontal => {
-                let mut gs = GRIP_FRACTION * w;
+                let mut gs = GRIP_BASE * self.border_scaling * w;
                 if gs > w * 0.5 {
                     gs = w * 0.5;
                 }
@@ -152,7 +159,7 @@ impl Splitter {
                 (gx, 0.0, gs, h)
             }
             ResolvedOrientation::Vertical => {
-                let mut gs = GRIP_FRACTION * h;
+                let mut gs = GRIP_BASE * self.border_scaling * h;
                 if gs > h * 0.5 {
                     gs = h * 0.5;
                 }

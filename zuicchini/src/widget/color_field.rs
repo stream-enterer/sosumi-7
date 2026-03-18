@@ -248,22 +248,22 @@ impl ColorField {
             return false;
         }
 
-        // Apply changes to color.
+        // C++ Cycle() checks each signal independently (not if/else-if).
+        // Each change is applied; last one wins if multiple change simultaneously.
         if rgba_changed {
             let r = ((exp.sf_red * 255 + 5000) / 10000).clamp(0, 255) as u8;
             let g = ((exp.sf_green * 255 + 5000) / 10000).clamp(0, 255) as u8;
             let b = ((exp.sf_blue * 255 + 5000) / 10000).clamp(0, 255) as u8;
             let a = ((exp.sf_alpha * 255 + 5000) / 10000).clamp(0, 255) as u8;
             self.color = Color::rgba(r, g, b, a);
-        } else if hsv_changed {
-            let h = exp.sf_hue as f32 / 100.0; // [0, 36000] → [0, 360)
-            let s = (exp.sf_sat as f32 / 10000.0).clamp(0.0, 1.0); // [0, 10000] → [0, 1]
-            let v = (exp.sf_val as f32 / 10000.0).clamp(0.0, 1.0); // [0, 10000] → [0, 1]
+        }
+        if hsv_changed {
+            let h = exp.sf_hue as f32 / 100.0;
+            let s = (exp.sf_sat as f32 / 10000.0).clamp(0.0, 1.0);
+            let v = (exp.sf_val as f32 / 10000.0).clamp(0.0, 1.0);
             self.color = Color::from_hsv(h, s, v).with_alpha(self.color.a());
-        } else if text_changed {
-            // C++ emColor::TryParse supports #RGB, #RGBA, #RRGGBB, #RRGGBBAA,
-            // #RRRGGGBBB, #RRRRGGGGBBBB, #RRRRGGGGBBBBAAAA, and X11 named colors.
-            // Use try_parse (not FromStr which only handles #RRGGBB/#RRGGBBAA).
+        }
+        if text_changed {
             if let Some(parsed) = Color::try_parse(&exp.tf_name) {
                 self.color = parsed;
             }
