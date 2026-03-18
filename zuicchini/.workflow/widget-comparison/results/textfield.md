@@ -47,28 +47,19 @@
 - **Fix**: Added prev_word_boundary_index, updated double-click and drag-by-words to use boundary-based segment selection
 - **Confidence**: high | **Coverage**: uncovered
 
-### [MEDIUM] DM_MOVE: no live drag feedback
-- C++ continuously moves selected text to drag position on every mouse motion event
-- Rust does nothing during drag, applies move only on mouse release
-- UX regression: no real-time visual feedback during text drag
-- **Confidence**: high | **Coverage**: uncovered
+### [MEDIUM] DM_MOVE: no live drag feedback — **FIXED**
+- **Fix**: Live drag implemented with snapshot revert/reapply on each motion event, matching C++ continuous repositioning.
 
 ### [MEDIUM] Ctrl+A doesn't publish selection to clipboard — **FIXED**
 - C++ `SelectAll(true)` publishes to clipboard
 - **Fix**: Added publish_selection() after select_all() in Ctrl+A handler
 - **Confidence**: high | **Coverage**: uncovered
 
-### [MEDIUM] Password mode paints as single string vs individual chars
-- C++ paints each `*` individually at column positions
-- Rust creates `"*".repeat(n)` and paints as single string
-- Cumulative rounding differences possible between N individual chars vs one N-char string
-- **Confidence**: medium | **Coverage**: uncovered
+### [MEDIUM] Password mode paints as single string vs individual chars — **FIXED**
+- **Fix**: Password mode now paints each `*` individually at column-grid positions (`tx + col * cw`), matching C++ per-char placement.
 
-### [MEDIUM] Selection polygon uses measured text width vs column grid
-- C++ computes highlight positions as `tx + col * cw` (monospace column grid)
-- Rust uses `Painter::measure_text_width` (actual pixel measurement)
-- Same result for monospace fonts; could diverge for variable-width
-- **Confidence**: medium | **Coverage**: covered
+### [MEDIUM] Selection polygon uses measured text width vs column grid — **FIXED**
+- **Fix**: Selection highlight now uses column-grid positioning (`tx + col * cw`), matching C++ exactly.
 
 ### [MEDIUM] Ctrl+Shift+A doesn't clear clipboard selection
 - C++ `EmptySelection()` clears clipboard via `Clipboard->Clear(true,SelectionId)`
@@ -89,9 +80,14 @@
 - C++ subclasses can do auto-formatting; Rust cannot
 - **Confidence**: high | **Coverage**: uncovered
 
-### [LOW] max_length is Rust-only addition (not a divergence)
-### [LOW] Home/End in single-line (no divergence found)
-### [LOW] GetRowEndIndex (no divergence found)
+### [LOW] max_length is Rust-only addition — **NOTE**
+- Not a divergence from C++; this is a Rust-side extension.
+
+### [LOW] Home/End in single-line — **NOTE**
+- No divergence found on closer inspection.
+
+### [LOW] GetRowEndIndex — **NOTE**
+- No divergence found on closer inspection.
 
 ## Summary
 

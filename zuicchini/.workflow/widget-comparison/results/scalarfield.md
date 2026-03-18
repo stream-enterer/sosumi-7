@@ -13,22 +13,14 @@
 - Affects snapping, comparison, mark iteration precision. `StepByKeyboard` does integer division in C++, Rust casts to i64 (truncates fractional parts). Deliberate design decision but changes integer-snapping semantics.
 - **Confidence**: high | **Coverage**: covered (render), but f64 precision differences may not surface in current tests
 
-### [HIGH] Drag behavior completely different — absolute vs relative
-- **C++**: Absolute positioning — `CheckMouse` converts mouse position to value on every frame
-- **Rust**: Relative delta — records start position, computes offset
-- C++ click-on-scale jumps to that value. Rust click starts drag from current value.
-- **Confidence**: high | **Coverage**: uncovered (no drag golden test)
+### [HIGH] Drag behavior completely different — absolute vs relative — **FIXED**
+- **Fix**: Drag now uses absolute positioning via `check_mouse`, converting mouse position to value on every frame, matching C++ `CheckMouse` behavior.
 
-### [MEDIUM] hit_test uses normalized space, input uses panel-space coords
-- C++ `CheckMouse` combines hit test + value computation in panel coords
-- Rust `hit_test` works in `(1.0, tallness)` space, separate from value computation
-- Coordinate space mismatch could cause wrong click acceptance/rejection
-- **Confidence**: medium | **Coverage**: uncovered
+### [MEDIUM] hit_test uses normalized space, input uses panel-space coords — **FIXED**
+- **Fix**: `hit_test` removed; `check_mouse` now handles both hit detection and value computation in panel-space coords, matching C++.
 
-### [MEDIUM] check_mouse doesn't apply marks_never_hidden culling
-- C++ shares `DoScalarField` between paint and check_mouse (culling applies to both)
-- Rust `check_mouse` reimplements layout without culling → ax/aw can differ from paint
-- **Confidence**: high | **Coverage**: uncovered
+### [MEDIUM] check_mouse doesn't apply marks_never_hidden culling — **NOTE**
+- `MarksNeverHidden` is not used in C++ `DoScalarField`; Rust layout matches C++ in this regard. Not an actionable divergence.
 
 ### [MEDIUM] Arrow keys (Left/Right) accepted as increment/decrement — **FIXED**
 - **Fix**: Removed ArrowLeft/ArrowRight, only +/- character keys matching C++.
