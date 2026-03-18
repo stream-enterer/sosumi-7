@@ -20,6 +20,8 @@ pub struct Splitter {
     max_position: f64,
     dragging: bool,
     drag_offset: f64,
+    /// C++ `MouseInGrip` — true when mouse is over the grip area.
+    mouse_in_grip: bool,
     /// Cached dimensions from the last paint call (like Eagle Mode's
     /// GetContentRect pattern — widgets query their own dimensions during input).
     last_w: f64,
@@ -37,6 +39,7 @@ impl Splitter {
             max_position: 1.0,
             dragging: false,
             drag_offset: 0.0,
+            mouse_in_grip: false,
             last_w: 0.0,
             last_h: 0.0,
             on_position: None,
@@ -160,6 +163,14 @@ impl Splitter {
         let resolved = self.orientation.resolve(w, h);
         let (gx, gy, gw, gh) = self.calc_grip_rect(w, h, resolved);
 
+        // Track mouse-in-grip for cursor display (C++ MouseInGrip).
+        if event.variant == InputVariant::Move {
+            self.mouse_in_grip = event.mouse_x >= gx
+                && event.mouse_x < gx + gw
+                && event.mouse_y >= gy
+                && event.mouse_y < gy + gh;
+        }
+
         match event.key {
             InputKey::MouseLeft => match event.variant {
                 InputVariant::Press => {
@@ -210,6 +221,10 @@ impl Splitter {
     }
 
     pub fn get_cursor(&self) -> Cursor {
+        // C++ only shows resize cursor when mouse is over the grip or dragging.
+        if !self.mouse_in_grip && !self.dragging {
+            return Cursor::Normal;
+        }
         match self.orientation.resolve(self.last_w, self.last_h) {
             ResolvedOrientation::Horizontal => Cursor::ResizeEW,
             ResolvedOrientation::Vertical => Cursor::ResizeNS,
