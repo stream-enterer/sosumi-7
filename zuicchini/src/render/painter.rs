@@ -1142,23 +1142,11 @@ impl<'a> Painter<'a> {
                 let mut col = start_x;
                 while col < end_x {
                     let batch = ((end_x - col) as usize).min(max_batch);
-                    // Interpolate batch into buffer
-                    for i in 0..batch {
-                        let c = interpolation::sample_area_fp(
-                            image,
-                            col + i as i32,
-                            row,
-                            &xfm,
-                            &sec,
-                            ext,
-                        );
-                        ibuf.set_pixel(i, [c.r(), c.g(), c.b(), c.a()]);
-                    }
-                    ibuf.set_len(batch);
-                    // Compute coverages
+                    interpolation::interpolate_scanline_area_sampled(
+                        image, col, row, batch, &xfm, &sec, ext, &mut ibuf,
+                    );
                     let all_full =
                         sp.batch_coverages(row, col, &mut coverages[..batch]);
-                    // Blend batch onto destination
                     let dest_offset = (row as usize * tw + col as usize) * 4;
                     let data = self.image().data_mut();
                     let dest = &mut data[dest_offset..];
@@ -1177,16 +1165,9 @@ impl<'a> Painter<'a> {
                 while col < end_x {
                     let batch = ((end_x - col) as usize).min(max_batch);
                     if upscaling {
-                        // Adaptive premul: fill buffer, then premul blend
-                        for i in 0..batch {
-                            let c = col + i as i32;
-                            let tx = (c - px) as i64 * sxfm.tdx + sxfm.base_x - 0x180_0000;
-                            let ty = (row - py) as i64 * sxfm.tdy + sxfm.base_y - 0x180_0000;
-                            let pm =
-                                interpolation::sample_adaptive_premul_fp(image, tx, ty, ext);
-                            ibuf.set_pixel(i, pm);
-                        }
-                        ibuf.set_len(batch);
+                        interpolation::interpolate_scanline_adaptive_premul(
+                            image, px, py, col, row, batch, &sxfm, ext, &mut ibuf,
+                        );
                         let all_full =
                             sp.batch_coverages(row, col, &mut coverages[..batch]);
                         let dest_offset = (row as usize * tw + col as usize) * 4;
@@ -1204,23 +1185,9 @@ impl<'a> Painter<'a> {
                             );
                         }
                     } else {
-                        // Nearest: fill buffer, then straight blend
-                        for i in 0..batch {
-                            let c = col + i as i32;
-                            let tx = (c - px) as i64 * sxfm.tdx + sxfm.base_x;
-                            let ty = (row - py) as i64 * sxfm.tdy + sxfm.base_y;
-                            let src_color = interpolation::sample_nearest(
-                                image,
-                                (tx >> 24) as f64,
-                                (ty >> 24) as f64,
-                                ext,
-                            );
-                            ibuf.set_pixel(
-                                i,
-                                [src_color.r(), src_color.g(), src_color.b(), src_color.a()],
-                            );
-                        }
-                        ibuf.set_len(batch);
+                        interpolation::interpolate_scanline_nearest(
+                            image, px, py, col, row, batch, &sxfm, ext, &mut ibuf,
+                        );
                         let all_full =
                             sp.batch_coverages(row, col, &mut coverages[..batch]);
                         let dest_offset = (row as usize * tw + col as usize) * 4;
@@ -1388,28 +1355,21 @@ impl<'a> Painter<'a> {
                 let mut col = start_x;
                 while col < end_x {
                     let batch = ((end_x - col) as usize).min(max_batch);
-                    // Interpolate, compute lum, map to color
+                    // Interpolate, then apply lum->color mapping in-place
+                    interpolation::interpolate_scanline_area_sampled(
+                        image, col, row, batch, &xfm, &sec, ext, &mut ibuf,
+                    );
                     for i in 0..batch {
-                        let color = interpolation::sample_area_fp(
-                            image,
-                            col + i as i32,
-                            row,
-                            &xfm,
-                            &sec,
-                            ext,
-                        );
+                        let p = ibuf.pixel_rgba(i);
                         let lum = if ch == 1 {
-                            color.r()
+                            p[0]
                         } else {
-                            ((color.r() as u32 * 77
-                                + color.g() as u32 * 150
-                                + color.b() as u32 * 29)
-                                >> 8) as u8
+                            ((p[0] as u32 * 77 + p[1] as u32 * 150 + p[2] as u32 * 29) >> 8)
+                                as u8
                         };
                         let c = lum_to_color(lum);
                         ibuf.set_pixel(i, [c.r(), c.g(), c.b(), c.a()]);
                     }
-                    ibuf.set_len(batch);
                     let all_full =
                         sp.batch_coverages(row, col, &mut coverages[..batch]);
                     let dest_offset = (row as usize * tw + col as usize) * 4;
@@ -2611,18 +2571,16 @@ impl<'a> Painter<'a> {
                 let mut col = start_x;
                 while col < end_x {
                     let batch = ((end_x - col) as usize).min(max_batch);
-                    for i in 0..batch {
-                        let color = interpolation::sample_area_fp(
-                            image,
-                            col + i as i32,
-                            row,
-                            &xfm,
-                            &sec,
-                            super::texture::ImageExtension::Clamp,
-                        );
-                        ibuf.set_pixel(i, [color.r(), color.g(), color.b(), color.a()]);
-                    }
-                    ibuf.set_len(batch);
+                    interpolation::interpolate_scanline_area_sampled(
+                        image,
+                        col,
+                        row,
+                        batch,
+                        &xfm,
+                        &sec,
+                        super::texture::ImageExtension::Clamp,
+                        &mut ibuf,
+                    );
                     let all_full =
                         sp.batch_coverages(row, col, &mut coverages[..batch]);
                     let dest_offset = (row as usize * tw + col as usize) * 4;
@@ -2650,16 +2608,9 @@ impl<'a> Painter<'a> {
                 let mut col = start_x;
                 while col < end_x {
                     let batch = ((end_x - col) as usize).min(max_batch);
-                    for i in 0..batch {
-                        let c = col + i as i32;
-                        let tx = (c - px) as i64 * sxfm.tdx + sxfm.base_x - 0x180_0000;
-                        let ty = (row - py) as i64 * sxfm.tdy + sxfm.base_y - 0x180_0000;
-                        let pm = interpolation::sample_adaptive_premul_fp_section(
-                            image, tx, ty, &sec, extension,
-                        );
-                        ibuf.set_pixel(i, pm);
-                    }
-                    ibuf.set_len(batch);
+                    interpolation::interpolate_scanline_adaptive_premul_section(
+                        image, px, py, col, row, batch, &sxfm, &sec, extension, &mut ibuf,
+                    );
                     let all_full =
                         sp.batch_coverages(row, col, &mut coverages[..batch]);
                     let dest_offset = (row as usize * tw + col as usize) * 4;

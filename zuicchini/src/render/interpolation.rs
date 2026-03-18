@@ -253,6 +253,10 @@ fn read_area_pixel<'a>(
 /// - CHANNELS=1/3: shift `(x + 0x7F) >> 8` for all channels
 ///
 /// Returns straight-alpha Color (premul->straight conversion done internally for 4-ch).
+///
+/// Note: production code uses `interpolate_scanline_area_sampled` which hoists Y setup
+/// and adds pCy column-reuse. This per-pixel version is retained as a test reference.
+#[cfg(test)]
 pub(crate) fn sample_area_fp(
     image: &Image,
     dest_x: i32,
@@ -1119,6 +1123,287 @@ pub(crate) fn sample_linear_gradient(
     }
     let t = ((point.0 - start.0) * dx + (point.1 - start.1) * dy) / len_sq;
     c0.lerp(c1, t.clamp(0.0, 1.0))
+}
+
+/// Scanline area-sampled interpolation: fills `buf` with `count` consecutive
+/// output pixels starting at `(dest_x_start, dest_y)`.
+///
+/// Optimizations over per-pixel `sample_area_fp`:
+/// 1. Y setup (ty1, ty2, ody, oy1, yw) computed once per row
+/// 2. pCy column-reuse: when consecutive dest pixels map to the same source
+///    column, the Y-accumulated result is reused (critical for downscaling)
+///
+/// Output format matches `sample_area_fp`: straight-alpha RGBA in `buf`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn interpolate_scanline_area_sampled(
+    image: &Image,
+    dest_x_start: i32,
+    dest_y: i32,
+    count: usize,
+    xfm: &AreaSampleTransform,
+    sec: &SectionBounds,
+    ext: ImageExtension,
+    buf: &mut super::scanline_tool::InterpolationBuffer,
+) {
+    let ch = image.channel_count();
+
+    // --- Y setup (hoisted out of per-pixel loop) ---
+    let mut ty1 = dest_y as i64 * xfm.tdy - xfm.ty;
+    let mut ty2 = ty1 + xfm.tdy;
+    let ty_end = (xfm.img_h as i64) << 24;
+    let mut ody = xfm.ody;
+
+    // Track whether entire row is out-of-bounds for EXTEND_ZERO early exit.
+    let mut y_oob = false;
+
+    if ty1 < 0 {
+        if ty2 <= 0 {
+            if ext == ImageExtension::Zero {
+                y_oob = true;
+            } else {
+                ty2 = 1 << 24;
+            }
+        } else if ty2 > ty_end {
+            ty2 = ty_end;
+        }
+        if !y_oob {
+            ty1 = 0;
+            ody = rational_inv(ty2);
+        }
+    } else if ty2 > ty_end {
+        if ty1 >= ty_end {
+            if ext == ImageExtension::Zero {
+                y_oob = true;
+            } else {
+                ty1 = ty_end - (1 << 24);
+            }
+        }
+        if !y_oob {
+            ody = rational_inv(ty_end - ty1);
+        }
+    }
+
+    if y_oob {
+        // All pixels in this row are transparent for EXTEND_ZERO.
+        for i in 0..count {
+            buf.set_pixel(i, [0, 0, 0, 0]);
+        }
+        buf.set_len(count);
+        return;
+    }
+
+    let oy1 = {
+        let w = ((0x100_0000i64 - (ty1 & 0xFF_FFFF)) as u64 * ody as u64 + 0xFF_FFFF) >> 24;
+        if w >= 0x10000 || ody == 0x7FFF_FFFF {
+            0x10000u32
+        } else {
+            w as u32
+        }
+    };
+    let yw = YWeights {
+        oy1,
+        oy1n: 0x10000u32 - oy1,
+        ody,
+        row0: (ty1 >> 24) as i32,
+    };
+
+    // pCy column-reuse state: cache the Y-accumulated result for the last
+    // source column to avoid redundant computation.
+    let mut prev_cy_col: i32 = i32::MIN;
+    let mut cached_cy: (u64, u64, u64, u64) = (0, 0, 0, 0);
+
+    let tx_end = (xfm.img_w as i64) << 24;
+
+    for pixel_idx in 0..count {
+        let dest_x = dest_x_start + pixel_idx as i32;
+
+        // --- X setup (per dest pixel, same as sample_area_fp) ---
+        let mut tx1 = dest_x as i64 * xfm.tdx - xfm.tx;
+        let mut tx2 = tx1 + xfm.tdx;
+        let mut odx = xfm.odx;
+
+        let mut x_oob = false;
+        if tx1 < 0 {
+            tx1 = 0;
+            if tx2 <= 0 {
+                if ext == ImageExtension::Zero {
+                    x_oob = true;
+                } else {
+                    tx2 = 1 << 24;
+                }
+            } else if tx2 > tx_end {
+                tx2 = tx_end;
+            }
+            if !x_oob {
+                odx = rational_inv(tx2);
+            }
+        } else if tx2 > tx_end {
+            if tx1 >= tx_end {
+                if ext == ImageExtension::Zero {
+                    x_oob = true;
+                } else {
+                    tx1 = tx_end - (1 << 24);
+                }
+            }
+            if !x_oob {
+                odx = rational_inv(tx_end - tx1);
+            }
+        }
+
+        if x_oob {
+            buf.set_pixel(pixel_idx, [0, 0, 0, 0]);
+            continue;
+        }
+
+        // First column weight
+        let ox = {
+            let w =
+                ((0x100_0000i64 - (tx1 & 0xFF_FFFF)) as u64 * odx as u64 + 0xFF_FFFF) >> 24;
+            if odx == 0x7FFF_FFFF {
+                0x7FFF_FFFFu32
+            } else {
+                w as u32
+            }
+        };
+        let col0 = (tx1 >> 24) as i32;
+        let col_bound = ((tx2 - 1).max(tx1) >> 24) as i32 + 1;
+
+        // --- Column + row accumulation with pCy reuse ---
+        let mut cyx_r: u64 = 0x7F_FFFF;
+        let mut cyx_g: u64 = 0x7F_FFFF;
+        let mut cyx_b: u64 = 0x7F_FFFF;
+        let mut cyx_a: u64 = 0x7F_FFFF;
+
+        let mut remaining = 0x10000u32;
+        let mut col = col0;
+        let mut col_weight = ox;
+
+        while remaining > 0 && col <= col_bound {
+            let w = if col_weight >= remaining {
+                remaining
+            } else {
+                col_weight
+            };
+
+            // pCy column-reuse: check if this column was already Y-accumulated.
+            let (cy_r, cy_g, cy_b, cy_a) = if col == prev_cy_col {
+                cached_cy
+            } else {
+                let cy = y_accumulate(image, sec, ch, col, &yw, xfm);
+                prev_cy_col = col;
+                cached_cy = cy;
+                cy
+            };
+
+            cyx_r += cy_r * w as u64;
+            cyx_g += cy_g * w as u64;
+            cyx_b += cy_b * w as u64;
+            cyx_a += cy_a * w as u64;
+
+            remaining -= w;
+            col += 1;
+            col_weight = odx;
+        }
+
+        // Output: WRITE_NO_ROUND_SHR_COLOR(cyx, 24)
+        let out_r = (cyx_r >> 24) as u8;
+        let out_g = (cyx_g >> 24) as u8;
+        let out_b = (cyx_b >> 24) as u8;
+
+        let rgba = match ch {
+            4 => {
+                let out_a = (cyx_a >> 24) as u8;
+                if out_a == 0 {
+                    [0, 0, 0, 0]
+                } else if out_a == 255 {
+                    [out_r, out_g, out_b, 255]
+                } else {
+                    let a16 = out_a as u16;
+                    let sr = ((out_r as u16 * 255 + a16 / 2) / a16).min(255) as u8;
+                    let sg = ((out_g as u16 * 255 + a16 / 2) / a16).min(255) as u8;
+                    let sb = ((out_b as u16 * 255 + a16 / 2) / a16).min(255) as u8;
+                    [sr, sg, sb, out_a]
+                }
+            }
+            3 => [out_r, out_g, out_b, 255],
+            _ => [out_r, out_r, out_r, 255],
+        };
+        buf.set_pixel(pixel_idx, rgba);
+    }
+    buf.set_len(count);
+}
+
+/// Scanline adaptive premul interpolation: fills `buf` with `count` consecutive
+/// output pixels of premultiplied RGBA.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn interpolate_scanline_adaptive_premul(
+    image: &Image,
+    px: i32,
+    py: i32,
+    dest_x_start: i32,
+    dest_y: i32,
+    count: usize,
+    sxfm: &ScaleTransform24,
+    ext: ImageExtension,
+    buf: &mut super::scanline_tool::InterpolationBuffer,
+) {
+    for i in 0..count {
+        let col = dest_x_start + i as i32;
+        let tx = (col - px) as i64 * sxfm.tdx + sxfm.base_x - 0x180_0000;
+        let ty = (dest_y - py) as i64 * sxfm.tdy + sxfm.base_y - 0x180_0000;
+        let pm = sample_adaptive_premul_fp(image, tx, ty, ext);
+        buf.set_pixel(i, pm);
+    }
+    buf.set_len(count);
+}
+
+/// Scanline adaptive premul interpolation with section bounds (for 9-slice).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn interpolate_scanline_adaptive_premul_section(
+    image: &Image,
+    px: i32,
+    py: i32,
+    dest_x_start: i32,
+    dest_y: i32,
+    count: usize,
+    sxfm: &ScaleTransform24,
+    sec: &SectionBounds,
+    ext: ImageExtension,
+    buf: &mut super::scanline_tool::InterpolationBuffer,
+) {
+    for i in 0..count {
+        let col = dest_x_start + i as i32;
+        let tx = (col - px) as i64 * sxfm.tdx + sxfm.base_x - 0x180_0000;
+        let ty = (dest_y - py) as i64 * sxfm.tdy + sxfm.base_y - 0x180_0000;
+        let pm = sample_adaptive_premul_fp_section(image, tx, ty, sec, ext);
+        buf.set_pixel(i, pm);
+    }
+    buf.set_len(count);
+}
+
+/// Scanline nearest-neighbor interpolation.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn interpolate_scanline_nearest(
+    image: &Image,
+    px: i32,
+    py: i32,
+    dest_x_start: i32,
+    dest_y: i32,
+    count: usize,
+    sxfm: &ScaleTransform24,
+    ext: ImageExtension,
+    buf: &mut super::scanline_tool::InterpolationBuffer,
+) {
+    // ty is constant for the whole row
+    let ty = (dest_y - py) as i64 * sxfm.tdy + sxfm.base_y;
+    let src_y = (ty >> 24) as f64;
+    for i in 0..count {
+        let col = dest_x_start + i as i32;
+        let tx = (col - px) as i64 * sxfm.tdx + sxfm.base_x;
+        let c = sample_nearest(image, (tx >> 24) as f64, src_y, ext);
+        buf.set_pixel(i, [c.r(), c.g(), c.b(), c.a()]);
+    }
+    buf.set_len(count);
 }
 
 #[cfg(test)]
