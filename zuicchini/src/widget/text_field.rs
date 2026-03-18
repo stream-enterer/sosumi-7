@@ -1400,15 +1400,17 @@ impl TextField {
 
         // Selection highlight — use polygon for multi-row selection (C++ emTextField.cpp:976-991)
         if has_selection {
-            let (col0, row0) = self.index_to_col_row(sel_start);
-            let (col1, row1) = self.index_to_col_row(sel_end);
+            let (_col0, row0) = self.index_to_col_row(sel_start);
+            let (_col1, row1) = self.index_to_col_row(sel_end);
 
             let sel_start_row = self.row_start(sel_start);
             let sel_end_row = self.row_start(sel_end);
             let start_text = &self.text[sel_start_row..sel_start];
             let end_text = &self.text[sel_end_row..sel_end];
-            let x0 = Painter::measure_text_width(start_text, cell_h) * ws;
-            let x1 = Painter::measure_text_width(end_text, cell_h) * ws;
+            let c0 = Self::byte_offset_to_col(start_text, start_text.len());
+            let c1 = Self::byte_offset_to_col(end_text, end_text.len());
+            let x0 = c0 as f64 * cell_w * ws;
+            let x1 = c1 as f64 * cell_w * ws;
 
             let scroll_ty = effective_ty - self.scroll_y;
 
@@ -1434,43 +1436,97 @@ impl TextField {
                 ];
                 painter.paint_polygon(&vertices, sel_color, canvas_color);
             }
-            let _ = (col0, col1);
         }
 
-        // Paint text per row, splitting at selection boundaries for fg/bg swap.
+        // Paint text per row, splitting at tab and selection boundaries.
+        // C++ emTextField.cpp:993-1054: column-grid rendering with tab expansion.
         // C++ line 1023: selected ? bgColor : fgColor; line 1024: selected ? selColor : canvasColor
         let mut byte_offset = 0usize;
         for (row_idx, row_text) in rows.iter().enumerate() {
             let row_y = effective_ty + row_idx as f64 * effective_ch - self.scroll_y;
             let row_start_byte = byte_offset;
-            let _row_end_byte = byte_offset + row_text.len();
             byte_offset += row_text.len() + 1; // +1 for '\n'
 
             if row_y + effective_ch < cy || row_y > cy + ch {
                 continue;
             }
 
-            if has_selection {
-                // Clamp selection to this row's byte range
-                let rs = sel_start.saturating_sub(row_start_byte).min(row_text.len());
-                let re = sel_end.saturating_sub(row_start_byte).min(row_text.len());
+            // Clamp selection to this row's byte range (0 if no selection on this row).
+            let rs = if has_selection {
+                sel_start.saturating_sub(row_start_byte).min(row_text.len())
+            } else {
+                0
+            };
+            let re = if has_selection {
+                sel_end.saturating_sub(row_start_byte).min(row_text.len())
+            } else {
+                0
+            };
+            let row_has_sel = has_selection && rs < re;
 
-                if rs < re {
-                    // Row has a selection segment: paint pre / selected / post
-                    let x_rs = Painter::measure_text_width(&row_text[..rs], cell_h) * ws;
-                    let x_re = Painter::measure_text_width(&row_text[..re], cell_h) * ws;
-                    if rs > 0 {
-                        painter.paint_text(tx, row_y, &row_text[..rs], effective_ch, ws, fg, canvas_color);
+            // Walk the row character by character, tracking column and byte offset.
+            // Flush a paint segment whenever we hit a tab or a selection boundary.
+            let mut col = 0usize;
+            let mut seg_start_byte = 0usize; // byte offset within row_text
+            let mut seg_start_col = 0usize;
+            let mut current_byte = 0usize;
+
+            // Determine colors for the segment starting at current_byte.
+            let seg_colors = |byte_in_row: usize| {
+                if row_has_sel && byte_in_row >= rs && byte_in_row < re {
+                    (bg, sel_color)
+                } else {
+                    (fg, canvas_color)
+                }
+            };
+
+            let (mut seg_fg, mut seg_bg) = seg_colors(0);
+
+            for ch in row_text.chars() {
+                let ch_len = ch.len_utf8();
+
+                // Check if selection boundary occurs at this character.
+                if row_has_sel && (current_byte == rs || current_byte == re) {
+                    // Flush the pending segment (non-tab text before this point).
+                    let seg_text = &row_text[seg_start_byte..current_byte];
+                    if !seg_text.is_empty() {
+                        let x = tx + seg_start_col as f64 * cell_w * ws;
+                        painter.paint_text(x, row_y, seg_text, effective_ch, ws, seg_fg, seg_bg);
                     }
-                    painter.paint_text(tx + x_rs, row_y, &row_text[rs..re], effective_ch, ws, bg, sel_color);
-                    if re < row_text.len() {
-                        painter.paint_text(tx + x_re, row_y, &row_text[re..], effective_ch, ws, fg, canvas_color);
+                    seg_start_byte = current_byte;
+                    seg_start_col = col;
+                    let (nfg, nbg) = seg_colors(current_byte);
+                    seg_fg = nfg;
+                    seg_bg = nbg;
+                }
+
+                if ch == '\t' {
+                    // Flush any text before this tab.
+                    let seg_text = &row_text[seg_start_byte..current_byte];
+                    if !seg_text.is_empty() {
+                        let x = tx + seg_start_col as f64 * cell_w * ws;
+                        painter.paint_text(x, row_y, seg_text, effective_ch, ws, seg_fg, seg_bg);
                     }
-                    continue;
+                    // Advance column to next 8-boundary (matching calc_total_cols_rows).
+                    col = (col / 8 + 1) * 8;
+                    current_byte += ch_len;
+                    seg_start_byte = current_byte;
+                    seg_start_col = col;
+                    // Re-evaluate colors after the tab (we may have crossed a selection boundary).
+                    let (nfg, nbg) = seg_colors(current_byte);
+                    seg_fg = nfg;
+                    seg_bg = nbg;
+                } else {
+                    col += 1;
+                    current_byte += ch_len;
                 }
             }
-
-            painter.paint_text(tx, row_y, row_text, effective_ch, ws, fg, canvas_color);
+            // Flush remaining segment.
+            let seg_text = &row_text[seg_start_byte..current_byte];
+            if !seg_text.is_empty() {
+                let x = tx + seg_start_col as f64 * cell_w * ws;
+                painter.paint_text(x, row_y, seg_text, effective_ch, ws, seg_fg, seg_bg);
+            }
         }
 
         // Cursor — C++ only renders when panel is in focused path
@@ -1479,8 +1535,8 @@ impl TextField {
         }
         let cursor_row_start = self.row_start(self.cursor);
         let cursor_in_row = &self.text[cursor_row_start..self.cursor];
-        let cursor_x_px = Painter::measure_text_width(cursor_in_row, cell_h) * ws;
-        let cursor_x = tx + cursor_x_px;
+        let cursor_col_grid = Self::byte_offset_to_col(cursor_in_row, cursor_in_row.len());
+        let cursor_x = tx + cursor_col_grid as f64 * cell_w * ws;
         let cursor_screen_y = effective_ty + cursor_row as f64 * effective_ch - self.scroll_y;
         let _ = cursor_col;
 
@@ -1497,7 +1553,7 @@ impl TextField {
         {
             let cxp = cursor_x;
             let cyp = cursor_screen_y;
-            let ch_w = Painter::measure_text_width("X", cell_h) * ws;
+            let ch_w = cell_w * ws;
             let chp = effective_ch;
             let dd = chp * 0.07;
             let vertices = [
@@ -2246,6 +2302,20 @@ impl TextField {
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    /// Compute the column (with tab expansion) for a byte offset within a row's text.
+    /// Tabs advance to the next 8-column boundary, matching `calc_total_cols_rows`.
+    fn byte_offset_to_col(row_text: &str, byte_offset: usize) -> usize {
+        let mut col = 0usize;
+        for ch in row_text[..byte_offset].chars() {
+            if ch == '\t' {
+                col = (col / 8 + 1) * 8;
+            } else {
+                col += 1;
+            }
+        }
+        col
+    }
 
     fn char_at(&self, pos: usize) -> char {
         self.text[pos..].chars().next().unwrap_or('\0')
