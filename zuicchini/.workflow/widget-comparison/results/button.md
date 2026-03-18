@@ -22,16 +22,12 @@
 - **Fix**: Added ButtonChecked overlay branch between pressed and normal
 - **Confidence**: medium | **Coverage**: uncovered
 
-### [SUSPECT] Keyboard: Rust handles Space (C++ doesn't); different press/release cycle
-- **C++**: emButton.cpp:113-120 — Enter only, instant Click()
-- **Rust**: button.rs:334-355 — Enter+Space, press-on-down, click-on-release
-- Rust keyboard creates visual pressed state; C++ doesn't
-- **Confidence**: high | **Coverage**: uncovered
+### [SUSPECT] Keyboard: Rust handles Space (C++ doesn't); different press/release cycle — **FIXED**
+- **Fix**: Removed Space, Enter is now instant Click() on press with no visual state change.
+- Modifier gated on NoMod/ShiftMod matching C++.
 
-### [SUSPECT] Keyboard: press/release visual state divergence
-- C++ keyboard Enter: no press state change, just Click()
-- Rust keyboard: sets pressed=true → visual shrink/overlay → sets pressed=false on release
-- **Confidence**: high | **Coverage**: uncovered
+### [SUSPECT] Keyboard: press/release visual state divergence — **FIXED**
+- **Fix**: Enter does instant Click(), no Pressed state change.
 
 ### [GAP] No modifier key checks on mouse press — **FIXED**
 - **C++**: `state.IsNoMod() || state.IsShiftMod()` gate (emButton.cpp:81-83)
@@ -70,10 +66,8 @@
 - Intentional — separate widgets — but API is misleading
 - **Confidence**: medium | **Coverage**: uncovered
 
-### [NOTE] Hover state is Rust-only addition
-- C++ has no hover. Rust adds hovered field + lighten-15% hover color.
-- Hover uses simple bounding box (not rounded-rect) — inconsistent with click area.
-- **Confidence**: high | **Coverage**: uncovered
+### [NOTE] Hover state is Rust-only addition — **FIXED**
+- **Fix**: Removed hover field, update_hover, is_hovered. Face color always ButtonBgColor.
 
 ### [NOTE] Click() API: no shift parameter, no enabled check, no EOI signal
 - **C++**: Click(bool shift) — gates on IsEnabled(), fires EOI when !shift && !NoEOI

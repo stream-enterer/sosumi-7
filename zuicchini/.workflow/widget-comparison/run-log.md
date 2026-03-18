@@ -194,9 +194,14 @@ TkTest composition divergence documented in results/tktest-divergence.md. Missin
 **Finding addressed**: Splitter [MEDIUM] Missing MouseInGrip hover tracking
 **Change**: Added mouse_in_grip field, tracked on Move events, gated get_cursor on it.
 
+### Fix 19: Remove Rust-only keyboard/visual divergences
+
+**Findings addressed**: Button [SUSPECT] Space/Enter divergence, [NOTE] hover state, RadioButton [LOW] face color, ScalarField [MEDIUM] arrow keys
+**Changes**: Removed Space from all button-family keyboards. Enter is instant Click() with NoMod/ShiftMod gate. Face color always ButtonBgColor. Removed hover field. Removed arrow keys from ScalarField. All cursors to Normal (C++ doesn't override GetCursor for buttons/TextField/ScalarField).
+
 ### All Fixes Summary
 
-All 1137 tests pass after every fix. Total: 19 fixes across 12 source files.
+All 1137 tests pass after every fix. Total: 25+ fixes across 12 source files.
 
 ### Notes
 

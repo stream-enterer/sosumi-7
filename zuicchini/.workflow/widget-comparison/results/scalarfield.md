@@ -30,10 +30,8 @@
 - Rust `check_mouse` reimplements layout without culling → ax/aw can differ from paint
 - **Confidence**: high | **Coverage**: uncovered
 
-### [MEDIUM] Arrow keys (Left/Right) accepted as increment/decrement
-- C++: only `+` and `-` character keys
-- Rust: adds `ArrowRight`/`ArrowLeft` — may conflict with focus navigation
-- **Confidence**: high | **Coverage**: uncovered
+### [MEDIUM] Arrow keys (Left/Right) accepted as increment/decrement — **FIXED**
+- **Fix**: Removed ArrowLeft/ArrowRight, only +/- character keys matching C++.
 
 ### [MEDIUM] Missing IsEnabled() check on input (only checks editable)
 - **C++**: gates on both `IsEditable()` AND `IsEnabled()`

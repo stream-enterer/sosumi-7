@@ -25,10 +25,8 @@
 - **Remaining**: Does not re-index other buttons or decrement selection index for buttons after the dropped one (requires back-references that Rust design doesn't have). Use `remove_by_index` + manual `set_index` for ordered removal.
 - **Confidence**: high | **Coverage**: uncovered
 
-### [LOW] RadioButton face color changes on press (C++ doesn't)
-- C++ always uses ButtonBgColor for face. Pressed visual comes from overlay image.
-- Rust adds `button_pressed()` darkened color → double-darkening effect
-- **Confidence**: high | **Coverage**: uncovered (golden only captures unpressed state)
+### [LOW] RadioButton face color changes on press (C++ doesn't) — **FIXED**
+- **Fix**: Face color always ButtonBgColor. Pressed visual from overlay only.
 
 ### [LOW] Missing Enter key input (see CC-01 pattern) — **FIXED**
 - **Fix**: Added Enter alongside Space in RadioButton and RadioBox input handlers.
