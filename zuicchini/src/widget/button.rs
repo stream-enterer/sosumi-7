@@ -13,7 +13,6 @@ pub struct Button {
     border: Border,
     look: Rc<Look>,
     pressed: bool,
-    hovered: bool,
     /// When true, clicking this button does not send an End-of-Interaction
     /// signal. Matches C++ `emButton::NoEOI`.
     no_eoi: bool,
@@ -22,7 +21,7 @@ pub struct Button {
     shown_checked: bool,
     shown_boxed: bool,
     shown_radioed: bool,
-    /// Cached dimensions for hover hit testing.
+    /// Cached dimensions from the last paint call.
     last_w: f64,
     last_h: f64,
     pub on_click: Option<Box<dyn FnMut()>>,
@@ -38,7 +37,6 @@ impl Button {
                 .with_how_to(true),
             look,
             pressed: false,
-            hovered: false,
             no_eoi: false,
             shown_checked: false,
             shown_boxed: false,
@@ -110,10 +108,6 @@ impl Button {
 
     pub fn is_pressed(&self) -> bool {
         self.pressed
-    }
-
-    pub fn is_hovered(&self) -> bool {
-        self.hovered
     }
 
     /// Round-rect hit test for the button face area.
@@ -276,11 +270,6 @@ impl Button {
         });
     }
 
-    /// Update hover state based on mouse position within button bounds.
-    fn update_hover(&mut self, mx: f64, my: f64) {
-        self.hovered = mx >= 0.0 && mx <= self.last_w && my >= 0.0 && my <= self.last_h;
-    }
-
     /// Rounded-rect hit test matching C++ `emButton::CheckMouse` non-boxed path.
     /// Tests against the face rect (content rect with face inset), not the raw
     /// content rect. Mouse coords are in normalized panel space.
@@ -300,12 +289,6 @@ impl Button {
 
     pub fn input(&mut self, event: &InputEvent) -> bool {
         let trace = super::trace_input_enabled();
-        // Update hover on any event with mouse coordinates
-        if event.variant == InputVariant::Move {
-            self.update_hover(event.mouse_x, event.mouse_y);
-            return false;
-        }
-
         match event.key {
             InputKey::MouseLeft => match event.variant {
                 InputVariant::Press => {
