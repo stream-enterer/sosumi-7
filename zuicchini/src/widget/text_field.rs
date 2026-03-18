@@ -579,6 +579,7 @@ impl TextField {
         p
     }
 
+    #[cfg(test)]
     fn word_start(&self, pos: usize) -> usize {
         let mut p = pos;
         while p > 0 {
@@ -591,6 +592,7 @@ impl TextField {
         p
     }
 
+    #[cfg(test)]
     fn word_end(&self, pos: usize) -> usize {
         let mut p = pos;
         while p < self.text.len() {
@@ -862,6 +864,19 @@ impl TextField {
         }
         // Reached end of text — return end with delimiter=true (no more text)
         (len, true)
+    }
+
+    /// Find the word/delimiter boundary before `index` by scanning forward from
+    /// the start. Matches C++ `GetPrevWordBoundaryIndex`.
+    fn prev_word_boundary_index(&self, index: usize) -> usize {
+        let mut i = 0;
+        loop {
+            let (j, _) = self.next_word_boundary_segment(i);
+            if j >= index || j == i {
+                return i;
+            }
+            i = j;
+        }
     }
 
     // ── Coordinate conversion (Phase 5) ─────────────────────────────────
@@ -1950,22 +1965,25 @@ impl TextField {
                 self.drag_mode = DragMode::SelectChars;
             }
             2 => {
-                // Double click: select word
-                let ws = self.word_start(pos);
-                let we = self.word_end(pos);
+                // Double click: select word/delimiter segment.
+                // C++ emTextField.cpp:398-413: uses GetNextWordBoundaryIndex
+                // then GetPrevWordBoundaryIndex to select the segment at cursor.
+                let (i2, _) = self.next_word_boundary_segment(pos);
+                let i1 = self.prev_word_boundary_index(i2);
                 if event.shift {
-                    // Extend to word boundary
                     let anchor = self.selection_anchor.unwrap_or(self.cursor);
                     if pos < anchor {
-                        self.selection_anchor = Some(self.word_end(anchor));
-                        self.cursor = ws;
+                        let (a2, _) = self.next_word_boundary_segment(anchor);
+                        self.selection_anchor = Some(a2);
+                        self.cursor = i1;
                     } else {
-                        self.selection_anchor = Some(self.word_start(anchor));
-                        self.cursor = we;
+                        let a1 = self.prev_word_boundary_index(anchor);
+                        self.selection_anchor = Some(a1);
+                        self.cursor = i2;
                     }
                 } else {
-                    self.selection_anchor = Some(ws);
-                    self.cursor = we;
+                    self.selection_anchor = Some(i1);
+                    self.cursor = i2;
                 }
                 self.fire_selection_change();
                 self.drag_mode = DragMode::SelectWords;
@@ -2022,16 +2040,20 @@ impl TextField {
                 true
             }
             DragMode::SelectWords => {
+                // C++ DM_SELECT_BY_WORDS (emTextField.cpp:454-480): uses
+                // word boundary segments for selection expansion.
                 let pos = self.pos_from_event(event.mouse_x, event.mouse_y);
                 if let Some(anchor) = self.selection_anchor {
-                    let anchor_ws = self.word_start(anchor);
-                    let anchor_we = self.word_end(anchor);
-                    if pos < anchor_ws {
-                        self.selection_anchor = Some(anchor_we);
-                        self.cursor = self.word_start(pos);
+                    let (i2, _) = self.next_word_boundary_segment(pos);
+                    let i1 = self.prev_word_boundary_index(i2);
+                    let anchor_start = self.prev_word_boundary_index(anchor);
+                    let (anchor_end, _) = self.next_word_boundary_segment(anchor_start);
+                    if anchor_start <= i1 {
+                        self.selection_anchor = Some(anchor_start);
+                        self.cursor = i2;
                     } else {
-                        self.selection_anchor = Some(anchor_ws);
-                        self.cursor = self.word_end(pos);
+                        self.selection_anchor = Some(anchor_end);
+                        self.cursor = i1;
                     }
                     self.fire_selection_change();
                 }
