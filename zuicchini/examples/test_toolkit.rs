@@ -12,7 +12,7 @@ use zuicchini::panel::{NoticeFlags, PanelBehavior, PanelCtx, PanelState, ViewCon
 use zuicchini::render::Painter;
 use zuicchini::widget::{
     Button, CheckBox, CheckButton, ColorField, ListBox, Look, RadioBox, RadioButton, RadioGroup,
-    ScalarField, SelectionMode, TextField,
+    ScalarField, SelectionMode, TextField, Tunnel,
 };
 use zuicchini::window::{App, WindowFlags};
 
@@ -196,6 +196,7 @@ enum WidgetCategory {
     ScalarFields,
     ColorFields,
     ListBoxes,
+    Tunnels,
 }
 
 struct WidgetGroupPanel {
@@ -234,18 +235,27 @@ impl PanelBehavior for WidgetGroupPanel {
                 WidgetCategory::Buttons => {
                     let bt1 = Button::new("Button", look.clone());
                     ctx.create_child_with("b1", Box::new(ButtonPanel { widget: bt1 }));
-                    let bt2 = Button::new("Long Desc", look);
+                    let mut bt2 = Button::new("Long Desc", look.clone());
+                    let long_desc = "This is a looooooooooooooooooooooooooooooooooooooooooooooooooooooong description of the button.\n".repeat(100);
+                    bt2.set_description(&long_desc);
                     ctx.create_child_with("b2", Box::new(ButtonPanel { widget: bt2 }));
+                    let mut bt3 = Button::new("NoEOI", look);
+                    bt3.set_no_eoi(true);
+                    ctx.create_child_with("b3", Box::new(ButtonPanel { widget: bt3 }));
                 }
                 WidgetCategory::CheckWidgets => {
                     let cb1 = CheckButton::new("Check Button", look.clone());
                     ctx.create_child_with("c1", Box::new(CheckButtonPanel { widget: cb1 }));
                     let cb2 = CheckButton::new("Check Button", look.clone());
                     ctx.create_child_with("c2", Box::new(CheckButtonPanel { widget: cb2 }));
+                    let cb3 = CheckButton::new("Check Button", look.clone());
+                    ctx.create_child_with("c3", Box::new(CheckButtonPanel { widget: cb3 }));
                     let cbx1 = CheckBox::new("Check Box", look.clone());
                     ctx.create_child_with("c4", Box::new(CheckBoxPanel { widget: cbx1 }));
-                    let cbx2 = CheckBox::new("Check Box", look);
+                    let cbx2 = CheckBox::new("Check Box", look.clone());
                     ctx.create_child_with("c5", Box::new(CheckBoxPanel { widget: cbx2 }));
+                    let cbx3 = CheckBox::new("Check Box", look);
+                    ctx.create_child_with("c6", Box::new(CheckBoxPanel { widget: cbx3 }));
                 }
                 WidgetCategory::RadioWidgets => {
                     let rg = RadioGroup::new();
@@ -293,10 +303,68 @@ impl PanelBehavior for WidgetGroupPanel {
                     let mut sf2 = ScalarField::new(0.0, 100.0, look.clone());
                     sf2.set_editable(true);
                     ctx.create_child_with("sf2", Box::new(ScalarFieldPanel { widget: sf2 }));
-                    let mut sf3 = ScalarField::new(-1000.0, 1000.0, look);
+                    let mut sf3 = ScalarField::new(-1000.0, 1000.0, look.clone());
                     sf3.set_editable(true);
                     sf3.set_scale_mark_intervals(&[1000, 100, 10, 5, 1]);
                     ctx.create_child_with("sf3", Box::new(ScalarFieldPanel { widget: sf3 }));
+                    // sf4: Level with custom formatter
+                    let mut sf4 = ScalarField::new(1.0, 5.0, look.clone());
+                    sf4.set_editable(true);
+                    sf4.set_text_box_tallness(0.25);
+                    sf4.set_value(3.0);
+                    sf4.set_text_of_value_fn(Box::new(|val, _iv| format!("Level {}", val)));
+                    ctx.create_child_with("sf4", Box::new(ScalarFieldPanel { widget: sf4 }));
+                    // sf5: Play Length with time formatter
+                    let mut sf5 = ScalarField::new(0.0, 24.0 * 3600.0 * 1000.0, look.clone());
+                    sf5.set_editable(true);
+                    sf5.set_value(4.0 * 3600.0 * 1000.0);
+                    sf5.set_scale_mark_intervals(&[
+                        3600000, 900000, 300000, 60000, 10000, 1000, 100, 10, 1,
+                    ]);
+                    sf5.set_text_of_value_fn(Box::new(|value, mark_interval| {
+                        let v = value;
+                        let h = v / 3600000;
+                        let m = (v / 60000) % 60;
+                        let s = (v / 1000) % 60;
+                        let ms = v % 1000;
+                        if mark_interval < 10 {
+                            format!("{:02}:{:02}:{:02}\n.{:03}", h, m, s, ms)
+                        } else if mark_interval < 100 {
+                            format!("{:02}:{:02}:{:02}\n.{:02}", h, m, s, ms / 10)
+                        } else if mark_interval < 1000 {
+                            format!("{:02}:{:02}:{:02}\n.{:01}", h, m, s, ms / 100)
+                        } else if mark_interval < 60000 {
+                            format!("{:02}:{:02}:{:02}", h, m, s)
+                        } else {
+                            format!("{:02}:{:02}", h, m)
+                        }
+                    }));
+                    ctx.create_child_with("sf5", Box::new(ScalarFieldPanel { widget: sf5 }));
+                    // sf6: Play Position (same formatter, static 4h max)
+                    let mut sf6 = ScalarField::new(0.0, 4.0 * 3600.0 * 1000.0, look);
+                    sf6.set_editable(true);
+                    sf6.set_scale_mark_intervals(&[
+                        3600000, 900000, 300000, 60000, 10000, 1000, 100, 10, 1,
+                    ]);
+                    sf6.set_text_of_value_fn(Box::new(|value, mark_interval| {
+                        let v = value;
+                        let h = v / 3600000;
+                        let m = (v / 60000) % 60;
+                        let s = (v / 1000) % 60;
+                        let ms = v % 1000;
+                        if mark_interval < 10 {
+                            format!("{:02}:{:02}:{:02}\n.{:03}", h, m, s, ms)
+                        } else if mark_interval < 100 {
+                            format!("{:02}:{:02}:{:02}\n.{:02}", h, m, s, ms / 10)
+                        } else if mark_interval < 1000 {
+                            format!("{:02}:{:02}:{:02}\n.{:01}", h, m, s, ms / 100)
+                        } else if mark_interval < 60000 {
+                            format!("{:02}:{:02}:{:02}", h, m, s)
+                        } else {
+                            format!("{:02}:{:02}", h, m)
+                        }
+                    }));
+                    ctx.create_child_with("sf6", Box::new(ScalarFieldPanel { widget: sf6 }));
                 }
                 WidgetCategory::ColorFields => {
                     let mut cf1 = ColorField::new(look.clone());
@@ -327,10 +395,42 @@ impl PanelBehavior for WidgetGroupPanel {
                     lb4.set_selection_mode(SelectionMode::Multi);
                     lb4.set_items((1..=7).map(|i| format!("Item {i}")).collect());
                     ctx.create_child_with("l4", Box::new(ListBoxPanel { widget: lb4 }));
-                    let mut lb5 = ListBox::new(look);
+                    let mut lb5 = ListBox::new(look.clone());
                     lb5.set_selection_mode(SelectionMode::Toggle);
                     lb5.set_items((1..=7).map(|i| format!("Item {i}")).collect());
                     ctx.create_child_with("l5", Box::new(ListBoxPanel { widget: lb5 }));
+                    // l6: Single column
+                    let mut lb6 = ListBox::new(look.clone());
+                    lb6.set_caption("Single Column");
+                    lb6.set_fixed_column_count(Some(1));
+                    lb6.set_items((1..=7).map(|i| format!("Item {i}")).collect());
+                    lb6.select(0, true);
+                    ctx.create_child_with("l6", Box::new(ListBoxPanel { widget: lb6 }));
+                    // l7: Custom List Box (Multi selection placeholder)
+                    let mut lb7 = ListBox::new(look);
+                    lb7.set_caption("Custom List Box");
+                    lb7.set_selection_mode(SelectionMode::Multi);
+                    lb7.set_items((1..=7).map(|i| format!("Item {i}")).collect());
+                    lb7.select(0, true);
+                    ctx.create_child_with("l7", Box::new(ListBoxPanel { widget: lb7 }));
+                }
+                WidgetCategory::Tunnels => {
+                    // t1: default tunnel
+                    let t1 = Tunnel::new(look.clone()).with_caption("Tunnel");
+                    ctx.create_child_with("t1", Box::new(t1));
+                    // t2: deeper tunnel
+                    let mut t2 = Tunnel::new(look.clone()).with_caption("Deeper Tunnel");
+                    t2.set_depth(30.0);
+                    ctx.create_child_with("t2", Box::new(t2));
+                    // t3: square end
+                    let mut t3 = Tunnel::new(look.clone()).with_caption("Square End");
+                    t3.set_child_tallness(1.0);
+                    ctx.create_child_with("t3", Box::new(t3));
+                    // t4: square end + zero depth
+                    let mut t4 = Tunnel::new(look).with_caption("Square End, Zero Depth");
+                    t4.set_child_tallness(1.0);
+                    t4.set_depth(0.0);
+                    ctx.create_child_with("t4", Box::new(t4));
                 }
             }
         }
@@ -383,6 +483,7 @@ impl PanelBehavior for TkTestPanel {
                 ("grp_scl", "Scalar Fields", WidgetCategory::ScalarFields),
                 ("grp_clr", "Color Fields", WidgetCategory::ColorFields),
                 ("grp_lst", "List Boxes", WidgetCategory::ListBoxes),
+                ("grp_tun", "Tunnels", WidgetCategory::Tunnels),
             ];
 
             for &(name, caption, cat) in groups {
