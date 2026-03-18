@@ -163,13 +163,9 @@ impl Button {
     pub fn paint(&mut self, painter: &mut Painter, w: f64, h: f64) {
         self.last_w = w;
         self.last_h = h;
-        let face_color = if self.pressed {
-            self.look.button_pressed()
-        } else if self.hovered {
-            self.look.button_hover()
-        } else {
-            self.look.button_bg_color
-        };
+        // C++ emButton.cpp:361: always ButtonBgColor. Pressed/checked visual
+        // comes from overlay image, not face color change.
+        let face_color = self.look.button_bg_color;
 
         // C++ DoBorder paints the border first, then DoButton paints the face
         // inside the content round rect.
@@ -362,28 +358,17 @@ impl Button {
                 }
                 _ => false,
             },
-            InputKey::Enter | InputKey::Space => match event.variant {
-                InputVariant::Press => {
-                    self.pressed = true;
-                    if let Some(cb) = &mut self.on_press_state {
-                        cb(true);
-                    }
-                    true
+            // C++ emButton.cpp:113-119: Enter only, instant Click(), no press
+            // visual state. C++ does NOT handle Space for buttons.
+            // C++ emButton.cpp:113-119: Enter only, instant Click(), no press
+            // visual state. C++ does NOT handle Space for buttons.
+            InputKey::Enter if event.variant == InputVariant::Press => {
+                if let Some(cb) = &mut self.on_click {
+                    cb();
                 }
-                InputVariant::Release => {
-                    if self.pressed {
-                        self.pressed = false;
-                        if let Some(cb) = &mut self.on_press_state {
-                            cb(false);
-                        }
-                        if let Some(cb) = &mut self.on_click {
-                            cb();
-                        }
-                    }
-                    true
-                }
-                _ => false,
-            },
+                true
+            }
+            InputKey::Enter => true,
             _ => false,
         }
     }
@@ -441,12 +426,8 @@ mod tests {
             *fired_clone.borrow_mut() = true;
         }));
 
-        // Mouse clicks require paint to set last_w/last_h; use keyboard.
-        assert!(!btn.is_pressed());
-        btn.input(&InputEvent::press(InputKey::Space));
-        assert!(btn.is_pressed());
-        btn.input(&InputEvent::release(InputKey::Space));
-        assert!(!btn.is_pressed());
+        // C++ Enter: instant Click() on press, no visual press state.
+        btn.input(&InputEvent::press(InputKey::Enter));
         assert!(*fired.borrow());
     }
 
@@ -461,11 +442,12 @@ mod tests {
             *count_clone.borrow_mut() += 1;
         }));
 
-        btn.input(&InputEvent::press(InputKey::Space));
-        btn.input(&InputEvent::release(InputKey::Space));
+        // C++: only Enter activates, instant on press. Space is not handled.
         btn.input(&InputEvent::press(InputKey::Enter));
-        btn.input(&InputEvent::release(InputKey::Enter));
-        assert_eq!(*count.borrow(), 2);
+        assert_eq!(*count.borrow(), 1);
+        // Space should NOT activate
+        btn.input(&InputEvent::press(InputKey::Space));
+        assert_eq!(*count.borrow(), 1);
     }
 
     #[test]

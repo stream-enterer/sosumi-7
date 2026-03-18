@@ -71,12 +71,8 @@ impl CheckButton {
         let fh = cr.h - 2.0 * d;
         let fr = (r - d).max(0.0);
 
-        // C++ non-boxed: face color changes when pressed.
-        let face_color = if self.pressed {
-            self.look.button_pressed()
-        } else {
-            self.look.button_bg_color
-        };
+        // C++ emButton.cpp:361: always ButtonBgColor. Pressed visual from overlay.
+        let face_color = self.look.button_bg_color;
         painter.paint_round_rect(fx, fy, fw, fh, fr, face_color);
         painter.set_canvas_color(face_color);
 
@@ -231,20 +227,12 @@ impl CheckButton {
                 }
                 _ => false,
             },
-            InputKey::Enter | InputKey::Space => match event.variant {
-                InputVariant::Press => {
-                    self.pressed = true;
-                    true
-                }
-                InputVariant::Release => {
-                    if self.pressed {
-                        self.pressed = false;
-                        self.toggle();
-                    }
-                    true
-                }
-                _ => false,
-            },
+            // C++ emButton.cpp:113-119: Enter only, instant Click().
+            InputKey::Enter if event.variant == InputVariant::Press => {
+                self.toggle();
+                true
+            }
+            InputKey::Enter => true,
             _ => false,
         }
     }
@@ -314,25 +302,22 @@ mod tests {
         let look = Look::new();
         let mut btn = CheckButton::new("Toggle", look);
         assert!(!btn.is_checked());
-        // Mouse clicks require paint for hit test; use Space (keyboard).
-        btn.input(&InputEvent::press(InputKey::Space));
-        assert!(!btn.is_checked()); // Not toggled yet on press
-        btn.input(&InputEvent::release(InputKey::Space));
-        assert!(btn.is_checked()); // Toggled on release
-        btn.input(&InputEvent::press(InputKey::Space));
-        btn.input(&InputEvent::release(InputKey::Space));
+        // Enter is instant: toggles on press, no release needed.
+        btn.input(&InputEvent::press(InputKey::Enter));
+        assert!(btn.is_checked()); // Toggled immediately on press
+        btn.input(&InputEvent::press(InputKey::Enter));
         assert!(!btn.is_checked());
     }
 
     #[test]
     fn pressed_state_tracks_press_release() {
+        // Enter is instant — no visual press state. Verify pressed stays false.
         let look = Look::new();
         let mut btn = CheckButton::new("CB", look);
         assert!(!btn.pressed);
-        btn.input(&InputEvent::press(InputKey::Space));
-        assert!(btn.pressed);
-        btn.input(&InputEvent::release(InputKey::Space));
-        assert!(!btn.pressed);
+        btn.input(&InputEvent::press(InputKey::Enter));
+        assert!(!btn.pressed); // Enter toggles instantly, no press state
+        assert!(btn.is_checked()); // But the toggle did happen
     }
 
     #[test]
@@ -346,10 +331,9 @@ mod tests {
             states_clone.borrow_mut().push(checked);
         }));
 
-        btn.input(&InputEvent::press(InputKey::Space));
-        btn.input(&InputEvent::release(InputKey::Space));
-        btn.input(&InputEvent::press(InputKey::Space));
-        btn.input(&InputEvent::release(InputKey::Space));
+        // Enter is instant: each press fires the callback immediately.
+        btn.input(&InputEvent::press(InputKey::Enter));
+        btn.input(&InputEvent::press(InputKey::Enter));
         assert_eq!(*states.borrow(), vec![true, false]);
     }
 }

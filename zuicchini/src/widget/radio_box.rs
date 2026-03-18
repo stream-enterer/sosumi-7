@@ -285,21 +285,12 @@ impl RadioBox {
                 }
                 _ => false,
             },
-            InputKey::Enter | InputKey::Space => match event.variant {
-                InputVariant::Press => {
-                    self.pressed = true;
-                    true
-                }
-                InputVariant::Release => {
-                    if self.pressed {
-                        self.pressed = false;
-                        self.box_pressed = false;
-                        self.group.borrow_mut().select(self.index);
-                    }
-                    true
-                }
-                _ => false,
-            },
+            // C++ emButton.cpp:113-119: Enter only, instant Click().
+            InputKey::Enter if event.variant == InputVariant::Press => {
+                self.group.borrow_mut().select(self.index);
+                true
+            }
+            InputKey::Enter => true,
             _ => false,
         }
     }
@@ -336,28 +327,25 @@ mod tests {
         assert!(!rb0.is_selected());
         assert!(!rb1.is_selected());
 
-        // Mouse clicks require paint; use Space for unit test.
-        rb0.input(&InputEvent::press(InputKey::Space));
-        assert!(!rb0.is_selected()); // Not selected yet on press
-        rb0.input(&InputEvent::release(InputKey::Space));
-        assert!(rb0.is_selected());
+        // Enter is instant: selects on press, no release needed.
+        rb0.input(&InputEvent::press(InputKey::Enter));
+        assert!(rb0.is_selected()); // Selected immediately on press
         assert!(!rb1.is_selected());
 
-        rb1.input(&InputEvent::press(InputKey::Space));
-        rb1.input(&InputEvent::release(InputKey::Space));
+        rb1.input(&InputEvent::press(InputKey::Enter));
         assert!(!rb0.is_selected());
         assert!(rb1.is_selected());
     }
 
     #[test]
     fn pressed_state_tracks_press_release() {
+        // Enter is instant — no visual press state. Verify pressed stays false.
         let look = Look::new();
         let group = RadioGroup::new();
         let mut rb = RadioBox::new("X", look, group.clone(), 0);
         assert!(!rb.pressed);
-        rb.input(&InputEvent::press(InputKey::Space));
-        assert!(rb.pressed);
-        rb.input(&InputEvent::release(InputKey::Space));
-        assert!(!rb.pressed);
+        rb.input(&InputEvent::press(InputKey::Enter));
+        assert!(!rb.pressed); // Enter selects instantly, no press state
+        assert!(rb.is_selected()); // But the selection did happen
     }
 }

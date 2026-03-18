@@ -273,12 +273,8 @@ impl RadioButton {
         let fh = cr.h - 2.0 * d;
         let fr = (r - d).max(0.0);
 
-        // C++ non-boxed: face color changes when pressed.
-        let face_color = if self.pressed {
-            self.look.button_pressed()
-        } else {
-            self.look.button_bg_color
-        };
+        // C++ emButton.cpp:361: always ButtonBgColor. Pressed visual from overlay.
+        let face_color = self.look.button_bg_color;
         painter.paint_round_rect(fx, fy, fw, fh, fr, face_color);
         painter.set_canvas_color(face_color);
 
@@ -434,20 +430,12 @@ impl RadioButton {
                 }
                 _ => false,
             },
-            InputKey::Enter | InputKey::Space => match event.variant {
-                InputVariant::Press => {
-                    self.pressed = true;
-                    true
-                }
-                InputVariant::Release => {
-                    if self.pressed {
-                        self.pressed = false;
-                        self.group.borrow_mut().select(self.index);
-                    }
-                    true
-                }
-                _ => false,
-            },
+            // C++ emButton.cpp:113-119: Enter only, instant Click().
+            InputKey::Enter if event.variant == InputVariant::Press => {
+                self.group.borrow_mut().select(self.index);
+                true
+            }
+            InputKey::Enter => true,
             _ => false,
         }
     }
@@ -573,19 +561,16 @@ mod tests {
         assert!(!r1.is_selected());
         assert!(!r2.is_selected());
 
-        r0.input(&InputEvent::press(InputKey::Space));
-        assert!(!r0.is_selected()); // Not selected yet on press
-        r0.input(&InputEvent::release(InputKey::Space));
-        assert!(r0.is_selected());
+        // Enter is instant: selects on press, no release needed.
+        r0.input(&InputEvent::press(InputKey::Enter));
+        assert!(r0.is_selected()); // Selected immediately on press
         assert!(!r1.is_selected());
 
-        r2.input(&InputEvent::press(InputKey::Space));
-        r2.input(&InputEvent::release(InputKey::Space));
+        r2.input(&InputEvent::press(InputKey::Enter));
         assert!(!r0.is_selected());
         assert!(r2.is_selected());
 
-        r1.input(&InputEvent::press(InputKey::Space));
-        r1.input(&InputEvent::release(InputKey::Space));
+        r1.input(&InputEvent::press(InputKey::Enter));
         assert!(!r0.is_selected());
         assert!(r1.is_selected());
         assert!(!r2.is_selected());
@@ -593,14 +578,14 @@ mod tests {
 
     #[test]
     fn pressed_state_tracks_press_release() {
+        // Enter is instant — no visual press state. Verify pressed stays false.
         let look = Look::new();
         let group = RadioGroup::new();
         let mut r0 = RadioButton::new("A", look, group.clone(), 0);
         assert!(!r0.pressed);
-        r0.input(&InputEvent::press(InputKey::Space));
-        assert!(r0.pressed);
-        r0.input(&InputEvent::release(InputKey::Space));
-        assert!(!r0.pressed);
+        r0.input(&InputEvent::press(InputKey::Enter));
+        assert!(!r0.pressed); // Enter selects instantly, no press state
+        assert!(r0.is_selected()); // But the selection did happen
     }
 
     #[test]
@@ -616,10 +601,9 @@ mod tests {
         let mut r0 = RadioButton::new("A", look.clone(), group.clone(), 0);
         let mut r1 = RadioButton::new("B", look, group.clone(), 1);
 
-        r0.input(&InputEvent::press(InputKey::Space));
-        r0.input(&InputEvent::release(InputKey::Space));
-        r1.input(&InputEvent::press(InputKey::Space));
-        r1.input(&InputEvent::release(InputKey::Space));
+        // Enter is instant: each press fires the callback immediately.
+        r0.input(&InputEvent::press(InputKey::Enter));
+        r1.input(&InputEvent::press(InputKey::Enter));
         assert_eq!(*selections.borrow(), vec![Some(0), Some(1)]);
     }
 

@@ -49,14 +49,12 @@ fn widget_checkbox_toggle() {
         "initial checked state mismatch"
     );
 
-    // After first activation (keyboard — behavioral test, not positional)
-    cb.input(&InputEvent::press(InputKey::Space));
-    cb.input(&InputEvent::release(InputKey::Space));
+    // After first activation (Enter is instant — no release needed)
+    cb.input(&InputEvent::press(InputKey::Enter));
     assert_eq!(cb.is_checked() as u8, golden[1], "after 1st click mismatch");
 
     // After second activation
-    cb.input(&InputEvent::press(InputKey::Space));
-    cb.input(&InputEvent::release(InputKey::Space));
+    cb.input(&InputEvent::press(InputKey::Enter));
     assert_eq!(cb.is_checked() as u8, golden[2], "after 2nd click mismatch");
 }
 
@@ -78,14 +76,12 @@ fn widget_checkbutton_toggle() {
         "initial checked state mismatch"
     );
 
-    // After first activation (keyboard — behavioral test, not positional)
-    cb.input(&InputEvent::press(InputKey::Space));
-    cb.input(&InputEvent::release(InputKey::Space));
+    // After first activation (Enter is instant — no release needed)
+    cb.input(&InputEvent::press(InputKey::Enter));
     assert_eq!(cb.is_checked() as u8, golden[1], "after 1st click mismatch");
 
     // After second activation
-    cb.input(&InputEvent::press(InputKey::Space));
-    cb.input(&InputEvent::release(InputKey::Space));
+    cb.input(&InputEvent::press(InputKey::Enter));
     assert_eq!(cb.is_checked() as u8, golden[2], "after 2nd click mismatch");
 }
 
@@ -112,9 +108,8 @@ fn widget_radiobutton_switch() {
         "initial radio check mismatch"
     );
 
-    // Activate B (keyboard — behavioral test, not positional)
-    rb_b.input(&InputEvent::press(InputKey::Space));
-    rb_b.input(&InputEvent::release(InputKey::Space));
+    // Activate B (Enter is instant — no release needed)
+    rb_b.input(&InputEvent::press(InputKey::Enter));
     let after = u32::from_le_bytes(golden[4..8].try_into().unwrap()) as usize;
     assert_eq!(
         group.borrow().selected(),

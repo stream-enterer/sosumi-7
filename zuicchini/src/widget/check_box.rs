@@ -279,21 +279,13 @@ impl CheckBox {
                 }
                 _ => false,
             },
-            InputKey::Enter | InputKey::Space => match event.variant {
-                InputVariant::Press => {
-                    self.pressed = true;
-                    true
-                }
-                InputVariant::Release => {
-                    if self.pressed {
-                        self.pressed = false;
-                        self.box_pressed = false;
-                        self.toggle();
-                    }
-                    true
-                }
-                _ => false,
-            },
+            // C++ emButton.cpp:113-119: Enter only, instant Click().
+            // Click() → Clicked() → toggle. No press visual, no Space.
+            InputKey::Enter if event.variant == InputVariant::Press => {
+                self.toggle();
+                true
+            }
+            InputKey::Enter => true,
             _ => false,
         }
     }
@@ -325,25 +317,22 @@ mod tests {
         let look = Look::new();
         let mut cb = CheckBox::new("Enable", look);
         assert!(!cb.is_checked());
-        // Mouse clicks require paint for hit test; use Space (keyboard).
-        cb.input(&InputEvent::press(InputKey::Space));
-        assert!(!cb.is_checked()); // Not toggled yet on press
-        cb.input(&InputEvent::release(InputKey::Space));
-        assert!(cb.is_checked()); // Toggled on release
-        cb.input(&InputEvent::press(InputKey::Space));
-        cb.input(&InputEvent::release(InputKey::Space));
+        // Enter is instant: toggles on press, no release needed.
+        cb.input(&InputEvent::press(InputKey::Enter));
+        assert!(cb.is_checked()); // Toggled immediately on press
+        cb.input(&InputEvent::press(InputKey::Enter));
         assert!(!cb.is_checked());
     }
 
     #[test]
     fn pressed_state_tracks_press_release() {
+        // Enter is instant — no visual press state. Verify pressed stays false.
         let look = Look::new();
         let mut cb = CheckBox::new("Enable", look);
         assert!(!cb.pressed);
-        cb.input(&InputEvent::press(InputKey::Space));
-        assert!(cb.pressed);
-        cb.input(&InputEvent::release(InputKey::Space));
-        assert!(!cb.pressed);
+        cb.input(&InputEvent::press(InputKey::Enter));
+        assert!(!cb.pressed); // Enter toggles instantly, no press state
+        assert!(cb.is_checked()); // But the toggle did happen
     }
 
     #[test]

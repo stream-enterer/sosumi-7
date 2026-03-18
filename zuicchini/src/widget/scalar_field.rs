@@ -550,11 +550,13 @@ impl ScalarField {
                     true
                 }
             },
-            InputKey::ArrowRight | InputKey::Key('+') if event.variant == InputVariant::Press => {
+            // C++ emScalarField.cpp:261-272: only '+' and '-' character keys.
+            // Arrow keys are NOT in C++ (would conflict with focus navigation).
+            InputKey::Key('+') if event.variant == InputVariant::Press => {
                 self.step_by_keyboard(1);
                 true
             }
-            InputKey::ArrowLeft | InputKey::Key('-') if event.variant == InputVariant::Press => {
+            InputKey::Key('-') if event.variant == InputVariant::Press => {
                 self.step_by_keyboard(-1);
                 true
             }
@@ -765,10 +767,11 @@ mod tests {
         sf.last_w = 200.0;
         sf.last_h = 40.0;
 
-        sf.input(&InputEvent::press(InputKey::ArrowRight));
+        // ScalarField uses '+' and '-' keys (not arrow keys).
+        sf.input(&InputEvent::press(InputKey::Key('+')));
         assert!(sf.value() > 50.0);
 
-        sf.input(&InputEvent::press(InputKey::ArrowLeft));
+        sf.input(&InputEvent::press(InputKey::Key('-')));
         // Should be roughly back to 50
         assert!((sf.value() - 50.0).abs() < 2.0);
     }
@@ -787,7 +790,7 @@ mod tests {
             val_clone.borrow_mut().push(v);
         }));
 
-        sf.input(&InputEvent::press(InputKey::ArrowRight));
+        sf.input(&InputEvent::press(InputKey::Key('+')));
         assert_eq!(values.borrow().len(), 1);
         assert!(values.borrow()[0] > 5.0);
     }
@@ -808,7 +811,7 @@ mod tests {
         sf.set_value(50.0);
         sf.last_w = 200.0;
         sf.last_h = 40.0;
-        let handled = sf.input(&InputEvent::press(InputKey::ArrowRight));
+        let handled = sf.input(&InputEvent::press(InputKey::Key('+')));
         assert!(!handled);
         assert!((sf.value() - 50.0).abs() < 0.001);
 
