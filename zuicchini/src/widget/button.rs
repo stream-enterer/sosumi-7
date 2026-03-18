@@ -291,6 +291,10 @@ impl Button {
         match event.key {
             InputKey::MouseLeft => match event.variant {
                 InputVariant::Press => {
+                    // C++ emButton.cpp:82: (state.IsNoMod() || state.IsShiftMod())
+                    if event.ctrl || event.alt || event.meta {
+                        return false;
+                    }
                     let hit = self.hit_test(event.mouse_x, event.mouse_y);
                     if trace {
                         let cap = &self.border.caption;
