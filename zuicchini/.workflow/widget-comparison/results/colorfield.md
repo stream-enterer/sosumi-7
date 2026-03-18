@@ -7,10 +7,8 @@
 
 ## Findings: 8 total (4 widget-specific + 4 CC refs)
 
-### [MEDIUM] Missing "transparent" text underlay for non-opaque colors
-- **C++**: emColorField.cpp:380-394 — paints "transparent" text centered under the color swatch when alpha < 255
-- **Rust**: color_field.rs:342-368 — only paints color rect + outline, no text underlay
-- Text color uses InputFgColor (editable) or OutputFgColor (read-only)
+### [MEDIUM] Missing "transparent" text underlay for non-opaque colors — **FIXED**
+- **Fix**: Added "transparent" text paint before color rect when alpha < 255, matching C++ emColorField.cpp:380-394.
 - **Confidence**: high | **Coverage**: may be covered if golden test uses non-opaque color
 
 ### [LOW] Missing #RGB, #RGBA, #RRRGGGBBB, and named color parsing

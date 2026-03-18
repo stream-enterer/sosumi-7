@@ -7,28 +7,28 @@
 
 ## Findings: 11 total
 
-### [MEDIUM] Drag math uses uncapped grip size during move
-- Rust recalculates `gs = GRIP_FRACTION * size` during drag without capping at `size * 0.5` (which `calc_grip_rect` does). Edge case for tiny panels.
+### [MEDIUM] Drag math uses uncapped grip size during move — **FIXED**
+- **Fix**: Drag now uses capped grip size from calc_grip_rect (gw/gh).
 - **Confidence**: medium | **Coverage**: partially covered
 
-### [MEDIUM] Missing MouseInGrip hover tracking
-- C++ only shows resize cursor on grip hover. Rust always returns resize cursor.
+### [MEDIUM] Missing MouseInGrip hover tracking — **FIXED**
+- **Fix**: Added mouse_in_grip tracking on Move events, gated get_cursor on it.
 - **Confidence**: high | **Coverage**: uncovered
 
-### [LOW] Default min/max position differs (0.05/0.95 vs 0.0/1.0)
-- Golden tests override defaults so this doesn't break tests.
+### [LOW] Default min/max position differs (0.05/0.95 vs 0.0/1.0) — **FIXED**
+- **Fix**: Changed to 0.0/1.0 matching C++ defaults.
 - **Confidence**: high | **Coverage**: covered (overridden)
 
-### [LOW] set_limits has no min>max validation
-- C++ clamps [0,1] and averages if inverted. Rust stores directly.
+### [LOW] set_limits has no min>max validation — **FIXED**
+- **Fix**: Clamps to [0,1], averages if inverted, matching C++ SetMinMaxPos.
 - **Confidence**: high | **Coverage**: partially covered
 
-### [LOW] Hit test is 1D not 2D
-- Rust only checks one axis. Fine when grip spans full panel. Fails for OOB clicks.
+### [LOW] Hit test is 1D not 2D — **FIXED**
+- **Fix**: Now checks both axes.
 - **Confidence**: medium | **Coverage**: uncovered
 
-### [LOW] Inclusive vs exclusive upper bound in hit test
-- C++ `<`, Rust `<=`. Negligible with floats.
+### [LOW] Inclusive vs exclusive upper bound in hit test — **FIXED**
+- **Fix**: Changed `<=` to `<` matching C++.
 - **Confidence**: low | **Coverage**: uncovered
 
 ### [LOW] Missing IsEnabled() check on press (see CC-03)

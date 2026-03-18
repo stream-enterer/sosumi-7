@@ -7,18 +7,12 @@
 
 ## Findings: 6 total
 
-### [BUG] Label block horizontal alignment: C++ left-aligns, Rust centers
-- **C++**: emBorder.cpp:1293-1301 — `LabelAlignment` defaults to `EM_ALIGN_LEFT`, skips centering
-- **Rust**: label.rs:68 — `cx += (cw - w2) * 0.5` always centers
-- When text fits horizontally (w2 <= content width), C++ places text at left edge, Rust centers it
-- **Masked by golden test**: "Hello World" at 1.0x0.75 is likely width-constrained (w2 > w), so centering branch never runs
-- A short caption on a wide panel would expose this
+### [BUG] Label block horizontal alignment: C++ left-aligns, Rust centers — **FIXED**
+- **Fix**: Removed centering offset `cx += (cw - w2) * 0.5`, text stays at left edge matching C++ EM_ALIGN_LEFT default.
 - **Confidence**: high | **Coverage**: effectively uncovered (golden passes by coincidence)
 
-### [BUG] Text line alignment hardcoded to Center instead of Left
-- **C++**: emBorder.cpp:1394 — passes `CaptionAlignment` (default `EM_ALIGN_LEFT`) to `PaintTextBoxed`
-- **Rust**: label.rs:96 — `TextAlignment::Center` hardcoded
-- For single-line text: invisible. For multi-line captions with different-length lines: left vs center alignment of each line
+### [BUG] Text line alignment hardcoded to Center instead of Left — **FIXED**
+- **Fix**: Changed text_alignment from Center to Left matching C++ CaptionAlignment default.
 - **Confidence**: high | **Coverage**: uncovered (golden uses single-line text)
 
 ### [GAP] No description or icon support

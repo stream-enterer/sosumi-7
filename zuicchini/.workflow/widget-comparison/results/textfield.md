@@ -37,9 +37,9 @@
 - `calc_total_cols_rows` correctly handles tabs for width, but paint doesn't use tab-expanded positioning
 - **Confidence**: high | **Coverage**: uncovered
 
-### [MEDIUM] Overwrite mode doesn't expand cols count for cursor
+### [MEDIUM] Overwrite mode doesn't expand cols count for cursor — **FIXED**
 - C++ increments `cols` when cursor is at last column in overwrite mode + focused
-- Rust has no equivalent — text layout scaling (`ws`) differs at end of text
+- **Fix**: Both paint paths increment cols matching C++ emTextField.cpp:920-922
 - **Confidence**: high | **Coverage**: uncovered
 
 ### [MEDIUM] Double-click word selection differs on delimiters — **FIXED**
@@ -53,9 +53,9 @@
 - UX regression: no real-time visual feedback during text drag
 - **Confidence**: high | **Coverage**: uncovered
 
-### [MEDIUM] Ctrl+A doesn't publish selection to clipboard
+### [MEDIUM] Ctrl+A doesn't publish selection to clipboard — **FIXED**
 - C++ `SelectAll(true)` publishes to clipboard
-- Rust `select_all()` does not publish
+- **Fix**: Added publish_selection() after select_all() in Ctrl+A handler
 - **Confidence**: high | **Coverage**: uncovered
 
 ### [MEDIUM] Password mode paints as single string vs individual chars

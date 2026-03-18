@@ -179,9 +179,24 @@ TkTest composition divergence documented in results/tktest-divergence.md. Missin
 **Finding addressed**: Splitter [LOW] Hit test is 1D not 2D, [LOW] Inclusive upper bound
 **Change**: Now checks both axes; changed `<=` to `<` matching C++.
 
+### Fix 16: TextField overwrite mode cols expansion
+
+**Finding addressed**: TextField [MEDIUM] Overwrite mode doesn't expand cols count
+**Change**: Both paint paths now increment cols when overwrite mode, focused, and cursor at last column.
+
+### Fix 17: TextField Ctrl+A publishes selection to clipboard
+
+**Finding addressed**: TextField [MEDIUM] Ctrl+A doesn't publish selection
+**Change**: Added `publish_selection()` call after `select_all()` in Ctrl+A handler.
+
+### Fix 18: Splitter grip hover cursor tracking
+
+**Finding addressed**: Splitter [MEDIUM] Missing MouseInGrip hover tracking
+**Change**: Added mouse_in_grip field, tracked on Move events, gated get_cursor on it.
+
 ### All Fixes Summary
 
-All 1137 tests pass after every fix. Total: 15 fixes across 11 files.
+All 1137 tests pass after every fix. Total: 19 fixes across 12 source files.
 
 ### Notes
 
