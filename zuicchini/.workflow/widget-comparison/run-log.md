@@ -209,3 +209,26 @@ All 1137 tests pass after every fix. Total: 30+ fixes across 13 source files.
 - The alignment bugs in Label are systemic — they affect DoLabel which is used by ALL border-based widgets. This needs tracking as a cross-cutting concern.
 - hit_test() vs check_mouse() mismatch in Button is the highest-confidence bug found so far.
 - The missing input guards (modifier keys, min extent, enabled, clip rect, IsViewed) are systemic — they affect all interactive widgets. Should verify once definitively rather than repeating for each widget.
+
+---
+
+## 2026-03-18 — Session 2: Remaining Widgets + Layer 2
+
+### Strategy
+
+Prior session fixed many findings. This session audits the remaining unaudited widgets:
+- **Border** (2676 LOC — core render path, root of CC-05/CC-06)
+- **CheckButton** (340 LOC — CC-01 verification)
+- **Tunnel, Dialog, Look** (small widgets)
+- **FileSelectionBox** (665 LOC — inverse size asymmetry vs C++ 1620)
+- **FilePanel, FileDialog, ErrorPanel, CoreConfigPanel**
+
+### Batch 4
+
+| Time | Widget | Status | Findings |
+|------|--------|--------|----------|
+| — | Border | pending | — |
+| — | CheckButton | pending | — |
+| — | Tunnel | pending | — |
+| — | Dialog + Look + ErrorPanel | pending | — |
+| — | FileSelectionBox | pending | — |
