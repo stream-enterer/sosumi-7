@@ -6,6 +6,7 @@ use crate::panel::PanelState;
 use crate::render::{Painter, BORDER_EDGES_ONLY};
 
 use super::border::{Border, OuterBorderType};
+use super::button::HOWTO_BUTTON;
 use super::look::Look;
 use super::toolkit_images::with_toolkit_images;
 
@@ -289,6 +290,7 @@ impl CheckButton {
     /// sections. Matches C++ `emCheckButton::GetHowTo`.
     pub fn get_how_to(&self, enabled: bool, focusable: bool) -> String {
         let mut text = self.border.get_howto(enabled, focusable);
+        text.push_str(HOWTO_BUTTON);
         text.push_str(HOWTO_CHECK_BUTTON);
         if self.checked {
             text.push_str(HOWTO_CHECKED);

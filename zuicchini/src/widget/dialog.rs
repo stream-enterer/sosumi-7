@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
 use crate::foundation::Rect;
-use crate::panel::PanelCtx;
+use crate::input::{InputEvent, InputKey, InputState, InputVariant};
+use crate::panel::{PanelCtx, PanelState};
 use crate::render::Painter;
 
 use super::border::{Border, OuterBorderType};
@@ -16,6 +17,7 @@ pub enum DialogResult {
 }
 
 type DialogFinishCb = Box<dyn FnMut(&DialogResult)>;
+type DialogCheckFinishCb = Box<dyn FnMut(&DialogResult) -> bool>;
 
 /// Modal dialog container widget.
 pub struct Dialog {
@@ -24,6 +26,7 @@ pub struct Dialog {
     buttons: Vec<(String, DialogResult)>,
     result: Option<DialogResult>,
     pub on_finish: Option<DialogFinishCb>,
+    pub on_check_finish: Option<DialogCheckFinishCb>,
     auto_delete: bool,
 }
 
@@ -39,6 +42,7 @@ impl Dialog {
             buttons: Vec::new(),
             result: None,
             on_finish: None,
+            on_check_finish: None,
             auto_delete: false,
         }
     }
@@ -52,6 +56,11 @@ impl Dialog {
     }
 
     pub fn finish(&mut self, result: DialogResult) {
+        if let Some(cb) = &mut self.on_check_finish {
+            if !cb(&result) {
+                return;
+            }
+        }
         self.result = Some(result.clone());
         if let Some(cb) = &mut self.on_finish {
             cb(&result);
@@ -155,6 +164,36 @@ impl Dialog {
         dlg
     }
 
+    /// Handle keyboard input for the dialog.
+    ///
+    /// Port of C++ `emDlg::DlgPanel::Input`:
+    /// - Enter (no modifiers) → finish with `DialogResult::Ok`
+    /// - Escape (no modifiers) → finish with `DialogResult::Cancel`
+    pub fn input(
+        &mut self,
+        event: &InputEvent,
+        _state: &PanelState,
+        _input_state: &InputState,
+    ) -> bool {
+        if event.variant != InputVariant::Press {
+            return false;
+        }
+        if event.ctrl || event.alt || event.meta {
+            return false;
+        }
+        match event.key {
+            InputKey::Enter => {
+                self.finish(DialogResult::Ok);
+                true
+            }
+            InputKey::Escape => {
+                self.finish(DialogResult::Cancel);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Check if the dialog should close (i.e. a result has been set).
     ///
     /// Port of C++ `emDialog::CheckFinish`.
@@ -166,7 +205,30 @@ impl Dialog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::foundation::Rect;
+    use crate::panel::PanelId;
+    use slotmap::Key as _;
     use std::cell::RefCell;
+
+    fn default_panel_state() -> PanelState {
+        PanelState {
+            id: PanelId::null(),
+            is_active: true,
+            in_active_path: true,
+            window_focused: true,
+            enabled: true,
+            viewed: true,
+            clip_rect: Rect::new(0.0, 0.0, 1e6, 1e6),
+            viewed_rect: Rect::new(0.0, 0.0, 200.0, 100.0),
+            priority: 1.0,
+            memory_limit: u64::MAX,
+            pixel_tallness: 1.0,
+        }
+    }
+
+    fn default_input_state() -> InputState {
+        InputState::new()
+    }
 
     #[test]
     fn dialog_finish_fires_callback() {
@@ -188,11 +250,74 @@ mod tests {
     }
 
     #[test]
+    fn check_finish_can_veto() {
+        let look = Look::new();
+        let mut dlg = Dialog::new("Veto", look);
+        dlg.on_check_finish = Some(Box::new(|r| *r != DialogResult::Cancel));
+
+        dlg.finish(DialogResult::Cancel);
+        assert!(dlg.result().is_none(), "veto should prevent finish");
+
+        dlg.finish(DialogResult::Ok);
+        assert_eq!(dlg.result(), Some(&DialogResult::Ok));
+    }
+
+    #[test]
     fn dialog_custom_result() {
         let look = Look::new();
         let mut dlg = Dialog::new("Custom", look);
         dlg.add_button("Retry", DialogResult::Custom(42));
         dlg.finish(DialogResult::Custom(42));
         assert_eq!(dlg.result(), Some(&DialogResult::Custom(42)));
+    }
+
+    #[test]
+    fn enter_finishes_with_ok() {
+        let look = Look::new();
+        let mut dlg = Dialog::new("Test", look);
+        let ps = default_panel_state();
+        let is = default_input_state();
+
+        let consumed = dlg.input(&InputEvent::press(InputKey::Enter), &ps, &is);
+        assert!(consumed);
+        assert_eq!(dlg.result(), Some(&DialogResult::Ok));
+    }
+
+    #[test]
+    fn escape_finishes_with_cancel() {
+        let look = Look::new();
+        let mut dlg = Dialog::new("Test", look);
+        let ps = default_panel_state();
+        let is = default_input_state();
+
+        let consumed = dlg.input(&InputEvent::press(InputKey::Escape), &ps, &is);
+        assert!(consumed);
+        assert_eq!(dlg.result(), Some(&DialogResult::Cancel));
+    }
+
+    #[test]
+    fn enter_with_modifier_is_ignored() {
+        let look = Look::new();
+        let mut dlg = Dialog::new("Test", look);
+        let ps = default_panel_state();
+        let is = default_input_state();
+
+        let mut ev = InputEvent::press(InputKey::Enter);
+        ev.ctrl = true;
+        let consumed = dlg.input(&ev, &ps, &is);
+        assert!(!consumed);
+        assert!(dlg.result().is_none());
+    }
+
+    #[test]
+    fn release_event_is_ignored() {
+        let look = Look::new();
+        let mut dlg = Dialog::new("Test", look);
+        let ps = default_panel_state();
+        let is = default_input_state();
+
+        let consumed = dlg.input(&InputEvent::release(InputKey::Enter), &ps, &is);
+        assert!(!consumed);
+        assert!(dlg.result().is_none());
     }
 }

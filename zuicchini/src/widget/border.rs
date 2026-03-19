@@ -362,36 +362,91 @@ impl Border {
 
     /// Best (natural) height-to-width ratio of the label.
     ///
-    /// C++ equivalent: `emBorder::GetBestLabelTallness()`.
+    /// C++ equivalent: `emBorder::DoLabel(LABEL_FUNC_GET_BEST_TALLNESS)`.
     pub(crate) fn best_label_tallness(&self) -> f64 {
         let has_cap = !self.caption.is_empty();
+        let has_icon = self.icon.is_some();
         let has_desc = !self.description.is_empty();
 
-        let cap_units: f64 = if has_cap { 1.0 } else { 0.0 };
-        let desc_units: f64 = if has_desc { 0.15 } else { 0.0 };
-
-        let gap2_units: f64 = if has_cap && has_desc {
-            desc_units * 0.05
+        // Step 1: caption
+        let (cap_w, cap_h) = if has_cap {
+            let w = Painter::measure_text_width(&self.caption, 1.0);
+            (w, 1.0_f64)
         } else {
-            0.0
+            (0.0, 0.0)
         };
-        let total_h = cap_units + gap2_units + desc_units;
-        if total_h <= 0.0 {
+        let (mut total_w, mut total_h) = if has_cap {
+            (cap_w, cap_h)
+        } else {
+            (1.0, 1.0) // C++ defaults; overwritten by icon/desc if present
+        };
+
+        // Step 2: icon
+        let icon_h_for_desc: f64; // iconH after icon processing (needed for desc-only-icon case)
+        if let Some(ref img) = self.icon {
+            let raw_w = img.width().max(1) as f64;
+            let raw_h = img.height().max(1) as f64;
+            let mut icon_w = raw_w;
+            let mut icon_h = raw_h;
+            if icon_h > icon_w * self.max_icon_area_tallness {
+                icon_h = icon_w * self.max_icon_area_tallness;
+            }
+            if has_cap {
+                if self.icon_above_caption {
+                    let f = cap_h * 3.0;
+                    icon_w *= f / icon_h;
+                    icon_h = f;
+                    let gap1 = cap_h * 0.1;
+                    total_w = icon_w.max(cap_w);
+                    total_h = icon_h + gap1 + cap_h;
+                } else {
+                    icon_w *= cap_h / icon_h;
+                    icon_h = cap_h;
+                    let gap1 = cap_h * 0.1;
+                    total_w = icon_w + gap1 + cap_w;
+                    total_h = cap_h;
+                }
+            } else {
+                total_w = icon_w;
+                total_h = icon_h;
+            }
+            icon_h_for_desc = icon_h;
+        } else {
+            icon_h_for_desc = 0.0;
+        }
+
+        // Step 3: description
+        if has_desc {
+            let desc_w_raw = Painter::measure_text_width(&self.description, 1.0);
+            let desc_h_raw = 1.0_f64;
+            if has_icon || has_cap {
+                let f = if has_cap {
+                    cap_h * 0.15
+                } else {
+                    icon_h_for_desc * 0.05
+                };
+                let mut desc_w = f / desc_h_raw;
+                let mut desc_h = f;
+                if desc_w > total_w {
+                    desc_h *= total_w / desc_w;
+                    desc_w = total_w;
+                }
+                let gap2 = desc_h * 0.05;
+                total_h += gap2 + desc_h;
+                let _ = desc_w; // used in clamping above
+            } else {
+                // description only
+                total_w = desc_w_raw;
+                total_h = desc_h_raw;
+            }
+        }
+
+        // Guard against degenerate (no label at all falls through with defaults 1.0/1.0)
+        if !has_cap && !has_icon && !has_desc {
             return 1.0;
         }
 
-        let cap_w = if has_cap {
-            Painter::measure_text_width(&self.caption, 1.0)
-        } else {
-            0.0
-        };
-        let desc_w = if has_desc {
-            Painter::measure_text_width(&self.description, 0.15)
-        } else {
-            0.0
-        };
-        let total_w = cap_w.max(desc_w).max(1e-100);
-        total_h / total_w
+        total_h / total_w.max(1e-100)
     }
 
     /// Horizontal offset for positioning a block of width `block_w` within
@@ -593,6 +648,9 @@ impl Border {
                 use crate::render::Painter;
                 let cap_tw = if has_cap {
                     let (tw, _) = Painter::get_text_size(&self.caption, 1.0, true, 0.0);
+                    tw
+                } else if has_desc {
+                    let (tw, _) = Painter::get_text_size(&self.description, 1.0, true, 0.0);
                     tw
                 } else {
                     1.0
@@ -906,7 +964,7 @@ How to move or set the focus:\n\
             }
             OuterBorderType::Rect => {
                 // Substance rect at the stroke center line.
-                let d = s * 0.006;
+                let d = s * 0.023;
                 (
                     Rect {
                         x: d,
@@ -918,7 +976,7 @@ How to move or set the focus:\n\
                 )
             }
             OuterBorderType::RoundRect => {
-                let d = s * 0.006; // half-stroke
+                let d = s * 0.023; // substance rect inset
                 let f = s * 0.22; // outer radius
                 (
                     Rect {
@@ -1034,7 +1092,7 @@ How to move or set the focus:\n\
         }
 
         let label_h = if self.label_in_border && self.has_label() {
-            self.label_space(label_area_w, rnd_h)
+            s * self.label_space_factor()
         } else {
             0.0
         };
@@ -1165,7 +1223,7 @@ How to move or set the focus:\n\
                 }
 
                 let label_h = if self.label_in_border && self.has_label() {
-                    self.label_space(rnd_w, rnd_h)
+                    s * self.label_space_factor()
                 } else {
                     0.0
                 };
@@ -1229,7 +1287,7 @@ How to move or set the focus:\n\
         }
 
         let label_h = if self.label_in_border && self.has_label() {
-            self.label_space(rnd_w, rnd_h)
+            s * self.label_space_factor()
         } else {
             0.0
         };
@@ -1462,7 +1520,7 @@ How to move or set the focus:\n\
             if enabled {
                 c
             } else {
-                c.with_alpha((c.a() as u16 * 64 / 255) as u8)
+                c.with_alpha((c.a() as f64 * 0.25 + 0.5) as u8)
             }
         };
         self.paint_label_impl(painter, area, look, &dim_color);
@@ -1481,7 +1539,7 @@ How to move or set the focus:\n\
             if enabled {
                 color
             } else {
-                color.with_alpha((color.a() as u16 * 64 / 255) as u8)
+                color.with_alpha((color.a() as f64 * 0.25 + 0.5) as u8)
             }
         };
         self.paint_label_impl(painter, area, look, &dim_color);
@@ -1606,12 +1664,12 @@ How to move or set the focus:\n\
         _focused: bool,
         enabled: bool,
     ) {
-        // Dimming for disabled state: C++ "GetTransparented(75.0)" ~ alpha * 0.25.
+        // Dimming for disabled state: C++ "GetTransparented(75.0)" = alpha * 0.25 + 0.5, truncate.
         let dim_color = |c: crate::foundation::Color| -> crate::foundation::Color {
             if enabled {
                 c
             } else {
-                c.with_alpha((c.a() as u16 * 64 / 255) as u8)
+                c.with_alpha((c.a() as f64 * 0.25 + 0.5) as u8)
             }
         };
 
@@ -1627,17 +1685,9 @@ How to move or set the focus:\n\
             }
             OuterBorderType::Margin => {}
             OuterBorderType::MarginFilled => {
-                let (ox, oy, _, _) = self.outer_insets(w, h);
-                painter.paint_rect(
-                    ox,
-                    oy,
-                    w - 2.0 * ox,
-                    h - 2.0 * oy,
-                    look.bg_color,
-                    Color::TRANSPARENT,
-                );
-                // C++ DoBorder: canvasColor=color after fill.
+                // C++ DoBorder: Clear fills the ENTIRE panel, not the inset rect.
                 if !look.bg_color.is_transparent() {
+                    painter.paint_rect(0.0, 0.0, w, h, look.bg_color, Color::TRANSPARENT);
                     painter.set_canvas_color(look.bg_color);
                 }
             }
@@ -1646,16 +1696,18 @@ How to move or set the focus:\n\
                 let s = self.base_unit(w, h);
                 let d = s * 0.023;
                 let e = s * 0.02;
-                painter.paint_rect(
-                    d,
-                    d,
-                    w - 2.0 * d,
-                    h - 2.0 * d,
-                    look.bg_color,
-                    Color::TRANSPARENT,
-                );
-                // C++ updates canvasColor to bg_color after fill.
-                painter.set_canvas_color(look.bg_color);
+                if !look.bg_color.is_transparent() {
+                    painter.paint_rect(
+                        d,
+                        d,
+                        w - 2.0 * d,
+                        h - 2.0 * d,
+                        look.bg_color,
+                        Color::TRANSPARENT,
+                    );
+                    // C++ updates canvasColor to bg_color after fill.
+                    painter.set_canvas_color(look.bg_color);
+                }
                 let color = dim_color(look.fg_color);
                 let sd = d + e * 0.5;
                 painter.paint_rect_outlined(
@@ -1673,8 +1725,10 @@ How to move or set the focus:\n\
                 let d = s * 0.023;
                 let e = s * 0.02;
                 let r = s * 0.22;
-                painter.paint_round_rect(d, d, w - 2.0 * d, h - 2.0 * d, r, look.bg_color);
-                painter.set_canvas_color(look.bg_color);
+                if !look.bg_color.is_transparent() {
+                    painter.paint_round_rect(d, d, w - 2.0 * d, h - 2.0 * d, r, look.bg_color);
+                    painter.set_canvas_color(look.bg_color);
+                }
                 let color = dim_color(look.fg_color);
                 let sd = d + e * 0.5;
                 let sr = r - e * 0.5;
@@ -2291,8 +2345,9 @@ mod tests {
     fn disabled_dimming_alpha() {
         use crate::foundation::Color;
         let c = Color::rgba(100, 150, 200, 255);
-        let dimmed = c.with_alpha((c.a() as u16 * 64 / 255) as u8);
-        // 255 * 64 / 255 = 64
+        // C++ GetTransparented(75.0): alpha * 0.25 + 0.5, truncate
+        let dimmed = c.with_alpha((c.a() as f64 * 0.25 + 0.5) as u8);
+        // 255 * 0.25 + 0.5 = 64.25, truncated = 64
         assert_eq!(dimmed.a(), 64);
         assert_eq!(dimmed.r(), 100);
     }

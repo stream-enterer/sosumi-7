@@ -416,7 +416,7 @@ impl Button {
 }
 
 /// C++ `emButton::HowToButton`.
-const HOWTO_BUTTON: &str = "\n\n\
+pub(crate) const HOWTO_BUTTON: &str = "\n\n\
     BUTTON\n\n\
     This is a button. Buttons can be triggered to perform an application defined\n\
     function.\n\n\

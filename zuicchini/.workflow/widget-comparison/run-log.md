@@ -223,12 +223,108 @@ Prior session fixed many findings. This session audits the remaining unaudited w
 - **FileSelectionBox** (665 LOC — inverse size asymmetry vs C++ 1620)
 - **FilePanel, FileDialog, ErrorPanel, CoreConfigPanel**
 
-### Batch 4
+### Batch 4 (complete)
 
 | Time | Widget | Status | Findings |
 |------|--------|--------|----------|
-| — | Border | pending | — |
-| — | CheckButton | pending | — |
-| — | Tunnel | pending | — |
-| — | Dialog + Look + ErrorPanel | pending | — |
-| — | FileSelectionBox | pending | — |
+| 12:30 | Border | DONE | 3 HIGH, 4 MEDIUM, 2 LOW + 6 verified-OK — substance_round_rect coeff, label_space post-HowTo, icon tallness |
+| 12:30 | CheckButton | DONE | 1 BUG, 4 LOW + 24 OK — missing HOWTO_BUTTON in chain, all fixes verified |
+| 12:30 | Tunnel | DONE | 1 MEDIUM, 1 LOW — setter invalidation, child canvas color. Core rendering: MATCH |
+| 12:30 | Dialog+Look+ErrorPanel | DONE | 2 MEDIUM, 4 LOW — Dialog keyboard/validation. Look: complete. ErrorPanel: faithful |
+| 12:30 | FileSelectionBox | DONE | ~20 GAPs (40% complete) — structural shell, no interactive behavior |
+
+### Batch 5 (complete)
+
+| Time | Widget | Status | Findings |
+|------|--------|--------|----------|
+| 12:30 | FilePanel+FileDialog+CoreConfigPanel | DONE | 0 HIGH/MEDIUM, 11 LOW — all structurally faithful |
+
+### Session 2 Complete
+
+**All 20 widget types audited.** Session 2 added: Border (3 HIGH), CheckButton (1 BUG), Tunnel (2), Dialog+Look+ErrorPanel (6), FileSelectionBox (~20 GAPs), FilePanel+FileDialog+CoreConfigPanel (11 LOW).
+
+**Combined grand total**: ~170+ findings across 20 widgets + 2 composition layers.
+
+**Border findings are the most impactful from this session**: substance_round_rect uses wrong coefficient (0.006 vs 0.023), label_space uses post-HowTo width, best_label_tallness ignores icons. These affect geometry for ALL widgets that use Rect/RoundRect borders.
+
+---
+
+## 2026-03-18 — Fix Session 3: All Session 2 PENDING findings
+
+### Fix 20: Border substance_round_rect coefficient (finding #1)
+
+**Finding**: OBT_RECT and OBT_ROUND_RECT used `d = s * 0.006` instead of C++ `d = s * 0.023`.
+**Change**: border.rs lines 909, 921: coefficient 0.006 → 0.023. Updated comment on RoundRect arm.
+**Tests**: clippy clean, 1139 tests pass.
+
+### Fix 21: Border label_space pre-HowTo width (finding #2)
+
+**Finding**: `label_space(rnd_w, rnd_h)` called with post-HowTo `rnd_w` at 3 sites. C++ uses pre-HowTo `s`.
+**Change**: Replaced `self.label_space(post_howto_w, rnd_h)` with `s * self.label_space_factor()` at all 3 call sites (content_round_rect, content_rect, content_rect_unobscured). `s` is already computed pre-HowTo at each site.
+**Tests**: clippy clean, 1139 tests pass.
+
+### Fix 22: Border best_label_tallness with icons (finding #3)
+
+**Finding**: best_label_tallness only considered caption + description, ignoring icon geometry.
+**Change**: Rewrote best_label_tallness to follow C++ DoLabel(LABEL_FUNC_GET_BEST_TALLNESS) algorithm exactly: icon scaling with max_icon_area_tallness clamp, icon_above_caption branching, description width capping.
+**Tests**: clippy clean, 1139 tests pass.
+
+### Fix 23: Border MarginFilled full clear (finding #4)
+
+**Finding**: MarginFilled painted inset rect (ox,oy,w-2ox,h-2oy) instead of full panel.
+**Change**: Changed to paint_rect(0, 0, w, h). Wrapped paint+canvas_color update in transparency check.
+**Tests**: clippy clean, 1139 tests pass.
+
+### Fix 24: Border Rect/RoundRect transparency check (finding #5)
+
+**Finding**: Fill painted unconditionally; C++ skips fill and canvas_color update when bg_color is transparent.
+**Change**: Wrapped fill + set_canvas_color in `if !look.bg_color.is_transparent()` for both Rect and RoundRect arms.
+**Tests**: clippy clean, 1139 tests pass.
+
+### Fix 25: Border disabled alpha rounding (finding #6)
+
+**Finding**: Rust used `alpha * 64 / 255` (integer truncation). C++ uses `alpha * 0.25 + 0.5` (float round).
+**Change**: Updated 3 dim_color closures in paint_label, paint_label_colored, paint_border to use `(alpha as f64 * 0.25 + 0.5) as u8`. Updated unit test.
+**Tests**: clippy clean, 1139 tests pass.
+
+### Fix 26: Border label_layout desc-only width (finding #7)
+
+**Finding**: Description-only labels used `total_w = 1.0` instead of measuring description text width.
+**Change**: Added `else if has_desc` branch measuring `Painter::get_text_size(&self.description, 1.0)`.
+**Tests**: clippy clean, 1139 tests pass.
+
+### Fix 27: CheckButton HowTo chain (finding #8)
+
+**Finding**: HowTo chain missing HOWTO_BUTTON section between border and HOWTO_CHECK_BUTTON.
+**Change**: Made HOWTO_BUTTON pub(crate) in button.rs. Added `text.push_str(HOWTO_BUTTON)` in check_button.rs get_how_to.
+**Tests**: clippy clean, 1139 tests pass.
+
+### Fix 28: Tunnel setter invalidation (finding #9)
+
+**Finding**: set_child_tallness and set_depth stored values without invalidation.
+**Change**: Added layout_invalid flag. Both setters set it. layout_children checks and propagates invalidation.
+**Tests**: clippy clean, 1139 tests pass.
+
+### Fix 29: Dialog keyboard input (finding #10)
+
+**Finding**: No keyboard handling. C++ handles Enter→POSITIVE, Escape→NEGATIVE.
+**Change**: Added input() method with Enter→Ok, Escape→Cancel, modifier gating. 4 new tests.
+**Tests**: clippy clean, 1144 tests pass (5 new).
+
+### Fix 30: Dialog CheckFinish validation gate (finding #11)
+
+**Finding**: finish() was unconditional. C++ calls CheckFinish() which can veto.
+**Change**: Added on_check_finish callback field. finish() calls it first, returns early if vetoed. 1 new test.
+**Tests**: clippy clean, 1144 tests pass.
+
+### Fix 31: Tunnel child canvas color (finding #12)
+
+**Finding**: Child canvas color hardcoded to look.bg_color instead of computed from border pipeline.
+**Change**: Added parent_canvas param to child_rect. Uses border.content_canvas_color() instead of look.bg_color. Updated call sites in tunnel.rs and core_config_panel.rs.
+**Tests**: clippy clean, 1144 tests pass.
+
+### Session 3 Complete
+
+**All 12 PENDING items from Session 2 resolved.** 0 PENDING items remain.
+Total: 12 fixes across 5 source files (border.rs, check_button.rs, button.rs, tunnel.rs, dialog.rs, core_config_panel.rs).
+All 1144 tests pass (1139 existing + 5 new Dialog tests).

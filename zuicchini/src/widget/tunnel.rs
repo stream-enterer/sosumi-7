@@ -2,7 +2,7 @@ use std::cell::OnceCell;
 use std::rc::Rc;
 
 use crate::foundation::{Color, Image, Rect};
-use crate::panel::{PanelBehavior, PanelCtx, PanelState};
+use crate::panel::{NoticeFlags, PanelBehavior, PanelCtx, PanelState};
 use crate::render::Painter;
 
 use super::border::{Border, OuterBorderType};
@@ -39,6 +39,12 @@ pub struct Tunnel {
     /// Depth of the tunnel. Larger values make the child panel smaller.
     /// The relationship is roughly: area_end = area_entrance / ((depth+1)^2).
     depth: f64,
+    /// Set when `set_child_tallness` or `set_depth` is called at runtime.
+    /// Cleared by `layout_children`, which then re-queues `LAYOUT_CHANGED` on
+    /// its own children so the next deliver_notices pass repositions them and
+    /// triggers a full repaint (via `had_notices = true` in the app loop).
+    /// Mirrors C++ `InvalidatePainting()` + `InvalidateChildrenLayout()`.
+    layout_invalid: bool,
 }
 
 /// Result of the tunnel geometry calculation.
@@ -63,6 +69,7 @@ impl Tunnel {
             look,
             child_tallness: 0.0,
             depth: 10.0,
+            layout_invalid: false,
         }
     }
 
@@ -84,6 +91,7 @@ impl Tunnel {
 
     pub fn set_child_tallness(&mut self, tallness: f64) {
         self.child_tallness = tallness;
+        self.layout_invalid = true;
     }
 
     pub fn depth(&self) -> f64 {
@@ -93,6 +101,7 @@ impl Tunnel {
     pub fn set_depth(&mut self, depth: f64) {
         let depth = if depth < 1e-10 { 1e-10 } else { depth };
         self.depth = depth;
+        self.layout_invalid = true;
     }
 
     pub(crate) fn border_mut(&mut self) -> &mut Border {
@@ -100,7 +109,13 @@ impl Tunnel {
     }
 
     /// Compute the geometry of the tunnel's inner (child) rectangle.
-    pub fn child_rect(&self, w: f64, h: f64) -> TunnelChildRect {
+    ///
+    /// `parent_canvas` is the canvas color of this tunnel panel (i.e.
+    /// `ctx.canvas_color()`). It is threaded through the border paint pipeline
+    /// via `Border::content_canvas_color` to arrive at the correct color for
+    /// the child panel — matching how C++ `DoTunnel` passes `cc` from
+    /// `GetContentRoundRect` into `pCanvasColor`.
+    pub fn child_rect(&self, w: f64, h: f64, parent_canvas: Color) -> TunnelChildRect {
         let (rect, ar) = self.content_round_rect(w, h);
         let ax = rect.x;
         let ay = rect.y;
@@ -110,12 +125,15 @@ impl Tunnel {
         let (bx, by, bw, bh, br) = self.compute_inner_rect(ax, ay, aw, ah, ar);
 
         // Child rect is the inner rect inset by half the corner radius.
+        // Canvas color is computed by walking the border paint pipeline, matching
+        // C++ GetContentRoundRect which returns `cc` after DoBorder's canvasColor
+        // tracking (always enabled=true: Tunnel has no InputField/OutputField inner).
         TunnelChildRect {
             x: bx + 0.5 * br,
             y: by + 0.5 * br,
             w: bw - br,
             h: bh - br,
-            canvas_color: self.look.bg_color,
+            canvas_color: self.border.content_canvas_color(parent_canvas, &self.look, true),
         }
     }
 
@@ -279,8 +297,19 @@ impl PanelBehavior for Tunnel {
             return;
         }
 
+        // Mirrors C++ InvalidatePainting() + InvalidateChildrenLayout(): when
+        // set_child_tallness or set_depth is called at runtime, re-queue
+        // LAYOUT_CHANGED on this panel's children so the next deliver_notices
+        // pass repositions them. The had_notices=true path in the app loop
+        // also causes a full repaint, matching InvalidatePainting().
+        if self.layout_invalid {
+            self.layout_invalid = false;
+            ctx.tree.invalidate_children_layout(ctx.id);
+            ctx.tree.queue_notice(ctx.id, NoticeFlags::LAYOUT_CHANGED);
+        }
+
         let rect = ctx.layout_rect();
-        let cr = self.child_rect(rect.w, rect.h);
+        let cr = self.child_rect(rect.w, rect.h, ctx.canvas_color());
 
         if let Some(&child) = ctx.children().first() {
             ctx.layout_child(child, cr.x, cr.y, cr.w, cr.h);
@@ -313,7 +342,7 @@ mod tests {
     fn tunnel_child_rect_is_inside_content() {
         let look = Look::new();
         let tunnel = Tunnel::new(look);
-        let cr = tunnel.child_rect(100.0, 60.0);
+        let cr = tunnel.child_rect(100.0, 60.0, Color::BLACK);
         assert!(cr.x > 0.0, "child x={} should be positive", cr.x);
         assert!(cr.y > 0.0, "child y={} should be positive", cr.y);
         assert!(

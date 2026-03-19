@@ -730,7 +730,7 @@ impl PanelBehavior for MaxMemInnerTunnelPanel {
         }
 
         let rect = ctx.layout_rect();
-        let cr = self.tunnel.child_rect(rect.w, rect.h);
+        let cr = self.tunnel.child_rect(rect.w, rect.h, ctx.canvas_color());
         if let Some(&child) = ctx.children().first() {
             ctx.layout_child(child, cr.x, cr.y, cr.w, cr.h);
             ctx.tree.set_canvas_color(child, cr.canvas_color);
@@ -790,7 +790,7 @@ impl PanelBehavior for MaxMemTunnelPanel {
         }
 
         let rect = ctx.layout_rect();
-        let cr = self.tunnel.child_rect(rect.w, rect.h);
+        let cr = self.tunnel.child_rect(rect.w, rect.h, ctx.canvas_color());
         if let Some(&child) = ctx.children().first() {
             ctx.layout_child(child, cr.x, cr.y, cr.w, cr.h);
             ctx.tree.set_canvas_color(child, cr.canvas_color);
