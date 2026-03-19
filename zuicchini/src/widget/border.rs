@@ -2734,4 +2734,577 @@ mod tests {
             "tallness 2.0 should be taller than 1.0"
         );
     }
+
+    /// Verify that `substance_round_rect` uses the correct C++ coefficient
+    /// `d = s * 0.023` for `OuterBorderType::Rect` and `RoundRect` (not the
+    /// old buggy value of 0.006). With `border_scaling = 1.0` and
+    /// `w = 1000.0, h = 100.0`, `s = min(w, h) * 1.0 = 100.0`, so
+    /// `d = 100.0 * 0.023 = 2.3`. The substance rect should be inset by
+    /// `d` on each side.
+    #[test]
+    fn substance_round_rect_rect_uses_correct_coefficient() {
+        let border = Border::new(OuterBorderType::Rect);
+        let w = 1000.0_f64;
+        let h = 100.0_f64;
+        let (rect, radius) = border.substance_round_rect(w, h);
+
+        // s = min(1000, 100) * 1.0 = 100.0
+        // d = 100.0 * 0.023 = 2.3
+        let s = w.min(h) * border.border_scaling;
+        let expected_d = s * 0.023;
+
+        let eps = 1e-6;
+        assert!(
+            (rect.x - expected_d).abs() < eps,
+            "rect.x = {}, expected {}",
+            rect.x,
+            expected_d,
+        );
+        assert!(
+            (rect.y - expected_d).abs() < eps,
+            "rect.y = {}, expected {}",
+            rect.y,
+            expected_d,
+        );
+        assert!(
+            (rect.w - (w - 2.0 * expected_d)).abs() < eps,
+            "rect.w = {}, expected {}",
+            rect.w,
+            w - 2.0 * expected_d,
+        );
+        assert!(
+            (rect.h - (h - 2.0 * expected_d)).abs() < eps,
+            "rect.h = {}, expected {}",
+            rect.h,
+            h - 2.0 * expected_d,
+        );
+        assert!(radius.abs() < eps, "Rect border should have radius 0");
+
+        // Sanity: the buggy coefficient 0.006 would give d = 0.6, which is
+        // far from 2.3.  Make sure we are NOT near the old value.
+        let buggy_d = s * 0.006;
+        assert!(
+            (rect.x - buggy_d).abs() > 1.0,
+            "rect.x {} is too close to the buggy inset {}",
+            rect.x,
+            buggy_d,
+        );
+    }
+
+    #[test]
+    fn substance_round_rect_roundrect_uses_correct_coefficient() {
+        let border = Border::new(OuterBorderType::RoundRect);
+        let w = 1000.0_f64;
+        let h = 100.0_f64;
+        let (rect, radius) = border.substance_round_rect(w, h);
+
+        let s = w.min(h) * border.border_scaling;
+        let expected_d = s * 0.023;
+        let expected_f = s * 0.22;
+        let expected_radius = (expected_f - expected_d).max(0.0);
+
+        let eps = 1e-6;
+        assert!(
+            (rect.x - expected_d).abs() < eps,
+            "rect.x = {}, expected {}",
+            rect.x,
+            expected_d,
+        );
+        assert!(
+            (rect.y - expected_d).abs() < eps,
+            "rect.y = {}, expected {}",
+            rect.y,
+            expected_d,
+        );
+        assert!(
+            (rect.w - (w - 2.0 * expected_d)).abs() < eps,
+            "rect.w = {}, expected {}",
+            rect.w,
+            w - 2.0 * expected_d,
+        );
+        assert!(
+            (rect.h - (h - 2.0 * expected_d)).abs() < eps,
+            "rect.h = {}, expected {}",
+            rect.h,
+            h - 2.0 * expected_d,
+        );
+        assert!(
+            (radius - expected_radius).abs() < eps,
+            "radius = {}, expected {}",
+            radius,
+            expected_radius,
+        );
+
+        // Sanity: must not match the old buggy coefficient.
+        let buggy_d = s * 0.006;
+        assert!(
+            (rect.x - buggy_d).abs() > 1.0,
+            "rect.x {} is too close to the buggy inset {}",
+            rect.x,
+            buggy_d,
+        );
+    }
+
+    // --- best_label_tallness icon contribution tests ---
+
+    #[test]
+    fn best_label_tallness_no_icon() {
+        let border = Border::new(OuterBorderType::None)
+            .with_caption("Hi")
+            .with_description("A short description");
+        let t = border.best_label_tallness();
+        assert!(t > 0.0, "tallness should be positive, got {t}");
+    }
+
+    #[test]
+    fn best_label_tallness_with_icon_above_greater_than_without() {
+        // With icon_above_caption=true the icon stacks vertically above the
+        // caption, adding 3*cap_h + gap to total_h. This must produce a
+        // strictly greater tallness than the same label without an icon.
+        let no_icon = Border::new(OuterBorderType::None)
+            .with_caption("Hi")
+            .with_description("A short description");
+        let t_no_icon = no_icon.best_label_tallness();
+
+        let icon = Image::new(16, 16, 4);
+        let mut with_icon = Border::new(OuterBorderType::None)
+            .with_caption("Hi")
+            .with_description("A short description")
+            .with_icon(icon);
+        with_icon.set_icon_above_caption(true);
+        let t_with_icon = with_icon.best_label_tallness();
+
+        assert!(
+            t_with_icon > t_no_icon,
+            "icon-above should increase tallness: with_icon={t_with_icon}, no_icon={t_no_icon}"
+        );
+    }
+
+    #[test]
+    fn best_label_tallness_with_icon_beside_changes_tallness() {
+        // With icon_above_caption=false (default), the icon is placed beside
+        // the caption, widening total_w. The tallness must differ from no-icon.
+        let no_icon = Border::new(OuterBorderType::None)
+            .with_caption("Hi")
+            .with_description("A short description");
+        let t_no_icon = no_icon.best_label_tallness();
+
+        let icon = Image::new(32, 32, 4);
+        let with_icon = Border::new(OuterBorderType::None)
+            .with_caption("Hi")
+            .with_description("A short description")
+            .with_icon(icon);
+        let t_with_icon = with_icon.best_label_tallness();
+
+        assert!(
+            (t_with_icon - t_no_icon).abs() > 1e-6,
+            "icon-beside should change tallness: with_icon={t_with_icon}, no_icon={t_no_icon}"
+        );
+        // Beside layout widens total_w without changing total_h, so tallness decreases.
+        assert!(
+            t_with_icon < t_no_icon,
+            "icon-beside should decrease tallness (wider): with_icon={t_with_icon}, no_icon={t_no_icon}"
+        );
+    }
+
+    #[test]
+    fn best_label_tallness_icon_above_vs_beside() {
+        let icon = Image::new(16, 64, 4);
+        let mut above = Border::new(OuterBorderType::None)
+            .with_caption("Hi")
+            .with_description("A short description")
+            .with_icon(icon);
+        above.set_icon_above_caption(true);
+        let t_above = above.best_label_tallness();
+
+        let icon2 = Image::new(16, 64, 4);
+        let mut beside = Border::new(OuterBorderType::None)
+            .with_caption("Hi")
+            .with_description("A short description")
+            .with_icon(icon2);
+        beside.set_icon_above_caption(false);
+        let t_beside = beside.best_label_tallness();
+
+        assert!(
+            (t_above - t_beside).abs() > 1e-6,
+            "icon_above_caption should change tallness: above={t_above}, beside={t_beside}"
+        );
+        // icon_above stacks vertically → taller total → higher tallness ratio
+        assert!(
+            t_above > t_beside,
+            "icon above should yield greater tallness: above={t_above}, beside={t_beside}"
+        );
+    }
+
+    #[test]
+    fn best_label_tallness_icon_only_no_caption() {
+        // Icon without caption: tallness should reflect the icon's own aspect ratio
+        // (clamped by max_icon_area_tallness).
+        let icon = Image::new(16, 64, 4);
+        let with_icon = Border::new(OuterBorderType::None).with_icon(icon);
+        let t = with_icon.best_label_tallness();
+
+        let no_label = Border::new(OuterBorderType::None);
+        let t_empty = no_label.best_label_tallness();
+
+        // The icon (16x64 → raw tallness 4.0, clamped to max_icon_area_tallness=1.0)
+        // should still produce tallness = 1.0, same as the no-label default.
+        // But with a wider icon the tallness should differ from default.
+        let wide_icon = Image::new(64, 16, 4);
+        let with_wide = Border::new(OuterBorderType::None).with_icon(wide_icon);
+        let t_wide = with_wide.best_label_tallness();
+
+        // wide icon (64x16) → tallness = 16/64 = 0.25, less than default 1.0
+        assert!(
+            t_wide < t_empty,
+            "wide icon should reduce tallness below default: wide={t_wide}, default={t_empty}"
+        );
+        assert!(t > 0.0, "icon-only tallness should be positive, got {t}");
+    }
+
+    // --- label_space uses pre-HowTo s (Fix 21) ---
+
+    /// Helper: compute the expected label_h for a given panel size using the
+    /// pre-HowTo `s = min(rnd_w, rnd_h) * border_scaling`, which is the correct
+    /// value per C++ emBorder.cpp line 901/937.
+    fn expected_label_h_pre_howto(border: &Border, w: f64, h: f64) -> f64 {
+        let (_, _, ow, oh) = border.outer_insets(w, h);
+        let rnd_w = (w - ow).max(0.0);
+        let rnd_h = (h - oh).max(0.0);
+        // s is computed BEFORE HowTo shift — this is the whole point of Fix 21.
+        let s = rnd_w.min(rnd_h) * border.border_scaling;
+        s * border.label_space_factor()
+    }
+
+    /// If the bug were present (label_space called with post-HowTo width),
+    /// this is the wrong value that would be computed.
+    fn buggy_label_h_post_howto(border: &Border, w: f64, h: f64) -> f64 {
+        let (_, _, ow, oh) = border.outer_insets(w, h);
+        let rnd_w = (w - ow).max(0.0);
+        let rnd_h = (h - oh).max(0.0);
+        let s = rnd_w.min(rnd_h) * border.border_scaling;
+        let ms = s * border.min_space_factor();
+        // Apply HowTo shift to rnd_w (the bug path).
+        let mut post_w = rnd_w;
+        if border.has_how_to {
+            let hts = s * border.how_to_space_factor();
+            if hts > ms {
+                post_w -= hts - ms;
+            }
+        }
+        // Buggy: recompute s from the narrower post-HowTo width.
+        let s_post = post_w.min(rnd_h) * border.border_scaling;
+        s_post * border.label_space_factor()
+    }
+
+    #[test]
+    fn label_space_uses_pre_howto_s_in_content_rect() {
+        // Tall panel where width is the constraining dimension for
+        // s = min(rnd_w, rnd_h). The HowTo shift reduces rnd_w, so if
+        // label_space were (incorrectly) called with post-HowTo width,
+        // it would produce a smaller label_h.
+        //
+        // OuterBorderType::None has zero outer insets AND min_space_factor=0,
+        // so how_to_space_factor (0.023) > min_space_factor (0.0) — the HowTo
+        // shift is the full howToSpace amount.
+        let border_howto = Border::new(OuterBorderType::None)
+            .with_caption("Test")
+            .with_how_to(true);
+
+        let w = 100.0;
+        let h = 200.0;
+
+        let correct_lh = expected_label_h_pre_howto(&border_howto, w, h);
+        let buggy_lh = buggy_label_h_post_howto(&border_howto, w, h);
+
+        // Sanity: the bug would produce a noticeably different value.
+        assert!(
+            (correct_lh - buggy_lh).abs() > 0.1,
+            "test inputs must produce a measurable difference: \
+             correct={correct_lh}, buggy={buggy_lh}"
+        );
+
+        // content_rect: the label_h used should match the pre-HowTo value.
+        let look = test_look();
+        let r_howto = border_howto.content_rect(w, h, &look);
+
+        // Without HowTo, same caption — label_h should be identical because
+        // both use s = min(rnd_w, rnd_h) before any HowTo shift.
+        let border_no_howto = Border::new(OuterBorderType::None)
+            .with_caption("Test");
+        let r_no_howto = border_no_howto.content_rect(w, h, &look);
+
+        // With the fix, the label contribution to `y` is the same in both
+        // cases (label_h = s * factor, s computed pre-HowTo).
+        // The howto border shifts x rightward but does NOT change label_h.
+        // So r_howto.y == r_no_howto.y.
+        assert!(
+            (r_howto.y - r_no_howto.y).abs() < 1e-10,
+            "content_rect label_h must use pre-HowTo s: \
+             with_howto.y={}, without_howto.y={}, diff={}",
+            r_howto.y, r_no_howto.y, (r_howto.y - r_no_howto.y).abs()
+        );
+
+        // Also verify the y offset matches our expected pre-HowTo label_h.
+        assert!(
+            (r_howto.y - correct_lh).abs() < 1e-10,
+            "content_rect y should equal pre-HowTo label_h: \
+             y={}, expected={correct_lh}",
+            r_howto.y
+        );
+    }
+
+    #[test]
+    fn label_space_uses_pre_howto_s_in_content_round_rect() {
+        // Same setup as above but exercising content_round_rect.
+        let border_howto = Border::new(OuterBorderType::None)
+            .with_caption("Test")
+            .with_how_to(true);
+        let border_no_howto = Border::new(OuterBorderType::None)
+            .with_caption("Test");
+
+        let w = 100.0;
+        let h = 200.0;
+        let look = test_look();
+
+        let (rr_howto, _) = border_howto.content_round_rect(w, h, &look);
+        let (rr_no_howto, _) = border_no_howto.content_round_rect(w, h, &look);
+
+        // label_h determines the y offset — it must be the same whether or not
+        // HowTo is enabled, because s is computed pre-HowTo.
+        assert!(
+            (rr_howto.y - rr_no_howto.y).abs() < 1e-10,
+            "content_round_rect label_h must use pre-HowTo s: \
+             with_howto.y={}, without_howto.y={}, diff={}",
+            rr_howto.y, rr_no_howto.y, (rr_howto.y - rr_no_howto.y).abs()
+        );
+    }
+
+    #[test]
+    fn label_space_uses_pre_howto_s_in_content_rect_unobscured() {
+        // content_rect_unobscured has its own IO-field path (InputField).
+        // The final y = rnd_y + d, where d depends on post-HowTo rnd_w
+        // (legitimately). To isolate the label_h contribution, compare a
+        // captioned vs non-captioned border, both with HowTo + InputField.
+        // The y difference should equal the pre-HowTo label_h = s * 0.17.
+        let border_cap = Border::new(OuterBorderType::None)
+            .with_caption("Test")
+            .with_how_to(true)
+            .with_inner(InnerBorderType::InputField);
+        let border_nocap = Border::new(OuterBorderType::None)
+            .with_how_to(true)
+            .with_inner(InnerBorderType::InputField);
+
+        let w = 100.0;
+        let h = 200.0;
+        let look = test_look();
+
+        let cu_cap = border_cap.content_rect_unobscured(w, h, &look);
+        let cu_nocap = border_nocap.content_rect_unobscured(w, h, &look);
+
+        // The y difference is label_h (plus downstream effects through rnd_h
+        // on the IO radius bump). For OuterBorderType::None with ms=0:
+        //   rnd_y_cap = label_h, rnd_y_nocap = 0
+        //   rnd_h_cap = h - label_h, rnd_h_nocap = h
+        // The IO bump d depends on min(rnd_w, rnd_h), and since rnd_h >> rnd_w
+        // for our tall panel, rnd_w dominates and d is the same in both cases.
+        // So y_diff ≈ label_h exactly.
+        let expected_label_h = expected_label_h_pre_howto(&border_cap, w, h);
+        let y_diff = cu_cap.y - cu_nocap.y;
+
+        // With the buggy code, label_h would be smaller (using post-HowTo s).
+        // With the fix, it must match the pre-HowTo value.
+        assert!(
+            (y_diff - expected_label_h).abs() < 0.01,
+            "content_rect_unobscured label_h must use pre-HowTo s: \
+             y_diff={y_diff}, expected_label_h={expected_label_h}, diff={}",
+            (y_diff - expected_label_h).abs()
+        );
+
+        // Verify the buggy value would be measurably different.
+        let buggy_label_h = buggy_label_h_post_howto(&border_cap, w, h);
+        assert!(
+            (expected_label_h - buggy_label_h).abs() > 0.1,
+            "test inputs must produce detectable difference: \
+             correct={expected_label_h}, buggy={buggy_label_h}"
+        );
+    }
+
+    #[test]
+    fn label_space_factor_is_accessible() {
+        // Verify label_space_factor returns the expected values per border type.
+        let group = Border::new(OuterBorderType::Group);
+        assert!((group.label_space_factor() - 0.05).abs() < 1e-10);
+
+        let rect = Border::new(OuterBorderType::Rect);
+        assert!((rect.label_space_factor() - 0.17).abs() < 1e-10);
+    }
+
+    /// Regression test for MarginFilled painting the full panel area.
+    ///
+    /// The bug: MarginFilled used `paint_rect(ox, oy, w-2*ox, h-2*oy)` which
+    /// left the margin corners showing canvas color instead of bg_color.
+    /// The fix: `paint_rect(0, 0, w, h)` fills the entire panel, matching
+    /// C++ `emBorder.cpp:628` which calls `painter->Clear(color, canvasColor)`.
+    #[test]
+    fn margin_filled_paints_full_panel_including_corners() {
+        let bg = Color::rgba(200, 100, 50, 255); // distinctive color
+        let canvas = Color::rgba(0, 0, 0, 255); // black canvas
+
+        let mut look = test_look();
+        look.bg_color = bg;
+
+        let border = Border::new(OuterBorderType::MarginFilled);
+
+        // For a 100x100 image, the margin inset d = s * 0.04 = 100 * 0.04 = 4.
+        // Old buggy code: paint_rect(4, 4, 92, 92) — corners at (0,0) untouched.
+        // Fixed code: paint_rect(0, 0, 100, 100) — entire panel filled.
+        let mut img = Image::new(100, 100, 4);
+        // Fill the image with canvas color so unfilled pixels are distinguishable.
+        img.fill(canvas);
+        let mut painter = Painter::new(&mut img);
+
+        border.paint_border(&mut painter, 100.0, 100.0, &look, false, true, 1.0);
+        drop(painter);
+
+        // Corner pixels must be bg_color, not canvas color.
+        let tl = img.pixel(0, 0);
+        assert_eq!(
+            [tl[0], tl[1], tl[2], tl[3]],
+            [bg.r(), bg.g(), bg.b(), bg.a()],
+            "top-left corner (0,0) should be bg_color, not canvas"
+        );
+
+        let br = img.pixel(99, 99);
+        assert_eq!(
+            [br[0], br[1], br[2], br[3]],
+            [bg.r(), bg.g(), bg.b(), bg.a()],
+            "bottom-right corner (99,99) should be bg_color, not canvas"
+        );
+
+        // Also check a pixel inside the old inset area to confirm it's still filled.
+        let mid = img.pixel(50, 50);
+        assert_eq!(
+            [mid[0], mid[1], mid[2], mid[3]],
+            [bg.r(), bg.g(), bg.b(), bg.a()],
+            "center pixel should be bg_color"
+        );
+    }
+
+    // --- description-only label_layout total_w tests (Fix 26) ---
+
+    #[test]
+    fn desc_only_label_width_not_hardcoded() {
+        // A border with description only (no caption, no icon) should compute
+        // total_w from the actual description text width, not fall back to 1.0.
+        // With a wide area and short text, the label rect should be narrower
+        // than the full area width — proving the text measurement is used.
+        let border = Border::new(OuterBorderType::None).with_description("X");
+        let area_w = 1000.0;
+        let area_h = 100.0;
+        let layout = border.label_layout(0.0, 0.0, area_w, area_h);
+        let desc_rect = layout
+            .description_rect
+            .expect("description-only border must produce a description_rect");
+        // If total_w were hardcoded to 1.0, then f * total_w = (area_h / 0.15) * 1.0
+        // = 666.67, which is less than area_w=1000 so label_w = 666.67.
+        // With the fix, total_w = get_text_size("X", 1.0).0 which is
+        // 1 / CHAR_BOX_TALLNESS (~0.55), giving f * total_w = 666.67 * 0.55 = ~366.
+        // The key: the actual value must differ from the buggy 1.0 path.
+        let buggy_total_w = 1.0;
+        let total_units = 0.15; // desc_units only
+        let f = area_h / total_units;
+        let buggy_label_w = (f * buggy_total_w).min(area_w);
+        assert!(
+            (desc_rect.w - buggy_label_w).abs() > 1.0,
+            "desc_rect.w ({}) must differ from buggy hardcoded width ({}); \
+             total_w should reflect actual text measurement",
+            desc_rect.w,
+            buggy_label_w
+        );
+        // Also: the actual width must be positive and less than area_w.
+        assert!(desc_rect.w > 0.0, "desc_rect.w must be positive");
+        assert!(
+            desc_rect.w < area_w,
+            "desc_rect.w ({}) should be less than area_w ({})",
+            desc_rect.w,
+            area_w
+        );
+    }
+
+    #[test]
+    fn desc_only_longer_text_wider_layout() {
+        // Longer description text should produce a wider label rect
+        // than shorter text, proving total_w depends on text width.
+        let short = Border::new(OuterBorderType::None).with_description("Hi");
+        let long = Border::new(OuterBorderType::None)
+            .with_description("This is a much longer description text");
+        let area_w = 5000.0; // very wide so labels don't clamp to area_w
+        let area_h = 100.0;
+        let short_layout = short.label_layout(0.0, 0.0, area_w, area_h);
+        let long_layout = long.label_layout(0.0, 0.0, area_w, area_h);
+        let short_w = short_layout
+            .description_rect
+            .expect("short desc must produce rect")
+            .w;
+        let long_w = long_layout
+            .description_rect
+            .expect("long desc must produce rect")
+            .w;
+        assert!(
+            long_w > short_w,
+            "longer description ({long_w}) should produce wider label than short ({short_w})"
+        );
+    }
+
+    /// Regression test: HowTo pill text visibility must account for pixel_scale.
+    ///
+    /// The fix changed the check from `tw * th > 100.0` to
+    /// `tw * th * pixel_scale > 100.0`.  We pick dimensions where tw*th ≈ 77
+    /// (below 100), so without pixel_scale the pill text is always hidden.
+    /// With a large pixel_scale (100.0) it should be visible; with a tiny one
+    /// (0.01) it should remain hidden.  If pixel_scale is ignored (the old bug),
+    /// both renders are identical and the test fails.
+    #[test]
+    fn howto_pill_text_respects_pixel_scale() {
+        // w=h=300 → s=300, hts=6.9, tw=6.21, th=12.42, tw*th ≈ 77.1
+        // pixel_scale=100 → 77.1*100 = 7710 > 100 → text painted
+        // pixel_scale=0.01 → 77.1*0.01 = 0.77 < 100 → text hidden
+        let w = 300.0;
+        let h = 300.0;
+        let img_w = 300_u32;
+        let img_h = 300_u32;
+
+        let mut border = Border::new(OuterBorderType::None).with_how_to(true);
+        border.set_how_to_text("Zoom".to_string());
+
+        let mut look = test_look();
+        // Ensure fg_color is fully opaque so the text actually writes pixels.
+        look.fg_color = Color::rgba(255, 255, 255, 255);
+
+        // Render with large pixel_scale (HowTo text should appear).
+        let mut img_large = Image::new(img_w, img_h, 4);
+        img_large.fill(Color::rgba(0, 0, 0, 0));
+        {
+            let mut painter = Painter::new(&mut img_large);
+            border.paint_border(&mut painter, w, h, &look, false, true, 100.0);
+        }
+
+        // Render with tiny pixel_scale (HowTo text should be hidden).
+        let mut img_small = Image::new(img_w, img_h, 4);
+        img_small.fill(Color::rgba(0, 0, 0, 0));
+        {
+            let mut painter = Painter::new(&mut img_small);
+            border.paint_border(&mut painter, w, h, &look, false, true, 0.01);
+        }
+
+        // The two buffers must differ — the large-scale render includes text
+        // that the small-scale render omits.
+        assert_ne!(
+            img_large.data(),
+            img_small.data(),
+            "HowTo pill text should be visible at pixel_scale=100.0 but hidden \
+             at pixel_scale=0.01; buffers must differ"
+        );
+    }
 }

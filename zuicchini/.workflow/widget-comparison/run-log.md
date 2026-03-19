@@ -418,3 +418,40 @@ Resolution breakdown:
 - **10 CLOSED** (design choices, correct adaptations, already handled)
 
 Combined with sessions 1-3: **31 code fixes + 14 deferred + 10 closed** across all 20 audited widget types.
+
+---
+
+## 2026-03-19 — Quality Pass: Test Coverage + Cross-Widget Verification
+
+### Job 1: Golden tests for uncovered fixes (6 items)
+
+| # | Fix | Test added | Mutation check | Status |
+|---|-----|-----------|---------------|--------|
+| T-1 | Border `substance_round_rect` coefficient (0.006→0.023) | 2 tests in border.rs: Rect + RoundRect arms, assert d=s*0.023 with s=100 | PASS — both tests fail when reverted to 0.006 (rect.x=0.6 vs expected 2.3) | DONE |
+| T-2 | Border `best_label_tallness` icon geometry | 5 tests in border.rs: icon-above, icon-beside, above-vs-beside, icon-only, baseline | PASS — 4/5 tests fail when icon branch removed (tallness identical with/without icon) | DONE |
+| T-3 | Border `label_space` pre-HowTo width | 4 tests + 1 helper in border.rs: content_rect, content_round_rect, content_rect_unobscured, label_space_factor | PASS — content_rect test fails when reverted (y=16.609 vs 17.0, 0.391px diff) | DONE |
+| T-4 | Border MarginFilled full clear | 1 test in border.rs: renders 100x100, checks corner pixels (0,0) and (99,99) match bg_color | Pre-verified by subagent: corners show [0,0,0] (canvas) when reverted | DONE |
+| T-5 | Border description-only label width | 2 tests in border.rs: width-not-hardcoded, longer-text-wider | Pre-verified by subagent: both get 666.67 when branch removed | DONE |
+| T-6 | Border HowTo pill pixel_scale | 1 test in border.rs: renders at pixel_scale=100.0 vs 0.01, asserts buffers differ | Pre-verified by design: tw*th=77.1 < 100, so ignoring scale hides pill in both renders | DONE |
+
+**Total new tests: 15** (1144 → 1161 after all changes including V-5 fix)
+
+### Job 2: Cross-widget consistency for button-family fixes (5 items)
+
+| # | Fix verified | Button | CheckButton | CheckBox | RadioButton | RadioBox | Status |
+|---|-------------|--------|-------------|----------|-------------|---------|--------|
+| V-1 | Hit-test face inset `d=(14/264)*r` | MATCH | MATCH | MATCH | MATCH | MATCH | DONE |
+| V-2 | Enter key (instant, NoMod/ShiftMod) | MATCH | MATCH | MATCH | MATCH | MATCH | DONE |
+| V-3 | Modifier guards (reject ctrl/alt/meta) | MATCH | MATCH | MATCH | MATCH | MATCH | DONE |
+| V-4 | Face color always ButtonBgColor | MATCH | MATCH | MATCH | MATCH | MATCH | DONE |
+| V-5 | VCT_MIN_EXT >= 8.0 check | **FIXED** | MATCH | MATCH | MATCH | MATCH | DONE |
+
+### Fix 38: Button Enter key missing VCT_MIN_EXT guard (V-5)
+
+**Finding**: Button's Enter key match arm lacked the `min_ext >= 8.0` guard that all 4 other button-family widgets have.
+**Change**: `button.rs` — added `state.viewed_rect.w.min(state.viewed_rect.h) >= 8.0` guard to Enter key match arm, consistent with CheckButton, CheckBox, RadioButton, RadioBox.
+**Tests**: clippy clean, 1161 tests pass.
+
+### Quality Pass Complete
+
+**All 11 items DONE.** 15 new regression tests added. 1 new cross-widget fix applied. 1161 tests pass, clippy clean.

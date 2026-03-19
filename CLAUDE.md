@@ -53,7 +53,7 @@ zuicchini is a port of Eagle Mode's emCore. Golden tests compare Rust pixel outp
 
 ## Do NOT
 
-- `#[allow(...)]` / `#[expect(...)]` — fix the warning instead
+- `#[allow(...)]` / `#[expect(...)]` — fix the warning instead, UNLESS warning is for too many arguments (which is allowed).
 - `Arc` / `Mutex` — single-threaded UI tree
 - `Cow` — use `String` / `&str`
 - Glob imports (`use foo::*`) — except `use super::*` in tests

@@ -379,7 +379,8 @@ impl Button {
                 if event.variant == InputVariant::Press
                     && !event.alt
                     && !event.meta
-                    && !event.ctrl =>
+                    && !event.ctrl
+                    && state.viewed_rect.w.min(state.viewed_rect.h) >= 8.0 =>
             {
                 if let Some(cb) = &mut self.on_click {
                     cb();
