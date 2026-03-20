@@ -114,12 +114,33 @@ impl KineticViewAnimator {
         self.velocity_y += (old_fix_y - self.zoom_fix_y) * q;
     }
 
-    /// If centered, update fix point to viewport center.
+    /// If centered, update fix point to viewport center, clamped to popup
+    /// rect when the view is popped up (C++ UpdateZoomFixPoint parity).
     pub fn update_zoom_fix_point(&mut self, view: &View) {
         if self.zoom_fix_point_centered {
             let (vw, vh) = view.viewport_size();
-            self.zoom_fix_x = vw * 0.5;
-            self.zoom_fix_y = vh * 0.5;
+            let mut x1 = 0.0;
+            let mut y1 = 0.0;
+            let mut x2 = vw;
+            let mut y2 = vh;
+            if view.is_popped_up() {
+                if let Some(pr) = view.max_popup_rect() {
+                    if x1 < pr.x {
+                        x1 = pr.x;
+                    }
+                    if y1 < pr.y {
+                        y1 = pr.y;
+                    }
+                    if x2 > pr.x + pr.w {
+                        x2 = pr.x + pr.w;
+                    }
+                    if y2 > pr.y + pr.h {
+                        y2 = pr.y + pr.h;
+                    }
+                }
+            }
+            self.zoom_fix_x = (x1 + x2) * 0.5;
+            self.zoom_fix_y = (y1 + y2) * 0.5;
         }
     }
 
@@ -1638,43 +1659,157 @@ impl VisitingViewAnimator {
     }
 
     /// Compute 3D distance from current view state to target panel coordinates.
-    /// Returns (dir_x, dir_y, dist_xy, dist_z) in the curve's cost space.
+    ///
+    /// Matches C++ `emVisitingViewAnimator::GetDistanceTo`: converts both current
+    /// and target view positions into a common ancestor panel's coordinate system
+    /// by walking the panel tree, then computes scroll/zoom distance in curve space.
+    ///
+    /// Returns (dir_x, dir_y, dist_xy, dist_z).
     fn get_distance_to(
         &self,
         view: &View,
-        _tree: &PanelTree,
-        _panel: super::tree::PanelId,
+        tree: &PanelTree,
+        panel: super::tree::PanelId,
         target_x: f64,
         target_y: f64,
         target_a: f64,
     ) -> (f64, f64, f64, f64) {
-        let (visited_vw, visited_vh) = view.visited_size();
-        let zflpp = view.get_zoom_factor_log_per_pixel();
+        // Home rectangle (C++ HomeX/Y/Width/Height). Rust View always has
+        // home at (0,0) with viewport dimensions.
+        let hw = view.viewport_size().0.max(1.0);
+        let hh = view.viewport_size().1.max(1.0);
+        let hx = 0.0_f64;
+        let hy = 0.0_f64;
+        // C++ HomePixelTallness — always 1.0 in Rust (square pixels).
+        let hp = 1.0_f64;
 
-        // Current view state
-        let current = view.current_visit();
-
-        // Distance in rel_x, rel_y space — convert to pixel-based distance
-        // using cached ViewedWidth/ViewedHeight (matches scroll denominator).
-        let dx_rel = target_x - current.rel_x;
-        let dy_rel = target_y - current.rel_y;
-
-        let dx = dx_rel * visited_vw * zflpp;
-        let dy = dy_rel * visited_vh * zflpp;
-
-        // Zoom distance in curve space: 0.5 * ln(target/current).
-        // The factor of 0.5 maps the area ratio to linear scale (C++ uses sqrt
-        // of area fraction internally). No zflpp scaling — the curve operates
-        // in abstract (scroll, log-zoom) space, not pixel space.
-        let dz = if current.rel_a > 1e-100 && target_a > 1e-100 {
-            0.5 * (target_a / current.rel_a).ln()
+        // View rectangle (C++ GetViewRect): popup-zoom uses max_popup_rect,
+        // otherwise same as home rect.
+        let (sx, sy, sw, sh) = if view.flags.contains(super::view::ViewFlags::POPUP_ZOOM) {
+            if let Some(r) = view.max_popup_rect() {
+                (r.x, r.y, r.w, r.h)
+            } else {
+                (hx, hy, hw, hh)
+            }
         } else {
-            0.0
+            (hx, hy, hw, hh)
         };
 
-        let extreme_dist = 50.0;
-        let dz = dz.clamp(-extreme_dist, extreme_dist);
+        // Panel height (tallness) for the target panel.
+        let panel_height = tree.get_height(panel);
 
+        // Rectangle "b": where the view should end up, in target-panel coords.
+        // C++: vw = sqrt(hw*hh*hp / (relA * panel->GetHeight()))
+        // Rust rel_a = 1/C++relA, so relA = 1/target_a.
+        let vw = (hw * hh * hp * target_a / panel_height).sqrt();
+        let vh = vw * panel_height / hp;
+        // Rust rel_x/y uses viewport-fraction convention:
+        //   vcx = vw_viewport * (0.5 + rel_x)
+        // C++ uses: vx = hx + hw*0.5 - (relX+0.5)*ViewedWidth
+        // In Rust: the panel center is at vcx = hw*(0.5+target_x), so
+        //   panel_vx = vcx - vw*0.5 = hw*(0.5+target_x) - vw*0.5
+        //   vx(C++) = hx + hw*0.5 - (relX+0.5)*vw
+        // For C++ relX=0 (centered): vx = hx + hw*0.5 - 0.5*vw = hw*0.5 - vw*0.5
+        // For Rust rel_x=0 (centered): panel_vx = hw*0.5 - vw*0.5 ✓
+        // Mapping: hw*(0.5+target_x) - vw*0.5 = hx + hw*0.5 - (relX+0.5)*vw
+        //   => relX = (vw*0.5 - hw*target_x) / vw - 0.5
+        //          = - hw*target_x / vw
+        // But we don't need to convert: we can compute vx directly from Rust coords.
+        let vx = hx + hw * (0.5 + target_x) - vw * 0.5;
+        let vy = hy + hh * (0.5 + target_y) - vh * 0.5;
+        let mut bx = (sx - vx) / vw;
+        let mut by = (sy - vy) / vw * hp;
+        let mut bw = sw / vw;
+        let mut bh = sh / vw * hp;
+
+        // Walk "b" up the panel tree until we reach a panel that is
+        // in_viewed_path and whose parent is NOT viewed (i.e., the SVP),
+        // or until we reach the root.
+        let mut b_id = panel;
+        while let Some(b_data) = tree.get(b_id) {
+            let parent_id = match b_data.parent {
+                Some(p) => p,
+                None => break, // root reached
+            };
+            if b_data.in_viewed_path {
+                let parent_viewed = tree
+                    .get(parent_id)
+                    .map(|p| p.viewed)
+                    .unwrap_or(false);
+                if !parent_viewed {
+                    break;
+                }
+            }
+            let lr = b_data.layout_rect;
+            bx = lr.x + bx * lr.w;
+            by = lr.y + by * lr.w;
+            bw *= lr.w;
+            bh *= lr.w;
+            b_id = parent_id;
+        }
+
+        // Get SVP and rectangle "a" (current view position in SVP coords).
+        let svp_id = view.svp().unwrap_or(view.root());
+        let (svp_vx, svp_vy, svp_vw) = tree
+            .get(svp_id)
+            .map(|p| (p.viewed_x, p.viewed_y, p.viewed_width))
+            .unwrap_or((0.0, 0.0, 1.0));
+
+        let mut ax = (sx - svp_vx) / svp_vw;
+        let mut ay = (sy - svp_vy) / svp_vw * hp;
+        let mut aw = sw / svp_vw;
+        let mut ah = sh / svp_vw * hp;
+
+        // Walk "a" up from SVP until reaching "b_id" so both rectangles
+        // are in the same panel's coordinate system.
+        let mut a_id = svp_id;
+        while a_id != b_id {
+            let a_data = match tree.get(a_id) {
+                Some(d) => d,
+                None => break,
+            };
+            let lr = a_data.layout_rect;
+            ax = lr.x + ax * lr.w;
+            ay = lr.y + ay * lr.w;
+            aw *= lr.w;
+            ah *= lr.w;
+            a_id = match a_data.parent {
+                Some(p) => p,
+                None => break, // shouldn't happen if tree is well-formed
+            };
+        }
+
+        // Calculate 3D distance.
+        let extreme_dist: f64 = 50.0;
+        let dx;
+        let dy;
+        let dz;
+
+        let t = aw + ah;
+        if t < 1e-100 {
+            dx = 0.0;
+            dy = 0.0;
+            dz = -extreme_dist;
+        } else {
+            let f = (sw + sh) * view.get_zoom_factor_log_per_pixel();
+            // Negate: the tree-walk computes displacement in C++ sign convention
+            // (positive = view rect to the right), but Rust raw_scroll_and_zoom
+            // uses opposite rel_x sign convention (positive delta = increase rel_x
+            // = panel moves right = viewport content goes left). Negating aligns
+            // the distance direction with Rust scroll direction.
+            dx = -(bx - ax + (bw - aw) * 0.5) / t * f;
+            dy = -(by - ay + (bh - ah) * 0.5) / t * f;
+            let ratio = (bw + bh) / t;
+            if ratio < (-extreme_dist).exp() {
+                dz = extreme_dist;
+            } else if ratio > extreme_dist.exp() {
+                dz = -extreme_dist;
+            } else {
+                dz = -ratio.ln();
+            }
+        }
+
+        // Calculate 2D distance.
         let dxy = (dx * dx + dy * dy).sqrt();
         let (dir_x, dir_y) = if dxy < 1e-100 {
             (1.0, 0.0)
@@ -1682,7 +1817,11 @@ impl VisitingViewAnimator {
             (dx / dxy, dy / dxy)
         };
 
-        (dir_x, dir_y, dxy, dz)
+        if dxy > extreme_dist.exp() {
+            (dir_x, dir_y, 0.0, -extreme_dist)
+        } else {
+            (dir_x, dir_y, dxy, dz)
+        }
     }
 }
 
