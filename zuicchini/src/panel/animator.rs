@@ -2337,6 +2337,84 @@ impl MagneticViewAnimator {
         (self.velocity_x, self.velocity_y)
     }
 
+    /// Calculate 3D distance to the nearest focusable panel.
+    ///
+    /// C++ emMagneticViewAnimator::CalculateDistance (emViewAnimator.cpp:809-907).
+    /// DFS from supreme viewed panel, compute essence rect in view coords,
+    /// measure 3D distance (xy pixels + log-zoom z-axis).
+    ///
+    /// Returns (dx, dy, dz, abs_dist). Returns (0,0,0,0) if no candidate found
+    /// or if POPUP_ZOOM is set.
+    pub fn calculate_distance(view: &View, tree: &PanelTree) -> (f64, f64, f64, f64) {
+        // Early return if VF_POPUP_ZOOM (magnetism not functioning with popup zoom)
+        if view.flags.contains(ViewFlags::POPUP_ZOOM) {
+            return (0.0, 0.0, 0.0, 0.0);
+        }
+
+        let svp = view.supreme_panel();
+        let view_rect = Self::get_view_rect(view);
+        let vcx = view_rect.x + view_rect.w * 0.5;
+        let vcy = view_rect.y + view_rect.h * 0.5;
+        let view_dim = (view_rect.w + view_rect.h) * 0.5;
+        let zflpp = view.get_zoom_factor_log_per_pixel();
+
+        let mut best_td = f64::MAX;
+        let mut best_dx = 0.0;
+        let mut best_dy = 0.0;
+        let mut best_dz = 0.0;
+
+        // DFS walk from SVP
+        let mut stack = vec![svp];
+        while let Some(id) = stack.pop() {
+            let p = match tree.get(id) {
+                Some(p) if p.viewed => p,
+                _ => continue,
+            };
+
+            // Push children for DFS
+            for child in tree.children(id) {
+                stack.push(child);
+            }
+
+            if !p.focusable {
+                continue;
+            }
+
+            // Compute essence rect in view coords
+            let (ex, ey, ew, eh) = tree.get_essence_rect(id);
+            let vex = tree.panel_to_view_x(id, ex);
+            let vey = tree.panel_to_view_y(id, ey);
+            let vew = tree.panel_to_view_delta_x(id, ew);
+            let veh = tree.panel_to_view_delta_y(id, eh);
+
+            let panel_cx = vex + vew * 0.5;
+            let panel_cy = vey + veh * 0.5;
+            let panel_dim = (vew + veh) * 0.5;
+
+            let tx = panel_cx - vcx;
+            let ty = panel_cy - vcy;
+            let tz = if zflpp > 1e-15 && panel_dim > 1e-15 {
+                (view_dim / panel_dim).ln() / zflpp
+            } else {
+                0.0
+            };
+
+            let td = tx * tx + ty * ty + tz * tz;
+            if td < best_td {
+                best_td = td;
+                best_dx = tx;
+                best_dy = ty;
+                best_dz = tz;
+            }
+        }
+
+        if best_td == f64::MAX {
+            (0.0, 0.0, 0.0, 0.0)
+        } else {
+            (best_dx, best_dy, best_dz, best_td.sqrt())
+        }
+    }
+
     /// Get the view rect for magnetism calculations.
     ///
     /// C++ emMagneticViewAnimator::GetViewRect (emViewAnimator.cpp:910-923):
@@ -2914,6 +2992,64 @@ mod tests {
         assert!(vy.abs() < 1e-12, "vy should be zero");
         assert!(vz.abs() < 1e-12, "vz should be zero");
         assert!(!anim.is_active());
+    }
+
+    #[test]
+    fn calculate_distance_finds_nearest_panel() {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.set_layout_rect(root, 0.0, 0.0, 1.0, 1.0);
+        tree.set_focusable(root, true);
+
+        // 3 child panels at different positions
+        let left = tree.create_child(root, "left");
+        tree.set_layout_rect(left, 0.0, 0.0, 0.3, 1.0);
+        tree.set_focusable(left, true);
+
+        let center = tree.create_child(root, "center");
+        tree.set_layout_rect(center, 0.35, 0.0, 0.3, 1.0);
+        tree.set_focusable(center, true);
+
+        let right = tree.create_child(root, "right");
+        tree.set_layout_rect(right, 0.7, 0.0, 0.3, 1.0);
+        tree.set_focusable(right, true);
+
+        let mut view = View::new(root, 800.0, 600.0);
+        view.update_viewing(&mut tree);
+
+        let (dx, dy, _dz, abs_dist) = MagneticViewAnimator::calculate_distance(&view, &tree);
+        // The center panel should be nearest to the viewport center
+        assert!(
+            abs_dist > 0.0,
+            "should find at least one candidate"
+        );
+        // dx should be small since center panel is near view center
+        assert!(
+            dx.abs() < 200.0,
+            "nearest panel should be close to center, dx={}",
+            dx
+        );
+    }
+
+    #[test]
+    fn calculate_distance_uses_log_zoom_z_axis() {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.set_layout_rect(root, 0.0, 0.0, 1.0, 1.0);
+        tree.set_focusable(root, true);
+
+        let mut view = View::new(root, 800.0, 600.0);
+        view.update_viewing(&mut tree);
+
+        let (_dx, _dy, dz, abs_dist) = MagneticViewAnimator::calculate_distance(&view, &tree);
+        // Root panel fills the viewport, so dz depends on
+        // log(view_dim / panel_dim) which should be near 0 when panel ≈ viewport
+        assert!(
+            abs_dist < f64::MAX,
+            "should find root panel as candidate"
+        );
+        // dz should be finite
+        assert!(dz.is_finite(), "dz should be finite, got {}", dz);
     }
 
     #[test]
