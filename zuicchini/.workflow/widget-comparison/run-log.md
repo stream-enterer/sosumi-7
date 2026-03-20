@@ -1073,6 +1073,11 @@ Key finding: CT-6/CT-7/CT-8 required relaxed tolerances (28-75%) due to remainin
 **Fixes applied**: calc_adler32 (add start param + C++ batching), calc_crc32 (add start param + C++ empty handling), calc_hash_code (fix multiplier 31→335171, add start param, stop-at-null, return i32), calc_crc64 (implement from scratch), calc_hash_name (implement from scratch)
 **Tests added**: 12
 
+### ext-foundation-install_info: Audit foundation/install_info.rs (3 methods from emInstallInfo.h)
+**MATCHes**: 3 | **MISMATCHes**: 0 | **SUSPECTs**: 0 | **MISSINGs**: 0
+**Fixes applied**: none
+**Tests added**: 0
+
 ### ext-foundation-dlog: Audit foundation/dlog.rs (RUST-ONLY)
 **MATCHes**: 0 | **MISMATCHes**: 0 | **SUSPECTs**: 0 | **MISSINGs**: 0
 **Fixes applied**: none
