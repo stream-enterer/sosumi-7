@@ -2130,3 +2130,72 @@ fn composition_colorfield_expansion_tall() {
     }
     result.unwrap();
 }
+
+/// Golden test: render a view with STRESS_TEST active and verify the overlay
+/// text "Stress Test" appears in the output pixels.
+///
+/// Renders twice: once without stress test (baseline), once with stress test
+/// active. Uses compare_images to verify they differ — the overlay must have
+/// painted visible pixels in the top-left region.
+#[test]
+fn stress_test_overlay_golden() {
+    let w: u32 = 800;
+    let h: u32 = 600;
+
+    let mut tree = PanelTree::new();
+    let root = tree.create_root("test");
+    tree.set_layout_rect(root, 0.0, 0.0, 1.0, 0.75);
+
+    // Render baseline (no stress test)
+    let mut view = View::new(root, w as f64, h as f64);
+    view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
+    settle(&mut tree, &mut view);
+
+    let mut compositor_base = SoftwareCompositor::new(w, h);
+    compositor_base.render(&mut tree, &view);
+    let baseline = compositor_base.framebuffer().data().to_vec();
+
+    // Enable stress test, sync a few frames to accumulate ring buffer entries
+    view.flags.insert(ViewFlags::STRESS_TEST);
+    for _ in 0..5 {
+        view.sync_stress_test();
+    }
+
+    let mut compositor_st = SoftwareCompositor::new(w, h);
+    compositor_st.render(&mut tree, &view);
+    let actual = compositor_st.framebuffer().data();
+
+    // The overlay should make the images differ. compare_images returns Err
+    // when images diverge beyond tolerance — we EXPECT divergence here.
+    let result = compare_images("stress_test_overlay", actual, &baseline, w, h, 0, 0.0);
+    assert!(
+        result.is_err(),
+        "stress test overlay should produce visible pixel differences vs baseline"
+    );
+
+    // Verify the overlay painted in the top-left corner specifically:
+    // Check a small region (first 50 rows, first 200 cols) for any pixel
+    // that differs between baseline and actual.
+    let mut overlay_pixels_differ = false;
+    for y in 0..50u32 {
+        for x in 0..200u32 {
+            let off = ((y * w + x) * 4) as usize;
+            for ch in 0..3 {
+                if actual[off + ch] != baseline[off + ch] {
+                    overlay_pixels_differ = true;
+                    break;
+                }
+            }
+            if overlay_pixels_differ {
+                break;
+            }
+        }
+        if overlay_pixels_differ {
+            break;
+        }
+    }
+    assert!(
+        overlay_pixels_differ,
+        "stress test overlay should paint visible pixels in the top-left corner"
+    );
+}
