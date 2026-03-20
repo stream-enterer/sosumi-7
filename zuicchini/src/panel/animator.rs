@@ -16,6 +16,86 @@ pub trait ViewAnimator {
     fn stop(&mut self);
 }
 
+/// Master/slave animator slot with deactivation chain.
+///
+/// Port of C++ emViewAnimator::SetMaster/Activate/Deactivate semantics.
+/// The slot holds an active animator and an optional slave slot. Activating
+/// a new animator deactivates the current one first. Deactivating cascades
+/// to the slave.
+pub struct AnimatorSlot {
+    active: Option<Box<dyn ViewAnimator>>,
+    slave: Option<Box<AnimatorSlot>>,
+}
+
+impl Default for AnimatorSlot {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AnimatorSlot {
+    pub fn new() -> Self {
+        Self {
+            active: None,
+            slave: None,
+        }
+    }
+
+    /// Activate an animator in this slot. Deactivates the current active
+    /// animator first (C++ Activate semantics).
+    pub fn activate(&mut self, animator: Box<dyn ViewAnimator>) {
+        // Deactivate current occupant before replacing
+        if let Some(ref mut current) = self.active {
+            current.stop();
+        }
+        self.active = Some(animator);
+    }
+
+    /// Deactivate the active animator. Deactivates any active slave first
+    /// (C++ Deactivate semantics: recursive slave deactivation).
+    pub fn deactivate(&mut self) {
+        // Deactivate slave first (recursive)
+        if let Some(ref mut slave) = self.slave {
+            slave.deactivate();
+        }
+        // Then deactivate self
+        if let Some(ref mut current) = self.active {
+            current.stop();
+        }
+        self.active = None;
+    }
+
+    /// Get the active animator, if any.
+    pub fn active(&self) -> Option<&dyn ViewAnimator> {
+        self.active.as_deref()
+    }
+
+    /// Get the active animator mutably, if any.
+    pub fn active_mut(&mut self) -> Option<&mut Box<dyn ViewAnimator>> {
+        self.active.as_mut()
+    }
+
+    /// Whether this slot has an active animator.
+    pub fn is_active(&self) -> bool {
+        self.active.as_ref().map(|a| a.is_active()).unwrap_or(false)
+    }
+
+    /// Set a slave slot. The slave is deactivated when this slot is deactivated.
+    pub fn set_slave(&mut self, slave: AnimatorSlot) {
+        self.slave = Some(Box::new(slave));
+    }
+
+    /// Get the slave slot, if any.
+    pub fn slave(&self) -> Option<&AnimatorSlot> {
+        self.slave.as_deref()
+    }
+
+    /// Get the slave slot mutably, if any.
+    pub fn slave_mut(&mut self) -> Option<&mut AnimatorSlot> {
+        self.slave.as_deref_mut()
+    }
+}
+
 /// Snapshot of kinetic animation state for velocity handoff between animators.
 #[derive(Clone, Debug)]
 pub struct KineticState {
@@ -2819,5 +2899,47 @@ mod tests {
         assert!(vy.abs() < 1e-12, "vy should be zero");
         assert!(vz.abs() < 1e-12, "vz should be zero");
         assert!(!anim.is_active());
+    }
+
+    #[test]
+    fn animator_slot_activate_deactivates_previous() {
+        let mut slot = AnimatorSlot::new();
+        assert!(!slot.is_active());
+
+        // Activate A
+        let a = KineticViewAnimator::new(10.0, 0.0, 0.0, 100.0);
+        slot.activate(Box::new(a));
+        assert!(slot.is_active());
+
+        // Activate B at same level — A should be deactivated (stopped)
+        let b = KineticViewAnimator::new(20.0, 0.0, 0.0, 100.0);
+        slot.activate(Box::new(b));
+        assert!(slot.is_active());
+        // B is now the active animator
+    }
+
+    #[test]
+    fn animator_slot_deactivate_cascades_to_slave() {
+        let mut slot = AnimatorSlot::new();
+
+        // Activate A in the master slot
+        let a = KineticViewAnimator::new(10.0, 0.0, 0.0, 100.0);
+        slot.activate(Box::new(a));
+
+        // Create a slave slot and activate B in it
+        let mut slave = AnimatorSlot::new();
+        let b = KineticViewAnimator::new(20.0, 0.0, 0.0, 100.0);
+        slave.activate(Box::new(b));
+        assert!(slave.is_active());
+
+        slot.set_slave(slave);
+
+        // Deactivate master — should cascade to slave
+        slot.deactivate();
+        assert!(!slot.is_active(), "master should be deactivated");
+        assert!(
+            !slot.slave().unwrap().is_active(),
+            "slave should also be deactivated"
+        );
     }
 }

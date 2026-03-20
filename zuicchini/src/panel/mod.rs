@@ -7,7 +7,7 @@ mod tree;
 mod view;
 
 pub use animator::{
-    KineticState, KineticViewAnimator, MagneticViewAnimator, SpeedingViewAnimator,
+    AnimatorSlot, KineticState, KineticViewAnimator, MagneticViewAnimator, SpeedingViewAnimator,
     SwipingViewAnimator, ViewAnimator, VisitingViewAnimator,
 };
 pub use behavior::{NoticeFlags, PanelBehavior, PanelState, ParentInvalidation};
