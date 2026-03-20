@@ -148,7 +148,7 @@ impl PanelBehavior for SubViewPanel {
     }
 
     fn get_cursor(&self) -> Cursor {
-        Cursor::Normal
+        self.sub_view.cursor()
     }
 
     fn get_title(&self) -> Option<String> {

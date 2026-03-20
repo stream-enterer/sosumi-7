@@ -224,8 +224,8 @@ impl MouseZoomScrollVIF {
         if acceleration > min_acceleration * 1.0001 {
             let t1: f64 = 0.03;
             let t2: f64 = 0.35;
-            let f1: f64 = 2.2;
-            let f2: f64 = 0.4;
+            let f1: f64 = 2.2_f64.powf(acceleration);
+            let f2: f64 = 0.4_f64.powf(acceleration);
 
             let mut dt = (clock_ms.saturating_sub(self.wheel_zoom_time)) as f64 * 0.001;
 

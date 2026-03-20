@@ -39,7 +39,9 @@ impl KineticViewAnimator {
             zoom_fix_point_centered: true,
             zoom_fix_x: 0.0,
             zoom_fix_y: 0.0,
-            active: velocity_x.abs() > 0.01 || velocity_y.abs() > 0.01 || velocity_z.abs() > 0.01,
+            active: (velocity_x * velocity_x + velocity_y * velocity_y + velocity_z * velocity_z)
+                .sqrt()
+                > 0.01,
         }
     }
 
@@ -47,7 +49,7 @@ impl KineticViewAnimator {
         self.velocity_x = vx;
         self.velocity_y = vy;
         self.velocity_z = vz;
-        self.active = vx.abs() > 0.01 || vy.abs() > 0.01 || vz.abs() > 0.01;
+        self.active = (vx * vx + vy * vy + vz * vz).sqrt() > 0.01;
     }
 
     pub fn velocity(&self) -> (f64, f64, f64) {

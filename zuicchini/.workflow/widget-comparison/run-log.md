@@ -1,5 +1,92 @@
 # Widget Comparison Run Log
 
+## 2026-03-19 — Session 9: Partial Parity Audit (Panel/Render/Scheduler)
+
+### Summary
+
+Systematic function-by-function audit of 10 file pairs covering the panel animation system, input filter chain, view compositor, and scheduler infrastructure. All 10 items DONE. 3 behavioral fixes applied. 1505 tests pass, clippy clean.
+
+### Results
+
+| # | C++ File | Rust File | MATCH | MISMATCH | SUSPECT | MISSING | EXTRA | Fixes |
+|---|----------|-----------|-------|----------|---------|---------|-------|-------|
+| PP-1 | emViewAnimator | animator.rs | 14 | 16 | 6 | 8 | 5 | 1 |
+| PP-2 | emViewInputFilter | input_filter.rs | 10 | 14 | 5 | 11 | 10 | 1 |
+| PP-3 | emSubViewPanel | sub_view_panel.rs | 7 | 1 | 5 | 5 | 4 | 1 |
+| PP-4 | emViewRenderer (compositor) | compositor.rs | 0 | 3 | 2 | 3 | 4 | 0 |
+| PP-5 | emViewRenderer (blit) | software_compositor.rs | 2 | 5 | 0 | 3 | 2 | 0 |
+| PP-6 | emScheduler | scheduler/core.rs | 11 | 4 | 3 | 0 | 8 | 0 |
+| PP-7 | emTimer | scheduler/timer.rs | 9 | 1 | 1 | 0 | 2 | 0 |
+| PP-8 | emEngine | scheduler/engine.rs | 10 | 2 | 2 | 0 | 4 | 0 |
+| PP-9 | emSignal | scheduler/signal.rs | 6 | 0 | 1 | 0 | 3 | 0 |
+| PP-10 | emJob | scheduler/job.rs | 16 | 3 | 3 | 2 | 5 | 0 |
+| **Total** | | | **85** | **49** | **28** | **32** | **47** | **3** |
+
+### Fixes Applied
+
+#### Fix 43: KineticViewAnimator velocity busy threshold (PP-1)
+**MISMATCH**: `set_velocity` used per-component check (`vx.abs() > 0.01 || ...`) instead of C++ magnitude check (`sqrt(vx^2+vy^2+vz^2) > 0.01`). Small multi-axis velocities (e.g. 0.006, 0.006, 0.006 with magnitude 0.0104) would stop prematurely.
+**Fix**: Changed to magnitude check in both `new()` and `set_velocity()`.
+
+#### Fix 44: Wheel zoom acceleration exponent (PP-2)
+**MISMATCH**: `update_wheel_zoom_speed` used `f1 = 2.2` and `f2 = 0.4` directly. C++ raises these to the acceleration power: `f1 = pow(2.2, a)`, `f2 = pow(0.4, a)`.
+**Fix**: Changed to `2.2_f64.powf(acceleration)` and `0.4_f64.powf(acceleration)`.
+
+#### Fix 45: SubViewPanel cursor delegation (PP-3)
+**MISMATCH**: `get_cursor()` returned `Cursor::Normal` unconditionally. C++ delegates to `SubViewPort->GetViewCursor()` which returns the sub-view's actual cursor.
+**Fix**: Changed to delegate to `self.sub_view.cursor()`.
+
+### Unported C++ Behavior (port gaps, not intentional design choices)
+
+**PP-1 animator**:
+- Master/slave activation chain not ported — velocity inheritance between animator transitions absent
+- MagneticViewAnimator: C++ panel-tree-traversal magnetism replaced by simple spring-damper (different physics model)
+- GetDistanceTo: C++ walks panel tree to common ancestor; Rust uses simplified relative coordinates
+- UpdateZoomFixPoint: popup zoom rect handling absent
+- SetActivePanelBestPossible not called after scroll/zoom
+
+**PP-2 input_filter**:
+- Touch VIF: C++ 17-state gesture machine (hold-to-zoom, multi-tap-to-visit, two-finger mouse emulation, three-finger menu, four-finger soft keyboard) replaced by simple pan/pinch/fling
+- CheatVIF not ported (stress test, popup zoom, ego mode, pan function, tree dump, debug log, screenshot)
+- Magnetism avoidance absent
+- Middle-button emulation: Alt-held state propagation missing (only fires on press, not held)
+- NavigateByProgram scroll scaling: Rust multiplies by viewport dimensions, C++ does not
+- Wheel modifier guard: Rust processes wheel with Ctrl/Alt/Meta held; C++ blocks non-Shift modifiers
+- Scroll speed: PanFunction config not supported
+- Zoom via Ctrl+middle drag: different formula and routing
+
+**PP-3 sub_view_panel**:
+- Input forwarding to sub-view entirely absent
+- Invalidation chain (title, cursor, painting from sub-view to parent) not ported
+- sync_geometry not-viewed branch hardcodes height=1.0 vs C++ dynamic GetHeight()
+
+**PP-4/PP-5 compositor**: Architectural redesign (record-replay vs C++ work-stealing). No clip-rect invalidation (always repaints full viewport). No pixel arithmetic in compositor — pixel fidelity is in Painter/scanline modules (already audited).
+
+**PP-6 scheduler**:
+- TimeSliceCounter incremented at end vs start (visible to engines during Cycle)
+- Clock incremented once per batch vs once per signal (affects is_signaled granularity)
+- Priority re-ascent missing — higher-priority engines woken mid-slice run next slice, not this slice
+- run() spins at 100% CPU (no sleep pacing)
+
+**PP-7 timer**:
+- Auto-purge of inactive timers invalidates TimerIds after one-shot firing, preventing timer reuse
+- Signal fire ordering: SlotMap iteration order vs C++ chronological sort
+
+**PP-8 engine**: Same re-ascent and clock issues as PP-6. SetEnginePriority does not re-ascend scan pointer.
+
+**PP-9 signal**: All behavioral contracts preserved. Ring-splice replaced by Vec::retain. No issues.
+
+**PP-10 job**:
+- No Drop safety guards (C++ fatally errors if job destroyed while queued)
+- Signal allocated eagerly vs C++ embedded member
+- Priority comparison uses epsilon vs exact inequality
+
+### Test Results
+
+All 1505 tests pass. Clippy clean. No new tests added (behavioral branches are covered by existing golden tests and the 1505-test suite).
+
+---
+
 ## 2026-03-19 — Session 8: Un-ignore All Behavioral Parity Tests
 
 ### Summary
