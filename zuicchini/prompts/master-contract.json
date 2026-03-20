@@ -1,0 +1,2756 @@
+{
+  "contract_version": "2.0",
+  "description": "Master parity audit contract — every C++ method mapped to Rust",
+  "generated_at": "2026-03-20T07:07:00.363872",
+  "sources": {
+    "run_002_features": "672 features from stale/state/run_002/feature_list.json",
+    "fresh_extraction": "429 methods from 28 uncovered files",
+    "git_history": "147 commits since 2026-03-15 used for staleness classification"
+  },
+  "rules": {
+    "immutability": "Agent MAY set passes to true. Agent MAY NOT delete features, modify steps, or mark as not applicable.",
+    "gate_protocol": "passes may only be set to true after clippy clean + all tests pass.",
+    "commit_protocol": "Commit after each feature. Include the contract JSON.",
+    "fidelity_layer": "Mixed. Check each feature's layer field: PIXEL = exact formulas, GEOMETRY = same algorithm, STATE = idiomatic Rust OK."
+  },
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Uncovered Files Audit (28 files, 429 methods)",
+      "dependency": null,
+      "features": [
+        {
+          "id": "ext-foundation-alignment",
+          "description": "Audit foundation/alignment.rs (3 methods from include/emCore/emStd1.h)",
+          "rust_file": "foundation/alignment.rs",
+          "cpp_header": "include/emCore/emStd1.h",
+          "layer": "STATE",
+          "method_count": 3,
+          "methods": [
+            "emAlignment",
+            "emAlignmentToString",
+            "emStringToAlignment"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emStd1.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emStd1.cpp",
+            "Read Rust src/foundation/alignment.rs",
+            "Compare these 3 methods: emAlignment, emAlignmentToString, emStringToAlignment",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": true,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-foundation-checksum",
+          "description": "Audit foundation/checksum.rs (5 methods from include/emCore/emStd2.h)",
+          "rust_file": "foundation/checksum.rs",
+          "cpp_header": "include/emCore/emStd2.h",
+          "layer": "PIXEL",
+          "method_count": 5,
+          "methods": [
+            "emCalcAdler32",
+            "emCalcCRC32",
+            "emCalcCRC64",
+            "emCalcHashCode",
+            "emCalcHashName"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emStd2.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emStd2.cpp",
+            "Read Rust src/foundation/checksum.rs",
+            "Compare these 5 methods: emCalcAdler32, emCalcCRC32, emCalcCRC64, emCalcHashCode, emCalcHashName",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-foundation-dlog",
+          "description": "Audit foundation/dlog.rs (RUST-ONLY)",
+          "rust_file": "foundation/dlog.rs",
+          "cpp_header": "RUST-ONLY",
+          "layer": "STATE",
+          "method_count": 0,
+          "methods": [],
+          "steps": [
+            "Read Rust src/foundation/dlog.rs",
+            "No C++ equivalent. Verify internal correctness: no dead code, no panicking paths, edge cases handled.",
+            "Write a unit test for any untested edge case found.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-foundation-install_info",
+          "description": "Audit foundation/install_info.rs (3 methods from include/emCore/emInstallInfo.h)",
+          "rust_file": "foundation/install_info.rs",
+          "cpp_header": "include/emCore/emInstallInfo.h",
+          "layer": "STATE",
+          "method_count": 3,
+          "methods": [
+            "emInstallDirType",
+            "emGetInstallPath",
+            "emGetConfigDirOverloadable"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emInstallInfo.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emInstallInfo.cpp",
+            "Read Rust src/foundation/install_info.rs",
+            "Compare these 3 methods: emInstallDirType, emGetInstallPath, emGetConfigDirOverloadable",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-foundation-mini_ipc",
+          "description": "Audit foundation/mini_ipc.rs (9 methods from include/emCore/emMiniIpc.h)",
+          "rust_file": "foundation/mini_ipc.rs",
+          "cpp_header": "include/emCore/emMiniIpc.h",
+          "layer": "STATE",
+          "method_count": 9,
+          "methods": [
+            "emMiniIpcClient::TrySend",
+            "emMiniIpcServer::emMiniIpcServer",
+            "emMiniIpcServer::~emMiniIpcServer",
+            "emMiniIpcServer::GetScheduler",
+            "emMiniIpcServer::StartServing",
+            "emMiniIpcServer::StopServing",
+            "emMiniIpcServer::IsServing",
+            "emMiniIpcServer::GetServerName",
+            "emMiniIpcServer::OnReception"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emMiniIpc.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emMiniIpc.cpp",
+            "Read Rust src/foundation/mini_ipc.rs",
+            "Compare these 9 methods: emMiniIpcClient::TrySend, emMiniIpcServer::emMiniIpcServer, emMiniIpcServer::~emMiniIpcServer, emMiniIpcServer::GetScheduler, emMiniIpcServer::StartServing, emMiniIpcServer::StopServing, emMiniIpcServer::IsServing, emMiniIpcServer::GetServerName, emMiniIpcServer::OnReception",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-foundation-process",
+          "description": "Audit foundation/process.rs (20 methods from include/emCore/emProcess.h)",
+          "rust_file": "foundation/process.rs",
+          "cpp_header": "include/emCore/emProcess.h",
+          "layer": "STATE",
+          "method_count": 20,
+          "methods": [
+            "emProcess::emProcess",
+            "emProcess::~emProcess",
+            "emProcess::StartFlags",
+            "emProcess::TryStart",
+            "emProcess::TryStartUnmanaged",
+            "emProcess::TryWrite",
+            "emProcess::TryRead",
+            "emProcess::TryReadErr",
+            "emProcess::WaitFlags",
+            "emProcess::WaitPipes",
+            "emProcess::CloseWriting",
+            "emProcess::CloseReading",
+            "emProcess::CloseReadingErr",
+            "emProcess::SendTerminationSignal",
+            "emProcess::SendKillSignal",
+            "emProcess::WaitForTermination",
+            "emProcess::IsRunning",
+            "emProcess::Terminate",
+            "emProcess::GetExitStatus",
+            "emProcess::GetArg0"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emProcess.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emProcess.cpp",
+            "Read Rust src/foundation/process.rs",
+            "Compare these 20 methods: emProcess::emProcess, emProcess::~emProcess, emProcess::StartFlags, emProcess::TryStart, emProcess::TryStartUnmanaged, emProcess::TryWrite, emProcess::TryRead, emProcess::TryReadErr, emProcess::WaitFlags, emProcess::WaitPipes (+10 more)",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-foundation-rect",
+          "description": "Audit foundation/rect.rs (RUST-ONLY)",
+          "rust_file": "foundation/rect.rs",
+          "cpp_header": "RUST-ONLY",
+          "layer": "STATE",
+          "method_count": 0,
+          "methods": [],
+          "steps": [
+            "Read Rust src/foundation/rect.rs",
+            "No C++ equivalent. Verify internal correctness: no dead code, no panicking paths, edge cases handled.",
+            "Write a unit test for any untested edge case found.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-foundation-tga",
+          "description": "Audit foundation/tga.rs (46 methods from include/emCore/emImage.h)",
+          "rust_file": "foundation/tga.rs",
+          "cpp_header": "include/emCore/emImage.h",
+          "layer": "STATE",
+          "method_count": 46,
+          "methods": [
+            "emImage::emImage",
+            "emImage::emImage",
+            "emImage::emImage",
+            "emImage::~emImage",
+            "emImage::operator=",
+            "emImage::operator==",
+            "emImage::operator!=",
+            "emImage::Setup",
+            "emImage::SetUserMap",
+            "emImage::HasUserMap",
+            "emImage::TryParseXpm",
+            "emImage::Clear",
+            "emImage::IsEmpty",
+            "emImage::GetWidth",
+            "emImage::GetHeight",
+            "emImage::GetChannelCount",
+            "emImage::GetMap",
+            "emImage::GetWritableMap",
+            "emImage::GetPixel",
+            "emImage::SetPixel",
+            "emImage::GetPixelChannel",
+            "emImage::SetPixelChannel",
+            "emImage::GetPixelInterpolated",
+            "emImage::Fill",
+            "emImage::Fill",
+            "emImage::FillChannel",
+            "emImage::FillChannel",
+            "emImage::Copy",
+            "emImage::Copy",
+            "emImage::CopyChannel",
+            "emImage::CopyChannel",
+            "emImage::CopyTransformed",
+            "emImage::GetTransformed",
+            "emImage::CalcMinMaxRect",
+            "emImage::CalcChannelMinMaxRect",
+            "emImage::CalcAlphaMinMaxRect",
+            "emImage::GetConverted",
+            "emImage::GetCropped",
+            "emImage::GetCroppedByAlpha",
+            "emImage::HasAnyNonGreyPixel",
+            "emImage::HasAnyTransparentPixel",
+            "emImage::DetermineAllColorsSorted",
+            "emImage::PreparePainter",
+            "emImage::IsChannelCountPaintable",
+            "emImage::GetDataRefCount",
+            "emImage::MakeNonShared"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emImage.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emImage.cpp",
+            "Read Rust src/foundation/tga.rs",
+            "Compare these 46 methods: emImage::emImage, emImage::emImage, emImage::emImage, emImage::~emImage, emImage::operator=, emImage::operator==, emImage::operator!=, emImage::Setup, emImage::SetUserMap, emImage::HasUserMap (+36 more)",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-foundation-x11_colors",
+          "description": "Audit foundation/x11_colors.rs (RUST-ONLY)",
+          "rust_file": "foundation/x11_colors.rs",
+          "cpp_header": "RUST-ONLY",
+          "layer": "STATE",
+          "method_count": 0,
+          "methods": [],
+          "steps": [
+            "Read Rust src/foundation/x11_colors.rs",
+            "No C++ equivalent. Verify internal correctness: no dead code, no panicking paths, edge cases handled.",
+            "Write a unit test for any untested edge case found.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-model-core_config",
+          "description": "Audit model/core_config.rs (4 methods from include/emCore/emCoreConfig.h)",
+          "rust_file": "model/core_config.rs",
+          "cpp_header": "include/emCore/emCoreConfig.h",
+          "layer": "STATE",
+          "method_count": 4,
+          "methods": [
+            "emCoreConfig::Acquire",
+            "emCoreConfig::GetFormatName",
+            "emCoreConfig::emCoreConfig",
+            "emCoreConfig::~emCoreConfig"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emCoreConfig.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emCoreConfig.cpp",
+            "Read Rust src/model/core_config.rs",
+            "Compare these 4 methods: emCoreConfig::Acquire, emCoreConfig::GetFormatName, emCoreConfig::emCoreConfig, emCoreConfig::~emCoreConfig",
+            "CRITICAL: Verify every config field's default value matches C++ emCoreConfig constructor defaults exactly — these control zoom speed, scroll speed, magnetism radius, thread count, and render quality across the entire application",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-model-fp_plugin",
+          "description": "Audit model/fp_plugin.rs (16 methods from include/emCore/emFpPlugin.h)",
+          "rust_file": "model/fp_plugin.rs",
+          "cpp_header": "include/emCore/emFpPlugin.h",
+          "layer": "STATE",
+          "method_count": 16,
+          "methods": [
+            "emFpPlugin::emFpPlugin",
+            "emFpPlugin::~emFpPlugin",
+            "emFpPlugin::GetProperty",
+            "emFpPlugin::TryCreateFilePanel",
+            "emFpPlugin::TryAcquireModel",
+            "emFpPlugin::GetFormatName",
+            "emFpPlugin::PropertyRec::PropertyRec",
+            "emFpPlugin::PropertyRec::~PropertyRec",
+            "emFpPluginList::Acquire",
+            "emFpPluginList::CreateFilePanel",
+            "emFpPluginList::CreateFilePanel",
+            "emFpPluginList::TryAcquireModel",
+            "emFpPluginList::SearchPlugin",
+            "emFpPluginList::SearchPlugins",
+            "emFpPluginList::emFpPluginList",
+            "emFpPluginList::~emFpPluginList"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emFpPlugin.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emFpPlugin.cpp",
+            "Read Rust src/model/fp_plugin.rs",
+            "Compare these 16 methods: emFpPlugin::emFpPlugin, emFpPlugin::~emFpPlugin, emFpPlugin::GetProperty, emFpPlugin::TryCreateFilePanel, emFpPlugin::TryAcquireModel, emFpPlugin::GetFormatName, emFpPlugin::PropertyRec::PropertyRec, emFpPlugin::PropertyRec::~PropertyRec, emFpPluginList::Acquire, emFpPluginList::CreateFilePanel (+6 more)",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-model-image_file_model",
+          "description": "Audit model/image_file_model.rs (12 methods from include/emCore/emImageFile.h)",
+          "rust_file": "model/image_file_model.rs",
+          "cpp_header": "include/emCore/emImageFile.h",
+          "layer": "STATE",
+          "method_count": 12,
+          "methods": [
+            "emImageFileModel::GetImage",
+            "emImageFileModel::SetImage",
+            "emImageFileModel::GetComment",
+            "emImageFileModel::SetComment",
+            "emImageFileModel::GetFileFormatInfo",
+            "emImageFileModel::SetFileFormatInfo",
+            "emImageFileModel::GetSavingQuality",
+            "emImageFileModel::SetSavingQuality",
+            "emImageFileModel::GetChangeSignal",
+            "emImageFileModel::emImageFileModel",
+            "emImageFileModel::~emImageFileModel",
+            "emImageFileModel::ResetData"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emImageFile.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emImageFile.cpp",
+            "Read Rust src/model/image_file_model.rs",
+            "Compare these 12 methods: emImageFileModel::GetImage, emImageFileModel::SetImage, emImageFileModel::GetComment, emImageFileModel::SetComment, emImageFileModel::GetFileFormatInfo, emImageFileModel::SetFileFormatInfo, emImageFileModel::GetSavingQuality, emImageFileModel::SetSavingQuality, emImageFileModel::GetChangeSignal, emImageFileModel::emImageFileModel (+2 more)",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-model-rec_types",
+          "description": "Audit model/rec_types.rs (99 methods from include/emCore/emRec.h)",
+          "rust_file": "model/rec_types.rs",
+          "cpp_header": "include/emCore/emRec.h",
+          "layer": "STATE",
+          "method_count": 99,
+          "methods": [
+            "emRec::emRec",
+            "emRec::emRec",
+            "emRec::~emRec",
+            "emRec::GetParent",
+            "emRec::GetRoot",
+            "emRec::GetFormatName",
+            "emRec::TryLoad",
+            "emRec::TrySave",
+            "emRec::TryLoadFromMem",
+            "emRec::SaveToMem",
+            "emRec::TryCopy",
+            "emRec::Copy",
+            "emRec::SetToDefault",
+            "emRec::IsSetToDefault",
+            "emRec::TryStartReading",
+            "emRec::TryContinueReading",
+            "emRec::QuitReading",
+            "emRec::TryStartWriting",
+            "emRec::TryContinueWriting",
+            "emRec::QuitWriting",
+            "emRec::CalcRecMemNeed",
+            "emRec::CheckIdentifier",
+            "emRec::Changed",
+            "emRec::BeTheParentOf",
+            "emBoolRec::emBoolRec",
+            "emBoolRec::emBoolRec",
+            "emBoolRec::Get",
+            "emBoolRec::Set",
+            "emBoolRec::Invert",
+            "emIntRec::emIntRec",
+            "emIntRec::emIntRec",
+            "emIntRec::Get",
+            "emIntRec::Set",
+            "emIntRec::GetMinValue",
+            "emIntRec::GetMaxValue",
+            "emDoubleRec::emDoubleRec",
+            "emDoubleRec::emDoubleRec",
+            "emDoubleRec::~emDoubleRec",
+            "emDoubleRec::Get",
+            "emDoubleRec::Set",
+            "emDoubleRec::GetMinValue",
+            "emDoubleRec::GetMaxValue",
+            "emEnumRec::emEnumRec",
+            "emEnumRec::~emEnumRec",
+            "emEnumRec::Get",
+            "emEnumRec::Set",
+            "emEnumRec::GetIdentifier",
+            "emEnumRec::GetIdentifierCount",
+            "emEnumRec::GetIdentifierOf",
+            "emEnumRec::GetValueOf",
+            "emFlagsRec::emFlagsRec",
+            "emFlagsRec::~emFlagsRec",
+            "emFlagsRec::Get",
+            "emFlagsRec::Set",
+            "emFlagsRec::GetIdentifierCount",
+            "emFlagsRec::GetIdentifierOf",
+            "emFlagsRec::GetBitOf",
+            "emAlignmentRec::emAlignmentRec",
+            "emAlignmentRec::~emAlignmentRec",
+            "emAlignmentRec::Get",
+            "emAlignmentRec::Set",
+            "emStringRec::emStringRec",
+            "emStringRec::~emStringRec",
+            "emStringRec::Get",
+            "emStringRec::Set",
+            "emColorRec::emColorRec",
+            "emColorRec::Get",
+            "emColorRec::Set",
+            "emStructRec::emStructRec",
+            "emStructRec::emStructRec",
+            "emStructRec::~emStructRec",
+            "emStructRec::GetCount",
+            "emStructRec::Get",
+            "emStructRec::GetIdentifierOf",
+            "emStructRec::GetIndexOf",
+            "emStructRec::GetIndexOf",
+            "emStructRec::ShallWriteOptionalOnly",
+            "emUnionRec::emUnionRec",
+            "emUnionRec::~emUnionRec",
+            "emUnionRec::GetVariant",
+            "emUnionRec::SetVariant",
+            "emUnionRec::Get",
+            "emUnionRec::GetVariantCount",
+            "emUnionRec::GetIdentifierOf",
+            "emUnionRec::GetVariantOf",
+            "emArrayRec::emArrayRec",
+            "emArrayRec::~emArrayRec",
+            "emArrayRec::GetCount",
+            "emArrayRec::SetCount",
+            "emArrayRec::Insert",
+            "emArrayRec::Remove",
+            "emArrayRec::GetMinCount",
+            "emArrayRec::GetMaxCount",
+            "emArrayRec::Get",
+            "emRecListener::emRecListener",
+            "emRecListener::~emRecListener",
+            "emRecListener::GetListenedRec",
+            "emRecListener::SetListenedRec",
+            "emRecListener::OnRecChanged"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emRec.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emRec.cpp",
+            "Read Rust src/model/rec_types.rs",
+            "Compare these 99 methods: emRec::emRec, emRec::emRec, emRec::~emRec, emRec::GetParent, emRec::GetRoot, emRec::GetFormatName, emRec::TryLoad, emRec::TrySave, emRec::TryLoadFromMem, emRec::SaveToMem (+89 more)",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        },
+        {
+          "id": "ext-panel-ctx",
+          "description": "Audit panel/ctx.rs (98 methods from include/emCore/emPanel.h)",
+          "rust_file": "panel/ctx.rs",
+          "cpp_header": "include/emCore/emPanel.h",
+          "layer": "STATE",
+          "method_count": 98,
+          "methods": [
+            "emPanel::emPanel",
+            "emPanel::~emPanel",
+            "emPanel::GetName",
+            "emPanel::GetIdentity",
+            "emPanel::EncodeIdentity",
+            "emPanel::DecodeIdentity",
+            "emPanel::GetTitle",
+            "emPanel::GetIconFileName",
+            "emPanel::GetView",
+            "emPanel::GetViewContext",
+            "emPanel::GetRootContext",
+            "emPanel::GetWindow",
+            "emPanel::GetScreen",
+            "emPanel::GetParent",
+            "emPanel::GetChild",
+            "emPanel::GetFirstChild",
+            "emPanel::GetLastChild",
+            "emPanel::GetPrev",
+            "emPanel::GetNext",
+            "emPanel::BeFirst",
+            "emPanel::BeLast",
+            "emPanel::BePrevOf",
+            "emPanel::BeNextOf",
+            "emPanel::SortChildren",
+            "emPanel::DeleteAllChildren",
+            "emPanel::Layout",
+            "emPanel::GetLayoutX",
+            "emPanel::GetLayoutY",
+            "emPanel::GetLayoutWidth",
+            "emPanel::GetLayoutHeight",
+            "emPanel::GetCanvasColor",
+            "emPanel::GetWidth",
+            "emPanel::GetHeight",
+            "emPanel::GetTallness",
+            "emPanel::GetSubstanceRect",
+            "emPanel::IsPointInSubstanceRect",
+            "emPanel::GetEssenceRect",
+            "emPanel::IsViewed",
+            "emPanel::IsInViewedPath",
+            "emPanel::GetViewedPixelTallness",
+            "emPanel::GetViewedX",
+            "emPanel::GetViewedY",
+            "emPanel::GetViewedWidth",
+            "emPanel::GetViewedHeight",
+            "emPanel::GetClipX1",
+            "emPanel::GetClipY1",
+            "emPanel::GetClipX2",
+            "emPanel::GetClipY2",
+            "emPanel::PanelToViewX",
+            "emPanel::PanelToViewY",
+            "emPanel::ViewToPanelX",
+            "emPanel::ViewToPanelY",
+            "emPanel::PanelToViewDeltaX",
+            "emPanel::PanelToViewDeltaY",
+            "emPanel::ViewToPanelDeltaX",
+            "emPanel::ViewToPanelDeltaY",
+            "emPanel::GetViewCondition",
+            "emPanel::SetAutoExpansionThreshold",
+            "emPanel::IsAutoExpanded",
+            "emPanel::SetEnableSwitch",
+            "emPanel::GetEnableSwitch",
+            "emPanel::IsEnabled",
+            "emPanel::SetFocusable",
+            "emPanel::IsFocusable",
+            "emPanel::IsActive",
+            "emPanel::IsInActivePath",
+            "emPanel::Activate",
+            "emPanel::IsFocused",
+            "emPanel::IsInFocusedPath",
+            "emPanel::Focus",
+            "emPanel::GetUpdatePriority",
+            "emPanel::GetMemoryLimit",
+            "emPanel::GetInputClockMS",
+            "emPanel::GetTouchEventPriority",
+            "emPanel::SetAutoplayHandling",
+            "emPanel::GetAutoplayHandling",
+            "emPanel::IsContentReady",
+            "emPanel::GetPlaybackState",
+            "emPanel::SetPlaybackState",
+            "emPanel::Cycle",
+            "emPanel::Notice",
+            "emPanel::Input",
+            "emPanel::GetCursor",
+            "emPanel::IsOpaque",
+            "emPanel::Paint",
+            "emPanel::AutoExpand",
+            "emPanel::AutoShrink",
+            "emPanel::LayoutChildren",
+            "emPanel::CreateControlPanel",
+            "emPanel::GetSoughtName",
+            "emPanel::IsHopeForSeeking",
+            "emPanel::InvalidateTitle",
+            "emPanel::InvalidateCursor",
+            "emPanel::InvalidatePainting",
+            "emPanel::InvalidatePainting",
+            "emPanel::InvalidateAutoExpansion",
+            "emPanel::InvalidateChildrenLayout",
+            "emPanel::InvalidateControlPanel"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emPanel.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emPanel.cpp",
+            "Read Rust src/panel/ctx.rs",
+            "Compare these 98 methods: emPanel::emPanel, emPanel::~emPanel, emPanel::GetName, emPanel::GetIdentity, emPanel::EncodeIdentity, emPanel::DecodeIdentity, emPanel::GetTitle, emPanel::GetIconFileName, emPanel::GetView, emPanel::GetViewContext (+88 more)",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "pipeline"
+          ]
+        },
+        {
+          "id": "ext-render-bitmap_font",
+          "description": "Audit render/bitmap_font.rs (RUST-ONLY)",
+          "rust_file": "render/bitmap_font.rs",
+          "cpp_header": "RUST-ONLY",
+          "layer": "PIXEL",
+          "method_count": 0,
+          "methods": [],
+          "steps": [
+            "Read Rust src/render/bitmap_font.rs",
+            "No C++ equivalent. Verify internal correctness: no dead code, no panicking paths, edge cases handled.",
+            "Write a unit test for any untested edge case found.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden"
+          ]
+        },
+        {
+          "id": "ext-render-draw_list",
+          "description": "Audit render/draw_list.rs (RUST-ONLY)",
+          "rust_file": "render/draw_list.rs",
+          "cpp_header": "RUST-ONLY",
+          "layer": "PIXEL",
+          "method_count": 0,
+          "methods": [],
+          "steps": [
+            "Read Rust src/render/draw_list.rs",
+            "No C++ equivalent. Verify internal correctness: no dead code, no panicking paths, edge cases handled.",
+            "Write a unit test for any untested edge case found.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden"
+          ]
+        },
+        {
+          "id": "ext-render-interpolation",
+          "description": "Audit render/interpolation.rs (13 methods from src/emCore/emPainter_ScTl.h)",
+          "rust_file": "render/interpolation.rs",
+          "cpp_header": "src/emCore/emPainter_ScTl.h",
+          "layer": "PIXEL",
+          "method_count": 13,
+          "methods": [
+            "ScanlineTool::InterpolateImageNearestEtCs1",
+            "ScanlineTool::InterpolateImageNearestEtCs2",
+            "ScanlineTool::InterpolateImageNearestEtCs3",
+            "ScanlineTool::InterpolateImageNearestEtCs4",
+            "ScanlineTool::InterpolateImageNearestEeCs1..4",
+            "ScanlineTool::InterpolateImageNearestEzCs1..4",
+            "ScanlineTool::InterpolateImageAreaSampledE{t,e,z}Cs{1..4}",
+            "ScanlineTool::InterpolateImageBilinearE{t,e,z}Cs{1..4}",
+            "ScanlineTool::InterpolateImageBicubicE{t,e,z}Cs{1..4}",
+            "ScanlineTool::InterpolateImageLanczosE{t,e,z}Cs{1..4}",
+            "ScanlineTool::InterpolateImageAdaptiveE{t,e,z}Cs{1..4}",
+            "ScanlineTool::InterpolateLinearGradient",
+            "ScanlineTool::InterpolateRadialGradient"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emPainter_ScTl.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emPainter_ScTlIntImg.cpp",
+            "Read Rust src/render/interpolation.rs",
+            "Compare these 13 methods: ScanlineTool::InterpolateImageNearestEtCs1, ScanlineTool::InterpolateImageNearestEtCs2, ScanlineTool::InterpolateImageNearestEtCs3, ScanlineTool::InterpolateImageNearestEtCs4, ScanlineTool::InterpolateImageNearestEeCs1..4, ScanlineTool::InterpolateImageNearestEzCs1..4, ScanlineTool::InterpolateImageAreaSampledE{t,e,z}Cs{1..4}, ScanlineTool::InterpolateImageBilinearE{t,e,z}Cs{1..4}, ScanlineTool::InterpolateImageBicubicE{t,e,z}Cs{1..4}, ScanlineTool::InterpolateImageLanczosE{t,e,z}Cs{1..4} (+3 more)",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden"
+          ]
+        },
+        {
+          "id": "ext-render-scanline",
+          "description": "Audit render/scanline.rs (6 methods from src/emCore/emPainter_ScTl.h)",
+          "rust_file": "render/scanline.rs",
+          "cpp_header": "src/emCore/emPainter_ScTl.h",
+          "layer": "PIXEL",
+          "method_count": 6,
+          "methods": [
+            "ScanlineTool::ScanlineTool",
+            "ScanlineTool::Init",
+            "ScanlineTool::PaintScanline",
+            "ScanlineTool::PaintLargeScanlineInt",
+            "ScanlineTool::PaintScanlineCol{Ps1,Ps2,Ps4}{,Cv}",
+            "ScanlineTool::PaintScanlineInt{,A,G2,G1,G1G2}Cs{1..4}Ps{1,2,4}{,Cv}"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emPainter_ScTl.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emPainter_ScTl.cpp",
+            "Read Rust src/render/scanline.rs",
+            "Compare these 6 methods: ScanlineTool::ScanlineTool, ScanlineTool::Init, ScanlineTool::PaintScanline, ScanlineTool::PaintLargeScanlineInt, ScanlineTool::PaintScanlineCol{Ps1,Ps2,Ps4}{,Cv}, ScanlineTool::PaintScanlineInt{,A,G2,G1,G1G2}Cs{1..4}Ps{1,2,4}{,Cv}",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden"
+          ]
+        },
+        {
+          "id": "ext-render-scanline_avx2",
+          "description": "Audit render/scanline_avx2.rs (7 methods from src/emCore/emPainter_ScTl.h)",
+          "rust_file": "render/scanline_avx2.rs",
+          "cpp_header": "src/emCore/emPainter_ScTl.h",
+          "layer": "PIXEL",
+          "method_count": 7,
+          "methods": [
+            "ScanlineTool::PaintScanlineColAvx2Pf{0..3}{,Cv}",
+            "ScanlineTool::PaintScanlineIntAvx2{,A,G2,G1,G1G2}Cs{1..4}Pf{0..3}{,Cv}",
+            "ScanlineTool::InterpolateImageAvx2NearestE{t,e,z}Cs{1..4}",
+            "ScanlineTool::InterpolateImageAvx2BilinearE{t,e,z}Cs{1..4}",
+            "ScanlineTool::InterpolateImageAvx2BicubicE{t,e,z}Cs{1..4}",
+            "ScanlineTool::InterpolateImageAvx2LanczosE{t,e,z}Cs{1..4}",
+            "ScanlineTool::InterpolateImageAvx2AdaptiveE{t,e,z}Cs{1..4}"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emPainter_ScTl.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emPainter_ScTlPSInt_AVX2.cpp",
+            "Read Rust src/render/scanline_avx2.rs",
+            "Compare these 7 methods: ScanlineTool::PaintScanlineColAvx2Pf{0..3}{,Cv}, ScanlineTool::PaintScanlineIntAvx2{,A,G2,G1,G1G2}Cs{1..4}Pf{0..3}{,Cv}, ScanlineTool::InterpolateImageAvx2NearestE{t,e,z}Cs{1..4}, ScanlineTool::InterpolateImageAvx2BilinearE{t,e,z}Cs{1..4}, ScanlineTool::InterpolateImageAvx2BicubicE{t,e,z}Cs{1..4}, ScanlineTool::InterpolateImageAvx2LanczosE{t,e,z}Cs{1..4}, ScanlineTool::InterpolateImageAvx2AdaptiveE{t,e,z}Cs{1..4}",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden"
+          ]
+        },
+        {
+          "id": "ext-render-scanline_tool",
+          "description": "Audit render/scanline_tool.rs (6 methods from src/emCore/emPainter_ScTl.h)",
+          "rust_file": "render/scanline_tool.rs",
+          "cpp_header": "src/emCore/emPainter_ScTl.h",
+          "layer": "PIXEL",
+          "method_count": 6,
+          "methods": [
+            "ScanlineTool::PaintScanlineColPs1",
+            "ScanlineTool::PaintScanlineColPs2",
+            "ScanlineTool::PaintScanlineColPs4",
+            "ScanlineTool::PaintScanlineColPs1Cv",
+            "ScanlineTool::PaintScanlineColPs2Cv",
+            "ScanlineTool::PaintScanlineColPs4Cv"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emPainter_ScTl.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emPainter_ScTlPSCol.cpp",
+            "Read Rust src/render/scanline_tool.rs",
+            "Compare these 6 methods: ScanlineTool::PaintScanlineColPs1, ScanlineTool::PaintScanlineColPs2, ScanlineTool::PaintScanlineColPs4, ScanlineTool::PaintScanlineColPs1Cv, ScanlineTool::PaintScanlineColPs2Cv, ScanlineTool::PaintScanlineColPs4Cv",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden"
+          ]
+        },
+        {
+          "id": "ext-render-software_compositor",
+          "description": "Audit render/software_compositor.rs (6 methods from include/emCore/emViewRenderer.h)",
+          "rust_file": "render/software_compositor.rs",
+          "cpp_header": "include/emCore/emViewRenderer.h",
+          "layer": "PIXEL",
+          "method_count": 6,
+          "methods": [
+            "emViewRenderer::emViewRenderer",
+            "emViewRenderer::~emViewRenderer",
+            "emViewRenderer::RenderView",
+            "emViewRenderer::PrepareBuffers",
+            "emViewRenderer::GetBufferPainter",
+            "emViewRenderer::AsyncFlushBuffer"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emViewRenderer.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emViewRenderer.cpp",
+            "Read Rust src/render/software_compositor.rs",
+            "Compare these 6 methods: emViewRenderer::emViewRenderer, emViewRenderer::~emViewRenderer, emViewRenderer::RenderView, emViewRenderer::PrepareBuffers, emViewRenderer::GetBufferPainter, emViewRenderer::AsyncFlushBuffer",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden"
+          ]
+        },
+        {
+          "id": "ext-render-thread_pool",
+          "description": "Audit render/thread_pool.rs (7 methods from include/emCore/emRenderThreadPool.h)",
+          "rust_file": "render/thread_pool.rs",
+          "cpp_header": "include/emCore/emRenderThreadPool.h",
+          "layer": "PIXEL",
+          "method_count": 7,
+          "methods": [
+            "emRenderThreadPool::Acquire",
+            "emRenderThreadPool::GetThreadCount",
+            "emRenderThreadPool::CallParallel",
+            "emRenderThreadPool::CallParallel",
+            "emRenderThreadPool::emRenderThreadPool",
+            "emRenderThreadPool::~emRenderThreadPool",
+            "emRenderThreadPool::Cycle"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emRenderThreadPool.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emRenderThreadPool.cpp",
+            "Read Rust src/render/thread_pool.rs",
+            "Compare these 7 methods: emRenderThreadPool::Acquire, emRenderThreadPool::GetThreadCount, emRenderThreadPool::CallParallel, emRenderThreadPool::CallParallel, emRenderThreadPool::emRenderThreadPool, emRenderThreadPool::~emRenderThreadPool, emRenderThreadPool::Cycle",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden"
+          ]
+        },
+        {
+          "id": "ext-render-tile_cache",
+          "description": "Audit render/tile_cache.rs (RUST-ONLY)",
+          "rust_file": "render/tile_cache.rs",
+          "cpp_header": "RUST-ONLY",
+          "layer": "PIXEL",
+          "method_count": 0,
+          "methods": [],
+          "steps": [
+            "Read Rust src/render/tile_cache.rs",
+            "No C++ equivalent. Verify internal correctness: no dead code, no panicking paths, edge cases handled.",
+            "Write a unit test for any untested edge case found.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden"
+          ]
+        },
+        {
+          "id": "ext-widget-core_config_panel",
+          "description": "Audit widget/core_config_panel.rs (40 methods from include/emCore/emCoreConfigPanel.h)",
+          "rust_file": "widget/core_config_panel.rs",
+          "cpp_header": "include/emCore/emCoreConfigPanel.h",
+          "layer": "STATE",
+          "method_count": 40,
+          "methods": [
+            "emCoreConfigPanel::emCoreConfigPanel",
+            "emCoreConfigPanel::~emCoreConfigPanel",
+            "emCoreConfigPanel::Cycle",
+            "emCoreConfigPanel::AutoExpand",
+            "emCoreConfigPanel::AutoShrink",
+            "emCoreConfigPanel::FactorField::FactorField",
+            "emCoreConfigPanel::FactorField::~FactorField",
+            "emCoreConfigPanel::FactorField::TextOfValue",
+            "emCoreConfigPanel::FactorField::ValueChanged",
+            "emCoreConfigPanel::FactorField::OnRecChanged",
+            "emCoreConfigPanel::MouseMiscGroup::MouseMiscGroup",
+            "emCoreConfigPanel::MouseMiscGroup::~MouseMiscGroup",
+            "emCoreConfigPanel::MouseMiscGroup::OnRecChanged",
+            "emCoreConfigPanel::MouseMiscGroup::Cycle",
+            "emCoreConfigPanel::MouseMiscGroup::AutoExpand",
+            "emCoreConfigPanel::MouseMiscGroup::AutoShrink",
+            "emCoreConfigPanel::MouseGroup::MouseGroup",
+            "emCoreConfigPanel::MouseGroup::~MouseGroup",
+            "emCoreConfigPanel::MouseGroup::AutoExpand",
+            "emCoreConfigPanel::KBGroup::KBGroup",
+            "emCoreConfigPanel::KBGroup::~KBGroup",
+            "emCoreConfigPanel::KBGroup::AutoExpand",
+            "emCoreConfigPanel::KineticGroup::KineticGroup",
+            "emCoreConfigPanel::KineticGroup::~KineticGroup",
+            "emCoreConfigPanel::KineticGroup::AutoExpand",
+            "emCoreConfigPanel::MaxMemGroup::MaxMemGroup",
+            "emCoreConfigPanel::MaxMemGroup::~MaxMemGroup",
+            "emCoreConfigPanel::MaxMemGroup::OnRecChanged",
+            "emCoreConfigPanel::MaxMemGroup::Cycle",
+            "emCoreConfigPanel::MaxMemGroup::AutoExpand",
+            "emCoreConfigPanel::MaxMemGroup::AutoShrink",
+            "emCoreConfigPanel::MaxMemTunnel::MaxMemTunnel",
+            "emCoreConfigPanel::MaxMemTunnel::~MaxMemTunnel",
+            "emCoreConfigPanel::MaxMemTunnel::AutoExpand",
+            "emCoreConfigPanel::PerformanceGroup::PerformanceGroup",
+            "emCoreConfigPanel::PerformanceGroup::~PerformanceGroup",
+            "emCoreConfigPanel::PerformanceGroup::OnRecChanged",
+            "emCoreConfigPanel::PerformanceGroup::Cycle",
+            "emCoreConfigPanel::PerformanceGroup::AutoExpand",
+            "emCoreConfigPanel::PerformanceGroup::AutoShrink"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emCoreConfigPanel.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emCoreConfigPanel.cpp",
+            "Read Rust src/widget/core_config_panel.rs",
+            "Compare these 40 methods: emCoreConfigPanel::emCoreConfigPanel, emCoreConfigPanel::~emCoreConfigPanel, emCoreConfigPanel::Cycle, emCoreConfigPanel::AutoExpand, emCoreConfigPanel::AutoShrink, emCoreConfigPanel::FactorField::FactorField, emCoreConfigPanel::FactorField::~FactorField, emCoreConfigPanel::FactorField::TextOfValue, emCoreConfigPanel::FactorField::ValueChanged, emCoreConfigPanel::FactorField::OnRecChanged (+30 more)",
+            "CRITICAL: Verify every config field's default value matches C++ emCoreConfig constructor defaults exactly — these control zoom speed, scroll speed, magnetism radius, thread count, and render quality across the entire application",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden",
+            "pipeline"
+          ]
+        },
+        {
+          "id": "ext-widget-field_panel",
+          "description": "Audit widget/field_panel.rs (RUST-ONLY)",
+          "rust_file": "widget/field_panel.rs",
+          "cpp_header": "RUST-ONLY",
+          "layer": "STATE",
+          "method_count": 0,
+          "methods": [],
+          "steps": [
+            "Read Rust src/widget/field_panel.rs",
+            "No C++ equivalent. Verify internal correctness: no dead code, no panicking paths, edge cases handled.",
+            "Write a unit test for any untested edge case found.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden",
+            "pipeline"
+          ]
+        },
+        {
+          "id": "ext-widget-image_file_panel",
+          "description": "Audit widget/image_file_panel.rs (8 methods from include/emCore/emImageFile.h)",
+          "rust_file": "widget/image_file_panel.rs",
+          "cpp_header": "include/emCore/emImageFile.h",
+          "layer": "STATE",
+          "method_count": 8,
+          "methods": [
+            "emImageFilePanel::emImageFilePanel",
+            "emImageFilePanel::SetFileModel",
+            "emImageFilePanel::GetIconFileName",
+            "emImageFilePanel::GetEssenceRect",
+            "emImageFilePanel::Cycle",
+            "emImageFilePanel::IsOpaque",
+            "emImageFilePanel::Paint",
+            "emImageFilePanel::CreateControlPanel"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emImageFile.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emImageFile.cpp",
+            "Read Rust src/widget/image_file_panel.rs",
+            "Compare these 8 methods: emImageFilePanel::emImageFilePanel, emImageFilePanel::SetFileModel, emImageFilePanel::GetIconFileName, emImageFilePanel::GetEssenceRect, emImageFilePanel::Cycle, emImageFilePanel::IsOpaque, emImageFilePanel::Paint, emImageFilePanel::CreateControlPanel",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden",
+            "pipeline"
+          ]
+        },
+        {
+          "id": "ext-widget-toolkit_images",
+          "description": "Audit widget/toolkit_images.rs (3 methods from include/emCore/emBorder.h)",
+          "rust_file": "widget/toolkit_images.rs",
+          "cpp_header": "include/emCore/emBorder.h",
+          "layer": "STATE",
+          "method_count": 3,
+          "methods": [
+            "emBorder::TkResources::TkResources",
+            "emBorder::TkResources::~TkResources",
+            "emBorder::GetTkResources"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emBorder.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emBorder.cpp",
+            "Read Rust src/widget/toolkit_images.rs",
+            "Compare these 3 methods: emBorder::TkResources::TkResources, emBorder::TkResources::~TkResources, emBorder::GetTkResources",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit",
+            "golden",
+            "pipeline"
+          ]
+        },
+        {
+          "id": "ext-window-platform",
+          "description": "Audit window/platform.rs (18 methods from include/emCore/emScreen.h)",
+          "rust_file": "window/platform.rs",
+          "cpp_header": "include/emCore/emScreen.h",
+          "layer": "STATE",
+          "method_count": 18,
+          "methods": [
+            "emScreen::LookupInherited",
+            "emScreen::GetDesktopRect",
+            "emScreen::GetMonitorCount",
+            "emScreen::GetMonitorRect",
+            "emScreen::GetMonitorIndexOfRect",
+            "emScreen::GetDPI",
+            "emScreen::GetGeometrySignal",
+            "emScreen::CanMoveMousePointer",
+            "emScreen::MoveMousePointer",
+            "emScreen::Beep",
+            "emScreen::GetWindows",
+            "emScreen::GetWindowsSignal",
+            "emScreen::LeaveFullscreenModes",
+            "emScreen::emScreen",
+            "emScreen::~emScreen",
+            "emScreen::Install",
+            "emScreen::SignalGeometrySignal",
+            "emScreen::CreateWindowPort"
+          ],
+          "steps": [
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/include/emCore/emScreen.h",
+            "Read C++ /home/ar/.local/git/eaglemode-0.96.4/src/emCore/emScreen.cpp",
+            "Read Rust src/window/platform.rs",
+            "Compare these 18 methods: emScreen::LookupInherited, emScreen::GetDesktopRect, emScreen::GetMonitorCount, emScreen::GetMonitorRect, emScreen::GetMonitorIndexOfRect, emScreen::GetDPI, emScreen::GetGeometrySignal, emScreen::CanMoveMousePointer, emScreen::MoveMousePointer, emScreen::Beep (+8 more)",
+            "Also read the C++ .cpp implementation file (not just the header) — check for static helpers, default values in constructors, and side effects (signals, invalidation, repaint calls) that the header doesn't show",
+            "For each method: verify constructors set the same default values, and methods produce the same side effects (callback firing, flag invalidation, repaint triggers)",
+            "For each method: report MATCH, MISMATCH, SUSPECT, or MISSING",
+            "For each MISMATCH: fix the Rust code minimally",
+            "For each fix: write a test verifying the corrected behavior",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false,
+          "required_test_layers": [
+            "unit"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Gap Assessment (334 unported C++ methods)",
+      "dependency": "phase-1",
+      "features": [
+        {
+          "id": "gap-ematmatrix",
+          "description": "Assess 8 unported methods from emATMatrix",
+          "origin": "emATMatrix",
+          "gap_count": 8,
+          "symbols": [
+            "emATMatrix",
+            "emIdentityATM",
+            "emInvertATM",
+            "emMultiplyATM",
+            "emTranslateATM",
+            "emScaleATM",
+            "emRotateATM",
+            "emShearATM"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 8 C++ methods: emATMatrix, emIdentityATM, emInvertATM, emMultiplyATM, emTranslateATM, emScaleATM, emRotateATM, emShearATM",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emconfigmodel",
+          "description": "Assess 3 unported methods from emConfigModel",
+          "origin": "emConfigModel",
+          "gap_count": 3,
+          "symbols": [
+            "emConfigModel::GetAutoSaveDelaySeconds",
+            "emConfigModel::SetAutoSaveDelaySeconds",
+            "emConfigModel::Cycle"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 3 C++ methods: emConfigModel::GetAutoSaveDelaySeconds, emConfigModel::SetAutoSaveDelaySeconds, emConfigModel::Cycle",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emcore/emprocess",
+          "description": "Assess 21 unported methods from emCore/emProcess",
+          "origin": "emCore/emProcess",
+          "gap_count": 21,
+          "symbols": [
+            "emProcess",
+            "emProcess::emProcess",
+            "emProcess::~emProcess",
+            "emProcess::StartFlags",
+            "emProcess::TryStart",
+            "emProcess::TryStartUnmanaged",
+            "emProcess::TryWrite",
+            "emProcess::TryRead",
+            "emProcess::TryReadErr",
+            "emProcess::WaitFlags",
+            "emProcess::WaitPipes",
+            "emProcess::CloseWriting",
+            "emProcess::CloseReading",
+            "emProcess::CloseReadingErr",
+            "emProcess::SendTerminationSignal",
+            "emProcess::SendKillSignal",
+            "emProcess::WaitForTermination",
+            "emProcess::IsRunning",
+            "emProcess::Terminate",
+            "emProcess::GetExitStatus",
+            "emProcess::GetArg0"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 21 C++ methods: emProcess, emProcess::emProcess, emProcess::~emProcess, emProcess::StartFlags, emProcess::TryStart, emProcess::TryStartUnmanaged, emProcess::TryWrite, emProcess::TryRead (+13 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emcore/emtmpfile",
+          "description": "Assess 13 unported methods from emCore/emTmpFile",
+          "origin": "emCore/emTmpFile",
+          "gap_count": 13,
+          "symbols": [
+            "emTmpFile",
+            "emTmpFile::emTmpFile()",
+            "emTmpFile::emTmpFile(emRootContext&, const char*)",
+            "emTmpFile::emTmpFile(const emString&)",
+            "emTmpFile::~emTmpFile",
+            "emTmpFile::TrySetup",
+            "emTmpFile::Setup",
+            "emTmpFile::SetupCustomPath",
+            "emTmpFile::GetPath",
+            "emTmpFile::Discard",
+            "emTmpFileMaster",
+            "emTmpFileMaster::Acquire",
+            "emTmpFileMaster::TryInventPath"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 13 C++ methods: emTmpFile, emTmpFile::emTmpFile(), emTmpFile::emTmpFile(emRootContext&, const char*), emTmpFile::emTmpFile(const emString&), emTmpFile::~emTmpFile, emTmpFile::TrySetup, emTmpFile::Setup, emTmpFile::SetupCustomPath (+5 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emcoreconfigpanel",
+          "description": "Assess 9 unported methods from emCoreConfigPanel",
+          "origin": "emCoreConfigPanel",
+          "gap_count": 9,
+          "symbols": [
+            "emCoreConfigPanel",
+            "emCoreConfigPanel::FactorField",
+            "emCoreConfigPanel::MouseMiscGroup",
+            "emCoreConfigPanel::MouseGroup",
+            "emCoreConfigPanel::KBGroup",
+            "emCoreConfigPanel::KineticGroup",
+            "emCoreConfigPanel::MaxMemGroup",
+            "emCoreConfigPanel::MaxMemTunnel",
+            "emCoreConfigPanel::PerformanceGroup"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 9 C++ methods: emCoreConfigPanel, emCoreConfigPanel::FactorField, emCoreConfigPanel::MouseMiscGroup, emCoreConfigPanel::MouseGroup, emCoreConfigPanel::KBGroup, emCoreConfigPanel::KineticGroup, emCoreConfigPanel::MaxMemGroup, emCoreConfigPanel::MaxMemTunnel (+1 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emcursor",
+          "description": "Assess 1 unported methods from emCursor",
+          "origin": "emCursor",
+          "gap_count": 1,
+          "symbols": [
+            "emCursor::ToString"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 1 C++ methods: emCursor::ToString",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emerrorpanel",
+          "description": "Assess 4 unported methods from emErrorPanel",
+          "origin": "emErrorPanel",
+          "gap_count": 4,
+          "symbols": [
+            "emErrorPanel::emErrorPanel(ParentArg, const emString&, const emString&)",
+            "emErrorPanel::~emErrorPanel",
+            "emErrorPanel::IsOpaque",
+            "emErrorPanel::Paint"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 4 C++ methods: emErrorPanel::emErrorPanel(ParentArg, const emString&, const emString&), emErrorPanel::~emErrorPanel, emErrorPanel::IsOpaque, emErrorPanel::Paint",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emfiledialog",
+          "description": "Assess 27 unported methods from emFileDialog",
+          "origin": "emFileDialog",
+          "gap_count": 27,
+          "symbols": [
+            "emFileDialog::ModeType",
+            "emFileDialog::emFileDialog(emContext&, ModeType, ViewFlags, WindowFlags, const emString&)",
+            "emFileDialog::~emFileDialog",
+            "emFileDialog::GetMode",
+            "emFileDialog::SetMode",
+            "emFileDialog::IsDirectoryResultAllowed",
+            "emFileDialog::SetDirectoryResultAllowed",
+            "emFileDialog::IsMultiSelectionEnabled",
+            "emFileDialog::SetMultiSelectionEnabled",
+            "emFileDialog::GetParentDirectory",
+            "emFileDialog::SetParentDirectory",
+            "emFileDialog::GetSelectedName",
+            "emFileDialog::GetSelectedNames",
+            "emFileDialog::SetSelectedName",
+            "emFileDialog::SetSelectedNames",
+            "emFileDialog::ClearSelection",
+            "emFileDialog::GetSelectedPath",
+            "emFileDialog::SetSelectedPath",
+            "emFileDialog::GetSelectionSignal",
+            "emFileDialog::GetFilters",
+            "emFileDialog::SetFilters",
+            "emFileDialog::GetSelectedFilterIndex",
+            "emFileDialog::SetSelectedFilterIndex",
+            "emFileDialog::AreHiddenFilesShown",
+            "emFileDialog::SetHiddenFilesShown",
+            "emFileDialog::Cycle",
+            "emFileDialog::CheckFinish"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 27 C++ methods: emFileDialog::ModeType, emFileDialog::emFileDialog(emContext&, ModeType, ViewFlags, WindowFlags, const emString&), emFileDialog::~emFileDialog, emFileDialog::GetMode, emFileDialog::SetMode, emFileDialog::IsDirectoryResultAllowed, emFileDialog::SetDirectoryResultAllowed, emFileDialog::IsMultiSelectionEnabled (+19 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emfilemodel",
+          "description": "Assess 13 unported methods from emFileModel",
+          "origin": "emFileModel",
+          "gap_count": 13,
+          "symbols": [
+            "emFileModelClient",
+            "emFileModelClient::GetModel",
+            "emFileModelClient::SetModel",
+            "emFileModelClient::GetMemoryLimit",
+            "emFileModelClient::GetPriority",
+            "emFileModelClient::IsReloadAnnoying",
+            "emFileModelClient::InvalidateMemoryLimit",
+            "emFileModelClient::InvalidatePriority",
+            "emFileModelClient::IsTheOnlyClient",
+            "emAbsoluteFileModelClient",
+            "emAbsoluteFileModelClient::GetMemoryLimit",
+            "emAbsoluteFileModelClient::GetPriority",
+            "emAbsoluteFileModelClient::IsReloadAnnoying"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 13 C++ methods: emFileModelClient, emFileModelClient::GetModel, emFileModelClient::SetModel, emFileModelClient::GetMemoryLimit, emFileModelClient::GetPriority, emFileModelClient::IsReloadAnnoying, emFileModelClient::InvalidateMemoryLimit, emFileModelClient::InvalidatePriority (+5 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emfilepanel",
+          "description": "Assess 14 unported methods from emFilePanel",
+          "origin": "emFilePanel",
+          "gap_count": 14,
+          "symbols": [
+            "emFilePanel::emFilePanel(ParentArg, const emString&, emFileModel*, bool)",
+            "emFilePanel::~emFilePanel",
+            "emFilePanel::GetFileModel",
+            "emFilePanel::SetFileModel",
+            "emFilePanel::SetCustomError",
+            "emFilePanel::ClearCustomError",
+            "emFilePanel::GetCustomError",
+            "emFilePanel::GetVirFileStateSignal",
+            "emFilePanel::VirtualFileState",
+            "emFilePanel::GetVirFileState",
+            "emFilePanel::IsVFSGood",
+            "emFilePanel::IsReloadAnnoying",
+            "emFilePanel::GetIconFileName",
+            "emFilePanel::IsContentReady"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 14 C++ methods: emFilePanel::emFilePanel(ParentArg, const emString&, emFileModel*, bool), emFilePanel::~emFilePanel, emFilePanel::GetFileModel, emFilePanel::SetFileModel, emFilePanel::SetCustomError, emFilePanel::ClearCustomError, emFilePanel::GetCustomError, emFilePanel::GetVirFileStateSignal (+6 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emfileselectionbox",
+          "description": "Assess 35 unported methods from emFileSelectionBox",
+          "origin": "emFileSelectionBox",
+          "gap_count": 35,
+          "symbols": [
+            "emFileSelectionBox::emFileSelectionBox(ParentArg, const emString&, const emString&, const emString&, const emImage&)",
+            "emFileSelectionBox::~emFileSelectionBox",
+            "emFileSelectionBox::IsMultiSelectionEnabled",
+            "emFileSelectionBox::SetMultiSelectionEnabled",
+            "emFileSelectionBox::GetParentDirectory",
+            "emFileSelectionBox::SetParentDirectory",
+            "emFileSelectionBox::GetSelectedName",
+            "emFileSelectionBox::GetSelectedNames",
+            "emFileSelectionBox::SetSelectedName",
+            "emFileSelectionBox::SetSelectedNames",
+            "emFileSelectionBox::ClearSelection",
+            "emFileSelectionBox::GetSelectedPath",
+            "emFileSelectionBox::SetSelectedPath",
+            "emFileSelectionBox::GetSelectionSignal",
+            "emFileSelectionBox::GetFilters",
+            "emFileSelectionBox::SetFilters",
+            "emFileSelectionBox::GetSelectedFilterIndex",
+            "emFileSelectionBox::SetSelectedFilterIndex",
+            "emFileSelectionBox::AreHiddenFilesShown",
+            "emFileSelectionBox::SetHiddenFilesShown",
+            "emFileSelectionBox::GetFileTriggerSignal",
+            "emFileSelectionBox::GetTriggeredFileName",
+            "emFileSelectionBox::TriggerFile",
+            "emFileSelectionBox::EnterSubDir",
+            "emFileSelectionBox::IsParentDirFieldHidden",
+            "emFileSelectionBox::SetParentDirFieldHidden",
+            "emFileSelectionBox::IsHiddenCheckBoxHidden",
+            "emFileSelectionBox::SetHiddenCheckBoxHidden",
+            "emFileSelectionBox::IsNameFieldHidden",
+            "emFileSelectionBox::SetNameFieldHidden",
+            "emFileSelectionBox::IsFilterHidden",
+            "emFileSelectionBox::SetFilterHidden",
+            "emFileSelectionBox::FilesListBox",
+            "emFileSelectionBox::FileItemPanel",
+            "emFileSelectionBox::FileOverlayPanel"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 35 C++ methods: emFileSelectionBox::emFileSelectionBox(ParentArg, const emString&, const emString&, const emString&, const emImage&), emFileSelectionBox::~emFileSelectionBox, emFileSelectionBox::IsMultiSelectionEnabled, emFileSelectionBox::SetMultiSelectionEnabled, emFileSelectionBox::GetParentDirectory, emFileSelectionBox::SetParentDirectory, emFileSelectionBox::GetSelectedName, emFileSelectionBox::GetSelectedNames (+27 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emfpplugin",
+          "description": "Assess 5 unported methods from emFpPlugin",
+          "origin": "emFpPlugin",
+          "gap_count": 5,
+          "symbols": [
+            "emFpPluginFunc",
+            "emFpPluginModelFunc",
+            "emFpPlugin",
+            "emFpPlugin::PropertyRec",
+            "emFpPluginList"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 5 C++ methods: emFpPluginFunc, emFpPluginModelFunc, emFpPlugin, emFpPlugin::PropertyRec, emFpPluginList",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emimage",
+          "description": "Assess 33 unported methods from emImage",
+          "origin": "emImage",
+          "gap_count": 33,
+          "symbols": [
+            "emImage::SetUserMap",
+            "emImage::HasUserMap",
+            "emImage::TryParseXpm",
+            "emImage::PreparePainter",
+            "emImageFileModel",
+            "emImageFileModel::GetImage",
+            "emImageFileModel::SetImage",
+            "emImageFileModel::GetComment",
+            "emImageFileModel::SetComment",
+            "emImageFileModel::GetFileFormatInfo",
+            "emImageFileModel::SetFileFormatInfo",
+            "emImageFileModel::GetSavingQuality",
+            "emImageFileModel::SetSavingQuality",
+            "emImageFileModel::GetChangeSignal",
+            "emImageFilePanel",
+            "emImageFilePanel::emImageFilePanel",
+            "emImageFilePanel::SetFileModel",
+            "emImageFilePanel::GetIconFileName",
+            "emImageFilePanel::GetEssenceRect",
+            "emImageFilePanel::Cycle",
+            "emImageFilePanel::IsOpaque",
+            "emImageFilePanel::Paint",
+            "emImageFilePanel::CreateControlPanel",
+            "emGetResImage",
+            "emTryGetResImage",
+            "emGetInsResImage",
+            "emTryGetInsResImage",
+            "emResModelBase",
+            "emResModel::LookupInherited",
+            "emClipRects::SetToMinMaxOf",
+            "emClipRects::IsSupersetOf(const emClipRects&)",
+            "emTexture::GetSrcX/SetSrcX/GetSrcY/SetSrcY/GetSrcW/SetSrcW/GetSrcH/SetSrcH",
+            "emTexture::GetAlpha/SetAlpha"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 33 C++ methods: emImage::SetUserMap, emImage::HasUserMap, emImage::TryParseXpm, emImage::PreparePainter, emImageFileModel, emImageFileModel::GetImage, emImageFileModel::SetImage, emImageFileModel::GetComment (+25 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-eminput",
+          "description": "Assess 5 unported methods from emInput",
+          "origin": "emInput",
+          "gap_count": 5,
+          "symbols": [
+            "emInputState::ClearTouches",
+            "emInputHotkey::GetString (both overloads)",
+            "emInputHotkey::ClearModifiers",
+            "emInputHotkey::AddModifier",
+            "emInputHotkey::SetKey"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 5 C++ methods: emInputState::ClearTouches, emInputHotkey::GetString (both overloads), emInputHotkey::ClearModifiers, emInputHotkey::AddModifier, emInputHotkey::SetKey",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emmodel",
+          "description": "Assess 7 unported methods from emModel",
+          "origin": "emModel",
+          "gap_count": 7,
+          "symbols": [
+            "emModel::GetName",
+            "emModel::IsCommon",
+            "emModel::IsRegistered",
+            "emModel::GetMinCommonLifetime",
+            "emModel::SetMinCommonLifetime",
+            "emModel::Register",
+            "emModel::Unregister"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 7 C++ methods: emModel::GetName, emModel::IsCommon, emModel::IsRegistered, emModel::GetMinCommonLifetime, emModel::SetMinCommonLifetime, emModel::Register, emModel::Unregister",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-empanel",
+          "description": "Assess 29 unported methods from emPanel",
+          "origin": "emPanel",
+          "gap_count": 29,
+          "symbols": [
+            "emPanel::ParentArgClass::GetRootContext",
+            "emPanel::ParentArgClass::GetView",
+            "emPanel::ParentArgClass::GetPanel",
+            "emPanel::LinkCrossPtr",
+            "emPanel::GetView",
+            "emPanel::GetViewContext",
+            "emPanel::GetRootContext",
+            "emPanel::GetWindow",
+            "emPanel::GetScreen",
+            "emPanel::GetPrev / GetNext",
+            "emPanel::GetViewedPixelTallness",
+            "emPanel::Cycle (protected virtual)",
+            "emSubViewPanel::emSubViewPanel (constructor)",
+            "emSubViewPanel::GetSubView",
+            "emSubViewPanel::GetTitle",
+            "emSubViewPanel::GetTouchEventPriority",
+            "emSubViewPanel::Notice (protected virtual)",
+            "emSubViewPanel::Input (protected virtual)",
+            "emSubViewPanel::GetCursor (protected virtual)",
+            "emSubViewPanel::IsOpaque (protected virtual)",
+            "emSubViewPanel::Paint (protected virtual)",
+            "emScreen::LookupInherited",
+            "emScreen::GetGeometrySignal",
+            "emScreen::GetWindows",
+            "emScreen::GetWindowsSignal",
+            "emScreen::emScreen (protected constructor)",
+            "emScreen::Install (protected)",
+            "emScreen::SignalGeometrySignal (protected)",
+            "emScreen::CreateWindowPort (protected pure virtual)"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 29 C++ methods: emPanel::ParentArgClass::GetRootContext, emPanel::ParentArgClass::GetView, emPanel::ParentArgClass::GetPanel, emPanel::LinkCrossPtr, emPanel::GetView, emPanel::GetViewContext, emPanel::GetRootContext, emPanel::GetWindow (+21 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emrec",
+          "description": "Assess 5 unported methods from emRec",
+          "origin": "emRec",
+          "gap_count": 5,
+          "symbols": [
+            "emRecListener",
+            "emAlignmentRec",
+            "emColorRec",
+            "emRecFileReader",
+            "emRecFileWriter"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 5 C++ methods: emRecListener, emAlignmentRec, emColorRec, emRecFileReader, emRecFileWriter",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emsigmodel",
+          "description": "Assess 3 unported methods from emSigModel",
+          "origin": "emSigModel",
+          "gap_count": 3,
+          "symbols": [
+            "emSigModel::Acquire",
+            "emSigModel::Lookup",
+            "emSigModel::LookupInherited"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 3 C++ methods: emSigModel::Acquire, emSigModel::Lookup, emSigModel::LookupInherited",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emstd1",
+          "description": "Assess 3 unported methods from emStd1",
+          "origin": "emStd1",
+          "gap_count": 3,
+          "symbols": [
+            "emSetFatalErrorGraphical",
+            "EM_ALIGN_* constants / emAlignment typedef",
+            "emAlignmentToString / emStringToAlignment"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 3 C++ methods: emSetFatalErrorGraphical, EM_ALIGN_* constants / emAlignment typedef, emAlignmentToString / emStringToAlignment",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emstd2",
+          "description": "Assess 3 unported methods from emStd2",
+          "origin": "emStd2",
+          "gap_count": 3,
+          "symbols": [
+            "emGetCPUTSC",
+            "emLibHandle / emTryOpenLib / emTryResolveSymbolFromLib / emCloseLib / emTryResolveSymbol",
+            "emCalcAdler32 / emCalcCRC32 / emCalcCRC64 / emCalcHashCode / emCalcHashName"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 3 C++ methods: emGetCPUTSC, emLibHandle / emTryOpenLib / emTryResolveSymbolFromLib / emCloseLib / emTryResolveSymbol, emCalcAdler32 / emCalcCRC32 / emCalcCRC64 / emCalcHashCode / emCalcHashName",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emtunnel",
+          "description": "Assess 8 unported methods from emTunnel",
+          "origin": "emTunnel",
+          "gap_count": 8,
+          "symbols": [
+            "emTunnel (class)",
+            "emTunnel::emTunnel (constructor)",
+            "emTunnel::GetChildTallness / SetChildTallness",
+            "emTunnel::GetDepth / SetDepth",
+            "emTunnel::GetChildRect (const)",
+            "emTunnel::GetChildRect (non-const deprecated overload)",
+            "emTunnel::PaintContent (protected)",
+            "emTunnel::LayoutChildren (protected)"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 8 C++ methods: emTunnel (class), emTunnel::emTunnel (constructor), emTunnel::GetChildTallness / SetChildTallness, emTunnel::GetDepth / SetDepth, emTunnel::GetChildRect (const), emTunnel::GetChildRect (non-const deprecated overload), emTunnel::PaintContent (protected), emTunnel::LayoutChildren (protected)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emvarmodel",
+          "description": "Assess 6 unported methods from emVarModel",
+          "origin": "emVarModel",
+          "gap_count": 6,
+          "symbols": [
+            "emVarModel::Acquire",
+            "emVarModel::Lookup",
+            "emVarModel::LookupInherited",
+            "emVarModel::Remove",
+            "emVarModel::GetAndRemove",
+            "emVarModel::GetInherited"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 6 C++ methods: emVarModel::Acquire, emVarModel::Lookup, emVarModel::LookupInherited, emVarModel::Remove, emVarModel::GetAndRemove, emVarModel::GetInherited",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emvarsigmodel",
+          "description": "Assess 6 unported methods from emVarSigModel",
+          "origin": "emVarSigModel",
+          "gap_count": 6,
+          "symbols": [
+            "emVarSigModel::Acquire",
+            "emVarSigModel::Lookup",
+            "emVarSigModel::LookupInherited",
+            "emVarSigModel::Remove",
+            "emVarSigModel::GetAndRemove",
+            "emVarSigModel::GetInherited"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 6 C++ methods: emVarSigModel::Acquire, emVarSigModel::Lookup, emVarSigModel::LookupInherited, emVarSigModel::Remove, emVarSigModel::GetAndRemove, emVarSigModel::GetInherited",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emview",
+          "description": "Assess 14 unported methods from emView",
+          "origin": "emView",
+          "gap_count": 14,
+          "symbols": [
+            "emView::GetViewFlagsSignal()",
+            "emView::GetTitle() / InvalidateTitle()",
+            "emView::GetTitleSignal()",
+            "emView::CreateControlPanel(emPanel&, const emString&) / GetControlPanelSignal()",
+            "emView::GetWindow() / GetScreen()",
+            "emView::GetMaxPopupViewRect(double*, double*, double*, double*)",
+            "emView::GetFirstVIF() / GetLastVIF()",
+            "emView::IsPoppedUp()",
+            "emView::IsSoftKeyboardShown() / ShowSoftKeyboard(bool)",
+            "emView::GetInputClockMS()",
+            "emView::GetTouchEventPriority(double, double, bool)",
+            "emView::Input(emInputEvent&, const emInputState&) [protected virtual]",
+            "emView::GetCursor() [protected virtual]",
+            "emView::DoCustomCheat(const char*)"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 14 C++ methods: emView::GetViewFlagsSignal(), emView::GetTitle() / InvalidateTitle(), emView::GetTitleSignal(), emView::CreateControlPanel(emPanel&, const emString&) / GetControlPanelSignal(), emView::GetWindow() / GetScreen(), emView::GetMaxPopupViewRect(double*, double*, double*, double*), emView::GetFirstVIF() / GetLastVIF(), emView::IsPoppedUp() (+6 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emviewinputfilter",
+          "description": "Assess 1 unported methods from emViewInputFilter",
+          "origin": "emViewInputFilter",
+          "gap_count": 1,
+          "symbols": [
+            "emCheatVIF: constructor, ~emCheatVIF(), Input() [protected]"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 1 C++ methods: emCheatVIF: constructor, ~emCheatVIF(), Input() [protected]",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-emwindow",
+          "description": "Assess 5 unported methods from emWindow",
+          "origin": "emWindow",
+          "gap_count": 5,
+          "symbols": [
+            "emWindow::GetWindowFlagsSignal",
+            "emWindow::GetWMResName",
+            "emWindow::SetWinPosViewSize (const char* geometry)",
+            "emWindow::GetBorderSizes",
+            "emWindowPort::GetBorderSizes (protected virtual)"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 5 C++ methods: emWindow::GetWindowFlagsSignal, emWindow::GetWMResName, emWindow::SetWinPosViewSize (const char* geometry), emWindow::GetBorderSizes, emWindowPort::GetBorderSizes (protected virtual)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "gap-unknown",
+          "description": "Assess 53 unported methods from unknown",
+          "origin": "unknown",
+          "gap_count": 53,
+          "symbols": [
+            "emBorder::SetLabel",
+            "emBorder::GetSubstanceRect",
+            "emBorder::GetContentRectUnobscured",
+            "emRadioButton::Mechanism::GetIndexOf",
+            "emRadioButton::Group",
+            "emDialog::GetButton",
+            "emDialog::GetButtonForResult",
+            "emDialog::GetOKButton",
+            "emDialog::GetCancelButton",
+            "emDialog::EnableAutoDeletion",
+            "emDialog::IsAutoDeletionEnabled",
+            "emDialog::ShowMessage",
+            "emDialog::CheckFinish",
+            "emScheduler::Run",
+            "emScheduler::InitiateTermination",
+            "emStandardScheduler::InitiateTermination",
+            "emPriSchedAgent::emPriSchedAgent",
+            "emPriSchedAgent::~emPriSchedAgent",
+            "emPriSchedAgent::SetAccessPriority",
+            "emPriSchedAgent::RequestAccess",
+            "emPriSchedAgent::IsWaitingForAccess",
+            "emPriSchedAgent::HasAccess",
+            "emPriSchedAgent::ReleaseAccess",
+            "emPriSchedAgent::GotAccess",
+            "emPriSchedAgent::PriSchedModel",
+            "emJob::emJob",
+            "emJob::~emJob",
+            "emJob::GetPriority",
+            "emJob::SetPriority",
+            "emJob::StateEnum",
+            "emJob::GetState",
+            "emJob::GetStateSignal",
+            "emJob::GetErrorText",
+            "emJob::GetPrev",
+            "emJob::GetNext",
+            "emJobQueue::emJobQueue",
+            "emJobQueue::~emJobQueue",
+            "emJobQueue::EnqueueJob",
+            "emJobQueue::IsEmpty",
+            "emJobQueue::GetFirstWaitingJob",
+            "emJobQueue::GetLastWaitingJob",
+            "emJobQueue::GetFirstRunningJob",
+            "emJobQueue::GetLastRunningJob",
+            "emJobQueue::InvalidateSortingOfWaitingJobs",
+            "emJobQueue::CompareForSortingOfWaitingJobs",
+            "emJobQueue::UpdateSortingOfWaitingJobs",
+            "emJobQueue::StartNextJob",
+            "emJobQueue::StartJob",
+            "emJobQueue::AbortJob",
+            "emJobQueue::SucceedJob",
+            "emJobQueue::FailJob",
+            "emJobQueue::FailAllRunningJobs",
+            "emJobQueue::FailAllJobs"
+          ],
+          "steps": [
+            "Note: some C++ methods are generated by macros (EM_IMPL_OBJ_CLASS, EM_IMPLEMENT_*_REC). If a symbol looks like boilerplate (constructor/destructor/copy), check whether it was macro-generated. Macro boilerplate is typically NOT_NEEDED in Rust.",
+            "For each of these 53 C++ methods: emBorder::SetLabel, emBorder::GetSubstanceRect, emBorder::GetContentRectUnobscured, emRadioButton::Mechanism::GetIndexOf, emRadioButton::Group, emDialog::GetButton, emDialog::GetButtonForResult, emDialog::GetOKButton (+45 more)",
+            "Determine: (a) is it actually needed in the Rust port? (b) if yes, is it already implemented under a different name? (c) if truly missing, is it feasible to implement?",
+            "For each: mark as IMPLEMENTED (found under different name), NOT_NEEDED (superseded or not applicable), or NEEDS_IMPLEMENTATION (with scope estimate)",
+            "For NEEDS_IMPLEMENTATION items: implement them and write a test",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Consolidation Verification (50 merged types)",
+      "dependency": "phase-2",
+      "features": [
+        {
+          "id": "con-cap-0001",
+          "description": "Consolidated into foundation/clip_rects.rs: emClipRects, emClipRects::emClipRects(), emClipRects::emClipRects(NUM,N, emC",
+          "rust_target": "foundation/clip_rects.rs",
+          "steps": [
+            "Read Rust src/foundation/clip_rects.rs",
+            "Verify these C++ symbols are covered: emClipRects, emClipRects::emClipRects(), emClipRects::emClipRects(NUM,NUM,NUM,NUM), emClipRects::Rect, emClipRects::Rect::GetX1",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0002",
+          "description": "Consolidated into foundation/color.rs: emColor, emColor::BLACK, emColor::WHITE, emColor::GRAY, emColor::RED (+37 more)",
+          "rust_target": "foundation/color.rs",
+          "steps": [
+            "Read Rust src/foundation/color.rs",
+            "Verify these C++ symbols are covered: emColor, emColor::BLACK, emColor::WHITE, emColor::GRAY, emColor::RED",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0009",
+          "description": "Consolidated into foundation/image.rs: emImage::emImage(), emImage::emImage(int width, in, emImage::operator==, emImage:",
+          "rust_target": "foundation/image.rs",
+          "steps": [
+            "Read Rust src/foundation/image.rs",
+            "Verify these C++ symbols are covered: emImage::emImage(), emImage::emImage(int width, int height, int channelCount), emImage::operator==, emImage::operator!=, emImage::Setup",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0010",
+          "description": "Consolidated into input/cursor.rs: emCursor (class), emCursor::NORMAL, emCursor::INVISIBLE, emCursor::WAIT, emCursor::CR",
+          "rust_target": "input/cursor.rs",
+          "steps": [
+            "Read Rust src/input/cursor.rs",
+            "Verify these C++ symbols are covered: emCursor (class), emCursor::NORMAL, emCursor::INVISIBLE, emCursor::WAIT, emCursor::CROSSHAIR",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0011",
+          "description": "Consolidated into input/event.rs: emInputKey (enum), EM_KEY_LEFT_BUTTON through EM_, EM_KEY_TOUCH, EM_KEY_SHIFT, EM_KEY_",
+          "rust_target": "input/event.rs",
+          "steps": [
+            "Read Rust src/input/event.rs",
+            "Verify these C++ symbols are covered: emInputKey (enum), EM_KEY_LEFT_BUTTON through EM_KEY_FORWARD_BUTTON (mouse keys), EM_KEY_TOUCH, EM_KEY_SHIFT, EM_KEY_CTRL, EM_KEY_ALT, EM_KEY_META, EM_KEY_ALT_GR (modifier keys), EM_KEY_CURSOR_UP/DOWN/LEFT/RIGHT, EM_KEY_PAGE_UP/DOWN, EM_KEY_HOME, EM_KEY_END (nav keys)",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0012",
+          "description": "Consolidated into input/hotkey.rs: emInputHotkey (class), emInputHotkey constructors (va, emInputHotkey::operator= / ope",
+          "rust_target": "input/hotkey.rs",
+          "steps": [
+            "Read Rust src/input/hotkey.rs",
+            "Verify these C++ symbols are covered: emInputHotkey (class), emInputHotkey constructors (various overloads), emInputHotkey::operator= / operator== / operator!=, emInputHotkey::TryParse, emInputHotkey::GetShift / GetCtrl / GetAlt / GetMeta",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0013",
+          "description": "Consolidated into input/state.rs: emInputState (class), emInputState::emInputState (de, emInputState::emInputState (co, ",
+          "rust_target": "input/state.rs",
+          "steps": [
+            "Read Rust src/input/state.rs",
+            "Verify these C++ symbols are covered: emInputState (class), emInputState::emInputState (default constructor), emInputState::emInputState (copy constructor), emInputState::operator== / operator!=, emInputState::GetMouseX / GetMouseY / SetMouse",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0014",
+          "description": "Consolidated into layout/linear.rs: emLinearLayout, emLinearLayout::emLinearLayout, emLinearLayout::SetHorizontal, emLin",
+          "rust_target": "layout/linear.rs",
+          "steps": [
+            "Read Rust src/layout/linear.rs",
+            "Verify these C++ symbols are covered: emLinearLayout, emLinearLayout::emLinearLayout (constructor), emLinearLayout::SetHorizontal, emLinearLayout::SetVertical, emLinearLayout::GetOrientationThresholdTallness",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0015",
+          "description": "Consolidated into layout/pack.rs: emPackLayout, emPackLayout::emPackLayout (co, emPackLayout::GetMinCellCount, emPackLay",
+          "rust_target": "layout/pack.rs",
+          "steps": [
+            "Read Rust src/layout/pack.rs",
+            "Verify these C++ symbols are covered: emPackLayout, emPackLayout::emPackLayout (constructor), emPackLayout::GetMinCellCount, emPackLayout::SetMinCellCount, emPackLayout::GetChildWeight(int index)",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0016",
+          "description": "Consolidated into layout/raster.rs: emRasterLayout, emRasterLayout::emRasterLayout, emRasterLayout::IsRowByRow, emRaster",
+          "rust_target": "layout/raster.rs",
+          "steps": [
+            "Read Rust src/layout/raster.rs",
+            "Verify these C++ symbols are covered: emRasterLayout, emRasterLayout::emRasterLayout (constructor), emRasterLayout::IsRowByRow, emRasterLayout::SetRowByRow, emRasterLayout::GetFixedColumnCount",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0017",
+          "description": "Consolidated into model/clipboard.rs: emClipboard (class, abstract), emClipboard::LookupInherited, emClipboard::PutText ",
+          "rust_target": "model/clipboard.rs",
+          "steps": [
+            "Read Rust src/model/clipboard.rs",
+            "Verify these C++ symbols are covered: emClipboard (class, abstract), emClipboard::LookupInherited, emClipboard::PutText (pure virtual), emClipboard::Clear (pure virtual), emClipboard::GetText (pure virtual)",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0018",
+          "description": "Consolidated into model/config_model.rs: emConfigModel, emConfigModel::GetInstallPath, emConfigModel::IsUnsaved, emConfi",
+          "rust_target": "model/config_model.rs",
+          "steps": [
+            "Read Rust src/model/config_model.rs",
+            "Verify these C++ symbols are covered: emConfigModel, emConfigModel::GetInstallPath, emConfigModel::IsUnsaved, emConfigModel::GetChangeSignal, emConfigModel::TrySave",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0021",
+          "description": "Consolidated into model/file_model.rs: emFileModel, emFileModel::GetFilePath, emFileModel::GetFileStateSigna, emFileMode",
+          "rust_target": "model/file_model.rs",
+          "steps": [
+            "Read Rust src/model/file_model.rs",
+            "Verify these C++ symbols are covered: emFileModel, emFileModel::GetFilePath, emFileModel::GetFileStateSignal, emFileModel::FileState, emFileModel::FileState::FS_WAITING",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0022",
+          "description": "Consolidated into model/rec_file_model.rs: emRecFileModel, emRecFileModel::GetRec, emRecFileModel::ResetData, emRecFileM",
+          "rust_target": "model/rec_file_model.rs",
+          "steps": [
+            "Read Rust src/model/rec_file_model.rs",
+            "Verify these C++ symbols are covered: emRecFileModel, emRecFileModel::GetRec, emRecFileModel::ResetData, emRecFileModel::TryStartLoading, emRecFileModel::TryContinueLoading",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0023",
+          "description": "Consolidated into model/watched_var.rs: emVarModel<VAR>, emVarModel::Set, emVarModel::Get, emVarModel::Var, emVarSigMode",
+          "rust_target": "model/watched_var.rs",
+          "steps": [
+            "Read Rust src/model/watched_var.rs",
+            "Verify these C++ symbols are covered: emVarModel<VAR>, emVarModel::Set, emVarModel::Get, emVarModel::Var, emVarSigModel<VAR>",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0024",
+          "description": "Consolidated into panel/animator.rs: emViewAnimator class: construc, emKineticViewAnimator: constru, emSpeedingViewAnima",
+          "rust_target": "panel/animator.rs",
+          "steps": [
+            "Read Rust src/panel/animator.rs",
+            "Verify these C++ symbols are covered: emViewAnimator class: constructor, ~emViewAnimator(), GetView(), SetMaster/GetMaster/GetActiveSlave(), IsActive(), Activate/Deactivate(), IsDeactivatingWhenIdle/SetDeactivateWhenIdle(), Input(), Paint(), Cycle(), CycleAnimation(), InvalidatePainting(), emKineticViewAnimator: constructor, Activate/Deactivate(), GetVelocity/GetAbsVelocity/SetVelocity(), CenterZoomFixPoint/SetZoomFixPoint(), SetFrictionEnabled/IsFrictionEnabled/GetFriction/SetFriction(), CycleAnimation(), emSpeedingViewAnimator: constructor, Activate/Deactivate(), GetTargetVelocity/GetAbsTargetVelocity/SetTargetVelocity(), GetAcceleration/SetAcceleration(), GetReverseAcceleration/SetReverseAcceleration(), CycleAnimation(), emSwipingViewAnimator: constructor, Activate/Deactivate(), IsGripped/SetGripped(), MoveGrip(), GetSpringConstant/SetSpringConstant(), GetAbsSpringExtension(), CycleAnimation(), emMagneticViewAnimator: constructor, Activate/Deactivate(), CycleAnimation()",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0025",
+          "description": "Consolidated into panel/behavior.rs: emPanel::GetViewedX / GetViewe, emPanel::GetClipX1 / GetClipY1, emPanel::IsActive /",
+          "rust_target": "panel/behavior.rs",
+          "steps": [
+            "Read Rust src/panel/behavior.rs",
+            "Verify these C++ symbols are covered: emPanel::GetViewedX / GetViewedY / GetViewedWidth / GetViewedHeight, emPanel::GetClipX1 / GetClipY1 / GetClipX2 / GetClipY2, emPanel::IsActive / IsInActivePath, emPanel::IsFocused / IsInFocusedPath, emPanel::IsViewFocused",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0026",
+          "description": "Consolidated into panel/input_filter.rs: emViewInputFilter: constructor, emMouseZoomScrollVIF: construc, emKeyboardZoomS",
+          "rust_target": "panel/input_filter.rs",
+          "steps": [
+            "Read Rust src/panel/input_filter.rs",
+            "Verify these C++ symbols are covered: emViewInputFilter: constructor(view, next), ~emViewInputFilter(), GetView(), GetPrev/GetNext(), GetTouchEventPriority(), Input() [protected], Cycle() [protected], ForwardInput(), GetForwardTouchEventPriority(), emMouseZoomScrollVIF: constructor, ~emMouseZoomScrollVIF(), Input() [protected], Cycle() [protected], emKeyboardZoomScrollVIF: constructor, ~emKeyboardZoomScrollVIF(), Input() [protected], emDefaultTouchVIF: constructor, ~emDefaultTouchVIF(), GetTouchEventPriority(), Input() [protected], Cycle() [protected]",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0027",
+          "description": "Consolidated into panel/tree.rs: emPanel::emPanel (constructor), emPanel::GetName, emPanel::GetIdentity / EncodeI, emPan",
+          "rust_target": "panel/tree.rs",
+          "steps": [
+            "Read Rust src/panel/tree.rs",
+            "Verify these C++ symbols are covered: emPanel::emPanel (constructor), emPanel::GetName, emPanel::GetIdentity / EncodeIdentity / DecodeIdentity, emPanel::GetTitle, emPanel::GetIconFileName",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0028",
+          "description": "Consolidated into panel/view.rs: emPanel::IsActivatedAdherent, emPanel::Activate, emPanel::Focus, emPanel::GetInputClock",
+          "rust_target": "panel/view.rs",
+          "steps": [
+            "Read Rust src/panel/view.rs",
+            "Verify these C++ symbols are covered: emPanel::IsActivatedAdherent, emPanel::Activate, emPanel::Focus, emPanel::GetInputClockMS, emPanel::InvalidateTitle (protected)",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0029",
+          "description": "Consolidated into render/em_font.rs: emFontCache, emFontCache::GetChar",
+          "rust_target": "render/em_font.rs",
+          "steps": [
+            "Read Rust src/render/em_font.rs",
+            "Verify these C++ symbols are covered: emFontCache, emFontCache::GetChar",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0030",
+          "description": "Consolidated into render/painter.rs:Painter (clip field): emPainter::GetClipY1(), emPainter::GetClipX2(), emPainter::Get",
+          "rust_target": "render/painter.rs:Painter (clip field)",
+          "steps": [
+            "Read Rust src/render/painter.rs:Painter (clip field)",
+            "Verify these C++ symbols are covered: emPainter::GetClipY1(), emPainter::GetClipX2(), emPainter::GetClipY2()",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0040",
+          "description": "Consolidated into render/painter.rs:Painter::origin: emPainter::GetOriginX(), emPainter::GetOriginY()",
+          "rust_target": "render/painter.rs:Painter::origin",
+          "steps": [
+            "Read Rust src/render/painter.rs:Painter::origin",
+            "Verify these C++ symbols are covered: emPainter::GetOriginX(), emPainter::GetOriginY()",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0044",
+          "description": "Consolidated into render/painter.rs:Painter::paint_border_image: emPainter::PaintBorderImage(x,, emPainter::PaintBorderI",
+          "rust_target": "render/painter.rs:Painter::paint_border_image",
+          "steps": [
+            "Read Rust src/render/painter.rs:Painter::paint_border_image",
+            "Verify these C++ symbols are covered: emPainter::PaintBorderImage(x, y, w, h, l, t, r, b, img, srcL, srcT, srcR, srcB, alpha, canvasColor, whichSubRects) [whole image], emPainter::PaintBorderImage(x, y, w, h, l, t, r, b, img, srcX, srcY, srcW, srcH, srcL, srcT, srcR, srcB, alpha, canvasColor, whichSubRects) [sub-image]",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0045",
+          "description": "Consolidated into render/painter.rs:Painter::paint_border_image_colored: emPainter::PaintBorderImageCol, emPainter::Pain",
+          "rust_target": "render/painter.rs:Painter::paint_border_image_colored",
+          "steps": [
+            "Read Rust src/render/painter.rs:Painter::paint_border_image_colored",
+            "Verify these C++ symbols are covered: emPainter::PaintBorderImageColored(x, y, w, h, l, t, r, b, img, srcL, srcT, srcR, srcB, color1, color2, canvasColor, whichSubRects) [whole image], emPainter::PaintBorderImageColored(x, y, w, h, l, t, r, b, img, srcX, srcY, srcW, srcH, srcL, srcT, srcR, srcB, color1, color2, canvasColor, whichSubRects) [sub-image]",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0052",
+          "description": "Consolidated into render/painter.rs:Painter::paint_image_colored: emPainter::PaintImageColored(x, emPainter::PaintImageC",
+          "rust_target": "render/painter.rs:Painter::paint_image_colored",
+          "steps": [
+            "Read Rust src/render/painter.rs:Painter::paint_image_colored",
+            "Verify these C++ symbols are covered: emPainter::PaintImageColored(x, y, w, h, img, color1, color2, canvasColor, extension) [whole image], emPainter::PaintImageColored(x, y, w, h, img, srcX, srcY, srcW, srcH, color1, color2, canvasColor, extension) [sub-image]",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0053",
+          "description": "Consolidated into render/painter.rs:Painter::paint_image_full: emPainter::PaintImage(x, y, w,, emPainter::PaintImage(x, ",
+          "rust_target": "render/painter.rs:Painter::paint_image_full",
+          "steps": [
+            "Read Rust src/render/painter.rs:Painter::paint_image_full",
+            "Verify these C++ symbols are covered: emPainter::PaintImage(x, y, w, h, img, alpha, canvasColor, extension) [whole image], emPainter::PaintImage(x, y, w, h, img, srcX, srcY, srcW, srcH, alpha, canvasColor, extension) [sub-image]",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0070",
+          "description": "Consolidated into render/painter.rs:Painter::scaling: emPainter::GetScaleX(), emPainter::GetScaleY()",
+          "rust_target": "render/painter.rs:Painter::scaling",
+          "steps": [
+            "Read Rust src/render/painter.rs:Painter::scaling",
+            "Verify these C++ symbols are covered: emPainter::GetScaleX(), emPainter::GetScaleY()",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0074",
+          "description": "Consolidated into render/stroke.rs: emStroke, emStroke::DashTypeEnum, emStroke::emStroke(emColor,boo, emStroke::emStroke",
+          "rust_target": "render/stroke.rs",
+          "steps": [
+            "Read Rust src/render/stroke.rs",
+            "Verify these C++ symbols are covered: emStroke, emStroke::DashTypeEnum, emStroke::emStroke(emColor,bool,DashTypeEnum,double,double), emStroke::emStroke(emUInt32), emStroke::GetColor",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0075",
+          "description": "Consolidated into render/texture.rs: emTexture, emTexture::TextureType, emTexture::ExtensionType, emTexture::DownscaleQu",
+          "rust_target": "render/texture.rs",
+          "steps": [
+            "Read Rust src/render/texture.rs",
+            "Verify these C++ symbols are covered: emTexture, emTexture::TextureType, emTexture::ExtensionType, emTexture::DownscaleQualityType, emTexture::UpscaleQualityType",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0076",
+          "description": "Consolidated into scheduler/core.rs: emScheduler::emScheduler, emScheduler::~emScheduler, emScheduler::IsTimeSliceAtEnd,",
+          "rust_target": "scheduler/core.rs",
+          "steps": [
+            "Read Rust src/scheduler/core.rs",
+            "Verify these C++ symbols are covered: emScheduler::emScheduler, emScheduler::~emScheduler, emScheduler::IsTimeSliceAtEnd, emScheduler::GetTimeSliceCounter, emScheduler::DoTimeSlice",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0077",
+          "description": "Consolidated into scheduler/engine.rs: emEngine::Signal, emEngine::IsSignaled, emEngine::IsTimeSliceAtEnd, emEngine::Pri",
+          "rust_target": "scheduler/engine.rs",
+          "steps": [
+            "Read Rust src/scheduler/engine.rs",
+            "Verify these C++ symbols are covered: emEngine::Signal, emEngine::IsSignaled, emEngine::IsTimeSliceAtEnd, emEngine::PriorityType, emEngine::Cycle",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0078",
+          "description": "Consolidated into scheduler/timer.rs: emTimer::TimerCentral::TimerCe, emTimer::TimerCentral::Cycle",
+          "rust_target": "scheduler/timer.rs",
+          "steps": [
+            "Read Rust src/scheduler/timer.rs",
+            "Verify these C++ symbols are covered: emTimer::TimerCentral::TimerCentral, emTimer::TimerCentral::Cycle",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0079",
+          "description": "Consolidated into widget/border.rs: emBorder, emBorder::OuterBorderType, emBorder::InnerBorderType, emBorder::emBorder, ",
+          "rust_target": "widget/border.rs",
+          "steps": [
+            "Read Rust src/widget/border.rs",
+            "Verify these C++ symbols are covered: emBorder, emBorder::OuterBorderType, emBorder::InnerBorderType, emBorder::emBorder, emBorder::GetCaption",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0080",
+          "description": "Consolidated into widget/button.rs: emButton, emButton::emButton, emButton::IsNoEOI, emButton::SetNoEOI, emButton::IsPre",
+          "rust_target": "widget/button.rs",
+          "steps": [
+            "Read Rust src/widget/button.rs",
+            "Verify these C++ symbols are covered: emButton, emButton::emButton, emButton::IsNoEOI, emButton::SetNoEOI, emButton::IsPressed",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0081",
+          "description": "Consolidated into widget/check_box.rs: emCheckBox, emCheckBox::emCheckBox",
+          "rust_target": "widget/check_box.rs",
+          "steps": [
+            "Read Rust src/widget/check_box.rs",
+            "Verify these C++ symbols are covered: emCheckBox, emCheckBox::emCheckBox",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0082",
+          "description": "Consolidated into widget/check_button.rs: emCheckButton, emCheckButton::emCheckButton, emCheckButton::IsChecked, emCheck",
+          "rust_target": "widget/check_button.rs",
+          "steps": [
+            "Read Rust src/widget/check_button.rs",
+            "Verify these C++ symbols are covered: emCheckButton, emCheckButton::emCheckButton, emCheckButton::IsChecked, emCheckButton::SetChecked, emCheckButton::GetHowTo",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0083",
+          "description": "Consolidated into widget/color_field.rs: emColorField::emColorField(Par, emColorField::IsEditable, emColorField::SetEdit",
+          "rust_target": "widget/color_field.rs",
+          "steps": [
+            "Read Rust src/widget/color_field.rs",
+            "Verify these C++ symbols are covered: emColorField::emColorField(ParentArg, const emString&, const emString&, const emString&, const emImage&, emColor, bool, bool), emColorField::IsEditable, emColorField::SetEditable, emColorField::IsAlphaEnabled, emColorField::SetAlphaEnabled",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0084",
+          "description": "Consolidated into widget/dialog.rs: emDialog, emDialog::emDialog, emDialog::SetRootTitle, emDialog::GetContentPanel, emD",
+          "rust_target": "widget/dialog.rs",
+          "steps": [
+            "Read Rust src/widget/dialog.rs",
+            "Verify these C++ symbols are covered: emDialog, emDialog::emDialog, emDialog::SetRootTitle, emDialog::GetContentPanel, emDialog::AddPositiveButton",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0085",
+          "description": "Consolidated into widget/label.rs: emLabel::emLabel(ParentArg, co, emLabel::PaintContent",
+          "rust_target": "widget/label.rs",
+          "steps": [
+            "Read Rust src/widget/label.rs",
+            "Verify these C++ symbols are covered: emLabel::emLabel(ParentArg, const emString&, const emString&, const emString&, const emImage&), emLabel::PaintContent",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0086",
+          "description": "Consolidated into widget/list_box.rs: emListBox::SelectionType, emListBox::emListBox(ParentArg, emListBox::GetSelectionT",
+          "rust_target": "widget/list_box.rs",
+          "steps": [
+            "Read Rust src/widget/list_box.rs",
+            "Verify these C++ symbols are covered: emListBox::SelectionType, emListBox::emListBox(ParentArg, const emString&, const emString&, const emString&, const emImage&, SelectionType), emListBox::GetSelectionType, emListBox::SetSelectionType, emListBox::GetItemCount",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0087",
+          "description": "Consolidated into widget/look.rs: emLook, emLook::emLook(), emLook::operator==, emLook::operator!=, emLook::Apply (+20 m",
+          "rust_target": "widget/look.rs",
+          "steps": [
+            "Read Rust src/widget/look.rs",
+            "Verify these C++ symbols are covered: emLook, emLook::emLook(), emLook::operator==, emLook::operator!=, emLook::Apply",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0089",
+          "description": "Consolidated into widget/radio_box.rs: emRadioBox, emRadioBox::emRadioBox",
+          "rust_target": "widget/radio_box.rs",
+          "steps": [
+            "Read Rust src/widget/radio_box.rs",
+            "Verify these C++ symbols are covered: emRadioBox, emRadioBox::emRadioBox",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0090",
+          "description": "Consolidated into widget/radio_button.rs: emRadioButton, emRadioButton::emRadioButton, emRadioButton::~emRadioButton, em",
+          "rust_target": "widget/radio_button.rs",
+          "steps": [
+            "Read Rust src/widget/radio_button.rs",
+            "Verify these C++ symbols are covered: emRadioButton, emRadioButton::emRadioButton, emRadioButton::~emRadioButton, emRadioButton::Mechanism, emRadioButton::Mechanism::Mechanism",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0091",
+          "description": "Consolidated into widget/scalar_field.rs: emScalarField::emScalarField(P, emScalarField::IsEditable, emScalarField::SetE",
+          "rust_target": "widget/scalar_field.rs",
+          "steps": [
+            "Read Rust src/widget/scalar_field.rs",
+            "Verify these C++ symbols are covered: emScalarField::emScalarField(ParentArg, const emString&, const emString&, const emString&, const emImage&, emInt64, emInt64, emInt64, bool), emScalarField::IsEditable, emScalarField::SetEditable, emScalarField::GetMinValue, emScalarField::GetMaxValue",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0092",
+          "description": "Consolidated into widget/splitter.rs: emSplitter::emSplitter(ParentA, emSplitter::IsVertical, emSplitter::SetVertical, e",
+          "rust_target": "widget/splitter.rs",
+          "steps": [
+            "Read Rust src/widget/splitter.rs",
+            "Verify these C++ symbols are covered: emSplitter::emSplitter(ParentArg, const emString&, const emString&, const emString&, const emImage&, bool, double, double, double), emSplitter::IsVertical, emSplitter::SetVertical, emSplitter::GetMinPos, emSplitter::GetMaxPos",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0093",
+          "description": "Consolidated into widget/text_field.rs: emTextField::emTextField(Paren, emTextField::IsEditable, emTextField::SetEditabl",
+          "rust_target": "widget/text_field.rs",
+          "steps": [
+            "Read Rust src/widget/text_field.rs",
+            "Verify these C++ symbols are covered: emTextField::emTextField(ParentArg, const emString&, const emString&, const emString&, const emImage&, const emString&, bool), emTextField::IsEditable, emTextField::SetEditable, emTextField::GetMultiLineMode, emTextField::SetMultiLineMode",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0096",
+          "description": "Consolidated into window/screen.rs: emScreen::GetDesktopRect, emScreen::GetMonitorCount, emScreen::GetMonitorRect, emScr",
+          "rust_target": "window/screen.rs",
+          "steps": [
+            "Read Rust src/window/screen.rs",
+            "Verify these C++ symbols are covered: emScreen::GetDesktopRect, emScreen::GetMonitorCount, emScreen::GetMonitorRect, emScreen::GetMonitorIndexOfRect, emScreen::GetDPI",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0097",
+          "description": "Consolidated into window/state_saver.rs: emWindowStateSaver (class), emWindowStateSaver::emWindowSt, emWindowStateSaver:",
+          "rust_target": "window/state_saver.rs",
+          "steps": [
+            "Read Rust src/window/state_saver.rs",
+            "Verify these C++ symbols are covered: emWindowStateSaver (class), emWindowStateSaver::emWindowStateSaver (constructor), emWindowStateSaver::Cycle (protected virtual), emWindowStateSaver::ModelClass (inner private class), emWindowStateSaver::ModelClass::ViewX/ViewY/ViewWidth/ViewHeight/Maximized/Fullscreen (fields)",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "con-cap-0098",
+          "description": "Consolidated into window/zui_window.rs: emWindow::WindowFlags (typedef, emWindow::WF_MODAL, emWindow::WF_UNDECORATED, em",
+          "rust_target": "window/zui_window.rs",
+          "steps": [
+            "Read Rust src/window/zui_window.rs",
+            "Verify these C++ symbols are covered: emWindow::WindowFlags (typedef int), emWindow::WF_MODAL, emWindow::WF_UNDECORATED, emWindow::WF_POPUP, emWindow::WF_MAXIMIZED",
+            "Verify all public methods from the consolidated C++ classes have Rust equivalents",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Test Review (6 test directories)",
+      "dependency": "phase-3",
+      "features": [
+        {
+          "id": "review-pipeline",
+          "description": "Review tests/pipeline/ for anti-patterns: test-shaped validation, missing side-effect checks, hardcoded-pass inputs, missing modifier setup",
+          "test_directory": "tests/pipeline/",
+          "steps": [
+            "List all #[test] functions in tests/pipeline/",
+            "For each test function, check: (1) assertions verify SPECIFIC expected values, not is_some()/is_ok(), (2) side effects are verified (callbacks, signals, state propagation), (3) test would FAIL if implementation were subtly wrong, (4) modifier keys set correctly for modifier-dependent tests, (5) test exercises actual behavior, not just compilation",
+            "Fix any defective test by strengthening its assertions",
+            "If a strengthened test now FAILS: that is a real bug. Fix the production code too.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "review-golden",
+          "description": "Review tests/golden/ for anti-patterns: test-shaped validation, missing side-effect checks, hardcoded-pass inputs, missing modifier setup",
+          "test_directory": "tests/golden/",
+          "steps": [
+            "List all #[test] functions in tests/golden/",
+            "For each test function, check: (1) assertions verify SPECIFIC expected values, not is_some()/is_ok(), (2) side effects are verified (callbacks, signals, state propagation), (3) test would FAIL if implementation were subtly wrong, (4) modifier keys set correctly for modifier-dependent tests, (5) test exercises actual behavior, not just compilation",
+            "Fix any defective test by strengthening its assertions",
+            "If a strengthened test now FAILS: that is a real bug. Fix the production code too.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "review-behavioral",
+          "description": "Review tests/behavioral/ for anti-patterns: test-shaped validation, missing side-effect checks, hardcoded-pass inputs, missing modifier setup",
+          "test_directory": "tests/behavioral/",
+          "steps": [
+            "List all #[test] functions in tests/behavioral/",
+            "For each test function, check: (1) assertions verify SPECIFIC expected values, not is_some()/is_ok(), (2) side effects are verified (callbacks, signals, state propagation), (3) test would FAIL if implementation were subtly wrong, (4) modifier keys set correctly for modifier-dependent tests, (5) test exercises actual behavior, not just compilation",
+            "Fix any defective test by strengthening its assertions",
+            "If a strengthened test now FAILS: that is a real bug. Fix the production code too.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "review-integration",
+          "description": "Review tests/integration/ for anti-patterns: test-shaped validation, missing side-effect checks, hardcoded-pass inputs, missing modifier setup",
+          "test_directory": "tests/integration/",
+          "steps": [
+            "List all #[test] functions in tests/integration/",
+            "For each test function, check: (1) assertions verify SPECIFIC expected values, not is_some()/is_ok(), (2) side effects are verified (callbacks, signals, state propagation), (3) test would FAIL if implementation were subtly wrong, (4) modifier keys set correctly for modifier-dependent tests, (5) test exercises actual behavior, not just compilation",
+            "Fix any defective test by strengthening its assertions",
+            "If a strengthened test now FAILS: that is a real bug. Fix the production code too.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "review-unit",
+          "description": "Review tests/unit/ for anti-patterns: test-shaped validation, missing side-effect checks, hardcoded-pass inputs, missing modifier setup",
+          "test_directory": "tests/unit/",
+          "steps": [
+            "List all #[test] functions in tests/unit/",
+            "For each test function, check: (1) assertions verify SPECIFIC expected values, not is_some()/is_ok(), (2) side effects are verified (callbacks, signals, state propagation), (3) test would FAIL if implementation were subtly wrong, (4) modifier keys set correctly for modifier-dependent tests, (5) test exercises actual behavior, not just compilation",
+            "Fix any defective test by strengthening its assertions",
+            "If a strengthened test now FAILS: that is a real bug. Fix the production code too.",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        },
+        {
+          "id": "review-inline-tests",
+          "description": "Review #[cfg(test)] modules in src/ for anti-patterns",
+          "test_directory": "src/",
+          "steps": [
+            "grep -rn '#[cfg(test)]' src/ to find all inline test modules",
+            "For each: check assertions verify specific values, side effects are tested, edge cases are covered",
+            "Fix any defective test by strengthening assertions",
+            "If a strengthened test now FAILS: fix the production code",
+            "cargo clippy --workspace -- -D warnings: zero warnings",
+            "cargo nextest run --workspace: zero failures"
+          ],
+          "passes": false
+        }
+      ]
+    }
+  ]
+}
