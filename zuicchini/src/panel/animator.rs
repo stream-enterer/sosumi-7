@@ -2293,6 +2293,7 @@ pub struct MagneticViewAnimator {
     /// Current snap velocity.
     velocity_x: f64,
     velocity_y: f64,
+    velocity_z: f64,
     /// Target snap position (set externally when a snap point is identified).
     snap_target_x: f64,
     snap_target_y: f64,
@@ -2300,6 +2301,12 @@ pub struct MagneticViewAnimator {
     active: bool,
     /// Damping factor to prevent oscillation (0..1).
     damping: f64,
+    /// Whether magnetism is currently active (within radius, velocity < threshold).
+    magnetism_active: bool,
+    /// CoreConfig magnetism_radius factor (default 1.0).
+    radius_factor: f64,
+    /// CoreConfig magnetism_speed factor (default 1.0).
+    speed_factor: f64,
 }
 
 impl MagneticViewAnimator {
@@ -2308,10 +2315,14 @@ impl MagneticViewAnimator {
             spring_constant,
             velocity_x: 0.0,
             velocity_y: 0.0,
+            velocity_z: 0.0,
             snap_target_x: 0.0,
             snap_target_y: 0.0,
             active: false,
             damping: 0.8,
+            magnetism_active: false,
+            radius_factor: 1.0,
+            speed_factor: 1.0,
         }
     }
 
@@ -2335,6 +2346,71 @@ impl MagneticViewAnimator {
     /// Current velocity.
     pub fn velocity(&self) -> (f64, f64) {
         (self.velocity_x, self.velocity_y)
+    }
+
+    /// Absolute velocity magnitude (3D).
+    pub fn abs_velocity(&self) -> f64 {
+        (self.velocity_x * self.velocity_x
+            + self.velocity_y * self.velocity_y
+            + self.velocity_z * self.velocity_z)
+            .sqrt()
+    }
+
+    pub fn set_radius_factor(&mut self, f: f64) {
+        self.radius_factor = f;
+    }
+
+    pub fn set_speed_factor(&mut self, f: f64) {
+        self.speed_factor = f;
+    }
+
+    pub fn is_magnetism_active(&self) -> bool {
+        self.magnetism_active
+    }
+
+    /// Magnetism enter/exit logic. Called each animation cycle.
+    ///
+    /// C++ emMagneticViewAnimator::CycleAnimation lines 716-755.
+    /// Returns true if the animator is busy (needs more frames).
+    pub fn update_magnetism(
+        &mut self,
+        abs_dist: f64,
+        dx: f64,
+        dy: f64,
+        dz: f64,
+        view_w: f64,
+        view_h: f64,
+    ) -> bool {
+        let min_value = 0.001;
+        let max_dist = if self.radius_factor <= min_value * 1.0001 {
+            0.0
+        } else {
+            (view_w + view_h) * 0.09 * self.radius_factor
+        };
+
+        let mut busy = false;
+
+        if abs_dist <= max_dist && abs_dist > 1e-3 {
+            // Within radius and non-trivial distance
+            if !self.magnetism_active && self.abs_velocity() < 10.0 {
+                self.magnetism_active = true;
+            }
+            busy = true;
+        } else {
+            // Outside radius or at target
+            if self.magnetism_active {
+                self.velocity_x = 0.0;
+                self.velocity_y = 0.0;
+                self.velocity_z = 0.0;
+                self.magnetism_active = false;
+            }
+            if self.abs_velocity() >= 0.01 {
+                busy = true; // friction deceleration
+            }
+        }
+
+        let _ = (dx, dy, dz); // used by hill-rolling physics in next feature
+        busy
     }
 
     /// Calculate 3D distance to the nearest focusable panel.
@@ -2992,6 +3068,39 @@ mod tests {
         assert!(vy.abs() < 1e-12, "vy should be zero");
         assert!(vz.abs() < 1e-12, "vz should be zero");
         assert!(!anim.is_active());
+    }
+
+    #[test]
+    fn magnetism_activates_within_radius() {
+        let mut mag = MagneticViewAnimator::new(100.0);
+        mag.set_radius_factor(1.0);
+        // abs_dist = 50, well within maxDist = (800+600)*0.09*1.0 = 126
+        let busy = mag.update_magnetism(50.0, 50.0, 0.0, 0.0, 800.0, 600.0);
+        assert!(mag.is_magnetism_active(), "should activate within radius");
+        assert!(busy, "should be busy");
+    }
+
+    #[test]
+    fn magnetism_does_not_activate_outside_radius() {
+        let mut mag = MagneticViewAnimator::new(100.0);
+        mag.set_radius_factor(1.0);
+        // abs_dist = 200, outside maxDist = 126
+        let busy = mag.update_magnetism(200.0, 200.0, 0.0, 0.0, 800.0, 600.0);
+        assert!(!mag.is_magnetism_active(), "should not activate outside radius");
+        assert!(!busy, "should not be busy (no velocity)");
+    }
+
+    #[test]
+    fn magnetism_high_velocity_prevents_activation() {
+        let mut mag = MagneticViewAnimator::new(100.0);
+        mag.set_radius_factor(1.0);
+        // Set high velocity (> 10.0)
+        mag.velocity_x = 50.0;
+        mag.velocity_y = 50.0;
+        // Within radius but velocity too high
+        let busy = mag.update_magnetism(50.0, 50.0, 0.0, 0.0, 800.0, 600.0);
+        assert!(!mag.is_magnetism_active(), "high velocity should prevent activation");
+        assert!(busy, "should be busy (within radius even though not activated)");
     }
 
     #[test]
