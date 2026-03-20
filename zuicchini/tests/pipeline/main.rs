@@ -12,3 +12,4 @@ mod scalarfield;
 mod splitter;
 mod textfield;
 mod focus;
+mod notices;
