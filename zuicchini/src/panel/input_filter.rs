@@ -1318,7 +1318,7 @@ fn speeding_step(
     }
 }
 
-/// State for a tracked touch point.
+/// State for a tracked touch point (simple version for existing code).
 #[derive(Copy, Clone, Debug)]
 pub struct TouchPoint {
     /// Touch identifier.
@@ -1329,6 +1329,135 @@ pub struct TouchPoint {
     /// Previous position (for delta computation).
     prev_x: f64,
     prev_y: f64,
+}
+
+/// C++ parity Touch struct for the full gesture state machine.
+///
+/// Port of C++ `emDefaultTouchVIF::Touch` (emViewInputFilter.h:286-298).
+#[derive(Copy, Clone, Debug)]
+pub struct Touch {
+    pub id: u64,
+    pub ms_total: i32,
+    pub ms_since_prev: i32,
+    pub down: bool,
+    pub x: f64,
+    pub y: f64,
+    pub prev_down: bool,
+    pub prev_x: f64,
+    pub prev_y: f64,
+    pub down_x: f64,
+    pub down_y: f64,
+}
+
+impl Default for Touch {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            ms_total: 0,
+            ms_since_prev: 0,
+            down: false,
+            x: 0.0,
+            y: 0.0,
+            prev_down: false,
+            prev_x: 0.0,
+            prev_y: 0.0,
+            down_x: 0.0,
+            down_y: 0.0,
+        }
+    }
+}
+
+/// Maximum number of tracked touches (C++ MAX_TOUCH_COUNT).
+pub const MAX_TOUCH_COUNT: usize = 16;
+
+/// Touch tracking infrastructure for the full C++ gesture state machine.
+pub struct TouchTracker {
+    pub touches: [Touch; MAX_TOUCH_COUNT],
+    pub touch_count: usize,
+    pub touches_time: u64,
+}
+
+impl Default for TouchTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TouchTracker {
+    pub fn new() -> Self {
+        Self {
+            touches: [Touch::default(); MAX_TOUCH_COUNT],
+            touch_count: 0,
+            touches_time: 0,
+        }
+    }
+
+    /// Reset all touches. C++ ResetTouches.
+    pub fn reset_touches(&mut self) {
+        self.touch_count = 0;
+        self.touches_time = 0;
+    }
+
+    /// Advance to next frame: copy current to prev, update ms_since_prev.
+    /// C++ NextTouches.
+    pub fn next_touches(&mut self, delta_ms: i32) {
+        for i in 0..self.touch_count {
+            let t = &mut self.touches[i];
+            t.prev_down = t.down;
+            t.prev_x = t.x;
+            t.prev_y = t.y;
+            t.ms_since_prev = delta_ms;
+            t.ms_total += delta_ms;
+        }
+    }
+
+    /// Remove touch at index, shifting remaining touches down.
+    /// C++ RemoveTouch.
+    pub fn remove_touch(&mut self, index: usize) {
+        if index >= self.touch_count {
+            return;
+        }
+        for i in index..self.touch_count - 1 {
+            self.touches[i] = self.touches[i + 1];
+        }
+        self.touch_count -= 1;
+        self.touches[self.touch_count] = Touch::default();
+    }
+
+    /// Whether any touch is currently down.
+    pub fn is_any_touch_down(&self) -> bool {
+        (0..self.touch_count).any(|i| self.touches[i].down)
+    }
+
+    /// Get per-frame move delta for touch at index (current - prev).
+    pub fn get_touch_move_x(&self, index: usize) -> f64 {
+        if index >= self.touch_count {
+            return 0.0;
+        }
+        self.touches[index].x - self.touches[index].prev_x
+    }
+
+    pub fn get_touch_move_y(&self, index: usize) -> f64 {
+        if index >= self.touch_count {
+            return 0.0;
+        }
+        self.touches[index].y - self.touches[index].prev_y
+    }
+
+    /// Get total move since touch-down (current - down).
+    pub fn get_total_touch_move_x(&self, index: usize) -> f64 {
+        if index >= self.touch_count {
+            return 0.0;
+        }
+        self.touches[index].x - self.touches[index].down_x
+    }
+
+    pub fn get_total_touch_move_y(&self, index: usize) -> f64 {
+        if index >= self.touch_count {
+            return 0.0;
+        }
+        self.touches[index].y - self.touches[index].down_y
+    }
 }
 
 /// Touch interaction state machine.
@@ -2751,6 +2880,60 @@ mod tests {
         type_cheat(&mut vif, &mut view, "chEat:ss!");
         let actions = vif.drain_actions();
         assert_eq!(actions, vec![CheatAction::Screenshot]);
+    }
+
+    #[test]
+    fn touch_tracker_move_calculations() {
+        let mut tracker = TouchTracker::new();
+
+        // Add a touch at (100, 200)
+        tracker.touches[0] = Touch {
+            id: 1,
+            ms_total: 0,
+            ms_since_prev: 0,
+            down: true,
+            x: 100.0,
+            y: 200.0,
+            prev_down: false,
+            prev_x: 100.0,
+            prev_y: 200.0,
+            down_x: 100.0,
+            down_y: 200.0,
+        };
+        tracker.touch_count = 1;
+
+        // Advance frame
+        tracker.next_touches(16);
+
+        // Move to (120, 230)
+        tracker.touches[0].x = 120.0;
+        tracker.touches[0].y = 230.0;
+
+        assert!((tracker.get_touch_move_x(0) - 20.0).abs() < 1e-12);
+        assert!((tracker.get_touch_move_y(0) - 30.0).abs() < 1e-12);
+        assert!((tracker.get_total_touch_move_x(0) - 20.0).abs() < 1e-12);
+        assert!((tracker.get_total_touch_move_y(0) - 30.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn touch_tracker_remove_shifts() {
+        let mut tracker = TouchTracker::new();
+
+        for i in 0..3u64 {
+            tracker.touches[i as usize] = Touch {
+                id: i + 1,
+                down: true,
+                x: (i as f64) * 10.0,
+                ..Touch::default()
+            };
+        }
+        tracker.touch_count = 3;
+
+        // Remove middle touch (index 1, id=2)
+        tracker.remove_touch(1);
+        assert_eq!(tracker.touch_count, 2);
+        assert_eq!(tracker.touches[0].id, 1);
+        assert_eq!(tracker.touches[1].id, 3);
     }
 
     fn input_state_at(x: f64, y: f64) -> InputState {

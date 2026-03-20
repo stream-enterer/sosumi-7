@@ -261,7 +261,7 @@
             "cargo clippy --workspace -- -D warnings: zero warnings",
             "cargo nextest run --workspace: zero failures"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "pf6-single-finger",
