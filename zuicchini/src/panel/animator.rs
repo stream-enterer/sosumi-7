@@ -2433,4 +2433,49 @@ mod tests {
         assert_eq!(vx, 0.0);
         assert_eq!(vy, 0.0);
     }
+
+    #[test]
+    #[ignore]
+    fn kinetic_velocity_inherited_on_activation() {
+        // BLOCKED: needs active-animator registry on View/Window with velocity
+        // inheritance protocol. C++ ref: emViewAnimator.cpp:Activate() (lines
+        // 68-84) inherits LastTSC/LastClk from the currently active animator,
+        // and emKineticViewAnimator::Activate() (lines 188-226) walks the
+        // active chain to find a KineticViewAnimator and copies its velocity
+        // and zoom-fix-point.
+        //
+        // In the Rust architecture, kinetic physics are inlined in
+        // MouseZoomScrollVIF (input_filter.rs) rather than composed as separate
+        // ViewAnimator instances. There is no master/slave chain or
+        // UpperActivePtr — the VIF and active_animator slot run independently.
+        //
+        // To port this behavior:
+        // 1. Add a KineticState { velocity: [f64; 3], zoom_fix: (f64, f64,
+        //    bool) } struct that can be extracted/applied.
+        // 2. Add View::active_kinetic_state() -> Option<KineticState> that the
+        //    VIF populates when its grip/wheel/coast animations are running.
+        // 3. When a new kinetic animation activates (VIF grip start, wheel
+        //    start, or active_animator swap), inherit KineticState from the
+        //    previous active source and deactivate it.
+        // 4. Wire needs_animator_abort in the app loop (currently set but never
+        //    checked) for mutual exclusion between VIF and active_animator.
+        //
+        // Expected behavior: swiping animator at velocity (100, 0, 0) is
+        // replaced by a new kinetic animator which inherits that velocity.
+        let (mut tree, mut view) = setup();
+        view.update_viewing(&mut tree);
+
+        let mut old_anim = KineticViewAnimator::new(100.0, 50.0, 0.0, 1000.0);
+        old_anim.set_friction_enabled(true);
+        old_anim.animate(&mut view, &mut tree, 0.016);
+
+        // A new kinetic animator should inherit velocity from old_anim.
+        // Currently there is no activation protocol to transfer velocity.
+        let new_anim = KineticViewAnimator::new(0.0, 0.0, 0.0, 1000.0);
+        let (vx, vy, _) = new_anim.velocity();
+        assert!(
+            vx.abs() > 1.0 && vy.abs() > 1.0,
+            "New animator should inherit velocity from previous active animator"
+        );
+    }
 }
