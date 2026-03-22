@@ -12,9 +12,9 @@ fn auto_expand_creates_all_panels() {
 
     assert!(lb.get_item_panel(0).is_none());
     lb.auto_expand_items();
-    assert!(lb.get_item_panel(0).is_some());
-    assert!(lb.get_item_panel(1).is_some());
-    assert!(lb.get_item_panel(2).is_some());
+    assert_eq!(lb.get_item_panel(0).unwrap().text(), "A", "panel 0 text");
+    assert_eq!(lb.get_item_panel(1).unwrap().text(), "B", "panel 1 text");
+    assert_eq!(lb.get_item_panel(2).unwrap().text(), "C", "panel 2 text");
 }
 
 #[test]

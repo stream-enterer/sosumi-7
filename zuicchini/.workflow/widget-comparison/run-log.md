@@ -1202,3 +1202,14 @@ Defects found and fixed:
 6. `parallel.rs:parallel_benchmark` — AP-5: no assertions; added byte-identical output verification
 7. `animator.rs:animator_visiting_square_panel` — AP-5: silent skip removed; now fails if golden absent
 8. `animator.rs:animator_magnetic_approach` — AP-5: silent skip removed; now fails if golden absent
+
+### review-behavioral: Review tests/behavioral/ for anti-patterns
+**Tests reviewed**: 216 | **Defective**: 4 | **Strengthened**: 4
+**Bugs found via strengthening**: none
+**Production fixes**: 0
+
+Defects found and fixed:
+1. `fp_plugin.rs:339` — AP-1: `is_some()` replaced with library name assertion
+2. `fp_plugin.rs:354` — AP-1: `is_some()` replaced with library name assertion
+3. `file_model.rs:72` — AP-1: `is_some()` replaced with data content assertion
+4. `color_field.rs:15-17` — AP-1: `is_some()` replaced with panel text content assertions

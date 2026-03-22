@@ -69,8 +69,7 @@ fn update_keeps_loaded_if_fresh() {
     m.check_out_of_date(1000, 512); // same date, not out of date
     m.update();
     assert!(matches!(m.state(), &FileState::Loaded));
-    assert!(m.data().is_some());
-}
+    assert_eq!(m.data().unwrap(), "data", "loaded data should be preserved after fresh update");
 
 #[test]
 fn reset_data_clears_everything() {
