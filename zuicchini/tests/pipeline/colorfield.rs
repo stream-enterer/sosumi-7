@@ -200,16 +200,16 @@ fn colorfield_expanded_data_matches_initial_color() {
         "Hue for rgb(100,150,200) should be ~210 degrees (21000), got {}",
         exp.sf_hue
     );
-    // Saturation should be non-zero (it's a colored pixel, not grey).
+    // Saturation: S = delta/max = 100/200 = 50% → ~5000 in C++ units.
     assert!(
-        exp.sf_sat > 0,
-        "Saturation should be > 0 for rgb(100,150,200), got {}",
+        exp.sf_sat > 4000 && exp.sf_sat < 6000,
+        "Saturation for rgb(100,150,200) should be ~5000 (50%), got {}",
         exp.sf_sat
     );
-    // Value should be > 0 (it's not black).
+    // Value: V = max/255 = 200/255 → ~7843 in C++ units.
     assert!(
-        exp.sf_val > 0,
-        "Value should be > 0 for rgb(100,150,200), got {}",
+        exp.sf_val > 7000 && exp.sf_val < 8500,
+        "Value for rgb(100,150,200) should be ~7843 (200/255), got {}",
         exp.sf_val
     );
 
@@ -462,10 +462,12 @@ fn colorfield_cycle_red_slider_updates_color_and_syncs() {
     );
 
     // HSV should have been synced (rgbaChanged → UpdateHSVOutput).
+    // V = max(r,g,b)/255 ≈ 127/255 → ~4980 in C++ units.
     let exp = cfb.color_field.expansion().unwrap();
     assert!(
-        exp.sf_val > 0,
-        "HSV value should be > 0 after setting red to 50%"
+        exp.sf_val > 4000 && exp.sf_val < 6000,
+        "HSV value should be ~4980 (127/255) after setting red to 50%, got {}",
+        exp.sf_val
     );
 
     // Name field should have been synced (rgbaChanged → UpdateNameOutput).
@@ -603,9 +605,10 @@ fn colorfield_cycle_hex_text_updates_color() {
     );
 
     // HSV expansion fields should also be synced (textChanged → UpdateHSVOutput).
+    // #00FF80 = rgb(0,255,128): H = 60*(128-0)/255 + 120 ≈ 150° → ~15000 in C++ units.
     assert!(
-        exp.sf_hue > 0,
-        "Hue should be > 0 for #00FF80 (green-cyan), got {}",
+        exp.sf_hue > 13000 && exp.sf_hue < 17000,
+        "Hue should be ~15000 (150°) for #00FF80 (green-cyan), got {}",
         exp.sf_hue
     );
 
@@ -774,11 +777,9 @@ fn colorfield_cycle_fires_on_color_callback() {
     cfb.color_field.cycle();
 
     let cb_color = received.borrow();
-    assert!(
-        cb_color.is_some(),
-        "on_color callback should have fired after cycle() detects a change"
+    let cb_color = cb_color.expect(
+        "on_color callback should have fired after cycle() detects a change",
     );
-    let cb_color = cb_color.unwrap();
     assert_eq!(
         cb_color.g(),
         255,

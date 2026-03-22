@@ -1172,3 +1172,18 @@ Key finding: CT-6/CT-7/CT-8 required relaxed tolerances (28-75%) due to remainin
 - Painter sub-image overloads: not called anywhere in zuicchini, whole-image variants sufficient
 - Stroke constructors: all fields settable individually
 - Dialog: add_button(label, Ok) covers AddPositiveButton
+
+## Phase 4: Test Review
+
+### review-pipeline: Review tests/pipeline/ for anti-patterns
+**Tests reviewed**: 307 | **Defective**: 6 | **Strengthened**: 6
+**Bugs found via strengthening**: none
+**Production fixes**: 0
+
+Defects found and fixed:
+1. `colorfield.rs:778` — `is_some()` replaced with `expect()` for direct value extraction
+2. `notices.rs:497-498` — `is_some()` + `unwrap()` replaced with `unwrap_or_else` for direct value extraction
+3. `colorfield.rs:204-208` — `sf_sat > 0` tightened to `4000..6000` (expected ~5000 for rgb(100,150,200))
+4. `colorfield.rs:210-213` — `sf_val > 0` tightened to `7000..8500` (expected ~7843 for rgb(100,150,200))
+5. `colorfield.rs:466-468` — `sf_val > 0` tightened to `4000..6000` (expected ~4980 for red=50%)
+6. `colorfield.rs:606-609` — `sf_hue > 0` tightened to `13000..17000` (expected ~15000 for #00FF80)

@@ -494,14 +494,18 @@ fn focus_change_old_panel_notified_before_new_panel() {
         .iter()
         .position(|e| e.starts_with("b:notice:") && e.contains("ACTIVE_CHANGED"));
 
-    assert!(a_idx.is_some(), "Panel A must receive ACTIVE_CHANGED");
-    assert!(b_idx.is_some(), "Panel B must receive ACTIVE_CHANGED");
+    let a_idx = a_idx.unwrap_or_else(|| {
+        panic!("Panel A must receive ACTIVE_CHANGED. Log: {:?}", *entries)
+    });
+    let b_idx = b_idx.unwrap_or_else(|| {
+        panic!("Panel B must receive ACTIVE_CHANGED. Log: {:?}", *entries)
+    });
 
     assert!(
-        a_idx.unwrap() < b_idx.unwrap(),
+        a_idx < b_idx,
         "Old active panel A (idx={}) must be notified before new active panel B (idx={}). Log: {:?}",
-        a_idx.unwrap(),
-        b_idx.unwrap(),
+        a_idx,
+        b_idx,
         *entries
     );
 }
