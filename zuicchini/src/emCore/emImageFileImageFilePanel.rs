@@ -83,7 +83,7 @@ impl emImageFilePanel {
 
 impl PanelBehavior for emImageFilePanel {
     fn is_opaque(&self) -> bool {
-        if self.file_panel.vir_file_state().is_good() {
+        if self.file_panel.GetVirFileState().is_good() {
             false
         } else {
             self.file_panel.is_opaque()
@@ -95,7 +95,7 @@ impl PanelBehavior for emImageFilePanel {
     }
 
     fn paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
-        if !self.file_panel.vir_file_state().is_good() {
+        if !self.file_panel.GetVirFileState().is_good() {
             self.file_panel.paint(painter, w, h, state);
             return;
         }

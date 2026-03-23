@@ -78,15 +78,15 @@ impl emFilePanel {
         }
     }
 
-    pub fn has_model(&self) -> bool {
+    pub fn GetFileModel(&self) -> bool {
         self.has_model
     }
 
-    pub fn set_has_model(&mut self, has: bool) {
+    pub fn SetFileModel(&mut self, has: bool) {
         self.has_model = has;
     }
 
-    pub fn file_state(&self) -> &FileState {
+    pub fn GetFileState(&self) -> &FileState {
         &self.file_state
     }
 
@@ -94,7 +94,7 @@ impl emFilePanel {
         self.file_state = state;
     }
 
-    pub fn error_text(&self) -> &str {
+    pub fn GetErrorText(&self) -> &str {
         &self.error_text
     }
 
@@ -102,7 +102,7 @@ impl emFilePanel {
         self.error_text = text.to_string();
     }
 
-    pub fn memory_need(&self) -> u64 {
+    pub fn GetMemoryNeed(&self) -> u64 {
         self.memory_need
     }
 
@@ -110,7 +110,7 @@ impl emFilePanel {
         self.memory_need = need;
     }
 
-    pub fn memory_limit(&self) -> u64 {
+    pub fn GetMemoryLimit(&self) -> u64 {
         self.memory_limit
     }
 
@@ -126,12 +126,12 @@ impl emFilePanel {
         self.custom_error = None;
     }
 
-    pub fn custom_error(&self) -> Option<&str> {
+    pub fn GetCustomError(&self) -> Option<&str> {
         self.custom_error.as_deref()
     }
 
     /// Compute the virtual file state from current model state and custom error.
-    pub fn vir_file_state(&self) -> VirtualFileState {
+    pub fn GetVirFileState(&self) -> VirtualFileState {
         if let Some(ref msg) = self.custom_error {
             return VirtualFileState::CustomError(msg.clone());
         }
@@ -163,7 +163,7 @@ impl emFilePanel {
     /// their content instead of calling this method when the state is good.
     pub fn paint_status(&self, painter: &mut emPainter, w: f64, h: f64) {
         let canvas_color = painter.canvas_color();
-        let vfs = self.vir_file_state();
+        let vfs = self.GetVirFileState();
 
         match &vfs {
             VirtualFileState::Waiting => {
@@ -380,7 +380,7 @@ fn paint_status_text(
 impl PanelBehavior for emFilePanel {
     fn is_opaque(&self) -> bool {
         matches!(
-            self.vir_file_state(),
+            self.GetVirFileState(),
             VirtualFileState::LoadError(_)
                 | VirtualFileState::SaveError(_)
                 | VirtualFileState::CustomError(_)
@@ -388,7 +388,7 @@ impl PanelBehavior for emFilePanel {
     }
 
     fn canvas_color(&self) -> emColor {
-        match self.vir_file_state() {
+        match self.GetVirFileState() {
             VirtualFileState::LoadError(_)
             | VirtualFileState::SaveError(_)
             | VirtualFileState::CustomError(_) => emColor::rgb(128, 0, 0),
