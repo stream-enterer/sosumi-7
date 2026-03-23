@@ -313,7 +313,7 @@ impl emColorField {
             let name = ctx.tree.name(child_id).unwrap_or("").to_string();
             if let Some(behavior) = ctx.tree.take_behavior(child_id) {
                 if let Some(sfp) = behavior.as_any().downcast_ref::<ScalarFieldPanel>() {
-                    let val = sfp.scalar_field.value() as i64;
+                    let val = sfp.scalar_field.GetValue() as i64;
                     let exp = self.expansion.as_mut().unwrap();
                     match name.as_str() {
                         "r" => exp.sf_red = val,
@@ -556,10 +556,10 @@ impl emColorField {
                 child_look.clone(),
                 editable,
             );
-            panel.scalar_field.set_scale_mark_intervals(pct_intervals);
+            panel.scalar_field.SetScaleMarkIntervals(pct_intervals);
             panel
                 .scalar_field
-                .set_text_of_value_fn(Box::new(|val, _iv| format!("{}%", val as f64 / 100.0)));
+                .SetTextOfValueFunc(Box::new(|val, _iv| format!("{}%", val as f64 / 100.0)));
             tree.set_behavior(child, Box::new(panel));
             child
         };
@@ -578,10 +578,10 @@ impl emColorField {
                 child_look.clone(),
                 editable,
             );
-            panel.scalar_field.set_scale_mark_intervals(pct_intervals);
+            panel.scalar_field.SetScaleMarkIntervals(pct_intervals);
             panel
                 .scalar_field
-                .set_text_of_value_fn(Box::new(|val, _iv| format!("{}%", val as f64 / 100.0)));
+                .SetTextOfValueFunc(Box::new(|val, _iv| format!("{}%", val as f64 / 100.0)));
             panel.scalar_field.border_mut().description =
                 "The lower the more transparent.".to_string();
             ctx.tree.set_behavior(child, Box::new(panel));
@@ -604,9 +604,9 @@ impl emColorField {
                 child_look.clone(),
                 editable,
             );
-            panel.scalar_field.set_scale_mark_intervals(hue_intervals);
-            panel.scalar_field.set_text_box_tallness(0.35);
-            panel.scalar_field.set_text_of_value_fn(Box::new(|val, iv| {
+            panel.scalar_field.SetScaleMarkIntervals(hue_intervals);
+            panel.scalar_field.SetTextBoxTallness(0.35);
+            panel.scalar_field.SetTextOfValueFunc(Box::new(|val, iv| {
                 if iv >= 6000 {
                     // C++ TextOfHueValue: major marks show color names
                     match (val / 6000) % 6 {

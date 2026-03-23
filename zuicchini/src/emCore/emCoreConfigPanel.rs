@@ -130,12 +130,12 @@ fn make_factor_field(
     let mut sf = emScalarField::new(-200.0, 200.0, look);
     sf.set_caption(caption);
     sf.border_mut().description = description.to_string();
-    sf.set_value(factor_cfg_to_val(cfg_value, cfg_min, cfg_max));
-    sf.set_scale_mark_intervals(&[100, 10]);
-    sf.set_text_box_tallness(0.3);
+    sf.SetValue(factor_cfg_to_val(cfg_value, cfg_min, cfg_max));
+    sf.SetScaleMarkIntervals(&[100, 10]);
+    sf.SetTextBoxTallness(0.3);
     sf.border_mut().set_border_scaling(1.5);
     let (min, max, dis) = (cfg_min, cfg_max, minimum_means_disabled);
-    sf.set_text_of_value_fn(Box::new(move |v, mi| {
+    sf.SetTextOfValueFunc(Box::new(move |v, mi| {
         factor_text_of_value(v, mi, dis, min, max)
     }));
     ScalarFieldPanel { scalar_field: sf }
@@ -677,11 +677,11 @@ impl MemFieldLayoutPanel {
         let max_val = mem_cfg_to_val(16384);
         let mut sf = emScalarField::new(min_val, max_val, self.look.clone());
         sf.set_caption("Max megabytes per view");
-        sf.set_value(mem_cfg_to_val(c.max_megabytes_per_view));
-        sf.set_scale_mark_intervals(&[100, 10]);
-        sf.set_text_box_tallness(0.3);
+        sf.SetValue(mem_cfg_to_val(c.max_megabytes_per_view));
+        sf.SetScaleMarkIntervals(&[100, 10]);
+        sf.SetTextBoxTallness(0.3);
         sf.border_mut().set_border_scaling(1.5);
-        sf.set_text_of_value_fn(Box::new(mem_text_of_value));
+        sf.SetTextOfValueFunc(Box::new(mem_text_of_value));
         let config: Rc<RefCell<emConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
         sf.on_value = Some(Box::new(move |val| {
             let mb = mem_val_to_cfg(val);
@@ -878,8 +878,8 @@ impl CpuGroup {
         // MaxRenderThreads: range 1-32
         let mut sf = emScalarField::new(1.0, 32.0, self.look.clone());
         sf.set_caption("Max render threads");
-        sf.set_value(c.max_render_threads as f64);
-        sf.set_scale_mark_intervals(&[1]);
+        sf.SetValue(c.max_render_threads as f64);
+        sf.SetScaleMarkIntervals(&[1]);
         sf.border_mut().outer = OuterBorderType::None;
         sf.border_mut().inner = InnerBorderType::InputField;
         sf.border_mut().set_border_scaling(1.5);
@@ -1019,11 +1019,11 @@ impl PerformanceGroup {
         ds_sf.set_caption("Downscale quality");
         ds_sf.border_mut().description =
             "Quality of image downscaling (antialiasing filter size)".to_string();
-        ds_sf.set_value(c.downscale_quality as f64);
-        ds_sf.set_scale_mark_intervals(&[1]);
-        ds_sf.set_text_box_tallness(0.3);
+        ds_sf.SetValue(c.downscale_quality as f64);
+        ds_sf.SetScaleMarkIntervals(&[1]);
+        ds_sf.SetTextBoxTallness(0.3);
         ds_sf.border_mut().set_border_scaling(1.5);
-        ds_sf.set_text_of_value_fn(Box::new(downscale_text));
+        ds_sf.SetTextOfValueFunc(Box::new(downscale_text));
         let config: Rc<RefCell<emConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
         ds_sf.on_value = Some(Box::new(move |val| {
             let q = (val + 0.5) as i32;
@@ -1042,11 +1042,11 @@ impl PerformanceGroup {
         let mut us_sf = emScalarField::new(0.0, 5.0, self.look.clone());
         us_sf.set_caption("Upscale quality");
         us_sf.border_mut().description = "Quality of image upscaling (interpolation)".to_string();
-        us_sf.set_value(c.upscale_quality as f64);
-        us_sf.set_scale_mark_intervals(&[1]);
-        us_sf.set_text_box_tallness(0.3);
+        us_sf.SetValue(c.upscale_quality as f64);
+        us_sf.SetScaleMarkIntervals(&[1]);
+        us_sf.SetTextBoxTallness(0.3);
         us_sf.border_mut().set_border_scaling(1.5);
-        us_sf.set_text_of_value_fn(Box::new(upscale_text));
+        us_sf.SetTextOfValueFunc(Box::new(upscale_text));
         let config: Rc<RefCell<emConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
         us_sf.on_value = Some(Box::new(move |val| {
             let q = (val + 0.5) as i32;

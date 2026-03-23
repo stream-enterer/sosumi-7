@@ -149,11 +149,11 @@ impl emScalarField {
 
     // --- Editable ---
 
-    pub fn is_editable(&self) -> bool {
+    pub fn IsEditable(&self) -> bool {
         self.editable
     }
 
-    pub fn set_editable(&mut self, editable: bool) {
+    pub fn SetEditable(&mut self, editable: bool) {
         if self.editable == editable {
             return;
         }
@@ -169,11 +169,11 @@ impl emScalarField {
 
     // --- Value ---
 
-    pub fn value(&self) -> f64 {
+    pub fn GetValue(&self) -> f64 {
         self.value
     }
 
-    pub fn set_value(&mut self, val: f64) {
+    pub fn SetValue(&mut self, val: f64) {
         let clamped = val.clamp(self.min, self.max);
         if (clamped - self.value).abs() > f64::EPSILON {
             self.value = clamped;
@@ -187,15 +187,15 @@ impl emScalarField {
 
     // --- Min/Max ---
 
-    pub fn min_value(&self) -> f64 {
+    pub fn GetMinValue(&self) -> f64 {
         self.min
     }
 
-    pub fn max_value(&self) -> f64 {
+    pub fn GetMaxValue(&self) -> f64 {
         self.max
     }
 
-    pub fn set_min_value(&mut self, min: f64) {
+    pub fn SetMinValue(&mut self, min: f64) {
         if (self.min - min).abs() < f64::EPSILON {
             return;
         }
@@ -204,11 +204,11 @@ impl emScalarField {
             self.max = self.min;
         }
         if self.value < self.min {
-            self.set_value(self.min);
+            self.SetValue(self.min);
         }
     }
 
-    pub fn set_max_value(&mut self, max: f64) {
+    pub fn SetMaxValue(&mut self, max: f64) {
         if (self.max - max).abs() < f64::EPSILON {
             return;
         }
@@ -217,26 +217,26 @@ impl emScalarField {
             self.min = self.max;
         }
         if self.value > self.max {
-            self.set_value(self.max);
+            self.SetValue(self.max);
         }
     }
 
-    pub fn set_min_max_values(&mut self, min: f64, max: f64) {
-        self.set_min_value(min);
-        self.set_max_value(max);
+    pub fn SetMinMaxValues(&mut self, min: f64, max: f64) {
+        self.SetMinValue(min);
+        self.SetMaxValue(max);
     }
 
     // --- Scale mark configuration ---
 
     /// Returns the current scale mark intervals (descending order, each > 0).
-    pub fn scale_mark_intervals(&self) -> &[u64] {
+    pub fn GetScaleMarkIntervals(&self) -> &[u64] {
         &self.scale_mark_intervals
     }
 
     /// Sets scale mark intervals. Each element must be > 0 and the sequence
     /// must be in strictly descending order. Panics on invalid input (matching
     /// the C++ `emFatalError` behaviour).
-    pub fn set_scale_mark_intervals(&mut self, intervals: &[u64]) {
+    pub fn SetScaleMarkIntervals(&mut self, intervals: &[u64]) {
         for (i, &iv) in intervals.iter().enumerate() {
             assert!(iv > 0, "scale mark interval must be > 0 (index {i})");
             if i > 0 {
@@ -255,11 +255,11 @@ impl emScalarField {
         self.scale_mark_intervals = intervals.to_vec();
     }
 
-    pub fn is_never_hiding_marks(&self) -> bool {
+    pub fn IsNeverHidingMarks(&self) -> bool {
         self.marks_never_hidden
     }
 
-    pub fn set_never_hide_marks(&mut self, never_hide: bool) {
+    pub fn SetNeverHideMarks(&mut self, never_hide: bool) {
         self.marks_never_hidden = never_hide;
     }
 
@@ -268,25 +268,25 @@ impl emScalarField {
     /// Sets a custom value-to-text formatter. The function receives the value
     /// as `i64` and the current mark interval as `u64`, returning the display
     /// string.
-    pub fn set_text_of_value_fn(&mut self, f: Box<dyn Fn(i64, u64) -> String>) {
+    pub fn SetTextOfValueFunc(&mut self, f: Box<dyn Fn(i64, u64) -> String>) {
         self.text_of_value_fn = f;
     }
 
-    pub fn text_box_tallness(&self) -> f64 {
+    pub fn GetTextBoxTallness(&self) -> f64 {
         self.text_box_tallness
     }
 
-    pub fn set_text_box_tallness(&mut self, tallness: f64) {
+    pub fn SetTextBoxTallness(&mut self, tallness: f64) {
         self.text_box_tallness = tallness;
     }
 
     // --- Keyboard interval ---
 
-    pub fn keyboard_interval(&self) -> u64 {
+    pub fn GetKeyboardInterval(&self) -> u64 {
         self.kb_interval
     }
 
-    pub fn set_keyboard_interval(&mut self, interval: u64) {
+    pub fn SetKeyboardInterval(&mut self, interval: u64) {
         self.kb_interval = interval;
     }
 
@@ -519,12 +519,12 @@ impl emScalarField {
         // C++ emScalarField.cpp:239: compute mouse value on every event.
         // CheckMouse returns (hit, value) — value is always computed even
         // when the mouse is outside the content round-rect.
-        let (in_area, mv) = self.check_mouse(event.mouse_x, event.mouse_y);
+        let (in_area, mv) = self.CheckMouse(event.mouse_x, event.mouse_y);
 
         // C++ absolute drag model: pressed state continuously sets value
         // to wherever the mouse points on the scale.
         if self.dragging && (mv - self.value).abs() > f64::EPSILON {
-            self.set_value(mv);
+            self.SetValue(mv);
         }
 
         match event.key {
@@ -537,7 +537,7 @@ impl emScalarField {
                     self.dragging = true;
                     // Immediately position needle at click location.
                     if (mv - self.value).abs() > f64::EPSILON {
-                        self.set_value(mv);
+                        self.SetValue(mv);
                     }
                     true
                 }
@@ -557,11 +557,11 @@ impl emScalarField {
             // C++ emScalarField.cpp:261-272: only '+' and '-' character keys.
             // Arrow keys are NOT in C++ (would conflict with focus navigation).
             InputKey::Key('+') if event.variant == InputVariant::Press => {
-                self.step_by_keyboard(1);
+                self.StepByKeyboard(1);
                 true
             }
             InputKey::Key('-') if event.variant == InputVariant::Press => {
-                self.step_by_keyboard(-1);
+                self.StepByKeyboard(-1);
                 true
             }
             _ => false,
@@ -599,7 +599,7 @@ impl emScalarField {
     /// content round-rect and `value` is the clamped scale value corresponding
     /// to `mx` (always computed, even when outside). Matches the two-output
     /// semantics of C++ `emScalarField::CheckMouse`.
-    pub fn check_mouse(&self, mx: f64, my: f64) -> (bool, f64) {
+    pub fn CheckMouse(&self, mx: f64, my: f64) -> (bool, f64) {
         if self.last_w <= 0.0 || self.last_h <= 0.0 {
             return (false, self.min);
         }
@@ -688,7 +688,7 @@ impl emScalarField {
     /// as step. Otherwise computes `range/129` (min 1) and finds the best
     /// matching scale mark interval. Snaps to grid with direction-dependent
     /// rounding using integer division.
-    fn step_by_keyboard(&mut self, dir: i32) {
+    fn StepByKeyboard(&mut self, dir: i32) {
         let range_f = self.max - self.min;
         let range = range_f as i64;
 
@@ -729,7 +729,7 @@ impl emScalarField {
             }
         };
 
-        self.set_value(v as f64);
+        self.SetValue(v as f64);
     }
 
     fn fire_change(&mut self) {
@@ -882,7 +882,7 @@ mod tests {
     }
 
     #[test]
-    fn scale_mark_intervals() {
+    fn GetScaleMarkIntervals() {
         let look = emLook::new();
         let mut sf = emScalarField::new(0.0, 100.0, look);
 
@@ -927,7 +927,7 @@ mod tests {
     }
 
     #[test]
-    fn text_box_tallness() {
+    fn GetTextBoxTallness() {
         let look = emLook::new();
         let mut sf = emScalarField::new(0.0, 100.0, look);
         assert!((sf.text_box_tallness() - 0.5).abs() < f64::EPSILON);
@@ -936,7 +936,7 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_interval() {
+    fn GetKeyboardInterval() {
         let look = emLook::new();
         let mut sf = emScalarField::new(0.0, 100.0, look);
         assert_eq!(sf.keyboard_interval(), 0);
