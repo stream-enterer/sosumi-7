@@ -65,23 +65,23 @@ impl emImageFileModel {
         &mut self.file_model
     }
 
-    pub fn data_change_signal(&self) -> SignalId {
+    pub fn GetChangeSignal(&self) -> SignalId {
         self.data_change_signal
     }
 
-    pub fn image(&self) -> Option<&emImage> {
+    pub fn GetImage(&self) -> Option<&emImage> {
         self.file_model.data().map(|d| &d.image)
     }
 
-    pub fn comment(&self) -> Option<&str> {
+    pub fn GetComment(&self) -> Option<&str> {
         self.file_model.data().map(|d| d.comment.as_str())
     }
 
-    pub fn format_info(&self) -> Option<&str> {
+    pub fn GetFileFormatInfo(&self) -> Option<&str> {
         self.file_model.data().map(|d| d.format_info.as_str())
     }
 
-    pub fn saving_quality(&self) -> u32 {
+    pub fn GetSavingQuality(&self) -> u32 {
         self.saving_quality
     }
 
@@ -123,7 +123,7 @@ impl emImageFileModel {
     }
 
     /// Set the format info. Returns `true` if the format info changed.
-    pub fn set_format_info(&mut self, info: String) -> bool {
+    pub fn SetFileFormatInfo(&mut self, info: String) -> bool {
         if let Some(data) = self.file_model.data() {
             if data.format_info == info {
                 return false;
