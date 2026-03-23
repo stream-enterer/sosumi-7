@@ -64,14 +64,14 @@ impl emRadioBox {
     }
 
     pub fn is_selected(&self) -> bool {
-        self.group.borrow().selected() == Some(self.index_cell.get())
+        self.group.borrow().GetChecked() == Some(self.index_cell.get())
     }
 
     pub fn set_checked(&mut self, checked: bool) {
         if checked {
-            self.group.borrow_mut().select(self.index_cell.get());
+            self.group.borrow_mut().SetChecked(self.index_cell.get());
         } else if self.is_selected() {
-            self.group.borrow_mut().set_check_index(None);
+            self.group.borrow_mut().SetCheckIndex(None);
         }
     }
 
@@ -312,7 +312,7 @@ impl emRadioBox {
                     self.pressed = false;
                     self.box_pressed = false;
                     if hit {
-                        self.group.borrow_mut().select(self.index_cell.get());
+                        self.group.borrow_mut().SetChecked(self.index_cell.get());
                     }
                     true
                 }
@@ -327,7 +327,7 @@ impl emRadioBox {
                     && !event.ctrl
                     && state.viewed_rect.w.min(state.viewed_rect.h) >= 8.0 =>
             {
-                self.group.borrow_mut().select(self.index_cell.get());
+                self.group.borrow_mut().SetChecked(self.index_cell.get());
                 true
             }
             _ => false,

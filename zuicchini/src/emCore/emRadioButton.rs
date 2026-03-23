@@ -37,12 +37,12 @@ impl RadioGroup {
         }))
     }
 
-    pub fn selected(&self) -> Option<usize> {
+    pub fn GetChecked(&self) -> Option<usize> {
         self.selected
     }
 
     /// Number of radio buttons currently in this group.
-    pub fn count(&self) -> usize {
+    pub fn GetCount(&self) -> usize {
         self.buttons.len()
     }
 
@@ -52,7 +52,7 @@ impl RadioGroup {
 
     /// Select the button at `index`, unchecking any previously selected button.
     /// No-op if already selected (matches C++ recursion guard / no-change check).
-    pub fn select(&mut self, index: usize) {
+    pub fn SetChecked(&mut self, index: usize) {
         if self.selected == Some(index) {
             return;
         }
@@ -66,7 +66,7 @@ impl RadioGroup {
     ///
     /// Matches C++ `Mechanism::SetCheckIndex`. When index is out of bounds
     /// (>= count), the selection is cleared.
-    pub fn set_check_index(&mut self, index: Option<usize>) {
+    pub fn SetCheckIndex(&mut self, index: Option<usize>) {
         let normalized = match index {
             Some(i) if i < self.buttons.len() => Some(i),
             _ => None,
@@ -88,7 +88,7 @@ impl RadioGroup {
     /// index is decremented to match the new layout.
     ///
     /// Matches C++ `Mechanism::RemoveByIndex`.
-    pub fn remove_by_index(&mut self, index: usize) {
+    pub fn RemoveByIndex(&mut self, index: usize) {
         if index >= self.buttons.len() {
             return;
         }
@@ -168,7 +168,7 @@ impl RadioGroup {
     /// In Rust, since buttons register themselves in `emRadioButton::new()`,
     /// this method registers `n` additional button slots for buttons that
     /// were created outside the normal constructor flow.
-    pub fn add_all(&mut self, n: usize) {
+    pub fn AddAll(&mut self, n: usize) {
         let base = self.buttons.len();
         for i in 0..n {
             self.buttons.push(Rc::new(Cell::new(base + i)));
@@ -181,7 +181,7 @@ impl RadioGroup {
     /// In C++, returns a pointer to the emRadioButton at `index`.
     /// In Rust, validates the index and returns it (since buttons are
     /// identified by their index in the group).
-    pub fn get_button(&self, index: usize) -> Option<usize> {
+    pub fn GetButton(&self, index: usize) -> Option<usize> {
         if index < self.buttons.len() {
             Some(index)
         } else {
@@ -195,7 +195,7 @@ impl RadioGroup {
     /// their index, so this validates the index is within bounds.
     ///
     /// Port of C++ `emRadioButton::Mechanism::GetIndexOf`.
-    pub fn get_index_of(&self, id: usize) -> Option<usize> {
+    pub fn GetIndexOf(&self, id: usize) -> Option<usize> {
         if id < self.buttons.len() {
             Some(id)
         } else {
@@ -208,7 +208,7 @@ impl RadioGroup {
     /// If a button was checked, clears the selection and fires the signal.
     /// Individual buttons' checked states are NOT modified (matching C++
     /// `Mechanism::RemoveAll`).
-    pub fn remove_all(&mut self) {
+    pub fn RemoveAll(&mut self) {
         let had_selection = self.selected.is_some();
         self.buttons.clear();
         if had_selection {
@@ -280,9 +280,9 @@ impl emRadioButton {
     ///   mechanism, clears the mechanism's selection.
     pub fn set_checked(&mut self, checked: bool) {
         if checked {
-            self.group.borrow_mut().select(self.index_cell.get());
+            self.group.borrow_mut().SetChecked(self.index_cell.get());
         } else if self.is_selected() {
-            self.group.borrow_mut().set_check_index(None);
+            self.group.borrow_mut().SetCheckIndex(None);
         }
     }
 
@@ -487,7 +487,7 @@ impl emRadioButton {
                     if hit {
                         self.group
                             .borrow_mut()
-                            .select(self.index_cell.get());
+                            .SetChecked(self.index_cell.get());
                     }
                     true
                 }
@@ -502,7 +502,7 @@ impl emRadioButton {
                     && !event.ctrl
                     && state.viewed_rect.w.min(state.viewed_rect.h) >= 8.0 =>
             {
-                self.group.borrow_mut().select(self.index_cell.get());
+                self.group.borrow_mut().SetChecked(self.index_cell.get());
                 true
             }
             _ => false,
@@ -515,7 +515,7 @@ impl emRadioButton {
 
     /// Whether this radio button provides how-to help text.
     /// Matches C++ `emRadioButton::HasHowTo` (inherited, always true).
-    pub fn has_how_to(&self) -> bool {
+    pub fn HasHowTo(&self) -> bool {
         true
     }
 
@@ -523,7 +523,7 @@ impl emRadioButton {
     ///
     /// Chains the border's base how-to with check-button + radio-button
     /// specific sections. Matches C++ `emRadioButton::GetHowTo`.
-    pub fn get_how_to(&self, enabled: bool, focusable: bool) -> String {
+    pub fn GetHowTo(&self, enabled: bool, focusable: bool) -> String {
         let mut text = self.border.get_howto(enabled, focusable);
         text.push_str(HOWTO_CHECK_BUTTON);
         if self.is_selected() {
