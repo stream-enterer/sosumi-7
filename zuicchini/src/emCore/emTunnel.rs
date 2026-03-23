@@ -88,20 +88,20 @@ impl emTunnel {
         self
     }
 
-    pub fn child_tallness(&self) -> f64 {
+    pub fn GetChildTallness(&self) -> f64 {
         self.child_tallness
     }
 
-    pub fn set_child_tallness(&mut self, tallness: f64) {
+    pub fn SetChildTallness(&mut self, tallness: f64) {
         self.child_tallness = tallness;
         self.layout_invalid = true;
     }
 
-    pub fn depth(&self) -> f64 {
+    pub fn GetDepth(&self) -> f64 {
         self.depth
     }
 
-    pub fn set_depth(&mut self, depth: f64) {
+    pub fn SetDepth(&mut self, depth: f64) {
         let depth = if depth < 1e-10 { 1e-10 } else { depth };
         self.depth = depth;
         self.layout_invalid = true;
@@ -118,7 +118,7 @@ impl emTunnel {
     /// via `emBorder::content_canvas_color` to arrive at the correct color for
     /// the child panel — matching how C++ `DoTunnel` passes `cc` from
     /// `GetContentRoundRect` into `pCanvasColor`.
-    pub fn child_rect(&self, w: f64, h: f64, parent_canvas: emColor) -> TunnelChildRect {
+    pub fn GetChildRect(&self, w: f64, h: f64, parent_canvas: emColor) -> TunnelChildRect {
         let (rect, ar) = self.content_round_rect(w, h);
         let ax = rect.x;
         let ay = rect.y;
@@ -312,7 +312,7 @@ impl PanelBehavior for emTunnel {
         }
 
         let rect = ctx.layout_rect();
-        let cr = self.child_rect(rect.w, rect.h, ctx.canvas_color());
+        let cr = self.GetChildRect(rect.w, rect.h, ctx.canvas_color());
 
         if let Some(&child) = ctx.children().first() {
             ctx.layout_child(child, cr.x, cr.y, cr.w, cr.h);

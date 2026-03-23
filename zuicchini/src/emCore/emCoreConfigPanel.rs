@@ -733,7 +733,7 @@ impl MaxMemInnerTunnelPanel {
     ) -> Self {
         let mut tunnel = emTunnel::new(look.clone())
             .with_caption("Please read all text\nbefore changing this setting!");
-        tunnel.set_child_tallness(0.7);
+        tunnel.SetChildTallness(0.7);
         Self {
             tunnel,
             config,
@@ -769,7 +769,7 @@ impl PanelBehavior for MaxMemInnerTunnelPanel {
         }
 
         let rect = ctx.layout_rect();
-        let cr = self.tunnel.child_rect(rect.w, rect.h, ctx.canvas_color());
+        let cr = self.tunnel.GetChildRect(rect.w, rect.h, ctx.canvas_color());
         if let Some(&child) = ctx.children().first() {
             ctx.layout_child(child, cr.x, cr.y, cr.w, cr.h);
             ctx.tree.set_canvas_color(child, cr.canvas_color);
@@ -792,7 +792,7 @@ impl MaxMemTunnelPanel {
         generation: Rc<Cell<u64>>,
     ) -> Self {
         let mut tunnel = emTunnel::new(look.clone());
-        tunnel.set_child_tallness(0.3);
+        tunnel.SetChildTallness(0.3);
         tunnel.border_mut().set_border_scaling(1.5);
         Self {
             tunnel,
@@ -829,7 +829,7 @@ impl PanelBehavior for MaxMemTunnelPanel {
         }
 
         let rect = ctx.layout_rect();
-        let cr = self.tunnel.child_rect(rect.w, rect.h, ctx.canvas_color());
+        let cr = self.tunnel.GetChildRect(rect.w, rect.h, ctx.canvas_color());
         if let Some(&child) = ctx.children().first() {
             ctx.layout_child(child, cr.x, cr.y, cr.w, cr.h);
             ctx.tree.set_canvas_color(child, cr.canvas_color);
