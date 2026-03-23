@@ -27,6 +27,7 @@ pub(crate) const CHAR_BOX_TALLNESS: f64 = 1.77;
 
 static ATLAS: OnceLock<emImage> = OnceLock::new();
 
+// DIVERGED: Acquire — Rust uses a global OnceLock instead of emModel/emRef
 /// Returns a reference to the decoded font atlas (single-channel grayscale).
 pub(crate) fn atlas() -> &'static emImage {
     ATLAS.get_or_init(|| decode_tga_rle_grayscale(TGA_DATA))
@@ -34,7 +35,7 @@ pub(crate) fn atlas() -> &'static emImage {
 
 /// Get glyph source coordinates within the atlas.
 /// Returns `(src_x, src_y, src_w, src_h)`.
-pub(crate) fn get_glyph(ch: char) -> (u32, u32, u32, u32) {
+pub(crate) fn GetChar(ch: char) -> (u32, u32, u32, u32) {
     let cp = ch as u32;
     let index = if (FIRST_CODE..=LAST_CODE).contains(&cp) {
         cp - FIRST_CODE
@@ -122,7 +123,7 @@ mod tests {
     #[test]
     fn space_is_blank() {
         let img = atlas();
-        let (sx, sy, sw, sh) = get_glyph(' ');
+        let (sx, sy, sw, sh) = GetChar(' ');
         for dy in 0..sh {
             for dx in 0..sw {
                 assert_eq!(
@@ -137,7 +138,7 @@ mod tests {
     #[test]
     fn letter_a_has_pixels() {
         let img = atlas();
-        let (sx, sy, sw, sh) = get_glyph('A');
+        let (sx, sy, sw, sh) = GetChar('A');
         let any_set = (0..sh)
             .flat_map(|dy| (0..sw).map(move |dx| (dx, dy)))
             .any(|(dx, dy)| img.pixel(sx + dx, sy + dy)[0] > 0);
@@ -146,8 +147,8 @@ mod tests {
 
     #[test]
     fn fallback_to_question_mark() {
-        let q = get_glyph('?');
-        let unknown = get_glyph('\u{FFFF}');
+        let q = GetChar('?');
+        let unknown = GetChar('\u{FFFF}');
         assert_eq!(q, unknown);
     }
 }

@@ -82,7 +82,7 @@ impl From<std::io::Error> for InstallInfoError {
 /// Returns `InstallInfoError::EnvNotSet` if a required environment variable is
 /// missing. Returns `InstallInfoError::UnsupportedPlatform` on non-Linux.
 #[cfg(target_os = "linux")]
-pub fn get_install_path(
+pub fn emGetInstallPath(
     idt: InstallDirType,
     prj: &str,
     sub_path: Option<&str>,
@@ -112,7 +112,7 @@ pub fn get_install_path(
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn get_install_path(
+pub fn emGetInstallPath(
     _idt: InstallDirType,
     _prj: &str,
     _sub_path: Option<&str>,
@@ -134,12 +134,12 @@ pub fn get_install_path(
 /// - `prj` — project name
 /// - `sub_dir` — optional sub-directory appended to the result
 #[cfg(target_os = "linux")]
-pub fn get_config_dir_overloadable(
+pub fn emGetConfigDirOverloadable(
     prj: &str,
     sub_dir: Option<&str>,
 ) -> Result<PathBuf, InstallInfoError> {
-    let host_dir = get_install_path(InstallDirType::HostConfig, prj, None)?;
-    let user_dir = get_install_path(InstallDirType::UserConfig, prj, None)?;
+    let host_dir = emGetInstallPath(InstallDirType::HostConfig, prj, None)?;
+    let user_dir = emGetInstallPath(InstallDirType::UserConfig, prj, None)?;
 
     let result_dir = match (read_version_file(&host_dir), read_version_file(&user_dir)) {
         (Some(host_ver), Some(user_ver)) => {
@@ -167,7 +167,7 @@ pub fn get_config_dir_overloadable(
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn get_config_dir_overloadable(
+pub fn emGetConfigDirOverloadable(
     _prj: &str,
     _sub_dir: Option<&str>,
 ) -> Result<PathBuf, InstallInfoError> {

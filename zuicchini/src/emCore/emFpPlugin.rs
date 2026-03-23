@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use crate::emCore::emInstallInfo::get_config_dir_overloadable;
+use crate::emCore::emInstallInfo::emGetConfigDirOverloadable;
 use crate::emCore::emRec::{RecError, RecStruct, RecValue};
 use crate::emCore::emContext::emContext;
 use crate::emCore::emRecRecord::Record;
@@ -450,7 +450,7 @@ impl emFpPluginList {
     ///
     /// Port of the C++ `emFpPluginList` constructor.
     fn load_plugins() -> Self {
-        let dir_path = match get_config_dir_overloadable("emCore", Some("FpPlugins")) {
+        let dir_path = match emGetConfigDirOverloadable("emCore", Some("FpPlugins")) {
             Ok(p) => p,
             Err(e) => {
                 log::error!("FpPluginList: cannot resolve plugin directory: {e}");

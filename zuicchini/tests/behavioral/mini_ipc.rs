@@ -93,7 +93,7 @@ mod linux {
 
     #[test]
     fn server_not_found() {
-        let result = emMiniIpcClient::try_send("nonexistent_test_server_12345", &["hello"]);
+        let result = emMiniIpcClient::TrySend("nonexistent_test_server_12345", &["hello"]);
         assert!(result.is_err());
     }
 
@@ -112,13 +112,13 @@ mod linux {
 
         let name = format!("test-mini-ipc-{}", std::process::id());
         server
-            .start_serving(&mut sched, Some(&name))
+            .StartServing(&mut sched, Some(&name))
             .expect("start serving");
-        assert!(server.is_serving());
-        assert_eq!(server.server_name(), name);
+        assert!(server.IsServing());
+        assert_eq!(server.GetServerName(), name);
 
         // Send a message
-        emMiniIpcClient::try_send(&name, &["hello", "world"]).expect("send message");
+        emMiniIpcClient::TrySend(&name, &["hello", "world"]).expect("send message");
 
         // Poll to receive
         // Directly invoke poll by running scheduler time slices
@@ -155,15 +155,15 @@ mod linux {
 
         let name = format!("test-cleanup-{}", std::process::id());
         server
-            .start_serving(&mut sched, Some(&name))
+            .StartServing(&mut sched, Some(&name))
             .expect("start serving");
-        assert!(server.is_serving());
+        assert!(server.IsServing());
 
-        server.stop_serving(&mut sched);
-        assert!(!server.is_serving());
+        server.StopServing(&mut sched);
+        assert!(!server.IsServing());
 
         // Verify FIFO is removed — sending should fail
-        let result = emMiniIpcClient::try_send(&name, &["test"]);
+        let result = emMiniIpcClient::TrySend(&name, &["test"]);
         assert!(result.is_err());
 
         server.cleanup(&mut sched);
@@ -184,12 +184,12 @@ mod linux {
 
         let name = format!("test-multi-{}", std::process::id());
         server
-            .start_serving(&mut sched, Some(&name))
+            .StartServing(&mut sched, Some(&name))
             .expect("start serving");
 
-        emMiniIpcClient::try_send(&name, &["msg1"]).expect("send 1");
-        emMiniIpcClient::try_send(&name, &["msg2", "arg2"]).expect("send 2");
-        emMiniIpcClient::try_send(&name, &["msg3"]).expect("send 3");
+        emMiniIpcClient::TrySend(&name, &["msg1"]).expect("send 1");
+        emMiniIpcClient::TrySend(&name, &["msg2", "arg2"]).expect("send 2");
+        emMiniIpcClient::TrySend(&name, &["msg3"]).expect("send 3");
 
         let start = std::time::Instant::now();
         while received.borrow().len() < 3 {

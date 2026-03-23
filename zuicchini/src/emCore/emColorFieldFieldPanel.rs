@@ -174,6 +174,6 @@ pub(crate) struct LabelPanel {
 
 impl PanelBehavior for LabelPanel {
     fn paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
-        self.label.paint(painter, w, h, _state.enabled);
+        self.label.PaintContent(painter, w, h, _state.enabled);
     }
 }

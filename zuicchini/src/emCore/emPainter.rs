@@ -1568,7 +1568,7 @@ impl<'a> emPainter<'a> {
             }
 
             // C++ PaintText renders ALL characters including space — no skip guard.
-            let (src_x, src_y, src_w, src_h) = emFontCache::get_glyph(ch);
+            let (src_x, src_y, src_w, src_h) = emFontCache::GetChar(ch);
             // C++ emPainter.cpp:2125 passes EXTEND_ZERO explicitly for font glyphs.
             self.paint_image_colored(
                 cx,

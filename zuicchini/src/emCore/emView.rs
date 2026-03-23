@@ -2783,7 +2783,7 @@ mod tests {
 
     #[test]
     fn test_svp_selection() {
-        let (mut tree, root, _child1, _child2) = setup_tree();
+        let (mut tree, root, child1, child2) = setup_tree();
         let mut view = emView::new(root, 800.0, 600.0);
         view.update_viewing(&mut tree);
 

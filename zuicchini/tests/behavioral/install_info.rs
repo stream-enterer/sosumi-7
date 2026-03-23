@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use zuicchini::emCore::emInstallInfo::{get_config_dir_overloadable, get_install_path, InstallDirType, InstallInfoError};
+use zuicchini::emCore::emInstallInfo::{emGetConfigDirOverloadable, emGetInstallPath, InstallDirType, InstallInfoError};
 
 /// Serialize all tests that mutate environment variables.
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -44,7 +44,7 @@ where
 #[test]
 fn bin_path() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &[], || {
-        let p = get_install_path(InstallDirType::Bin, "emCore", None).unwrap();
+        let p = emGetInstallPath(InstallDirType::Bin, "emCore", None).unwrap();
         assert_eq!(p, PathBuf::from("/opt/eaglemode/bin"));
     });
 }
@@ -52,7 +52,7 @@ fn bin_path() {
 #[test]
 fn include_path_uses_prj() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &[], || {
-        let p = get_install_path(InstallDirType::Include, "emCore", None).unwrap();
+        let p = emGetInstallPath(InstallDirType::Include, "emCore", None).unwrap();
         assert_eq!(p, PathBuf::from("/opt/eaglemode/include/emCore"));
     });
 }
@@ -60,7 +60,7 @@ fn include_path_uses_prj() {
 #[test]
 fn lib_path() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &[], || {
-        let p = get_install_path(InstallDirType::Lib, "emCore", None).unwrap();
+        let p = emGetInstallPath(InstallDirType::Lib, "emCore", None).unwrap();
         assert_eq!(p, PathBuf::from("/opt/eaglemode/lib"));
     });
 }
@@ -68,7 +68,7 @@ fn lib_path() {
 #[test]
 fn html_doc_path() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &[], || {
-        let p = get_install_path(InstallDirType::HtmlDoc, "emCore", None).unwrap();
+        let p = emGetInstallPath(InstallDirType::HtmlDoc, "emCore", None).unwrap();
         assert_eq!(p, PathBuf::from("/opt/eaglemode/doc/html"));
     });
 }
@@ -76,7 +76,7 @@ fn html_doc_path() {
 #[test]
 fn pdf_doc_path() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &[], || {
-        let p = get_install_path(InstallDirType::PdfDoc, "emCore", None).unwrap();
+        let p = emGetInstallPath(InstallDirType::PdfDoc, "emCore", None).unwrap();
         assert_eq!(p, PathBuf::from("/opt/eaglemode/doc/pdf"));
     });
 }
@@ -84,7 +84,7 @@ fn pdf_doc_path() {
 #[test]
 fn ps_doc_path() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &[], || {
-        let p = get_install_path(InstallDirType::PsDoc, "emCore", None).unwrap();
+        let p = emGetInstallPath(InstallDirType::PsDoc, "emCore", None).unwrap();
         assert_eq!(p, PathBuf::from("/opt/eaglemode/doc/ps"));
     });
 }
@@ -92,7 +92,7 @@ fn ps_doc_path() {
 #[test]
 fn host_config_path() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &[], || {
-        let p = get_install_path(InstallDirType::HostConfig, "emCore", None).unwrap();
+        let p = emGetInstallPath(InstallDirType::HostConfig, "emCore", None).unwrap();
         assert_eq!(p, PathBuf::from("/opt/eaglemode/etc/emCore"));
     });
 }
@@ -100,7 +100,7 @@ fn host_config_path() {
 #[test]
 fn res_path() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &[], || {
-        let p = get_install_path(InstallDirType::Res, "emCore", None).unwrap();
+        let p = emGetInstallPath(InstallDirType::Res, "emCore", None).unwrap();
         assert_eq!(p, PathBuf::from("/opt/eaglemode/res/emCore"));
     });
 }
@@ -111,7 +111,7 @@ fn user_config_default() {
         &[("HOME", "/home/testuser"), ("EM_DIR", "/opt/eaglemode")],
         &["EM_USER_CONFIG_DIR"],
         || {
-            let p = get_install_path(InstallDirType::UserConfig, "emCore", None).unwrap();
+            let p = emGetInstallPath(InstallDirType::UserConfig, "emCore", None).unwrap();
             assert_eq!(p, PathBuf::from("/home/testuser/.eaglemode/emCore"));
         },
     );
@@ -126,7 +126,7 @@ fn user_config_with_override() {
         ],
         &[],
         || {
-            let p = get_install_path(InstallDirType::UserConfig, "emCore", None).unwrap();
+            let p = emGetInstallPath(InstallDirType::UserConfig, "emCore", None).unwrap();
             assert_eq!(p, PathBuf::from("/custom/config/emCore"));
         },
     );
@@ -138,7 +138,7 @@ fn tmp_path_with_tmpdir() {
         &[("TMPDIR", "/my/tmp"), ("EM_DIR", "/opt/eaglemode")],
         &[],
         || {
-            let p = get_install_path(InstallDirType::Tmp, "emCore", None).unwrap();
+            let p = emGetInstallPath(InstallDirType::Tmp, "emCore", None).unwrap();
             assert_eq!(p, PathBuf::from("/my/tmp"));
         },
     );
@@ -147,7 +147,7 @@ fn tmp_path_with_tmpdir() {
 #[test]
 fn tmp_path_default() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &["TMPDIR"], || {
-        let p = get_install_path(InstallDirType::Tmp, "emCore", None).unwrap();
+        let p = emGetInstallPath(InstallDirType::Tmp, "emCore", None).unwrap();
         assert_eq!(p, PathBuf::from("/tmp"));
     });
 }
@@ -155,7 +155,7 @@ fn tmp_path_default() {
 #[test]
 fn home_path() {
     with_envs(&[("HOME", "/home/testuser")], &[], || {
-        let p = get_install_path(InstallDirType::Home, "emCore", None).unwrap();
+        let p = emGetInstallPath(InstallDirType::Home, "emCore", None).unwrap();
         assert_eq!(p, PathBuf::from("/home/testuser"));
     });
 }
@@ -163,7 +163,7 @@ fn home_path() {
 #[test]
 fn sub_path_appended() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &[], || {
-        let p = get_install_path(InstallDirType::Res, "emCore", Some("images/logo.png")).unwrap();
+        let p = emGetInstallPath(InstallDirType::Res, "emCore", Some("images/logo.png")).unwrap();
         assert_eq!(
             p,
             PathBuf::from("/opt/eaglemode/res/emCore/images/logo.png")
@@ -174,7 +174,7 @@ fn sub_path_appended() {
 #[test]
 fn empty_sub_path_ignored() {
     with_envs(&[("EM_DIR", "/opt/eaglemode")], &[], || {
-        let p = get_install_path(InstallDirType::Bin, "emCore", Some("")).unwrap();
+        let p = emGetInstallPath(InstallDirType::Bin, "emCore", Some("")).unwrap();
         assert_eq!(p, PathBuf::from("/opt/eaglemode/bin"));
     });
 }
@@ -182,7 +182,7 @@ fn empty_sub_path_ignored() {
 #[test]
 fn missing_em_dir_returns_error() {
     with_envs(&[], &["EM_DIR"], || {
-        let result = get_install_path(InstallDirType::Bin, "emCore", None);
+        let result = emGetInstallPath(InstallDirType::Bin, "emCore", None);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -210,7 +210,7 @@ fn config_dir_overloadable_versions_match() {
         ],
         &[],
         || {
-            let p = get_config_dir_overloadable("testprj", None).unwrap();
+            let p = emGetConfigDirOverloadable("testprj", None).unwrap();
             assert_eq!(p, user_dir);
         },
     );
@@ -237,7 +237,7 @@ fn config_dir_overloadable_versions_mismatch() {
         ],
         &[],
         || {
-            let p = get_config_dir_overloadable("testprj", None).unwrap();
+            let p = emGetConfigDirOverloadable("testprj", None).unwrap();
             assert_eq!(p, host_dir);
         },
     );
@@ -264,7 +264,7 @@ fn config_dir_overloadable_no_user_version() {
         ],
         &[],
         || {
-            let p = get_config_dir_overloadable("testprj", None).unwrap();
+            let p = emGetConfigDirOverloadable("testprj", None).unwrap();
             assert_eq!(p, host_dir);
         },
     );
@@ -288,7 +288,7 @@ fn config_dir_overloadable_with_sub_dir() {
         ],
         &[],
         || {
-            let p = get_config_dir_overloadable("testprj", Some("themes")).unwrap();
+            let p = emGetConfigDirOverloadable("testprj", Some("themes")).unwrap();
             assert_eq!(p, host_dir.join("themes"));
         },
     );

@@ -223,7 +223,7 @@ mod platform {
 
     impl emMiniIpcClient {
         /// Send a message to the named server.
-        pub fn try_send(server_name: &str, args: &[&str]) -> Result<(), MiniIpcError> {
+        pub fn TrySend(server_name: &str, args: &[&str]) -> Result<(), MiniIpcError> {
             let fifo = fifo_path(server_name);
             let lock = lock_path(server_name);
 
@@ -364,7 +364,7 @@ mod platform {
         }
 
         /// Start serving on the given name (or generate one).
-        pub fn start_serving(
+        pub fn StartServing(
             &mut self,
             scheduler: &mut EngineScheduler,
             name: Option<&str>,
@@ -399,7 +399,7 @@ mod platform {
         }
 
         /// Stop serving and clean up.
-        pub fn stop_serving(&mut self, scheduler: &mut EngineScheduler) {
+        pub fn StopServing(&mut self, scheduler: &mut EngineScheduler) {
             let mut inner = self.inner.borrow_mut();
             if !inner.serving {
                 return;
@@ -417,18 +417,19 @@ mod platform {
             let _ = std::fs::remove_file(lock_path(&server_name));
         }
 
-        pub fn is_serving(&self) -> bool {
+        pub fn IsServing(&self) -> bool {
             self.inner.borrow().serving
         }
 
-        pub fn server_name(&self) -> String {
+        pub fn GetServerName(&self) -> String {
             self.inner.borrow().server_name.clone()
         }
 
+        // DIVERGED: no C++ equivalent — Rust-only resource cleanup (C++ uses destructor)
         /// Remove engine/timer from scheduler. Call before dropping.
         pub fn cleanup(&mut self, scheduler: &mut EngineScheduler) {
-            if self.is_serving() {
-                self.stop_serving(scheduler);
+            if self.IsServing() {
+                self.StopServing(scheduler);
             }
             scheduler.disconnect(self.timer_signal, self.engine_id);
             scheduler.remove_engine(self.engine_id);
@@ -476,7 +477,7 @@ pub struct emMiniIpcClient;
 
 #[cfg(not(target_os = "linux"))]
 impl emMiniIpcClient {
-    pub fn try_send(_server_name: &str, _args: &[&str]) -> Result<(), MiniIpcError> {
+    pub fn TrySend(_server_name: &str, _args: &[&str]) -> Result<(), MiniIpcError> {
         Err(MiniIpcError::UnsupportedPlatform)
     }
 }

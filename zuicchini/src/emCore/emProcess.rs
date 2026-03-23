@@ -174,7 +174,7 @@ impl emProcess {
     ///   removal is not supported portably).
     /// * `dir_path` - Working directory for the child, or `None` to inherit.
     /// * `flags` - Combination of [`StartFlags`] controlling I/O handles.
-    pub fn try_start(
+    pub fn TryStart(
         &mut self,
         args: &[&str],
         extra_env: &HashMap<String, String>,
@@ -256,7 +256,7 @@ impl emProcess {
     ///
     /// The child is spawned and then immediately detached. No pipes are created
     /// regardless of `flags`.
-    pub fn try_start_unmanaged(
+    pub fn TryStartUnmanaged(
         args: &[&str],
         extra_env: &HashMap<String, String>,
         dir_path: Option<&Path>,
@@ -310,7 +310,7 @@ impl emProcess {
     ///
     /// Returns a [`PipeResult`] indicating how many bytes were written, whether
     /// the operation would block, or whether the pipe is closed.
-    pub fn try_write(&mut self, buf: &[u8]) -> Result<PipeResult, ProcessError> {
+    pub fn TryWrite(&mut self, buf: &[u8]) -> Result<PipeResult, ProcessError> {
         let stdin = match self.stdin_pipe.as_mut() {
             Some(s) => s,
             None => return Ok(PipeResult::Closed),
@@ -320,17 +320,17 @@ impl emProcess {
         }
         match stdin.write(buf) {
             Ok(0) => {
-                self.close_writing();
+                self.CloseWriting();
                 Ok(PipeResult::Closed)
             }
             Ok(n) => Ok(PipeResult::Bytes(n)),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(PipeResult::WouldBlock),
             Err(e) if e.kind() == io::ErrorKind::BrokenPipe => {
-                self.close_writing();
+                self.CloseWriting();
                 Ok(PipeResult::Closed)
             }
             Err(e) => {
-                self.close_writing();
+                self.CloseWriting();
                 Err(ProcessError::WriteFailed {
                     program: self.arg0.clone(),
                     source: e,
@@ -343,7 +343,7 @@ impl emProcess {
     ///
     /// Returns a [`PipeResult`] indicating how many bytes were read, whether
     /// the operation would block, or whether the pipe is closed.
-    pub fn try_read(&mut self, buf: &mut [u8]) -> Result<PipeResult, ProcessError> {
+    pub fn TryRead(&mut self, buf: &mut [u8]) -> Result<PipeResult, ProcessError> {
         let stdout = match self.stdout_pipe.as_mut() {
             Some(s) => s,
             None => return Ok(PipeResult::Closed),
@@ -353,13 +353,13 @@ impl emProcess {
         }
         match stdout.read(buf) {
             Ok(0) => {
-                self.close_reading();
+                self.CloseReading();
                 Ok(PipeResult::Closed)
             }
             Ok(n) => Ok(PipeResult::Bytes(n)),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(PipeResult::WouldBlock),
             Err(e) => {
-                self.close_reading();
+                self.CloseReading();
                 Err(ProcessError::ReadFailed {
                     program: self.arg0.clone(),
                     source: e,
@@ -372,7 +372,7 @@ impl emProcess {
     ///
     /// Returns a [`PipeResult`] indicating how many bytes were read, whether
     /// the operation would block, or whether the pipe is closed.
-    pub fn try_read_err(&mut self, buf: &mut [u8]) -> Result<PipeResult, ProcessError> {
+    pub fn TryReadErr(&mut self, buf: &mut [u8]) -> Result<PipeResult, ProcessError> {
         let stderr = match self.stderr_pipe.as_mut() {
             Some(s) => s,
             None => return Ok(PipeResult::Closed),
@@ -382,13 +382,13 @@ impl emProcess {
         }
         match stderr.read(buf) {
             Ok(0) => {
-                self.close_reading_err();
+                self.CloseReadingErr();
                 Ok(PipeResult::Closed)
             }
             Ok(n) => Ok(PipeResult::Bytes(n)),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(PipeResult::WouldBlock),
             Err(e) => {
-                self.close_reading_err();
+                self.CloseReadingErr();
                 Err(ProcessError::ReadErrFailed {
                     program: self.arg0.clone(),
                     source: e,
@@ -398,17 +398,17 @@ impl emProcess {
     }
 
     /// Close the stdin pipe to the child process.
-    pub fn close_writing(&mut self) {
+    pub fn CloseWriting(&mut self) {
         self.stdin_pipe = None;
     }
 
     /// Close the stdout pipe from the child process.
-    pub fn close_reading(&mut self) {
+    pub fn CloseReading(&mut self) {
         self.stdout_pipe = None;
     }
 
     /// Close the stderr pipe from the child process.
-    pub fn close_reading_err(&mut self) {
+    pub fn CloseReadingErr(&mut self) {
         self.stderr_pipe = None;
     }
 
@@ -417,8 +417,8 @@ impl emProcess {
     ///
     /// On Unix this sends `SIGTERM`. Note that Rust's `Child::kill()` sends
     /// `SIGKILL`, so we use a platform-specific path for the soft signal.
-    pub fn send_termination_signal(&mut self) {
-        if !self.is_running() {
+    pub fn SendTerminationSignal(&mut self) {
+        if !self.IsRunning() {
             return;
         }
         #[cfg(unix)]
@@ -446,8 +446,8 @@ impl emProcess {
 
     /// Forcibly kill the child process (SIGKILL on Unix, TerminateProcess on
     /// Windows).
-    pub fn send_kill_signal(&mut self) {
-        if !self.is_running() {
+    pub fn SendKillSignal(&mut self) {
+        if !self.IsRunning() {
             return;
         }
         if let Some(child) = self.child.as_mut() {
@@ -463,7 +463,7 @@ impl emProcess {
     ///
     /// Returns `true` if the child has terminated (or was never started),
     /// `false` if the timeout expired.
-    pub fn wait_for_termination(&mut self, timeout: Option<Duration>) -> bool {
+    pub fn WaitForTermination(&mut self, timeout: Option<Duration>) -> bool {
         let child = match self.child.as_mut() {
             Some(c) => c,
             None => return true,
@@ -476,9 +476,9 @@ impl emProcess {
                     Ok(status) => {
                         self.exit_status = Some(status);
                         self.child = None;
-                        self.close_writing();
-                        self.close_reading();
-                        self.close_reading_err();
+                        self.CloseWriting();
+                        self.CloseReading();
+                        self.CloseReadingErr();
                         true
                     }
                     Err(_) => false,
@@ -492,9 +492,9 @@ impl emProcess {
                         Ok(Some(status)) => {
                             self.exit_status = Some(status);
                             self.child = None;
-                            self.close_writing();
-                            self.close_reading();
-                            self.close_reading_err();
+                            self.CloseWriting();
+                            self.CloseReading();
+                            self.CloseReadingErr();
                             return true;
                         }
                         Ok(None) => {
@@ -518,39 +518,40 @@ impl emProcess {
     }
 
     /// Check whether the child process is still running.
-    pub fn is_running(&mut self) -> bool {
-        !self.wait_for_termination(Some(Duration::ZERO))
+    pub fn IsRunning(&mut self) -> bool {
+        !self.WaitForTermination(Some(Duration::ZERO))
     }
 
     /// Send a termination signal and wait for the child to exit.
     ///
     /// If the child does not exit within `timeout`, it is forcibly killed.
-    pub fn terminate(&mut self, timeout: Duration) {
-        if !self.is_running() {
+    pub fn Terminate(&mut self, timeout: Duration) {
+        if !self.IsRunning() {
             return;
         }
-        self.send_termination_signal();
-        if !self.wait_for_termination(Some(timeout)) {
-            self.send_kill_signal();
-            self.wait_for_termination(None);
+        self.SendTerminationSignal();
+        if !self.WaitForTermination(Some(timeout)) {
+            self.SendKillSignal();
+            self.WaitForTermination(None);
         }
     }
 
+    // DIVERGED: no C++ equivalent — Rust-only convenience combining WaitForTermination + SendKillSignal
     /// Wait for the child to exit and then forcibly kill it if the timeout
-    /// expires. This is the equivalent of the C++ `WaitOrKill`.
+    /// expires.
     pub fn wait_or_kill(&mut self, timeout: Duration) {
-        if self.wait_for_termination(Some(timeout)) {
+        if self.WaitForTermination(Some(timeout)) {
             return;
         }
-        self.send_kill_signal();
-        self.wait_for_termination(None);
+        self.SendKillSignal();
+        self.WaitForTermination(None);
     }
 
     /// Get the exit code of a terminated child process.
     ///
     /// Returns `None` if the child has not yet terminated or was never started.
     /// On Unix, if the child was killed by a signal, the code is `128 + signal`.
-    pub fn get_exit_status(&self) -> Option<i32> {
+    pub fn GetExitStatus(&self) -> Option<i32> {
         self.exit_status.map(|s| {
             #[cfg(unix)]
             {
@@ -571,7 +572,7 @@ impl emProcess {
     }
 
     /// Get the first program argument (program name). Useful for error messages.
-    pub fn arg0(&self) -> &str {
+    pub fn GetArg0(&self) -> &str {
         &self.arg0
     }
 }
@@ -584,8 +585,8 @@ impl Default for emProcess {
 
 impl Drop for emProcess {
     fn drop(&mut self) {
-        if self.is_running() {
-            self.terminate(Duration::from_secs(20));
+        if self.IsRunning() {
+            self.Terminate(Duration::from_secs(20));
         }
     }
 }
@@ -598,7 +599,7 @@ mod tests {
     fn start_and_read_stdout() {
         let mut proc = emProcess::new();
         let env = HashMap::new();
-        proc.try_start(
+        proc.TryStart(
             &["echo", "hello"],
             &env,
             None,
@@ -608,8 +609,8 @@ mod tests {
 
         let mut buf = [0u8; 64];
         // Read until we get output or pipe closes.
-        proc.wait_for_termination(Some(Duration::from_secs(5)));
-        let result = proc.try_read(&mut buf).expect("read failed");
+        proc.WaitForTermination(Some(Duration::from_secs(5)));
+        let result = proc.TryRead(&mut buf).expect("read failed");
         match result {
             PipeResult::Bytes(n) => {
                 let output = std::str::from_utf8(&buf[..n]).expect("not utf8");
@@ -622,7 +623,7 @@ mod tests {
             PipeResult::WouldBlock => panic!("unexpected WouldBlock after wait"),
         }
 
-        assert_eq!(proc.get_exit_status(), Some(0), "process should exit with status 0");
+        assert_eq!(proc.GetExitStatus(), Some(0), "process should exit with status 0");
     }
 
     #[test]
@@ -630,7 +631,7 @@ mod tests {
         let mut proc = emProcess::new();
         let env = HashMap::new();
         let err = proc
-            .try_start(&[], &env, None, StartFlags::DEFAULT)
+            .TryStart(&[], &env, None, StartFlags::DEFAULT)
             .unwrap_err();
         assert!(matches!(err, ProcessError::EmptyArgs));
     }
@@ -639,17 +640,17 @@ mod tests {
     fn exit_code_nonzero() {
         let mut proc = emProcess::new();
         let env = HashMap::new();
-        proc.try_start(&["false"], &env, None, StartFlags::empty())
+        proc.TryStart(&["false"], &env, None, StartFlags::empty())
             .expect("failed to start false");
-        proc.wait_for_termination(Some(Duration::from_secs(5)));
-        assert_eq!(proc.get_exit_status(), Some(1));
+        proc.WaitForTermination(Some(Duration::from_secs(5)));
+        assert_eq!(proc.GetExitStatus(), Some(1));
     }
 
     #[test]
     fn write_to_stdin_pipe() {
         let mut proc = emProcess::new();
         let env = HashMap::new();
-        proc.try_start(
+        proc.TryStart(
             &["cat"],
             &env,
             None,
@@ -658,13 +659,13 @@ mod tests {
         .expect("failed to start cat");
 
         let data = b"test data\n";
-        let write_result = proc.try_write(data).expect("write failed");
+        let write_result = proc.TryWrite(data).expect("write failed");
         assert!(matches!(write_result, PipeResult::Bytes(_)));
 
-        proc.close_writing(); // signal EOF to cat
+        proc.CloseWriting(); // signal EOF to cat
 
         let mut buf = [0u8; 64];
-        let read_result = proc.try_read(&mut buf).expect("read failed");
+        let read_result = proc.TryRead(&mut buf).expect("read failed");
         match read_result {
             PipeResult::Bytes(n) => {
                 assert_eq!(&buf[..n], data);
@@ -672,21 +673,21 @@ mod tests {
             other => panic!("expected Bytes, got {other:?}"),
         }
 
-        proc.wait_for_termination(Some(Duration::from_secs(5)));
+        proc.WaitForTermination(Some(Duration::from_secs(5)));
     }
 
     #[test]
     fn kill_long_running() {
         let mut proc = emProcess::new();
         let env = HashMap::new();
-        proc.try_start(&["sleep", "60"], &env, None, StartFlags::empty())
+        proc.TryStart(&["sleep", "60"], &env, None, StartFlags::empty())
             .expect("failed to start sleep");
 
-        assert!(proc.is_running());
-        proc.send_kill_signal();
-        assert!(proc.wait_for_termination(Some(Duration::from_secs(5))));
-        assert!(!proc.is_running());
+        assert!(proc.IsRunning());
+        proc.SendKillSignal();
+        assert!(proc.WaitForTermination(Some(Duration::from_secs(5))));
+        assert!(!proc.IsRunning());
         // Killed by signal 9 → exit status 128+9 = 137
-        assert_eq!(proc.get_exit_status(), Some(137));
+        assert_eq!(proc.GetExitStatus(), Some(137));
     }
 }

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::emCore::emInstallInfo::{get_install_path, InstallDirType};
+use crate::emCore::emInstallInfo::{emGetInstallPath, InstallDirType};
 use crate::emCore::emRec::{RecError, RecStruct};
 use crate::emCore::emConfigModel::emConfigModel;
 use crate::emCore::emContext::emContext;
@@ -214,7 +214,7 @@ impl emCoreConfig {
     /// registers it, and loads from disk (or installs defaults).
     pub fn acquire(ctx: &emContext) -> Rc<RefCell<emConfigModel<Self>>> {
         ctx.acquire::<emConfigModel<Self>>("", || {
-            let path = get_install_path(InstallDirType::UserConfig, "emCore", Some("config.rec"))
+            let path = emGetInstallPath(InstallDirType::UserConfig, "emCore", Some("config.rec"))
                 .unwrap_or_else(|_| {
                     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
                     std::path::PathBuf::from(home)
