@@ -253,11 +253,11 @@ struct TestPanel {
     bg_color_shared: Rc<Cell<emColor>>,
     input_log: Vec<String>,
     test_image: emImage,
-    GetDepth: u32,
+    depth: u32,
 }
 
 impl TestPanel {
-    fn new(GetDepth: u32, bg_color_shared: Rc<Cell<emColor>>) -> Self {
+    fn new(depth: u32, bg_color_shared: Rc<Cell<emColor>>) -> Self {
         let mut img = emImage::new(64, 64, 4);
         for y in 0..64u32 {
             for x in 0..64u32 {
@@ -271,7 +271,7 @@ impl TestPanel {
             bg_color_shared,
             input_log: Vec::new(),
             test_image: img,
-            GetDepth,
+            depth,
         }
     }
 
@@ -827,13 +827,13 @@ impl PanelBehavior for TestPanel {
         // TkTestGrp
         ctx.create_child_with("tktest", Box::new(TkTestGrpPanel::new()));
 
-        // Recursive test panels (GetDepth + 1)
-        if self.GetDepth < MAX_DEPTH {
+        // Recursive test panels (depth + 1)
+        if self.depth < MAX_DEPTH {
             for i in 1..=4 {
                 let child_bg = Rc::new(Cell::new(emColor::rgba(0x00, 0x1C, 0x38, 0xFF)));
                 let tp_id = ctx.create_child_with(
                     &format!("tp{i}"),
-                    Box::new(TestPanel::new(self.GetDepth + 1, child_bg)),
+                    Box::new(TestPanel::new(self.depth + 1, child_bg)),
                 );
                 // C++: every emTestPanel constructor calls SetAutoExpansionThreshold(900.0)
                 ctx.tree

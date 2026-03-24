@@ -3,7 +3,7 @@ use crate::emCore::emImage::emImage;
 
 use super::emPainter::{TextAlignment, VAlign};
 use crate::emCore::emStroke::emStroke;
-use super::emTexture::{ImageExtension, ImageQuality};
+use super::emTexture::{ImageExtension, ImageQuality, emTexture};
 
 /// A recorded drawing operation for parallel tile rendering.
 ///
@@ -155,6 +155,188 @@ pub(crate) enum DrawOp {
         min_width_scale: f64,
         formatted: bool,
         rel_line_space: f64,
+    },
+
+    // Ellipse sector / arc / outlines
+    PaintEllipseSector {
+        cx: f64,
+        cy: f64,
+        rx: f64,
+        ry: f64,
+        start_angle: f64,
+        sweep_angle: f64,
+        color: emColor,
+        canvas_color: emColor,
+    },
+    PaintEllipseArc {
+        cx: f64,
+        cy: f64,
+        rx: f64,
+        ry: f64,
+        start_angle: f64,
+        range_angle: f64,
+        stroke: emStroke,
+        canvas_color: emColor,
+    },
+    PaintEllipseSectorOutline {
+        cx: f64,
+        cy: f64,
+        rx: f64,
+        ry: f64,
+        start_angle: f64,
+        sweep_angle: f64,
+        stroke: emStroke,
+        canvas_color: emColor,
+    },
+    PaintEllipseOutline {
+        cx: f64,
+        cy: f64,
+        rx: f64,
+        ry: f64,
+        stroke: emStroke,
+        canvas_color: emColor,
+    },
+
+    // Gradients
+    PaintLinearGradient {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        color_a: emColor,
+        color_b: emColor,
+        horizontal: bool,
+        canvas_color: emColor,
+    },
+    PaintRadialGradient {
+        cx: f64,
+        cy: f64,
+        rx: f64,
+        ry: f64,
+        color_inner: emColor,
+        color_outer: emColor,
+        canvas_color: emColor,
+    },
+
+    // Lines
+    PaintLine {
+        x0: f64,
+        y0: f64,
+        x1: f64,
+        y1: f64,
+        color: emColor,
+        canvas_color: emColor,
+    },
+    PaintLineStroked {
+        x0: f64,
+        y0: f64,
+        x1: f64,
+        y1: f64,
+        stroke: emStroke,
+        canvas_color: emColor,
+    },
+
+    // Polygons
+    PaintPolygonEvenOdd {
+        vertices: Vec<(f64, f64)>,
+        color: emColor,
+        canvas_color: emColor,
+    },
+    PaintPolygonTextured {
+        vertices: Vec<(f64, f64)>,
+        texture: emTexture,
+        canvas_color: emColor,
+    },
+    PaintPolygonTexturedEvenOdd {
+        vertices: Vec<(f64, f64)>,
+        texture: emTexture,
+        canvas_color: emColor,
+    },
+    PaintPolygonOutline {
+        vertices: Vec<(f64, f64)>,
+        stroke_color: emColor,
+        thickness: f64,
+        canvas_color: emColor,
+    },
+
+    // Polylines
+    PaintPolyline {
+        vertices: Vec<(f64, f64)>,
+        stroke_color: emColor,
+        thickness: f64,
+        canvas_color: emColor,
+    },
+    PaintPolylineWithoutArrows {
+        vertices: Vec<(f64, f64)>,
+        stroke: emStroke,
+        closed: bool,
+        canvas_color: emColor,
+    },
+    PaintPolylineWithArrows {
+        vertices: Vec<(f64, f64)>,
+        stroke: emStroke,
+        closed: bool,
+        canvas_color: emColor,
+    },
+    PaintDashedPolyline {
+        vertices: Vec<(f64, f64)>,
+        stroke: emStroke,
+        closed: bool,
+        canvas_color: emColor,
+    },
+
+    // Bezier
+    PaintBezier {
+        points: Vec<(f64, f64)>,
+        color: emColor,
+        canvas_color: emColor,
+    },
+    PaintBezierOutline {
+        points: Vec<(f64, f64)>,
+        stroke: emStroke,
+        canvas_color: emColor,
+    },
+    PaintBezierLine {
+        points: Vec<(f64, f64)>,
+        stroke: emStroke,
+        canvas_color: emColor,
+    },
+
+    // Images
+    PaintImageSimple {
+        x: f64,
+        y: f64,
+        image_ptr: *const emImage,
+    },
+    PaintBorderImageColored {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        l: f64,
+        t: f64,
+        r: f64,
+        b: f64,
+        image_ptr: *const emImage,
+        src_l: i32,
+        src_t: i32,
+        src_r: i32,
+        src_b: i32,
+        color1: emColor,
+        color2: emColor,
+        canvas_color: emColor,
+        which_sub_rects: u16,
+        alpha: u8,
+    },
+
+    // Edge correction
+    PaintEdgeCorrection {
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        color1: emColor,
+        color2: emColor,
     },
 }
 
@@ -411,6 +593,253 @@ impl DrawList {
                     *formatted,
                     *rel_line_space,
                 ),
+
+                DrawOp::PaintEllipseSector {
+                    cx,
+                    cy,
+                    rx,
+                    ry,
+                    start_angle,
+                    sweep_angle,
+                    color,
+                    canvas_color,
+                } => painter.PaintEllipseSector(
+                    *cx,
+                    *cy,
+                    *rx,
+                    *ry,
+                    *start_angle,
+                    *sweep_angle,
+                    *color,
+                    *canvas_color,
+                ),
+
+                DrawOp::PaintEllipseArc {
+                    cx,
+                    cy,
+                    rx,
+                    ry,
+                    start_angle,
+                    range_angle,
+                    stroke,
+                    canvas_color,
+                } => painter.PaintEllipseArc(
+                    *cx, *cy, *rx, *ry, *start_angle, *range_angle, stroke, *canvas_color,
+                ),
+
+                DrawOp::PaintEllipseSectorOutline {
+                    cx,
+                    cy,
+                    rx,
+                    ry,
+                    start_angle,
+                    sweep_angle,
+                    stroke,
+                    canvas_color,
+                } => painter.PaintEllipseSectorOutline(
+                    *cx,
+                    *cy,
+                    *rx,
+                    *ry,
+                    *start_angle,
+                    *sweep_angle,
+                    stroke,
+                    *canvas_color,
+                ),
+
+                DrawOp::PaintEllipseOutline {
+                    cx,
+                    cy,
+                    rx,
+                    ry,
+                    stroke,
+                    canvas_color,
+                } => painter.PaintEllipseOutline(*cx, *cy, *rx, *ry, stroke, *canvas_color),
+
+                DrawOp::PaintLinearGradient {
+                    x,
+                    y,
+                    w,
+                    h,
+                    color_a,
+                    color_b,
+                    horizontal,
+                    canvas_color,
+                } => painter.paint_linear_gradient(
+                    *x,
+                    *y,
+                    *w,
+                    *h,
+                    *color_a,
+                    *color_b,
+                    *horizontal,
+                    *canvas_color,
+                ),
+
+                DrawOp::PaintRadialGradient {
+                    cx,
+                    cy,
+                    rx,
+                    ry,
+                    color_inner,
+                    color_outer,
+                    canvas_color,
+                } => painter.paint_radial_gradient(
+                    *cx,
+                    *cy,
+                    *rx,
+                    *ry,
+                    *color_inner,
+                    *color_outer,
+                    *canvas_color,
+                ),
+
+                DrawOp::PaintLine {
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    color,
+                    canvas_color,
+                } => painter.PaintLine(*x0, *y0, *x1, *y1, *color, *canvas_color),
+
+                DrawOp::PaintLineStroked {
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    stroke,
+                    canvas_color,
+                } => painter.paint_line_stroked(*x0, *y0, *x1, *y1, stroke, *canvas_color),
+
+                DrawOp::PaintPolygonEvenOdd {
+                    vertices,
+                    color,
+                    canvas_color,
+                } => painter.paint_polygon_even_odd(vertices, *color, *canvas_color),
+
+                DrawOp::PaintPolygonTextured {
+                    vertices,
+                    texture,
+                    canvas_color,
+                } => painter.paint_polygon_textured(vertices, texture, *canvas_color),
+
+                DrawOp::PaintPolygonTexturedEvenOdd {
+                    vertices,
+                    texture,
+                    canvas_color,
+                } => painter.paint_polygon_textured_even_odd(vertices, texture, *canvas_color),
+
+                DrawOp::PaintPolygonOutline {
+                    vertices,
+                    stroke_color,
+                    thickness,
+                    canvas_color,
+                } => painter.PaintPolygonOutline(vertices, *stroke_color, *thickness, *canvas_color),
+
+                DrawOp::PaintPolyline {
+                    vertices,
+                    stroke_color,
+                    thickness,
+                    canvas_color,
+                } => painter.PaintPolyline(vertices, *stroke_color, *thickness, *canvas_color),
+
+                DrawOp::PaintPolylineWithoutArrows {
+                    vertices,
+                    stroke,
+                    closed,
+                    canvas_color,
+                } => painter.PaintPolylineWithoutArrows(vertices, stroke, *closed, *canvas_color),
+
+                DrawOp::PaintPolylineWithArrows {
+                    vertices,
+                    stroke,
+                    closed,
+                    canvas_color,
+                } => painter.PaintPolylineWithArrows(vertices, stroke, *closed, *canvas_color),
+
+                DrawOp::PaintDashedPolyline {
+                    vertices,
+                    stroke,
+                    closed,
+                    canvas_color,
+                } => painter.PaintDashedPolyline(vertices, stroke, *closed, *canvas_color),
+
+                DrawOp::PaintBezier {
+                    points,
+                    color,
+                    canvas_color,
+                } => painter.PaintBezier(points, *color, *canvas_color),
+
+                DrawOp::PaintBezierOutline {
+                    points,
+                    stroke,
+                    canvas_color,
+                } => painter.PaintBezierOutline(points, stroke, *canvas_color),
+
+                DrawOp::PaintBezierLine {
+                    points,
+                    stroke,
+                    canvas_color,
+                } => painter.PaintBezierLine(points, stroke, *canvas_color),
+
+                DrawOp::PaintImageSimple { x, y, image_ptr } => {
+                    // SAFETY: see DrawOp Send/Sync impl
+                    let image = unsafe { &**image_ptr };
+                    painter.PaintImage(*x, *y, image);
+                }
+
+                DrawOp::PaintBorderImageColored {
+                    x,
+                    y,
+                    w,
+                    h,
+                    l,
+                    t,
+                    r,
+                    b,
+                    image_ptr,
+                    src_l,
+                    src_t,
+                    src_r,
+                    src_b,
+                    color1,
+                    color2,
+                    canvas_color,
+                    which_sub_rects,
+                    alpha,
+                } => {
+                    let image = unsafe { &**image_ptr };
+                    painter.PaintBorderImageColored(
+                        *x,
+                        *y,
+                        *w,
+                        *h,
+                        *l,
+                        *t,
+                        *r,
+                        *b,
+                        image,
+                        *src_l,
+                        *src_t,
+                        *src_r,
+                        *src_b,
+                        *color1,
+                        *color2,
+                        *canvas_color,
+                        *which_sub_rects,
+                        *alpha,
+                    );
+                }
+
+                DrawOp::PaintEdgeCorrection {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    color1,
+                    color2,
+                } => painter.PaintEdgeCorrection(*x1, *y1, *x2, *y2, *color1, *color2),
             }
         }
     }

@@ -243,6 +243,11 @@ pub(crate) enum PaintTarget<'a> {
     DrawList(&'a mut Vec<DrawOp>),
 }
 
+/// Zero-sized proof that the painter is in direct (non-recording) mode.
+/// Can only be created by `try_record()`, ensuring the recording check happened.
+#[derive(Clone, Copy)]
+struct DirectProof(());
+
 /// CPU software rasterizer that paints into an emImage buffer.
 pub struct emPainter<'a> {
     target: PaintTarget<'a>,
@@ -317,43 +322,62 @@ impl<'a> emPainter<'a> {
     }
 
     /// Get a mutable reference to the target image.
-    /// Panics if in recording mode — callers must check `is_recording()` first.
-    fn GetImage(&mut self) -> &mut emImage {
+    /// The `DirectProof` parameter statically guarantees we are not in recording mode.
+    fn GetImage(&mut self, _proof: DirectProof) -> &mut emImage {
         match &mut self.target {
             PaintTarget::emImage(img) => img,
-            PaintTarget::DrawList(_) => unreachable!("pixel access in recording mode"),
+            PaintTarget::DrawList(_) => unsafe { std::hint::unreachable_unchecked() },
         }
     }
 
     /// Get an immutable reference to the target image.
-    fn image_ref(&self) -> &emImage {
+    fn image_ref(&self, _proof: DirectProof) -> &emImage {
         match &self.target {
             PaintTarget::emImage(img) => img,
-            PaintTarget::DrawList(_) => unreachable!("pixel access in recording mode"),
+            PaintTarget::DrawList(_) => unsafe { std::hint::unreachable_unchecked() },
         }
     }
 
-    /// Push a draw op when in recording mode. Returns true if recording.
-    fn record(&mut self, op: DrawOp) -> bool {
+    /// Try to record a draw op. Returns `Some(DirectProof)` if in direct mode,
+    /// `None` if the op was recorded (recording mode).
+    fn try_record(&mut self, op: DrawOp) -> Option<DirectProof> {
         if let PaintTarget::DrawList(ops) = &mut self.target {
             ops.push(op);
-            true
+            None
         } else {
-            false
+            Some(DirectProof(()))
+        }
+    }
+
+    /// Return a `DirectProof` if we are in direct mode, `None` otherwise.
+    /// Use for methods that access pixels but have no corresponding `DrawOp`
+    /// (e.g. `Clear`).
+    fn require_direct(&self) -> Option<DirectProof> {
+        match &self.target {
+            PaintTarget::emImage(_) => Some(DirectProof(())),
+            PaintTarget::DrawList(_) => None,
+        }
+    }
+
+    /// Record a state operation unconditionally (for push/pop/set that also
+    /// mutate local state regardless of mode).
+    fn record_state(&mut self, op: DrawOp) {
+        if let PaintTarget::DrawList(ops) = &mut self.target {
+            ops.push(op);
         }
     }
 
     /// Read a pixel from the target image, returning an owned copy.
     /// Avoids borrow issues when both reading and writing pixels.
     #[inline]
-    fn read_pixel(&self, x: u32, y: u32) -> [u8; 4] {
-        let p = self.image_ref().GetPixel(x, y);
+    fn read_pixel(&self, proof: DirectProof, x: u32, y: u32) -> [u8; 4] {
+        let p = self.image_ref(proof).GetPixel(x, y);
         [p[0], p[1], p[2], p[3]]
     }
 
     /// Push the current state onto the stack.
     pub fn push_state(&mut self) {
-        self.record(DrawOp::PushState);
+        self.record_state(DrawOp::PushState);
         self.state_stack.push(self.state.clone());
     }
 
@@ -362,7 +386,7 @@ impl<'a> emPainter<'a> {
     /// # Panics
     /// Panics if the state stack is empty.
     pub fn pop_state(&mut self) {
-        self.record(DrawOp::PopState);
+        self.record_state(DrawOp::PopState);
         self.state = self.state_stack.pop().expect("State stack underflow");
     }
 
@@ -373,13 +397,13 @@ impl<'a> emPainter<'a> {
 
     /// Set the canvas color used for canvas_blend operations.
     pub fn SetCanvasColor(&mut self, color: emColor) {
-        self.record(DrawOp::SetCanvasColor(color));
+        self.record_state(DrawOp::SetCanvasColor(color));
         self.state.canvas_color = color;
     }
 
     /// Set the global alpha multiplier.
     pub fn SetAlpha(&mut self, alpha: u8) {
-        self.record(DrawOp::SetAlpha(alpha));
+        self.record_state(DrawOp::SetAlpha(alpha));
         self.state.alpha = alpha;
     }
 
@@ -390,7 +414,7 @@ impl<'a> emPainter<'a> {
 
     /// Set the offset absolutely (not cumulative).
     pub fn set_offset(&mut self, ox: f64, oy: f64) {
-        self.record(DrawOp::SetOffset(ox, oy));
+        self.record_state(DrawOp::SetOffset(ox, oy));
         self.state.offset_x = ox;
         self.state.offset_y = oy;
     }
@@ -411,7 +435,7 @@ impl<'a> emPainter<'a> {
     /// Computes and stores clip edges in f64, matching C++ emPanel.cpp:1478-1495.
     /// Truncation to i32 happens only at each paint operation's point of use.
     pub fn SetClipping(&mut self, x: f64, y: f64, w: f64, h: f64) {
-        self.record(DrawOp::ClipRect { x, y, w, h });
+        self.record_state(DrawOp::ClipRect { x, y, w, h });
         let px = x * self.state.scale_x + self.state.offset_x;
         let py = y * self.state.scale_y + self.state.offset_y;
         let px2 = px + w * self.state.scale_x;
@@ -539,16 +563,14 @@ impl<'a> emPainter<'a> {
         if w <= 0.0 || h <= 0.0 || color.GetAlpha() == 0 {
             return;
         }
-        if self.record(DrawOp::PaintRect {
+        let Some(proof) = self.try_record(DrawOp::PaintRect {
             x,
             y,
             w,
             h,
             color,
             canvas_color,
-        }) {
-            return;
-        }
+        }) else { return; };
         let saved_canvas = self.state.canvas_color;
         self.state.canvas_color = canvas_color;
         let dx_px = x * self.state.scale_x + self.state.offset_x;
@@ -603,7 +625,7 @@ impl<'a> emPainter<'a> {
         // Top edge row (sub-pixel coverage in Y)
         if start_y < inner_y1 {
             for px in start_x..end_x {
-                self.blend_with_coverage(px, start_y, color, sp.coverage(px, start_y));
+                self.blend_with_coverage(proof, px, start_y, color, sp.coverage(px, start_y));
             }
         }
 
@@ -611,18 +633,18 @@ impl<'a> emPainter<'a> {
         for py in inner_y1..inner_y2 {
             // Left edge pixel (sub-pixel coverage in X)
             if start_x < inner_x1 {
-                self.blend_with_coverage(start_x, py, color, sp.coverage(start_x, py));
+                self.blend_with_coverage(proof, start_x, py, color, sp.coverage(start_x, py));
             }
 
             // Interior span: full coverage, no per-pixel clip/bounds checks.
             if inner_x1 < inner_x2 {
-                self.fill_span_blended(py, inner_x1, inner_x2, color);
+                self.fill_span_blended(proof, py, inner_x1, inner_x2, color);
             }
 
             // Right edge pixel (sub-pixel coverage in X)
             if inner_x2 < end_x {
                 let rx = end_x - 1;
-                self.blend_with_coverage(rx, py, color, sp.coverage(rx, py));
+                self.blend_with_coverage(proof, rx, py, color, sp.coverage(rx, py));
             }
         }
 
@@ -630,7 +652,7 @@ impl<'a> emPainter<'a> {
         if inner_y2 < end_y {
             let by = end_y - 1;
             for px in start_x..end_x {
-                self.blend_with_coverage(px, by, color, sp.coverage(px, by));
+                self.blend_with_coverage(proof, px, by, color, sp.coverage(px, by));
             }
         }
 
@@ -650,20 +672,18 @@ impl<'a> emPainter<'a> {
         if rx <= 0.0 || ry <= 0.0 {
             return;
         }
-        if self.record(DrawOp::PaintEllipse {
+        let Some(proof) = self.try_record(DrawOp::PaintEllipse {
             cx,
             cy,
             rx,
             ry,
             color,
             canvas_color,
-        }) {
-            return;
-        }
+        }) else { return; };
         let saved_canvas = self.state.canvas_color;
         self.state.canvas_color = canvas_color;
         let verts = self.ellipse_polygon(cx, cy, rx, ry);
-        self.fill_polygon_aa(&verts, color, WindingRule::NonZero);
+        self.fill_polygon_aa(proof, &verts, color, WindingRule::NonZero);
         self.state.canvas_color = saved_canvas;
     }
 
@@ -683,6 +703,16 @@ impl<'a> emPainter<'a> {
         color: emColor,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintEllipseSector {
+            cx,
+            cy,
+            rx,
+            ry,
+            start_angle,
+            sweep_angle,
+            color,
+            canvas_color,
+        }) else { return; };
         if rx <= 0.0 || ry <= 0.0 {
             return;
         }
@@ -746,6 +776,16 @@ impl<'a> emPainter<'a> {
         horizontal: bool,
         canvas_color: emColor,
     ) {
+        let Some(proof) = self.try_record(DrawOp::PaintLinearGradient {
+            x,
+            y,
+            w,
+            h,
+            color_a,
+            color_b,
+            horizontal,
+            canvas_color,
+        }) else { return; };
         let saved_canvas = self.state.canvas_color;
         self.state.canvas_color = canvas_color;
         let px = self.to_pixel_x(x);
@@ -790,7 +830,7 @@ impl<'a> emPainter<'a> {
                 }
                 ibuf.set_len(batch);
                 let dest_offset = (row as usize * tw + col as usize) * 4;
-                let data = self.GetImage().GetWritableMap();
+                let data = self.GetImage(proof).GetWritableMap();
                 let dest = &mut data[dest_offset..];
                 blend_scanline(dest, &ibuf, batch, None, &mode);
                 col += batch as i32;
@@ -814,6 +854,15 @@ impl<'a> emPainter<'a> {
         color_outer: emColor,
         canvas_color: emColor,
     ) {
+        let Some(proof) = self.try_record(DrawOp::PaintRadialGradient {
+            cx,
+            cy,
+            rx,
+            ry,
+            color_inner,
+            color_outer,
+            canvas_color,
+        }) else { return; };
         if rx <= 0.0 || ry <= 0.0 {
             return;
         }
@@ -865,7 +914,7 @@ impl<'a> emPainter<'a> {
 
         for (y, spans) in &rows {
             for span in spans {
-                self.blit_span_textured(*y, span, &px_texture);
+                self.blit_span_textured(proof, *y, span, &px_texture);
             }
         }
         self.state.canvas_color = saved_canvas;
@@ -881,29 +930,35 @@ impl<'a> emPainter<'a> {
         color: emColor,
         canvas_color: emColor,
     ) {
+        let Some(proof) = self.try_record(DrawOp::PaintLine {
+            x0,
+            y0,
+            x1,
+            y1,
+            color,
+            canvas_color,
+        }) else { return; };
         let saved_canvas = self.state.canvas_color;
         self.state.canvas_color = canvas_color;
         let px0 = self.to_pixel_x(x0);
         let py0 = self.to_pixel_y(y0);
         let px1 = self.to_pixel_x(x1);
         let py1 = self.to_pixel_y(y1);
-        self.draw_line_pixels(px0, py0, px1, py1, color);
+        self.draw_line_pixels(proof, px0, py0, px1, py1, color);
         self.state.canvas_color = saved_canvas;
     }
 
     /// Fill a polygon defined by a list of (x, y) vertices.
     /// Uses anti-aliased scanline rasterization with NonZero winding rule.
     pub fn PaintPolygon(&mut self, vertices: &[(f64, f64)], color: emColor, canvas_color: emColor) {
-        if self.record(DrawOp::PaintPolygon {
+        let Some(proof) = self.try_record(DrawOp::PaintPolygon {
             vertices: vertices.to_vec(),
             color,
             canvas_color,
-        }) {
-            return;
-        }
+        }) else { return; };
         let saved_canvas = self.state.canvas_color;
         self.state.canvas_color = canvas_color;
-        self.fill_polygon_aa(vertices, color, WindingRule::NonZero);
+        self.fill_polygon_aa(proof, vertices, color, WindingRule::NonZero);
         self.state.canvas_color = saved_canvas;
     }
 
@@ -914,9 +969,14 @@ impl<'a> emPainter<'a> {
         color: emColor,
         canvas_color: emColor,
     ) {
+        let Some(proof) = self.try_record(DrawOp::PaintPolygonEvenOdd {
+            vertices: vertices.to_vec(),
+            color,
+            canvas_color,
+        }) else { return; };
         let saved_canvas = self.state.canvas_color;
         self.state.canvas_color = canvas_color;
-        self.fill_polygon_aa(vertices, color, WindingRule::EvenOdd);
+        self.fill_polygon_aa(proof, vertices, color, WindingRule::EvenOdd);
         self.state.canvas_color = saved_canvas;
     }
 
@@ -928,12 +988,17 @@ impl<'a> emPainter<'a> {
         texture: &emTexture,
         canvas_color: emColor,
     ) {
+        let Some(proof) = self.try_record(DrawOp::PaintPolygonTextured {
+            vertices: vertices.to_vec(),
+            texture: texture.clone(),
+            canvas_color,
+        }) else { return; };
         let saved_canvas = self.state.canvas_color;
         self.state.canvas_color = canvas_color;
         if let emTexture::SolidColor(color) = texture {
-            self.fill_polygon_aa(vertices, *color, WindingRule::NonZero);
+            self.fill_polygon_aa(proof, vertices, *color, WindingRule::NonZero);
         } else {
-            self.fill_polygon_aa_textured(vertices, texture, WindingRule::NonZero);
+            self.fill_polygon_aa_textured(proof, vertices, texture, WindingRule::NonZero);
         }
         self.state.canvas_color = saved_canvas;
     }
@@ -945,12 +1010,17 @@ impl<'a> emPainter<'a> {
         texture: &emTexture,
         canvas_color: emColor,
     ) {
+        let Some(proof) = self.try_record(DrawOp::PaintPolygonTexturedEvenOdd {
+            vertices: vertices.to_vec(),
+            texture: texture.clone(),
+            canvas_color,
+        }) else { return; };
         let saved_canvas = self.state.canvas_color;
         self.state.canvas_color = canvas_color;
         if let emTexture::SolidColor(color) = texture {
-            self.fill_polygon_aa(vertices, *color, WindingRule::EvenOdd);
+            self.fill_polygon_aa(proof, vertices, *color, WindingRule::EvenOdd);
         } else {
-            self.fill_polygon_aa_textured(vertices, texture, WindingRule::EvenOdd);
+            self.fill_polygon_aa_textured(proof, vertices, texture, WindingRule::EvenOdd);
         }
         self.state.canvas_color = saved_canvas;
     }
@@ -963,6 +1033,12 @@ impl<'a> emPainter<'a> {
         thickness: f64,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintPolygonOutline {
+            vertices: vertices.to_vec(),
+            stroke_color,
+            thickness,
+            canvas_color,
+        }) else { return; };
         if vertices.len() < 2 {
             return;
         }
@@ -978,6 +1054,12 @@ impl<'a> emPainter<'a> {
         thickness: f64,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintPolyline {
+            vertices: vertices.to_vec(),
+            stroke_color,
+            thickness,
+            canvas_color,
+        }) else { return; };
         if vertices.len() < 2 {
             return;
         }
@@ -1009,26 +1091,29 @@ impl<'a> emPainter<'a> {
     /// Fill a rounded rectangle using AA polygon approximation.
     /// Reads canvas_color from painter state (set by caller).
     pub fn PaintRoundRect(&mut self, x: f64, y: f64, w: f64, h: f64, radius: f64, color: emColor) {
-        if self.record(DrawOp::PaintRoundRect {
+        let Some(proof) = self.try_record(DrawOp::PaintRoundRect {
             x,
             y,
             w,
             h,
             radius,
             color,
-        }) {
-            return;
-        }
+        }) else { return; };
         if w <= 0.0 || h <= 0.0 {
             return;
         }
         let verts = self.round_rect_polygon(x, y, w, h, radius);
-        self.fill_polygon_aa(&verts, color, WindingRule::NonZero);
+        self.fill_polygon_aa(proof, &verts, color, WindingRule::NonZero);
     }
 
     /// Draw a source image at the given position (convenience wrapper).
     /// Draws at 1:1 scale with full opacity and no canvas color.
     pub fn PaintImage(&mut self, x: f64, y: f64, image: &emImage) {
+        let Some(_proof) = self.try_record(DrawOp::PaintImageSimple {
+            x,
+            y,
+            image_ptr: image as *const emImage,
+        }) else { return; };
         let iw = image.GetWidth() as f64 / self.state.scale_x;
         let ih = image.GetHeight() as f64 / self.state.scale_y;
         self.paint_image_full(x, y, iw, ih, image, 255, emColor::TRANSPARENT);
@@ -1050,7 +1135,7 @@ impl<'a> emPainter<'a> {
         if image.GetChannelCount() != 4 || w <= 0.0 || h <= 0.0 || alpha == 0 {
             return;
         }
-        if self.record(DrawOp::PaintImageFull {
+        let Some(proof) = self.try_record(DrawOp::PaintImageFull {
             x,
             y,
             w,
@@ -1058,9 +1143,7 @@ impl<'a> emPainter<'a> {
             image_ptr: image as *const emImage,
             alpha,
             canvas_color,
-        }) {
-            return;
-        }
+        }) else { return; };
 
         let dx_px = x * self.state.scale_x + self.state.offset_x;
         let dy_px = y * self.state.scale_y + self.state.offset_y;
@@ -1166,7 +1249,7 @@ impl<'a> emPainter<'a> {
                     let all_full =
                         sp.batch_coverages(row, col, &mut coverages[..batch]);
                     let dest_offset = (row as usize * tw + col as usize) * 4;
-                    let data = self.GetImage().GetWritableMap();
+                    let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
                     if all_full {
                         blend_scanline(dest, &ibuf, batch, None, &mode);
@@ -1189,7 +1272,7 @@ impl<'a> emPainter<'a> {
                         let all_full =
                             sp.batch_coverages(row, col, &mut coverages[..batch]);
                         let dest_offset = (row as usize * tw + col as usize) * 4;
-                        let data = self.GetImage().GetWritableMap();
+                        let data = self.GetImage(proof).GetWritableMap();
                         let dest = &mut data[dest_offset..];
                         if all_full {
                             blend_scanline_premul(dest, &ibuf, batch, None, &mode);
@@ -1209,7 +1292,7 @@ impl<'a> emPainter<'a> {
                         let all_full =
                             sp.batch_coverages(row, col, &mut coverages[..batch]);
                         let dest_offset = (row as usize * tw + col as usize) * 4;
-                        let data = self.GetImage().GetWritableMap();
+                        let data = self.GetImage(proof).GetWritableMap();
                         let dest = &mut data[dest_offset..];
                         if all_full {
                             blend_scanline(dest, &ibuf, batch, None, &mode);
@@ -1254,7 +1337,7 @@ impl<'a> emPainter<'a> {
         canvas_color: emColor,
         extension: ImageExtension,
     ) {
-        if self.record(DrawOp::PaintImageColored {
+        let Some(proof) = self.try_record(DrawOp::PaintImageColored {
             x,
             y,
             w,
@@ -1268,9 +1351,7 @@ impl<'a> emPainter<'a> {
             color2,
             canvas_color,
             extension,
-        }) {
-            return;
-        }
+        }) else { return; };
         // Floating-point dest rect in pixel space (sub-pixel precision).
         let dx = x * self.state.scale_x + self.state.offset_x;
         let dy = y * self.state.scale_y + self.state.offset_y;
@@ -1391,7 +1472,7 @@ impl<'a> emPainter<'a> {
                     let all_full =
                         sp.batch_coverages(row, col, &mut coverages[..batch]);
                     let dest_offset = (row as usize * tw + col as usize) * 4;
-                    let data = self.GetImage().GetWritableMap();
+                    let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
                     if all_full {
                         blend_scanline(dest, &ibuf, batch, None, &mode);
@@ -1443,7 +1524,7 @@ impl<'a> emPainter<'a> {
                     let all_full =
                         sp.batch_coverages(row, col, &mut coverages[..batch]);
                     let dest_offset = (row as usize * tw + col as usize) * 4;
-                    let data = self.GetImage().GetWritableMap();
+                    let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
                     if all_full {
                         blend_scanline(dest, &ibuf, batch, None, &mode);
@@ -1506,7 +1587,7 @@ impl<'a> emPainter<'a> {
         if text.is_empty() || char_height <= 0.0 || color.GetAlpha() == 0 {
             return;
         }
-        if self.record(DrawOp::PaintText {
+        let Some(_proof) = self.try_record(DrawOp::PaintText {
             x,
             y,
             text: text.to_string(),
@@ -1514,9 +1595,7 @@ impl<'a> emPainter<'a> {
             width_scale,
             color,
             canvas_color,
-        }) {
-            return;
-        }
+        }) else { return; };
 
         let rcw = char_height / emFontCache::CHAR_BOX_TALLNESS;
         let char_width = rcw * width_scale;
@@ -1656,7 +1735,7 @@ impl<'a> emPainter<'a> {
         if text.is_empty() || w <= 0.0 || h <= 0.0 || max_char_height <= 0.0 {
             return;
         }
-        if self.record(DrawOp::PaintTextBoxed {
+        let Some(_proof) = self.try_record(DrawOp::PaintTextBoxed {
             x,
             y,
             w,
@@ -1671,9 +1750,7 @@ impl<'a> emPainter<'a> {
             min_width_scale,
             formatted,
             rel_line_space,
-        }) {
-            return;
-        }
+        }) else { return; };
 
         let (mut tw, mut th) =
             Self::GetTextSize(text, max_char_height, formatted, rel_line_space);
@@ -1821,7 +1898,7 @@ impl<'a> emPainter<'a> {
         if w <= 0.0 || h <= 0.0 {
             return;
         }
-        if self.record(DrawOp::PaintImageScaled {
+        let Some(proof) = self.try_record(DrawOp::PaintImageScaled {
             x,
             y,
             w,
@@ -1829,9 +1906,7 @@ impl<'a> emPainter<'a> {
             image_ptr: image as *const emImage,
             quality,
             extension,
-        }) {
-            return;
-        }
+        }) else { return; };
 
         let px = self.to_pixel_x(x);
         let py = self.to_pixel_y(y);
@@ -1903,7 +1978,7 @@ impl<'a> emPainter<'a> {
                 }
                 ibuf.set_len(batch);
                 let dest_offset = (row as usize * tw + col as usize) * 4;
-                let data = self.GetImage().GetWritableMap();
+                let data = self.GetImage(proof).GetWritableMap();
                 let dest = &mut data[dest_offset..];
                 blend_scanline(dest, &ibuf, batch, None, &mode);
                 col += batch as i32;
@@ -1918,6 +1993,11 @@ impl<'a> emPainter<'a> {
     /// segment i uses points[i*3], points[i*3+1], points[i*3+2], points[((i+1)*3) % n].
     /// The path is implicitly closed.
     pub fn PaintBezier(&mut self, points: &[(f64, f64)], color: emColor, canvas_color: emColor) {
+        let Some(proof) = self.try_record(DrawOp::PaintBezier {
+            points: points.to_vec(),
+            color,
+            canvas_color,
+        }) else { return; };
         if points.len() < 3 {
             return;
         }
@@ -1937,7 +2017,7 @@ impl<'a> emPainter<'a> {
             tessellate_cubic_cpp(&mut verts, p0, p1, p2, p3, s, 0.0);
         }
         if verts.len() >= 3 {
-            self.fill_polygon_aa(&verts, color, WindingRule::NonZero);
+            self.fill_polygon_aa(proof, &verts, color, WindingRule::NonZero);
         }
         self.state.canvas_color = saved_canvas;
     }
@@ -1950,6 +2030,11 @@ impl<'a> emPainter<'a> {
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintBezierOutline {
+            points: points.to_vec(),
+            stroke: stroke.clone(),
+            canvas_color,
+        }) else { return; };
         if points.len() < 3 {
             return;
         }
@@ -1978,6 +2063,11 @@ impl<'a> emPainter<'a> {
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintBezierLine {
+            points: points.to_vec(),
+            stroke: stroke.clone(),
+            canvas_color,
+        }) else { return; };
         let n = points.len();
         if n < 4 {
             return;
@@ -2040,7 +2130,7 @@ impl<'a> emPainter<'a> {
         if alpha == 0 || w <= 0.0 || h <= 0.0 {
             return;
         }
-        if self.record(DrawOp::PaintBorderImage {
+        let Some(proof) = self.try_record(DrawOp::PaintBorderImage {
             x,
             y,
             w,
@@ -2057,9 +2147,7 @@ impl<'a> emPainter<'a> {
             alpha,
             canvas_color,
             which_sub_rects,
-        }) {
-            return;
-        }
+        }) else { return; };
         let iw = image.GetWidth() as f64;
         let ih = image.GetHeight() as f64;
         let quality = super::emTexture::ImageQuality::Bilinear;
@@ -2119,10 +2207,10 @@ impl<'a> emPainter<'a> {
 
         // Corners.
         if which_sub_rects & (1 << 8) != 0 {
-            self.paint_9slice_section(x, y, l, t, image, 0.0, 0.0, sl, st, quality, ext);
+            self.paint_9slice_section(proof, x, y, l, t, image, 0.0, 0.0, sl, st, quality, ext);
         }
         if which_sub_rects & (1 << 2) != 0 {
-            self.paint_9slice_section(
+            self.paint_9slice_section(proof, 
                 x + w - r,
                 y,
                 r,
@@ -2137,7 +2225,7 @@ impl<'a> emPainter<'a> {
             );
         }
         if which_sub_rects & (1 << 6) != 0 {
-            self.paint_9slice_section(
+            self.paint_9slice_section(proof, 
                 x,
                 y + h - b,
                 l,
@@ -2152,7 +2240,7 @@ impl<'a> emPainter<'a> {
             );
         }
         if which_sub_rects & (1 << 0) != 0 {
-            self.paint_9slice_section(
+            self.paint_9slice_section(proof, 
                 x + w - r,
                 y + h - b,
                 r,
@@ -2170,7 +2258,7 @@ impl<'a> emPainter<'a> {
         // Edges.
         if dst_cx > 0.0 {
             if which_sub_rects & (1 << 5) != 0 {
-                self.paint_9slice_section(
+                self.paint_9slice_section(proof, 
                     x + l,
                     y,
                     dst_cx,
@@ -2185,7 +2273,7 @@ impl<'a> emPainter<'a> {
                 );
             }
             if which_sub_rects & (1 << 3) != 0 {
-                self.paint_9slice_section(
+                self.paint_9slice_section(proof, 
                     x + l,
                     y + h - b,
                     dst_cx,
@@ -2202,7 +2290,7 @@ impl<'a> emPainter<'a> {
         }
         if dst_cy > 0.0 {
             if which_sub_rects & (1 << 7) != 0 {
-                self.paint_9slice_section(
+                self.paint_9slice_section(proof, 
                     x,
                     y + t,
                     l,
@@ -2217,7 +2305,7 @@ impl<'a> emPainter<'a> {
                 );
             }
             if which_sub_rects & (1 << 1) != 0 {
-                self.paint_9slice_section(
+                self.paint_9slice_section(proof, 
                     x + w - r,
                     y + t,
                     r,
@@ -2235,7 +2323,7 @@ impl<'a> emPainter<'a> {
 
         // Center.
         if which_sub_rects & (1 << 4) != 0 && dst_cx > 0.0 && dst_cy > 0.0 {
-            self.paint_9slice_section(
+            self.paint_9slice_section(proof, 
                 x + l,
                 y + t,
                 dst_cx,
@@ -2280,6 +2368,26 @@ impl<'a> emPainter<'a> {
         which_sub_rects: u16,
         alpha: u8,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintBorderImageColored {
+            x,
+            y,
+            w,
+            h,
+            l,
+            t,
+            r,
+            b,
+            image_ptr: image as *const emImage,
+            src_l,
+            src_t,
+            src_r,
+            src_b,
+            color1,
+            color2,
+            canvas_color,
+            which_sub_rects,
+            alpha,
+        }) else { return; };
         if alpha == 0 || w <= 0.0 || h <= 0.0 {
             return;
         }
@@ -2497,6 +2605,7 @@ impl<'a> emPainter<'a> {
     #[allow(clippy::too_many_arguments)]
     fn paint_9slice_section(
         &mut self,
+        proof: DirectProof,
         dx: f64,
         dy: f64,
         dw: f64,
@@ -2608,7 +2717,7 @@ impl<'a> emPainter<'a> {
                     let all_full =
                         sp.batch_coverages(row, col, &mut coverages[..batch]);
                     let dest_offset = (row as usize * tw + col as usize) * 4;
-                    let data = self.GetImage().GetWritableMap();
+                    let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
                     if all_full {
                         blend_scanline(dest, &ibuf, batch, None, &mode);
@@ -2638,7 +2747,7 @@ impl<'a> emPainter<'a> {
                     let all_full =
                         sp.batch_coverages(row, col, &mut coverages[..batch]);
                     let dest_offset = (row as usize * tw + col as usize) * 4;
-                    let data = self.GetImage().GetWritableMap();
+                    let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
                     if all_full {
                         blend_scanline_premul(dest, &ibuf, batch, None, &mode);
@@ -2672,6 +2781,16 @@ impl<'a> emPainter<'a> {
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintEllipseArc {
+            cx,
+            cy,
+            rx,
+            ry,
+            start_angle,
+            range_angle,
+            stroke: stroke.clone(),
+            canvas_color,
+        }) else { return; };
         if rx <= 0.0 || ry <= 0.0 || stroke.width <= 0.0 {
             return;
         }
@@ -2709,6 +2828,16 @@ impl<'a> emPainter<'a> {
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintEllipseSectorOutline {
+            cx,
+            cy,
+            rx,
+            ry,
+            start_angle,
+            sweep_angle,
+            stroke: stroke.clone(),
+            canvas_color,
+        }) else { return; };
         if rx <= 0.0 || ry <= 0.0 || stroke.width <= 0.0 {
             return;
         }
@@ -2750,16 +2879,14 @@ impl<'a> emPainter<'a> {
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
-        if self.record(DrawOp::PaintRectOutlined {
+        let Some(proof) = self.try_record(DrawOp::PaintRectOutlined {
             x,
             y,
             w,
             h,
             stroke: stroke.clone(),
             canvas_color,
-        }) {
-            return;
-        }
+        }) else { return; };
         let sw = stroke.width;
         let w = w.max(0.0);
         let h = h.max(0.0);
@@ -2814,7 +2941,7 @@ impl<'a> emPainter<'a> {
             (ix2, iy1),
             (ix1, iy1), // close inner
         ];
-        self.fill_polygon_aa(&poly, stroke.color, WindingRule::NonZero);
+        self.fill_polygon_aa(proof, &poly, stroke.color, WindingRule::NonZero);
     }
 
     /// Draw a rounded rectangle outline. emStroke is centered on the shape boundary.
@@ -2835,16 +2962,14 @@ impl<'a> emPainter<'a> {
         if w <= 0.0 || h <= 0.0 || stroke.width <= 0.0 {
             return;
         }
-        if self.record(DrawOp::PaintRoundRectOutlined {
+        let Some(proof) = self.try_record(DrawOp::PaintRoundRectOutlined {
             x,
             y,
             w,
             h,
             radius,
             stroke: stroke.clone(),
-        }) {
-            return;
-        }
+        }) else { return; };
         let sw = stroke.width;
         let t2 = sw * 0.5;
 
@@ -2881,7 +3006,7 @@ impl<'a> emPainter<'a> {
         outer.push(outer[0]);
         outer.push(inner[0]);
         outer.extend(inner.iter().rev());
-        self.fill_polygon_aa(&outer, stroke.color, WindingRule::NonZero);
+        self.fill_polygon_aa(proof, &outer, stroke.color, WindingRule::NonZero);
     }
 
     /// Draw an ellipse outline. emStroke is centered on the shape boundary.
@@ -2898,6 +3023,14 @@ impl<'a> emPainter<'a> {
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
+        let Some(proof) = self.try_record(DrawOp::PaintEllipseOutline {
+            cx,
+            cy,
+            rx,
+            ry,
+            stroke: stroke.clone(),
+            canvas_color,
+        }) else { return; };
         if rx <= 0.0 || ry <= 0.0 || stroke.width <= 0.0 {
             return;
         }
@@ -2933,7 +3066,7 @@ impl<'a> emPainter<'a> {
         outer.push(outer[0]);
         outer.push(inner[0]);
         outer.extend(inner.iter().rev());
-        self.fill_polygon_aa(&outer, stroke.color, WindingRule::NonZero);
+        self.fill_polygon_aa(proof, &outer, stroke.color, WindingRule::NonZero);
     }
 
     /// Correct blending artifacts along a shared edge between two adjacent polygons.
@@ -2950,6 +3083,14 @@ impl<'a> emPainter<'a> {
         mut color1: emColor,
         mut color2: emColor,
     ) {
+        let Some(proof) = self.try_record(DrawOp::PaintEdgeCorrection {
+            x1,
+            y1,
+            x2,
+            y2,
+            color1,
+            color2,
+        }) else { return; };
         // Transform to pixel coordinates.
         x1 = x1 * self.state.scale_x + self.state.offset_x;
         y1 = y1 * self.state.scale_y + self.state.offset_y;
@@ -3079,7 +3220,7 @@ impl<'a> emPainter<'a> {
                                 (color1.GetBlue() as f64 * w1 + color2.GetBlue() as f64 * w2).round() as u8;
                             let ca = alpha3.min(255) as u8;
                             let correction = emColor::rgba(cr, cg, cb, ca);
-                            self.blend_pixel(sx, sy, correction);
+                            self.blend_pixel(proof, sx, sy, correction);
                         }
                     }
                 }
@@ -3113,11 +3254,14 @@ impl<'a> emPainter<'a> {
 
     /// Fill the current clip rect with a solid color.
     pub fn Clear(&mut self, color: emColor) {
+        let Some(proof) = self.require_direct() else {
+            return;
+        };
         let x = self.state.clip.x1 as i32;
         let y = self.state.clip.y1 as i32;
         let w = self.state.clip.x2.ceil() as i32 - x;
         let h = self.state.clip.y2.ceil() as i32 - y;
-        self.fill_rect_pixels(x, y, w, h, color);
+        self.fill_rect_pixels(proof, x, y, w, h, color);
     }
 
     /// Draw a dashed polyline by splitting the path into dash/gap segments
@@ -3129,6 +3273,12 @@ impl<'a> emPainter<'a> {
         closed: bool,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintDashedPolyline {
+            vertices: vertices.to_vec(),
+            stroke: stroke.clone(),
+            closed,
+            canvas_color,
+        }) else { return; };
         use crate::emCore::emStroke::DashType;
 
         if vertices.len() < 2 || stroke.width <= 0.0 {
@@ -3551,6 +3701,12 @@ impl<'a> emPainter<'a> {
         closed: bool,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintPolylineWithoutArrows {
+            vertices: vertices.to_vec(),
+            stroke: stroke.clone(),
+            closed,
+            canvas_color,
+        }) else { return; };
         if stroke.is_dashed() {
             self.PaintDashedPolyline(vertices, stroke, closed, canvas_color);
         } else {
@@ -3568,6 +3724,12 @@ impl<'a> emPainter<'a> {
         closed: bool,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintPolylineWithArrows {
+            vertices: vertices.to_vec(),
+            stroke: stroke.clone(),
+            closed,
+            canvas_color,
+        }) else { return; };
         if vertices.len() < 2 {
             return;
         }
@@ -3745,14 +3907,12 @@ impl<'a> emPainter<'a> {
         if vertices.is_empty() || stroke.width <= 0.0 {
             return;
         }
-        if self.record(DrawOp::PaintSolidPolyline {
+        let Some(proof) = self.try_record(DrawOp::PaintSolidPolyline {
             vertices: vertices.to_vec(),
             stroke: stroke.clone(),
             closed,
             canvas_color,
-        }) {
-            return;
-        }
+        }) else { return; };
 
         let saved_canvas = self.state.canvas_color;
         self.state.canvas_color = canvas_color;
@@ -4157,7 +4317,7 @@ impl<'a> emPainter<'a> {
             .map(|i| (outline[i * 2], outline[i * 2 + 1]))
             .collect();
 
-        self.fill_polygon_aa(&poly, stroke.color, WindingRule::NonZero);
+        self.fill_polygon_aa(proof, &poly, stroke.color, WindingRule::NonZero);
         self.state.canvas_color = saved_canvas;
     }
 
@@ -4171,6 +4331,14 @@ impl<'a> emPainter<'a> {
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
+        let Some(_proof) = self.try_record(DrawOp::PaintLineStroked {
+            x0,
+            y0,
+            x1,
+            y1,
+            stroke: stroke.clone(),
+            canvas_color,
+        }) else { return; };
         // For width=1 with no decorations and no rounding, simple line.
         if stroke.width <= 1.0
             && !stroke.start_end.IsDecorated()
@@ -4980,7 +5148,7 @@ impl<'a> emPainter<'a> {
     // --- Anti-aliased polygon fill ---
 
     /// Fill a polygon with anti-aliased edges using the scanline rasterizer.
-    fn fill_polygon_aa(&mut self, vertices: &[(f64, f64)], color: emColor, rule: WindingRule) {
+    fn fill_polygon_aa(&mut self, proof: DirectProof, vertices: &[(f64, f64)], color: emColor, rule: WindingRule) {
         if vertices.len() < 3 {
             return;
         }
@@ -4999,13 +5167,13 @@ impl<'a> emPainter<'a> {
 
         for (y, spans) in &rows {
             for span in spans {
-                self.blit_span(*y, span, color);
+                self.blit_span(proof, *y, span, color);
             }
         }
     }
 
     /// Blit a single AA span onto the target.
-    fn blit_span(&mut self, y: i32, span: &emPainterScanline::Span, color: emColor) {
+    fn blit_span(&mut self, proof: DirectProof, y: i32, span: &emPainterScanline::Span, color: emColor) {
         let tw = self.target_width as i32;
         let th = self.target_height as i32;
         if y < 0 || y >= th {
@@ -5024,14 +5192,14 @@ impl<'a> emPainter<'a> {
         if span_width == 1 {
             let opacity = span.opacity_beg;
             if opacity > 0 {
-                self.blend_with_coverage(x_start, y, color, opacity);
+                self.blend_with_coverage(proof, x_start, y, color, opacity);
             }
             return;
         }
 
         // First pixel (partial coverage).
         if span.opacity_beg > 0 {
-            self.blend_with_coverage(x_start, y, color, span.opacity_beg);
+            self.blend_with_coverage(proof, x_start, y, color, span.opacity_beg);
         }
 
         // Interior pixels — bulk scanline, no per-pixel clip/bounds checks.
@@ -5039,44 +5207,44 @@ impl<'a> emPainter<'a> {
         let ix2 = x_end - 1;
         if ix1 < ix2 {
             if span.opacity_mid >= 0x1000 {
-                self.fill_span_blended(y, ix1, ix2, color);
+                self.fill_span_blended(proof, y, ix1, ix2, color);
             } else if span.opacity_mid > 0 {
                 // Uniform partial coverage: pre-compute alpha-adjusted color once.
                 let alpha =
                     ((color.GetAlpha() as i32 * span.opacity_mid + 0x800) >> 12).clamp(0, 255) as u8;
                 let blended = emColor::rgba(color.GetRed(), color.GetGreen(), color.GetBlue(), alpha);
-                self.fill_span_blended(y, ix1, ix2, blended);
+                self.fill_span_blended(proof, y, ix1, ix2, blended);
             }
         }
 
         // Last pixel (partial coverage).
         if span_width > 1 && span.opacity_end > 0 {
             let x_last = x_end - 1;
-            self.blend_with_coverage(x_last, y, color, span.opacity_end);
+            self.blend_with_coverage(proof, x_last, y, color, span.opacity_end);
         }
     }
 
     /// Blend a sampled color with sub-pixel edge coverage (0..=0x1000).
     #[inline]
-    fn blend_with_coverage(&mut self, x: i32, y: i32, color: emColor, cov: i32) {
+    fn blend_with_coverage(&mut self, proof: DirectProof, x: i32, y: i32, color: emColor, cov: i32) {
         if cov >= 0x1000 {
-            self.blend_pixel(x, y, color);
+            self.blend_pixel(proof, x, y, color);
         } else if cov > 0 {
             // C++ single-step: alpha = (color_alpha * opacity_12bit + 0x800) >> 12
             let alpha = ((color.GetAlpha() as i32 * cov + 0x800) >> 12).clamp(0, 255) as u8;
             let blended = emColor::rgba(color.GetRed(), color.GetGreen(), color.GetBlue(), alpha);
-            self.blend_pixel(x, y, blended);
+            self.blend_pixel(proof, x, y, blended);
         }
     }
 
     /// Same as `blend_pixel` but without clip/bounds checks.
     /// Caller must guarantee x,y are within both the clip rect and the target image.
     #[inline(always)]
-    fn blend_pixel_unchecked(&mut self, x: i32, y: i32, color: emColor) {
+    fn blend_pixel_unchecked(&mut self, proof: DirectProof, x: i32, y: i32, color: emColor) {
         let xu = x as u32;
         let yu = y as u32;
         if color.IsOpaque() && self.state.alpha == 255 {
-            let out = self.GetImage().SetPixel(xu, yu);
+            let out = self.GetImage(proof).SetPixel(xu, yu);
             out[0] = color.GetRed();
             out[1] = color.GetGreen();
             out[2] = color.GetBlue();
@@ -5090,10 +5258,10 @@ impl<'a> emPainter<'a> {
             if combined_alpha == 0 {
                 return;
             }
-            let px = self.read_pixel(xu, yu);
+            let px = self.read_pixel(proof, xu, yu);
             let existing = emColor::rgba(px[0], px[1], px[2], px[3]);
             let result = existing.canvas_blend(color, self.state.canvas_color, combined_alpha);
-            let out = self.GetImage().SetPixel(xu, yu);
+            let out = self.GetImage(proof).SetPixel(xu, yu);
             out[0] = result.GetRed();
             out[1] = result.GetGreen();
             out[2] = result.GetBlue();
@@ -5108,14 +5276,14 @@ impl<'a> emPainter<'a> {
                 return;
             }
             if ea >= 255 {
-                let out = self.GetImage().SetPixel(xu, yu);
+                let out = self.GetImage(proof).SetPixel(xu, yu);
                 out[0] = color.GetRed();
                 out[1] = color.GetGreen();
                 out[2] = color.GetBlue();
                 out[3] = 255;
                 return;
             }
-            let bg = self.read_pixel(xu, yu);
+            let bg = self.read_pixel(proof, xu, yu);
             let alpha = ea as u32;
             let t = (255 - alpha) * 257;
             let r = ((bg[0] as u32 * t + 0x8073) >> 16)
@@ -5126,7 +5294,7 @@ impl<'a> emPainter<'a> {
                 + ((color.GetBlue() as u32 * alpha * 257 + 0x8073) >> 16);
             let a =
                 ((bg[3] as u32 * t + 0x8073) >> 16) + ((255u32 * alpha * 257 + 0x8073) >> 16);
-            let out = self.GetImage().SetPixel(xu, yu);
+            let out = self.GetImage(proof).SetPixel(xu, yu);
             out[0] = r as u8;
             out[1] = g as u8;
             out[2] = b as u8;
@@ -5136,19 +5304,20 @@ impl<'a> emPainter<'a> {
 
     /// Same as `blend_with_coverage` but without clip/bounds checks.
     #[inline(always)]
-    fn blend_with_coverage_unchecked(&mut self, x: i32, y: i32, color: emColor, cov: i32) {
+    fn blend_with_coverage_unchecked(&mut self, proof: DirectProof, x: i32, y: i32, color: emColor, cov: i32) {
         if cov >= 0x1000 {
-            self.blend_pixel_unchecked(x, y, color);
+            self.blend_pixel_unchecked(proof, x, y, color);
         } else if cov > 0 {
             let alpha = ((color.GetAlpha() as i32 * cov + 0x800) >> 12).clamp(0, 255) as u8;
             let blended = emColor::rgba(color.GetRed(), color.GetGreen(), color.GetBlue(), alpha);
-            self.blend_pixel_unchecked(x, y, blended);
+            self.blend_pixel_unchecked(proof, x, y, blended);
         }
     }
 
     /// Fill a polygon with a texture using the scanline rasterizer.
     fn fill_polygon_aa_textured(
         &mut self,
+        proof: DirectProof,
         vertices: &[(f64, f64)],
         texture: &emTexture,
         rule: WindingRule,
@@ -5175,7 +5344,7 @@ impl<'a> emPainter<'a> {
 
         for (y, spans) in &rows {
             for span in spans {
-                self.blit_span_textured(*y, span, &px_texture);
+                self.blit_span_textured(proof, *y, span, &px_texture);
             }
         }
     }
@@ -5357,7 +5526,7 @@ impl<'a> emPainter<'a> {
     }
 
     /// Blit a single textured AA span onto the target.
-    fn blit_span_textured(&mut self, y: i32, span: &emPainterScanline::Span, texture: &PixelTexture) {
+    fn blit_span_textured(&mut self, proof: DirectProof, y: i32, span: &emPainterScanline::Span, texture: &PixelTexture) {
         let tw = self.target_width as i32;
         let th = self.target_height as i32;
         if y < 0 || y >= th {
@@ -5388,9 +5557,9 @@ impl<'a> emPainter<'a> {
             let color = Self::sample_pixel_texture(texture, x as f64 + 0.5, py);
 
             if opacity >= 0x1000 {
-                self.blend_pixel_unchecked(x, y, color);
+                self.blend_pixel_unchecked(proof, x, y, color);
             } else {
-                self.blend_with_coverage_unchecked(x, y, color, opacity);
+                self.blend_with_coverage_unchecked(proof, x, y, color, opacity);
             }
         }
     }
@@ -5546,7 +5715,7 @@ impl<'a> emPainter<'a> {
 
     // --- Pixel-level operations ---
 
-    fn blend_pixel(&mut self, x: i32, y: i32, color: emColor) {
+    fn blend_pixel(&mut self, proof: DirectProof, x: i32, y: i32, color: emColor) {
         let clip = self.state.clip;
         if (x as f64) < clip.x1
             || (x as f64) >= clip.x2
@@ -5561,7 +5730,7 @@ impl<'a> emPainter<'a> {
 
         if color.IsOpaque() && self.state.alpha == 255 {
             // Fully opaque: direct write, no blending needed.
-            let out = self.GetImage().SetPixel(x as u32, y as u32);
+            let out = self.GetImage(proof).SetPixel(x as u32, y as u32);
             out[0] = color.GetRed();
             out[1] = color.GetGreen();
             out[2] = color.GetBlue();
@@ -5584,10 +5753,10 @@ impl<'a> emPainter<'a> {
             if combined_alpha == 0 {
                 return;
             }
-            let px = self.read_pixel(x as u32, y as u32);
+            let px = self.read_pixel(proof, x as u32, y as u32);
             let existing = emColor::rgba(px[0], px[1], px[2], px[3]);
             let result = existing.canvas_blend(color, self.state.canvas_color, combined_alpha);
-            let out = self.GetImage().SetPixel(x as u32, y as u32);
+            let out = self.GetImage(proof).SetPixel(x as u32, y as u32);
             out[0] = result.GetRed();
             out[1] = result.GetGreen();
             out[2] = result.GetBlue();
@@ -5605,9 +5774,9 @@ impl<'a> emPainter<'a> {
             if ea == 0 {
                 return;
             }
-            let bg = self.read_pixel(x as u32, y as u32);
+            let bg = self.read_pixel(proof, x as u32, y as u32);
             if ea >= 255 {
-                let out = self.GetImage().SetPixel(x as u32, y as u32);
+                let out = self.GetImage(proof).SetPixel(x as u32, y as u32);
                 out[0] = color.GetRed();
                 out[1] = color.GetGreen();
                 out[2] = color.GetBlue();
@@ -5627,7 +5796,7 @@ impl<'a> emPainter<'a> {
                     + ((color.GetBlue() as u32 * alpha * 257 + 0x8073) >> 16);
                 let a =
                     ((bg[3] as u32 * t + 0x8073) >> 16) + ((255u32 * alpha * 257 + 0x8073) >> 16);
-                let out = self.GetImage().SetPixel(x as u32, y as u32);
+                let out = self.GetImage(proof).SetPixel(x as u32, y as u32);
                 out[0] = r as u8;
                 out[1] = g as u8;
                 out[2] = b as u8;
@@ -5640,7 +5809,7 @@ impl<'a> emPainter<'a> {
     /// clip or bounds checks.  Caller must guarantee that `y` and `x1..x2`
     /// are within both the clip rect and the target image.
     #[inline]
-    fn fill_span_blended(&mut self, y: i32, x1: i32, x2: i32, color: emColor) {
+    fn fill_span_blended(&mut self, proof: DirectProof, y: i32, x1: i32, x2: i32, color: emColor) {
         debug_assert!(x1 >= 0 && x2 <= self.target_width as i32);
         debug_assert!(y >= 0 && y < self.target_height as i32);
         debug_assert!(x1 < x2);
@@ -5650,7 +5819,7 @@ impl<'a> emPainter<'a> {
 
         if color.IsOpaque() && self.state.alpha == 255 {
             let pixel = [color.GetRed(), color.GetGreen(), color.GetBlue(), 255u8];
-            let data = self.GetImage().GetWritableMap();
+            let data = self.GetImage(proof).GetWritableMap();
             for col in x1..x2 {
                 let off = row_base + col as usize * 4;
                 data[off..off + 4].copy_from_slice(&pixel);
@@ -5675,7 +5844,7 @@ impl<'a> emPainter<'a> {
             let delta_r = pm_r - cr as i32;
             let delta_g = pm_g - cg as i32;
             let delta_b = pm_b - cb as i32;
-            let data = self.GetImage().GetWritableMap();
+            let data = self.GetImage(proof).GetWritableMap();
             for col in x1..x2 {
                 let off = row_base + col as usize * 4;
                 data[off] = (data[off] as i32 + delta_r).clamp(0, 255) as u8;
@@ -5694,7 +5863,7 @@ impl<'a> emPainter<'a> {
             }
             if ea >= 255 {
                 let pixel = [color.GetRed(), color.GetGreen(), color.GetBlue(), 255u8];
-                let data = self.GetImage().GetWritableMap();
+                let data = self.GetImage(proof).GetWritableMap();
                 for col in x1..x2 {
                     let off = row_base + col as usize * 4;
                     data[off..off + 4].copy_from_slice(&pixel);
@@ -5706,7 +5875,7 @@ impl<'a> emPainter<'a> {
                 let sg = (color.GetGreen() as u32 * alpha * 257 + 0x8073) >> 16;
                 let sb = (color.GetBlue() as u32 * alpha * 257 + 0x8073) >> 16;
                 let sa = (255u32 * alpha * 257 + 0x8073) >> 16;
-                let data = self.GetImage().GetWritableMap();
+                let data = self.GetImage(proof).GetWritableMap();
                 for col in x1..x2 {
                     let off = row_base + col as usize * 4;
                     data[off] = (((data[off] as u32 * t + 0x8073) >> 16) + sr) as u8;
@@ -5718,7 +5887,7 @@ impl<'a> emPainter<'a> {
         }
     }
 
-    fn fill_rect_pixels(&mut self, x: i32, y: i32, w: i32, h: i32, color: emColor) {
+    fn fill_rect_pixels(&mut self, proof: DirectProof, x: i32, y: i32, w: i32, h: i32, color: emColor) {
         let cx1 = (self.state.clip.x1 as i32).max(0);
         let cy1 = (self.state.clip.y1 as i32).max(0);
         let cx2 = (self.state.clip.x2.ceil() as i32).min(self.target_width as i32);
@@ -5736,7 +5905,7 @@ impl<'a> emPainter<'a> {
         if color.IsOpaque() && self.state.alpha == 255 {
             let pixel = [color.GetRed(), color.GetGreen(), color.GetBlue(), 255u8];
             let tw = self.target_width as usize;
-            let data = self.GetImage().GetWritableMap();
+            let data = self.GetImage(proof).GetWritableMap();
             for row in start_y..end_y {
                 let row_base = row as usize * tw * 4;
                 for col in start_x..end_x {
@@ -5748,11 +5917,11 @@ impl<'a> emPainter<'a> {
         }
 
         for row in start_y..end_y {
-            self.fill_span_blended(row, start_x, end_x, color);
+            self.fill_span_blended(proof, row, start_x, end_x, color);
         }
     }
 
-    fn draw_line_pixels(&mut self, mut x0: i32, mut y0: i32, x1: i32, y1: i32, color: emColor) {
+    fn draw_line_pixels(&mut self, proof: DirectProof, mut x0: i32, mut y0: i32, x1: i32, y1: i32, color: emColor) {
         // Bresenham's line algorithm
         let dx = (x1 - x0).abs();
         let dy = -(y1 - y0).abs();
@@ -5761,7 +5930,7 @@ impl<'a> emPainter<'a> {
         let mut err = dx + dy;
 
         loop {
-            self.blend_pixel(x0, y0, color);
+            self.blend_pixel(proof, x0, y0, color);
             if x0 == x1 && y0 == y1 {
                 break;
             }
