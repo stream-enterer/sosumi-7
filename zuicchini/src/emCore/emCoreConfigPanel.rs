@@ -1634,4 +1634,59 @@ mod tests {
         assert_eq!(upscale_text(0, 1), "Nearest\nPixel");
         assert_eq!(upscale_text(5, 1), "Adaptive");
     }
+
+    #[test]
+    fn factor_val_to_cfg_roundtrip() {
+        let cfg_min = 0.25;
+        let cfg_max = 4.0;
+
+        // value=0 → cfg=1.0 (default)
+        let cfg = factor_val_to_cfg(0.0, cfg_min, cfg_max);
+        assert!((cfg - 1.0).abs() < 1e-12, "expected cfg=1.0, got {cfg}");
+        let back = factor_cfg_to_val(cfg, cfg_min, cfg_max);
+        assert!((back - 0.0).abs() <= 1.0, "roundtrip 0: got {back}");
+
+        // value=100 → cfg=2.0
+        let cfg = factor_val_to_cfg(100.0, cfg_min, cfg_max);
+        assert!((cfg - 2.0).abs() < 1e-12, "expected cfg=2.0, got {cfg}");
+        let back = factor_cfg_to_val(cfg, cfg_min, cfg_max);
+        assert!((back - 100.0).abs() <= 1.0, "roundtrip 100: got {back}");
+
+        // value=-100 → cfg=0.5
+        let cfg = factor_val_to_cfg(-100.0, cfg_min, cfg_max);
+        assert!((cfg - 0.5).abs() < 1e-12, "expected cfg=0.5, got {cfg}");
+        let back = factor_cfg_to_val(cfg, cfg_min, cfg_max);
+        assert!((back - -100.0).abs() <= 1.0, "roundtrip -100: got {back}");
+
+        // value=200 → cfg=4.0
+        let cfg = factor_val_to_cfg(200.0, cfg_min, cfg_max);
+        assert!((cfg - 4.0).abs() < 1e-12, "expected cfg=4.0, got {cfg}");
+        let back = factor_cfg_to_val(cfg, cfg_min, cfg_max);
+        assert!((back - 200.0).abs() <= 1.0, "roundtrip 200: got {back}");
+    }
+
+    #[test]
+    fn factor_text_disabled_label() {
+        assert_eq!(
+            factor_text_of_value(-200, 100, true, 0.25, 4.0),
+            "Disabled"
+        );
+    }
+
+    #[test]
+    fn factor_text_default_label() {
+        assert_eq!(
+            factor_text_of_value(0, 100, false, 0.25, 4.0),
+            "Default"
+        );
+    }
+
+    #[test]
+    fn memory_field_log2_roundtrip() {
+        for &mb in &[8, 1024, 16384] {
+            let val = mem_cfg_to_val(mb);
+            let back = mem_val_to_cfg(val);
+            assert_eq!(back, mb, "mem roundtrip failed for {mb}: val={val}, back={back}");
+        }
+    }
 }

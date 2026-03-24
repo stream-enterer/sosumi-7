@@ -335,4 +335,56 @@ mod tests {
         assert!(!consumed);
         assert!(dlg.GetResult().is_none());
     }
+
+    #[test]
+    fn add_custom_button_lookup() {
+        let look = emLook::new();
+        let mut dlg = emDialog::new("Test", look);
+        dlg.AddCustomButton("Apply", DialogResult::Custom(7));
+        let btn = dlg.GetButtonForResult(&DialogResult::Custom(7));
+        assert!(btn.is_some());
+        let (label, _) = btn.unwrap();
+        assert_eq!(label, "Apply");
+    }
+
+    #[test]
+    fn set_button_label() {
+        let look = emLook::new();
+        let mut dlg = emDialog::new("Test", look);
+        dlg.AddCustomButton("OK", DialogResult::Ok);
+        dlg.set_button_label_for_result(&DialogResult::Ok, "Accept");
+        let btn = dlg.GetButtonForResult(&DialogResult::Ok);
+        assert!(btn.is_some());
+        let (label, _) = btn.unwrap();
+        assert_eq!(label, "Accept");
+    }
+
+    #[test]
+    fn auto_deletion_toggle() {
+        let look = emLook::new();
+        let dlg = emDialog::new("Test", look);
+        assert!(!dlg.IsAutoDeletionEnabled());
+        let mut dlg = dlg;
+        dlg.EnableAutoDeletion();
+        assert!(dlg.IsAutoDeletionEnabled());
+    }
+
+    #[test]
+    fn check_finish_lifecycle() {
+        let look = emLook::new();
+        let mut dlg = emDialog::new("Test", look);
+        assert!(!dlg.CheckFinish());
+        dlg.Finish(DialogResult::Ok);
+        assert!(dlg.CheckFinish());
+    }
+
+    #[test]
+    fn set_root_title() {
+        let look = emLook::new();
+        let mut dlg = emDialog::new("Old Title", look);
+        dlg.SetRootTitle("New Title");
+        // Verify the dialog still functions after title change.
+        dlg.Finish(DialogResult::Ok);
+        assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
+    }
 }

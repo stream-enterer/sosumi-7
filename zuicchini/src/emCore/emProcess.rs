@@ -690,4 +690,124 @@ mod tests {
         // Killed by signal 9 → exit status 128+9 = 137
         assert_eq!(proc.GetExitStatus(), Some(137));
     }
+
+    #[test]
+    fn stderr_pipe() {
+        let mut proc = emProcess::new();
+        let env = HashMap::new();
+        proc.TryStart(
+            &["sh", "-c", "echo error >&2"],
+            &env,
+            None,
+            StartFlags::PIPE_STDERR,
+        )
+        .expect("failed to start sh");
+
+        proc.WaitForTermination(Some(Duration::from_secs(5)));
+
+        let mut buf = [0u8; 64];
+        let result = proc.TryReadErr(&mut buf).expect("read stderr failed");
+        match result {
+            PipeResult::Bytes(n) => {
+                let output = std::str::from_utf8(&buf[..n]).expect("not utf8");
+                assert!(output.contains("error"), "expected 'error', got: {output}");
+            }
+            PipeResult::Closed => {
+                // Pipe already drained — acceptable for a fast child.
+            }
+            PipeResult::WouldBlock => panic!("unexpected WouldBlock after wait"),
+        }
+    }
+
+    #[test]
+    fn working_directory() {
+        let mut proc = emProcess::new();
+        let env = HashMap::new();
+        let tmpdir = std::env::temp_dir();
+        proc.TryStart(
+            &["pwd"],
+            &env,
+            Some(tmpdir.as_path()),
+            StartFlags::PIPE_STDOUT,
+        )
+        .expect("failed to start pwd");
+
+        proc.WaitForTermination(Some(Duration::from_secs(5)));
+
+        let mut buf = [0u8; 512];
+        let result = proc.TryRead(&mut buf).expect("read failed");
+        match result {
+            PipeResult::Bytes(n) => {
+                let output = std::str::from_utf8(&buf[..n]).expect("not utf8");
+                let tmpdir_str = tmpdir.to_str().expect("temp_dir not utf8");
+                assert!(
+                    output.contains(tmpdir_str),
+                    "expected output to contain '{tmpdir_str}', got: {output}"
+                );
+            }
+            PipeResult::Closed => {
+                // Pipe already drained — acceptable for a fast child.
+            }
+            PipeResult::WouldBlock => panic!("unexpected WouldBlock after wait"),
+        }
+    }
+
+    #[test]
+    fn extra_env() {
+        let mut proc = emProcess::new();
+        let mut env = HashMap::new();
+        env.insert("TEST_ZUICCHINI_VAR".to_string(), "hello_test".to_string());
+        proc.TryStart(
+            &["sh", "-c", "echo $TEST_ZUICCHINI_VAR"],
+            &env,
+            None,
+            StartFlags::PIPE_STDOUT,
+        )
+        .expect("failed to start sh");
+
+        proc.WaitForTermination(Some(Duration::from_secs(5)));
+
+        let mut buf = [0u8; 64];
+        let result = proc.TryRead(&mut buf).expect("read failed");
+        match result {
+            PipeResult::Bytes(n) => {
+                let output = std::str::from_utf8(&buf[..n]).expect("not utf8");
+                assert!(
+                    output.contains("hello_test"),
+                    "expected 'hello_test', got: {output}"
+                );
+            }
+            PipeResult::Closed => {
+                // Pipe already drained — acceptable for a fast child.
+            }
+            PipeResult::WouldBlock => panic!("unexpected WouldBlock after wait"),
+        }
+    }
+
+    #[test]
+    fn is_running_after_exit() {
+        let mut proc = emProcess::new();
+        let env = HashMap::new();
+        proc.TryStart(&["true"], &env, None, StartFlags::empty())
+            .expect("failed to start true");
+        proc.WaitForTermination(Some(Duration::from_secs(5)));
+        assert!(!proc.IsRunning());
+    }
+
+    #[test]
+    fn send_terminate_signal() {
+        let mut proc = emProcess::new();
+        let env = HashMap::new();
+        proc.TryStart(&["sleep", "60"], &env, None, StartFlags::empty())
+            .expect("failed to start sleep");
+
+        assert!(proc.IsRunning());
+        proc.SendTerminationSignal();
+        assert!(proc.WaitForTermination(Some(Duration::from_secs(5))));
+        assert!(!proc.IsRunning());
+        assert!(
+            proc.GetExitStatus().is_some(),
+            "exit status should be Some after termination"
+        );
+    }
 }

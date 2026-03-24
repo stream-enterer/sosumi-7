@@ -473,4 +473,94 @@ mod tests {
         assert!(VirtualFileState::Saving.IsHopeForSeeking());
         assert!(!VirtualFileState::Loaded.IsHopeForSeeking());
     }
+
+    #[test]
+    fn vfs_all_states_map() {
+        let mut panel = emFilePanel::with_model();
+
+        panel.set_file_state(FileState::Waiting);
+        assert_eq!(panel.GetVirFileState(), VirtualFileState::Waiting);
+
+        panel.set_file_state(FileState::Loading { progress: 50.0 });
+        assert_eq!(
+            panel.GetVirFileState(),
+            VirtualFileState::Loading { progress: 50.0 }
+        );
+
+        panel.set_file_state(FileState::Loaded);
+        assert_eq!(panel.GetVirFileState(), VirtualFileState::Loaded);
+
+        panel.set_file_state(FileState::Unsaved);
+        assert_eq!(panel.GetVirFileState(), VirtualFileState::Unsaved);
+
+        panel.set_file_state(FileState::Saving);
+        assert_eq!(panel.GetVirFileState(), VirtualFileState::Saving);
+
+        panel.set_file_state(FileState::TooCostly);
+        assert_eq!(panel.GetVirFileState(), VirtualFileState::TooCostly);
+
+        panel.set_file_state(FileState::LoadError("e".to_string()));
+        assert_eq!(
+            panel.GetVirFileState(),
+            VirtualFileState::LoadError("e".to_string())
+        );
+
+        panel.set_file_state(FileState::SaveError("e".to_string()));
+        assert_eq!(
+            panel.GetVirFileState(),
+            VirtualFileState::SaveError("e".to_string())
+        );
+    }
+
+    #[test]
+    fn canvas_color_error_states() {
+        let error_color = emColor::rgb(128, 0, 0);
+
+        let mut panel = emFilePanel::with_model();
+        panel.set_file_state(FileState::LoadError("err".to_string()));
+        assert_eq!(panel.GetCanvasColor(), error_color);
+
+        panel.set_file_state(FileState::SaveError("err".to_string()));
+        assert_eq!(panel.GetCanvasColor(), error_color);
+
+        panel.set_custom_error("custom");
+        assert_eq!(panel.GetCanvasColor(), error_color);
+
+        panel.clear_custom_error();
+        panel.set_file_state(FileState::Loaded);
+        assert_eq!(panel.GetCanvasColor(), emColor::TRANSPARENT);
+    }
+
+    #[test]
+    fn custom_error_priority() {
+        // Custom error overrides TooCostly + memory limit exceeded.
+        let mut panel = emFilePanel::with_model();
+        panel.set_file_state(FileState::TooCostly);
+        panel.set_memory_need(1000);
+        panel.set_memory_limit(500);
+        panel.set_custom_error("msg");
+        assert_eq!(
+            panel.GetVirFileState(),
+            VirtualFileState::CustomError("msg".to_string())
+        );
+
+        // Custom error overrides even NoFileModel.
+        let mut panel = emFilePanel::new();
+        assert_eq!(panel.GetVirFileState(), VirtualFileState::NoFileModel);
+        panel.set_custom_error("msg");
+        assert_eq!(
+            panel.GetVirFileState(),
+            VirtualFileState::CustomError("msg".to_string())
+        );
+    }
+
+    #[test]
+    fn memory_accessors_roundtrip() {
+        let mut panel = emFilePanel::new();
+        panel.set_memory_need(42);
+        assert_eq!(panel.GetMemoryNeed(), 42);
+
+        panel.set_memory_limit(100);
+        assert_eq!(panel.GetMemoryLimit(), 100);
+    }
 }

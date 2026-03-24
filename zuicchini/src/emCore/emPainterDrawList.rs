@@ -844,3 +844,271 @@ impl DrawList {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::emCore::emColor::emColor;
+    use crate::emCore::emImage::emImage;
+    use crate::emCore::emPainter::emPainter;
+
+    fn images_equal(a: &[u8], b: &[u8]) -> bool {
+        a == b
+    }
+
+    fn pixel_at(map: &[u8], x: usize, y: usize, width: usize) -> [u8; 4] {
+        let off = (y * width + x) * 4;
+        [map[off], map[off + 1], map[off + 2], map[off + 3]]
+    }
+
+    const WHITE: [u8; 4] = [255, 255, 255, 255];
+
+    #[test]
+    fn replay_rect_matches_direct() {
+        // Direct paint
+        let mut img_a = emImage::new(64, 64, 4);
+        img_a.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img_a);
+            p.SetCanvasColor(emColor::WHITE);
+            p.PaintRect(10.0, 10.0, 40.0, 30.0, emColor::RED, emColor::WHITE);
+        }
+
+        // Record + replay
+        let mut draw_list = DrawList::new();
+        {
+            let mut ops = Vec::new();
+            let mut p = emPainter::new_recording(64, 64, &mut ops);
+            p.SetCanvasColor(emColor::WHITE);
+            p.PaintRect(10.0, 10.0, 40.0, 30.0, emColor::RED, emColor::WHITE);
+            *draw_list.ops_mut() = ops;
+        }
+        let mut img_b = emImage::new(64, 64, 4);
+        img_b.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img_b);
+            draw_list.replay(&mut p, (0.0, 0.0));
+        }
+
+        assert!(
+            images_equal(img_a.GetMap(), img_b.GetMap()),
+            "replay of PaintRect must match direct paint"
+        );
+    }
+
+    #[test]
+    fn replay_ellipse_matches_direct() {
+        // Direct paint
+        let mut img_a = emImage::new(64, 64, 4);
+        img_a.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img_a);
+            p.SetCanvasColor(emColor::WHITE);
+            p.PaintEllipse(32.0, 32.0, 20.0, 15.0, emColor::RED, emColor::WHITE);
+        }
+
+        // Record + replay
+        let mut draw_list = DrawList::new();
+        {
+            let mut ops = Vec::new();
+            let mut p = emPainter::new_recording(64, 64, &mut ops);
+            p.SetCanvasColor(emColor::WHITE);
+            p.PaintEllipse(32.0, 32.0, 20.0, 15.0, emColor::RED, emColor::WHITE);
+            *draw_list.ops_mut() = ops;
+        }
+        let mut img_b = emImage::new(64, 64, 4);
+        img_b.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img_b);
+            draw_list.replay(&mut p, (0.0, 0.0));
+        }
+
+        assert!(
+            images_equal(img_a.GetMap(), img_b.GetMap()),
+            "replay of PaintEllipse must match direct paint"
+        );
+    }
+
+    #[test]
+    fn replay_state_push_pop() {
+        let mut draw_list = DrawList::new();
+        {
+            let mut ops = Vec::new();
+            let mut p = emPainter::new_recording(64, 32, &mut ops);
+            p.SetCanvasColor(emColor::WHITE);
+            p.push_state();
+            p.SetCanvasColor(emColor::RED);
+            p.PaintRect(0.0, 0.0, 32.0, 32.0, emColor::BLUE, emColor::RED);
+            p.pop_state();
+            p.PaintRect(32.0, 0.0, 32.0, 32.0, emColor::GREEN, emColor::WHITE);
+            *draw_list.ops_mut() = ops;
+        }
+
+        let mut img = emImage::new(64, 32, 4);
+        img.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img);
+            draw_list.replay(&mut p, (0.0, 0.0));
+        }
+
+        let map = img.GetMap();
+        let px_left = pixel_at(map, 16, 16, 64);
+        assert_ne!(px_left, WHITE, "blue rect area should not be white");
+
+        let px_right = pixel_at(map, 48, 16, 64);
+        assert_ne!(px_right, WHITE, "green rect area should not be white");
+    }
+
+    #[test]
+    fn replay_clip_rect() {
+        let mut draw_list = DrawList::new();
+        {
+            let mut ops = Vec::new();
+            let mut p = emPainter::new_recording(64, 64, &mut ops);
+            p.SetCanvasColor(emColor::WHITE);
+            p.SetClipping(10.0, 10.0, 20.0, 20.0);
+            p.PaintRect(0.0, 0.0, 64.0, 64.0, emColor::RED, emColor::WHITE);
+            *draw_list.ops_mut() = ops;
+        }
+
+        let mut img = emImage::new(64, 64, 4);
+        img.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img);
+            draw_list.replay(&mut p, (0.0, 0.0));
+        }
+
+        let map = img.GetMap();
+        let inside = pixel_at(map, 15, 15, 64);
+        assert_ne!(inside, WHITE, "pixel inside clip region should not be white");
+
+        let outside = pixel_at(map, 5, 5, 64);
+        assert_eq!(outside, WHITE, "pixel outside clip region should be white");
+    }
+
+    #[test]
+    fn replay_offset_translation() {
+        let mut draw_list = DrawList::new();
+        {
+            let mut ops = Vec::new();
+            let mut p = emPainter::new_recording(64, 64, &mut ops);
+            p.SetCanvasColor(emColor::WHITE);
+            p.set_offset(10.0, 10.0);
+            p.PaintRect(0.0, 0.0, 20.0, 20.0, emColor::RED, emColor::WHITE);
+            *draw_list.ops_mut() = ops;
+        }
+
+        // Replay with tile_offset=(0,0)
+        let mut img1 = emImage::new(64, 64, 4);
+        img1.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img1);
+            draw_list.replay(&mut p, (0.0, 0.0));
+        }
+        let map1 = img1.GetMap();
+        let shifted = pixel_at(map1, 15, 15, 64);
+        assert_ne!(shifted, WHITE, "pixel at (15,15) should be painted (rect shifted to 10,10)");
+        let before = pixel_at(map1, 5, 5, 64);
+        assert_eq!(before, WHITE, "pixel at (5,5) should be white (before offset)");
+
+        // Replay with tile_offset=(5,5)
+        let mut img2 = emImage::new(64, 64, 4);
+        img2.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img2);
+            draw_list.replay(&mut p, (5.0, 5.0));
+        }
+        let map2 = img2.GetMap();
+        let tile_shifted = pixel_at(map2, 10, 10, 64);
+        assert_ne!(
+            tile_shifted, WHITE,
+            "pixel at (10,10) should be painted when tile_offset=(5,5)"
+        );
+    }
+
+    #[test]
+    fn replay_gradient_matches_direct() {
+        // Direct paint
+        let mut img_a = emImage::new(64, 64, 4);
+        img_a.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img_a);
+            p.SetCanvasColor(emColor::WHITE);
+            p.paint_linear_gradient(
+                0.0,
+                0.0,
+                64.0,
+                32.0,
+                emColor::RED,
+                emColor::BLUE,
+                true,
+                emColor::WHITE,
+            );
+        }
+
+        // Record + replay
+        let mut draw_list = DrawList::new();
+        {
+            let mut ops = Vec::new();
+            let mut p = emPainter::new_recording(64, 64, &mut ops);
+            p.SetCanvasColor(emColor::WHITE);
+            p.paint_linear_gradient(
+                0.0,
+                0.0,
+                64.0,
+                32.0,
+                emColor::RED,
+                emColor::BLUE,
+                true,
+                emColor::WHITE,
+            );
+            *draw_list.ops_mut() = ops;
+        }
+        let mut img_b = emImage::new(64, 64, 4);
+        img_b.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img_b);
+            draw_list.replay(&mut p, (0.0, 0.0));
+        }
+
+        assert!(
+            images_equal(img_a.GetMap(), img_b.GetMap()),
+            "replay of paint_linear_gradient must match direct paint"
+        );
+    }
+
+    #[test]
+    fn replay_polygon_matches_direct() {
+        let triangle = [(10.0, 10.0), (50.0, 10.0), (30.0, 50.0)];
+
+        // Direct paint
+        let mut img_a = emImage::new(64, 64, 4);
+        img_a.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img_a);
+            p.SetCanvasColor(emColor::WHITE);
+            p.PaintPolygon(&triangle, emColor::GREEN, emColor::WHITE);
+        }
+
+        // Record + replay
+        let mut draw_list = DrawList::new();
+        {
+            let mut ops = Vec::new();
+            let mut p = emPainter::new_recording(64, 64, &mut ops);
+            p.SetCanvasColor(emColor::WHITE);
+            p.PaintPolygon(&triangle, emColor::GREEN, emColor::WHITE);
+            *draw_list.ops_mut() = ops;
+        }
+        let mut img_b = emImage::new(64, 64, 4);
+        img_b.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img_b);
+            draw_list.replay(&mut p, (0.0, 0.0));
+        }
+
+        assert!(
+            images_equal(img_a.GetMap(), img_b.GetMap()),
+            "replay of PaintPolygon must match direct paint"
+        );
+    }
+}

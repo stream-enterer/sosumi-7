@@ -6,6 +6,7 @@ mod core_config_panel;
 mod cursor;
 mod default_item_panel;
 mod file_model;
+mod file_selection;
 mod fp_plugin;
 mod image_file_model;
 mod install_info;

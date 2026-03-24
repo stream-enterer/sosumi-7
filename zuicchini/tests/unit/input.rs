@@ -115,3 +115,92 @@ fn hotkey_parse_meta() {
     let hk2 = Hotkey::TryParse("Cmd+A").unwrap();
     assert!(hk2.meta);
 }
+
+#[test]
+fn hotkey_parse_case_insensitive_ctrl() {
+    for s in &["CTRL+A", "control+A", "Control+a"] {
+        let hk = Hotkey::TryParse(s).unwrap();
+        assert!(hk.ctrl, "failed for {s}");
+        assert!(!hk.alt);
+        assert!(!hk.shift);
+        assert!(!hk.meta);
+        assert_eq!(hk.key, InputKey::Key('a'), "failed for {s}");
+    }
+}
+
+#[test]
+fn hotkey_parse_all_meta_aliases() {
+    for s in &["Win+X", "Super+X", "cmd+X"] {
+        let hk = Hotkey::TryParse(s).unwrap();
+        assert!(hk.meta, "failed for {s}");
+        assert!(!hk.ctrl);
+        assert!(!hk.alt);
+        assert!(!hk.shift);
+        assert_eq!(hk.key, InputKey::Key('x'), "failed for {s}");
+    }
+}
+
+#[test]
+fn hotkey_display_roundtrip() {
+    for s in &["Ctrl+Shift+F1", "Alt+F4", "Escape"] {
+        let hk1 = Hotkey::TryParse(s).unwrap();
+        let display = hk1.to_string();
+        let hk2 = Hotkey::TryParse(&display).unwrap();
+        assert_eq!(hk1.ctrl, hk2.ctrl, "ctrl mismatch for {s}");
+        assert_eq!(hk1.alt, hk2.alt, "alt mismatch for {s}");
+        assert_eq!(hk1.shift, hk2.shift, "shift mismatch for {s}");
+        assert_eq!(hk1.meta, hk2.meta, "meta mismatch for {s}");
+        assert_eq!(hk1.key, hk2.key, "key mismatch for {s}");
+    }
+}
+
+#[test]
+fn hotkey_modifier_mutation() {
+    let mut hk = Hotkey::new(InputKey::Key('c'));
+    assert!(!hk.ctrl);
+    hk.AddModifier(InputKey::Ctrl);
+    assert!(hk.ctrl);
+    assert_eq!(hk.key, InputKey::Key('c'));
+
+    hk.ClearModifiers();
+    assert!(!hk.ctrl);
+    assert!(!hk.alt);
+    assert!(!hk.shift);
+    assert!(!hk.meta);
+    assert_eq!(hk.key, InputKey::Key('c'));
+}
+
+#[test]
+fn hotkey_match_rejects_extra_modifiers() {
+    let hk = Hotkey::TryParse("C").unwrap();
+    assert!(!hk.shift);
+
+    let mut state = emInputState::new();
+    state.press(InputKey::Shift);
+    assert!(state.GetShift());
+
+    assert!(!hk.Match(InputKey::Key('c'), &state));
+}
+
+#[test]
+fn hotkey_parse_special_keys() {
+    let cases: &[(&str, InputKey)] = &[
+        ("esc", InputKey::Escape),
+        ("return", InputKey::Enter),
+        ("del", InputKey::Delete),
+        ("pgup", InputKey::PageUp),
+        ("arrowup", InputKey::ArrowUp),
+    ];
+    for (s, expected) in cases {
+        let hk = Hotkey::TryParse(s).unwrap();
+        assert_eq!(hk.key, *expected, "failed for {s}");
+    }
+}
+
+#[test]
+fn hotkey_set_key() {
+    let mut hk = Hotkey::new(InputKey::Key('a'));
+    assert_eq!(hk.key, InputKey::Key('a'));
+    hk.SetKey(InputKey::F12);
+    assert_eq!(hk.key, InputKey::F12);
+}

@@ -145,3 +145,66 @@ fn window_geometry_all_fields_serialized() {
     assert_eq!(rec.get_bool("maximized"), Some(true));
     assert_eq!(rec.get_bool("fullscreen"), Some(true));
 }
+
+#[test]
+fn geometry_extreme_values() {
+    let geo = WindowGeometry {
+        x: i32::MAX,
+        y: i32::MAX,
+        width: u32::MAX,
+        height: u32::MAX,
+        maximized: false,
+        fullscreen: false,
+    };
+
+    let rec = geo.to_rec();
+    let restored = WindowGeometry::from_rec(&rec).expect("from_rec");
+    assert_eq!(restored.x, i32::MAX);
+    assert_eq!(restored.y, i32::MAX);
+    assert_eq!(restored.width, u32::MAX);
+    assert_eq!(restored.height, u32::MAX);
+}
+
+#[test]
+fn geometry_zero_size() {
+    let geo = WindowGeometry {
+        x: 50,
+        y: 50,
+        width: 0,
+        height: 0,
+        maximized: false,
+        fullscreen: false,
+    };
+
+    let rec = geo.to_rec();
+    let restored = WindowGeometry::from_rec(&rec).expect("from_rec");
+    assert_eq!(restored.width, 0);
+    assert_eq!(restored.height, 0);
+}
+
+#[test]
+fn geometry_wrong_type_fails() {
+    let mut rec = RecStruct::new();
+    rec.set_str("x", "not_a_number");
+    rec.set_int("y", 100);
+    rec.set_int("width", 800);
+    rec.set_int("height", 600);
+
+    let result = WindowGeometry::from_rec(&rec);
+    assert!(result.is_err());
+}
+
+#[test]
+fn geometry_partial_bools() {
+    let mut rec = RecStruct::new();
+    rec.set_int("x", 10);
+    rec.set_int("y", 20);
+    rec.set_int("width", 800);
+    rec.set_int("height", 600);
+    rec.set_bool("maximized", true);
+    // Do NOT set "fullscreen" — should default to false.
+
+    let geo = WindowGeometry::from_rec(&rec).expect("from_rec");
+    assert!(geo.maximized);
+    assert!(!geo.fullscreen);
+}

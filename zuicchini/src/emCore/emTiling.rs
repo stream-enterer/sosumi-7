@@ -267,3 +267,81 @@ pub(crate) fn position_aux_panel(
     ctx.layout_child(aux_id, aux_rect.x, aux_rect.y, aux_rect.w, aux_rect.h);
     Some(aux_id)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn orientation_resolve_wide() {
+        let o = Orientation::Adaptive {
+            tallness_threshold: 1.0,
+        };
+        assert_eq!(o.resolve(2.0, 1.0), ResolvedOrientation::Horizontal);
+    }
+
+    #[test]
+    fn orientation_resolve_tall() {
+        let o = Orientation::Adaptive {
+            tallness_threshold: 1.0,
+        };
+        assert_eq!(o.resolve(1.0, 2.0), ResolvedOrientation::Vertical);
+    }
+
+    #[test]
+    fn orientation_resolve_square() {
+        let o = Orientation::Adaptive {
+            tallness_threshold: 1.0,
+        };
+        // tallness = 1.0 <= threshold 1.0 → Horizontal (boundary)
+        assert_eq!(o.resolve(1.0, 1.0), ResolvedOrientation::Horizontal);
+    }
+
+    #[test]
+    fn alignment_display_roundtrip() {
+        for variant in [
+            Alignment::Start,
+            Alignment::Center,
+            Alignment::End,
+            Alignment::Stretch,
+        ] {
+            let s = variant.to_string();
+            let parsed: Alignment = s.parse().unwrap();
+            assert_eq!(parsed, variant);
+        }
+
+        for variant in [AlignmentH::Left, AlignmentH::Center, AlignmentH::Right] {
+            let s = variant.to_string();
+            let parsed: AlignmentH = s.parse().unwrap();
+            assert_eq!(parsed, variant);
+        }
+
+        for variant in [AlignmentV::Top, AlignmentV::Center, AlignmentV::Bottom] {
+            let s = variant.to_string();
+            let parsed: AlignmentV = s.parse().unwrap();
+            assert_eq!(parsed, variant);
+        }
+    }
+
+    #[test]
+    fn spacing_uniform() {
+        let s = Spacing::uniform(5.0, 3.0);
+        assert_eq!(s.margin_left, 5.0);
+        assert_eq!(s.margin_right, 5.0);
+        assert_eq!(s.margin_top, 5.0);
+        assert_eq!(s.margin_bottom, 5.0);
+        assert_eq!(s.inner_h, 3.0);
+        assert_eq!(s.inner_v, 3.0);
+    }
+
+    #[test]
+    fn child_constraint_defaults() {
+        let c = ChildConstraint::default();
+        assert_eq!(c.weight, 1.0);
+        assert_eq!(c.min_main, 0.0);
+        assert!(c.max_main.is_infinite());
+        assert_eq!(c.preferred_tallness, 0.2);
+        assert_eq!(c.min_tallness, 1e-4);
+        assert_eq!(c.max_tallness, 1e4);
+    }
+}

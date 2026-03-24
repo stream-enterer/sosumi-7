@@ -955,3 +955,71 @@ fn colorfield_drag_hue_slider_updates_rgb_e2e() {
     h.expand_to(16.0);
     // Would need: find hue slider bounds, drag to new GetPos, tick, verify RGBA fields.
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2C: emColorFieldFieldPanel coverage
+// ---------------------------------------------------------------------------
+
+/// After expansion, verify that each scalar-field child panel has a non-zero
+/// layout rect (proving the layout was computed and the panel would paint).
+#[test]
+fn colorfield_scalar_panels_paint() {
+    let mut h = PipelineTestHarness::new();
+    let root = h.get_root_panel();
+
+    let look = emLook::new();
+    let behavior = ColorFieldBehavior::new(look).with_color(emColor::RED);
+    let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
+
+    h.tick();
+    h.expand_to(16.0);
+
+    let layout_id = h.tree.children(panel_id).next().expect("raster layout");
+    let scalar_names = ["r", "g", "b", "a", "h", "s", "v"];
+
+    for child_id in h.tree.children(layout_id) {
+        let name = h.tree.name(child_id).unwrap_or("?").to_string();
+        if !scalar_names.contains(&name.as_str()) {
+            continue;
+        }
+        let r = h.tree.layout_rect(child_id).expect("layout rect should exist");
+        assert!(
+            r.w > 0.0 && r.h > 0.0,
+            "Scalar panel '{name}' should have non-zero layout rect, got {r:?}"
+        );
+    }
+}
+
+/// After expanding with #FF0000FF, the text field child's expansion data
+/// should contain "FF0000" (no alpha suffix for opaque colors).
+#[test]
+fn colorfield_text_panel_hex() {
+    let mut h = PipelineTestHarness::new();
+    let root = h.get_root_panel();
+
+    let look = emLook::new();
+    let behavior = ColorFieldBehavior::new(look).with_color(emColor::rgba(0xFF, 0x00, 0x00, 0xFF));
+    let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
+
+    h.tick();
+    h.expand_to(16.0);
+
+    let behavior = h.tree.take_behavior(panel_id).expect("behavior exists");
+    let cfb = behavior
+        .as_any()
+        .downcast_ref::<ColorFieldBehavior>()
+        .expect("should be ColorFieldBehavior");
+
+    let exp = cfb
+        .color_field
+        .expansion()
+        .expect("expansion should exist");
+
+    assert!(
+        exp.tf_name.contains("FF0000"),
+        "Text field should contain 'FF0000' for pure red, got '{}'",
+        exp.tf_name
+    );
+
+    h.tree.put_behavior(panel_id, behavior);
+}
