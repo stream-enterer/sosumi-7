@@ -1899,18 +1899,13 @@ impl emVisitingViewAnimator {
         // Rust rel_a = 1/C++relA, so relA = 1/target_a.
         let vw = (hw * hh * hp * target_a / panel_height).sqrt();
         let vh = vw * panel_height / hp;
-        // Rust rel_x/y uses viewport-fraction convention:
-        //   vcx = vw_viewport * (0.5 + rel_x)
-        // C++ uses: vx = hx + hw*0.5 - (relX+0.5)*ViewedWidth
-        // In Rust: the panel center is at vcx = hw*(0.5+target_x), so
-        //   panel_vx = vcx - vw*0.5 = hw*(0.5+target_x) - vw*0.5
-        //   vx(C++) = hx + hw*0.5 - (relX+0.5)*vw
-        // For C++ relX=0 (centered): vx = hx + hw*0.5 - 0.5*vw = hw*0.5 - vw*0.5
-        // For Rust rel_x=0 (centered): panel_vx = hw*0.5 - vw*0.5 ✓
-        // Mapping: hw*(0.5+target_x) - vw*0.5 = hx + hw*0.5 - (relX+0.5)*vw
-        //   => relX = (vw*0.5 - hw*target_x) / vw - 0.5
-        //          = - hw*target_x / vw
-        // But we don't need to convert: we can compute vx directly from Rust coords.
+        // Compute target viewport position using Rust's rel_x convention.
+        // Rust: vcx = vw_viewport * (0.5 + rel_x), root_vx = vcx - 0.5 * vw_target.
+        // This differs from the C++ formula (vx = hmx - (relX+0.5)*vw) because
+        // Rust rel_x and C++ relX have opposite sign AND zoom-dependent scaling.
+        // The Rust-native formula ensures the animator targets the correct Rust
+        // rel_x position. The dx/dy negation below converts the panel-space
+        // displacement to the correct Rust scroll direction.
         let vx = hx + hw * (0.5 + target_x) - vw * 0.5;
         let vy = hy + hh * (0.5 + target_y) - vh * 0.5;
         let mut bx = (sx - vx) / vw;
