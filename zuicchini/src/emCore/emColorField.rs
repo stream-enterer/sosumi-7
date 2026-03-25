@@ -206,11 +206,10 @@ impl emColorField {
         let (h, s, v) = c.GetHSV();
         exp.hue_out = (h * 100.0 + 0.5) as i64;
         exp.sf_hue = exp.hue_out;
-        // C++ GetSat/GetVal return [0,100]; Rust to_hsv returns [0,1].
-        // Scale by 10000 to match C++ range [0,10000].
-        exp.sat_out = (s * 10000.0 + 0.5) as i64;
+        // GetHSV now returns s/v in [0,100] matching C++. Scale by 100 for [0,10000] range.
+        exp.sat_out = (s * 100.0 + 0.5) as i64;
         exp.sf_sat = exp.sat_out;
-        exp.val_out = (v * 10000.0 + 0.5) as i64;
+        exp.val_out = (v * 100.0 + 0.5) as i64;
         exp.sf_val = exp.val_out;
 
         exp.name_out = c.to_string();
@@ -260,8 +259,8 @@ impl emColorField {
         }
         if hsv_changed {
             let h = exp.sf_hue as f32 / 100.0;
-            let s = (exp.sf_sat as f32 / 10000.0).clamp(0.0, 1.0);
-            let v = (exp.sf_val as f32 / 10000.0).clamp(0.0, 1.0);
+            let s = (exp.sf_sat as f32 / 100.0).clamp(0.0, 100.0);
+            let v = (exp.sf_val as f32 / 100.0).clamp(0.0, 100.0);
             self.color = emColor::SetHSVA(h, s, v).SetAlpha(self.color.GetAlpha());
         }
         if text_changed {
@@ -371,10 +370,10 @@ impl emColorField {
                 exp.hue_out = (h * 100.0 + 0.5) as i64;
                 exp.sf_hue = exp.hue_out;
             }
-            exp.sat_out = (s * 10000.0 + 0.5) as i64;
+            exp.sat_out = (s * 100.0 + 0.5) as i64;
             exp.sf_sat = exp.sat_out;
         }
-        exp.val_out = (v * 10000.0 + 0.5) as i64;
+        exp.val_out = (v * 100.0 + 0.5) as i64;
         exp.sf_val = exp.val_out;
     }
 

@@ -533,9 +533,9 @@ fn l3_emColor_SetHue_preserves_sat_val() {
     let (_, rs, rv) = result.GetHSV();
     // Saturation and value should be preserved (within the integer HSV algorithm's precision)
     // Note: for zero-saturation colors (greys), hue is arbitrary so sat/val still match
-    if s > 0.01 {
-        assert!((rs - s).abs() < 0.02, "sat changed");
-        assert!((rv - v).abs() < 0.02, "val changed");
+    if s > 1.0 {
+        assert!((rs - s).abs() < 2.0, "sat changed");
+        assert!((rv - v).abs() < 2.0, "val changed");
     }
 }
 

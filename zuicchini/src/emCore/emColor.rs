@@ -71,23 +71,21 @@ impl emColor {
     }
 
     // DIVERGED: SetHSVA — renamed to SetHSVA constructor (not mutator); alpha omitted
-    // (use .SetAlpha() to set it); s/v take [0,1] not [0,100] percent
-    /// Create a color from HSV values. `h` in [0, 360), `s` and `v` in [0, 1].
+    // (use .SetAlpha() to set it). s/v scale matches C++ [0,100].
+    /// Create a color from HSV values. `h` in [0, 360), `s` and `v` in [0, 100].
     ///
     /// Uses the exact C++ integer algorithm (emColor.cpp:868-918):
-    ///   cmax = (int)(v*255+0.5); cmin = cmax - (int)(cmax*s+0.5);
-    ///   cunit = cmax-cmin; chue = (int)(cunit*h/60+0.5);
+    ///   cmax = (int)(val*2.55+0.5); cmin = cmax - (int)(cmax*sat*0.01+0.5);
+    ///   cunit = cmax-cmin; chue = (int)(cunit*hue/60+0.5);
     ///   then sextant dispatch on chue vs cunit boundaries.
     pub fn SetHSVA(h: f32, s: f32, v: f32) -> Self {
-        let s = s.clamp(0.0, 1.0);
-        let v = v.clamp(0.0, 1.0);
+        let s = s.clamp(0.0, 100.0);
+        let v = v.clamp(0.0, 100.0);
         let h = if h < 0.0 { (h % 360.0) + 360.0 } else if h >= 360.0 { h % 360.0 } else { h };
 
-        // Replicate C++ expression order exactly to match FP rounding.
-        // C++ val/sat are [0,100]; ours are [0,1], so multiply by 100 first.
-        // Use f64 for the conversion to avoid f32 precision loss.
-        let v_pct = v as f64 * 100.0;
-        let s_pct = s as f64 * 100.0;
+        // Exact C++ expression order and types. s/v are already [0,100].
+        let v_pct = v as f64;
+        let s_pct = s as f64;
         let cmax = (v_pct * 2.55 + 0.5) as i32;
         let cmin = cmax - (cmax as f64 * s_pct * 0.01 + 0.5) as i32;
         let cunit = cmax - cmin;
@@ -112,9 +110,10 @@ impl emColor {
         Self::rgb(r as u8, g as u8, b as u8)
     }
 
-    // DIVERGED: GetHue/GetSat/GetVal — combined into GetHSV returning (h, s, v) tuple;
-    // s/v return [0,1] not [0,100] percent
-    /// Convert to HSV. Returns `(h, s, v)` with h in [0, 360), s and v in [0, 1].
+    // DIVERGED: GetHue/GetSat/GetVal — combined into GetHSV returning (h, s, v) tuple
+    /// Convert to HSV. Returns `(h, s, v)` with h in [0, 360), s and v in [0, 100].
+    ///
+    /// Matches C++ GetHue/GetSat/GetVal scale: s = (cmax-cmin)*100/cmax, v = cmax*100/255.
     pub fn GetHSV(self) -> (f32, f32, f32) {
         let r = self.GetRed() as f32 / 255.0;
         let g = self.GetGreen() as f32 / 255.0;
@@ -134,9 +133,9 @@ impl emColor {
             60.0 * ((r - g) / delta + 4.0)
         };
 
-        let s = if max == 0.0 { 0.0 } else { delta / max };
+        let s = if max == 0.0 { 0.0 } else { (delta / max) * 100.0 };
 
-        (h, s, max)
+        (h, s, max * 100.0)
     }
 
     // DIVERGED: GetLighted — split into lighten (positive) and darken (negative);
@@ -517,8 +516,8 @@ mod tests {
     fn hsv_pure_colors() {
         let (h, s, v) = emColor::RED.GetHSV();
         assert!((h - 0.0).abs() < 1.0);
-        assert!((s - 1.0).abs() < 0.01);
-        assert!((v - 1.0).abs() < 0.01);
+        assert!((s - 100.0).abs() < 1.0);
+        assert!((v - 100.0).abs() < 1.0);
 
         let (h, _, _) = emColor::GREEN.GetHSV();
         assert!((h - 120.0).abs() < 1.0);
@@ -582,32 +581,32 @@ mod tests {
 
     #[test]
     fn with_hue_preserves_sv() {
-        let c = emColor::SetHSVA(120.0, 0.8, 0.6);
+        let c = emColor::SetHSVA(120.0, 80.0, 60.0);
         let shifted = c.SetHue(240.0);
         let (h, s, v) = shifted.GetHSV();
         assert!((h - 240.0).abs() < 2.0);
-        assert!((s - 0.8).abs() < 0.02);
-        assert!((v - 0.6).abs() < 0.02);
+        assert!((s - 80.0).abs() < 2.0);
+        assert!((v - 60.0).abs() < 2.0);
     }
 
     #[test]
     fn with_saturation_preserves_hv() {
-        let c = emColor::SetHSVA(120.0, 0.8, 0.6);
-        let changed = c.SetSat(0.3);
+        let c = emColor::SetHSVA(120.0, 80.0, 60.0);
+        let changed = c.SetSat(30.0);
         let (h, s, v) = changed.GetHSV();
         assert!((h - 120.0).abs() < 2.0);
-        assert!((s - 0.3).abs() < 0.02);
-        assert!((v - 0.6).abs() < 0.02);
+        assert!((s - 30.0).abs() < 2.0);
+        assert!((v - 60.0).abs() < 2.0);
     }
 
     #[test]
     fn with_value_preserves_hs() {
-        let c = emColor::SetHSVA(120.0, 0.8, 0.6);
-        let changed = c.SetVal(0.9);
+        let c = emColor::SetHSVA(120.0, 80.0, 60.0);
+        let changed = c.SetVal(90.0);
         let (h, s, v) = changed.GetHSV();
         assert!((h - 120.0).abs() < 2.0);
-        assert!((s - 0.8).abs() < 0.02);
-        assert!((v - 0.9).abs() < 0.02);
+        assert!((s - 80.0).abs() < 2.0);
+        assert!((v - 90.0).abs() < 2.0);
     }
 
     #[test]
