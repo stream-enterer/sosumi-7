@@ -65,6 +65,8 @@ use zuicchini::emCore::emSplitter::emSplitter;
 
 use zuicchini::emCore::emTextField::emTextField;
 
+use zuicchini::emCore::emTunnel::emTunnel;
+
 use super::common::*;
 
 /// Skip test if golden data hasn't been generated yet.
@@ -294,47 +296,6 @@ impl PanelBehavior for SplitterPanel {
 // ═══════════════════════════════════════════════════════════════════
 // Stub panels for unported C++ types
 // ═══════════════════════════════════════════════════════════════════
-
-/// Stub for C++ emTunnel — renders a Group border with caption, positions
-/// a single child filling the content area.
-struct TunnelStubPanel {
-    border: emBorder,
-    look: Rc<emLook>,
-}
-
-impl TunnelStubPanel {
-    fn new(caption: &str, look: Rc<emLook>) -> Self {
-        let border = emBorder::new(OuterBorderType::Group)
-            .with_inner(InnerBorderType::Group)
-            .with_caption(caption);
-        Self { border, look }
-    }
-}
-
-impl PanelBehavior for TunnelStubPanel {
-    fn Paint(&mut self, p: &mut emPainter, w: f64, h: f64, s: &PanelState) {
-        self.border
-            .paint_border(p, w, h, &self.look, s.is_focused(), s.enabled, 1.0);
-    }
-
-    fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
-        let children = ctx.children();
-        if children.is_empty() {
-            return;
-        }
-        let rect = ctx.layout_rect();
-        let cr = self.border.GetContentRect(rect.w, rect.h, &self.look);
-        ctx.layout_child(children[0], cr.x, cr.y, cr.w, cr.h);
-        let cc = self
-            .border
-            .content_canvas_color(ctx.GetCanvasColor(), &self.look, ctx.is_enabled());
-        ctx.set_all_children_canvas_color(cc);
-    }
-
-    fn auto_expand(&self) -> bool {
-        true
-    }
-}
 
 /// Stub for C++ emFileSelectionBox — renders a Group border with caption.
 struct FileSelectionBoxStubPanel {
@@ -1153,17 +1114,19 @@ impl TkTestPanel {
                 }),
             );
 
-            let mut b2 = emButton::new("Button", look.clone());
-            b2.SetDescription(
-                "This is a long description for testing.\n\
-                 It has multiple lines.\n\
-                 Third line here.",
-            );
+            let mut b2 = emButton::new("Long Desc", look.clone());
+            {
+                let mut desc = String::new();
+                for _ in 0..100 {
+                    desc.push_str("This is a looooooooooooooooooooooooooooooooooooooooooooooooooooooong description of the button.\n");
+                }
+                b2.SetDescription(&desc);
+            }
             let id = ctx.tree.create_child(gid, "b2");
             ctx.tree
                 .set_behavior(id, Box::new(ButtonPanel { widget: b2 }));
 
-            let mut b3 = emButton::new("Button", look.clone());
+            let mut b3 = emButton::new("NoEOI", look.clone());
             b3.SetNoEOI(true);
             let id = ctx.tree.create_child(gid, "b3");
             ctx.tree
@@ -1236,12 +1199,14 @@ impl TkTestPanel {
         let gid = Self::make_category(ctx.tree, grid_id, "textfields", "Text Fields", None, None);
         {
             let mut tf1 = emTextField::new(look.clone());
+            tf1.SetCaption("Read-Only");
             tf1.SetText("Read-Only");
             let id = ctx.tree.create_child(gid, "tf1");
             ctx.tree
                 .set_behavior(id, Box::new(TextFieldPanel { widget: tf1 }));
 
             let mut tf2 = emTextField::new(look.clone());
+            tf2.SetCaption("Editable");
             tf2.SetEditable(true);
             tf2.SetText("Editable");
             let id = ctx.tree.create_child(gid, "tf2");
@@ -1249,6 +1214,7 @@ impl TkTestPanel {
                 .set_behavior(id, Box::new(TextFieldPanel { widget: tf2 }));
 
             let mut tf3 = emTextField::new(look.clone());
+            tf3.SetCaption("Password");
             tf3.SetEditable(true);
             tf3.SetText("Password");
             tf3.SetPasswordMode(true);
@@ -1257,6 +1223,7 @@ impl TkTestPanel {
                 .set_behavior(id, Box::new(TextFieldPanel { widget: tf3 }));
 
             let mut mltf1 = emTextField::new(look.clone());
+            mltf1.SetCaption("Multi-Line");
             mltf1.SetEditable(true);
             mltf1.SetMultiLineMode(true);
             mltf1.SetText("first line\nsecond line\n...");
@@ -1275,15 +1242,14 @@ impl TkTestPanel {
             None,
         );
         {
+            let mut sf1 = emScalarField::new(0.0, 100.0, look.clone());
+            sf1.SetCaption("Read-Only");
             let id = ctx.tree.create_child(gid, "sf1");
-            ctx.tree.set_behavior(
-                id,
-                Box::new(ScalarFieldPanel {
-                    widget: emScalarField::new(0.0, 100.0, look.clone()),
-                }),
-            );
+            ctx.tree
+                .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf1 }));
 
             let mut sf2 = emScalarField::new(0.0, 100.0, look.clone());
+            sf2.SetCaption("Editable");
             sf2.SetEditable(true);
             let id = ctx.tree.create_child(gid, "sf2");
             ctx.tree
@@ -1298,6 +1264,7 @@ impl TkTestPanel {
 
             // sf4: Level 1-5, val=3, custom format, GetTextBoxTallness=0.25
             let mut sf4 = emScalarField::new(1.0, 5.0, look.clone());
+            sf4.SetCaption("Level");
             sf4.SetEditable(true);
             sf4.SetValue(3.0);
             sf4.SetTextBoxTallness(0.25);
@@ -1308,11 +1275,12 @@ impl TkTestPanel {
 
             // sf5: PlayLength, time format
             let mut sf5 = emScalarField::new(0.0, 86400000.0, look.clone());
+            sf5.SetCaption("Play Length");
             sf5.SetEditable(true);
             sf5.SetValue(14400000.0);
+            // C++ emTestPanel.cpp:636
             sf5.SetScaleMarkIntervals(&[
-                86400000, 43200000, 21600000, 10800000, 3600000, 1800000, 600000, 300000, 60000,
-                30000, 10000, 5000, 1000,
+                3600000, 900000, 300000, 60000, 10000, 1000, 100, 10, 1,
             ]);
             sf5.SetTextOfValueFunc(Box::new(|val, _interval| {
                 let ms = val.unsigned_abs();
@@ -1327,7 +1295,12 @@ impl TkTestPanel {
 
             // sf6: PlayPos, same time format, max=sf5.GetValue
             let mut sf6 = emScalarField::new(0.0, 14400000.0, look.clone());
+            sf6.SetCaption("Play Position");
             sf6.SetEditable(true);
+            // C++ emTestPanel.cpp:643
+            sf6.SetScaleMarkIntervals(&[
+                3600000, 900000, 300000, 60000, 10000, 1000, 100, 10, 1,
+            ]);
             sf6.SetTextOfValueFunc(Box::new(|val, _interval| {
                 let ms = val.unsigned_abs();
                 let s = ms / 1000;
@@ -1351,12 +1324,14 @@ impl TkTestPanel {
         );
         {
             let mut cf1 = emColorField::new(look.clone());
+            cf1.SetCaption("Read-Only");
             cf1.SetColor(emColor::rgba(0xBB, 0x22, 0x22, 0xFF));
             let id = ctx.tree.create_child(gid, "cf1");
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf1 }));
 
             let mut cf2 = emColorField::new(look.clone());
+            cf2.SetCaption("Editable");
             cf2.SetEditable(true);
             cf2.SetColor(emColor::rgba(0x22, 0xBB, 0x22, 0xFF));
             let id = ctx.tree.create_child(gid, "cf2");
@@ -1364,6 +1339,7 @@ impl TkTestPanel {
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf2 }));
 
             let mut cf3 = emColorField::new(look.clone());
+            cf3.SetCaption("Editable, Alpha Enabled");
             cf3.SetEditable(true);
             cf3.SetAlphaEnabled(true);
             cf3.SetColor(emColor::rgba(0x22, 0x22, 0xBB, 0xFF));
@@ -1372,27 +1348,52 @@ impl TkTestPanel {
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf3 }));
         }
 
-        // 7. Tunnels (C++ :735-754) — stub panels, emTunnel not ported
+        // 7. Tunnels (C++ emTestPanel.cpp:662-680)
         let gid = Self::make_category(ctx.tree, grid_id, "tunnels", "Tunnels", Some(0.4), None);
         {
-            let tunnel_info: [(&str, &str); 4] = [
-                ("t1", "Tunnel"),
-                ("t2", "Deeper Tunnel"),
-                ("t3", "Square End"),
-                ("t4", "Square End, Zero Depth"),
-            ];
-            for (name, caption) in &tunnel_info {
-                let tid = ctx.tree.create_child(gid, name);
-                ctx.tree
-                    .set_behavior(tid, Box::new(TunnelStubPanel::new(caption, look.clone())));
-                // Each tunnel has a child button inside
-                let child = ctx.tree.create_child(tid, "child");
-                ctx.tree.set_behavior(
-                    child,
-                    Box::new(ButtonPanel {
-                        widget: emButton::new("Inside", look.clone()),
-                    }),
-                );
+            let tid = ctx.tree.create_child(gid, "t1");
+            let t1 = emTunnel::new(look.clone()).with_caption("Tunnel");
+            ctx.tree.set_behavior(tid, Box::new(t1));
+            let child = ctx.tree.create_child(tid, "e");
+            ctx.tree.set_behavior(
+                child,
+                Box::new(ButtonPanel {
+                    widget: emButton::new("End Of Tunnel", look.clone()),
+                }),
+            );
+
+            let tid = ctx.tree.create_child(gid, "t2");
+            let mut t2 = emTunnel::new(look.clone()).with_caption("Deeper Tunnel");
+            t2.SetDepth(30.0);
+            ctx.tree.set_behavior(tid, Box::new(t2));
+            let child = ctx.tree.create_child(tid, "e");
+            {
+                let mut rg = emRasterGroup::new();
+                rg.border.caption = "End Of Tunnel".to_string();
+                ctx.tree.set_behavior(child, Box::new(rg));
+            }
+
+            let tid = ctx.tree.create_child(gid, "t3");
+            let mut t3 = emTunnel::new(look.clone()).with_caption("Square End");
+            t3.SetChildTallness(1.0);
+            ctx.tree.set_behavior(tid, Box::new(t3));
+            let child = ctx.tree.create_child(tid, "e");
+            {
+                let mut rg = emRasterGroup::new();
+                rg.border.caption = "End Of Tunnel".to_string();
+                ctx.tree.set_behavior(child, Box::new(rg));
+            }
+
+            let tid = ctx.tree.create_child(gid, "t4");
+            let mut t4 = emTunnel::new(look.clone()).with_caption("Square End, Zero Depth");
+            t4.SetChildTallness(1.0);
+            t4.SetDepth(0.0);
+            ctx.tree.set_behavior(tid, Box::new(t4));
+            let child = ctx.tree.create_child(tid, "e");
+            {
+                let mut rg = emRasterGroup::new();
+                rg.border.caption = "End Of Tunnel".to_string();
+                ctx.tree.set_behavior(child, Box::new(rg));
             }
         }
 
@@ -1408,55 +1409,69 @@ impl TkTestPanel {
         {
             let items7: Vec<String> = (1..=7).map(|i| format!("Item {i}")).collect();
 
+            let mut lb1 = emListBox::new(look.clone());
+            lb1.SetCaption("Empty");
             let id = ctx.tree.create_child(gid, "l1");
-            ctx.tree.set_behavior(
-                id,
-                Box::new(ListBoxPanel {
-                    widget: emListBox::new(look.clone()),
-                }),
-            );
+            ctx.tree
+                .set_behavior(id, Box::new(ListBoxPanel { widget: lb1 }));
 
             let mut lb2 = emListBox::new(look.clone());
+            lb2.SetCaption("Single-Selection");
             lb2.SetSelectionType(SelectionMode::Single);
             lb2.set_items(items7.clone());
+            lb2.SetSelectedIndex(0);
             let id = ctx.tree.create_child(gid, "l2");
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb2 }));
 
             let mut lb3 = emListBox::new(look.clone());
+            lb3.SetCaption("Read-Only");
             lb3.SetSelectionType(SelectionMode::ReadOnly);
             lb3.set_items(items7.clone());
+            lb3.SetSelectedIndex(2);
             let id = ctx.tree.create_child(gid, "l3");
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb3 }));
 
             let mut lb4 = emListBox::new(look.clone());
+            lb4.SetCaption("Multi-Selection");
             lb4.SetSelectionType(SelectionMode::Multi);
             lb4.set_items(items7.clone());
+            lb4.Select(1, false);
+            lb4.Select(2, false);
+            lb4.Select(3, false);
+            lb4.Select(4, false);
             let id = ctx.tree.create_child(gid, "l4");
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb4 }));
 
             let mut lb5 = emListBox::new(look.clone());
+            lb5.SetCaption("Toggle-Selection");
             lb5.SetSelectionType(SelectionMode::Toggle);
             lb5.set_items(items7.clone());
+            lb5.Select(2, false);
+            lb5.Select(4, false);
             let id = ctx.tree.create_child(gid, "l5");
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb5 }));
 
             // l6: single column
             let mut lb6 = emListBox::new(look.clone());
+            lb6.SetCaption("Single Column");
             lb6.SetSelectionType(SelectionMode::Single);
             lb6.set_items(items7.clone());
             lb6.set_fixed_column_count(Some(1));
+            lb6.SetSelectedIndex(0);
             let id = ctx.tree.create_child(gid, "l6");
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb6 }));
 
-            // l7: regular listbox (custom panels not ported)
+            // l7: custom list box (custom panels not ported)
             let mut lb7 = emListBox::new(look.clone());
-            lb7.SetSelectionType(SelectionMode::Single);
+            lb7.SetCaption("Custom List Box");
+            lb7.SetSelectionType(SelectionMode::Multi);
             lb7.set_items(items7);
+            lb7.SetSelectedIndex(0);
             let id = ctx.tree.create_child(gid, "l7");
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb7 }));
@@ -1470,32 +1485,31 @@ impl TkTestPanel {
             rl.preferred_child_tallness = 0.1;
             let rl_id = ctx.tree.create_child(gid, "rl");
 
-            let cb_names = [
-                "CbTopLev",
-                "CbPZoom",
-                "CbModal",
-                "CbFullscreen",
-                "CbPopup",
-                "CbUndec",
-                "CbResizable",
+            // C++ emTestPanel.cpp:738-747
+            let cb_items: &[(&str, &str, bool)] = &[
+                ("tl", "Top-Level", false),
+                ("VF_POPUP_ZOOM", "VF_POPUP_ZOOM", true),
+                ("WF_MODAL", "WF_MODAL", true),
+                ("WF_UNDECORATED", "WF_UNDECORATED", false),
+                ("WF_POPUP", "WF_POPUP", false),
+                ("WF_MAXIMIZED", "WF_MAXIMIZED", false),
+                ("WF_FULLSCREEN", "WF_FULLSCREEN", false),
             ];
-            for name in &cb_names {
+            for &(name, caption, checked) in cb_items {
                 let id = ctx.tree.create_child(rl_id, name);
-                ctx.tree.set_behavior(
-                    id,
-                    Box::new(CheckBoxPanel {
-                        widget: emCheckBox::new(name, look.clone()),
-                    }),
-                );
+                let mut cb = emCheckBox::new(caption, look.clone());
+                if checked {
+                    cb.SetChecked(true);
+                }
+                ctx.tree.set_behavior(id, Box::new(CheckBoxPanel { widget: cb }));
             }
             ctx.tree.set_behavior(rl_id, Box::new(rl));
 
-            // emButton
-            let id = ctx.tree.create_child(gid, "dlgButton");
+            let id = ctx.tree.create_child(gid, "bt");
             ctx.tree.set_behavior(
                 id,
                 Box::new(ButtonPanel {
-                    widget: emButton::new("Test Dialog...", look.clone()),
+                    widget: emButton::new("Create Test Dialog", look.clone()),
                 }),
             );
         }
@@ -1518,7 +1532,7 @@ impl TkTestPanel {
             ctx.tree.set_behavior(
                 id,
                 Box::new(ButtonPanel {
-                    widget: emButton::new("Open", look.clone()),
+                    widget: emButton::new("Open...", look.clone()),
                 }),
             );
 
@@ -1526,7 +1540,7 @@ impl TkTestPanel {
             ctx.tree.set_behavior(
                 id,
                 Box::new(ButtonPanel {
-                    widget: emButton::new("Open Multi", look.clone()),
+                    widget: emButton::new("Open Multi, Allow Dir...", look.clone()),
                 }),
             );
 
@@ -1534,7 +1548,7 @@ impl TkTestPanel {
             ctx.tree.set_behavior(
                 id,
                 Box::new(ButtonPanel {
-                    widget: emButton::new("Save As", look.clone()),
+                    widget: emButton::new("Save As...", look.clone()),
                 }),
             );
         }
