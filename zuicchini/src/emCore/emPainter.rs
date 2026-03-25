@@ -1614,7 +1614,7 @@ impl<'a> emPainter<'a> {
                 char_width,
                 char_height,
                 color,
-                self.state.canvas_color,
+                canvas_color,
             );
             return;
         }
