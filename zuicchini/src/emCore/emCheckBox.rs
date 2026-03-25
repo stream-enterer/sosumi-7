@@ -161,7 +161,7 @@ impl emCheckBox {
             let mut stroke = emStroke::new(check_color, fw * 0.16);
             stroke.join = LineJoin::Round;
             stroke.cap = LineCap::Round;
-            painter.PaintSolidPolyline(&verts, &stroke, false, emColor::TRANSPARENT);
+            painter.PaintSolidPolyline(&verts, &stroke, false, face_color);
         }
 
         // Paint checkbox image overlay (C++ lines 318-331).

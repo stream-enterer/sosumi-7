@@ -167,7 +167,7 @@ impl emRadioBox {
                 dot_w * 0.5,
                 dot_h * 0.5,
                 self.look.input_fg_color,
-                emColor::TRANSPARENT,
+                face_color,
             );
         }
 

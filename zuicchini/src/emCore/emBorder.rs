@@ -1580,15 +1580,19 @@ How to move or set the focus:\n\
         let cap_align = self.caption_alignment.unwrap_or(self.label_alignment);
         let desc_align = self.description_alignment.unwrap_or(self.label_alignment);
 
-        // Icon
+        // Icon — C++ re-centers to image's true aspect ratio (emBorder.cpp:1354-1357)
         if let Some(ref icon_rect) = label.icon_rect {
             if let Some(ref img) = self.icon {
                 if !img.IsEmpty() {
+                    let true_w =
+                        icon_rect.h * img.GetWidth() as f64 / img.GetHeight() as f64;
+                    let icon_x = icon_rect.x + (icon_rect.w - true_w) * 0.5;
+                    let icon_w = true_w;
                     if img.GetChannelCount() == 1 {
                         painter.PaintImageColored(
-                            icon_rect.x,
+                            icon_x,
                             icon_rect.y,
-                            icon_rect.w,
+                            icon_w,
                             icon_rect.h,
                             img,
                             0,
@@ -1602,9 +1606,9 @@ How to move or set the focus:\n\
                         );
                     } else {
                         painter.paint_image_scaled(
-                            icon_rect.x,
+                            icon_x,
                             icon_rect.y,
-                            icon_rect.w,
+                            icon_w,
                             icon_rect.h,
                             img,
                             crate::emCore::emTexture::ImageQuality::Bilinear,
