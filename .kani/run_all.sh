@@ -10,8 +10,8 @@
 set -uo pipefail
 
 RESULTS=".kani/results.json"
-PROOFS_MANUAL="src/emCore/proofs.rs"
-PROOFS_GEN="src/emCore/proofs_generated.rs"
+PROOFS_MANUAL="tests/kani/proofs.rs"
+PROOFS_GEN="tests/kani/proofs_generated.rs"
 TIMEOUT_PER_HARNESS=60
 
 # Collect all harness names from both proof files

@@ -96,12 +96,6 @@ pub mod emWindow;
 pub mod emWindowPlatform;
 pub mod emWindowStateSaver;
 pub mod fixed;
-#[cfg(kani)]
-mod proofs;
-#[cfg(kani)]
-mod proofs_generated;
-#[cfg(kani)]
-mod proofs_layer3;
 pub mod rect;
 pub mod toolkit_images;
 pub(crate) mod widget_utils;

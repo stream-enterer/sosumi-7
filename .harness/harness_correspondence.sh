@@ -40,7 +40,7 @@ for rs in "$RS_DIR"/*.rs; do
   [ -f "$rs" ] || continue
   base=$(basename "$rs" .rs)
   [ "$base" = "mod" ] && continue
-  [ "$base" = "proofs" ] && continue  # Kani proofs are not a C++ port
+  # Kani proofs moved to tests/kani/
   rs_count=$((rs_count + 1))
   if [ ! -f "$CPP_DIR/$base.h" ] && [ ! -f "$RS_DIR/$base.rust_only" ]; then
     if ! head -5 "$rs" | grep -q 'SPLIT:'; then

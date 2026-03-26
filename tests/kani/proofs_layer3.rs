@@ -6,12 +6,12 @@
 //
 // Run individual: cargo kani --harness <name>
 
-#![allow(non_snake_case)]
+// (non_snake_case allowed via parent module)
 
-use crate::emCore::emColor::emColor;
-use crate::emCore::emATMatrix::AffineMatrix;
-use crate::emCore::fixed::Fixed12;
-use crate::emCore::rect::{Rect, PixelRect};
+use eaglemode_rs::emCore::emColor::emColor;
+use eaglemode_rs::emCore::emATMatrix::AffineMatrix;
+use eaglemode_rs::emCore::fixed::Fixed12;
+use eaglemode_rs::emCore::rect::{Rect, PixelRect};
 
 // ═══════════════════════════════════════════════════════════════════
 //  emColor — component accessors

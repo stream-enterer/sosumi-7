@@ -7,20 +7,20 @@
 // Run individual: cargo kani --harness <name>
 // Run all: .kani/run_all.sh
 
-#![allow(non_snake_case)]
+// (non_snake_case allowed via parent module)
 
 #[allow(unused_imports)]
-use crate::emCore::emViewAnimator::KineticState;
+use eaglemode_rs::emCore::emViewAnimator::KineticState;
 #[allow(unused_imports)]
-use crate::emCore::rect::Rect;
+use eaglemode_rs::emCore::rect::Rect;
 #[allow(unused_imports)]
-use crate::emCore::emTiling::Spacing;
+use eaglemode_rs::emCore::emTiling::Spacing;
 #[allow(unused_imports)]
-use crate::emCore::emProcess::StartFlags;
+use eaglemode_rs::emCore::emProcess::StartFlags;
 #[allow(unused_imports)]
-use crate::emCore::emColor::emColor;
+use eaglemode_rs::emCore::emColor::emColor;
 #[allow(unused_imports)]
-use crate::emCore::emLook::emLook;
+use eaglemode_rs::emCore::emLook::emLook;
 
 #[cfg(kani)]
 #[kani::proof]
@@ -37,7 +37,7 @@ fn kani_emATMatrix_AffineMatrix_new() {
     kani::assume(p_a11.is_finite());
     kani::assume(p_a20.is_finite());
     kani::assume(p_a21.is_finite());
-    let _result = crate::emCore::emATMatrix::AffineMatrix::new(p_a00, p_a01, p_a10, p_a11, p_a20, p_a21);
+    let _result = eaglemode_rs::emCore::emATMatrix::AffineMatrix::new(p_a00, p_a01, p_a10, p_a11, p_a20, p_a21);
 }
 
 #[cfg(kani)]
@@ -47,7 +47,7 @@ fn kani_emATMatrix_AffineMatrix_translate() {
     let mut p_dy: f64 = kani::any::<f64>();
     kani::assume(p_dx.is_finite());
     kani::assume(p_dy.is_finite());
-    let _result = crate::emCore::emATMatrix::AffineMatrix::translate(p_dx, p_dy);
+    let _result = eaglemode_rs::emCore::emATMatrix::AffineMatrix::translate(p_dx, p_dy);
 }
 
 #[cfg(kani)]
@@ -57,7 +57,7 @@ fn kani_emATMatrix_AffineMatrix_scale() {
     let mut p_fac_y: f64 = kani::any::<f64>();
     kani::assume(p_fac_x.is_finite());
     kani::assume(p_fac_y.is_finite());
-    let _result = crate::emCore::emATMatrix::AffineMatrix::scale(p_fac_x, p_fac_y);
+    let _result = eaglemode_rs::emCore::emATMatrix::AffineMatrix::scale(p_fac_x, p_fac_y);
 }
 
 #[cfg(kani)]
@@ -71,7 +71,7 @@ fn kani_emATMatrix_AffineMatrix_scale_around() {
     kani::assume(p_fac_y.is_finite());
     kani::assume(p_fix_x.is_finite());
     kani::assume(p_fix_y.is_finite());
-    let _result = crate::emCore::emATMatrix::AffineMatrix::scale_around(p_fac_x, p_fac_y, p_fix_x, p_fix_y);
+    let _result = eaglemode_rs::emCore::emATMatrix::AffineMatrix::scale_around(p_fac_x, p_fac_y, p_fix_x, p_fix_y);
 }
 
 #[cfg(kani)]
@@ -79,7 +79,7 @@ fn kani_emATMatrix_AffineMatrix_scale_around() {
 fn kani_emATMatrix_AffineMatrix_rotate() {
     let mut p_angle: f64 = kani::any::<f64>();
     kani::assume(p_angle.is_finite());
-    let _result = crate::emCore::emATMatrix::AffineMatrix::rotate(p_angle);
+    let _result = eaglemode_rs::emCore::emATMatrix::AffineMatrix::rotate(p_angle);
 }
 
 #[cfg(kani)]
@@ -91,7 +91,7 @@ fn kani_emATMatrix_AffineMatrix_rotate_around() {
     kani::assume(p_angle.is_finite());
     kani::assume(p_fix_x.is_finite());
     kani::assume(p_fix_y.is_finite());
-    let _result = crate::emCore::emATMatrix::AffineMatrix::rotate_around(p_angle, p_fix_x, p_fix_y);
+    let _result = eaglemode_rs::emCore::emATMatrix::AffineMatrix::rotate_around(p_angle, p_fix_x, p_fix_y);
 }
 
 #[cfg(kani)]
@@ -101,7 +101,7 @@ fn kani_emATMatrix_AffineMatrix_shear() {
     let mut p_sh_y: f64 = kani::any::<f64>();
     kani::assume(p_sh_x.is_finite());
     kani::assume(p_sh_y.is_finite());
-    let _result = crate::emCore::emATMatrix::AffineMatrix::shear(p_sh_x, p_sh_y);
+    let _result = eaglemode_rs::emCore::emATMatrix::AffineMatrix::shear(p_sh_x, p_sh_y);
 }
 
 #[cfg(kani)]
@@ -115,7 +115,7 @@ fn kani_emATMatrix_AffineMatrix_shear_around() {
     kani::assume(p_sh_y.is_finite());
     kani::assume(p_fix_x.is_finite());
     kani::assume(p_fix_y.is_finite());
-    let _result = crate::emCore::emATMatrix::AffineMatrix::shear_around(p_sh_x, p_sh_y, p_fix_x, p_fix_y);
+    let _result = eaglemode_rs::emCore::emATMatrix::AffineMatrix::shear_around(p_sh_x, p_sh_y, p_fix_x, p_fix_y);
 }
 
 #[cfg(kani)]
@@ -129,7 +129,7 @@ fn kani_emClipRects_ClipRects_from_rect() {
     kani::assume(p_y1.is_finite());
     kani::assume(p_x2.is_finite());
     kani::assume(p_y2.is_finite());
-    let _result = crate::emCore::emClipRects::ClipRects::from_rect(p_x1, p_y1, p_x2, p_y2);
+    let _result = eaglemode_rs::emCore::emClipRects::ClipRects::from_rect(p_x1, p_y1, p_x2, p_y2);
 }
 
 #[cfg(kani)]
@@ -139,7 +139,7 @@ fn kani_emColor_emColor_rgba() {
     let mut p_g: u8 = kani::any::<u8>();
     let mut p_b: u8 = kani::any::<u8>();
     let mut p_a: u8 = kani::any::<u8>();
-    let _result = crate::emCore::emColor::emColor::rgba(p_r, p_g, p_b, p_a);
+    let _result = eaglemode_rs::emCore::emColor::emColor::rgba(p_r, p_g, p_b, p_a);
 }
 
 #[cfg(kani)]
@@ -148,41 +148,41 @@ fn kani_emColor_emColor_rgb() {
     let mut p_r: u8 = kani::any::<u8>();
     let mut p_g: u8 = kani::any::<u8>();
     let mut p_b: u8 = kani::any::<u8>();
-    let _result = crate::emCore::emColor::emColor::rgb(p_r, p_g, p_b);
+    let _result = eaglemode_rs::emCore::emColor::emColor::rgb(p_r, p_g, p_b);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_GetRed() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.GetRed();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_GetGreen() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.GetGreen();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_GetBlue() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.GetBlue();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_GetAlpha() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.GetAlpha();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_GetPacked() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.GetPacked();
 }
 
@@ -195,20 +195,20 @@ fn kani_emColor_emColor_SetHSVA() {
     kani::assume(p_h.is_finite());
     kani::assume(p_s.is_finite());
     kani::assume(p_v.is_finite());
-    let _result = crate::emCore::emColor::emColor::SetHSVA(p_h, p_s, p_v);
+    let _result = eaglemode_rs::emCore::emColor::emColor::SetHSVA(p_h, p_s, p_v);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_GetHSV() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.GetHSV();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_lighten() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_amount: f64 = kani::any::<f64>();
     kani::assume(p_amount.is_finite());
     let _result = self_val.lighten(p_amount);
@@ -217,7 +217,7 @@ fn kani_emColor_emColor_lighten() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_darken() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_amount: f64 = kani::any::<f64>();
     kani::assume(p_amount.is_finite());
     let _result = self_val.darken(p_amount);
@@ -226,8 +226,8 @@ fn kani_emColor_emColor_darken() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_blend() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
-    let mut p_other = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut p_other = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_alpha: u8 = kani::any::<u8>();
     let _result = self_val.blend(p_other, p_alpha);
 }
@@ -235,7 +235,7 @@ fn kani_emColor_emColor_blend() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_SetAlpha() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_a: u8 = kani::any::<u8>();
     let _result = self_val.SetAlpha(p_a);
 }
@@ -243,8 +243,8 @@ fn kani_emColor_emColor_SetAlpha() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_GetBlended() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
-    let mut p_other = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut p_other = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_t: f64 = kani::any::<f64>();
     kani::assume(p_t.is_finite());
     let _result = self_val.GetBlended(p_other, p_t);
@@ -253,9 +253,9 @@ fn kani_emColor_emColor_GetBlended() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_canvas_blend() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
-    let mut p_source = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
-    let mut p_canvas = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut p_source = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut p_canvas = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_alpha: u8 = kani::any::<u8>();
     let _result = self_val.canvas_blend(p_source, p_canvas, p_alpha);
 }
@@ -263,7 +263,7 @@ fn kani_emColor_emColor_canvas_blend() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_SetRed() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_r: u8 = kani::any::<u8>();
     let _result = self_val.SetRed(p_r);
 }
@@ -271,7 +271,7 @@ fn kani_emColor_emColor_SetRed() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_SetGreen() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_g: u8 = kani::any::<u8>();
     let _result = self_val.SetGreen(p_g);
 }
@@ -279,7 +279,7 @@ fn kani_emColor_emColor_SetGreen() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_SetBlue() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_b: u8 = kani::any::<u8>();
     let _result = self_val.SetBlue(p_b);
 }
@@ -287,28 +287,28 @@ fn kani_emColor_emColor_SetBlue() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_IsTotallyTransparent() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.IsTotallyTransparent();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_IsOpaque() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.IsOpaque();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_IsGrey() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.IsGrey();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_GetGrey() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.GetGrey();
 }
 
@@ -316,13 +316,13 @@ fn kani_emColor_emColor_GetGrey() {
 #[kani::proof]
 fn kani_emColor_emColor_SetGrey() {
     let mut p_val: u8 = kani::any::<u8>();
-    let _result = crate::emCore::emColor::emColor::SetGrey(p_val);
+    let _result = eaglemode_rs::emCore::emColor::emColor::SetGrey(p_val);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_SetHue() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_h: f32 = kani::any::<f32>();
     kani::assume(p_h.is_finite());
     let _result = self_val.SetHue(p_h);
@@ -331,7 +331,7 @@ fn kani_emColor_emColor_SetHue() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_SetSat() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_s: f32 = kani::any::<f32>();
     kani::assume(p_s.is_finite());
     let _result = self_val.SetSat(p_s);
@@ -340,7 +340,7 @@ fn kani_emColor_emColor_SetSat() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_SetVal() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_v: f32 = kani::any::<f32>();
     kani::assume(p_v.is_finite());
     let _result = self_val.SetVal(p_v);
@@ -349,7 +349,7 @@ fn kani_emColor_emColor_SetVal() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emColor_emColor_GetTransparented() {
-    let mut self_val = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_amount: f64 = kani::any::<f64>();
     kani::assume(p_amount.is_finite());
     let _result = self_val.GetTransparented(p_amount);
@@ -361,14 +361,14 @@ fn kani_emImage_emImage_new() {
     let mut p_width: u32 = kani::any::<u32>();
     let mut p_height: u32 = kani::any::<u32>();
     let mut p_channel_count: u8 = kani::any::<u8>();
-    let _result = crate::emCore::emImage::emImage::new(p_width, p_height, p_channel_count);
+    let _result = eaglemode_rs::emCore::emImage::emImage::new(p_width, p_height, p_channel_count);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emImage_emImage_is_channel_count_paintable() {
     let mut p_channel_count: u8 = kani::any::<u8>();
-    let _result = crate::emCore::emImage::emImage::is_channel_count_paintable(p_channel_count);
+    let _result = eaglemode_rs::emCore::emImage::emImage::is_channel_count_paintable(p_channel_count);
 }
 
 #[cfg(kani)]
@@ -376,122 +376,122 @@ fn kani_emImage_emImage_is_channel_count_paintable() {
 fn kani_emLinearLayout_emLinearLayout_adaptive() {
     let mut p_tallness_threshold: f64 = kani::any::<f64>();
     kani::assume(p_tallness_threshold.is_finite());
-    let _result = crate::emCore::emLinearLayout::emLinearLayout::adaptive(p_tallness_threshold);
+    let _result = eaglemode_rs::emCore::emLinearLayout::emLinearLayout::adaptive(p_tallness_threshold);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emLook_emLook_border_tint() {
-    let mut self_val = emLook { bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_hl_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_hl_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()) };
+    let mut self_val = emLook { bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_hl_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_hl_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()) };
     let _result = self_val.border_tint();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emLook_emLook_focus_tint() {
-    let mut self_val = emLook { bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_hl_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_hl_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()) };
+    let mut self_val = emLook { bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_hl_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_hl_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()) };
     let _result = self_val.focus_tint();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emLook_emLook_disabled_fg() {
-    let mut self_val = emLook { bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_hl_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_hl_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()) };
+    let mut self_val = emLook { bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_hl_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_hl_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()) };
     let _result = self_val.disabled_fg();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emLook_emLook_button_hover() {
-    let mut self_val = emLook { bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_hl_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_hl_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()) };
+    let mut self_val = emLook { bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_hl_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_hl_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()) };
     let _result = self_val.button_hover();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emLook_emLook_button_pressed() {
-    let mut self_val = emLook { bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_hl_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_bg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_fg_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_hl_color: crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()) };
+    let mut self_val = emLook { bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), button_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), input_hl_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_bg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_fg_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), output_hl_color: eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()) };
     let _result = self_val.button_pressed();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emProcess_StartFlags_contains() {
-    let mut self_val = crate::emCore::emProcess::StartFlags::empty();
-    let mut p_other = crate::emCore::emProcess::StartFlags::empty();
+    let mut self_val = eaglemode_rs::emCore::emProcess::StartFlags::empty();
+    let mut p_other = eaglemode_rs::emCore::emProcess::StartFlags::empty();
     let _result = self_val.contains(p_other);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emRecRecTypes_emColorRec_new() {
-    let mut p_default_value = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut p_default_value = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_have_alpha: bool = kani::any::<bool>();
-    let _result = crate::emCore::emRecRecTypes::emColorRec::new(p_default_value, p_have_alpha);
+    let _result = eaglemode_rs::emCore::emRecRecTypes::emColorRec::new(p_default_value, p_have_alpha);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emRecRecTypes_emColorRec_GetRec() {
-    let mut self_val = crate::emCore::emRecRecTypes::emColorRec::new(crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emRecRecTypes::emColorRec::new(eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), kani::any());
     let _result = self_val.GetRec();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emRecRecTypes_emColorRec_Set() {
-    let mut self_val = crate::emCore::emRecRecTypes::emColorRec::new(crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), kani::any());
-    let mut p_value = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emRecRecTypes::emColorRec::new(eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), kani::any());
+    let mut p_value = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.Set(p_value);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emRecRecTypes_emColorRec_SetToDefault() {
-    let mut self_val = crate::emCore::emRecRecTypes::emColorRec::new(crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emRecRecTypes::emColorRec::new(eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), kani::any());
     let _result = self_val.SetToDefault();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emRecRecTypes_emColorRec_IsSetToDefault() {
-    let mut self_val = crate::emCore::emRecRecTypes::emColorRec::new(crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emRecRecTypes::emColorRec::new(eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), kani::any());
     let _result = self_val.IsSetToDefault();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emRecRecTypes_emColorRec_HaveAlpha() {
-    let mut self_val = crate::emCore::emRecRecTypes::emColorRec::new(crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emRecRecTypes::emColorRec::new(eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any()), kani::any());
     let _result = self_val.HaveAlpha();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emRecRecTypes_emColorRec_ToRecStruct() {
-    let mut p_color = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut p_color = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_have_alpha: bool = kani::any::<bool>();
-    let _result = crate::emCore::emRecRecTypes::emColorRec::ToRecStruct(p_color, p_have_alpha);
+    let _result = eaglemode_rs::emCore::emRecRecTypes::emColorRec::ToRecStruct(p_color, p_have_alpha);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emRenderThreadPool_emRenderThreadPool_new() {
     let mut p_max_render_threads: i32 = kani::any::<i32>();
-    let _result = crate::emCore::emRenderThreadPool::emRenderThreadPool::new(p_max_render_threads);
+    let _result = eaglemode_rs::emCore::emRenderThreadPool::emRenderThreadPool::new(p_max_render_threads);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emRenderThreadPool_emRenderThreadPool_GetThreadCount() {
-    let mut self_val = crate::emCore::emRenderThreadPool::emRenderThreadPool::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emRenderThreadPool::emRenderThreadPool::new(kani::any());
     let _result = self_val.GetThreadCount();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emRenderThreadPool_emRenderThreadPool_UpdateThreadCount() {
-    let mut self_val = crate::emCore::emRenderThreadPool::emRenderThreadPool::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emRenderThreadPool::emRenderThreadPool::new(kani::any());
     let mut p_max_render_threads: i32 = kani::any::<i32>();
     let _result = self_val.UpdateThreadCount(p_max_render_threads);
 }
@@ -500,30 +500,30 @@ fn kani_emRenderThreadPool_emRenderThreadPool_UpdateThreadCount() {
 #[kani::proof]
 fn kani_emStd1_emEnableDLog() {
     let mut p_enable: bool = kani::any::<bool>();
-    let _result = crate::emCore::emStd1::emEnableDLog(p_enable);
+    let _result = eaglemode_rs::emCore::emStd1::emEnableDLog(p_enable);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emStd1_emSetFatalErrorGraphical() {
     let mut p_enable: bool = kani::any::<bool>();
-    let _result = crate::emCore::emStd1::emSetFatalErrorGraphical(p_enable);
+    let _result = eaglemode_rs::emCore::emStd1::emSetFatalErrorGraphical(p_enable);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emStroke_emStroke_new() {
-    let mut p_color = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut p_color = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_width: f64 = kani::any::<f64>();
     kani::assume(p_width.is_finite());
-    let _result = crate::emCore::emStroke::emStroke::new(p_color, p_width);
+    let _result = eaglemode_rs::emCore::emStroke::emStroke::new(p_color, p_width);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emTexture_emTexture_GetColor() {
-    let mut p_c = crate::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
-    let _result = crate::emCore::emTexture::emTexture::GetColor(p_c);
+    let mut p_c = eaglemode_rs::emCore::emColor::emColor::rgba(kani::any(), kani::any(), kani::any(), kani::any());
+    let _result = eaglemode_rs::emCore::emTexture::emTexture::GetColor(p_c);
 }
 
 #[cfg(kani)]
@@ -533,7 +533,7 @@ fn kani_emTiling_Spacing_uniform() {
     let mut p_inner: f64 = kani::any::<f64>();
     kani::assume(p_margin.is_finite());
     kani::assume(p_inner.is_finite());
-    let _result = crate::emCore::emTiling::Spacing::uniform(p_margin, p_inner);
+    let _result = eaglemode_rs::emCore::emTiling::Spacing::uniform(p_margin, p_inner);
 }
 
 #[cfg(kani)]
@@ -554,13 +554,13 @@ fn kani_emViewAnimator_emKineticViewAnimator_new() {
     kani::assume(p_velocity_y.is_finite());
     kani::assume(p_velocity_z.is_finite());
     kani::assume(p_friction.is_finite());
-    let _result = crate::emCore::emViewAnimator::emKineticViewAnimator::new(p_velocity_x, p_velocity_y, p_velocity_z, p_friction);
+    let _result = eaglemode_rs::emCore::emViewAnimator::emKineticViewAnimator::new(p_velocity_x, p_velocity_y, p_velocity_z, p_friction);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emKineticViewAnimator_SetVelocity() {
-    let mut self_val = crate::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_vx: f64 = kani::any::<f64>();
     let mut p_vy: f64 = kani::any::<f64>();
     let mut p_vz: f64 = kani::any::<f64>();
@@ -573,7 +573,7 @@ fn kani_emViewAnimator_emKineticViewAnimator_SetVelocity() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emKineticViewAnimator_GetVelocity() {
-    let mut self_val = crate::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.GetVelocity();
     assert!(_result.0.is_finite(), "non-finite result.0");
     assert!(_result.1.is_finite(), "non-finite result.1");
@@ -583,7 +583,7 @@ fn kani_emViewAnimator_emKineticViewAnimator_GetVelocity() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emKineticViewAnimator_GetAbsVelocity() {
-    let mut self_val = crate::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.GetAbsVelocity();
     // Layer 2: finite output from finite inputs
     assert!(_result.is_finite(), "non-finite result");
@@ -592,7 +592,7 @@ fn kani_emViewAnimator_emKineticViewAnimator_GetAbsVelocity() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emKineticViewAnimator_SetFrictionEnabled() {
-    let mut self_val = crate::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_enabled: bool = kani::any::<bool>();
     let _result = self_val.SetFrictionEnabled(p_enabled);
 }
@@ -600,14 +600,14 @@ fn kani_emViewAnimator_emKineticViewAnimator_SetFrictionEnabled() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emKineticViewAnimator_IsFrictionEnabled() {
-    let mut self_val = crate::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.IsFrictionEnabled();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emKineticViewAnimator_SetFriction() {
-    let mut self_val = crate::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_friction: f64 = kani::any::<f64>();
     kani::assume(p_friction.is_finite());
     let _result = self_val.SetFriction(p_friction);
@@ -616,7 +616,7 @@ fn kani_emViewAnimator_emKineticViewAnimator_SetFriction() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emKineticViewAnimator_GetFriction() {
-    let mut self_val = crate::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.GetFriction();
     // Layer 2: finite output from finite inputs
     assert!(_result.is_finite(), "non-finite result");
@@ -625,14 +625,14 @@ fn kani_emViewAnimator_emKineticViewAnimator_GetFriction() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emKineticViewAnimator_extract_kinetic_state() {
-    let mut self_val = crate::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
     let _result = self_val.extract_kinetic_state();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emKineticViewAnimator_inject_kinetic_state() {
-    let mut self_val = crate::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emKineticViewAnimator::new(kani::any(), kani::any(), kani::any(), kani::any());
     let mut p_state = KineticState { vx: kani::any::<f64>(), vy: kani::any::<f64>(), vz: kani::any::<f64>(), zoom_fix_centered: kani::any::<bool>(), zoom_fix_x: kani::any::<f64>(), zoom_fix_y: kani::any::<f64>() };
     let _result = self_val.inject_kinetic_state(p_state);
 }
@@ -642,13 +642,13 @@ fn kani_emViewAnimator_emKineticViewAnimator_inject_kinetic_state() {
 fn kani_emViewAnimator_emSpeedingViewAnimator_new() {
     let mut p_friction: f64 = kani::any::<f64>();
     kani::assume(p_friction.is_finite());
-    let _result = crate::emCore::emViewAnimator::emSpeedingViewAnimator::new(p_friction);
+    let _result = eaglemode_rs::emCore::emViewAnimator::emSpeedingViewAnimator::new(p_friction);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSpeedingViewAnimator_SetTargetVelocity() {
-    let mut self_val = crate::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
     let mut p_vx: f64 = kani::any::<f64>();
     let mut p_vy: f64 = kani::any::<f64>();
     let mut p_vz: f64 = kani::any::<f64>();
@@ -661,14 +661,14 @@ fn kani_emViewAnimator_emSpeedingViewAnimator_SetTargetVelocity() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSpeedingViewAnimator_release() {
-    let mut self_val = crate::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
     let _result = self_val.release();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSpeedingViewAnimator_SetAcceleration() {
-    let mut self_val = crate::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
     let mut p_accel: f64 = kani::any::<f64>();
     kani::assume(p_accel.is_finite());
     let _result = self_val.SetAcceleration(p_accel);
@@ -677,7 +677,7 @@ fn kani_emViewAnimator_emSpeedingViewAnimator_SetAcceleration() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSpeedingViewAnimator_SetReverseAcceleration() {
-    let mut self_val = crate::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
     let mut p_accel: f64 = kani::any::<f64>();
     kani::assume(p_accel.is_finite());
     let _result = self_val.SetReverseAcceleration(p_accel);
@@ -686,14 +686,14 @@ fn kani_emViewAnimator_emSpeedingViewAnimator_SetReverseAcceleration() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSpeedingViewAnimator_inner() {
-    let mut self_val = crate::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
     let _result = self_val.inner();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSpeedingViewAnimator_inner_mut() {
-    let mut self_val = crate::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSpeedingViewAnimator::new(kani::any());
     let _result = self_val.inner_mut();
 }
 
@@ -708,7 +708,7 @@ fn kani_emViewAnimator_emVisitingViewAnimator_new() {
     kani::assume(p_target_y.is_finite());
     kani::assume(p_target_a.is_finite());
     kani::assume(p__speed.is_finite());
-    let _result = crate::emCore::emViewAnimator::emVisitingViewAnimator::new(p_target_x, p_target_y, p_target_a, p__speed);
+    let _result = eaglemode_rs::emCore::emViewAnimator::emVisitingViewAnimator::new(p_target_x, p_target_y, p_target_a, p__speed);
 }
 
 #[cfg(kani)]
@@ -716,13 +716,13 @@ fn kani_emViewAnimator_emVisitingViewAnimator_new() {
 fn kani_emViewAnimator_emSwipingViewAnimator_new() {
     let mut p_friction: f64 = kani::any::<f64>();
     kani::assume(p_friction.is_finite());
-    let _result = crate::emCore::emViewAnimator::emSwipingViewAnimator::new(p_friction);
+    let _result = eaglemode_rs::emCore::emViewAnimator::emSwipingViewAnimator::new(p_friction);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSwipingViewAnimator_SetGripped() {
-    let mut self_val = crate::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
     let mut p_gripped: bool = kani::any::<bool>();
     let _result = self_val.SetGripped(p_gripped);
 }
@@ -730,14 +730,14 @@ fn kani_emViewAnimator_emSwipingViewAnimator_SetGripped() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSwipingViewAnimator_IsGripped() {
-    let mut self_val = crate::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
     let _result = self_val.IsGripped();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSwipingViewAnimator_MoveGrip() {
-    let mut self_val = crate::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
     let mut p_dimension: usize = kani::any::<usize>();
     let mut p_distance: f64 = kani::any::<f64>();
     kani::assume(p_distance.is_finite());
@@ -747,7 +747,7 @@ fn kani_emViewAnimator_emSwipingViewAnimator_MoveGrip() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSwipingViewAnimator_SetSpringConstant() {
-    let mut self_val = crate::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
     let mut p_k: f64 = kani::any::<f64>();
     kani::assume(p_k.is_finite());
     let _result = self_val.SetSpringConstant(p_k);
@@ -756,7 +756,7 @@ fn kani_emViewAnimator_emSwipingViewAnimator_SetSpringConstant() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSwipingViewAnimator_GetAbsSpringExtension() {
-    let mut self_val = crate::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
     let _result = self_val.GetAbsSpringExtension();
     // Layer 2: finite output from finite inputs
     assert!(_result.is_finite(), "non-finite result");
@@ -765,14 +765,14 @@ fn kani_emViewAnimator_emSwipingViewAnimator_GetAbsSpringExtension() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSwipingViewAnimator_inner() {
-    let mut self_val = crate::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
     let _result = self_val.inner();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emSwipingViewAnimator_inner_mut() {
-    let mut self_val = crate::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emSwipingViewAnimator::new(kani::any());
     let _result = self_val.inner_mut();
 }
 
@@ -781,13 +781,13 @@ fn kani_emViewAnimator_emSwipingViewAnimator_inner_mut() {
 fn kani_emViewAnimator_emMagneticViewAnimator_new() {
     let mut p_spring_constant: f64 = kani::any::<f64>();
     kani::assume(p_spring_constant.is_finite());
-    let _result = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(p_spring_constant);
+    let _result = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(p_spring_constant);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_set_snap_target() {
-    let mut self_val = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
     let mut p_x: f64 = kani::any::<f64>();
     let mut p_y: f64 = kani::any::<f64>();
     kani::assume(p_x.is_finite());
@@ -798,7 +798,7 @@ fn kani_emViewAnimator_emMagneticViewAnimator_set_snap_target() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_SetSpringConstant() {
-    let mut self_val = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
     let mut p_k: f64 = kani::any::<f64>();
     kani::assume(p_k.is_finite());
     let _result = self_val.SetSpringConstant(p_k);
@@ -807,7 +807,7 @@ fn kani_emViewAnimator_emMagneticViewAnimator_SetSpringConstant() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_set_damping() {
-    let mut self_val = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
     let mut p_d: f64 = kani::any::<f64>();
     kani::assume(p_d.is_finite());
     let _result = self_val.set_damping(p_d);
@@ -816,7 +816,7 @@ fn kani_emViewAnimator_emMagneticViewAnimator_set_damping() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_GetVelocity() {
-    let mut self_val = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
     let _result = self_val.GetVelocity();
     assert!(_result.0.is_finite(), "non-finite result.0");
     assert!(_result.1.is_finite(), "non-finite result.1");
@@ -825,7 +825,7 @@ fn kani_emViewAnimator_emMagneticViewAnimator_GetVelocity() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_GetAbsVelocity() {
-    let mut self_val = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
     let _result = self_val.GetAbsVelocity();
     // Layer 2: finite output from finite inputs
     assert!(_result.is_finite(), "non-finite result");
@@ -834,7 +834,7 @@ fn kani_emViewAnimator_emMagneticViewAnimator_GetAbsVelocity() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_set_radius_factor() {
-    let mut self_val = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
     let mut p_f: f64 = kani::any::<f64>();
     kani::assume(p_f.is_finite());
     let _result = self_val.set_radius_factor(p_f);
@@ -843,7 +843,7 @@ fn kani_emViewAnimator_emMagneticViewAnimator_set_radius_factor() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_set_speed_factor() {
-    let mut self_val = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
     let mut p_f: f64 = kani::any::<f64>();
     kani::assume(p_f.is_finite());
     let _result = self_val.set_speed_factor(p_f);
@@ -852,14 +852,14 @@ fn kani_emViewAnimator_emMagneticViewAnimator_set_speed_factor() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_is_magnetism_active() {
-    let mut self_val = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
     let _result = self_val.is_magnetism_active();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_update_magnetism() {
-    let mut self_val = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
     let mut p_abs_dist: f64 = kani::any::<f64>();
     let mut p_dx: f64 = kani::any::<f64>();
     let mut p_dy: f64 = kani::any::<f64>();
@@ -878,7 +878,7 @@ fn kani_emViewAnimator_emMagneticViewAnimator_update_magnetism() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_hill_rolling_physics() {
-    let mut self_val = crate::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let mut self_val = eaglemode_rs::emCore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
     let mut p_dt: f64 = kani::any::<f64>();
     let mut p_abs_dist: f64 = kani::any::<f64>();
     let mut p_dx: f64 = kani::any::<f64>();
@@ -901,7 +901,7 @@ fn kani_emViewAnimator_emMagneticViewAnimator_hill_rolling_physics() {
 fn kani_emViewRenderer_SoftwareCompositor_new() {
     let mut p_width: u32 = kani::any::<u32>();
     let mut p_height: u32 = kani::any::<u32>();
-    let _result = crate::emCore::emViewRenderer::SoftwareCompositor::new(p_width, p_height);
+    let _result = eaglemode_rs::emCore::emViewRenderer::SoftwareCompositor::new(p_width, p_height);
 }
 
 #[cfg(kani)]
@@ -910,34 +910,34 @@ fn kani_emViewRendererTileCache_TileCache_new() {
     let mut p_viewport_width: u32 = kani::any::<u32>();
     let mut p_viewport_height: u32 = kani::any::<u32>();
     let mut p_max_tiles: usize = kani::any::<usize>();
-    let _result = crate::emCore::emViewRendererTileCache::TileCache::new(p_viewport_width, p_viewport_height, p_max_tiles);
+    let _result = eaglemode_rs::emCore::emViewRendererTileCache::TileCache::new(p_viewport_width, p_viewport_height, p_max_tiles);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emWindowPlatform_uninhibit_screensaver() {
     let mut p_cookie: u32 = kani::any::<u32>();
-    let _result = crate::emCore::emWindowPlatform::uninhibit_screensaver(p_cookie);
+    let _result = eaglemode_rs::emCore::emWindowPlatform::uninhibit_screensaver(p_cookie);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emWindowPlatform_uninhibit_screensaver_157() {
     let mut p__cookie: u32 = kani::any::<u32>();
-    let _result = crate::emCore::emWindowPlatform::uninhibit_screensaver(p__cookie);
+    let _result = eaglemode_rs::emCore::emWindowPlatform::uninhibit_screensaver(p__cookie);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_fixed_Fixed12_from_raw() {
     let mut p_raw: i32 = kani::any::<i32>();
-    let _result = crate::emCore::fixed::Fixed12::from_raw(p_raw);
+    let _result = eaglemode_rs::emCore::fixed::Fixed12::from_raw(p_raw);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_fixed_Fixed12_raw() {
-    let mut self_val = crate::emCore::fixed::Fixed12::from_raw(kani::any());
+    let mut self_val = eaglemode_rs::emCore::fixed::Fixed12::from_raw(kani::any());
     let _result = self_val.raw();
 }
 
@@ -946,20 +946,20 @@ fn kani_fixed_Fixed12_raw() {
 fn kani_fixed_Fixed12_from_f64() {
     let mut p_v: f64 = kani::any::<f64>();
     kani::assume(p_v.is_finite());
-    let _result = crate::emCore::fixed::Fixed12::from_f64(p_v);
+    let _result = eaglemode_rs::emCore::fixed::Fixed12::from_f64(p_v);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_fixed_Fixed12_from_i32() {
     let mut p_v: i32 = kani::any::<i32>();
-    let _result = crate::emCore::fixed::Fixed12::from_i32(p_v);
+    let _result = eaglemode_rs::emCore::fixed::Fixed12::from_i32(p_v);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_fixed_Fixed12_to_f64() {
-    let mut self_val = crate::emCore::fixed::Fixed12::from_raw(kani::any());
+    let mut self_val = eaglemode_rs::emCore::fixed::Fixed12::from_raw(kani::any());
     let _result = self_val.to_f64();
     // Layer 2: finite output from finite inputs
     assert!(_result.is_finite(), "non-finite result");
@@ -968,35 +968,35 @@ fn kani_fixed_Fixed12_to_f64() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_fixed_Fixed12_to_i32() {
-    let mut self_val = crate::emCore::fixed::Fixed12::from_raw(kani::any());
+    let mut self_val = eaglemode_rs::emCore::fixed::Fixed12::from_raw(kani::any());
     let _result = self_val.to_i32();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_fixed_Fixed12_frac() {
-    let mut self_val = crate::emCore::fixed::Fixed12::from_raw(kani::any());
+    let mut self_val = eaglemode_rs::emCore::fixed::Fixed12::from_raw(kani::any());
     let _result = self_val.frac();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_fixed_Fixed12_floor() {
-    let mut self_val = crate::emCore::fixed::Fixed12::from_raw(kani::any());
+    let mut self_val = eaglemode_rs::emCore::fixed::Fixed12::from_raw(kani::any());
     let _result = self_val.floor();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_fixed_Fixed12_ceil() {
-    let mut self_val = crate::emCore::fixed::Fixed12::from_raw(kani::any());
+    let mut self_val = eaglemode_rs::emCore::fixed::Fixed12::from_raw(kani::any());
     let _result = self_val.ceil();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_fixed_Fixed12_round() {
-    let mut self_val = crate::emCore::fixed::Fixed12::from_raw(kani::any());
+    let mut self_val = eaglemode_rs::emCore::fixed::Fixed12::from_raw(kani::any());
     let _result = self_val.round();
 }
 
@@ -1011,7 +1011,7 @@ fn kani_rect_Rect_new() {
     kani::assume(p_y.is_finite());
     kani::assume(p_w.is_finite());
     kani::assume(p_h.is_finite());
-    let _result = crate::emCore::rect::Rect::new(p_x, p_y, p_w, p_h);
+    let _result = eaglemode_rs::emCore::rect::Rect::new(p_x, p_y, p_w, p_h);
 }
 
 #[cfg(kani)]
@@ -1057,7 +1057,7 @@ fn kani_rect_PixelRect_new() {
     let mut p_y: i32 = kani::any::<i32>();
     let mut p_w: i32 = kani::any::<i32>();
     let mut p_h: i32 = kani::any::<i32>();
-    let _result = crate::emCore::rect::PixelRect::new(p_x, p_y, p_w, p_h);
+    let _result = eaglemode_rs::emCore::rect::PixelRect::new(p_x, p_y, p_w, p_h);
 }
 
 #[cfg(kani)]
@@ -1070,5 +1070,5 @@ fn kani_widget_utils_check_mouse_round_rect() {
     kani::assume(p_mx.is_finite());
     kani::assume(p_my.is_finite());
     kani::assume(p_r.is_finite());
-    let _result = crate::emCore::widget_utils::check_mouse_round_rect(p_mx, p_my, &p_rect, p_r);
+    let _result = eaglemode_rs::emCore::widget_utils::check_mouse_round_rect(p_mx, p_my, &p_rect, p_r);
 }
