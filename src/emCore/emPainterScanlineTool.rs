@@ -193,18 +193,7 @@ fn blend_scanline_source_over(
     coverages: Option<&[i32]>,
     painter_alpha: u8,
 ) {
-    // AVX2 fast path: full coverage, painter_alpha=255, 4-channel buffer.
-    #[cfg(target_arch = "x86_64")]
-    if coverages.is_none()
-        && painter_alpha == 255
-        && buf.ch == 4
-        && is_x86_feature_detected!("avx2")
-    {
-        unsafe {
-            super::emPainterScanlineAvx2::blend_source_over_avx2(dest, buf.raw_data(), count);
-        }
-        return;
-    }
+    use super::emColor::blend_hash_lookup;
 
     for i in 0..count {
         let cov = coverages.map_or(0x1000, |c| c[i]);
@@ -244,17 +233,17 @@ fn blend_scanline_source_over(
         }
 
         // Background: Blinn div255 (matches C++).
-        // Source: round-half-up (c*a+127)/255 (matches C++ hash table).
-        let alpha = ea as u32;
-        let t = (255 - alpha) * 257;
+        // Source: C++ hash table lookup (emPainter_ScTlPSCol.cpp:119).
+        let alpha = ea as u8;
+        let t = (255 - alpha as u32) * 257;
         dest[off] = (((dest[off] as u32 * t + 0x8073) >> 16)
-            + ((src[0] as u32 * alpha + 127) / 255)) as u8;
+            + blend_hash_lookup(src[0], alpha) as u32) as u8;
         dest[off + 1] = (((dest[off + 1] as u32 * t + 0x8073) >> 16)
-            + ((src[1] as u32 * alpha + 127) / 255)) as u8;
+            + blend_hash_lookup(src[1], alpha) as u32) as u8;
         dest[off + 2] = (((dest[off + 2] as u32 * t + 0x8073) >> 16)
-            + ((src[2] as u32 * alpha + 127) / 255)) as u8;
+            + blend_hash_lookup(src[2], alpha) as u32) as u8;
         dest[off + 3] = (((dest[off + 3] as u32 * t + 0x8073) >> 16)
-            + ((255u32 * alpha + 127) / 255)) as u8;
+            + blend_hash_lookup(255, alpha) as u32) as u8;
     }
 }
 
@@ -290,6 +279,8 @@ fn blend_scanline_premul_canvas(
     canvas: emColor,
     painter_alpha: u8,
 ) {
+    use super::emColor::blend_hash_lookup;
+
     for i in 0..count {
         let cov = coverages.map_or(0x1000, |c| c[i]);
         if cov <= 0 {
@@ -318,19 +309,19 @@ fn blend_scanline_premul_canvas(
             continue;
         };
 
-        let a = pm[3] as u32;
+        let a = pm[3];
         if a == 0 {
             continue;
         }
 
         let off = i * 4;
-        // Canvas path: (cv * a + 127) / 255 rounding
-        let cr = (canvas.GetRed() as u32 * a + 127) / 255;
-        let cg = (canvas.GetGreen() as u32 * a + 127) / 255;
-        let cb = (canvas.GetBlue() as u32 * a + 127) / 255;
-        dest[off] = (dest[off] as i32 + pm[0] as i32 - cr as i32).clamp(0, 255) as u8;
-        dest[off + 1] = (dest[off + 1] as i32 + pm[1] as i32 - cg as i32).clamp(0, 255) as u8;
-        dest[off + 2] = (dest[off + 2] as i32 + pm[2] as i32 - cb as i32).clamp(0, 255) as u8;
+        // Canvas path: C++ hash table lookup (emPainter_ScTlPSCol.cpp:121).
+        let cr = blend_hash_lookup(canvas.GetRed(), a) as i32;
+        let cg = blend_hash_lookup(canvas.GetGreen(), a) as i32;
+        let cb = blend_hash_lookup(canvas.GetBlue(), a) as i32;
+        dest[off] = (dest[off] as i32 + pm[0] as i32 - cr).clamp(0, 255) as u8;
+        dest[off + 1] = (dest[off + 1] as i32 + pm[1] as i32 - cg).clamp(0, 255) as u8;
+        dest[off + 2] = (dest[off + 2] as i32 + pm[2] as i32 - cb).clamp(0, 255) as u8;
         // Canvas blend: dest alpha unchanged
     }
 }

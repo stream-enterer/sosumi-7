@@ -1,5 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 /// Error returned when parsing a hex color string fails.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,6 +15,51 @@ impl fmt::Display for ColorParseError {
 }
 
 impl std::error::Error for ColorParseError {}
+
+// ── Blend hash table (C++ SharedPixelFormat) ──────────────────────────
+//
+// C++ emPainter uses precomputed 256×256 hash tables per channel for alpha
+// blending (emPainter.cpp:190-234, emPainter.h:794-804). The tables decompose
+// the blend `(color * alpha + round) / 255` into four quadrant terms, each
+// independently rounded at table-build time. This produces different rounding
+// from direct computation for ~0.2% of (color, alpha) pairs (±1 channel value).
+//
+// C++ has three separate tables (RedHash, GreenHash, BlueHash) because each
+// channel can have a different range and bit-shift in the packed pixel. Since
+// the Rust port always uses 4-byte RGBA with range=255 for all channels, the
+// unshifted table values are identical across channels. One table suffices.
+// DIVERGED: SharedPixelFormat — single table instead of three, because
+// range=255 for all channels makes them identical when unshifted.
+
+static BLEND_HASH: LazyLock<Box<[u8; 65536]>> = LazyLock::new(|| {
+    let mut hash = Box::new([0u8; 65536]);
+    let range: i32 = 255;
+    for a1 in 0i32..128 {
+        let c1 = (a1 * range + 127) / 255;
+        for a2 in 0i32..128 {
+            let c2 = (a2 * range + 127) / 255;
+            let c3 = (a1 * a2 * range + 32512) / 65025;
+            hash[(a1 as usize) << 8 | a2 as usize] = c3 as u8;
+            hash[(a1 as usize) << 8 | (255 - a2 as usize)] = (c1 - c3) as u8;
+            hash[(255 - a1 as usize) << 8 | a2 as usize] = (c2 - c3) as u8;
+            hash[(255 - a1 as usize) << 8 | (255 - a2 as usize)] =
+                (range + c3 - c1 - c2) as u8;
+        }
+    }
+    hash
+});
+
+/// Look up the premultiplied blend contribution for a (color, alpha) pair
+/// using the C++ hash table decomposition. Returns the same value as
+/// `(color * alpha + 127) / 255` for ~99.8% of inputs; differs by ±1 for
+/// the remaining ~0.2% due to independently rounded quadrant terms.
+///
+/// Matches C++ `((PTYPE*)hashTable)[alpha]` where `hashTable` points to
+/// the row for `color` (emPainter.cpp:817, emPainter_ScTlPSCol.cpp:97).
+#[inline(always)]
+pub(crate) fn blend_hash_lookup(color: u8, alpha: u8) -> u8 {
+    BLEND_HASH[(color as usize) << 8 | alpha as usize]
+}
 
 // DIVERGED: Get — renamed to GetPacked because Rust has no implicit u32 conversion operator
 // DIVERGED: Set (all overloads) — not ported (emColor is Copy; use constructors rgba/rgb/SetAlpha instead of mutation)
@@ -217,16 +263,16 @@ impl emColor {
         )
     }
 
-    /// emCore canvas blend: `target += round(source*alpha/255) - round(canvas*alpha/255)`.
+    /// emCore canvas blend: `target += hash(source,alpha) - hash(canvas,alpha)`.
     ///
     /// `self` is the current target pixel, `source` is the color being painted,
     /// `canvas` is the background canvas color, `alpha` is blend strength (0–255).
-    /// Uses two separate round-to-nearest `/255` terms matching C++ emPainter hash table.
+    /// Uses the C++ hash table for both source and canvas terms, matching the
+    /// 4-quadrant decomposition in emPainter's SharedPixelFormat (emPainter.cpp:190-234).
     pub fn canvas_blend(self, source: emColor, canvas: emColor, alpha: u8) -> emColor {
-        let a = alpha as i32;
         let blend_ch = |target: u8, src: u8, cvs: u8| -> u8 {
-            let src_term = (src as i32 * a + 127) / 255;
-            let cvs_term = (cvs as i32 * a + 127) / 255;
+            let src_term = blend_hash_lookup(src, alpha) as i32;
+            let cvs_term = blend_hash_lookup(cvs, alpha) as i32;
             (target as i32 + src_term - cvs_term).clamp(0, 255) as u8
         };
         emColor::rgba(

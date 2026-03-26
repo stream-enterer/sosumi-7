@@ -8,7 +8,7 @@ use super::emPainterScanline::{self, WindingRule};
 use super::emPainterScanlineTool::{blend_scanline, blend_scanline_premul, BlendMode, InterpolationBuffer};
 use super::emStroke::{emStroke, emStrokeEnd, StrokeEndType};
 use super::emTexture::{ImageExtension, ImageQuality, emTexture};
-use crate::emCore::emColor::emColor;
+use crate::emCore::emColor::{blend_hash_lookup, emColor};
 use crate::emCore::emImage::emImage;
 use crate::emCore::fixed::Fixed12;
 
@@ -3242,7 +3242,6 @@ impl<'a> emPainter<'a> {
         let th = self.target_height as i32;
 
         // C++ hash tables map (color_channel, alpha) → premultiplied value.
-        // In Rust we compute inline: h[alpha] = (channel * alpha + 127) / 255
         let h1 = [color1.GetRed(), color1.GetGreen(), color1.GetBlue()];
         let h2 = [color2.GetRed(), color2.GetGreen(), color2.GetBlue()];
 
@@ -3290,15 +3289,15 @@ impl<'a> emPainter<'a> {
                 if sx >= 0 && sx < tw && sy >= 0 && sy < th {
                     let bg = self.read_pixel(proof, sx as u32, sy as u32);
                     let out = self.GetImage(proof).SetPixel(sx as u32, sy as u32);
-                    // C++ PEC_TEMPLATE: pixel = bg * alpha3/255 + h1[alpha1] + h2[alpha2]
+                    // C++ PEC_TEMPLATE: pixel = bg * hash[alpha3] + h1[alpha1] + h2[alpha2]
                     for ch in 0..3 {
                         let bg_term = if alpha3 > 0 {
-                            (bg[ch] as i32 * alpha3 + 127) / 255
+                            blend_hash_lookup(bg[ch], alpha3 as u8) as i32
                         } else {
                             0
                         };
-                        let c1_term = (h1[ch] as i32 * alpha1 + 127) / 255;
-                        let c2_term = (h2[ch] as i32 * alpha2 + 127) / 255;
+                        let c1_term = blend_hash_lookup(h1[ch], alpha1 as u8) as i32;
+                        let c2_term = blend_hash_lookup(h2[ch], alpha2 as u8) as i32;
                         out[ch] = (bg_term + c1_term + c2_term).clamp(0, 255) as u8;
                     }
                 }
@@ -5352,18 +5351,18 @@ impl<'a> emPainter<'a> {
                 out[3] = 255;
                 return;
             }
-            // Background: Blinn div255. Source: (c*a+127)/255 (C++ hash table).
+            // Background: Blinn div255. Source: C++ hash table.
             let bg = self.read_pixel(proof, xu, yu);
-            let alpha = ea as u32;
-            let t = (255 - alpha) * 257;
+            let alpha = ea as u8;
+            let t = (255 - alpha as u32) * 257;
             let r = ((bg[0] as u32 * t + 0x8073) >> 16)
-                + ((color.GetRed() as u32 * alpha + 127) / 255);
+                + blend_hash_lookup(color.GetRed(), alpha) as u32;
             let g = ((bg[1] as u32 * t + 0x8073) >> 16)
-                + ((color.GetGreen() as u32 * alpha + 127) / 255);
+                + blend_hash_lookup(color.GetGreen(), alpha) as u32;
             let b = ((bg[2] as u32 * t + 0x8073) >> 16)
-                + ((color.GetBlue() as u32 * alpha + 127) / 255);
+                + blend_hash_lookup(color.GetBlue(), alpha) as u32;
             let a =
-                ((bg[3] as u32 * t + 0x8073) >> 16) + ((255u32 * alpha + 127) / 255);
+                ((bg[3] as u32 * t + 0x8073) >> 16) + blend_hash_lookup(255, alpha) as u32;
             let out = self.GetImage(proof).SetPixel(xu, yu);
             out[0] = r as u8;
             out[1] = g as u8;
@@ -5852,18 +5851,18 @@ impl<'a> emPainter<'a> {
                 out[2] = color.GetBlue();
                 out[3] = 255;
             } else {
-                // Background: Blinn div255. Source: (c*a+127)/255 (C++ hash table).
-                let alpha = ea as u32;
-                let inv = 255 - alpha;
-                let t = inv * 257; // background attenuation factor
+                // Background: Blinn div255. Source: C++ hash table.
+                let alpha = ea as u8;
+                let t = (255 - alpha as u32) * 257;
                 let r = ((bg[0] as u32 * t + 0x8073) >> 16)
-                    + ((color.GetRed() as u32 * alpha + 127) / 255);
+                    + blend_hash_lookup(color.GetRed(), alpha) as u32;
                 let g = ((bg[1] as u32 * t + 0x8073) >> 16)
-                    + ((color.GetGreen() as u32 * alpha + 127) / 255);
+                    + blend_hash_lookup(color.GetGreen(), alpha) as u32;
                 let b = ((bg[2] as u32 * t + 0x8073) >> 16)
-                    + ((color.GetBlue() as u32 * alpha + 127) / 255);
+                    + blend_hash_lookup(color.GetBlue(), alpha) as u32;
                 let a =
-                    ((bg[3] as u32 * t + 0x8073) >> 16) + ((255u32 * alpha + 127) / 255);
+                    ((bg[3] as u32 * t + 0x8073) >> 16)
+                        + blend_hash_lookup(255, alpha) as u32;
                 let out = self.GetImage(proof).SetPixel(x as u32, y as u32);
                 out[0] = r as u8;
                 out[1] = g as u8;
