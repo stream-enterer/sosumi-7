@@ -195,6 +195,19 @@ fn blend_scanline_source_over(
 ) {
     use super::emColor::blend_hash_lookup;
 
+    // AVX2 fast path: full coverage, painter_alpha=255, 4-channel buffer.
+    #[cfg(target_arch = "x86_64")]
+    if coverages.is_none()
+        && painter_alpha == 255
+        && buf.ch == 4
+        && is_x86_feature_detected!("avx2")
+    {
+        unsafe {
+            super::emPainterScanlineAvx2::blend_source_over_avx2(dest, buf.raw_data(), count);
+        }
+        return;
+    }
+
     for i in 0..count {
         let cov = coverages.map_or(0x1000, |c| c[i]);
         if cov <= 0 {
