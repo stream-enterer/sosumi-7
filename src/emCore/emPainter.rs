@@ -1255,10 +1255,11 @@ impl<'a> emPainter<'a> {
                     let dest_offset = (row as usize * tw + col as usize) * 4;
                     let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
+                    // Area sampling outputs premultiplied pixels (matching C++).
                     if all_full {
-                        blend_scanline(dest, &ibuf, batch, None, &mode);
+                        blend_scanline_premul(dest, &ibuf, batch, None, &mode);
                     } else {
-                        blend_scanline(dest, &ibuf, batch, Some(&coverages[..batch]), &mode);
+                        blend_scanline_premul(dest, &ibuf, batch, Some(&coverages[..batch]), &mode);
                     }
                     col += batch as i32;
                 }
@@ -2769,10 +2770,12 @@ impl<'a> emPainter<'a> {
                     let dest_offset = (row as usize * tw + col as usize) * 4;
                     let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
+                    // Area sampling outputs premultiplied pixels (matching C++
+                    // WRITE_NO_ROUND_SHR_COLOR). Blend via premul path.
                     if all_full {
-                        blend_scanline(dest, &ibuf, batch, None, &mode);
+                        blend_scanline_premul(dest, &ibuf, batch, None, &mode);
                     } else {
-                        blend_scanline(dest, &ibuf, batch, Some(&coverages[..batch]), &mode);
+                        blend_scanline_premul(dest, &ibuf, batch, Some(&coverages[..batch]), &mode);
                     }
                     col += batch as i32;
                 }
