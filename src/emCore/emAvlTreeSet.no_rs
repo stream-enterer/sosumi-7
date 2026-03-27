@@ -1,3 +1,7 @@
+--------------------------------------------------------------------------------
+AGENT AUDIT (unreviewed — treat claims as unverified)
+--------------------------------------------------------------------------------
+
 C++ header: include/emCore/emAvlTreeSet.h
 C++ implementation: header-only (template class)
 
@@ -81,11 +85,45 @@ Coverage gaps:
 OPEN QUESTIONS:
   - None
 
-NOTE: Zero emCore consumers, but 4 files outside emCore use this type.
-Gap will surface when emOsm or emStocks are ported.
+--------------------------------------------------------------------------------
+OUTSIDE EMCORE (grep output — reproducible, no interpretation)
+--------------------------------------------------------------------------------
 
 C++ usage outside emCore (4 files):
   include/emOsm/emOsmTileCacheCleaner.h
   src/emStocks/emStocksListBox.cpp
   src/emStocks/emStocksRec.cpp
   src/emTest/emTestContainers.cpp
+
+================================================================================
+REVIEWED SUMMARY (reviewed — unverified items marked NOT VERIFIED)
+================================================================================
+
+C++ emAvlTreeSet.h: copy-on-write sorted set backed by emAvlTree.
+
+Zero emCore consumers. 4 files outside emCore use this type.
+Gap will surface when emOsm or emStocks are ported.
+
+C++ provides:
+  Sorted set with ordered access (GetFirst, GetLast, GetNearest*),
+  set algebra operators (&=, |=, -=, +=), COW copy semantics,
+  and stable iterators that survive mutations.
+
+Closest Rust stdlib equivalent: BTreeSet
+  - Contains, Insert, Remove, Clear, IsEmpty, GetCount -> direct equivalents
+  - GetFirst/GetLast -> .first() / .last() (nightly) or .iter().next() / .iter().next_back()
+  - GetNearest* -> .range() with Bound
+  - Set algebra -> BitAnd, BitOr, Sub traits on &BTreeSet (return new sets)
+    C++ &=, |=, -= mutate in place. Rust equivalents are .retain() and
+    .extend(), not operator overloads.
+
+No Rust equivalent exists for:
+  COW copy semantics — BTreeSet always deep copies on .clone().
+  Stable iterators — BTreeSet iterators borrow immutably.
+  GetWritable — COW mutation trigger. BTreeSet elements are not
+    directly mutable (must remove and re-insert).
+  GetDataRefCount / MakeNonShared — COW refcount management.
+
+NOT VERIFIED: how the 4 outside-emCore files use emAvlTreeSet.
+  Whether they depend on COW, stable iterators, ordered access,
+  or set algebra is not checked.
