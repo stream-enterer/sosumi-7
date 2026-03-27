@@ -1,3 +1,7 @@
+--------------------------------------------------------------------------------
+AGENT AUDIT (unreviewed — treat claims as unverified)
+--------------------------------------------------------------------------------
+
 C++ header: include/emCore/emAvlTree.h
 C++ implementation: src/emCore/emAvlTree.cpp
 
@@ -12,7 +16,7 @@ C++ public API:
   - EM_AVL_CLEAR_VARS / EM_AVL_CLEAR_BEGIN / EM_AVL_CLEAR_END — clear algorithm macros
   - EM_AVL_SEARCH_VARS / EM_AVL_SEARCH_BEGIN / EM_AVL_SEARCH_GO_LEFT / EM_AVL_SEARCH_GO_RIGHT / EM_AVL_SEARCH_GO_LEFT_OR_FOUND / EM_AVL_SEARCH_GO_RIGHT_OR_FOUND / EM_AVL_SEARCH_END — search macros
   - EM_AVL_LOOP_VARS / EM_AVL_LOOP_START / EM_AVL_LOOP_END — forward iteration macros
-  - EM_AVL_REV_LOOP_START / EM_AVL_REV_LOOP_END — reverse iteration macros
+  - EM_AVL_REV_LOOP_VARS / EM_AVL_REV_LOOP_START / EM_AVL_REV_LOOP_END — reverse iteration macros
   - EM_AVL_ITER_VARS / EM_AVL_ITER_FIRST / EM_AVL_ITER_LAST / EM_AVL_ITER_NEXT / EM_AVL_ITER_PREV — stable iterator macros
   - EM_AVL_ITER_START_ANY_BEGIN / EM_AVL_ITER_START_ANY_GO_LEFT / EM_AVL_ITER_START_ANY_GO_RIGHT / EM_AVL_ITER_START_ANY_GO_LEFT_OR_FOUND / EM_AVL_ITER_START_ANY_GO_RIGHT_OR_FOUND / EM_AVL_ITER_START_ANY_END — positioned iterator start macros
   - EM_AVL_INS_LOOP_VARS / EM_AVL_INS_ITER_VARS — union variable macros
@@ -49,6 +53,10 @@ Coverage gaps:
 OPEN QUESTIONS:
   - None
 
+--------------------------------------------------------------------------------
+OUTSIDE EMCORE (grep output — reproducible, no interpretation)
+--------------------------------------------------------------------------------
+
 C++ usage outside emCore (8 files):
   include/emFileMan/emFileManTheme.h
   include/emOsm/emOsmTileCacheCleaner.h
@@ -58,3 +66,48 @@ C++ usage outside emCore (8 files):
   src/emStocks/emStocksPricesFetcher.cpp
   src/emStocks/emStocksRec.cpp
   src/emTest/emTestContainers.cpp
+
+================================================================================
+REVIEWED SUMMARY (reviewed — unverified items marked NOT VERIFIED)
+================================================================================
+
+C++ emAvlTree.h: low-level intrusive AVL tree via C preprocessor macros.
+
+8 files outside emCore use this type.
+
+emAvlTree is used two ways:
+  1. As the engine behind emAvlTreeMap and emAvlTreeSet (wrapper types,
+     separate marker files)
+  2. Directly via raw EM_AVL_* macros in three emCore files
+
+Direct emCore usage and Rust replacements (verified by grep):
+  emContext.cpp  — model registry lookup (43 macro invocations)
+    -> HashMap in emContext.rs:44
+  emPanel.cpp    — child panel lookup by name (17 macro invocations)
+    -> HashMap + SlotMap in emPanelTree.rs:245-249
+  emListBox.cpp  — item lookup by name (17 macro invocations)
+    -> HashMap in emListBox.rs:253
+
+No Rust equivalent exists for:
+  emAvlNode / emAvlTree / emAvlIterator — intrusive node struct and
+    tree pointer. Rust uses HashMap which manages its own storage.
+  EM_AVL_* macros — the entire macro-based insertion/removal/search/
+    iteration system. Rust uses HashMap methods directly.
+  emAvlCheck() — tree consistency validator. No Rust equivalent found.
+  EM_AVL_LOOP / EM_AVL_REV_LOOP — sorted forward/reverse iteration.
+    HashMap iteration is unordered.
+  EM_AVL_ITER_* — stable iterator that survives mutations.
+    HashMap iterators borrow the collection immutably.
+
+Semantic differences (unverified impact):
+  Ordering: AVL trees iterate in sorted key order. HashMap does not.
+    emContext.cpp uses EM_AVL_LOOP (sorted iteration).
+    NOT VERIFIED: whether the Rust emContext.rs iteration depends on
+    any particular ordering of its HashMap.
+
+  NOT VERIFIED: whether the 8 outside-emCore files use emAvlTree
+    raw macros directly or only through emAvlTreeMap/emAvlTreeSet.
+    If through wrappers only, emAvlTree is an implementation detail
+    those files never touch.
+
+  NOT VERIFIED: whether any code calls emAvlCheck() outside emCore.

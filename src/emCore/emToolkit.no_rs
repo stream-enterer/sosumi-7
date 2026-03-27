@@ -1,3 +1,7 @@
+--------------------------------------------------------------------------------
+AGENT AUDIT (unreviewed — treat claims as unverified)
+--------------------------------------------------------------------------------
+
 C++ header: include/emCore/emToolkit.h
 C++ implementation: header-only (pure aggregation header, no code)
 
@@ -78,7 +82,7 @@ OPEN QUESTIONS:
   - None
 
 --------------------------------------------------------------------------------
-OUTSIDE EMCORE (grep of C++ codebase, not part of agent audit)
+OUTSIDE EMCORE (grep output — reproducible, no interpretation)
 --------------------------------------------------------------------------------
 
 C++ usage outside emCore (37 files):
@@ -121,7 +125,7 @@ C++ usage outside emCore (37 files):
   src/emTest/emTestPackLayout.cpp
 
 ================================================================================
-REVIEWED SUMMARY
+REVIEWED SUMMARY (reviewed — unverified items marked NOT VERIFIED)
 ================================================================================
 
 C++ emToolkit.h: aggregation header containing no code.

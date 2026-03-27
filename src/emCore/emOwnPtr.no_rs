@@ -1,3 +1,7 @@
+--------------------------------------------------------------------------------
+AGENT AUDIT (unreviewed — treat claims as unverified)
+--------------------------------------------------------------------------------
+
 C++ header: include/emCore/emOwnPtr.h
 C++ implementation: header-only
 
@@ -71,7 +75,7 @@ OPEN QUESTIONS:
   - None
 
 --------------------------------------------------------------------------------
-OUTSIDE EMCORE (grep of C++ codebase, not part of agent audit)
+OUTSIDE EMCORE (grep output — reproducible, no interpretation)
 --------------------------------------------------------------------------------
 
 C++ usage outside emCore (17 files):
@@ -94,7 +98,7 @@ C++ usage outside emCore (17 files):
   include/emXpm/emXpmImageFileModel.h
 
 ================================================================================
-REVIEWED SUMMARY
+REVIEWED SUMMARY (reviewed — unverified items marked NOT VERIFIED)
 ================================================================================
 
 C++ emOwnPtr.h: unique-ownership smart pointer (pre-C++11 unique_ptr).

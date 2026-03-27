@@ -1,3 +1,7 @@
+--------------------------------------------------------------------------------
+AGENT AUDIT (unreviewed — treat claims as unverified)
+--------------------------------------------------------------------------------
+
 C++ header: include/emCore/emArray.h
 C++ implementation: header-only (all template code in emArray.h)
 
@@ -147,7 +151,7 @@ Coverage gaps:
   - emArray<OBJ>::Iterator: Rust uses standard iterators; no custom Iterator type needed.
 
 --------------------------------------------------------------------------------
-OUTSIDE EMCORE (grep of C++ codebase, not part of agent audit)
+OUTSIDE EMCORE (grep output — reproducible, no interpretation)
 --------------------------------------------------------------------------------
 
 C++ usage outside emCore (69 files):
@@ -222,7 +226,7 @@ C++ usage outside emCore (69 files):
   src/emX11/emX11Screen.cpp
 
 ================================================================================
-REVIEWED SUMMARY
+REVIEWED SUMMARY (reviewed — unverified items marked NOT VERIFIED)
 ================================================================================
 
 C++ emArray.h: dynamic array template with copy-on-write and stable iterators.

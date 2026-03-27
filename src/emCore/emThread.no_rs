@@ -1,3 +1,7 @@
+--------------------------------------------------------------------------------
+AGENT AUDIT (unreviewed — treat claims as unverified)
+--------------------------------------------------------------------------------
+
 C++ header: include/emCore/emThread.h
 C++ implementation: src/emCore/emThread.cpp
 
@@ -141,7 +145,7 @@ OPEN QUESTIONS:
     all dead code paths in the emCore-only scope?
 
 --------------------------------------------------------------------------------
-OUTSIDE EMCORE (grep of C++ codebase, not part of agent audit)
+OUTSIDE EMCORE (grep output — reproducible, no interpretation)
 --------------------------------------------------------------------------------
 
 C++ usage outside emCore (19 files):
@@ -166,7 +170,7 @@ C++ usage outside emCore (19 files):
   src/emX11/emX11Screen.cpp
 
 ================================================================================
-REVIEWED SUMMARY
+REVIEWED SUMMARY (reviewed — unverified items marked NOT VERIFIED)
 ================================================================================
 
 C++ emThread.h: portable threading primitives wrapping pthreads/Win32.
