@@ -4,7 +4,7 @@ Generated: 2026-03-27
 
 ## Overview
 
-20 marker files were documented by 6 research agents: 15 `.no_rust_equivalent` files covering C++ types replaced by Rust standard library equivalents, and 5 `.rust_only` files covering Rust infrastructure with no single C++ header counterpart. All 20 marker files contain non-empty documentation. Across all files, 22 open questions and 34 coverage gaps were identified. No marker file was left undocumented.
+19 marker files remain under audit: 14 `.no_rust_equivalent` files covering C++ types replaced by Rust standard library equivalents, and 5 `.rust_only` files covering Rust infrastructure with no single C++ header counterpart. emThread has been reviewed and finalized as `.no_rs` (see src/emCore/emThread.no_rs). Across remaining files, 19 open questions and 27 coverage gaps were identified.
 
 ## File Summary Table
 
@@ -22,7 +22,7 @@ Generated: 2026-03-27
 | emOwnPtrArray | no_rust_equivalent | 1 class, ~20 methods | `Vec<Option<Box<T>>>` or `Vec<T>` (pattern, not directly named) | 4 (compact/capacity, BinaryInsert, BinaryRemoveByKey, concrete usages) | 2 |
 | emRef | no_rust_equivalent | 2 classes, ~15 methods | `Rc<T>`, `Rc<RefCell<T>>` (emScreen, emFpPlugin, emCoreConfig, emContext) | 3 (emRefTarget base, explicit Set/Reset, GetRefCount) | 1 |
 | emString | no_rust_equivalent | 1 class, ~50 methods | `String`/`&str` pervasively (1042+ C++ occurrences) | 3 (Extract, SetLenGetWritable, GetWritable by index) | 1 |
-| emThread | no_rust_equivalent | 5 classes + typedef, ~35 methods | `std::thread::scope`, `std::sync::Mutex`, `AtomicBool` | 7 (StartUnmanaged, ExitCurrentThread, timeout wait, exit status, semaphore, RW mutex, recursive mutex) | 3 |
+| emThread | **DONE** → .no_rs | — | — | — | — |
 | emTmpFile | no_rust_equivalent | 2 classes, ~10 methods | None in emCore (tempfile crate in test deps only) | 3 (emTmpFile, emTmpFileMaster, IPC cleanup; 0 emCore consumers) | 2 |
 | emToolkit | no_rust_equivalent | 0 (aggregation header, 25 includes) | All 25 widget headers have corresponding .rs files | 1 (no aggregation equivalent; not needed in Rust) | 0 |
 | emPainterDrawList | rust_only | N/A (no C++ equivalent) | 1 enum (37 variants), 1 struct, replay method | 0 | 1 |
@@ -52,11 +52,6 @@ Generated: 2026-03-27
 - When/if emTmpConv is ported, will it need the full emTmpFileMaster IPC-based cleanup mechanism, or will the tempfile crate's auto-cleanup suffice? -- from emTmpFile
 - emTmpFile depends on emModel and emMiniIpc. The Rust port has emMiniIpc (src/emCore/emMiniIpc.rs). Does it have sufficient functionality to support emTmpFileMaster's liveness-ping pattern if needed? -- from emTmpFile
 - Will ImgDir and ImgDirUp be needed when emFileSelectionBox or emFileDialog is fully ported? -- from toolkit_images
-
-### Threading and concurrency patterns
-- How does Rust emFontCache handle concurrent access? C++ uses emThreadMutex. -- from emThread
-- C++ emPainter accepts a userSpaceMutex (emThreadMiniMutex*) parameter for thread safety during painting. How is this handled in the Rust port? -- from emThread
-- Are any of the emThread "coverage gap" methods actually needed by the Rust port, or are they all dead code paths in the emCore-only scope? -- from emThread
 
 ### Performance characteristics
 - emClipRects.h uses a raw linked list internally and calls emSortSingleLinkedList. The Rust emClipRects uses Vec<Rect> instead. Whether performance characteristics differ for large clip rect sets is untested. -- from emList
@@ -92,8 +87,6 @@ Generated: 2026-03-27
 - emPainterDrawList.rs is the only rust_only file that represents an architectural divergence from C++ rather than a code consolidation. C++ uses mutex-based concurrent panel tree traversal; Rust uses a record-replay pattern because Rc-based panel behaviors cannot cross thread boundaries.
 
 - HashMap replaces three separate C++ data structures: emAvlTree macros (in emContext, emPanel, emListBox), emAvlTreeMap (in emFileSelectionBox), and the intrusive AVL node system. All three AVL-related no_rust_equivalent markers document types replaced by the same Rust standard library type.
-
-- The emThread marker file documents the most coverage gaps (7) of any single file, but 5 of those 7 gaps (StartUnmanaged, ExitCurrentThread, timeout wait, exit status, recursive mutex) have no identified consumer in the current Rust emCore port.
 
 - Two marker files (emOwnPtrArray, emCrossPtr) raise open questions about whether specific C++ member variables in emBorder, emFileDialog, emFontCache, and emFpPlugin have been ported with equivalent patterns. These are the most concrete verification gaps.
 
