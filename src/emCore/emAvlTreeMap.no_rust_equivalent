@@ -1,0 +1,99 @@
+C++ header: include/emCore/emAvlTreeMap.h
+C++ implementation: header-only (template class)
+
+C++ public API:
+  template <class KEY, class VALUE> class emAvlTreeMap:
+    - emAvlTreeMap() — construct empty
+    - emAvlTreeMap(const emAvlTreeMap& src) — copy (COW)
+    - emAvlTreeMap(const KEY& key, const VALUE& value) — single-element
+    - ~emAvlTreeMap()
+    - operator=(const emAvlTreeMap& map) -> emAvlTreeMap&
+    - struct Element { KEY Key; VALUE Value; emAvlNode AvlNode; }
+    - bool Contains(const KEY& key) const
+    - const Element* Get(const KEY& key) const
+    - const Element* GetFirst() const
+    - const Element* GetLast() const
+    - const Element* GetNearestGreater(const KEY& key) const
+    - const Element* GetNearestGreaterOrEqual(const KEY& key) const
+    - const Element* GetNearestLess(const KEY& key) const
+    - const Element* GetNearestLessOrEqual(const KEY& key) const
+    - const KEY* GetKey(const KEY& key) const
+    - const KEY* GetKey(const Element* elem) const
+    - KEY* GetKeyWritable(const KEY& key)
+    - KEY* GetKeyWritable(const Element* elem)
+    - const VALUE* GetValue(const KEY& key) const
+    - const VALUE* GetValue(const Element* elem) const
+    - VALUE* GetValueWritable(const KEY& key, bool insertIfNew)
+    - VALUE* GetValueWritable(const Element* elem)
+    - void SetValue(const KEY& key, const VALUE& value, bool insertIfNew)
+    - void SetValue(const Element* elem, const VALUE& value)
+    - const VALUE& operator[](const KEY& key) const
+    - VALUE& operator[](const KEY& key)
+    - void Insert(const KEY& key, const VALUE& value)
+    - void RemoveFirst()
+    - void RemoveLast()
+    - void Remove(const KEY& key)
+    - void Remove(const Element* elem)
+    - void Clear()
+    - bool IsEmpty() const
+    - int GetCount() const
+    - unsigned int GetDataRefCount() const
+    - void MakeNonShared()
+    - class Iterator (stable iterator with ~500 bytes; auto-adapts on COW, advances on element removal)
+      - Iterator()
+      - Iterator(const Iterator&)
+      - Iterator(const emAvlTreeMap&, const KEY&)
+      - Iterator(const emAvlTreeMap&, const Element*)
+      - ~Iterator()
+      - operator=(const Iterator&)
+      - operator const Element*() const
+      - operator*() const -> const Element&
+      - operator->() const -> const Element*
+      - Get() const -> const Element*
+      - Set(const Iterator&)
+      - Set(const emAvlTreeMap&, const KEY&)
+      - Set(const emAvlTreeMap&, const Element*)
+      - SetFirst(const emAvlTreeMap&)
+      - SetLast(const emAvlTreeMap&)
+      - SetNext()
+      - SetPrev()
+      - operator++() / operator--() (pre/post)
+      - operator==(const Iterator&) / operator!=(const Iterator&)
+      - GetMap() const -> const emAvlTreeMap*
+      - Detach()
+    - Iterator begin() const
+    - Iterator end() const
+
+  Copy-on-write sorted map backed by intrusive AVL tree. Key features:
+  copy-on-write sharing (SharedData with RefCount), stable iterators
+  (linked list of iterators per map instance, auto-adjusted on COW clone
+  and element removal), and ordered access (GetFirst/Last, GetNearest*).
+
+C++ usage in emCore (3 occurrences in 1 file outside the header itself):
+  - src/emCore/emFileSelectionBox.cpp:22 — #include <emCore/emAvlTreeMap.h>
+  - src/emCore/emFileSelectionBox.cpp:720 — emAvlTreeMap<emString,int> map; (local variable for deduplication)
+  - src/emCore/emFileSelectionBox.cpp:721 — const emAvlTreeMap<emString,int>::Element* elem;
+
+Rust equivalents found:
+  - emAvlTreeMap<emString,int> in emFileSelectionBox -> not found in src/emCore/emFileSelectionBox.rs (no HashMap/BTreeMap usage detected; file exists but may not yet implement this particular logic)
+  - General map usage throughout Rust codebase uses std::collections::HashMap (emContext.rs:44, emPanelTree.rs:249, emListBox.rs:253, emLinearLayout.rs:22, emPackLayout.rs:14, emGUIFramework.rs:83, emProcess.rs:180, emRes.rs:8)
+  - Contains() -> HashMap::contains_key()
+  - Get() -> HashMap::get()
+  - Insert() -> HashMap::insert()
+  - Remove() -> HashMap::remove()
+  - Clear() -> HashMap::clear()
+  - IsEmpty() -> HashMap::is_empty()
+  - GetCount() -> HashMap::len()
+  - operator[] -> HashMap index or entry API
+  - GetFirst/GetLast/GetNearestGreater/etc. -> no direct HashMap equivalent; would need BTreeMap for ordered access
+  - Copy-on-write / stable iterators -> not replicated in Rust (not needed; Rust uses ownership)
+  - MakeNonShared / GetDataRefCount -> not applicable in Rust
+
+Coverage gaps:
+  - Ordered access methods (GetFirst, GetLast, GetNearestGreater, GetNearestGreaterOrEqual, GetNearestLess, GetNearestLessOrEqual) have no Rust equivalent in HashMap; BTreeMap would be needed but is not used for this purpose
+  - Copy-on-write sharing semantics not replicated
+  - Stable iterator semantics (auto-advance on removal, auto-adjust on COW) not replicated
+  - The specific emFileSelectionBox usage (local deduplication map) may not yet be ported
+
+OPEN QUESTIONS:
+  - Whether emFileSelectionBox.rs has ported the deduplication logic from lines 720-721 of the C++ implementation (no HashMap usage found in that file)

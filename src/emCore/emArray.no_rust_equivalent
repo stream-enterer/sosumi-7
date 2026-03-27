@@ -1,0 +1,147 @@
+C++ header: include/emCore/emArray.h
+C++ implementation: header-only (all template code in emArray.h)
+
+C++ public API:
+  Free functions:
+  - emSortArray<OBJ>(OBJ* array, int count, compare_fn, void* context) -> bool
+  - emBinarySearch<OBJ,KEY>(const OBJ* array, int count, KEY key, compare_fn, void* context) -> int
+
+  class emArray<OBJ>:
+  - emArray() -- default constructor (empty array)
+  - emArray(const emArray &) -- copy constructor (COW shallow copy)
+  - emArray(const OBJ* array, int count, int tuningLevel=0) -- construct from C array
+  - emArray(const OBJ* array, int count, const OBJ* array2, int count2, int tuningLevel=0) -- construct by concatenating two arrays
+  - emArray(const OBJ& obj, int count=1, int tuningLevel=0) -- construct by filling
+  - ~emArray()
+  - operator=(const emArray&) -> emArray& -- copy assignment (COW)
+  - operator=(const OBJ&) -> emArray& -- assign single element
+  - GetTuningLevel() const -> int
+  - SetTuningLevel(int tuningLevel) -> void -- controls optimization level (0-4)
+  - GetCount() const -> int -- number of elements
+  - SetCount(int count, bool compact=false) -> void
+  - Compact() -> void -- shrink capacity to count
+  - operator const OBJ*() const -- implicit conversion to pointer
+  - Get() const -> const OBJ* -- get pointer to first element
+  - operator[](int index) const -> const OBJ&
+  - Get(int index) const -> const OBJ&
+  - GetWritable() -> OBJ* -- mutable pointer (breaks COW)
+  - GetWritable(int index) -> OBJ& -- mutable element reference
+  - GetWritable(const OBJ* obj) -> OBJ* -- mutable pointer from const pointer
+  - Set(int index, const OBJ& obj) -> void
+  - Add(const emArray&, bool compact=false) -> void
+  - Add(const OBJ*, int count, bool compact=false) -> void
+  - Add(const OBJ&, int count=1, bool compact=false) -> void
+  - AddNew(int count=1, bool compact=false) -> void
+  - operator+=(const emArray&) -> emArray&
+  - operator+=(const OBJ&) -> emArray&
+  - operator+(const emArray&) const -> emArray
+  - operator+(const OBJ&) const -> emArray
+  - Insert(int index, const emArray&, bool compact=false) -> void
+  - Insert(int index, const OBJ*, int count, bool compact=false) -> void
+  - Insert(int index, const OBJ&, int count=1, bool compact=false) -> void
+  - InsertNew(int index, int count=1, bool compact=false) -> void
+  - Replace(int index, int remCount, const emArray&, bool compact=false) -> void
+  - Replace(int index, int remCount, const OBJ*, int count, bool compact=false) -> void
+  - Replace(int index, int remCount, const OBJ&, int count=1, bool compact=false) -> void
+  - ReplaceByNew(int index, int remCount, int count=1, bool compact=false) -> void
+  - GetSubArray(int index, int count, bool compact=false) const -> emArray
+  - Extract(int index, int count, bool compact=false) -> emArray
+  - Remove(int index, int count=1, bool compact=false) -> void
+  - Clear(bool compact=false) -> void
+  - IsEmpty() const -> bool
+  - PointerToIndex(const OBJ* ptr) const -> int
+  - Sort(compare_fn, void* context=NULL) -> bool
+  - BinarySearch(const OBJ&, compare_fn, void* context=NULL) const -> int
+  - BinarySearchByKey(void* key, compare_fn, void* context=NULL) const -> int
+  - BinaryInsert(const OBJ&, compare_fn, void* context=NULL, bool compact=false) -> void
+  - BinaryInsertIfNew(const OBJ&, compare_fn, void* context=NULL, bool compact=false) -> bool
+  - BinaryInsertOrReplace(const OBJ&, compare_fn, void* context=NULL, bool compact=false) -> void
+  - BinaryReplace(const OBJ&, compare_fn, void* context=NULL, bool compact=false) -> bool
+  - BinaryRemove(const OBJ&, compare_fn, void* context=NULL, bool compact=false) -> bool
+  - BinaryRemoveByKey(void* key, compare_fn, void* context=NULL, bool compact=false) -> bool
+  - GetDataRefCount() const -> unsigned int
+  - MakeNonShared() -> void
+
+  class emArray<OBJ>::Iterator:
+  - Iterator()
+  - Iterator(const Iterator&)
+  - Iterator(const emArray<OBJ>&, int index=0)
+  - operator=(const Iterator&) -> Iterator&
+  - IsValid() const -> bool
+  - operator const OBJ*() const
+  - operator*() const -> const OBJ&
+  - operator->() const -> const OBJ*
+  - Get() const -> const OBJ*
+  - Set(const Iterator&) -> void
+  - Set(const emArray<OBJ>&, int index) -> void
+  - SetFirst(const emArray<OBJ>&) -> void
+  - SetLast(const emArray<OBJ>&) -> void
+  - SetNext() -> void
+  - SetPrev() -> void
+  - operator++() -> const OBJ*
+  - operator--() -> const OBJ*
+  - operator++(int) -> const OBJ*
+  - operator--(int) -> const OBJ*
+  - operator==(const Iterator&) const -> bool
+  - operator!=(const Iterator&) const -> bool
+  - GetArray() const -> const emArray<OBJ>*
+
+C++ usage in emCore (236 occurrences in headers, 81 in .cpp files):
+  - emRec.h: emArray<char> used for serialization buffers (emRecMemWriter, emRecMemReader)
+  - emProcess.h (line 87): emArray<emString> for args and extraEnv parameters
+  - emPanel.h: emArray<emString> for DecodeIdentity/EncodeIdentity
+  - emImage.h: includes emArray.h (emImage stores pixel data)
+  - emInput.h (line ~60): emArray<emInputEvent> for event storage
+  - emScalarField.h (line ~106): emArray<emUInt64> for scale mark intervals
+  - emListBox.h: emArray<int> for selected indices
+  - emFileSelectionBox.h: emArray<emString> for selected names and filters
+  - emStd2.h: emArray<emString> used in utility functions
+  - emFileDialog.h: emArray<emString> for file paths
+  - emScreen.h: emArray used for monitor/window lists
+  - emLinearLayout.h: emArray for child constraints
+  - emPackLayout.h: emArray for cell info
+  - emRec.cpp (lines 129,135): emArray<char> buf for TryLoadFromMem/SaveToMem
+  - emProcess.cpp (lines 87,94-97): emArray<emString> for args, env; emArray<char> for envBlock, cmd
+  - emPanel.cpp (lines 228,249,285,287): emArray<emString> for identity encoding/decoding
+  - emColorField.cpp (line 217): emArray<emUInt64> for percentIntervals
+  - emFileSelectionBox.cpp (lines 140,147,156,158,246): emArray<emString> for selected names, filters
+
+Rust equivalents found:
+  - emArray<T> broadly maps to Vec<T>
+  - GetCount: Vec::len() -- used pervasively across the Rust codebase
+  - SetCount: Vec::resize() / Vec::truncate()
+  - Compact: Vec::shrink_to_fit()
+  - Get/operator[]: Vec index operator or .get()
+  - GetWritable: direct mutable access (no COW in Rust)
+  - Add: Vec::push() / Vec::extend()
+  - Insert: Vec::insert()
+  - Remove: Vec::remove() / Vec::drain()
+  - Clear: Vec::clear()
+  - IsEmpty: Vec::is_empty()
+  - Sort: Vec::sort_by() -- see src/emCore/emClipRects.rs:337
+  - BinarySearch: Vec::binary_search_by() or slice::binary_search()
+  - GetSubArray: slice indexing [a..b] or .to_vec()
+  - Extract: Vec::drain(range).collect()
+  - Replace: Vec::splice()
+  - emSortArray: slice::sort_by() -- no custom needed
+  - emBinarySearch: slice::binary_search_by()
+  - Iterator: standard Rust iterators (.iter(), .iter_mut(), for loops)
+  - TuningLevel: no Rust equivalent needed (Rust has no COW array; Vec manages capacity automatically)
+  - COW (copy-on-write): no Rust equivalent (Vec uses move semantics / Clone)
+  - GetDataRefCount/MakeNonShared: no Rust equivalent (single-owner by design)
+  Representative Vec usage locations:
+    - src/emCore/emPainterDrawList.rs:69 -- Vec<(f64,f64)> for vertices
+    - src/emCore/emEngine.rs:62-63 -- Vec<SignalId>, Vec<EngineId> for scheduler queues
+    - src/emCore/emLinearLayout.rs:311-355 -- Vec for constraints and index lists
+    - src/emCore/emScalarField.rs:106 -- Vec<u64> for scale_mark_intervals
+    - src/emCore/emListBox.rs:367 -- Vec<String> for items
+    - src/emCore/emScreen.rs:23 -- Vec<MonitorInfo>
+    - src/emCore/emInputState.rs:16 -- Vec<(u64, f64, f64)> for touches
+
+Coverage gaps:
+  - BinaryInsert, BinaryInsertIfNew, BinaryInsertOrReplace, BinaryReplace, BinaryRemove,
+    BinaryRemoveByKey: no direct Rust equivalents found in the codebase, but these can be
+    trivially composed from binary_search_by + insert/remove. Not found in use in the ported
+    Rust code so far.
+  - PointerToIndex: not directly needed in Rust (use index-based iteration)
+  - emArray<OBJ>::Iterator: Rust uses standard iterators; no custom Iterator type needed.

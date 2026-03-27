@@ -1,0 +1,37 @@
+Rust file: src/emCore/emPainterDrawList.rs
+
+Defines:
+  - enum DrawOp — 37 variants recording all paint operations (PushState, PopState, SetOffset, ClipRect, SetCanvasColor, SetAlpha, PaintRect, PaintRoundRect, PaintRectOutlined, PaintRoundRectOutlined, PaintEllipse, PaintPolygon, PaintSolidPolyline, PaintImageFull, PaintImageColored, PaintImageScaled, PaintBorderImage, PaintText, PaintTextBoxed, PaintEllipseSector, PaintEllipseArc, PaintEllipseSectorOutline, PaintEllipseOutline, PaintLinearGradient, PaintRadialGradient, PaintLine, PaintLineStroked, PaintPolygonEvenOdd, PaintPolygonTextured, PaintPolygonTexturedEvenOdd, PaintPolygonOutline, PaintPolyline, PaintPolylineWithoutArrows, PaintPolylineWithArrows, PaintDashedPolyline, PaintBezier, PaintBezierOutline, PaintBezierLine, PaintImageSimple, PaintBorderImageColored, PaintEdgeCorrection)
+  - unsafe impl Send for DrawOp — raw *const emImage pointers are valid during replay phase
+  - unsafe impl Sync for DrawOp — same safety argument
+  - struct DrawList — wrapper around Vec<DrawOp>
+  - DrawList::new() -> Self — creates with capacity 256
+  - DrawList::ops_mut() -> &mut Vec<DrawOp>
+  - DrawList::replay(&self, &mut emPainter, tile_offset: (f64, f64)) — replays all recorded ops into a painter, subtracting tile_offset from SetOffset calls
+
+Used by:
+  - src/emCore/emPainter.rs:4 — imports DrawOp; uses it in PaintTarget::DrawList variant (line 247) and try_record() method (line 347); every paint method records a DrawOp
+  - src/emCore/emPainter.rs:305 — new_recording() constructor takes &mut Vec<DrawOp>
+  - src/emCore/emPainter.rs:6386 — test imports DrawList
+  - src/emCore/emViewRenderer.rs:6 — imports DrawList for rendering pipeline
+  - src/emCore/emWindow.rs:383 — imports DrawList for frame rendering (record phase 1, replay phase 2)
+
+Git history:
+  - Created: 1bdf5cc2df364e03afb778df678d4919c175101d 2026-03-16 — "feat(CAP-0057): implement RenderThreadPool for parallel tile rendering" — originally as src/render/draw_list.rs with 416 lines, 18 DrawOp variants
+  - Renamed: 22af067bd 2026-03-23 — moved from src/render/draw_list.rs to src/emCore/emPainterDrawList.rs (Phase 3 rename)
+  - Major change: 656dfa0ae 2026-03-23 — "Phase 4 Part 1: rename 72 types to match C++ em-prefixed names" — renamed types within the file (32 insertions, 32 deletions)
+  - Major change: aeba41f14 2026-03-23 — "Phase 4 Part 2: rename 298 methods + 16 trait methods to match C++ CamelCase names" — renamed method calls in replay (14 insertions, 14 deletions)
+  - Major change: a4c2846703 2026-03-24 — "fix: complete recording-mode support for all 35 paint methods" — expanded from 18 to 37+ DrawOp variants (430 lines added)
+  - Major change: 03d70cbd52 2026-03-24 — "test: close coverage gaps across 11 under-covered files (56 new tests)" — added 268 lines of tests
+  - Renamed: 6165255d0 2026-03-26 — workspace flatten
+
+Related C++ code:
+  - C++ has NO equivalent display list / draw list concept. The C++ architecture uses a fundamentally different parallelization strategy:
+    - src/emCore/emViewRenderer.cpp:132-146 — C++ uses emThreadMiniMutex (UserSpaceMutex) to serialize access to shared panel data during concurrent rendering
+    - include/emCore/emViewRenderer.h:100-105 — ThreadPool, UserSpaceMutex fields
+    - include/emCore/emRenderThreadPool.h — C++ thread pool that renders tiles directly, with mutex-protected access to panel tree
+  - In C++, each render thread calls Paint() methods directly on panels while holding/releasing a UserSpaceMutex. In Rust, Rc<Look> in panel behaviors prevents Send/Sync across threads.
+  - Structural differences: The Rust DrawList is an architectural divergence required by Rust's ownership model. C++ can share mutable state via mutex; Rust cannot send Rc across threads. The solution: Phase 1 (single-threaded) records all draw calls into a DrawList, Phase 2 (parallel) replays the DrawList into tile buffers. This replaces C++'s mutex-based concurrent panel tree traversal with a record-then-replay pattern. The DrawOp enum serializes the full painter API surface.
+
+OPEN QUESTIONS:
+  - The unsafe Send/Sync impls for DrawOp rely on the invariant that emImage pointers remain valid between recording and replay. This is documented in comments but not enforced by the type system.

@@ -1,0 +1,66 @@
+C++ header: include/emCore/emOwnPtrArray.h
+C++ implementation: header-only
+
+C++ public API:
+  - template<class OBJ> class emOwnPtrArray
+    - emOwnPtrArray()                                                  // construct empty
+    - ~emOwnPtrArray()                                                 // delete all owned objects
+    - int GetCount() const                                             // element count
+    - void SetCount(int count, bool compact=false)                     // resize; new elements NULL, shrink deletes
+    - void Compact()                                                   // capacity = count
+    - OBJ* const* Get() const                                          // raw C array (const)
+    - OBJ** Get()                                                      // raw C array (mutable)
+    - OBJ* Get(int index) const                                        // element at index
+    - OBJ* operator[](int index) const                                 // element at index
+    - void Set(int index, OBJ* obj)                                    // assign at index, delete old
+    - void Reset(int index)                                            // Set(index, NULL)
+    - OBJ* Release(int index)                                          // release ownership at index
+    - void Add(OBJ* obj, bool compact=false)                           // append
+    - emOwnPtrArray& operator+=(OBJ* obj)                              // append
+    - void Insert(int index, OBJ* obj, bool compact=false)             // insert at position
+    - void Remove(int index, int remCount=1, bool compact=false)       // remove range, delete objects
+    - void Clear(bool compact=false)                                   // remove all
+    - bool IsEmpty() const                                             // count == 0
+    - bool Sort(int(*compare)(...), void* context=NULL)                // stable sort
+    - int BinarySearchByKey(void* key, int(*cmpObjKey)(...), void*)    // binary search
+    - void BinaryInsert(OBJ* obj, int(*compare)(...), void*, bool)     // sorted insert
+    - bool BinaryRemoveByKey(void* key, int(*cmpObjKey)(...), void*, bool) // find and remove
+    - OBJ* const* begin() const                                        // range-based for (const)
+    - OBJ** begin()                                                    // range-based for (mutable)
+    - OBJ* const* end() const                                          // range-based for (const)
+    - OBJ** end()                                                      // range-based for (mutable)
+    - (copy ctor and copy assignment are private/disabled)
+
+  Private:
+    - WrappedCmpContext, WrappedCmpObjKeyContext structs
+    - void AdaptCapacity(int newCount, bool compact=false)             // realloc strategy
+    - static int WrappedCompare(...)                                   // unwrap compare functor
+    - static int WrappedCompareObjKey(...)                             // unwrap compare functor
+
+C++ usage in emCore (48 total occurrences across 3 files):
+  - emFontCache.h:85: emOwnPtrArray<Entry> EntryArray (member variable)
+  - emFpPlugin.h:349: emOwnPtrArray<emFpPlugin> Plugins (member variable)
+  - emOwnPtrArray.h: all 42 remaining occurrences are the definition itself
+
+Rust equivalents found:
+  - emOwnPtrArray<T> -> Vec<Option<Box<T>>> or Vec<Box<T>> or Vec<T>
+    - No direct named equivalent found in Rust codebase
+    - emFontCache is not yet ported to use this pattern (uses OnceLock global)
+    - emFpPlugin.rs: not found using emOwnPtrArray pattern directly
+  - GetCount -> Vec::len()
+  - Add/Insert/Remove -> Vec::push(), Vec::insert(), Vec::remove()
+  - Sort -> Vec::sort_by() or slice::sort_by()
+  - BinarySearchByKey -> slice::binary_search_by()
+  - begin/end -> Iterator trait, for-in loops
+  - Clear -> Vec::clear()
+  - IsEmpty -> Vec::is_empty()
+
+Coverage gaps:
+  - emOwnPtrArray's compact/capacity management: no Rust equivalent needed; Vec handles capacity internally
+  - BinaryInsert (sorted insert with stable ordering): would use binary_search_by + insert; not found implemented
+  - BinaryRemoveByKey: would use binary_search_by + remove; not found implemented
+  - The two concrete usages (emFontCache, emFpPlugin) are either not yet ported or use different structures
+
+OPEN QUESTIONS:
+  - emFontCache.rs uses a global OnceLock rather than the C++ model/ref pattern; does EntryArray have a Rust equivalent?
+  - emFpPlugin.rs exists but its internal Plugins array structure was not verified against emOwnPtrArray<emFpPlugin>

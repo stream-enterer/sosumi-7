@@ -1,0 +1,93 @@
+C++ header: include/emCore/emFileStream.h
+C++ implementation: src/emCore/emFileStream.cpp
+
+C++ public API:
+  class emFileStream
+    emFileStream(FILE * file=NULL, size_t bufSize=8192)
+    ~emFileStream()
+    void TryOpen(const char * filePath, const char * mode)
+    void TryClose()
+    void Close()
+    bool IsOpen() const -> bool
+    emInt64 TryTell() -> emInt64
+    void TrySeek(emInt64 pos)
+    void TrySeekEnd(emInt64 posFromEnd=0)
+    void TrySkip(emInt64 offset)
+    void TryRead(void * buf, size_t len)
+    size_t TryReadAtMost(void * buf, size_t maxLen) -> size_t
+    emString TryReadLine(bool removeLineBreak=false) -> emString
+    int TryReadCharOrEOF() -> int
+    emInt8 TryReadInt8() -> emInt8
+    emUInt8 TryReadUInt8() -> emUInt8
+    emInt16 TryReadInt16LE() -> emInt16
+    emInt16 TryReadInt16BE() -> emInt16
+    emUInt16 TryReadUInt16LE() -> emUInt16
+    emUInt16 TryReadUInt16BE() -> emUInt16
+    emInt32 TryReadInt32LE() -> emInt32
+    emInt32 TryReadInt32BE() -> emInt32
+    emUInt32 TryReadUInt32LE() -> emUInt32
+    emUInt32 TryReadUInt32BE() -> emUInt32
+    emInt64 TryReadInt64LE() -> emInt64
+    emInt64 TryReadInt64BE() -> emInt64
+    emUInt64 TryReadUInt64LE() -> emUInt64
+    emUInt64 TryReadUInt64BE() -> emUInt64
+    void TryWrite(const void * buf, size_t len)
+    void TryWrite(const char * str)
+    void TryWriteChar(int value)
+    void TryWriteInt8(emInt8 value)
+    void TryWriteUInt8(emUInt8 value)
+    void TryWriteInt16LE(emInt16 value)
+    void TryWriteInt16BE(emInt16 value)
+    void TryWriteUInt16LE(emUInt16 value)
+    void TryWriteUInt16BE(emUInt16 value)
+    void TryWriteInt32LE(emInt32 value)
+    void TryWriteInt32BE(emInt32 value)
+    void TryWriteUInt32LE(emUInt32 value)
+    void TryWriteUInt32BE(emUInt32 value)
+    void TryWriteInt64LE(emInt64 value)
+    void TryWriteInt64BE(emInt64 value)
+    void TryWriteUInt64LE(emUInt64 value)
+    void TryWriteUInt64BE(emUInt64 value)
+    void TryFlush()
+    FILE * TryGetFile() -> FILE *
+
+  Implementation detail: Wraps a FILE* with an 8KB user-space buffer for
+  efficient small read/write operations. Supports both reading and writing
+  with automatic buffer management. Tracks file position for seek optimization.
+
+C++ usage in emCore (0 usages outside emFileStream.h/cpp):
+  emFileStream is not used by any other file in emCore.
+  It is used outside emCore by image file model classes:
+    include/emBmp/emBmpImageFileModel.h
+    include/emGif/emGifFileModel.h
+    include/emIlbm/emIlbmImageFileModel.h
+    include/emPcx/emPcxImageFileModel.h
+    include/emPnm/emPnmImageFileModel.h
+    include/emRas/emRasImageFileModel.h
+    include/emRgb/emRgbImageFileModel.h
+    include/emTga/emTgaImageFileModel.h
+    include/emXpm/emXpmImageFileModel.h
+    src/emGif/emGifFileModel.cpp
+    src/emJpeg/emJpegImageFileModel.cpp
+    src/emTga/emTgaImageFileModel.cpp
+    src/emTest/emTestContainers.cpp
+
+Rust equivalents found:
+  - No direct port of emFileStream found in Rust emCore.
+  - No usage of std::io::BufReader or std::io::BufWriter found in src/emCore/.
+  - File I/O in Rust emCore uses std::fs::File directly:
+    - emFileSelectionBox.rs:555 uses std::fs::read_dir/std::fs::File::open (existence check)
+    - emWindow.rs:1352 uses std::fs::File::create (log file)
+    - emMiniIpc.rs:255,282 uses std::fs::File (pipe I/O)
+  - Rust std::io::BufReader/BufWriter provide equivalent buffered I/O functionality.
+  - Rust byteorder crate or from_le_bytes/from_be_bytes provide equivalent endian read/write.
+
+Coverage gaps:
+  - Entire emFileStream class has no Rust port. All 39 public methods are unported.
+  - No consumer of emFileStream exists in Rust emCore (consistent with C++ where it is
+    only used by image file model classes outside emCore).
+
+OPEN QUESTIONS:
+  - When/if image file model classes (emBmp, emGif, etc.) are ported to Rust, will they
+    need an emFileStream equivalent, or will std::io::BufReader/BufWriter + byteorder
+    or from_le_bytes suffice?

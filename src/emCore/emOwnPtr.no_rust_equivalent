@@ -1,0 +1,71 @@
+C++ header: include/emCore/emOwnPtr.h
+C++ implementation: header-only
+
+C++ public API:
+  - template<class OBJECT, class DELETER> class emOwnPtrBase
+    - emOwnPtrBase(OBJECT* ptr = NULL)              // construct, take ownership
+    - ~emOwnPtrBase()                                // delete owned object via DELETER
+    - void Set(OBJECT* ptr = NULL)                   // assign new ptr, delete old
+    - emOwnPtrBase& operator=(OBJECT* ptr)           // assign new ptr, delete old
+    - void Reset()                                   // Set(NULL)
+    - OBJECT* Release()                              // release ownership, return raw ptr
+    - operator OBJECT*() const                       // implicit conversion to raw ptr
+    - OBJECT* Get() const                            // get raw ptr
+    - OBJECT* operator->() const                     // smart-pointer dereference
+    - (copy ctor and copy assignment are private/disabled)
+
+  - template<class OBJECT> struct emOwnPtrDeleter
+    - void operator()(OBJECT* ptr) const             // calls delete ptr
+
+  - template<class OBJECT> struct emOwnArrayPtrDeleter
+    - void operator()(OBJECT* ptr) const             // calls delete[] ptr
+
+  - template<class OBJECT> class emOwnPtr : public emOwnPtrBase<OBJECT, emOwnPtrDeleter<OBJECT>>
+    - emOwnPtr(OBJECT* ptr = NULL)
+    - emOwnPtr& operator=(OBJECT* ptr)
+
+  - template<class OBJECT> class emOwnArrayPtr : public emOwnPtrBase<OBJECT, emOwnArrayPtrDeleter<OBJECT>>
+    - emOwnArrayPtr(OBJECT* ptr = NULL)
+    - emOwnArrayPtr& operator=(OBJECT* ptr)
+
+C++ usage in emCore (37 total occurrences across 12 files, excluding emOwnPtr.h itself):
+  - emBorder.h:417: emOwnPtr<AuxData> Aux (member variable)
+  - emColorField.h:136: emOwnPtr<Expansion> Exp (member variable)
+  - emRecFileModel.h:93: emOwnPtr<emRecFileReader> Reader (member variable)
+  - emRecFileModel.h:94: emOwnPtr<emRecFileWriter> Writer (member variable)
+  - emFileModel.h:309: emOwnPtr<PSAgentClass> PSAgent (member variable)
+  - emFilePanel.h:155: emOwnPtr<emString> CustomError (member variable)
+  - emFileStream.h:110: emOwnArrayPtr<emByte> Buf (member variable)
+  - emSubViewPanel.h:109: emOwnPtr<SubViewClass> SubView (member variable)
+  - emSubViewPanel.h:110: emOwnPtr<SubViewPortClass> SubViewPort (member variable)
+  - emGUIFramework.h:112: emOwnPtr<emScheduler> Scheduler (member variable)
+  - emGUIFramework.h:113: emOwnPtr<emRootContext> RootContext (member variable)
+  - emGUIFramework.h:114: emOwnPtr<AutoTerminatorClass> AutoTerminator (member variable)
+  - emView.h:665: emOwnPtr<emViewPort> DummyViewPort (member variable)
+  - emView.h:674: emOwnPtr<emMagneticViewAnimator> MagneticVA (member variable)
+  - emView.h:675: emOwnPtr<emVisitingViewAnimator> VisitingVA (member variable)
+  - emView.h:708-712: emOwnPtr<UpdateEngineClass>, emOwnPtr<EOIEngineClass>, emOwnPtr<StressTestClass>
+  - emWindow.h:211: emOwnPtr<emWindowPort> WindowPort (member variable)
+  - emRec.h:1114: emOwnArrayPtr<VariantType> TypeArray (member variable)
+  - emRec.h:1116: emOwnPtr<emRec> Record (member variable)
+  - emImage.cpp:130: emOwnArrayPtr<ColorEntry> colors (local variable)
+
+Rust equivalents found:
+  - emOwnPtr<T> -> Option<Box<T>> throughout the Rust codebase
+    - emColorField.rs:87: expansion: Option<Box<Expansion>>
+      (comment at line 86: "Port of C++ `emOwnPtr<Expansion> Exp`.")
+    - emEngine.rs:41: behavior: Option<Box<dyn emEngine>>
+    - emViewAnimator.rs:30-31: active: Option<Box<dyn emViewAnimator>>, slave: Option<Box<AnimatorSlot>>
+    - emWindow.rs:54: active_animator: Option<Box<dyn emViewAnimator>>
+  - emOwnPtr::Set -> field = Some(Box::new(value)) or field = None
+  - emOwnPtr::Reset -> field = None (Drop runs automatically)
+  - emOwnPtr::Release -> field.take()
+  - emOwnPtr::Get -> field.as_ref() / field.as_deref()
+  - emOwnArrayPtr<emByte> -> Vec<u8> (idiomatic Rust owned buffer)
+
+Coverage gaps:
+  - emOwnPtrBase/emOwnPtrDeleter/emOwnArrayPtrDeleter: no Rust equivalents needed; Box and Vec handle deallocation
+  - No gaps in functional coverage; all usage patterns have idiomatic Rust equivalents
+
+OPEN QUESTIONS:
+  - None

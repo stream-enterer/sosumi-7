@@ -1,0 +1,59 @@
+C++ header: include/emCore/emTmpFile.h
+C++ implementation: src/emCore/emTmpFile.cpp
+
+C++ public API:
+  class emTmpFile : public emUncopyable
+    emTmpFile()
+    emTmpFile(emRootContext & rootContext, const char * postfix=NULL)
+    emTmpFile(const emString & customPath)
+    ~emTmpFile()
+    void TrySetup(emRootContext & rootContext, const char * postfix=NULL)
+    void Setup(emRootContext & rootContext, const char * postfix=NULL)
+    void SetupCustomPath(const emString & customPath)
+    const emString & GetPath() const -> const emString &
+    void Discard()
+
+  class emTmpFileMaster : public emModel
+    static emRef<emTmpFileMaster> Acquire(emRootContext & rootContext) -> emRef<emTmpFileMaster>
+    emString TryInventPath(const char * postfix=NULL) -> emString
+  protected:
+    emTmpFileMaster(emContext & context, const emString & name)
+    virtual ~emTmpFileMaster()
+  private:
+    static emString GetCommonPath() -> emString
+    static void TryDeleteDeadDirectories()
+    void TryStartOwnDirectory()
+    class IpcServerClass : public emMiniIpcServer (handles ping for liveness detection)
+
+  Implementation detail: emTmpFile invents temporary file paths via emTmpFileMaster,
+  which creates a per-process directory under a common tmp path. Dead directories
+  from crashed processes are cleaned up by pinging their IPC servers via emMiniIpcServer.
+  The path naming uses a hash of hostname+username for isolation. Destructor auto-deletes
+  the file/directory tree. Depends on emModel, emMiniIpc, emInstallInfo.
+
+C++ usage in emCore (0 usages outside emTmpFile.h/cpp):
+  emTmpFile is not used by any other file in emCore.
+  It is used outside emCore by:
+    include/emTmpConv/emTmpConvModel.h
+    src/emTest/emTestContainers.cpp
+
+Rust equivalents found:
+  - No direct port of emTmpFile or emTmpFileMaster found in Rust emCore.
+  - No usage of the tempfile crate found in src/emCore/.
+  - tests/behavioral/file_selection.rs has a custom TempDir struct (line 7-26) used
+    only in tests, not in library code.
+  - The tempfile crate is present in Cargo.lock (used by test dependencies).
+
+Coverage gaps:
+  - Entire emTmpFile class has no Rust port (5 public methods unported).
+  - Entire emTmpFileMaster class has no Rust port (2 public methods unported).
+  - The dead-directory cleanup via IPC ping mechanism has no Rust equivalent.
+  - No consumer of emTmpFile exists in Rust emCore (consistent with C++ where it is
+    only used by emTmpConv outside emCore).
+
+OPEN QUESTIONS:
+  - When/if emTmpConv is ported, will it need the full emTmpFileMaster IPC-based
+    cleanup mechanism, or will the tempfile crate's auto-cleanup suffice?
+  - emTmpFile depends on emModel and emMiniIpc. The Rust port has emMiniIpc
+    (src/emCore/emMiniIpc.rs). Does it have sufficient functionality to support
+    emTmpFileMaster's liveness-ping pattern if needed?

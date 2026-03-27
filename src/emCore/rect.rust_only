@@ -1,0 +1,53 @@
+Rust file: src/emCore/rect.rs
+
+Defines:
+  - struct Rect { x: f64, y: f64, w: f64, h: f64 } — Logical rectangle for layout coordinates
+  - Rect::new(f64, f64, f64, f64) -> Self
+  - Rect::intersects(&self, &Rect) -> bool
+  - Rect::intersection(&self, &Rect) -> Option<Rect>
+  - Rect::contains_point(&self, f64, f64) -> bool
+  - Rect::area(&self) -> f64
+  - struct PixelRect { x: i32, y: i32, w: i32, h: i32 } — Pixel rectangle for rasterizer coordinates
+  - PixelRect::new(i32, i32, i32, i32) -> Self
+
+Used by:
+  - src/emCore/emBorder.rs:3
+  - src/emCore/emButton.rs:4
+  - src/emCore/emCheckBox.rs:4
+  - src/emCore/emCheckButton.rs:4
+  - src/emCore/emColorField.rs (via widget_utils which imports Rect)
+  - src/emCore/emDialog.rs:3
+  - src/emCore/emLinearLayout.rs:3
+  - src/emCore/emListBox.rs:6
+  - src/emCore/emPackLayout.rs:3
+  - src/emCore/emPanel.rs:6
+  - src/emCore/emPanelCtx.rs:5
+  - src/emCore/emPanelTree.rs:12
+  - src/emCore/emRadioBox.rs:5
+  - src/emCore/emRadioButton.rs:5
+  - src/emCore/emRasterLayout.rs:1
+  - src/emCore/emScalarField.rs:4
+  - src/emCore/emSplitter.rs:290 (in tests)
+  - src/emCore/emTextField.rs:3
+  - src/emCore/emTunnel.rs:6
+  - src/emCore/emView.rs:11
+  - src/emCore/emViewAnimator.rs:6
+  - src/emCore/widget_utils.rs:1
+
+Git history:
+  - Created: 74b7dc1b18d398562f7814c99009f6efa37fb0b9 2026-03-06 — "Add named Rect and PixelRect types to replace anonymous tuples"
+  - Major change: 80ad08ab940632656cd4d3c07bbe3405c2838799 2026-03-06 — "Implement VIEW subsystem (VIEW-001 through VIEW-004)" — added 32 lines (intersects, intersection, contains_point, area methods)
+  - Renamed: 22af067bd 2026-03-23 — moved from src/foundation/rect.rs to src/emCore/rect.rs
+  - Renamed: 6165255d0 2026-03-26 — workspace flatten
+
+Related C++ code:
+  - C++ does NOT have a dedicated Rect struct for layout coordinates. Instead, it passes four separate double parameters (x, y, w, h) throughout the API. Examples:
+    - emPainter.h lines 826-827: `double ClipX1, ClipY1, ClipX2, ClipY2;` (note: x1/y1/x2/y2 convention, not x/y/w/h)
+    - emPanel uses separate GetLayoutX(), GetLayoutY(), GetLayoutWidth(), GetLayoutHeight() methods
+    - emButton::DoButton() line 229: `double x,y,w,h,r,d,f,bx,by,bw,bh,...` — all separate local variables
+  - emClipRects<NUM>::Rect (emClipRects.h:60) is a different concept — a linked-list node for clip region management, not a general layout rect
+  - emViewRenderer.h:93 has `struct TodoRect` — a render-scheduling struct, not a general purpose rect
+  - Structural differences: Rust consolidates the C++ pattern of passing 4 separate doubles into a single struct. This is a type-safety improvement with no behavioral change. The Rust Rect uses (x, y, w, h) while C++ emPainter uses (x1, y1, x2, y2) for clip bounds — the conventions differ.
+
+OPEN QUESTIONS:
+  - PixelRect is defined but no dependents were found importing it in the current grep. It may be used via the module re-export or may be unused.

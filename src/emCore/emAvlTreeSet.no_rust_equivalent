@@ -1,0 +1,82 @@
+C++ header: include/emCore/emAvlTreeSet.h
+C++ implementation: header-only (template class)
+
+C++ public API:
+  template <class OBJ> class emAvlTreeSet:
+    - emAvlTreeSet() — construct empty
+    - emAvlTreeSet(const emAvlTreeSet& src) — copy (COW)
+    - emAvlTreeSet(const OBJ& obj) — single-element
+    - ~emAvlTreeSet()
+    - operator=(const emAvlTreeSet& set) -> emAvlTreeSet&
+    - bool Contains(const OBJ& obj) const
+    - const OBJ* Get(const OBJ& obj) const
+    - const OBJ* GetFirst() const
+    - const OBJ* GetLast() const
+    - const OBJ* GetNearestGreater(const OBJ& obj) const
+    - const OBJ* GetNearestGreaterOrEqual(const OBJ& obj) const
+    - const OBJ* GetNearestLess(const OBJ& obj) const
+    - const OBJ* GetNearestLessOrEqual(const OBJ& obj) const
+    - OBJ* GetWritable(const OBJ& obj, bool insertIfNew)
+    - OBJ* GetWritable(const OBJ* elem)
+    - void Insert(const OBJ& obj)
+    - void Insert(const emAvlTreeSet& set)
+    - void RemoveFirst()
+    - void RemoveLast()
+    - void Remove(const OBJ& obj)
+    - void Remove(const OBJ* elem)
+    - void Remove(const emAvlTreeSet& set)
+    - void Intersect(const emAvlTreeSet& set)
+    - void Clear()
+    - bool IsEmpty() const
+    - int GetCount() const
+    - bool operator==(const emAvlTreeSet& set) const
+    - bool operator!=(const emAvlTreeSet& set) const
+    - operator+= / operator+ (union with OBJ or set)
+    - operator|= / operator| (union, same as +)
+    - operator-= / operator- (subtraction)
+    - operator&= / operator& (intersection)
+    - unsigned int GetDataRefCount() const
+    - void MakeNonShared()
+    - class Iterator (stable iterator, same design as emAvlTreeMap::Iterator)
+      - Iterator()
+      - Iterator(const Iterator&)
+      - Iterator(const emAvlTreeSet&, const OBJ*)
+      - ~Iterator()
+      - operator=(const Iterator&)
+      - operator const OBJ*() const
+      - operator*() const -> const OBJ&
+      - operator->() const -> const OBJ*
+      - Get() const -> const OBJ*
+      - Set(const Iterator&)
+      - Set(const emAvlTreeSet&, const OBJ*)
+      - SetFirst(const emAvlTreeSet&)
+      - SetLast(const emAvlTreeSet&)
+      - SetNext()
+      - SetPrev()
+      - operator++() / operator--() (pre/post)
+      - operator==(const Iterator&) / operator!=(const Iterator&)
+      - GetSet() const -> const emAvlTreeSet*
+      - Detach()
+    - Iterator begin() const
+    - Iterator end() const
+
+  Copy-on-write sorted set backed by intrusive AVL tree. Same COW and
+  stable-iterator design as emAvlTreeMap. Adds set algebra operators
+  (+, |, -, &) and bulk Insert/Remove/Intersect with another set.
+
+C++ usage in emCore (0 occurrences outside the header itself):
+  - No usage of emAvlTreeSet found in any .h or .cpp file under include/emCore/ or src/emCore/ (other than the header's own definition and the mention in emAvlTree.h comments).
+
+Rust equivalents found:
+  - std::collections::HashSet used in src/emCore/emInputState.rs:11 (for pressed keys)
+  - std::collections::BTreeSet used in src/emCore/emImage.rs:1
+  - No direct port of emAvlTreeSet exists or is needed — it has zero usage in emCore
+
+Coverage gaps:
+  - Set algebra operators (+, |, -, &) — HashSet/BTreeSet provide equivalent via std traits
+  - Ordered access (GetFirst, GetLast, GetNearest*) — BTreeSet provides ordered iteration; HashSet does not
+  - Copy-on-write / stable iterators — not replicated in Rust
+  - No gap is actionable since emAvlTreeSet has zero usage in emCore
+
+OPEN QUESTIONS:
+  - None

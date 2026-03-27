@@ -1,0 +1,38 @@
+Rust file: src/emCore/widget_utils.rs
+
+Defines:
+  - fn trace_input_enabled() -> bool — returns true if TRACE_INPUT env var is set (cached via OnceLock)
+  - fn check_mouse_round_rect(mx: f64, my: f64, rect: &Rect, r: f64) -> bool — rounded-rectangle hit test using signed-distance formula
+
+Used by:
+  - src/emCore/emButton.rs:294 — calls check_mouse_round_rect for button face hit test
+  - src/emCore/emButton.rs:301 — calls trace_input_enabled
+  - src/emCore/emCheckBox.rs:220 — calls check_mouse_round_rect
+  - src/emCore/emCheckBox.rs:259 — calls trace_input_enabled
+  - src/emCore/emCheckButton.rs:203 — calls check_mouse_round_rect
+  - src/emCore/emCheckButton.rs:210 — calls trace_input_enabled
+  - src/emCore/emColorField.rs:465 — calls check_mouse_round_rect
+  - src/emCore/emListBox.rs:1156 — calls check_mouse_round_rect
+  - src/emCore/emRadioBox.rs:226 — calls check_mouse_round_rect
+  - src/emCore/emRadioBox.rs:267 — calls trace_input_enabled
+  - src/emCore/emRadioButton.rs:432 — calls check_mouse_round_rect
+  - src/emCore/emRadioButton.rs:444 — calls trace_input_enabled
+  - src/emCore/emTextField.rs:2092 — calls check_mouse_round_rect
+  - src/emCore/emWindow.rs:793 — calls trace_input_enabled
+
+Git history:
+  - Created: 22af067bdbe3bbd9715c882e021ba69ab0286b59 2026-03-23 — "Phase 3: flatten to src/emCore/ with emFoo.rs naming" — 23 lines added (file created during the module restructuring)
+  - Renamed: 6165255d0 2026-03-26 — workspace flatten
+
+Related C++ code:
+  - check_mouse_round_rect corresponds to inline hit-test code duplicated across multiple C++ widget CheckMouse methods:
+    - src/emCore/emButton.cpp lines 278-281: `dx=emMax(emMax(x-mx,mx-x-w)+r,0.0); dy=emMax(emMax(y-my,my-y-h)+r,0.0); *pHit = dx*dx+dy*dy <= r*r;`
+    - src/emCore/emScalarField.cpp:307 — CheckMouse method with similar formula
+    - src/emCore/emTextField.cpp:880 — CheckMouse method with similar formula
+  - In C++, each widget class has its own copy of this formula inline in its CheckMouse method. Rust extracts the common formula into a shared utility function.
+  - trace_input_enabled has no C++ equivalent — it is a Rust-only debugging aid.
+  - Structural differences: C++ duplicates the round-rect hit-test formula in each widget's CheckMouse. Rust deduplicates into widget_utils.rs. The formula is identical: `dx = max(max(rect.x - mx, mx - rect.x - rect.w) + r, 0); dy = ...; hit = dx*dx + dy*dy <= r*r`.
+
+OPEN QUESTIONS:
+  - The file was created during "Phase 3" restructuring. It may have previously been inline code in individual widget files, or it may have been created fresh as a deduplication during the rename.
+  - trace_input_enabled uses OnceLock (from std::sync). The CLAUDE.md rules say "no Arc/Mutex — single-threaded UI tree". OnceLock is not Arc/Mutex but is a sync primitive; whether this is considered an exception is unclear.

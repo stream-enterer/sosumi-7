@@ -1,0 +1,62 @@
+C++ header: include/emCore/emRef.h
+C++ implementation: src/emCore/emRef.cpp
+
+C++ public API:
+  - class emRefTarget
+    - emRefTarget()                              // construct with zero refcount
+    - virtual ~emRefTarget()                     // fatal error if refcount != 0
+    - emRefTarget(const emRefTarget&)            // copy ctor; does NOT copy refcount
+    - emRefTarget& operator=(const emRefTarget&) // assignment; does NOT copy refcount
+    - void Alloc()                               // increment refcount
+    - void Free()                                // decrement refcount; delete this if <= 0
+    - int GetRefCount() const                    // return refcount
+
+  - template<class CLS> class emRef
+    - emRef()                                    // NULL reference
+    - emRef(const emRef&)                        // copy; calls Alloc on target
+    - emRef(CLS* model)                          // from raw ptr; calls Alloc
+    - ~emRef()                                   // calls Free on target
+    - emRef& operator=(const emRef&)             // rebind; Alloc new, Free old
+    - void Set(CLS* model = NULL)                // rebind to raw ptr
+    - emRef& operator=(CLS* model)               // rebind to raw ptr
+    - void Reset()                               // Set(NULL)
+    - operator CLS*() const                      // implicit conversion to raw ptr
+    - CLS* Get() const                           // explicit get raw ptr
+    - CLS* operator->() const                    // smart-pointer dereference
+
+C++ usage in emCore (164 total occurrences across 44 files):
+  - emModel.h: class emModel : public emRefTarget (inherits emRefTarget)
+  - emBorder.h:413: emRef<emVarModel<TkResources>> TkResVarModel (member variable)
+  - emRenderThreadPool.h:46: static emRef<emRenderThreadPool> Acquire(...) (return type)
+  - emRenderThreadPool.h:79: emRef<emCoreConfig> CoreConfig (member variable)
+  - emRes.h:106: static emRef<emResModel<CLS>> Acquire(...) (return type)
+  - emClipboard.h:51: static emRef<emClipboard> LookupInherited(...) (return type)
+  - emScreen.h:53: static emRef<emScreen> LookupInherited(...) (return type)
+  - emSigModel.h:44: static emRef<emSigModel> Acquire(...) (return type)
+  - emCoreConfig.h:37: static emRef<emCoreConfig> Acquire(...) (return type)
+  - emCoreConfigPanel.h:57: emRef<emCoreConfig> Config (member variable)
+  - emFileModel.h:309: emRef<emSigModel> (member variable in PSAgentClass context)
+  - emVarModel.h: extensive use in template Acquire/Get/Set methods
+  - emVarSigModel.h: extensive use in template methods
+  - emFpPlugin.cpp:120,170: emRef<emModel>, emRef<emFpPluginList> (return types, locals)
+  - emPainter.h: emRef used for render thread pool references
+  - emView.h: emRef used for font cache, core config references
+
+Rust equivalents found:
+  - emRefTarget::Alloc/Free/GetRefCount -> Rc<T> internal refcount (implicit, no explicit calls)
+  - emRef<T> -> Rc<T> or Rc<RefCell<T>> throughout the codebase
+    - emScreen.rs:165: Rc<RefCell<emScreen>> for LookupInherited return
+    - emScreen.rs:188: Rc<RefCell<emScreen>> for Install parameter
+    - emFpPlugin.rs:445: Rc<RefCell<Self>> for Acquire return
+    - emCoreConfig.rs:215: Rc<RefCell<emConfigModel<Self>>> for Acquire return
+    - emContext.rs:40: Weak<emContext> for parent reference (Weak = non-owning Rc)
+    - emFontCache.rs:30: DIVERGED comment: "Rust uses a global OnceLock instead of emModel/emRef"
+  - emRef::Set/Reset/Get/operator-> -> Rc::clone, Option methods, direct deref via Deref trait
+
+Coverage gaps:
+  - emRefTarget as explicit base class: not replicated; Rc<T> handles refcounting internally
+  - emRef::Set(ptr)/Reset() explicit rebinding: Rc uses reassignment; no explicit Set/Reset methods
+  - GetRefCount(): Rc::strong_count() exists but is not commonly used in the Rust port
+
+OPEN QUESTIONS:
+  - Some C++ code stores emRef<emVarModel<emRef<T>>> (nested references); the Rust equivalent pattern is not verified

@@ -1,0 +1,40 @@
+Rust file: src/emCore/fixed.rs
+
+Defines:
+  - struct Fixed12(i32) — Fixed-point number with 12 fractional bits (4096 sub-pixel grid)
+  - const FRAC_BITS: i32 = 12
+  - const SCALE: i32 = 4096
+  - const FRAC_MASK: i32 = 0xFFF
+  - Fixed12::ZERO, Fixed12::ONE — associated constants
+  - Fixed12::from_raw(i32) -> Self
+  - Fixed12::raw(self) -> i32
+  - Fixed12::from_f64(f64) -> Self
+  - Fixed12::from_i32(i32) -> Self
+  - Fixed12::to_f64(self) -> f64
+  - Fixed12::to_i32(self) -> i32 — integer part, truncates toward negative infinity
+  - Fixed12::frac(self) -> i32 — fractional part, lower 12 bits
+  - Fixed12::floor(self) -> Self
+  - Fixed12::ceil(self) -> Self — DIVERGED from C++ (uses i64 to avoid signed overflow UB)
+  - Fixed12::round(self) -> Self — DIVERGED from C++ (uses i64 to avoid signed overflow UB)
+  - impl Add, AddAssign, Sub, SubAssign, Mul, Neg, Display for Fixed12
+
+Used by:
+  - src/emCore/emPainter.rs:13 — uses Fixed12 for sub-pixel coordinate conversion in rasterization
+  - src/emCore/emPainterScanline.rs:2 — uses Fixed12 for AA scanline edge tracking
+
+Git history:
+  - Created: ae8907ec2b790b96bf73a50e3a4eea2f67cb1aa7 2026-03-06 — "Port full C++ emPainter feature set (PAINT-001 through 011)"
+  - Major change: 8f066ed4743ef7eb7084bbc4349e31b54e36a449 2026-03-25 — "verification: Kani formal proofs, harness infrastructure, and C++ equivalence fixes" — added 6 lines, 2 removed (likely Kani-related annotations or proof setup)
+  - Major change: 3a1f81606c2523afb97b88d2486aa33f7b856e12 2026-03-25 — "fix: eliminate 6 signed overflow UB bugs with i64/saturating arithmetic" — ceil() and round() changed to use i64 promotion to avoid C++ signed overflow UB
+  - Renamed: 22af067bd 2026-03-23 — moved from src/foundation/fixed.rs to src/emCore/fixed.rs
+  - Renamed: 6165255d0 2026-03-26 — moved from zuicchini/src/emCore/ to src/emCore/ (workspace flatten)
+
+Related C++ code:
+  - The functionality in this file corresponds to inline fixed-point arithmetic in:
+    - src/emCore/emPainter.cpp lines 358-374 — uses 0x1000 (4096) scale, >>12 shifts, and 0xfff masks for sub-pixel AA coverage computation in PaintRect and scanline rasterization
+    - src/emCore/emPainter_ScTl.cpp lines 296-326 — uses 0xFFF000 masks and >>24 shifts for scaled tile image coordinates (24-bit fixed point variant)
+    - src/emCore/emPainter_ScTlIntImg.cpp lines 609-860 — extensive use of fixed-point for area sampling weights
+  - Structural differences: C++ uses bare int variables with inline shifts/masks (e.g., `ix=(int)(x*0x1000); ix>>=12;`). Rust wraps these in a Fixed12 newtype with named methods. C++ has no dedicated fixed-point type; the 12-bit convention is implicit in variable naming (ix, iy, ax1, ax2, ay1, ay2). The Rust newtype makes the fractional-bit count explicit and prevents accidental mixing with plain i32 values.
+
+OPEN QUESTIONS:
+  - C++ also uses 24-bit fixed point in emPainter_ScTl*.cpp. Whether a Fixed24 type exists or is needed is not documented.

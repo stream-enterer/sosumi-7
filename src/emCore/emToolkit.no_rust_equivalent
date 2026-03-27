@@ -1,0 +1,78 @@
+C++ header: include/emCore/emToolkit.h
+C++ implementation: header-only (pure aggregation header, no code)
+
+C++ public API:
+  emToolkit.h declares no types, no functions, no macros. It is a convenience
+  aggregation header that includes all 24 toolkit widget headers:
+    1.  emLook.h
+    2.  emBorder.h
+    3.  emLabel.h
+    4.  emTiling.h
+    5.  emGroup.h
+    6.  emLinearLayout.h
+    7.  emLinearGroup.h
+    8.  emRasterLayout.h
+    9.  emRasterGroup.h
+    10. emPackLayout.h
+    11. emPackGroup.h
+    12. emTunnel.h
+    13. emButton.h
+    14. emCheckButton.h
+    15. emRadioButton.h
+    16. emCheckBox.h
+    17. emRadioBox.h
+    18. emTextField.h
+    19. emScalarField.h
+    20. emColorField.h
+    21. emListBox.h
+    22. emFileSelectionBox.h
+    23. emSplitter.h
+    24. emDialog.h
+    25. emFileDialog.h
+
+C++ usage in emCore (2 occurrences in src/emCore/):
+  - src/emCore/emImageFile.cpp:22 — #include <emCore/emToolkit.h>
+  - src/emCore/emInstallInfo.cpp:29 — #include <emCore/emToolkit.h>
+  Also referenced in:
+  - include/emCore/emCoreConfigPanel.h:25 — #include <emCore/emToolkit.h>
+
+Rust equivalents found:
+  All 25 aggregated headers have corresponding Rust files in src/emCore/:
+    1.  emLook.h -> src/emCore/emLook.rs
+    2.  emBorder.h -> src/emCore/emBorder.rs
+    3.  emLabel.h -> src/emCore/emLabel.rs
+    4.  emTiling.h -> src/emCore/emTiling.rs
+    5.  emGroup.h -> src/emCore/emGroup.rs
+    6.  emLinearLayout.h -> src/emCore/emLinearLayout.rs
+    7.  emLinearGroup.h -> src/emCore/emLinearGroup.rs
+    8.  emRasterLayout.h -> src/emCore/emRasterLayout.rs
+    9.  emRasterGroup.h -> src/emCore/emRasterGroup.rs
+    10. emPackLayout.h -> src/emCore/emPackLayout.rs
+    11. emPackGroup.h -> src/emCore/emPackGroup.rs
+    12. emTunnel.h -> src/emCore/emTunnel.rs
+    13. emButton.h -> src/emCore/emButton.rs
+    14. emCheckButton.h -> src/emCore/emCheckButton.rs
+    15. emRadioButton.h -> src/emCore/emRadioButton.rs
+    16. emCheckBox.h -> src/emCore/emCheckBox.rs
+    17. emRadioBox.h -> src/emCore/emRadioBox.rs
+    18. emTextField.h -> src/emCore/emTextField.rs
+    19. emScalarField.h -> src/emCore/emScalarField.rs
+    20. emColorField.h -> src/emCore/emColorField.rs
+    21. emListBox.h -> src/emCore/emListBox.rs
+    22. emFileSelectionBox.h -> src/emCore/emFileSelectionBox.rs
+    23. emSplitter.h -> src/emCore/emSplitter.rs
+    24. emDialog.h -> src/emCore/emDialog.rs
+    25. emFileDialog.h -> src/emCore/emFileDialog.rs
+
+  Toolkit image loading (the resource aspect of the toolkit):
+    - src/emCore/toolkit_images.rs provides ToolkitImages struct and with_toolkit_images() accessor
+    - Used by emBorder.rs, emButton.rs, emCheckButton.rs, emCheckBox.rs
+
+  Rust does not need an aggregation header equivalent; each module is imported individually via mod.rs.
+
+Coverage gaps:
+  - No aggregation equivalent exists in Rust (not needed; Rust uses explicit module imports)
+  - emImageFile.cpp and emInstallInfo.cpp used emToolkit.h as a convenience include; the Rust equivalents import only what they need
+
+OPEN QUESTIONS:
+  - None

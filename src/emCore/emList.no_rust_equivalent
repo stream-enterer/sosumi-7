@@ -1,0 +1,127 @@
+C++ header: include/emCore/emList.h
+C++ implementation: src/emCore/emList.cpp
+
+C++ public API:
+  Free functions:
+  - emSortSingleLinkedList(void** pFirst, int nextOffset, compare_fn, void* context=NULL) -> bool
+  - emSortDoubleLinkedList(void** pFirst, void** pLast, int nextOffset, int prevOffset, compare_fn, void* context=NULL) -> bool
+
+  class emList<OBJ>:
+  - emList() -- default constructor (empty list)
+  - emList(const emList&) -- copy constructor (COW shallow copy)
+  - emList(const OBJ&) -- construct with one element
+  - emList(const emList&, const emList&) -- concatenate two lists
+  - emList(const emList&, const OBJ&) -- list + element
+  - emList(const OBJ&, const emList&) -- element + list
+  - emList(const emList&, const OBJ* first, const OBJ* last) -- sublist constructor
+  - ~emList()
+  - operator=(const emList&) -> emList&
+  - operator=(const OBJ&) -> emList&
+  - GetFirst() const -> const OBJ*
+  - GetLast() const -> const OBJ*
+  - GetNext(const OBJ* elem) const -> const OBJ*
+  - GetPrev(const OBJ* elem) const -> const OBJ*
+  - GetWritable(const OBJ* elem) -> OBJ*
+  - GetFirstWritable() -> OBJ*
+  - GetLastWritable() -> OBJ*
+  - GetNextWritable(const OBJ* elem) -> OBJ*
+  - GetPrevWritable(const OBJ* elem) -> OBJ*
+  - Set(const OBJ* pos, const OBJ& obj) -> void
+  - InsertAtBeg(const OBJ&) -> void (6 overloads for obj/elem/range/src)
+  - InsertAtEnd(const OBJ&) -> void (6 overloads)
+  - InsertBefore(const OBJ* pos, ...) -> void (6 overloads)
+  - InsertAfter(const OBJ* pos, ...) -> void (6 overloads)
+  - Add(const OBJ&) -> void (6 overloads, alias for InsertAtEnd)
+  - operator+=(const emList&) -> emList&
+  - operator+=(const OBJ&) -> emList&
+  - operator+(const emList&) const -> emList
+  - operator+(const OBJ&) const -> emList
+  - MoveToBeg(...) -> void (5 overloads)
+  - MoveToEnd(...) -> void (5 overloads)
+  - MoveBefore(const OBJ* pos, ...) -> void (5 overloads)
+  - MoveAfter(const OBJ* pos, ...) -> void (5 overloads)
+  - GetSubListOfFirst() const -> emList
+  - GetSubListOfLast() const -> emList
+  - GetSubList(const OBJ* elem) const -> emList
+  - GetSubList(const OBJ* first, const OBJ* last) const -> emList
+  - ExtractFirst() -> emList
+  - ExtractLast() -> emList
+  - Extract(const OBJ* elem) -> emList
+  - Extract(const OBJ* first, const OBJ* last) -> emList
+  - RemoveFirst() -> void
+  - RemoveLast() -> void
+  - Remove(const OBJ* elem) -> void
+  - Remove(const OBJ* first, const OBJ* last) -> void
+  - Clear(bool compact=false) -> void
+  - IsEmpty() const -> bool
+  - Sort(compare_fn, void* context=NULL) -> bool
+  - GetCount() const -> int (O(n) traversal)
+  - GetAtIndex(int index) const -> const OBJ* (O(n) traversal)
+  - GetIndexOf(const OBJ* elem) const -> int (O(n) traversal)
+  - GetDataRefCount() const -> unsigned int
+  - MakeNonShared() -> void
+
+  class emList<OBJ>::Iterator:
+  - Iterator()
+  - Iterator(const Iterator&)
+  - Iterator(const emList<OBJ>&, const OBJ* elem)
+  - ~Iterator()
+  - operator=(const Iterator&) -> Iterator&
+  - operator const OBJ*() const
+  - operator*() const -> const OBJ&
+  - operator->() const -> const OBJ*
+  - Get() const -> const OBJ*
+  - Set(const Iterator&) -> void
+  - Set(const emList<OBJ>&, const OBJ* elem) -> void
+  - SetFirst(const emList<OBJ>&) -> void
+  - SetLast(const emList<OBJ>&) -> void
+  - SetNext() -> void
+  - SetPrev() -> void
+  - operator++() -> const OBJ*
+  - operator--() -> const OBJ*
+  - operator++(int) -> const OBJ*
+  - operator--(int) -> const OBJ*
+  - operator==(const Iterator&) const -> bool
+  - operator!=(const Iterator&) const -> bool
+  - GetList() const -> const emList<OBJ>*
+  - Detach() -> void
+
+  emList.cpp implementation details:
+  - emSortSingleLinkedList: merge-sort on singly-linked list using pointer-offset-based
+    next traversal. Uses an array of 64 merge bins. Returns whether order changed.
+  - emSortDoubleLinkedList: calls emSortSingleLinkedList then fixes prev pointers in a
+    second pass.
+
+C++ usage in emCore (287 occurrences in headers, 78 in .cpp files):
+  Note: The vast majority of these are within emList.h itself (241 of 287 in headers)
+  and emListBox.h/.cpp (which is a separate class emListBox, not an instantiation of
+  emList<>). Actual instantiations of emList<OBJ> in emCore are:
+  - emClipRects.h (line 700): uses emSortSingleLinkedList for sorting clip rect linked list
+  - emArray.h (line 160): documentation mentions emList in TuningLevel comment
+  - emRes.h (line 97): documentation mentions emList
+  - emThread.h (line 55): documentation mentions emList
+  - emJob.cpp (line 22): includes emList.h
+  - emPanel.cpp (line 21): includes emList.h
+  No instantiation of emList<SomeConcreteType> was found in any emCore .h or .cpp file
+  outside of emList.h's own examples/template definitions.
+
+Rust equivalents found:
+  - emList<T> has no direct Rust equivalent type in the codebase. The Rust port does not
+    use std::collections::LinkedList or VecDeque as a replacement.
+  - emSortSingleLinkedList: replaced by Vec::sort_by() or slice::sort_by() in contexts
+    where linked list sorting was needed. See src/emCore/emClipRects.rs:336-338 where
+    self.rects.sort_by() replaces the C++ emSortSingleLinkedList call.
+  - emListBox in Rust (src/emCore/emListBox.rs) uses Vec-based storage, not emList<>.
+  - No usage of std::collections::LinkedList found anywhere in the Rust codebase.
+
+Coverage gaps:
+  - The emList<OBJ> template class itself (with COW, stable iterators, move semantics
+    between lists) has no Rust equivalent. However, no emCore code outside emList.h
+    instantiates emList<> with a concrete type, so there is no gap in ported functionality.
+  - emSortSingleLinkedList/emSortDoubleLinkedList as standalone functions do not exist
+    in Rust; the one call site (emClipRects) uses Vec::sort_by instead.
+
+OPEN QUESTIONS:
+  - emClipRects.h uses a raw linked list internally (not emList<>) and calls
+    emSortSingleLinkedList. The Rust emClipRects uses Vec<Rect> instead. Whether
+    performance characteristics differ for large clip rect sets is untested.

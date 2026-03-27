@@ -1,0 +1,53 @@
+Rust file: src/emCore/toolkit_images.rs
+
+Defines:
+  - struct ToolkitImages (pub(crate)): holds 15 emImage fields for widget TGA assets
+    Fields: group_border, button_border, popup_border, group_inner_border,
+            io_field, custom_rect_border, button, button_pressed, button_checked,
+            splitter, splitter_pressed, check_box, check_box_pressed,
+            radio_box, radio_box_pressed
+  - fn with_toolkit_images<R>(f: impl FnOnce(&ToolkitImages) -> R) -> R (pub(crate)):
+    thread-local lazy-init accessor; loads all 15 TGA images on first call via OnceCell
+  - fn decode(data, name, expected_w, expected_h) -> emImage (private):
+    wrapper around load_tga() with dimension assertion
+
+Used by:
+  - src/emCore/emBorder.rs:1798,1847,1896,1935,2076,2158,2231 — border/inner rendering
+  - src/emCore/emButton.rs:215 — button overlay
+  - src/emCore/emCheckBox.rs:169,182 — checkbox overlay
+  - src/emCore/emCheckButton.rs:124 — checkbutton overlay
+  - src/emCore/emRadioButton.rs:353 — radio button overlay
+  - src/emCore/emRadioBox.rs:176,188 — radio box overlay
+  - src/emCore/emSplitter.rs:129 — splitter overlay
+  - src/emCore/mod.rs:100 — module declaration
+
+Git history:
+  - Created: 16155857be727bd283c5556692745aec82de2a93 2026-03-10 — "WIP: Phase 6 PaintBorderImage infrastructure and widget overlay rendering"
+    Added as zuicchini/src/widget/toolkit_images.rs (131 lines), part of border image rendering infrastructure.
+  - a3c4970 2026-03-10 — "WIP: Phase 6 widget config fixes and 9-slice pre-reduced area sampling" — +13/-6, config/decode refinements
+  - 63fdeb1 2026-03-17 — "fix: add pressed state to CheckButton, CheckBox, RadioButton, RadioBox" — +6/-6, added pressed-state fields
+  - 22af067 2026-03-23 — "Phase 3: flatten to src/emCore/ with emFoo.rs naming" — moved from widget/ to emCore/
+  - 656dfa0 2026-03-23 — "Phase 4 Part 1: rename 72 types to match C++ em-prefixed names" — renamed types (Image->emImage etc.)
+  - aeba41f 2026-03-23 — "Phase 4 Part 2: rename 298 methods to match C++ CamelCase names" — renamed methods
+  - 6165255 2026-03-26 — "chore: flatten workspace to single crate" — path move only
+
+Related C++ code:
+  - emBorder.h:321-341 (struct TkResources): holds the same image fields as ToolkitImages,
+    plus 3 additional fields not in Rust: ImgDir, ImgDirUp, ImgTunnel.
+  - emBorder.cpp:47-61: loads TGA files via emGetResImage() from res/emCore/toolkit/ at runtime.
+    C++ loads from filesystem at runtime; Rust embeds via include_bytes!() at compile time.
+  - C++ resource directory: res/emCore/toolkit/ with finalize script at
+    res/emCore/toolkit/src/toolkit-finalize.pl
+  - Rust resource directory: res/toolkit/ (15 TGA files; C++ has 18 — adds Dir.tga, DirUp.tga, Tunnel.tga)
+    Note: Tunnel.tga exists in Rust res/toolkit/ but is not loaded by ToolkitImages.
+
+Structural differences:
+  - In C++, TkResources is a nested struct inside emBorder, loaded via emGetResImage() at runtime.
+    In Rust, ToolkitImages is a standalone module with compile-time embedding (include_bytes!).
+  - C++ uses a shared resource context (emRootContext) for deduplication; Rust uses thread_local OnceCell.
+  - Rust is missing 3 of 18 C++ images: ImgDir, ImgDirUp, ImgTunnel.
+    (Tunnel.tga is present in res/toolkit/ but not loaded.)
+
+OPEN QUESTIONS:
+  - Why is Tunnel.tga present in res/toolkit/ but not loaded by ToolkitImages?
+  - Will ImgDir and ImgDirUp be needed when emFileSelectionBox or emFileDialog is ported?

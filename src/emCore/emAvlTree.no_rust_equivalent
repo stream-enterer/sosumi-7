@@ -1,0 +1,50 @@
+C++ header: include/emCore/emAvlTree.h
+C++ implementation: src/emCore/emAvlTree.cpp
+
+C++ public API:
+  - struct emAvlNode { emAvlNode* Left; emAvlNode* Right; int Balance; }
+  - typedef emAvlNode* emAvlTree;
+  - struct emAvlIterator { const emAvlNode* nstack[64]; int depth; }
+  - int emAvlCheck(emAvlTree tree)  — validates tree consistency, returns height
+  - EM_AVL_ELEMENT(ELEMENT_CLASS, NODE_MEMBER, NODE_POINTER) — macro to get element from node
+  - EM_AVL_INSERT_VARS / EM_AVL_INSERT_BEGIN_SEARCH / EM_AVL_INSERT_GO_LEFT / EM_AVL_INSERT_GO_RIGHT / EM_AVL_INSERT_END_SEARCH / EM_AVL_INSERT_NOW — insert algorithm macros
+  - EM_AVL_REMOVE_VARS / EM_AVL_REMOVE_BEGIN / EM_AVL_REMOVE_GO_LEFT / EM_AVL_REMOVE_GO_RIGHT / EM_AVL_REMOVE_NOW / EM_AVL_REMOVE_END — remove algorithm macros
+  - EM_AVL_CLEAR_VARS / EM_AVL_CLEAR_BEGIN / EM_AVL_CLEAR_END — clear algorithm macros
+  - EM_AVL_SEARCH_VARS / EM_AVL_SEARCH_BEGIN / EM_AVL_SEARCH_GO_LEFT / EM_AVL_SEARCH_GO_RIGHT / EM_AVL_SEARCH_GO_LEFT_OR_FOUND / EM_AVL_SEARCH_GO_RIGHT_OR_FOUND / EM_AVL_SEARCH_END — search macros
+  - EM_AVL_LOOP_VARS / EM_AVL_LOOP_START / EM_AVL_LOOP_END — forward iteration macros
+  - EM_AVL_REV_LOOP_START / EM_AVL_REV_LOOP_END — reverse iteration macros
+  - EM_AVL_ITER_VARS / EM_AVL_ITER_FIRST / EM_AVL_ITER_LAST / EM_AVL_ITER_NEXT / EM_AVL_ITER_PREV — stable iterator macros
+  - EM_AVL_ITER_START_ANY_BEGIN / EM_AVL_ITER_START_ANY_GO_LEFT / EM_AVL_ITER_START_ANY_GO_RIGHT / EM_AVL_ITER_START_ANY_GO_LEFT_OR_FOUND / EM_AVL_ITER_START_ANY_GO_RIGHT_OR_FOUND / EM_AVL_ITER_START_ANY_END — positioned iterator start macros
+  - EM_AVL_INS_LOOP_VARS / EM_AVL_INS_ITER_VARS — union variable macros
+
+  emAvlTree is a low-level intrusive AVL tree implemented via C preprocessor macros.
+  Elements embed an emAvlNode member; macros operate on the tree pointer directly.
+  Used as the underlying engine for emAvlTreeMap, emAvlTreeSet, and directly in emContext, emPanel, and emListBox.
+
+C++ implementation (emAvlTree.cpp):
+  - Only implements emAvlCheck(): recursive validation that Balance == right_height - left_height.
+  - All other functionality is pure macro expansion (no compiled code).
+
+C++ usage in emCore (77 EM_AVL_ macro invocations across 3 .cpp files + 3 .h files using emAvlTree/emAvlNode):
+  - include/emCore/emContext.h:148 — emAvlTree AvlTree member in emContext
+  - include/emCore/emPanel.h:798 — emAvlTree AvlTree member in emPanel (child lookup)
+  - include/emCore/emListBox.h:401 — emAvlTree ItemAvlTree member in emListBox
+  - include/emCore/emAvlTreeMap.h:289 — emAvlTree in emAvlTreeMap::SharedData
+  - include/emCore/emAvlTreeSet.h:290 — emAvlTree in emAvlTreeSet::SharedData
+  - src/emCore/emContext.cpp:101-261 — EM_AVL_SEARCH, EM_AVL_INSERT, EM_AVL_REMOVE, EM_AVL_LOOP for model registry (43 invocations)
+  - src/emCore/emPanel.cpp:338-1553 — EM_AVL_SEARCH, EM_AVL_INSERT, EM_AVL_REMOVE for child panel lookup (17 invocations)
+  - src/emCore/emListBox.cpp:82-321 — EM_AVL_INSERT, EM_AVL_REMOVE, EM_AVL_SEARCH for item lookup (17 invocations)
+
+Rust equivalents found:
+  - emContext AvlTree (model registry) -> HashMap<ModelKey, ModelEntry> in src/emCore/emContext.rs:44
+  - emPanel AvlTree (child lookup) -> HashMap<(PanelId, String), PanelId> name_index in src/emCore/emPanelTree.rs:249, plus SlotMap<PanelId, PanelData> arena at line 245
+  - emListBox ItemAvlTree -> HashMap<String, usize> name_index in src/emCore/emListBox.rs:253
+  - emAvlNode / emAvlTree / emAvlIterator / emAvlCheck / all EM_AVL_* macros -> not ported (replaced by std collections)
+
+Coverage gaps:
+  - No direct Rust equivalent of the intrusive AVL node/tree/macro system (by design: replaced by HashMap/SlotMap)
+  - emAvlCheck() has no Rust equivalent (not needed; std HashMap is self-validating)
+  - The copy-on-write and stable-iterator semantics of the C++ AVL macros used through emAvlTreeMap/emAvlTreeSet are not replicated at this level
+
+OPEN QUESTIONS:
+  - None

@@ -1,0 +1,141 @@
+C++ header: include/emCore/emThread.h
+C++ implementation: src/emCore/emThread.cpp
+
+C++ public API:
+  typedef emUInt64 emThreadId;
+
+  class emThread : public emUncopyable
+    emThread()
+    virtual ~emThread()
+    void Start(void * arg)
+    void Start(int (* func)(void *), void * arg)
+    static void StartUnmanaged(int (* func)(void *), void * arg)
+    bool WaitForTermination(unsigned timeoutMS=UINT_MAX) -> bool
+    bool IsRunning() -> bool
+    int GetExitStatus() const -> int
+    emThreadId GetThreadId() const -> emThreadId
+    static emThreadId GetCurrentThreadId() -> emThreadId
+    static void ExitCurrentThread(int exitStatus)
+    static int GetHardwareThreadCount() -> int
+  protected:
+    virtual int Run(void * arg) -> int
+
+  template <class OBJ> class emThreadMutexLocker : public emUncopyable
+    emThreadMutexLocker(OBJ & mutex)
+    ~emThreadMutexLocker()
+    OBJ & GetMutex() const -> OBJ &
+
+  class emThreadMiniMutex : public emUncopyable
+    emThreadMiniMutex()
+    ~emThreadMiniMutex()
+    void Lock()
+    void Unlock()
+    typedef emThreadMutexLocker<emThreadMiniMutex> Locker
+
+  class emThreadEvent : public emUncopyable
+    emThreadEvent()
+    emThreadEvent(int count)
+    ~emThreadEvent()
+    emInt64 Send(emInt64 n=1) -> emInt64
+    bool Receive(emInt64 n=1, unsigned timeoutMS=UINT_MAX) -> bool
+    emInt64 GetCount() const -> emInt64
+    void SetCount(emInt64 count)
+    void Clear()
+
+  class emThreadMutex : private emUncopyable
+    emThreadMutex()
+    ~emThreadMutex()
+    bool Lock(unsigned timeoutMS=UINT_MAX) -> bool
+    void Unlock()
+    bool IsLocked() const -> bool
+    bool LockReadOnly(unsigned timeoutMS=UINT_MAX) -> bool
+    void UnlockReadOnly()
+    bool IsLockedAnyhow() const -> bool
+    typedef emThreadMutexLocker<emThreadMutex> Locker
+    class ReadOnlyLocker : public emUncopyable
+      ReadOnlyLocker(emThreadMutex & mutex)
+      ~ReadOnlyLocker()
+      emThreadMutex & GetMutex() const -> emThreadMutex &
+
+  class emThreadRecursiveMutex : public emUncopyable
+    emThreadRecursiveMutex()
+    ~emThreadRecursiveMutex()
+    bool Lock(unsigned timeoutMS=UINT_MAX) -> bool
+    void Unlock()
+    bool IsLocked() const -> bool
+    typedef emThreadMutexLocker<emThreadRecursiveMutex> Locker
+
+C++ usage in emCore (usages outside emThread.h/cpp):
+  emViewRenderer.h:105         - emThreadMiniMutex UserSpaceMutex (member field)
+  emFontCache.h:37             - #include <emCore/emThread.h>
+  emFontCache.h:83             - emThreadMutex Mutex (member field)
+  emPainter.h:41               - #include <emCore/emThread.h>
+  emPainter.h:164              - emThreadMiniMutex * userSpaceMutex parameter
+  emPainter.h:246              - emThreadMiniMutex * userSpaceMutex parameter
+  emPainter.h:828              - emThreadMiniMutex * UserSpaceMutex (member field)
+  emRenderThreadPool.h:29      - #include <emCore/emThread.h>
+  emRenderThreadPool.h:80      - emArray<emThread*> ChildThreads (member field)
+  emRenderThreadPool.h:86      - emThreadMiniMutex Mutex (member field)
+  emRenderThreadPool.h:87      - emThreadEvent ActivateEvent (member field)
+  emRenderThreadPool.h:88      - emThreadEvent DoneEvent (member field)
+  emRenderThreadPool.cpp:105   - emThread::GetHardwareThreadCount()
+  emRenderThreadPool.cpp:128   - new emThread()
+  emStd1.cpp:32                - #include <emCore/emThread.h>
+  emStd1.cpp:72                - static emThreadMiniMutex em_time_func_mutex
+  emStd1.cpp:79,93,107,121    - emThreadMiniMutex::Locker mutexLocker(...)
+  emStd1.cpp:606               - static emThreadMiniMutex logFileMutex
+  emStd1.cpp:694               - static emThreadMiniMutex emDevLogMutex
+  emStd2.cpp:52                - #include <emCore/emThread.h>
+  emStd2.cpp:276,289           - static emThreadMiniMutex mutex
+  emStd2.cpp:282               - emThreadMiniMutex::Locker mutexLocker(mutex)
+  emStd2.cpp:1287              - static emThreadMiniMutex emLibTableMutex
+  emStd2.cpp:1323,1425,1455   - emThreadMiniMutex::Locker mutexLocker(emLibTableMutex)
+  emPainter.cpp:117            - emThreadMiniMutex * userSpaceMutex parameter
+  emPainter.cpp:312            - emThreadMiniMutex * userSpaceMutex parameter
+  emFontCache.cpp:65           - emThreadMutex::Locker mutexLocker(Mutex)
+  emThread.cpp:869             - emThread::GetCurrentThreadId() (used by emThreadRecursiveMutex)
+
+Rust equivalents found:
+  emThread class:
+    - Not ported as a type. Rust uses std::thread::scope() and std::thread::spawn() directly.
+    - emRenderThreadPool.rs:77 uses std::thread::scope (replaces C++ emThread + emThreadEvent
+      activate/done pattern)
+    - emProcess.rs:6 uses std::thread (for process I/O pump)
+  emThread::GetHardwareThreadCount():
+    - emRenderThreadPool.rs:35 uses std::thread::available_parallelism()
+  emThreadMiniMutex:
+    - Not ported. Rust code uses std::sync::Mutex instead.
+    - emStd1.rs:8 uses std::sync::Mutex
+    - emStd1.rs:10 uses std::sync::atomic::AtomicBool
+    - emPainter.rs:6429, emViewRenderer.rs:60, emWindow.rs:425 use std::sync::Mutex
+  emThreadMutex (readers/writers):
+    - Not ported. No RwLock usage found in Rust emCore.
+    - C++ emFontCache uses emThreadMutex; OPEN QUESTION: how Rust emFontCache handles concurrency.
+  emThreadEvent (semaphore):
+    - Not ported. Rust replaces the activate/done event pattern with
+      std::thread::scope (scoped thread join replaces explicit event signaling).
+  emThreadRecursiveMutex:
+    - Not ported. No usage found in Rust emCore.
+  emThreadMutexLocker:
+    - Not needed. Rust's MutexGuard provides RAII locking.
+  emThreadId:
+    - Not ported. std::thread::ThreadId used implicitly by std::thread API.
+
+Coverage gaps:
+  - emThread::StartUnmanaged (detached thread spawning) - no Rust equivalent found
+  - emThread::ExitCurrentThread - no Rust equivalent found (not typically needed in Rust)
+  - emThread::WaitForTermination with timeout - no Rust equivalent found
+    (std::thread::JoinHandle::join has no timeout)
+  - emThread::GetExitStatus - no Rust equivalent found (thread closures return values via JoinHandle)
+  - emThreadEvent (full semaphore API) - no Rust equivalent found; functionality replaced
+    by scoped threads in the one known usage site (emRenderThreadPool)
+  - emThreadMutex with readers/writers and timeout - no Rust equivalent found
+  - emThreadRecursiveMutex - no Rust equivalent found
+
+OPEN QUESTIONS:
+  - How does Rust emFontCache handle concurrent access? C++ uses emThreadMutex.
+  - C++ emPainter accepts a userSpaceMutex (emThreadMiniMutex*) parameter for thread safety
+    during painting. How is this handled in the Rust port? Rust emPainter.rs uses
+    std::sync::Mutex for tile results, but the userSpaceMutex parameter pattern is unclear.
+  - Are any of the "coverage gap" methods actually needed by the Rust port, or are they
+    all dead code paths in the emCore-only scope?

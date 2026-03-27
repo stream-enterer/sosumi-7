@@ -1,0 +1,123 @@
+C++ header: include/emCore/emString.h
+C++ implementation: src/emCore/emString.cpp
+
+C++ public API:
+  class emString:
+  - emString() -- default constructor (empty string)
+  - emString(const emString&) -- copy constructor (COW shallow copy via refcount)
+  - emString(const char* p) -- construct from null-terminated C string
+  - emString(const char* p, int len) -- construct from buffer with length
+  - emString(const char* p, int len, const char* p2, int len2) -- construct by concatenation
+  - emString(char c, int len=1) -- construct by filling with byte
+  - ~emString()
+  - static Format(const char* format, ...) -> emString -- printf-style formatting
+  - static VFormat(const char* format, va_list args) -> emString
+  - operator=(const emString&) -> emString&
+  - operator=(const char*) -> emString&
+  - operator=(char) -> emString&
+  - GetCount() const -> int -- byte length (calls strlen)
+  - GetLen() const -> int -- byte length (calls strlen)
+  - operator const char*() const -- implicit conversion to C string
+  - Get() const -> const char* -- get internal null-terminated buffer
+  - operator[](int index) const -> char
+  - Get(int index) const -> char
+  - GetWritable() -> char* -- mutable buffer (breaks COW)
+  - GetWritable(int index) -> char& -- mutable byte reference
+  - SetLenGetWritable(int len) -> char* -- resize and get mutable buffer
+  - Add(const emString&) -> void
+  - Add(const char*) -> void
+  - Add(const char*, int len) -> void
+  - Add(char c, int len=1) -> void
+  - operator+=(const emString&) -> emString&
+  - operator+=(const char*) -> emString&
+  - operator+=(char) -> emString&
+  - operator+(const emString&) const -> emString
+  - operator+(const char*) const -> emString
+  - operator+(char) const -> emString
+  - friend operator+(const char*, const emString&) -> emString
+  - friend operator+(char, const emString&) -> emString
+  - Insert(int index, const emString&) -> void
+  - Insert(int index, const char*) -> void
+  - Insert(int index, const char*, int len) -> void
+  - Insert(int index, char c, int len=1) -> void
+  - Replace(int index, int exLen, const emString&) -> void
+  - Replace(int index, int exLen, const char*) -> void
+  - Replace(int index, int exLen, const char*, int len) -> void
+  - Replace(int index, int exLen, char c, int len=1) -> void
+  - GetSubString(int index, int len) const -> emString
+  - Extract(int index, int len) -> emString
+  - Remove(int index, int len=1) -> void
+  - Clear() -> void
+  - IsEmpty() const -> bool
+  - operator==/!=/<=/>=/</> (const emString&) const -> bool (strcmp-based)
+  - operator==/!=/<=/>=/</> (const char*) const -> bool
+  - friend operator==/!=/<=/>=/</> (const char*, const emString&) -> bool
+  - GetDataRefCount() const -> unsigned int
+  - MakeNonShared() -> void
+
+  Implementation details (emString.cpp):
+  - COW with reference-counted SharedData { RefCount, Buf[] }
+  - EmptyData is a static singleton with RefCount=UINT_MAX/2
+  - PrivRep handles overlapping source/target memory (memmove)
+  - VFormat uses a 512-byte stack buffer, falls back to heap allocation
+
+C++ usage in emCore (517 occurrences in headers across 67 files, 525 in .cpp across 63 files):
+  emString is the most heavily used type in all of emCore. Representative usages:
+  - emBorder.h (lines 52-54,68-69,414-415): Caption, Description member variables; name parameter
+  - emPanel.h (line 12+): panel name, identity encoding
+  - emModel.h (line 5+): model name storage
+  - emFileModel.h: file path storage
+  - emTextField.h (line 19+): text content storage
+  - emDialog.h: title, message strings
+  - emFileDialog.h (23 occurrences): file paths, directory paths, filters
+  - emFileSelectionBox.h (29 occurrences): directory, selected names, filters
+  - emFpPlugin.h (29 occurrences): plugin paths, names, descriptions
+  - emRec.h (22 occurrences): record names, string values
+  - emStd2.h (17 occurrences): utility string functions
+  - emStd1.cpp (line 12+): emGetChildPath, emGetHostName, etc.
+  - emStd2.cpp (46 occurrences): path manipulation, string utilities
+  - emProcess.cpp (32 occurrences): command args, environment variables
+  - emTextField.cpp (26 occurrences): text editing operations
+  - emMiniIpc.cpp (24 occurrences): IPC message formatting
+  - emInstallInfo.cpp (14 occurrences): installation path queries
+
+Rust equivalents found:
+  - emString broadly maps to String (owned) and &str (borrowed)
+  - The Rust codebase uses String/&str pervasively in the same roles as emString.
+  - emString() -> String::new()
+  - emString(const char*) -> String::from() or .to_string()
+  - Get() / operator const char*() -> .as_str() or &str borrowing
+  - GetLen()/GetCount() -> .len()
+  - operator[] -> .as_bytes()[i] or .chars().nth(i)
+  - Add / operator+= -> String::push_str() / format!()
+  - operator+ -> format!() or + operator on String
+  - Insert -> String::insert_str()
+  - Replace -> String::replace() or String::replace_range()
+  - GetSubString -> &str slicing or String::from(&s[a..b])
+  - Remove -> String::drain() or String::replace_range(range, "")
+  - Clear -> String::clear()
+  - IsEmpty -> String::is_empty() or str::is_empty()
+  - Comparison operators -> PartialEq, PartialOrd, Ord on String/&str (lexicographic)
+  - Format/VFormat -> format!() macro
+  - COW/GetDataRefCount/MakeNonShared -> no equivalent (String is single-owner)
+  - GetWritable/SetLenGetWritable -> direct mutable access via &mut String
+  Representative String/&str usage locations:
+    - src/emCore/emListBox.rs:74,133,230,232 -- String for item text, name
+    - src/emCore/emBorder.rs -- &str parameters for caption, description
+    - src/emCore/emColor.rs:371,380 -- &str for color parsing, String for intermediate
+    - src/emCore/emInput.rs:194 -- &str for key name parsing (emStringToInputKey)
+    - src/emCore/emTextField.rs -- String for text content (68 occurrences of relevant patterns)
+
+Coverage gaps:
+  - Extract(int index, int len) -> emString: no single-method equivalent found in Rust,
+    but can be composed from slicing + drain/replace_range. Not found as a named method
+    in the Rust codebase.
+  - SetLenGetWritable: no direct equivalent. Rust String does not expose a raw buffer
+    resize-then-write pattern. Callers would use String::with_capacity + push/write.
+  - GetWritable(int index) -> char&: Rust strings are UTF-8 and do not support O(1)
+    mutable byte access by index. Callers would use unsafe or bytes_mut().
+
+OPEN QUESTIONS:
+  - The C++ emString is byte-oriented (strlen-based, no encoding assumption). Rust String
+    is UTF-8. Whether any emCore code relies on non-UTF-8 byte sequences in strings is
+    not verified by this audit.

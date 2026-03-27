@@ -1,0 +1,67 @@
+C++ header: include/emCore/emAnything.h
+C++ implementation: src/emCore/emAnything.cpp
+
+C++ public API:
+  - class emAnything
+    - emAnything()                                     // construct invalid (Data = NULL)
+    - emAnything(const emAnything&)                     // copy; increments Data refcount
+    - ~emAnything()                                     // decrements Data refcount; deletes if 0
+    - emAnything& operator=(const emAnything&)           // copy assignment with refcount management
+    Protected:
+    - struct AbstractSharedData
+      - AbstractSharedData()                            // refcount = 1
+      - virtual ~AbstractSharedData()                   // virtual destructor
+      - unsigned int RefCount
+    - emAnything(AbstractSharedData* data)              // protected ctor from shared data
+    - AbstractSharedData* Data                          // pointer to shared data
+
+  - template<class VALUE> class emCastAnything : public emAnything
+    - emCastAnything(const VALUE& value)               // wrap a value into emAnything
+    - emCastAnything(const emAnything& anything)        // attempt to extract VALUE from emAnything
+    - operator const VALUE*() const                     // returns pointer to VALUE or NULL if type mismatch
+    Private:
+    - struct SharedData : AbstractSharedData
+      - SharedData(const VALUE& value)
+      - virtual ~SharedData()
+      - VALUE Value
+
+  Implementation detail: emCastAnything uses dynamic_cast to check if the AbstractSharedData
+  is actually a SharedData<VALUE>, providing type-safe extraction. Copies are implicitly shared
+  via refcounted AbstractSharedData.
+
+C++ usage in emCore (68 total occurrences across 5 files):
+  - emListBox.h:84: const emAnything& data = emAnything() (parameter with default)
+  - emListBox.h:97: const emAnything& data = emAnything() (parameter with default)
+  - emListBox.h:118-120: const emAnything& item1data, const emAnything& item2data (compare callback params)
+  - emListBox.h:171: emAnything GetItemData(int index) const (return type)
+  - emListBox.h:178: void SetItemData(int index, const emAnything& data) (parameter)
+  - emListBox.h:274: const emAnything& GetItemData() const (ItemPanelInterface method)
+  - emListBox.h:371: emAnything Data (member variable in Item struct)
+  - emListBox.cpp:70: AddItem with emAnything data parameter
+  - emListBox.cpp:79: InsertItem with emAnything data parameter
+  - emListBox.cpp:188-190: DefaultSortFunction with emAnything params
+  - emListBox.cpp:350: GetItemData returning emAnything
+  - emListBox.cpp:357: SetItemData accepting emAnything
+  - emFileSelectionBox.cpp:695,701: emCastAnything<FileItemData>(data) (type extraction)
+  - emFileSelectionBox.cpp:967,1074,1184: emCastAnything<FileItemData>(GetItemData()) (type extraction)
+
+Rust equivalents found:
+  - emAnything -> Box<dyn Any> (or Option<Box<dyn Any>>)
+    - emListBox.rs:234: data: Option<Box<dyn Any>> (Item struct member)
+    - emListBox.rs:394: data: Option<Box<dyn Any>> (AddItem parameter)
+    - emListBox.rs:413: data: Option<Box<dyn Any>> (InsertItem parameter)
+    - emListBox.rs:661: pub fn GetItemData(&self, index: usize) -> Option<&dyn Any>
+    - emListBox.rs:666: pub fn SetItemData(&mut self, index: usize, data: Option<Box<dyn Any>>)
+  - emCastAnything<T>(anything) -> Any::downcast_ref::<T>() in Rust
+    - emPanel.rs:37-45: as_any()/as_any_mut() trait methods for downcasting
+  - Implicit sharing (refcounted AbstractSharedData) -> not replicated; Rust uses owned Box<dyn Any>
+    - C++ emAnything copies share data (COW-like); Rust Box<dyn Any> is move-only, no sharing
+
+Coverage gaps:
+  - Implicit sharing: C++ emAnything copies are cheap (refcount bump); Rust Box<dyn Any> is move-only.
+    If the Rust port never copies item data between containers, this is not a functional gap.
+  - emCastAnything construction from value: Rust uses Box::new(value) as Box<dyn Any>
+  - emCastAnything extraction: Rust uses downcast_ref::<T>() which returns Option<&T>
+
+OPEN QUESTIONS:
+  - C++ emAnything supports implicit sharing (multiple emAnything values point to same data). The Rust port uses Box<dyn Any> which is not shared. Is any C++ code path relying on shared-copy semantics of emAnything (beyond just passing it around)?

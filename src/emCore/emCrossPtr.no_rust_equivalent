@@ -1,0 +1,67 @@
+C++ header: include/emCore/emCrossPtr.h
+C++ implementation: src/emCore/emCrossPtr.cpp
+
+C++ public API:
+  - class emCrossPtrPrivate (protected/internal)
+    - void Unlink()                                  // remove from linked list
+    - void* Obj                                      // pointed object
+    - emCrossPtrPrivate** ThisPtr                     // pointer to prev's Next (or list's First)
+    - emCrossPtrPrivate* Next                         // next in linked list
+
+  - template<class CLS> class emCrossPtr : private emCrossPtrPrivate
+    - emCrossPtr()                                   // NULL pointer
+    - emCrossPtr(const emCrossPtr&)                  // copy; links to same object
+    - emCrossPtr(CLS* obj)                           // from raw ptr; links to object's list
+    - ~emCrossPtr()                                  // unlinks from list
+    - emCrossPtr& operator=(const emCrossPtr&)       // rebind
+    - void Set(CLS* obj = NULL)                      // rebind to new object
+    - emCrossPtr& operator=(CLS* obj)                // rebind to new object
+    - void Reset()                                   // Set(NULL)
+    - operator CLS*() const                          // implicit conversion to raw ptr
+    - CLS* Get() const                               // get raw ptr
+    - CLS* operator->() const                        // smart-pointer dereference
+
+  - class emCrossPtrList : public emUncopyable
+    - emCrossPtrList()                               // empty list
+    - ~emCrossPtrList()                              // calls BreakCrossPtrs
+    - void BreakCrossPtrs()                          // set all cross pointers to NULL, clear list
+    - void LinkCrossPtr(emCrossPtrPrivate&)           // insert cross pointer into this list
+
+C++ usage in emCore (46 total occurrences across 9 files):
+  - emContext.h:63: comment "emCrossPtr<emContext> is possible"
+  - emContext.h:141: emCrossPtrList CrossPtrList (member variable)
+  - emModel.h:165: comment "emCrossPtr<emModel> is possible"
+  - emModel.h:205: emCrossPtrList CrossPtrList (member variable)
+  - emPanel.h:115: comment "emCrossPtr<emPanel> is possible"
+  - emPanel.h:795: emCrossPtrList CrossPtrList (member variable)
+  - emPanel.h:864: inline void emPanel::LinkCrossPtr forwarding to CrossPtrList
+  - emView.h:135: comment "emCrossPtr<emView> is possible"
+  - emView.h:663: emCrossPtrList CrossPtrList (member variable)
+  - emWindow.h:103: comment "emCrossPtr<emWindow> is possible"
+  - emWindow.h:207: emCrossPtrList CrossPtrList (member variable)
+  - emBorder.h:410: emCrossPtr<emPanel> PanelPointerCache (member variable)
+  - emFileDialog.h:204: emCrossPtr<emDialog> OverwriteDialog (member variable)
+  Usage outside emCore (for context):
+  - emMain/emAutoplay.h: emCrossPtr<emPanel> (2 member variables)
+  - emMain/emBookmarks.h: emCrossPtr<emView> (4 member variables)
+  - emMain/emMainWindow.h: emCrossPtr<emWindow> (1 member variable)
+
+Rust equivalents found:
+  - emCrossPtr<T> -> Weak<T> (std::rc::Weak)
+    - emContext.rs:40: parent: Option<Weak<emContext>> (parent reference)
+    - emContext.rs:41: children: RefCell<Vec<Weak<emContext>>> (child references)
+  - emCrossPtrList -> no explicit equivalent; Weak references don't need a list on the target side
+    - Rc/Weak handles automatic invalidation: when the Rc is dropped, all Weak references
+      return None on upgrade(), which is the same semantic as BreakCrossPtrs nullifying all pointers
+  - No search results for CrossPtrList, BreakCrossPtrs, or LinkCrossPtr in Rust codebase
+
+Coverage gaps:
+  - emCrossPtrList::BreakCrossPtrs(): no explicit equivalent; Weak::upgrade() returns None after Rc drop
+  - emCrossPtrList::LinkCrossPtr(): no equivalent needed; Rc::downgrade() creates Weak without registering
+  - emCrossPtr copy semantics (copy constructs a new weak ref to same object): Weak::clone() in Rust
+  - emBorder PanelPointerCache: not verified whether Rust emBorder uses Weak for this
+  - emFileDialog OverwriteDialog: not verified in Rust
+
+OPEN QUESTIONS:
+  - The C++ pattern allows early invalidation via BreakCrossPtrs() in destructors before full cleanup; Rust's Weak only invalidates when the last Rc drops. Is this timing difference significant for any emCore code path?
+  - emBorder's PanelPointerCache and emFileDialog's OverwriteDialog: are these ported with Weak references or with a different pattern?
