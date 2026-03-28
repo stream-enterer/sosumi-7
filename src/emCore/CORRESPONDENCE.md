@@ -86,3 +86,60 @@ any code checks a cross pointer during the target's destruction is
 NOT VERIFIED.
 
 - emCrossPtr.no_rs
+
+## Reproducible queries
+
+These grep commands produce structural data across marker files.
+Run against ~/git/eaglemode-0.96.4/. The C++ source does not change,
+so the output is stable.
+
+### Which marker types depend on which other marker types (C++ #include)
+
+For each .no_rs type, which other .no_rs types does its C++ header include:
+
+```
+for type in emAnything emArray emAvlTree emAvlTreeMap emAvlTreeSet emCrossPtr emFileStream emList emOwnPtr emOwnPtrArray emRef emString emThread emTmpFile emToolkit; do
+  includes=$(grep "#include.*emCore/" ~/git/eaglemode-0.96.4/include/emCore/${type}.h 2>/dev/null | sed 's/.*emCore\///' | sed 's/\.h.*//')
+  for inc in $includes; do
+    [ -f "src/emCore/${inc}.no_rs" ] && echo "  $type -> $inc"
+  done
+done
+```
+
+Produces: which marker types include which other marker types.
+As of 2026-03-28:
+  emAvlTreeMap -> emAvlTree
+  emAvlTreeSet -> emAvlTree
+  emFileStream -> emOwnPtr
+  emOwnPtrArray -> emArray
+
+### Which eaglemode app modules use which marker types
+
+For each .no_rs type, which app modules outside emCore reference it:
+
+```
+for type in emAnything emArray emAvlTree emAvlTreeMap emAvlTreeSet emCrossPtr emFileStream emList emOwnPtr emOwnPtrArray emRef emString emThread emTmpFile emToolkit; do
+  apps=$(grep -rl "$type" ~/git/eaglemode-0.96.4/include/ ~/git/eaglemode-0.96.4/src/ --include='*.h' --include='*.cpp' 2>/dev/null | grep -v "/emCore/" | sed 's|.*/include/||;s|.*/src/||' | sed 's|/.*||' | sort -u | tr '\n' ' ')
+  [ -n "$apps" ] && echo "$type: $apps"
+done
+```
+
+Produces: per-type list of app modules that depend on it.
+
+### Which marker types each app module needs (inverse of above)
+
+Tells you: if you're porting emStocks, which marker types will you encounter?
+
+```
+declare -A app_types
+for type in emAnything emArray emAvlTree emAvlTreeMap emAvlTreeSet emCrossPtr emFileStream emList emOwnPtr emOwnPtrArray emRef emString emThread emTmpFile emToolkit; do
+  for app in $(grep -rl "$type" ~/git/eaglemode-0.96.4/include/ ~/git/eaglemode-0.96.4/src/ --include='*.h' --include='*.cpp' 2>/dev/null | grep -v "/emCore/" | sed 's|.*/include/||;s|.*/src/||' | sed 's|/.*||' | sort -u); do
+    app_types[$app]="${app_types[$app]} $type"
+  done
+done
+for app in $(echo "${!app_types[@]}" | tr ' ' '\n' | sort); do
+  echo "$app:${app_types[$app]}"
+done
+```
+
+Produces: per-app list of marker types it depends on.
