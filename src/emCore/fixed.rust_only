@@ -46,3 +46,27 @@ OPEN QUESTIONS:
 ================================================================================
 REVIEWED SUMMARY (reviewed — unverified items marked NOT VERIFIED)
 ================================================================================
+
+Rust file: src/emCore/fixed.rs
+
+Newtype wrapper (Fixed12) around i32 with 12 fractional bits.
+
+C++ uses bare int variables with inline shifts/masks for the same
+arithmetic. The Rust newtype prevents accidental mixing with plain
+i32 values. No C++ header equivalent — the convention is implicit
+in variable naming (ix, iy, ax1, ax2, ay1, ay2).
+
+Used by emPainter.rs and emPainterScanline.rs only.
+
+Divergences from C++:
+  ceil() and round() use i64 promotion to avoid signed overflow UB
+  that exists in the C++ originals. Deliberate fix (commit 3a1f81).
+
+Open question resolved: No Fixed24 type exists. The 24-bit fixed-point
+  path (emPainterInterpolation.rs: ~36 occurrences, emPainter.rs: ~8)
+  uses bare >> 24 shifts and 0xFF_FFFF masks inline, same as C++.
+  Both fixed.rs and emPainterInterpolation.rs were created in the same
+  commit (ae8907e, 2026-03-06) by the same author. Whether the newtype
+  was intentionally scoped to 12-bit only or whether the 24-bit path
+  was left unwrapped due to time constraints is not determinable from
+  the available evidence.
