@@ -135,22 +135,35 @@ Rust equivalents used in the codebase (verified by grep):
   emOwnArrayPtr<T>    -> Vec<T>
     (emFileStream.h:110 uses emOwnArrayPtr<emByte> — equivalent is Vec<u8>)
 
-NOT VERIFIED: whether all 17 outside-emCore files use emOwnPtr in ways
-  that map cleanly to Option<Box<T>>. Specific files not checked:
-    include/emAv/emAvClient.h
-    include/emBmp/emBmpImageFileModel.h
-    include/emClock/emTimeZonesModel.h
-    include/emFileMan/emFileManModel.h
-    include/emFileMan/emFileManViewConfig.h
-    include/emGif/emGifFileModel.h
-    include/emGif/emGifImageFileModel.h
-    include/emJpeg/emJpegImageFileModel.h
-    include/emJson/emJsonKeyMap.h
-    include/emMain/emMainWindow.h
-    include/emOsm/emOsmTileCache.h
-    include/emPnm/emPnmImageFileModel.h
-    include/emTga/emTgaImageFileModel.h
-    include/emTmpConv/emTmpConvModel.h
-    include/emWnds/emWndsScreen.h
-    include/emX11/emX11Screen.h
-    include/emXpm/emXpmImageFileModel.h
+VERIFIED: All 17 outside-emCore files use emOwnPtr/emOwnArrayPtr/emOwnPtrArray
+  as owned member fields with standard Set/Reset/Get patterns. No Release()
+  calls. All map cleanly to Rust equivalents.
+
+  emOwnPtr<T> member fields -> Option<Box<T>>:
+    emBmpImageFileModel.h   — L (LoadingState), S (SavingState)
+    emFileManModel.h        — IpcServer (IpcServerClass)
+    emFileManViewConfig.h   — VisitingVA, RevisitEngine
+    emGifFileModel.h        — File (emFileStream)
+    emGifImageFileModel.h   — L (LoadingState)
+    emJpegImageFileModel.h  — L (LoadingState), S (SavingState)
+    emMainWindow.h          — VisitingVA (emVisitingViewAnimator)
+    emOsmTileCache.h        — FileModelClient (emFileModelClient)
+    emPnmImageFileModel.h   — L (LoadingState), S (SavingState)
+    emTgaImageFileModel.h   — L (LoadingState), S (SavingState), Encoder
+    emTmpConvModel.h        — PSAgent (PSAgentClass)
+    emWndsScreen.h          — WCThread, ViewRenderer
+    emX11Screen.h           — WCThread, ViewRenderer
+    emXpmImageFileModel.h   — L (LoadingState), S (SavingState)
+
+  emOwnArrayPtr<T> member fields -> Vec<T>:
+    emBmpImageFileModel.h   — Palette (unsigned char)
+    emJsonKeyMap.h          — SortedByStrings (Element), SortedByKeys (Element*)
+    emTgaImageFileModel.h   — Palette (emColor), Pal (emUInt32)
+    emXpmImageFileModel.h   — Buffer (char), StringArray (char*), Pal (emUInt32)
+
+  emOwnPtrArray<T> member fields -> Vec<Box<T>>:
+    emAvClient.h            — Properties (Property)
+    emTimeZonesModel.h      — Cities (City)
+
+  Conclusion: All 17 outside-emCore files use standard ownership patterns.
+  No gap found.
