@@ -388,6 +388,94 @@ impl emFileStream {
     }
 }
 
+// --- Endian-aware typed reads and writes (16/32/64-bit) ---
+
+impl emFileStream {
+    fn read_exact_bytes<const N: usize>(&mut self) -> Result<[u8; N]> {
+        let mut bytes = [0u8; N];
+        self.TryRead(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    // --- Typed reads ---
+
+    pub fn TryReadInt16LE(&mut self) -> Result<i16> {
+        Ok(i16::from_le_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadInt16BE(&mut self) -> Result<i16> {
+        Ok(i16::from_be_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadUInt16LE(&mut self) -> Result<u16> {
+        Ok(u16::from_le_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadUInt16BE(&mut self) -> Result<u16> {
+        Ok(u16::from_be_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadInt32LE(&mut self) -> Result<i32> {
+        Ok(i32::from_le_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadInt32BE(&mut self) -> Result<i32> {
+        Ok(i32::from_be_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadUInt32LE(&mut self) -> Result<u32> {
+        Ok(u32::from_le_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadUInt32BE(&mut self) -> Result<u32> {
+        Ok(u32::from_be_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadInt64LE(&mut self) -> Result<i64> {
+        Ok(i64::from_le_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadInt64BE(&mut self) -> Result<i64> {
+        Ok(i64::from_be_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadUInt64LE(&mut self) -> Result<u64> {
+        Ok(u64::from_le_bytes(self.read_exact_bytes()?))
+    }
+    pub fn TryReadUInt64BE(&mut self) -> Result<u64> {
+        Ok(u64::from_be_bytes(self.read_exact_bytes()?))
+    }
+
+    // --- Typed writes ---
+
+    pub fn TryWriteInt16LE(&mut self, v: i16) -> Result<()> {
+        self.TryWrite(&v.to_le_bytes())
+    }
+    pub fn TryWriteInt16BE(&mut self, v: i16) -> Result<()> {
+        self.TryWrite(&v.to_be_bytes())
+    }
+    pub fn TryWriteUInt16LE(&mut self, v: u16) -> Result<()> {
+        self.TryWrite(&v.to_le_bytes())
+    }
+    pub fn TryWriteUInt16BE(&mut self, v: u16) -> Result<()> {
+        self.TryWrite(&v.to_be_bytes())
+    }
+    pub fn TryWriteInt32LE(&mut self, v: i32) -> Result<()> {
+        self.TryWrite(&v.to_le_bytes())
+    }
+    pub fn TryWriteInt32BE(&mut self, v: i32) -> Result<()> {
+        self.TryWrite(&v.to_be_bytes())
+    }
+    pub fn TryWriteUInt32LE(&mut self, v: u32) -> Result<()> {
+        self.TryWrite(&v.to_le_bytes())
+    }
+    pub fn TryWriteUInt32BE(&mut self, v: u32) -> Result<()> {
+        self.TryWrite(&v.to_be_bytes())
+    }
+    pub fn TryWriteInt64LE(&mut self, v: i64) -> Result<()> {
+        self.TryWrite(&v.to_le_bytes())
+    }
+    pub fn TryWriteInt64BE(&mut self, v: i64) -> Result<()> {
+        self.TryWrite(&v.to_be_bytes())
+    }
+    pub fn TryWriteUInt64LE(&mut self, v: u64) -> Result<()> {
+        self.TryWrite(&v.to_le_bytes())
+    }
+    pub fn TryWriteUInt64BE(&mut self, v: u64) -> Result<()> {
+        self.TryWrite(&v.to_be_bytes())
+    }
+}
+
 impl Default for emFileStream {
     fn default() -> Self {
         Self::new()
