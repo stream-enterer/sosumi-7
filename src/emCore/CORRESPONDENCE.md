@@ -17,7 +17,8 @@ All 11 marker files contain evidence gathered by LLM agents and
 reviewed by a human-LLM pair. Each marker file has three sections:
 an unreviewed agent audit, a mechanically reproducible grep of
 outside-emCore usage, and a reviewed summary. All 11 have reviewed
-summaries as of 2026-03-28.
+summaries as of 2026-03-28. All NOT VERIFIED items in marker files
+have been closed as of Phase 4 (2026-03-28).
 
 ### Phase 1 changes (2026-03-28)
 
@@ -94,6 +95,43 @@ Marker file updated:
   emAvlTree macros powered. emAvlTree.no_rs remains because the C++ type
   is a macro library with no direct Rust equivalent — Map/Set provide
   the functionality at a higher level.
+
+### Phase 4 changes (2026-03-28)
+
+NOT VERIFIED items closed — 6 marker files updated:
+- emPainterDrawList.rust_only — DrawList safety invariant #2 verified:
+  frame loop structure guarantees no tree modification between record
+  and replay. RefCell/interior mutability risk: none (DrawOp contains
+  only plain data and raw pointers, no Rc/RefCell).
+- emThread.no_rs — 19 outside-emCore files verified, all use standard
+  threading patterns mapping to std::thread/std::sync.
+- emAvlTree.no_rs — HashMap ordering in emContext.rs verified (only
+  iteration is GetListing debug dump, order-independent). Outside-emCore
+  files all use wrappers only (no raw EM_AVL_* macros). emAvlCheck()
+  has no outside-emCore callers.
+- emOwnPtr.no_rs — 17 outside-emCore files verified, all use
+  emOwnPtr/emOwnArrayPtr/emOwnPtrArray as owned member fields mapping
+  to Option<Box<T>> / Box<T> / Vec<T>.
+- emRef.no_rs — emVarModel/WatchedVar ownership change verified: no
+  sharing gap. C++ shared-model pattern replaced by OnceLock (emBorder
+  TkResources) or transient access (no persistent multi-consumer sharing).
+- emString.no_rs — COW performance impact verified as negligible. C++
+  passes strings by const reference (370 sites, 0 by-value outside emCore).
+  No hot-loop O(1)-copy dependence found.
+
+emPainterDrawList.rs resolution:
+- emPainterDrawList.rs is NOT a rename of emThread. It is an
+  architectural divergence caused by Rust's ownership model (Rc is
+  not Send). C++ emThread is replaced by std::thread/std::sync.
+  emPainterDrawList.rs replaces the rendering pipeline pattern that
+  C++ emThread enabled. The .rust_only marker remains — this is
+  genuinely Rust-only code with no C++ equivalent.
+- Rename to emThread.rs rejected: would violate emPainter firewall
+  (emPainter.rs imports emPainterDrawList) and would be misleading
+  (DrawList is not a thread abstraction).
+
+No empainter-deferred-refactors.log entries: no deferred refactors
+were logged during Phases 1-3.
 
 Call site audit (no changes needed):
 - Vec usage audited across all src/emCore/*.rs files. All Vec::clone()
@@ -259,6 +297,10 @@ was introduced.
 - emThread.no_rs (threading model change)
 - emPainterDrawList.rust_only (record-replay pattern)
 
+Resolution: emPainterDrawList.rs is the consequence of this chain.
+It remains as .rust_only (genuinely Rust-only, no C++ equivalent).
+The relationship is documented in Phase 4 findings.
+
 ## BreakCrossPtrs timing
 
 C++ invalidates cross pointers early in destructors (before cleanup).
@@ -266,9 +308,17 @@ The Rust port (emCrossPtr.rs) uses a shared Rc<Cell<bool>> invalidation
 flag instead of C++ intrusive linked lists. Invalidation is explicit
 via invalidate() rather than implicit via destructor ordering. C++
 BreakCrossPtrs is called in destructors of emWindow, emView, emContext;
-Rust callers must call invalidate() at equivalent points. Whether any
-code checks a cross pointer during the target's destruction is
-NOT VERIFIED.
+Rust callers must call invalidate() at equivalent points.
+
+VERIFIED (Phase 4): In C++, code after BreakCrossPtrs in destructors
+(deleting child panels, windows, contexts, VIFs) does not check cross
+pointers — it operates on direct ownership links. The two C++ consumers
+of emCrossPtr (emBorder::PanelPointerCache, emFileDialog::OverwriteDialog)
+are accessed only during normal operation (painting, layout), never during
+destruction. In the Rust port, emCrossPtr has zero consumers — both C++
+usage sites were resolved with different patterns (PanelPointerCache:
+not implemented, OverwriteDialog: Option<emDialog>). The timing risk is
+moot. emCrossPtrList::Drop calls BreakCrossPtrs(), matching C++ behavior.
 
 - emCrossPtr.rs (DIVERGED from C++ intrusive linked list)
 
