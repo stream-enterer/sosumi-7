@@ -1,5 +1,41 @@
 # Cross-Cutting Patterns Across Marker Files
 
+## How to read the marker files
+
+Each .no_rs and .rust_only file has three sections separated by labels:
+
+  AGENT AUDIT (unreviewed — treat claims as unverified)
+  OUTSIDE EMCORE (grep output — reproducible, no interpretation)
+  REVIEWED SUMMARY (reviewed — unverified items marked NOT VERIFIED)
+
+Do not trust any section uncritically.
+
+The AGENT AUDIT was written by an LLM that read C++ headers and grepped
+the Rust codebase. It contains real file paths and line numbers mixed
+with interpretive claims. The line numbers were correct when written
+but may have drifted. The interpretive claims ("not needed", "by design",
+"no gaps") were not reviewed and may be wrong.
+
+The OUTSIDE EMCORE section is grep output. It is mechanically reproducible
+and contains no interpretation. It is the strongest section.
+
+The REVIEWED SUMMARY was written by a human-LLM pair that verified
+specific claims against source code. Items marked "verified" mean:
+a grep or file read confirmed the claim at the time of writing. This
+does NOT mean the claim is currently true — code changes since the
+review may have invalidated it. Items marked "NOT VERIFIED" mean: the
+claim was identified as unverified and left open rather than guessed at.
+
+Before acting on any claim in any section:
+  - If it names a file path or line number, read the file.
+  - If it says something exists or doesn't exist, grep for it.
+  - If it says behavior X happens, read the code that does X.
+
+The marker files are a starting point for investigation, not a
+substitute for it.
+
+---
+
 Patterns that span multiple marker files and are not visible by reading
 any single file in isolation. Each pattern names the concern and lists
 the files where evidence is documented.
