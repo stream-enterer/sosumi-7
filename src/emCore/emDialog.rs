@@ -65,6 +65,11 @@ impl emDialog {
         }
     }
 
+    /// Get the look used by this dialog.
+    pub fn look(&self) -> &Rc<emLook> {
+        &self.look
+    }
+
     pub fn GetResult(&self) -> Option<&DialogResult> {
         self.result.as_ref()
     }

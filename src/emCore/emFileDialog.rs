@@ -40,6 +40,13 @@ pub struct emFileDialog {
     fsb: emFileSelectionBox,
     mode: FileDialogMode,
     dir_allowed: bool,
+    // DIVERGED: C++ `OverwriteDialog` is `emCrossPtr<emDialog>` — a cross-pointer
+    // to a dynamically-created child dialog in the panel tree, polled each Cycle().
+    // Rust has no signal/cycle infrastructure and emDialog is not wrapped in
+    // Rc<RefCell<...>>, so we use `Option<emDialog>` to track the pending overwrite
+    // confirmation dialog. The caller retrieves it via `overwrite_dialog()` and feeds
+    // back the user's choice via `confirm_overwrite()` / `cancel_overwrite()`.
+    overwrite_dialog: Option<emDialog>,
     overwrite_asked: String,
     overwrite_confirmed: String,
 }
@@ -60,6 +67,7 @@ impl emFileDialog {
             fsb,
             mode,
             dir_allowed: false,
+            overwrite_dialog: None,
             overwrite_asked: String::new(),
             overwrite_confirmed: String::new(),
         }
@@ -243,6 +251,14 @@ impl emFileDialog {
                         msg
                     };
                     if text != self.overwrite_confirmed {
+                        // Create the overwrite confirmation dialog, matching
+                        // C++ CheckFinish lines 186-197 (new emDialog, set
+                        // title, add OK/Cancel buttons).
+                        let mut dlg =
+                            emDialog::new("File Exists", self.dialog.look().clone());
+                        dlg.AddCustomButton("OK", DialogResult::Ok);
+                        dlg.AddCustomButton("Cancel", DialogResult::Cancel);
+                        self.overwrite_dialog = Some(dlg);
                         self.overwrite_asked = text;
                         return FileDialogCheckResult::ConfirmOverwrite(paths_to_overwrite);
                     }
@@ -255,15 +271,35 @@ impl emFileDialog {
         FileDialogCheckResult::Allow
     }
 
-    /// Confirm overwrite (called after user confirms in a sub-dialog).
+    /// Access the pending overwrite confirmation dialog, if any.
+    ///
+    /// DIVERGED: C++ `OverwriteDialog` is `emCrossPtr<emDialog>` polled in
+    /// `Cycle()`. Rust exposes `Option<&emDialog>` for the caller to present
+    /// and relay the user's answer via `confirm_overwrite()` /
+    /// `cancel_overwrite()`.
+    pub fn overwrite_dialog(&self) -> Option<&emDialog> {
+        self.overwrite_dialog.as_ref()
+    }
+
+    /// Confirm overwrite (called after user confirms in the overwrite dialog).
+    ///
+    /// Port of C++ `Cycle()` POSITIVE branch (lines 92-96): copies
+    /// `OverwriteAsked` into `OverwriteConfirmed`, clears `OverwriteAsked`,
+    /// and destroys the dialog.
     pub fn confirm_overwrite(&mut self) {
         self.overwrite_confirmed = self.overwrite_asked.clone();
         self.overwrite_asked.clear();
+        self.overwrite_dialog = None;
     }
 
-    /// Cancel overwrite request.
+    /// Cancel overwrite request (called after user cancels the overwrite
+    /// dialog).
+    ///
+    /// Port of C++ `Cycle()` NEGATIVE branch (lines 98-100): clears
+    /// `OverwriteAsked` and destroys the dialog.
     pub fn cancel_overwrite(&mut self) {
         self.overwrite_asked.clear();
+        self.overwrite_dialog = None;
     }
 
     /// Handle triggering a file (double-click / enter). Returns true if dialog
