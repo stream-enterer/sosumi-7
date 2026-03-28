@@ -99,15 +99,24 @@ No Rust equivalent exists for:
   EM_AVL_ITER_* — stable iterator that survives mutations.
     HashMap iterators borrow the collection immutably.
 
-Semantic differences (unverified impact):
+Semantic differences (verified):
   Ordering: AVL trees iterate in sorted key order. HashMap does not.
-    emContext.cpp uses EM_AVL_LOOP (sorted iteration).
-    NOT VERIFIED: whether the Rust emContext.rs iteration depends on
-    any particular ordering of its HashMap.
+    emContext.cpp uses EM_AVL_LOOP (sorted iteration) in GetListing(),
+    GetModelInfo(), SearchUnused(), and SearchGarbage().
+    VERIFIED: The only HashMap iteration in emContext.rs is .keys() in
+    GetListing() (debug dump) — order-independent. The other EM_AVL_LOOP
+    call sites (SearchUnused, SearchGarbage, GetModelInfo) are "find first
+    match" or "count all" operations, also order-independent. No Rust code
+    depends on HashMap iteration order.
 
-  NOT VERIFIED: whether the 8 outside-emCore files use emAvlTree
-    raw macros directly or only through emAvlTreeMap/emAvlTreeSet.
-    If through wrappers only, emAvlTree is an implementation detail
-    those files never touch.
+  VERIFIED: All 8 outside-emCore files use only emAvlTreeMap or
+    emAvlTreeSet wrappers. None use raw EM_AVL_* macros or emAvlNode.
+    Files: emFileManTheme.h/.cpp (emAvlTreeMap<emString,int>),
+    emOsmTileCacheCleaner.h (emAvlTreeMap + emAvlTreeSet),
+    emStocksPricesFetcher.h/.cpp (emAvlTreeMap), emStocksRec.cpp
+    (emAvlTreeSet<int>), emStocksListBox.cpp (emAvlTreeSet<int>),
+    emTestContainers.cpp (emAvlTreeMap + emAvlTreeSet).
+    emAvlTree is purely an internal implementation detail of emCore.
 
-  NOT VERIFIED: whether any code calls emAvlCheck() outside emCore.
+  VERIFIED: No code outside emCore calls emAvlCheck(). grep for
+    "emAvlCheck" in all .h/.cpp files outside emCore returned zero hits.
