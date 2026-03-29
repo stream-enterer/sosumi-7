@@ -4,5 +4,6 @@ pub mod emStocksConfig;
 pub mod emStocksFileModel;
 pub mod emStocksItemChart;
 pub mod emStocksItemPanel;
+pub mod emStocksListBox;
 pub mod emStocksPricesFetcher;
 pub mod emStocksRec;
