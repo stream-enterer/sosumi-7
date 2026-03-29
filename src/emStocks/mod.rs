@@ -2,4 +2,5 @@
 
 pub mod emStocksConfig;
 pub mod emStocksFileModel;
+pub mod emStocksPricesFetcher;
 pub mod emStocksRec;
