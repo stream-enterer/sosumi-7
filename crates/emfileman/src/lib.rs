@@ -17,3 +17,7 @@ pub mod emDirPanel;
 pub mod emFileLinkPanel;
 pub mod emFileManSelInfoPanel;
 pub mod emFileManControlPanel;
+
+pub mod emDirFpPlugin;
+pub mod emDirStatFpPlugin;
+pub mod emFileLinkFpPlugin;
