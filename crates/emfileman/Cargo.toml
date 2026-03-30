@@ -1,0 +1,13 @@
+[package]
+name = "emfileman"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "emFileMan"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+emcore = { path = "../emcore" }
+libc = { workspace = true }
+log = { workspace = true }
