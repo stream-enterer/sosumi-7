@@ -1,7 +1,13 @@
+use std::cell::RefCell;
+use std::path::PathBuf;
+use std::rc::Rc;
+
+use emcore::emContext::emContext;
+use emcore::emFileModel::FileState;
 use emcore::emInstallInfo::{emGetInstallPath, InstallDirType};
 use emcore::emRec::{RecError, RecStruct};
+use emcore::emRecFileModel::emRecFileModel;
 use emcore::emRecRecord::Record;
-use std::path::PathBuf;
 
 /// Base path type for emFileLink resolution.
 ///
@@ -175,6 +181,52 @@ impl Record for emFileLinkData {
     }
 }
 
+/// Model wrapper for `.emFileLink` files.
+///
+/// Port of C++ `emFileLinkModel` (extends `emRecFileModel`).
+pub struct emFileLinkModel {
+    rec_model: emRecFileModel<emFileLinkData>,
+}
+
+impl emFileLinkModel {
+    pub fn Acquire(ctx: &Rc<emContext>, name: &str, _common: bool) -> Rc<RefCell<Self>> {
+        ctx.acquire::<Self>(name, || Self {
+            rec_model: emRecFileModel::new(PathBuf::from(name)),
+        })
+    }
+
+    pub fn GetFormatName(&self) -> &str {
+        "emFileLink"
+    }
+
+    pub fn GetFileState(&self) -> &FileState {
+        self.rec_model.GetFileState()
+    }
+
+    pub fn GetFullPath(&self) -> String {
+        let data = self.rec_model.GetMap();
+        let file_path = self.rec_model.path().to_string_lossy();
+        data.GetFullPath(&file_path)
+    }
+
+    pub fn GetBasePathType(&self) -> BasePathType {
+        self.rec_model.GetMap().base_path_type
+    }
+
+    pub fn GetBasePathProject(&self) -> &str {
+        &self.rec_model.GetMap().base_path_project
+    }
+
+    pub fn GetPath(&self) -> &str {
+        &self.rec_model.GetMap().path
+    }
+
+    pub fn GetHaveDirEntry(&self) -> bool {
+        self.rec_model.GetMap().have_dir_entry
+    }
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +286,39 @@ mod tests {
         // None type uses parent of file_path as base
         assert!(full.ends_with("subdir/file.txt"));
         assert!(full.starts_with("/some/dir/"));
+    }
+
+    #[test]
+    fn model_acquire_returns_same_instance() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let m1 = emFileLinkModel::Acquire(&ctx, "/tmp/test.emFileLink", true);
+        let m2 = emFileLinkModel::Acquire(&ctx, "/tmp/test.emFileLink", true);
+        assert!(Rc::ptr_eq(&m1, &m2));
+    }
+
+    #[test]
+    fn model_acquire_different_names() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let m1 = emFileLinkModel::Acquire(&ctx, "/tmp/a.emFileLink", true);
+        let m2 = emFileLinkModel::Acquire(&ctx, "/tmp/b.emFileLink", true);
+        assert!(!Rc::ptr_eq(&m1, &m2));
+    }
+
+    #[test]
+    fn model_get_format_name() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let m = emFileLinkModel::Acquire(&ctx, "/tmp/test.emFileLink", true);
+        assert_eq!(m.borrow().GetFormatName(), "emFileLink");
+    }
+
+    #[test]
+    fn model_delegates_to_data() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let m = emFileLinkModel::Acquire(&ctx, "/tmp/test.emFileLink", true);
+        let m = m.borrow();
+        assert_eq!(m.GetBasePathType(), BasePathType::None);
+        assert_eq!(m.GetBasePathProject(), "");
+        assert_eq!(m.GetPath(), "");
+        assert!(!m.GetHaveDirEntry());
     }
 }
