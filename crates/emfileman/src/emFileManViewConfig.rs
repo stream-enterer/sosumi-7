@@ -1,12 +1,14 @@
+use std::cell::{Cell, RefCell};
 use std::ffi::CString;
+use std::rc::Rc;
 
 use crate::emDirEntry::emDirEntry;
 use crate::emFileManConfig::{NameSortingStyle, SortCriterion};
+use crate::emFileManConfig::emFileManConfig;
+use crate::emFileManTheme::emFileManTheme;
+use crate::emFileManThemeNames::emFileManThemeNames;
 
 /// Sorting configuration extracted from `emFileManViewConfig`.
-/// DIVERGED: C++ `emFileManViewConfig` is a full model with signals, autosave,
-/// and theme management. This file ports only the sorting/comparison logic;
-/// the model infrastructure will follow when the view layer is ported.
 pub struct SortConfig {
     pub sort_criterion: SortCriterion,
     pub name_sorting_style: NameSortingStyle,
@@ -354,6 +356,203 @@ fn compare_slice(a: &[u8], b: &[u8], case_insensitive: bool) -> i32 {
     }
 }
 
+pub struct emFileManViewConfig {
+    ctx: Rc<emcore::emContext::emContext>,
+    config: Rc<RefCell<emFileManConfig>>,
+    theme: Rc<RefCell<emFileManTheme>>,
+    _theme_names: Rc<RefCell<emFileManThemeNames>>,
+    sort_criterion: SortCriterion,
+    name_sorting_style: NameSortingStyle,
+    sort_directories_first: bool,
+    show_hidden_files: bool,
+    theme_name: String,
+    autosave: bool,
+    change_generation: Rc<Cell<u64>>,
+    // Track initial values for IsUnsaved
+    initial_sort_criterion: SortCriterion,
+    initial_name_sorting_style: NameSortingStyle,
+    initial_sort_directories_first: bool,
+    initial_show_hidden_files: bool,
+    initial_theme_name: String,
+    initial_autosave: bool,
+}
+
+#[allow(non_snake_case)]
+impl emFileManViewConfig {
+    pub fn Acquire(ctx: &Rc<emcore::emContext::emContext>) -> Rc<RefCell<Self>> {
+        ctx.acquire::<Self>("", || {
+            let config = emFileManConfig::Acquire(ctx);
+            let theme_names = emFileManThemeNames::Acquire(ctx);
+            let (sc, nss, sdf, shf, tn, auto) = {
+                let c = config.borrow();
+                (
+                    c.GetSortCriterion(),
+                    c.GetNameSortingStyle(),
+                    c.GetSortDirectoriesFirst(),
+                    c.GetShowHiddenFiles(),
+                    c.GetThemeName().to_string(),
+                    c.GetAutosave(),
+                )
+            };
+            let theme = emFileManTheme::Acquire(
+                ctx,
+                if tn.is_empty() { "default" } else { &tn },
+            );
+            Self {
+                ctx: Rc::clone(ctx),
+                config,
+                theme,
+                _theme_names: theme_names,
+                sort_criterion: sc,
+                name_sorting_style: nss,
+                sort_directories_first: sdf,
+                show_hidden_files: shf,
+                theme_name: tn.clone(),
+                autosave: auto,
+                change_generation: Rc::new(Cell::new(0)),
+                initial_sort_criterion: sc,
+                initial_name_sorting_style: nss,
+                initial_sort_directories_first: sdf,
+                initial_show_hidden_files: shf,
+                initial_theme_name: tn,
+                initial_autosave: auto,
+            }
+        })
+    }
+
+    fn bump_generation(&self) {
+        self.change_generation
+            .set(self.change_generation.get() + 1);
+    }
+
+    fn write_back_if_autosave(&self) {
+        if self.autosave {
+            let mut cfg = self.config.borrow_mut();
+            cfg.SetSortCriterion(self.sort_criterion);
+            cfg.SetNameSortingStyle(self.name_sorting_style);
+            cfg.SetSortDirectoriesFirst(self.sort_directories_first);
+            cfg.SetShowHiddenFiles(self.show_hidden_files);
+            cfg.SetThemeName(&self.theme_name);
+            cfg.SetAutosave(self.autosave);
+        }
+    }
+
+    pub fn GetChangeSignal(&self) -> u64 {
+        self.change_generation.get()
+    }
+
+    pub fn GetSortCriterion(&self) -> SortCriterion {
+        self.sort_criterion
+    }
+
+    pub fn GetNameSortingStyle(&self) -> NameSortingStyle {
+        self.name_sorting_style
+    }
+
+    pub fn GetSortDirectoriesFirst(&self) -> bool {
+        self.sort_directories_first
+    }
+
+    pub fn GetShowHiddenFiles(&self) -> bool {
+        self.show_hidden_files
+    }
+
+    pub fn GetThemeName(&self) -> &str {
+        &self.theme_name
+    }
+
+    pub fn GetAutosave(&self) -> bool {
+        self.autosave
+    }
+
+    pub fn GetTheme(&self) -> std::cell::Ref<'_, emFileManTheme> {
+        self.theme.borrow()
+    }
+
+    pub fn SetSortCriterion(&mut self, sc: SortCriterion) {
+        if self.sort_criterion != sc {
+            self.sort_criterion = sc;
+            self.bump_generation();
+            self.write_back_if_autosave();
+        }
+    }
+
+    pub fn SetNameSortingStyle(&mut self, nss: NameSortingStyle) {
+        if self.name_sorting_style != nss {
+            self.name_sorting_style = nss;
+            self.bump_generation();
+            self.write_back_if_autosave();
+        }
+    }
+
+    pub fn SetSortDirectoriesFirst(&mut self, b: bool) {
+        if self.sort_directories_first != b {
+            self.sort_directories_first = b;
+            self.bump_generation();
+            self.write_back_if_autosave();
+        }
+    }
+
+    pub fn SetShowHiddenFiles(&mut self, b: bool) {
+        if self.show_hidden_files != b {
+            self.show_hidden_files = b;
+            self.bump_generation();
+            self.write_back_if_autosave();
+        }
+    }
+
+    pub fn SetThemeName(&mut self, name: &str) {
+        if self.theme_name != name {
+            self.theme_name = name.to_string();
+            self.theme = emFileManTheme::Acquire(&self.ctx, name);
+            self.bump_generation();
+            self.write_back_if_autosave();
+        }
+    }
+
+    pub fn SetAutosave(&mut self, b: bool) {
+        if self.autosave != b {
+            self.autosave = b;
+            self.bump_generation();
+            self.write_back_if_autosave();
+        }
+    }
+
+    pub fn CompareDirEntries(&self, e1: &emDirEntry, e2: &emDirEntry) -> i32 {
+        let cfg = SortConfig {
+            sort_criterion: self.sort_criterion,
+            name_sorting_style: self.name_sorting_style,
+            sort_directories_first: self.sort_directories_first,
+        };
+        super::emFileManViewConfig::CompareDirEntries(e1, e2, &cfg)
+    }
+
+    pub fn IsUnsaved(&self) -> bool {
+        self.sort_criterion != self.initial_sort_criterion
+            || self.name_sorting_style != self.initial_name_sorting_style
+            || self.sort_directories_first != self.initial_sort_directories_first
+            || self.show_hidden_files != self.initial_show_hidden_files
+            || self.theme_name != self.initial_theme_name
+            || self.autosave != self.initial_autosave
+    }
+
+    pub fn SaveAsDefault(&mut self) {
+        let mut cfg = self.config.borrow_mut();
+        cfg.SetSortCriterion(self.sort_criterion);
+        cfg.SetNameSortingStyle(self.name_sorting_style);
+        cfg.SetSortDirectoriesFirst(self.sort_directories_first);
+        cfg.SetShowHiddenFiles(self.show_hidden_files);
+        cfg.SetThemeName(&self.theme_name);
+        cfg.SetAutosave(self.autosave);
+        self.initial_sort_criterion = self.sort_criterion;
+        self.initial_name_sorting_style = self.name_sorting_style;
+        self.initial_sort_directories_first = self.sort_directories_first;
+        self.initial_show_hidden_files = self.show_hidden_files;
+        self.initial_theme_name = self.theme_name.clone();
+        self.initial_autosave = self.autosave;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -451,5 +650,43 @@ mod tests {
         let e2 = emDirEntry::from_path("/dev/null");
         let cmp = CompareDirEntries(&e1, &e2, &cfg);
         assert_eq!(cmp, 0); // same file = same size
+    }
+
+    #[test]
+    fn view_config_acquire_returns_same() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let v1 = emFileManViewConfig::Acquire(&ctx);
+        let v2 = emFileManViewConfig::Acquire(&ctx);
+        assert!(Rc::ptr_eq(&v1, &v2));
+    }
+
+    #[test]
+    fn view_config_setters_bump_generation() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let vc = emFileManViewConfig::Acquire(&ctx);
+        let gen0 = vc.borrow().GetChangeSignal();
+        vc.borrow_mut().SetSortCriterion(SortCriterion::BySize);
+        let gen1 = vc.borrow().GetChangeSignal();
+        assert!(gen1 > gen0);
+    }
+
+    #[test]
+    fn view_config_is_unsaved_after_change() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let vc = emFileManViewConfig::Acquire(&ctx);
+        assert!(!vc.borrow().IsUnsaved());
+        vc.borrow_mut().SetShowHiddenFiles(true);
+        assert!(vc.borrow().IsUnsaved());
+    }
+
+    #[test]
+    fn view_config_compare_dir_entries_method() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let vc = emFileManViewConfig::Acquire(&ctx);
+        let vc = vc.borrow();
+        let e1 = emDirEntry::from_path("/tmp");
+        let e2 = emDirEntry::from_path("/dev");
+        let cmp = vc.CompareDirEntries(&e1, &e2);
+        assert!(cmp > 0); // "tmp" > "dev"
     }
 }
