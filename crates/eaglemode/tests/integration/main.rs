@@ -3,6 +3,7 @@ mod support;
 
 mod emstocks;
 mod input;
+mod plugin_e2e;
 mod layout;
 mod lifecycle;
 mod mutation;
