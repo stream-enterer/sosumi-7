@@ -3,7 +3,8 @@ use std::rc::Rc;
 
 use crate::emColor::emColor;
 use crate::emFileModel::{FileModelState, FileState};
-use crate::emPanel::{PanelBehavior, PanelState};
+use crate::emPanel::{NoticeFlags, PanelBehavior, PanelState};
+use crate::emPanelCtx::PanelCtx;
 use crate::emPainter::{emPainter, TextAlignment, VAlign};
 
 /// Extended file state for a file panel, adding custom error and no-model states.
@@ -47,6 +48,8 @@ pub struct emFilePanel {
     custom_error: Option<String>,
     last_vir_file_state: VirtualFileState,
     pub(crate) cached_memory_limit: u64,
+    pub(crate) cached_priority: f64,
+    pub(crate) cached_in_active_path: bool,
 }
 
 impl Default for emFilePanel {
@@ -62,6 +65,8 @@ impl emFilePanel {
             custom_error: None,
             last_vir_file_state: VirtualFileState::NoFileModel,
             cached_memory_limit: u64::MAX,
+            cached_priority: 0.0,
+            cached_in_active_path: false,
         }
     }
 
@@ -126,6 +131,30 @@ impl emFilePanel {
             FileState::TooCostly => VirtualFileState::TooCostly,
             FileState::LoadError(e) => VirtualFileState::LoadError(e.clone()),
             FileState::SaveError(e) => VirtualFileState::SaveError(e.clone()),
+        }
+    }
+
+    /// Inner cycle logic. Returns true if VirtualFileState changed.
+    /// Port of C++ emFilePanel::Cycle.
+    pub(crate) fn cycle_inner(&mut self) -> bool {
+        let new_state = self.compute_vir_file_state();
+        if new_state != self.last_vir_file_state {
+            self.last_vir_file_state = new_state;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Port of C++ emFilePanel::IsContentReady.
+    /// Returns (ready, readying).
+    pub fn IsContentReady(&self) -> (bool, bool) {
+        match &self.last_vir_file_state {
+            VirtualFileState::Waiting
+            | VirtualFileState::Loading { .. }
+            | VirtualFileState::Saving => (false, true),
+            VirtualFileState::Loaded | VirtualFileState::Unsaved => (true, false),
+            _ => (false, false),
         }
     }
 
@@ -373,6 +402,26 @@ impl PanelBehavior for emFilePanel {
         Some("file.tga".to_string())
     }
 
+    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+        self.cycle_inner()
+    }
+
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+        if flags.contains(NoticeFlags::MEMORY_LIMIT_CHANGED) {
+            self.cached_memory_limit = state.memory_limit;
+        }
+        if flags.contains(NoticeFlags::UPDATE_PRIORITY_CHANGED) {
+            self.cached_priority = state.priority;
+        }
+        if flags.intersects(NoticeFlags::ACTIVE_CHANGED | NoticeFlags::VIEW_FOCUS_CHANGED) {
+            self.cached_in_active_path = state.in_active_path;
+        }
+    }
+
+    fn IsHopeForSeeking(&self) -> bool {
+        self.GetVirFileState().IsHopeForSeeking()
+    }
+
     fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
         self.paint_status(painter, w, h);
     }
@@ -590,5 +639,75 @@ mod tests {
 
         panel.SetFileModel(None);
         assert_eq!(panel.GetVirFileState(), VirtualFileState::NoFileModel);
+    }
+
+    #[test]
+    fn cycle_detects_state_change() {
+        let (mut panel, model) = make_panel_with_model();
+        assert_eq!(panel.GetVirFileState(), VirtualFileState::Waiting);
+
+        model.borrow_mut().complete_load("data".to_string());
+        let changed = panel.cycle_inner();
+        assert!(changed);
+        assert_eq!(panel.GetVirFileState(), VirtualFileState::Loaded);
+
+        let changed = panel.cycle_inner();
+        assert!(!changed);
+    }
+
+    #[test]
+    fn notice_updates_cached_memory_limit() {
+        let (mut panel, _model) = make_panel_with_model();
+        let mut state = PanelState::default_for_test();
+        state.memory_limit = 2048;
+        panel.notice(NoticeFlags::MEMORY_LIMIT_CHANGED, &state);
+        assert_eq!(panel.cached_memory_limit, 2048);
+    }
+
+    #[test]
+    fn notice_updates_cached_priority() {
+        let (mut panel, _model) = make_panel_with_model();
+        let mut state = PanelState::default_for_test();
+        state.priority = 0.75;
+        panel.notice(NoticeFlags::UPDATE_PRIORITY_CHANGED, &state);
+        assert!((panel.cached_priority - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn notice_updates_cached_in_active_path() {
+        let (mut panel, _model) = make_panel_with_model();
+        let mut state = PanelState::default_for_test();
+        state.in_active_path = true;
+        panel.notice(NoticeFlags::ACTIVE_CHANGED, &state);
+        assert!(panel.cached_in_active_path);
+    }
+
+    #[test]
+    fn is_hope_for_seeking_delegates() {
+        let (panel, _model) = make_panel_with_model();
+        assert!(panel.IsHopeForSeeking());
+    }
+
+    #[test]
+    fn is_content_ready_by_state() {
+        let (mut panel, model) = make_panel_with_model();
+        // Waiting → not ready, readying
+        assert_eq!(panel.IsContentReady(), (false, true));
+
+        // Loaded → ready
+        model.borrow_mut().complete_load("data".to_string());
+        panel.refresh_vir_file_state();
+        assert_eq!(panel.IsContentReady(), (true, false));
+
+        // Reset to test error state
+        let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(
+            PathBuf::from("/tmp/test2"),
+            SignalId::default(),
+            SignalId::default(),
+        )));
+        panel.SetFileModel(Some(model2.clone() as Rc<RefCell<dyn FileModelState>>));
+        model2.borrow_mut().fail_load("err".to_string());
+        panel.refresh_vir_file_state();
+        assert_eq!(panel.IsContentReady(), (false, false));
     }
 }
