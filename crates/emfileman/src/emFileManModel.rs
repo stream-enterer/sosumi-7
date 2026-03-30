@@ -1,11 +1,17 @@
 // Selection subsystem and command tree of emFileManModel.
 
+use std::cell::Cell;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use emcore::emColor::emColor;
+use emcore::emContext::emContext;
 use emcore::emImage::emImage;
 use emcore::emImageFile::load_image_from_file;
 use emcore::emLook::emLook;
+use emcore::emProcess;
 use emcore::emStd2::emCalcHashCode;
 
 // ---------------------------------------------------------------------------
@@ -498,6 +504,261 @@ impl Default for SelectionManager {
     }
 }
 
+pub struct emFileManModel {
+    selection: SelectionManager,
+    command_root: Option<CommandNode>,
+    shift_tgt_sel_path: String,
+    command_run_id: u64,
+    selection_generation: Rc<Cell<u64>>,
+    commands_generation: Rc<Cell<u64>>,
+    ipc_server_name: String,
+}
+
+impl emFileManModel {
+    pub fn Acquire(ctx: &Rc<emContext>) -> Rc<RefCell<Self>> {
+        ctx.acquire::<Self>("", || {
+            let ipc_server_name = format!("eaglemode-rs-fm-{}", std::process::id());
+            Self {
+                selection: SelectionManager::new(),
+                command_root: None,
+                shift_tgt_sel_path: String::new(),
+                command_run_id: 0,
+                selection_generation: Rc::new(Cell::new(0)),
+                commands_generation: Rc::new(Cell::new(0)),
+                ipc_server_name,
+            }
+        })
+    }
+
+    fn bump_selection_generation(&self) {
+        self.selection_generation
+            .set(self.selection_generation.get() + 1);
+    }
+
+    // --- Signals ---
+    pub fn GetSelectionSignal(&self) -> u64 {
+        self.selection_generation.get()
+    }
+    pub fn GetCommandsSignal(&self) -> u64 {
+        self.commands_generation.get()
+    }
+
+    // --- Selection delegation (each bumps generation) ---
+    pub fn GetSourceSelectionCount(&self) -> usize {
+        self.selection.GetSourceSelectionCount()
+    }
+    pub fn GetSourceSelection(&self, index: usize) -> &str {
+        self.selection.GetSourceSelection(index)
+    }
+    pub fn IsSelectedAsSource(&self, path: &str) -> bool {
+        self.selection.IsSelectedAsSource(path)
+    }
+    pub fn SelectAsSource(&mut self, path: &str) {
+        self.selection.SelectAsSource(path);
+        self.bump_selection_generation();
+    }
+    pub fn DeselectAsSource(&mut self, path: &str) {
+        self.selection.DeselectAsSource(path);
+        self.bump_selection_generation();
+    }
+    pub fn ClearSourceSelection(&mut self) {
+        self.selection.ClearSourceSelection();
+        self.bump_selection_generation();
+    }
+
+    pub fn GetTargetSelectionCount(&self) -> usize {
+        self.selection.GetTargetSelectionCount()
+    }
+    pub fn GetTargetSelection(&self, index: usize) -> &str {
+        self.selection.GetTargetSelection(index)
+    }
+    pub fn IsSelectedAsTarget(&self, path: &str) -> bool {
+        self.selection.IsSelectedAsTarget(path)
+    }
+    pub fn SelectAsTarget(&mut self, path: &str) {
+        self.selection.SelectAsTarget(path);
+        self.bump_selection_generation();
+    }
+    pub fn DeselectAsTarget(&mut self, path: &str) {
+        self.selection.DeselectAsTarget(path);
+        self.bump_selection_generation();
+    }
+    pub fn ClearTargetSelection(&mut self) {
+        self.selection.ClearTargetSelection();
+        self.bump_selection_generation();
+    }
+
+    pub fn SwapSelection(&mut self) {
+        self.selection.SwapSelection();
+        self.bump_selection_generation();
+    }
+    pub fn IsAnySelectionInDirTree(&self, dir_path: &str) -> bool {
+        self.selection.IsAnySelectionInDirTree(dir_path)
+    }
+
+    pub fn UpdateSelection(&mut self) {
+        let src_before = self.selection.GetSourceSelectionCount();
+        let tgt_before = self.selection.GetTargetSelectionCount();
+        self.selection.UpdateSelection();
+        if self.selection.GetSourceSelectionCount() != src_before
+            || self.selection.GetTargetSelectionCount() != tgt_before
+        {
+            self.bump_selection_generation();
+        }
+    }
+
+    // --- Shift target ---
+    pub fn GetShiftTgtSelPath(&self) -> &str {
+        &self.shift_tgt_sel_path
+    }
+    pub fn SetShiftTgtSelPath(&mut self, path: &str) {
+        self.shift_tgt_sel_path = path.to_string();
+    }
+
+    // --- IPC ---
+    pub fn GetMiniIpcServerName(&self) -> &str {
+        &self.ipc_server_name
+    }
+    pub fn GetCommandRunId(&self) -> String {
+        self.selection.GetCommandRunId()
+    }
+
+    pub fn HandleIpcMessage(&mut self, args: &[&str]) {
+        self.selection.handle_ipc_message(args);
+        self.bump_selection_generation();
+    }
+
+    // --- Clipboard ---
+    pub fn SelectionToClipboard(&self, source: bool, names_only: bool) -> String {
+        let count = if source {
+            self.selection.GetSourceSelectionCount()
+        } else {
+            self.selection.GetTargetSelectionCount()
+        };
+        let mut lines = Vec::with_capacity(count);
+        for i in 0..count {
+            let path = if source {
+                self.selection.GetSourceSelection(i)
+            } else {
+                self.selection.GetTargetSelection(i)
+            };
+            if names_only {
+                lines.push(
+                    Path::new(path)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.to_string()),
+                );
+            } else {
+                lines.push(path.to_string());
+            }
+        }
+        lines.join("\n")
+    }
+
+    // --- Command tree ---
+    pub fn GetCommandRoot(&self) -> Option<&CommandNode> {
+        self.command_root.as_ref()
+    }
+
+    pub fn GetCommand(&self, cmd_path: &str) -> Option<&CommandNode> {
+        self.command_root
+            .as_ref()
+            .and_then(|root| find_command_by_path(root, cmd_path))
+    }
+
+    pub fn SearchDefaultCommandFor(&self, file_path: &str) -> Option<&CommandNode> {
+        self.command_root
+            .as_ref()
+            .and_then(|root| super::emFileManModel::SearchDefaultCommandFor(root, file_path))
+    }
+
+    pub fn SearchHotkeyCommand(&self, hotkey: &str) -> Option<&CommandNode> {
+        self.command_root
+            .as_ref()
+            .and_then(|root| find_command_by_hotkey(root, hotkey))
+    }
+
+    pub fn set_command_root(&mut self, root: CommandNode) {
+        self.command_root = Some(root);
+        self.commands_generation
+            .set(self.commands_generation.get() + 1);
+    }
+
+    pub fn RunCommand(
+        &mut self,
+        cmd: &CommandNode,
+        extra_env: &HashMap<String, String>,
+    ) -> Result<(), String> {
+        self.command_run_id = self.command_run_id.wrapping_add(1);
+        let src_count = self.selection.GetSourceSelectionCount();
+        let tgt_count = self.selection.GetTargetSelectionCount();
+        let mut args: Vec<String> = Vec::new();
+        if !cmd.interpreter.is_empty() {
+            args.push(cmd.interpreter.clone());
+        }
+        args.push(cmd.cmd_path.clone());
+        args.push(src_count.to_string());
+        args.push(tgt_count.to_string());
+        for i in 0..src_count {
+            args.push(self.selection.GetSourceSelection(i).to_string());
+        }
+        for i in 0..tgt_count {
+            args.push(self.selection.GetTargetSelection(i).to_string());
+        }
+
+        let mut env = extra_env.clone();
+        env.insert(
+            "EM_FM_SERVER_NAME".to_string(),
+            self.ipc_server_name.clone(),
+        );
+        env.insert(
+            "EM_COMMAND_RUN_ID".to_string(),
+            self.selection.GetCommandRunId(),
+        );
+
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let dir_path = if cmd.dir.is_empty() {
+            None
+        } else {
+            Some(Path::new(&cmd.dir))
+        };
+
+        emProcess::emProcess::TryStartUnmanaged(
+            &arg_refs,
+            &env,
+            dir_path,
+            emProcess::StartFlags::empty(),
+        )
+        .map_err(|e| format!("Failed to start command: {e}"))
+    }
+}
+
+fn find_command_by_path<'a>(node: &'a CommandNode, cmd_path: &str) -> Option<&'a CommandNode> {
+    if node.cmd_path == cmd_path {
+        return Some(node);
+    }
+    for child in &node.children {
+        if let Some(found) = find_command_by_path(child, cmd_path) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn find_command_by_hotkey<'a>(node: &'a CommandNode, hotkey: &str) -> Option<&'a CommandNode> {
+    if node.command_type == CommandType::Command && !node.hotkey.is_empty() && node.hotkey == hotkey
+    {
+        return Some(node);
+    }
+    for child in &node.children {
+        if let Some(found) = find_command_by_hotkey(child, hotkey) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -844,5 +1105,102 @@ mod ipc_tests {
         // "update" is a no-op on SelectionManager (caller handles the signal)
         m.handle_ipc_message(&["update"]);
         // Just verify it doesn't crash
+    }
+}
+
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+
+    #[test]
+    fn model_acquire_singleton() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let m1 = emFileManModel::Acquire(&ctx);
+        let m2 = emFileManModel::Acquire(&ctx);
+        assert!(Rc::ptr_eq(&m1, &m2));
+    }
+
+    #[test]
+    fn model_selection_bumps_generation() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let model = emFileManModel::Acquire(&ctx);
+        let gen0 = model.borrow().GetSelectionSignal();
+        model.borrow_mut().SelectAsSource("/tmp/a");
+        assert!(model.borrow().GetSelectionSignal() > gen0);
+    }
+
+    #[test]
+    fn model_shift_tgt_sel_path() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let model = emFileManModel::Acquire(&ctx);
+        assert_eq!(model.borrow().GetShiftTgtSelPath(), "");
+        model.borrow_mut().SetShiftTgtSelPath("/home/user/docs");
+        assert_eq!(model.borrow().GetShiftTgtSelPath(), "/home/user/docs");
+    }
+
+    #[test]
+    fn model_get_command_root_initially_none() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let model = emFileManModel::Acquire(&ctx);
+        assert!(model.borrow().GetCommandRoot().is_none());
+    }
+
+    #[test]
+    fn model_get_command_by_path() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let model = emFileManModel::Acquire(&ctx);
+        let mut model = model.borrow_mut();
+        let mut root = CommandNode::default();
+        root.command_type = CommandType::Group;
+        let mut child = CommandNode::default();
+        child.cmd_path = "/cmds/test.sh".to_string();
+        child.command_type = CommandType::Command;
+        root.children.push(child);
+        model.set_command_root(root);
+        assert!(model.GetCommand("/cmds/test.sh").is_some());
+        assert!(model.GetCommand("/cmds/nonexistent.sh").is_none());
+    }
+
+    #[test]
+    fn model_selection_to_clipboard() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let model = emFileManModel::Acquire(&ctx);
+        {
+            let mut m = model.borrow_mut();
+            m.SelectAsSource("/home/user/a.txt");
+            m.SelectAsSource("/home/user/b.txt");
+        }
+        let m = model.borrow();
+        let clip = m.SelectionToClipboard(true, false);
+        assert!(clip.contains("/home/user/a.txt"));
+        assert!(clip.contains("/home/user/b.txt"));
+        let clip_names = m.SelectionToClipboard(true, true);
+        assert!(clip_names.contains("a.txt"));
+        assert!(!clip_names.contains("/home/user/"));
+    }
+
+    #[test]
+    fn model_search_hotkey_command() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let model = emFileManModel::Acquire(&ctx);
+        let mut model = model.borrow_mut();
+        let mut root = CommandNode::default();
+        root.command_type = CommandType::Group;
+        let mut child = CommandNode::default();
+        child.cmd_path = "/cmds/open.sh".to_string();
+        child.command_type = CommandType::Command;
+        child.hotkey = "Ctrl+O".to_string();
+        root.children.push(child);
+        model.set_command_root(root);
+        assert!(model.SearchHotkeyCommand("Ctrl+O").is_some());
+        assert!(model.SearchHotkeyCommand("Ctrl+X").is_none());
+    }
+
+    #[test]
+    fn model_ipc_server_name() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let model = emFileManModel::Acquire(&ctx);
+        let name = model.borrow().GetMiniIpcServerName().to_string();
+        assert!(name.starts_with("eaglemode-rs-fm-"));
     }
 }
