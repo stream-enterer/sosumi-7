@@ -712,6 +712,7 @@ dependencies = [
  "emstocks",
  "gungraun",
  "rand",
+ "slotmap",
 ]
 
 [[package]]
@@ -745,6 +746,7 @@ version = "0.1.0"
 dependencies = [
  "emcore",
  "gungraun",
+ "libc",
 ]
 
 [[package]]

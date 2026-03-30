@@ -9,7 +9,7 @@ use crate::emImage::emImage;
 use std::sync::OnceLock;
 
 const TGA_DATA: &[u8] =
-    include_bytes!("../../res/fonts/00020-0007F_128x224_BasicLatin_original.tga");
+    include_bytes!("../../../res/fonts/00020-0007F_128x224_BasicLatin_original.tga");
 
 /// Width of each glyph cell in the atlas (pixels).
 pub(crate) const CHAR_WIDTH: u32 = 128;
