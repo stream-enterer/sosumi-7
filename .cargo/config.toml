@@ -3,3 +3,4 @@
 # instead of polluting the project root.
 LLVM_PROFILE_FILE = { value = "target/profraw/default_%m_%p.profraw", force = false }
 LD_LIBRARY_PATH = { value = "target/debug", relative = true, force = false }
+EM_DIR = { value = ".", relative = true, force = false }
