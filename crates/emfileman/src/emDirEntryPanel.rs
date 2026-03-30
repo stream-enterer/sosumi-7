@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use emcore::emColor::emColor;
 use emcore::emContext::emContext;
-use emcore::emPanel::{PanelBehavior, PanelState};
+use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::emPanelCtx::PanelCtx;
 use emcore::emPanelTree::PanelId;
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
@@ -69,12 +69,17 @@ pub fn compute_bg_color(
 /// info, borders, and content area. Creates content panels via the plugin
 /// system and alt panels for alternative views.
 pub struct emDirEntryPanel {
+    ctx: Rc<emContext>,
     file_man: Rc<RefCell<emFileManModel>>,
     config: Rc<RefCell<emFileManViewConfig>>,
     dir_entry: emDirEntry,
     pub(crate) bg_color: u32,
     content_panel: Option<PanelId>,
     alt_panel: Option<PanelId>,
+    content_dirty: bool,
+    alt_dirty: bool,
+    last_viewed: bool,
+    last_in_active_path: bool,
 }
 
 impl emDirEntryPanel {
@@ -97,12 +102,17 @@ impl emDirEntryPanel {
         };
 
         Self {
+            ctx,
             file_man,
             config,
             dir_entry,
             bg_color,
             content_panel: None,
             alt_panel: None,
+            content_dirty: true,
+            alt_dirty: true,
+            last_viewed: false,
+            last_in_active_path: false,
         }
     }
 
@@ -118,6 +128,66 @@ impl emDirEntryPanel {
         self.dir_entry = dir_entry;
         if path_changed {
             self.update_bg_color();
+        }
+    }
+
+    fn update_content_panel(&mut self, ctx: &mut PanelCtx) {
+        if !self.content_dirty {
+            return;
+        }
+        self.content_dirty = false;
+
+        let should_create = self.last_viewed;
+        let should_delete = !self.last_in_active_path && !self.last_viewed;
+
+        if should_delete && self.content_panel.is_some() {
+            if let Some(child) = self.content_panel.take() {
+                ctx.delete_child(child);
+            }
+        } else if should_create && self.content_panel.is_none() {
+            let stat_mode = if self.dir_entry.IsDirectory() {
+                emcore::emFpPlugin::FileStatMode::Directory
+            } else {
+                emcore::emFpPlugin::FileStatMode::Regular
+            };
+            let fppl = emcore::emFpPlugin::emFpPluginList::Acquire(&self.ctx);
+            let fppl = fppl.borrow();
+            let parent_arg =
+                emcore::emFpPlugin::PanelParentArg::new(Rc::clone(&self.ctx));
+            let behavior = fppl.CreateFilePanelWithStat(
+                &parent_arg,
+                CONTENT_NAME,
+                self.dir_entry.GetPath(),
+                None,
+                stat_mode,
+                0,
+            );
+            let child_id = ctx.create_child_with(CONTENT_NAME, behavior);
+            self.content_panel = Some(child_id);
+        }
+    }
+
+    fn update_alt_panel(&mut self, ctx: &mut PanelCtx) {
+        if !self.alt_dirty {
+            return;
+        }
+        self.alt_dirty = false;
+
+        let should_create = self.last_viewed;
+        let should_delete = !self.last_in_active_path && !self.last_viewed;
+
+        if should_delete && self.alt_panel.is_some() {
+            if let Some(child) = self.alt_panel.take() {
+                ctx.delete_child(child);
+            }
+        } else if should_create && self.alt_panel.is_none() {
+            let alt = crate::emDirEntryAltPanel::emDirEntryAltPanel::new(
+                Rc::clone(&self.ctx),
+                self.dir_entry.clone(),
+                1,
+            );
+            let child_id = ctx.create_child_with(ALT_NAME, Box::new(alt));
+            self.alt_panel = Some(child_id);
         }
     }
 
@@ -137,6 +207,23 @@ impl emDirEntryPanel {
 }
 
 impl PanelBehavior for emDirEntryPanel {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+        if flags.intersects(
+            NoticeFlags::VIEW_CHANGED
+                | NoticeFlags::SOUGHT_NAME_CHANGED
+                | NoticeFlags::ACTIVE_CHANGED,
+        ) {
+            let viewed_changed = state.viewed != self.last_viewed;
+            let active_changed = state.in_active_path != self.last_in_active_path;
+            self.last_viewed = state.viewed;
+            self.last_in_active_path = state.in_active_path;
+            if viewed_changed || active_changed {
+                self.content_dirty = true;
+                self.alt_dirty = true;
+            }
+        }
+    }
+
     fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
         self.update_bg_color();
         false
@@ -251,6 +338,10 @@ impl PanelBehavior for emDirEntryPanel {
     }
 
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        // Create/delete children based on dirty flags
+        self.update_content_panel(ctx);
+        self.update_alt_panel(ctx);
+
         if let Some(child) = self.content_panel {
             let cfg = self.config.borrow();
             let theme = cfg.GetTheme();
