@@ -1,11 +1,58 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use crate::emInstallInfo::emGetConfigDirOverloadable;
-use crate::emRec::{RecError, RecStruct, RecValue};
 use crate::emContext::emContext;
+use crate::emInstallInfo::emGetConfigDirOverloadable;
+use crate::emPanel::PanelBehavior;
+use crate::emRec::{RecError, RecStruct, RecValue};
 use crate::emRecRecord::Record;
+
+// ── Plugin function types ───────────────────────────────────────────
+// Port of C++ emFpPluginFunc and emFpPluginModelFunc from emFpPlugin.h.
+// Uses Rust calling convention with #[no_mangle] for symbol lookup.
+// Types cross the dylib boundary safely because host and plugins link
+// the same libemcore.so.
+
+/// Type of the plugin function for creating a file panel.
+/// Port of C++ `emFpPluginFunc`.
+pub type emFpPluginFunc = fn(
+    parent: &PanelParentArg,
+    name: &str,
+    path: &str,
+    plugin: &emFpPlugin,
+    error_buf: &mut String,
+) -> Option<Rc<RefCell<dyn PanelBehavior>>>;
+
+/// Type of the plugin model function for acquiring file models.
+/// Port of C++ `emFpPluginModelFunc`.
+pub type emFpPluginModelFunc = fn(
+    context: &Rc<emContext>,
+    class_name: &str,
+    name: &str,
+    common: bool,
+    plugin: &emFpPlugin,
+    error_buf: &mut String,
+) -> Option<Rc<RefCell<dyn Any>>>;
+
+/// Simplified parent argument for panel creation.
+/// DIVERGED: Full C++ emPanel::ParentArg carries parent panel reference.
+/// This simplified version carries the root context for model acquisition.
+/// Full panel tree integration deferred to panel framework completion.
+pub struct PanelParentArg {
+    root_context: Rc<emContext>,
+}
+
+impl PanelParentArg {
+    pub fn new(root_context: Rc<emContext>) -> Self {
+        Self { root_context }
+    }
+
+    pub fn root_context(&self) -> &Rc<emContext> {
+        &self.root_context
+    }
+}
 
 // ── FpPluginProperty ────────────────────────────────────────────────
 
@@ -74,20 +121,25 @@ pub struct emFpPlugin {
 
     // Cached resolved function pointers are not serialized and are managed
     // by the dynamic loading layer at runtime.
-    #[cfg(unix)]
-    cached_library: RefCell<Option<CachedLibrary>>,
+    cached: RefCell<CachedFunctions>,
 }
 
-#[cfg(unix)]
-struct CachedLibrary {
+/// Cached resolved function pointers. Port of C++ CachedFunc/CachedModelFunc
+/// fields on emFpPlugin.
+#[derive(Default)]
+struct CachedFunctions {
     lib_name: String,
-    _library: libloading::Library,
+    func_name: String,
+    func: Option<emFpPluginFunc>,
+    model_func_name: String,
+    model_func: Option<emFpPluginModelFunc>,
 }
 
-#[cfg(unix)]
-impl std::fmt::Debug for CachedLibrary {
+// Default is derived — all fields are String::new() / None.
+
+impl std::fmt::Debug for CachedFunctions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CachedLibrary")
+        f.debug_struct("CachedFunctions")
             .field("lib_name", &self.lib_name)
             .finish()
     }
@@ -112,8 +164,7 @@ impl Clone for emFpPlugin {
             model_classes: self.model_classes.clone(),
             model_able_to_save: self.model_able_to_save,
             properties: self.properties.clone(),
-            #[cfg(unix)]
-            cached_library: RefCell::new(None),
+            cached: RefCell::new(CachedFunctions::default()),
         }
     }
 }
@@ -126,50 +177,137 @@ impl emFpPlugin {
         self.properties.iter().rev().find(|p| p.name == name)
     }
 
-    /// Resolve and load the dynamic library for this plugin.
-    ///
-    /// Port of C++ `emFpPlugin::TryCreateFilePanel` library resolution.
-    /// The actual function lookup and call would happen at the call site.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the library cannot be loaded.
-    #[cfg(unix)]
-    pub fn try_load_library(&self) -> Result<(), FpPluginError> {
-        if self.library.is_empty() {
-            return Err(FpPluginError::EmptyLibraryName);
+    /// Create a file panel via this plugin's function.
+    /// Port of C++ `emFpPlugin::TryCreateFilePanel`.
+    pub fn TryCreateFilePanel(
+        &self,
+        parent: &PanelParentArg,
+        name: &str,
+        path: &str,
+    ) -> Result<Rc<RefCell<dyn PanelBehavior>>, FpPluginError> {
+        use crate::emStd2::{emTryResolveSymbol, LibError};
+
+        let mut cached = self.cached.borrow_mut();
+
+        // Invalidate cache if library changed (matches C++ CachedLibName check)
+        if cached.lib_name != self.library {
+            *cached = CachedFunctions::default();
+            cached.lib_name = self.library.clone();
         }
 
-        let mut cached = self.cached_library.borrow_mut();
-
-        // If already cached with the same library name, nothing to do.
-        if let Some(ref cl) = *cached {
-            if cl.lib_name == self.library {
-                return Ok(());
+        // Resolve function if not cached or function name changed
+        if cached.func.is_none() || cached.func_name != self.function {
+            if self.function.is_empty() {
+                return Err(FpPluginError::EmptyFunctionName);
             }
+
+            let ptr = unsafe {
+                emTryResolveSymbol(&self.library, false, &self.function)
+            }
+            .map_err(|e| match e {
+                LibError::LibraryLoad { library, message } => {
+                    FpPluginError::LibraryLoad { library, message }
+                }
+                LibError::SymbolResolve {
+                    library,
+                    symbol,
+                    message,
+                } => FpPluginError::SymbolResolve {
+                    library,
+                    symbol,
+                    message,
+                },
+            })?;
+
+            cached.func =
+                Some(unsafe { std::mem::transmute::<*const (), emFpPluginFunc>(ptr) });
+            cached.func_name = self.function.clone();
         }
 
-        // Load the library. The C++ code uses emTryResolveSymbol which calls
-        // emTryOpenLib with the pure library name. We use libloading which
-        // expects a full path or system-resolvable name.
-        let lib = unsafe { libloading::Library::new(&self.library) }.map_err(|e| {
-            FpPluginError::LibraryLoad {
-                library: self.library.clone(),
-                message: e.to_string(),
-            }
-        })?;
+        let func = cached.func.expect("func was just set");
+        drop(cached); // release borrow before calling plugin function
 
-        *cached = Some(CachedLibrary {
-            lib_name: self.library.clone(),
-            _library: lib,
-        });
-
-        Ok(())
+        let mut error_buf = String::new();
+        match func(parent, name, path, self, &mut error_buf) {
+            Some(panel) => Ok(panel),
+            None => Err(FpPluginError::PluginFunctionFailed {
+                function: self.function.clone(),
+                message: if error_buf.is_empty() {
+                    format!(
+                        "Plugin function {} in {} failed.",
+                        self.function, self.library
+                    )
+                } else {
+                    error_buf
+                },
+            }),
+        }
     }
 
-    #[cfg(not(unix))]
-    pub fn try_load_library(&self) -> Result<(), FpPluginError> {
-        Err(FpPluginError::UnsupportedPlatform)
+    /// Acquire a model via this plugin's model function.
+    /// Port of C++ `emFpPlugin::TryAcquireModelImpl`.
+    pub fn TryAcquireModel(
+        &self,
+        context: &Rc<emContext>,
+        class_name: &str,
+        name: &str,
+        common: bool,
+    ) -> Result<Rc<RefCell<dyn Any>>, FpPluginError> {
+        use crate::emStd2::{emTryResolveSymbol, LibError};
+
+        let mut cached = self.cached.borrow_mut();
+
+        if cached.lib_name != self.library {
+            *cached = CachedFunctions::default();
+            cached.lib_name = self.library.clone();
+        }
+
+        if cached.model_func.is_none() || cached.model_func_name != self.model_function {
+            if self.model_function.is_empty() {
+                return Err(FpPluginError::EmptyFunctionName);
+            }
+
+            let ptr = unsafe {
+                emTryResolveSymbol(&self.library, false, &self.model_function)
+            }
+            .map_err(|e| match e {
+                LibError::LibraryLoad { library, message } => {
+                    FpPluginError::LibraryLoad { library, message }
+                }
+                LibError::SymbolResolve {
+                    library,
+                    symbol,
+                    message,
+                } => FpPluginError::SymbolResolve {
+                    library,
+                    symbol,
+                    message,
+                },
+            })?;
+
+            cached.model_func =
+                Some(unsafe { std::mem::transmute::<*const (), emFpPluginModelFunc>(ptr) });
+            cached.model_func_name = self.model_function.clone();
+        }
+
+        let func = cached.model_func.expect("model_func was just set");
+        drop(cached);
+
+        let mut error_buf = String::new();
+        match func(context, class_name, name, common, self, &mut error_buf) {
+            Some(model) => Ok(model),
+            None => Err(FpPluginError::PluginFunctionFailed {
+                function: self.model_function.clone(),
+                message: if error_buf.is_empty() {
+                    format!(
+                        "Plugin model function {} in {} failed.",
+                        self.model_function, self.library
+                    )
+                } else {
+                    error_buf
+                },
+            }),
+        }
     }
 
     /// Check if this plugin matches the given criteria.
@@ -286,8 +424,7 @@ impl Record for emFpPlugin {
             model_classes,
             model_able_to_save,
             properties,
-            #[cfg(unix)]
-            cached_library: RefCell::new(None),
+            cached: RefCell::new(CachedFunctions::default()),
         })
     }
 
@@ -364,8 +501,7 @@ impl Default for emFpPlugin {
             model_classes: Vec::new(),
             model_able_to_save: false,
             properties: Vec::new(),
-            #[cfg(unix)]
-            cached_library: RefCell::new(None),
+            cached: RefCell::new(CachedFunctions::default()),
         }
     }
 }
@@ -550,6 +686,111 @@ impl emFpPluginList {
                 plugin.IsMatchingPlugin(model_class_name, file_name, require_able_to_save, stat_mode)
             })
             .collect()
+    }
+
+    /// Create a panel for a file. Port of C++ `emFpPluginList::CreateFilePanel`.
+    ///
+    /// Calls the appropriate plugin. On failure, returns an emErrorPanel.
+    pub fn CreateFilePanel(
+        &self,
+        parent: &PanelParentArg,
+        name: &str,
+        path: &str,
+        alternative: usize,
+    ) -> Rc<RefCell<dyn PanelBehavior>> {
+        let abs_path = match std::fs::canonicalize(path) {
+            Ok(p) => p.to_string_lossy().to_string(),
+            Err(e) => {
+                return Rc::new(RefCell::new(
+                    crate::emErrorPanel::emErrorPanel::new(&e.to_string()),
+                ));
+            }
+        };
+
+        let metadata = std::fs::metadata(&abs_path);
+
+        match metadata {
+            Err(e) => Rc::new(RefCell::new(
+                crate::emErrorPanel::emErrorPanel::new(&e.to_string()),
+            )),
+            Ok(meta) => {
+                let stat_mode = if meta.is_dir() {
+                    FileStatMode::Directory
+                } else {
+                    FileStatMode::Regular
+                };
+                self.CreateFilePanelWithStat(
+                    parent, name, &abs_path, None, stat_mode, alternative,
+                )
+            }
+        }
+    }
+
+    /// Create a panel with pre-computed stat information.
+    /// Port of C++ `emFpPluginList::CreateFilePanel` (stat overload).
+    pub fn CreateFilePanelWithStat(
+        &self,
+        parent: &PanelParentArg,
+        name: &str,
+        absolute_path: &str,
+        stat_err: Option<&std::io::Error>,
+        stat_mode: FileStatMode,
+        alternative: usize,
+    ) -> Rc<RefCell<dyn PanelBehavior>> {
+        if let Some(err) = stat_err {
+            return Rc::new(RefCell::new(
+                crate::emErrorPanel::emErrorPanel::new(&err.to_string()),
+            ));
+        }
+
+        let plugin =
+            self.SearchPlugin(None, Some(absolute_path), false, alternative, stat_mode);
+        match plugin {
+            None => {
+                let msg = if alternative == 0 {
+                    "This file type cannot be shown."
+                } else {
+                    "No alternative file panel plugin available."
+                };
+                Rc::new(RefCell::new(
+                    crate::emErrorPanel::emErrorPanel::new(msg),
+                ))
+            }
+            Some(plugin) => match plugin.TryCreateFilePanel(parent, name, absolute_path) {
+                Ok(panel) => panel,
+                Err(e) => Rc::new(RefCell::new(
+                    crate::emErrorPanel::emErrorPanel::new(&e.to_string()),
+                )),
+            },
+        }
+    }
+
+    /// Acquire a model via the best matching plugin.
+    /// Port of C++ `emFpPluginList::TryAcquireModel`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn TryAcquireModelFromPlugin(
+        &self,
+        context: &Rc<emContext>,
+        class_name: &str,
+        name: &str,
+        name_is_file_path: bool,
+        common: bool,
+        alternative: usize,
+        stat_mode: FileStatMode,
+    ) -> Result<Rc<RefCell<dyn Any>>, FpPluginError> {
+        let file_path = if name_is_file_path { Some(name) } else { None };
+        let plugin = self.SearchPlugin(
+            Some(class_name),
+            file_path,
+            false,
+            alternative,
+            stat_mode,
+        );
+
+        match plugin {
+            None => Err(FpPluginError::NoPluginFound),
+            Some(plugin) => plugin.TryAcquireModel(context, class_name, name, common),
+        }
     }
 }
 
