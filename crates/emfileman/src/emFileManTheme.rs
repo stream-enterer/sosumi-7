@@ -1,10 +1,18 @@
+use std::cell::{Ref, RefCell};
+use std::path::PathBuf;
+use std::rc::Rc;
+
 use emcore::emColor::emColor;
+use emcore::emConfigModel::emConfigModel;
+use emcore::emContext::emContext;
+use emcore::emImage::emImage;
+use emcore::emImageFile::load_image_from_file;
 use emcore::emInstallInfo::{emGetInstallPath, InstallDirType, InstallInfoError};
 use emcore::emRec::{RecError, RecStruct, RecValue};
 use emcore::emRecRecord::Record;
 use emcore::emRecRecTypes::{emAlignmentRec, emColorRec};
+use emcore::emSignal::SignalId;
 use emcore::emTiling::Alignment;
-use std::path::PathBuf;
 
 pub const THEME_FILE_ENDING: &str = ".emFileManTheme";
 
@@ -532,6 +540,124 @@ impl Record for emFileManThemeData {
     }
 }
 
+/// Lazy-loading image record. Stores a path and caches the loaded image.
+/// DIVERGED: C++ ImageFileRec extends emStringRec + emRecListener with async
+/// emImageFileModel loading. This loads synchronously via load_image_from_file.
+pub struct ImageFileRec {
+    path: String,
+    theme_dir: PathBuf,
+    cached: RefCell<Option<emImage>>,
+}
+
+impl ImageFileRec {
+    pub fn new(path: String, theme_dir: PathBuf) -> Self {
+        Self {
+            path,
+            theme_dir,
+            cached: RefCell::new(None),
+        }
+    }
+
+    pub fn GetImage(&self) -> Ref<'_, emImage> {
+        // Check if already cached without taking a mutable borrow.
+        let needs_load = self.cached.borrow().is_none();
+        if needs_load {
+            let image = if self.path.is_empty() {
+                None
+            } else {
+                load_image_from_file(&self.theme_dir.join(&self.path))
+            };
+            *self.cached.borrow_mut() = Some(image.unwrap_or_else(|| emImage::new(1, 1, 4)));
+        }
+        Ref::map(self.cached.borrow(), |opt| opt.as_ref().expect("just set"))
+    }
+
+    pub fn GetPath(&self) -> &str {
+        &self.path
+    }
+}
+
+pub struct emFileManTheme {
+    config_model: emConfigModel<emFileManThemeData>,
+    outer_border_img: ImageFileRec,
+    file_inner_border_img: ImageFileRec,
+    dir_inner_border_img: ImageFileRec,
+    alt_inner_border_img: ImageFileRec,
+}
+
+impl emFileManTheme {
+    pub fn Acquire(ctx: &Rc<emContext>, name: &str) -> Rc<RefCell<Self>> {
+        ctx.acquire::<Self>(name, || {
+            let signal_id = SignalId::default();
+            let theme_dir = GetThemesDirPath().unwrap_or_default();
+            let path = theme_dir.join(format!("{}{}", name, THEME_FILE_ENDING));
+            let data = emFileManThemeData::default();
+            let outer = ImageFileRec::new(data.OuterBorderImg.clone(), theme_dir.clone());
+            let file_inner =
+                ImageFileRec::new(data.FileInnerBorderImg.clone(), theme_dir.clone());
+            let dir_inner =
+                ImageFileRec::new(data.DirInnerBorderImg.clone(), theme_dir.clone());
+            let alt_inner = ImageFileRec::new(data.AltInnerBorderImg.clone(), theme_dir);
+            Self {
+                config_model: emConfigModel::new(data, path, signal_id),
+                outer_border_img: outer,
+                file_inner_border_img: file_inner,
+                dir_inner_border_img: dir_inner,
+                alt_inner_border_img: alt_inner,
+            }
+        })
+    }
+
+    pub fn GetFormatName(&self) -> &str {
+        "emFileManTheme"
+    }
+
+    pub fn GetRec(&self) -> &emFileManThemeData {
+        self.config_model.GetRec()
+    }
+
+    pub fn GetChangeSignal(&self) -> SignalId {
+        self.config_model.GetChangeSignal()
+    }
+
+    pub fn GetOuterBorderImage(&self) -> Ref<'_, emImage> {
+        self.outer_border_img.GetImage()
+    }
+
+    pub fn GetFileInnerBorderImage(&self) -> Ref<'_, emImage> {
+        self.file_inner_border_img.GetImage()
+    }
+
+    pub fn GetDirInnerBorderImage(&self) -> Ref<'_, emImage> {
+        self.dir_inner_border_img.GetImage()
+    }
+
+    pub fn GetAltInnerBorderImage(&self) -> Ref<'_, emImage> {
+        self.alt_inner_border_img.GetImage()
+    }
+
+    pub(crate) fn _refresh_image_recs(&mut self) {
+        let theme_dir = self
+            .config_model
+            .GetInstallPath()
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new(""))
+            .to_path_buf();
+        let data = self.config_model.GetRec();
+        self.outer_border_img = ImageFileRec::new(data.OuterBorderImg.clone(), theme_dir.clone());
+        self.file_inner_border_img =
+            ImageFileRec::new(data.FileInnerBorderImg.clone(), theme_dir.clone());
+        self.dir_inner_border_img =
+            ImageFileRec::new(data.DirInnerBorderImg.clone(), theme_dir.clone());
+        self.alt_inner_border_img =
+            ImageFileRec::new(data.AltInnerBorderImg.clone(), theme_dir);
+    }
+
+    pub(crate) fn _config_model_mut(&mut self) -> &mut emConfigModel<emFileManThemeData> {
+        &mut self.config_model
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -626,5 +752,36 @@ mod tests {
         assert_eq!(t2.DirNameColor, 0xFF0000FF);
         assert_eq!(t2.FileContentColor, 0x00FF00AA);
         assert_eq!(t2.DirContentColor, 0x0000FFBB);
+    }
+
+    #[test]
+    fn image_file_rec_empty_path_returns_fallback() {
+        let rec = ImageFileRec::new("".to_string(), PathBuf::new());
+        let img = rec.GetImage();
+        assert_eq!(img.GetWidth(), 1);
+        assert_eq!(img.GetHeight(), 1);
+    }
+
+    #[test]
+    fn image_file_rec_caches_result() {
+        let rec = ImageFileRec::new("".to_string(), PathBuf::new());
+        let _img1 = rec.GetImage();
+        let _img2 = rec.GetImage();
+    }
+
+    #[test]
+    fn theme_model_acquire_same_name() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let t1 = emFileManTheme::Acquire(&ctx, "test_theme");
+        let t2 = emFileManTheme::Acquire(&ctx, "test_theme");
+        assert!(Rc::ptr_eq(&t1, &t2));
+    }
+
+    #[test]
+    fn theme_model_field_access() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let theme = emFileManTheme::Acquire(&ctx, "default");
+        let theme = theme.borrow();
+        assert_eq!(theme.GetRec().Height, 0.0);
     }
 }

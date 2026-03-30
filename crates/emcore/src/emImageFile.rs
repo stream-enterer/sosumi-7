@@ -2,7 +2,18 @@ use std::path::{Path, PathBuf};
 
 use crate::emImage::emImage;
 use crate::emFileModel::{emFileModel, FileState};
+use crate::emResTga::load_tga;
 use crate::emSignal::SignalId;
+
+/// Synchronous image file loader.
+///
+/// DIVERGED: C++ uses async emImageFileModel with plugin dispatch (emTga, emBmp,
+/// emGif, etc.). This loads synchronously and only supports TGA for now.
+/// Returns `None` if the file cannot be read or decoded.
+pub fn load_image_from_file(path: &Path) -> Option<emImage> {
+    let data = std::fs::read(path).ok()?;
+    load_tga(&data).ok()
+}
 
 /// Data payload for an image file model.
 ///
