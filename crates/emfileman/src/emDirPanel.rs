@@ -114,9 +114,10 @@ struct KeyWalkState {
 /// when viewed. Creates/updates emDirEntryPanel children from model entries.
 ///
 /// DIVERGED: C++ emDirPanel connects emDirModel as a FileModelState via
-/// SetFileModel. Rust drives loading directly in Cycle (option b from spec)
-/// because emDirModel does not implement FileModelState — it wraps
-/// emDirModelData directly without scheduler integration.
+/// SetFileModel. Rust drives loading directly in Cycle using
+/// `get_file_state()` to query the model's phase, because emDirModel does
+/// not implement FileModelState — it wraps emDirModelData directly without
+/// scheduler integration.
 pub struct emDirPanel {
     pub(crate) file_panel: emFilePanel,
     ctx: Rc<emContext>,
@@ -126,7 +127,6 @@ pub struct emDirPanel {
     dir_model: Option<Rc<RefCell<emDirModel>>>,
     pub(crate) content_complete: bool,
     child_count: usize,
-    loading_started: bool,
     loading_done: bool,
     loading_error: Option<String>,
     key_walk_state: Option<KeyWalkState>,
@@ -147,7 +147,6 @@ impl emDirPanel {
             dir_model: None,
             content_complete: false,
             child_count: 0,
-            loading_started: false,
             loading_done: false,
             loading_error: None,
             key_walk_state: None,
@@ -287,42 +286,46 @@ impl PanelBehavior for emDirPanel {
 
         if let Some(ref dm_rc) = self.dir_model {
             let mut dm = dm_rc.borrow_mut();
-            if !self.loading_started {
-                match dm.try_start_loading() {
-                    Ok(()) => {
-                        self.loading_started = true;
-                        self.loading_done = false;
-                        self.loading_error = None;
-                        self.file_panel.clear_custom_error();
+            match dm.get_file_state() {
+                emcore::emFileModel::FileState::Waiting => {
+                    match dm.try_start_loading() {
+                        Ok(()) => {
+                            self.loading_done = false;
+                            self.loading_error = None;
+                            self.file_panel.clear_custom_error();
+                        }
+                        Err(e) => {
+                            self.loading_error = Some(e.clone());
+                            self.file_panel.set_custom_error(&e);
+                        }
                     }
-                    Err(e) => {
-                        self.loading_error = Some(e.clone());
-                        self.file_panel.set_custom_error(&e);
+                    changed = true;
+                }
+                emcore::emFileModel::FileState::Loading { .. } => {
+                    match dm.try_continue_loading() {
+                        Ok(true) => {
+                            dm.quit_loading();
+                            self.loading_done = true;
+                            self.file_panel.clear_custom_error();
+                            drop(dm);
+                            self.update_children(ctx);
+                            changed = true;
+                        }
+                        Ok(false) => {
+                            changed = true;
+                        }
+                        Err(e) => {
+                            self.loading_error = Some(e.clone());
+                            self.file_panel.set_custom_error(&e);
+                            changed = true;
+                        }
                     }
                 }
-                changed = true;
-            } else if !self.loading_done && self.loading_error.is_none() {
-                match dm.try_continue_loading() {
-                    Ok(true) => {
-                        dm.quit_loading();
-                        self.loading_done = true;
-                        self.file_panel.clear_custom_error();
-                        drop(dm);
-                        self.update_children(ctx);
-                        changed = true;
-                    }
-                    Ok(false) => {
-                        changed = true;
-                    }
-                    Err(e) => {
-                        self.loading_error = Some(e.clone());
-                        self.file_panel.set_custom_error(&e);
-                        changed = true;
-                    }
+                emcore::emFileModel::FileState::Loaded => {
+                    drop(dm);
+                    self.update_children(ctx);
                 }
-            } else if self.loading_done {
-                drop(dm);
-                self.update_children(ctx);
+                _ => {}
             }
         }
 
@@ -360,7 +363,6 @@ impl PanelBehavior for emDirPanel {
             if state.viewed {
                 if self.dir_model.is_none() {
                     self.dir_model = Some(emDirModel::Acquire(&self.ctx, &self.path));
-                    self.loading_started = false;
                     self.loading_done = false;
                     self.loading_error = None;
                     self.child_count = 0;
@@ -369,7 +371,6 @@ impl PanelBehavior for emDirPanel {
             } else if self.dir_model.is_some() {
                 self.dir_model = None;
                 self.file_panel.SetFileModel(None);
-                self.loading_started = false;
                 self.loading_done = false;
                 self.loading_error = None;
             }
@@ -393,7 +394,7 @@ impl PanelBehavior for emDirPanel {
             let theme = cfg.GetTheme();
             let dc = emColor::from_packed(theme.GetRec().DirContentColor);
             painter.Clear(dc);
-        } else if self.loading_error.is_some() || self.loading_started {
+        } else if self.loading_error.is_some() || self.dir_model.is_some() {
             self.file_panel.paint_status(painter, w, h);
         } else {
             let cfg = self.config.borrow();
