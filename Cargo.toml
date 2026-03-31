@@ -27,6 +27,8 @@ zbus = "5"
 rand = "0.9"
 criterion = { version = "0.8", features = ["html_reports"] }
 gungraun = "0.17"
+arboard = "3"
+open = "5"
 
 [profile.release]
 lto = true
