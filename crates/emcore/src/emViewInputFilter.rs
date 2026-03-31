@@ -2974,39 +2974,6 @@ mod tests {
     ///   - Total: ~430 LOC new code. This is a substantial rewrite of
     ///     emDefaultTouchVIF, not a point fix. The existing pan/pinch/fling code
     ///     would be subsumed by the C++ state machine's SCROLL state.
-    #[test]
-    #[ignore]
-    fn touch_vif_cpp_17_state_gesture_machine_not_ported() {
-        // Rust emDefaultTouchVIF has 4 states; C++ has 17.
-        // Missing: hold-to-zoom, multi-tap-to-visit, two-finger mouse emulation,
-        // three-finger menu, four-finger soft keyboard toggle.
-        //
-        // The C++ state machine cannot be incrementally added as targeted changes
-        // because state transitions form a densely connected graph:
-        //   FIRST_DOWN -> SECOND_DOWN -> THIRD_DOWN -> FOURTH_DOWN (finger count)
-        //   FIRST_DOWN -> FIRST_DOWN_UP -> DOUBLE_DOWN -> DOUBLE_DOWN_UP -> TRIPLE_DOWN
-        //     (tap counting via up/down transitions with 250ms timeouts)
-        //   SECOND_DOWN -> EMU_MOUSE_1..4 (direction-based mouse emulation)
-        //
-        // The existing Rust code treats single-touch as immediate pan (no hold
-        // timer) and two-touch as immediate pinch-zoom (no directional mouse
-        // emulation). Porting requires replacing the entire state machine, not
-        // augmenting it.
-        //
-        // Existing Rust infrastructure that can be reused:
-        //   - TouchPoint tracking array (16 slots, find/add/remove)
-        //   - Fling velocity smoothing and friction
-        //   - emView::scroll() and emView::zoom() for scroll/zoom actions
-        //   - emView::visit_fullsized() exists (called visit_full in Rust)
-        //
-        // Infrastructure that must be added:
-        //   - Per-touch timing (MsTotal, MsSincePrev) and initial down position
-        //   - Event injection (ForwardInput with synthetic mouse/modifier events)
-        //   - Touch event priority negotiation
-        //   - Soft keyboard toggle API on emView
-        panic!("C++ emDefaultTouchVIF 17-state gesture machine not yet ported");
-    }
-
     /// Helper: create a key event with characters for cheat code testing.
     fn cheat_key_event(chars: &str) -> emInputEvent {
         let mut event = emInputEvent::press(InputKey::Key('a'));
