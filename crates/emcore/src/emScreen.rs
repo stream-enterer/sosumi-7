@@ -117,9 +117,13 @@ impl emScreen {
 
     /// Move the mouse pointer by (dx, dy) pixels.
     ///
-    /// Matches C++ emScreen::MoveMousePointer. No-op; winit limitation.
+    /// DIVERGED: C++ emScreen inherits from emWindow and implements this directly.
+    /// In Rust, emScreen is a monitor model without a window reference. The actual
+    /// implementation is on `emWindow::MoveMousePointer` which uses winit's
+    /// `set_cursor_position`. Callers with window access should use that instead.
     pub fn MoveMousePointer(&self, _dx: f64, _dy: f64) {
-        // Not supported by winit core. See ZuiWindow::move_mouse_pointer.
+        // No-op: emScreen doesn't hold a window reference in Rust.
+        // Use emWindow::MoveMousePointer for the working implementation.
     }
 
     /// Emit an acoustic warning beep via libcanberra (Linux) or no-op (other).
