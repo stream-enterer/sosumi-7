@@ -262,7 +262,7 @@ impl PanelBehavior for emStocksFilePanel {
                 InputKey::Key('H') => {
                     // C++: ListBox->SetInterest(HIGH_INTEREST)
                     let Self { list_box, model, .. } = self;
-                    if let Some(lb) = list_box.as_ref() {
+                    if let Some(lb) = list_box.as_mut() {
                         lb.SetInterest(model.GetWritableRec(), Interest::High, false);
                     }
                     return true;
@@ -270,7 +270,7 @@ impl PanelBehavior for emStocksFilePanel {
                 InputKey::Key('M') => {
                     // C++: ListBox->SetInterest(MEDIUM_INTEREST)
                     let Self { list_box, model, .. } = self;
-                    if let Some(lb) = list_box.as_ref() {
+                    if let Some(lb) = list_box.as_mut() {
                         lb.SetInterest(model.GetWritableRec(), Interest::Medium, false);
                     }
                     return true;
@@ -278,7 +278,7 @@ impl PanelBehavior for emStocksFilePanel {
                 InputKey::Key('L') => {
                     // C++: ListBox->SetInterest(LOW_INTEREST)
                     let Self { list_box, model, .. } = self;
-                    if let Some(lb) = list_box.as_ref() {
+                    if let Some(lb) = list_box.as_mut() {
                         lb.SetInterest(model.GetWritableRec(), Interest::Low, false);
                     }
                     return true;
@@ -321,7 +321,17 @@ impl PanelBehavior for emStocksFilePanel {
             }
         }
 
-        state_changed || self.fetch_dialog.is_some()
+        // Poll ListBox confirmation dialogs (C++: Cycle calls into ListBox state machine)
+        let list_box_busy = {
+            let Self { list_box, model, config, .. } = self;
+            if let Some(lb) = list_box.as_mut() {
+                lb.Cycle(model.GetWritableRec(), config)
+            } else {
+                false
+            }
+        };
+
+        state_changed || self.fetch_dialog.is_some() || list_box_busy
     }
 
     fn GetIconFileName(&self) -> Option<String> {

@@ -41,6 +41,14 @@ pub struct emStocksListBox {
     pub(crate) layout_y: f64,
     pub(crate) layout_w: f64,
     pub(crate) layout_h: f64,
+
+    // C++ fields: CutStocksDialog, DeleteStocksDialog, PasteStocksDialog,
+    // InterestDialog, InterestToSet — persistent dialog pointers polled in Cycle.
+    pub(crate) cut_stocks_dialog: Option<emDialog>,
+    pub(crate) paste_stocks_dialog: Option<emDialog>,
+    pub(crate) delete_stocks_dialog: Option<emDialog>,
+    pub(crate) interest_dialog: Option<emDialog>,
+    pub(crate) interest_to_set: Option<Interest>,
 }
 
 impl Default for emStocksListBox {
@@ -62,6 +70,11 @@ impl emStocksListBox {
             layout_y: 0.0,
             layout_w: 1.0,
             layout_h: 1.0,
+            cut_stocks_dialog: None,
+            paste_stocks_dialog: None,
+            delete_stocks_dialog: None,
+            interest_dialog: None,
+            interest_to_set: None,
         }
     }
 
@@ -459,8 +472,9 @@ impl emStocksListBox {
 
     /// Port of C++ DeleteStocks.
     /// Removes selected stocks from rec.
-    /// When `ask=true`, creates a confirmation dialog. Actual modal blocking
-    /// requires panel tree event loop integration.
+    /// When `ask=true` (C++: default), stores a confirmation dialog in
+    /// `delete_stocks_dialog` and returns early — Cycle() polls the result.
+    /// When `ask=false`, performs deletion immediately.
     /// C++ takes no arguments (reads from owned FileModel).
     /// Rust takes `rec` and `ask` parameters.
     pub fn DeleteStocks(&mut self, rec: &mut emStocksRec, ask: bool) {
@@ -469,18 +483,23 @@ impl emStocksListBox {
         }
         if ask {
             if let Some(ref look) = self.look {
+                // Cancel any in-flight dialog before creating a new one.
+                if let Some(ref mut d) = self.delete_stocks_dialog {
+                    d.Finish(DialogResult::Cancel);
+                }
                 let count = self.GetSelectionCount();
-                let mut _dialog = emDialog::new(
+                let mut dialog = emDialog::new(
                     &format!("Really delete {} stock(s)?", count),
                     look.clone(),
                 );
-                _dialog.AddCustomButton("OK", DialogResult::Ok);
-                _dialog.AddCustomButton("Cancel", DialogResult::Cancel);
-                // Dialog infrastructure in place. Actual modal blocking requires
-                // panel tree event loop integration.
+                dialog.AddCustomButton("Delete", DialogResult::Ok);
+                dialog.AddCustomButton("Cancel", DialogResult::Cancel);
+                self.delete_stocks_dialog = Some(dialog);
             }
+            return; // Defer until Cycle() observes dialog confirmation.
         }
 
+        // ask=false path: perform deletion immediately.
         // Collect rec-level stock indices to remove, sorted descending
         let mut indices_to_remove: Vec<usize> = self
             .GetSelectedIndices()
@@ -499,23 +518,30 @@ impl emStocksListBox {
 
     /// Port of C++ CutStocks.
     /// Cuts selected stocks to clipboard.
-    /// When `ask=true`, creates a confirmation dialog. Actual modal blocking
-    /// requires panel tree event loop integration.
+    /// When `ask=true` (C++: default), stores a confirmation dialog in
+    /// `cut_stocks_dialog` and returns early — Cycle() polls the result.
+    /// When `ask=false`, performs copy+delete immediately.
     /// C++ takes no arguments. Rust takes `rec` and `ask` parameters.
     pub fn CutStocks(&mut self, rec: &mut emStocksRec, ask: bool) {
         if ask {
             if let Some(ref look) = self.look {
+                // Cancel any in-flight dialog before creating a new one.
+                if let Some(ref mut d) = self.cut_stocks_dialog {
+                    d.Finish(DialogResult::Cancel);
+                }
                 let count = self.GetSelectionCount();
-                let mut _dialog = emDialog::new(
+                let mut dialog = emDialog::new(
                     &format!("Really cut {} stock(s)?", count),
                     look.clone(),
                 );
-                _dialog.AddCustomButton("OK", DialogResult::Ok);
-                _dialog.AddCustomButton("Cancel", DialogResult::Cancel);
-                // Dialog infrastructure in place. Actual modal blocking requires
-                // panel tree event loop integration.
+                dialog.AddCustomButton("Cut", DialogResult::Ok);
+                dialog.AddCustomButton("Cancel", DialogResult::Cancel);
+                self.cut_stocks_dialog = Some(dialog);
             }
+            return; // Defer until Cycle() observes dialog confirmation.
         }
+
+        // ask=false path: perform cut immediately.
         self.CopyStocks(rec);
         if self.GetSelectionCount() > 0 {
             self.DeleteStocks(rec, false); // inner delete doesn't ask again
@@ -524,10 +550,11 @@ impl emStocksListBox {
 
     /// Port of C++ PasteStocks.
     /// Pastes stocks from clipboard.
+    /// When `ask=true` (C++: default), stores a confirmation dialog in
+    /// `paste_stocks_dialog` and returns early — Cycle() polls the result.
+    /// When `ask=false`, reads clipboard and inserts stocks immediately.
     /// Returns names of pasted stocks that are not visible due to filters,
     /// or an error if the clipboard data is invalid or clipboard is empty.
-    /// When `ask=true`, creates a confirmation dialog. Actual modal blocking
-    /// requires panel tree event loop integration.
     /// C++ takes no arguments. Rust takes `rec`, `config`, and `ask` parameters.
     pub fn PasteStocks(
         &mut self,
@@ -537,13 +564,19 @@ impl emStocksListBox {
     ) -> Result<Vec<String>, String> {
         if ask {
             if let Some(ref look) = self.look {
-                let mut _dialog = emDialog::new("Really paste stocks?", look.clone());
-                _dialog.AddCustomButton("OK", DialogResult::Ok);
-                _dialog.AddCustomButton("Cancel", DialogResult::Cancel);
-                // Dialog infrastructure in place. Actual modal blocking requires
-                // panel tree event loop integration.
+                // Cancel any in-flight dialog before creating a new one.
+                if let Some(ref mut d) = self.paste_stocks_dialog {
+                    d.Finish(DialogResult::Cancel);
+                }
+                let mut dialog = emDialog::new("Really paste stocks?", look.clone());
+                dialog.AddCustomButton("Paste", DialogResult::Ok);
+                dialog.AddCustomButton("Cancel", DialogResult::Cancel);
+                self.paste_stocks_dialog = Some(dialog);
             }
+            return Ok(Vec::new()); // Defer until Cycle() observes dialog confirmation.
         }
+
+        // ask=false path: perform paste immediately.
         let clipboard_text = if let Ok(mut clipboard) = arboard::Clipboard::new() {
             clipboard.get_text().unwrap_or_default()
         } else {
@@ -607,24 +640,33 @@ impl emStocksListBox {
 
     /// Port of C++ SetInterest.
     /// Sets interest level on selected stocks.
-    /// When `ask=true`, creates a confirmation dialog. Actual modal blocking
-    /// requires panel tree event loop integration.
+    /// When `ask=true` (C++: default), stores a confirmation dialog in
+    /// `interest_dialog` and `interest_to_set`, then returns early — Cycle()
+    /// polls the result.
+    /// When `ask=false`, applies the interest change immediately.
     /// C++ takes no arguments beyond interest. Rust takes `rec` and `ask` parameters.
     pub fn SetInterest(
-        &self,
+        &mut self,
         rec: &mut emStocksRec,
         interest: Interest,
         ask: bool,
     ) {
         if ask {
             if let Some(ref look) = self.look {
-                let mut _dialog = emDialog::new("Really change interest?", look.clone());
-                _dialog.AddCustomButton("OK", DialogResult::Ok);
-                _dialog.AddCustomButton("Cancel", DialogResult::Cancel);
-                // Dialog infrastructure in place. Actual modal blocking requires
-                // panel tree event loop integration.
+                // Cancel any in-flight dialog before creating a new one.
+                if let Some(ref mut d) = self.interest_dialog {
+                    d.Finish(DialogResult::Cancel);
+                }
+                let mut dialog = emDialog::new("Really change interest?", look.clone());
+                dialog.AddCustomButton("Change", DialogResult::Ok);
+                dialog.AddCustomButton("Cancel", DialogResult::Cancel);
+                self.interest_dialog = Some(dialog);
+                self.interest_to_set = Some(interest);
             }
+            return; // Defer until Cycle() observes dialog confirmation.
         }
+
+        // ask=false path: apply immediately.
         for &vis_idx in self.GetSelectedIndices() {
             if let Some(&stock_idx) = self.visible_items.get(vis_idx) {
                 if let Some(stock) = rec.stocks.get_mut(stock_idx) {
@@ -632,6 +674,64 @@ impl emStocksListBox {
                 }
             }
         }
+    }
+
+    /// Port of C++ Cycle (dialog polling portion).
+    /// Polls persistent confirmation dialogs and executes deferred operations
+    /// when the user confirms. Returns true while any dialog is still open
+    /// (signals the parent panel to keep cycling).
+    pub fn Cycle(&mut self, rec: &mut emStocksRec, config: &emStocksConfig) -> bool {
+        let mut busy = false;
+
+        // Poll delete dialog.
+        if let Some(result) = self.delete_stocks_dialog.as_ref().and_then(|d| d.GetResult()) {
+            let confirmed = *result == DialogResult::Ok;
+            self.delete_stocks_dialog = None;
+            if confirmed {
+                self.DeleteStocks(rec, false);
+            }
+        } else if self.delete_stocks_dialog.is_some() {
+            busy = true;
+        }
+
+        // Poll cut dialog.
+        if let Some(result) = self.cut_stocks_dialog.as_ref().and_then(|d| d.GetResult()) {
+            let confirmed = *result == DialogResult::Ok;
+            self.cut_stocks_dialog = None;
+            if confirmed {
+                self.CutStocks(rec, false);
+            }
+        } else if self.cut_stocks_dialog.is_some() {
+            busy = true;
+        }
+
+        // Poll paste dialog.
+        if let Some(result) = self.paste_stocks_dialog.as_ref().and_then(|d| d.GetResult()) {
+            let confirmed = *result == DialogResult::Ok;
+            self.paste_stocks_dialog = None;
+            if confirmed {
+                let _ = self.PasteStocks(rec, config, false);
+            }
+        } else if self.paste_stocks_dialog.is_some() {
+            busy = true;
+        }
+
+        // Poll interest dialog.
+        if let Some(result) = self.interest_dialog.as_ref().and_then(|d| d.GetResult()) {
+            let confirmed = *result == DialogResult::Ok;
+            self.interest_dialog = None;
+            if confirmed {
+                if let Some(interest) = self.interest_to_set.take() {
+                    self.SetInterest(rec, interest, false);
+                }
+            } else {
+                self.interest_to_set = None;
+            }
+        } else if self.interest_dialog.is_some() {
+            busy = true;
+        }
+
+        busy
     }
 
     /// Port of C++ ShowFirstWebPages.
