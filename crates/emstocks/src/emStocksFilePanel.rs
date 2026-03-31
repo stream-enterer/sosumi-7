@@ -32,6 +32,14 @@ impl PanelBehavior for emStocksFilePanel {
             // C++: painter.Clear(BgColor, canvasColor) — canvasColor not passed
             // because Rust emPainter::Clear takes only one color argument.
             painter.Clear(self.bg_color);
+
+            // C++: ListBox->Paint(...) checks GetItemCount()==0 and paints
+            // "empty stock list" message.
+            if let Some(ref list_box) = self.list_box {
+                if let Some(_msg) = list_box.GetEmptyMessage() {
+                    // TODO: Paint _msg using emPainter::PaintTextBoxed when available
+                }
+            }
         }
         // C++: if (!IsVFSGood()) emFilePanel::Paint(painter,canvasColor);
         // Base class paint for non-good state deferred until emFilePanel integration.
@@ -139,42 +147,60 @@ impl PanelBehavior for emStocksFilePanel {
                 }
                 InputKey::Key('N') => {
                     // C++: ListBox->NewStock()
-                    // TODO: delegate to ListBox once NewStock is implemented
+                    list_box.NewStock(&mut self.rec, &self.config);
                     return true;
                 }
                 InputKey::Key('X') => {
                     // C++: ListBox->CutStocks()
-                    // TODO: delegate to ListBox once CutStocks is implemented
+                    let _clipboard = list_box.CutStocks(&mut self.rec);
+                    // TODO: put _clipboard text on system clipboard
                     return true;
                 }
                 InputKey::Key('C') => {
                     // C++: ListBox->CopyStocks()
-                    // TODO: delegate to ListBox once CopyStocks is implemented
+                    let _clipboard = list_box.CopyStocks(&self.rec);
+                    // TODO: put _clipboard text on system clipboard
                     return true;
                 }
                 InputKey::Key('V') => {
                     // C++: ListBox->PasteStocks()
-                    // TODO: delegate to ListBox once PasteStocks is implemented
+                    // TODO: read clipboard_text from system clipboard
+                    let clipboard_text = String::new();
+                    if !clipboard_text.is_empty() {
+                        let _result = list_box.PasteStocks(
+                            &mut self.rec,
+                            &self.config,
+                            &clipboard_text,
+                        );
+                    }
                     return true;
                 }
                 InputKey::Key('P') => {
                     // C++: ListBox->StartToFetchSharePrices()
-                    // TODO: delegate to ListBox once StartToFetchSharePrices is implemented
+                    let _ids = list_box.GetVisibleStockIds(&self.rec);
+                    // TODO: launch fetch dialog with _ids
                     return true;
                 }
                 InputKey::Key('W') => {
                     // C++: ListBox->ShowFirstWebPages()
-                    // TODO: delegate to ListBox once ShowFirstWebPages is implemented
+                    let _pages = list_box.ShowFirstWebPages(&self.rec);
+                    // TODO: launch browser with _pages
                     return true;
                 }
                 InputKey::Key('H') => {
                     // C++: ListBox->FindSelected()
-                    // TODO: delegate to ListBox once FindSelected is implemented
+                    // TODO: read selection text from system clipboard
+                    let text = self.config.search_text.clone();
+                    let _found = list_box.FindSelected(
+                        &self.rec,
+                        &mut self.config,
+                        &text,
+                    );
                     return true;
                 }
                 InputKey::Key('G') => {
                     // C++: ListBox->FindNext()
-                    // TODO: delegate to ListBox once FindNext is implemented
+                    let _found = list_box.FindNext(&self.rec, &self.config);
                     return true;
                 }
                 _ => {}
@@ -183,15 +209,17 @@ impl PanelBehavior for emStocksFilePanel {
 
         // ── Shift+Ctrl shortcuts ──
         if input_state.IsShiftCtrlMod() {
+            let list_box = self.list_box.as_mut().unwrap();
             match event.key {
                 InputKey::Key('W') => {
                     // C++: ListBox->ShowAllWebPages()
-                    // TODO: delegate to ListBox once ShowAllWebPages is implemented
+                    let _pages = list_box.ShowAllWebPages(&self.rec);
+                    // TODO: launch browser with _pages
                     return true;
                 }
                 InputKey::Key('G') => {
                     // C++: ListBox->FindPrevious()
-                    // TODO: delegate to ListBox once FindPrevious is implemented
+                    let _found = list_box.FindPrevious(&self.rec, &self.config);
                     return true;
                 }
                 _ => {}
@@ -201,7 +229,8 @@ impl PanelBehavior for emStocksFilePanel {
         // ── No-modifier shortcuts ──
         if input_state.IsNoMod() && event.key == InputKey::Delete {
             // C++: ListBox->DeleteStocks()
-            // TODO: delegate to ListBox once DeleteStocks is implemented
+            let list_box = self.list_box.as_mut().unwrap();
+            list_box.DeleteStocks(&mut self.rec);
             return true;
         }
 
@@ -210,17 +239,20 @@ impl PanelBehavior for emStocksFilePanel {
             match event.key {
                 InputKey::Key('H') => {
                     // C++: ListBox->SetInterest(HIGH_INTEREST)
-                    // TODO: delegate to ListBox once SetInterest is implemented
+                    let list_box = self.list_box.as_ref().unwrap();
+                    list_box.SetInterest(&mut self.rec, Interest::High);
                     return true;
                 }
                 InputKey::Key('M') => {
                     // C++: ListBox->SetInterest(MEDIUM_INTEREST)
-                    // TODO: delegate to ListBox once SetInterest is implemented
+                    let list_box = self.list_box.as_ref().unwrap();
+                    list_box.SetInterest(&mut self.rec, Interest::Medium);
                     return true;
                 }
                 InputKey::Key('L') => {
                     // C++: ListBox->SetInterest(LOW_INTEREST)
-                    // TODO: delegate to ListBox once SetInterest is implemented
+                    let list_box = self.list_box.as_ref().unwrap();
+                    list_box.SetInterest(&mut self.rec, Interest::Low);
                     return true;
                 }
                 _ => {}
@@ -256,6 +288,7 @@ impl emStocksFilePanel {
             vfs_good: false,
         }
     }
+
 }
 
 impl Default for emStocksFilePanel {
