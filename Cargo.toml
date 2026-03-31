@@ -3,6 +3,7 @@ members = [
     "crates/emcore",
     "crates/emfileman",
     "crates/emstocks",
+    "crates/emmain",
     "crates/eaglemode",
     "crates/test_plugin",
 ]

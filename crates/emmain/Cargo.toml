@@ -1,0 +1,17 @@
+[package]
+name = "emmain"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "emMain"
+crate-type = ["rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+emcore = { workspace = true }
+emstocks = { path = "../emstocks" }
+emfileman = { path = "../emfileman" }
+log = { workspace = true }
