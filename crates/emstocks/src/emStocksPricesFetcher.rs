@@ -1,12 +1,14 @@
 // Port of C++ emStocksPricesFetcher.h / emStocksPricesFetcher.cpp
-// DIVERGED: No emEngine trait impl (standalone Cycle method instead).
-// DIVERGED: No FileModel/FileStateSignal/ChangeSignal integration — Cycle does not check file state.
+// DIVERGED(Phase 4): FileModel/FileStateSignal/ChangeSignal integration pending.
+// emEngine trait is implemented but the trait Cycle cannot drive the fetch loop
+// until FileModel integration provides access to the rec.
 // DIVERGED: Uses BTreeMap<String, Option<usize>> mapping stock ID to index in emStocksRec.stocks,
 // instead of emAvlTreeMap<String, emCrossPtr<StockRec>>. The cross-pointer approach
 // doesn't work well when StockRecs are stored in a Vec.
 
 use std::collections::{BTreeMap, HashMap};
 
+use emcore::emEngine::{emEngine, EngineCtx};
 use emcore::emProcess::{emProcess, PipeResult, StartFlags};
 
 use super::emStocksRec::{
@@ -494,6 +496,16 @@ impl emStocksPricesFetcher {
             *entry = idx;
         }
         idx
+    }
+}
+
+impl emEngine for emStocksPricesFetcher {
+    fn Cycle(&mut self, _ctx: &mut EngineCtx<'_>) -> bool {
+        // DIVERGED(Phase 4): FileModel/FileStateSignal/ChangeSignal integration pending.
+        // Once FileModel is integrated, this will read rec from the model and check file state.
+        // For now, this trait impl cannot call the internal Cycle because it needs
+        // a &mut emStocksRec. The caller must use the direct Cycle(&mut rec) method.
+        self.current_process_active
     }
 }
 
