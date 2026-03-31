@@ -186,13 +186,15 @@ impl PanelBehavior for emStocksFilePanel {
                 InputKey::Key('P') => {
                     // C++: ListBox->StartToFetchSharePrices()
                     let _ids = list_box.GetVisibleStockIds(&self.rec);
-                    // TODO: launch fetch dialog with _ids
+                    // TODO(Phase 4): create real emStocksFetchPricesDialog
                     return true;
                 }
                 InputKey::Key('W') => {
                     // C++: ListBox->ShowFirstWebPages()
-                    let _pages = list_box.ShowFirstWebPages(&self.rec);
-                    // TODO: launch browser with _pages
+                    let pages = list_box.ShowFirstWebPages(&self.rec);
+                    for url in &pages {
+                        let _ = open::that(url);
+                    }
                     return true;
                 }
                 InputKey::Key('H') => {
@@ -224,8 +226,10 @@ impl PanelBehavior for emStocksFilePanel {
             match event.key {
                 InputKey::Key('W') => {
                     // C++: ListBox->ShowAllWebPages()
-                    let _pages = list_box.ShowAllWebPages(&self.rec);
-                    // TODO: launch browser with _pages
+                    let pages = list_box.ShowAllWebPages(&self.rec);
+                    for url in &pages {
+                        let _ = open::that(url);
+                    }
                     return true;
                 }
                 InputKey::Key('G') => {
