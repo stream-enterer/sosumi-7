@@ -180,3 +180,45 @@ fn test_binary_remove_by_key() {
     assert_eq!(arr.GetCount(), 2);
     assert!(!arr.BinaryRemoveByKey(&4, |item| item.0));
 }
+
+#[test]
+fn test_add_new() {
+    let mut arr: emArray<i32> = emArray::new();
+    arr.AddNew();
+    assert_eq!(arr.GetCount(), 1);
+    assert_eq!(arr.Get_at(0), &0); // i32::default() = 0
+}
+
+#[test]
+fn test_insert_new() {
+    let mut arr: emArray<i32> = emArray::new();
+    arr.Add_one(10);
+    arr.Add_one(30);
+    arr.InsertNew(1);
+    assert_eq!(arr.GetCount(), 3);
+    assert_eq!(arr.Get_at(1), &0);
+    assert_eq!(arr.Get_at(2), &30);
+}
+
+#[test]
+fn test_replace_by_new() {
+    let mut arr: emArray<i32> = emArray::new();
+    arr.Add_one(10);
+    arr.Add_one(20);
+    arr.Add_one(30);
+    arr.ReplaceByNew(1, 2);
+    assert_eq!(arr.GetCount(), 2);
+    assert_eq!(arr.Get_at(0), &10);
+    assert_eq!(arr.Get_at(1), &0);
+}
+
+#[test]
+fn test_tuning_level() {
+    let mut arr: emArray<i32> = emArray::new();
+    assert_eq!(arr.GetTuningLevel(), 0);
+    arr.SetTuningLevel(4);
+    assert_eq!(arr.GetTuningLevel(), 4);
+    // TuningLevel has no effect on behavior — just stored for API correspondence
+    arr.Add_one(42);
+    assert_eq!(arr.Get_at(0), &42);
+}

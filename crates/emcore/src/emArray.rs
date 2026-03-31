@@ -4,8 +4,9 @@
 // mutation deep-copies if shared. Rust equivalent wraps Vec<T> in Rc
 // with clone-on-mutate via Rc::make_mut.
 //
-// DIVERGED: TuningLevel — omitted entirely. Rust ownership handles
-// the optimization concerns that TuningLevel addressed in C++.
+// DIVERGED: TuningLevel — stored for API correspondence but has no effect
+// on behavior. Rust ownership handles the optimization concerns that
+// TuningLevel addressed in C++.
 //
 // DIVERGED: C++ overloaded methods are split into distinct names
 // (Add_one, Add_fill, Add_slice, etc.) because Rust has no overloading.
@@ -19,8 +20,7 @@
 //
 // DIVERGED: PointerToIndex — omitted from initial port.
 //
-// DIVERGED: AddNew, InsertNew, ReplaceByNew (default-value insertion
-// variants) — omitted. Rust callers use Default::default() explicitly.
+// AddNew, InsertNew, ReplaceByNew require T: Default (separate impl block).
 //
 // DIVERGED: Sort() skips COW clone if array is already sorted. C++ calls
 // MakeWritable() unconditionally. No behavioral difference for callers.
@@ -77,12 +77,17 @@ impl Cursor {
 /// if the Rc is shared (Rc::make_mut).
 pub struct emArray<T: Clone> {
     data: Rc<Vec<T>>,
+    /// C++ TuningLevel — stored for API correspondence, no effect on behavior.
+    /// DIVERGED: Rust ownership model makes COW tuning unnecessary; field
+    /// exists for API correspondence only.
+    tuning_level: u8,
 }
 
 impl<T: Clone> Clone for emArray<T> {
     fn clone(&self) -> Self {
         emArray {
             data: Rc::clone(&self.data),
+            tuning_level: self.tuning_level,
         }
     }
 }
@@ -101,18 +106,21 @@ impl<T: Clone> emArray<T> {
     pub fn new() -> Self {
         emArray {
             data: Rc::new(Vec::new()),
+            tuning_level: 0,
         }
     }
 
     pub fn from_slice(slice: &[T]) -> Self {
         emArray {
             data: Rc::new(slice.to_vec()),
+            tuning_level: 0,
         }
     }
 
     pub fn filled(obj: T, count: usize) -> Self {
         emArray {
             data: Rc::new(vec![obj; count]),
+            tuning_level: 0,
         }
     }
 
@@ -155,6 +163,7 @@ impl<T: Clone> emArray<T> {
     pub fn GetSubArray(&self, index: usize, count: usize) -> emArray<T> {
         emArray {
             data: Rc::new(self.data[index..index + count].to_vec()),
+            tuning_level: self.tuning_level,
         }
     }
 
@@ -267,6 +276,7 @@ impl<T: Clone> emArray<T> {
         let extracted: Vec<T> = v.drain(index..index + count).collect();
         emArray {
             data: Rc::new(extracted),
+            tuning_level: self.tuning_level,
         }
     }
 
@@ -279,6 +289,44 @@ impl<T: Clone> emArray<T> {
     pub fn MakeNonShared(&mut self) {
         // Rc::make_mut will clone the inner Vec if shared.
         let _ = self.make_writable();
+    }
+
+    // ---------------------------------------------------------------
+    // TuningLevel (API correspondence only)
+    // ---------------------------------------------------------------
+
+    /// Get the tuning level. C++ `GetTuningLevel`.
+    pub fn GetTuningLevel(&self) -> u8 {
+        self.tuning_level
+    }
+
+    /// Set the tuning level. No effect on behavior. C++ `SetTuningLevel`.
+    pub fn SetTuningLevel(&mut self, level: u8) {
+        self.tuning_level = level;
+    }
+}
+
+// ---------------------------------------------------------------
+// Default-insertion methods (require T: Default)
+// ---------------------------------------------------------------
+
+impl<T: Clone + Default> emArray<T> {
+    /// Append a default-constructed element. C++ `AddNew`.
+    pub fn AddNew(&mut self) {
+        self.make_writable().push(T::default());
+    }
+
+    /// Insert a default-constructed element at `index`. C++ `InsertNew`.
+    pub fn InsertNew(&mut self, index: usize) {
+        self.make_writable().insert(index, T::default());
+    }
+
+    /// Replace `count` elements starting at `index` with one default element.
+    /// C++ `ReplaceByNew`.
+    pub fn ReplaceByNew(&mut self, index: usize, count: usize) {
+        let v = self.make_writable();
+        v.drain(index..index + count);
+        v.insert(index, T::default());
     }
 }
 
