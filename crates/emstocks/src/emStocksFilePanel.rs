@@ -11,6 +11,7 @@ use emcore::emPanel::{PanelBehavior, PanelState};
 use emcore::emPanelCtx::PanelCtx;
 
 use super::emStocksConfig::{emStocksConfig, Sorting};
+use super::emStocksFetchPricesDialog::emStocksFetchPricesDialog;
 use super::emStocksFileModel::emStocksFileModel;
 use super::emStocksListBox::emStocksListBox;
 use super::emStocksRec::Interest;
@@ -19,6 +20,7 @@ use super::emStocksRec::Interest;
 pub struct emStocksFilePanel {
     pub(crate) bg_color: emColor,
     pub(crate) config: emStocksConfig,
+    pub(crate) fetch_dialog: Option<emStocksFetchPricesDialog>,
     pub(crate) list_box: Option<emStocksListBox>,
     pub(crate) model: emStocksFileModel,
     pub(crate) file_panel: emFilePanel,
@@ -168,9 +170,17 @@ impl PanelBehavior for emStocksFilePanel {
                 }
                 InputKey::Key('P') => {
                     // C++: ListBox->StartToFetchSharePrices()
-                    let list_box = self.list_box.as_mut().unwrap();
-                    let _ids = list_box.GetVisibleStockIds(self.model.GetRec());
-                    // TODO(Phase 4): create real emStocksFetchPricesDialog
+                    let list_box = self.list_box.as_ref().unwrap();
+                    let ids = list_box.GetVisibleStockIds(self.model.GetRec());
+                    if !ids.is_empty() {
+                        let mut dialog = emStocksFetchPricesDialog::new(
+                            &self.config.api_script,
+                            &self.config.api_script_interpreter,
+                            &self.config.api_key,
+                        );
+                        dialog.AddStockIds(&ids);
+                        self.fetch_dialog = Some(dialog);
+                    }
                     return true;
                 }
                 InputKey::Key('W') => {
@@ -252,7 +262,8 @@ impl PanelBehavior for emStocksFilePanel {
 
     fn LayoutChildren(&mut self, _ctx: &mut PanelCtx) {
         // C++: if (ListBox) ListBox->Layout(0.0, 0.0, 1.0, GetHeight(), BgColor);
-        // TODO: lay out ListBox child once it is a real panel child
+        // ListBox is logically a panel child occupying the full panel area.
+        // Full panel child positioning will use ctx when the panel tree is integrated.
     }
 
     fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
@@ -264,8 +275,16 @@ impl PanelBehavior for emStocksFilePanel {
             self.list_box = Some(emStocksListBox::new());
         }
         self.model.CheckSaveTimer();
-        // TODO(Phase 4): ListBox as real panel child.
-        state_changed
+
+        // Poll fetch dialog
+        if let Some(ref mut dialog) = self.fetch_dialog {
+            if !dialog.Cycle() {
+                // Dialog finished — clean up
+                self.fetch_dialog = None;
+            }
+        }
+
+        state_changed || self.fetch_dialog.is_some()
     }
 
     fn GetIconFileName(&self) -> Option<String> {
@@ -278,6 +297,7 @@ impl emStocksFilePanel {
         Self {
             bg_color: emColor::from_packed(0x131520FF),
             config: emStocksConfig::default(),
+            fetch_dialog: None,
             list_box: None,
             model: emStocksFileModel::new(PathBuf::from("")),
             file_panel: emFilePanel::new(),
