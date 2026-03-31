@@ -2552,6 +2552,13 @@ impl emView {
 
         RecValue::Struct(rec)
     }
+
+    /// Handle a custom cheat code. Override in subclasses for app-specific cheats.
+    /// C++ `emView::DoCustomCheat(const char* func)`.
+    pub(crate) fn DoCustomCheat(&self, func: &str) {
+        // Default: propagate to parent view context (C++ walks parent contexts)
+        log::debug!("Unknown cheat code: {}", func);
+    }
 }
 
 // ── Highlight arrow helpers (C++ emView.cpp:2300-2479) ──

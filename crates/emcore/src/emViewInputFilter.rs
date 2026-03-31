@@ -2257,9 +2257,7 @@ impl emCheatVIF {
 
             // Unknown command — custom cheat fallthrough
             _ => {
-                // C++ calls emView::DoCustomCheat(func) here.
-                // TODO: needs custom cheat dispatch on emView
-                eprintln!("[CheatVIF] unknown cheat command: {func}");
+                view.DoCustomCheat(func);
             }
         }
     }
