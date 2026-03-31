@@ -114,3 +114,69 @@ fn cursor_survives_cow_clone() {
     // Cursor still valid against a (unchanged)
     assert_eq!(cur.Get(&a), Some(&2));
 }
+
+#[test]
+fn test_sort_by_custom_comparator() {
+    let mut arr = emArray::new();
+    arr.Add_one(3);
+    arr.Add_one(1);
+    arr.Add_one(2);
+    // Sort descending
+    arr.Sort_by(|a, b| b.cmp(a));
+    assert_eq!(arr.Get_at(0), &3);
+    assert_eq!(arr.Get_at(1), &2);
+    assert_eq!(arr.Get_at(2), &1);
+}
+
+#[test]
+fn test_binary_search_by() {
+    let mut arr = emArray::new();
+    for i in [1, 3, 5, 7, 9] {
+        arr.Add_one(i);
+    }
+    assert_eq!(arr.BinarySearch_by(|x| x.cmp(&5)), Ok(2));
+    assert_eq!(arr.BinarySearch_by(|x| x.cmp(&4)), Err(2));
+}
+
+#[test]
+fn test_binary_insert_by() {
+    let mut arr = emArray::new();
+    // Insert in reverse order
+    arr.BinaryInsert_by(3, |a, b| b.cmp(a));
+    arr.BinaryInsert_by(1, |a, b| b.cmp(a));
+    arr.BinaryInsert_by(2, |a, b| b.cmp(a));
+    assert_eq!(arr.Get_at(0), &3);
+    assert_eq!(arr.Get_at(1), &2);
+    assert_eq!(arr.Get_at(2), &1);
+}
+
+#[test]
+fn test_binary_search_by_key() {
+    let mut arr: emArray<(i32, &str)> = emArray::new();
+    arr.Add_one((1, "one"));
+    arr.Add_one((3, "three"));
+    arr.Add_one((5, "five"));
+    assert_eq!(arr.BinarySearchByKey(&3, |item| item.0), Ok(1));
+    assert_eq!(arr.BinarySearchByKey(&2, |item| item.0), Err(1));
+}
+
+#[test]
+fn test_binary_replace() {
+    let mut arr = emArray::new();
+    arr.Add_one(1);
+    arr.Add_one(3);
+    arr.Add_one(5);
+    assert!(arr.BinaryReplace(3, |a, b| a.cmp(b)));
+    assert!(!arr.BinaryReplace(4, |a, b| a.cmp(b)));
+}
+
+#[test]
+fn test_binary_remove_by_key() {
+    let mut arr: emArray<(i32, &str)> = emArray::new();
+    arr.Add_one((1, "one"));
+    arr.Add_one((3, "three"));
+    arr.Add_one((5, "five"));
+    assert!(arr.BinaryRemoveByKey(&3, |item| item.0));
+    assert_eq!(arr.GetCount(), 2);
+    assert!(!arr.BinaryRemoveByKey(&4, |item| item.0));
+}

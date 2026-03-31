@@ -17,8 +17,7 @@
 // DIVERGED: Iterator inner class — omitted from this file. Will be
 // ported separately as emArrayIterator (Task 2).
 //
-// DIVERGED: BinarySearchByKey, BinaryReplace, BinaryRemoveByKey,
-// PointerToIndex, custom comparator overloads — omitted from initial port.
+// DIVERGED: PointerToIndex — omitted from initial port.
 //
 // DIVERGED: AddNew, InsertNew, ReplaceByNew (default-value insertion
 // variants) — omitted. Rust callers use Default::default() explicitly.
@@ -363,6 +362,126 @@ impl<T: Clone + Ord> emArray<T> {
     /// Remove the element equal to `obj`. Returns `true` if found and removed.
     pub fn BinaryRemove(&mut self, obj: &T) -> bool {
         match self.data.binary_search(obj) {
+            Ok(i) => {
+                self.make_writable().remove(i);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+}
+
+// ---------------------------------------------------------------
+// Sort and binary search with custom comparators
+// ---------------------------------------------------------------
+
+impl<T: Clone> emArray<T> {
+    /// Sort with a custom comparator.
+    /// C++ `emArray::Sort(int(*)(const OBJ*,const OBJ*,void*), void*)`.
+    pub fn Sort_by(&mut self, compare: impl FnMut(&T, &T) -> std::cmp::Ordering) {
+        self.make_writable().sort_by(compare);
+    }
+
+    /// Binary search with a custom comparator.
+    /// C++ custom comparator overload of `BinarySearch`.
+    pub fn BinarySearch_by(
+        &self,
+        compare: impl FnMut(&T) -> std::cmp::Ordering,
+    ) -> Result<usize, usize> {
+        self.data.binary_search_by(compare)
+    }
+
+    /// Insert maintaining order defined by `compare`.
+    pub fn BinaryInsert_by(
+        &mut self,
+        obj: T,
+        mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
+    ) {
+        let pos = match self.data.binary_search_by(|probe| compare(probe, &obj)) {
+            Ok(i) | Err(i) => i,
+        };
+        self.make_writable().insert(pos, obj);
+    }
+
+    /// Insert only if no equal element exists (per `compare`). Returns `true` if inserted.
+    pub fn BinaryInsertIfNew_by(
+        &mut self,
+        obj: T,
+        mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
+    ) -> bool {
+        match self.data.binary_search_by(|probe| compare(probe, &obj)) {
+            Ok(_) => false,
+            Err(i) => {
+                self.make_writable().insert(i, obj);
+                true
+            }
+        }
+    }
+
+    /// Insert or replace the matching element (per `compare`).
+    pub fn BinaryInsertOrReplace_by(
+        &mut self,
+        obj: T,
+        mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
+    ) {
+        match self.data.binary_search_by(|probe| compare(probe, &obj)) {
+            Ok(i) => {
+                self.make_writable()[i] = obj;
+            }
+            Err(i) => {
+                self.make_writable().insert(i, obj);
+            }
+        }
+    }
+
+    /// Remove the matching element (per `compare`). Returns `true` if found.
+    pub fn BinaryRemove_by(
+        &mut self,
+        compare: impl FnMut(&T) -> std::cmp::Ordering,
+    ) -> bool {
+        match self.data.binary_search_by(compare) {
+            Ok(i) => {
+                self.make_writable().remove(i);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Binary search by extracted key.
+    /// C++ `BinarySearchByKey`.
+    pub fn BinarySearchByKey<K: Ord>(
+        &self,
+        key: &K,
+        extract: impl Fn(&T) -> K,
+    ) -> Result<usize, usize> {
+        self.data.binary_search_by(|probe| extract(probe).cmp(key))
+    }
+
+    /// Find and replace the matching element (per `compare`). Returns `true` if found.
+    /// C++ `BinaryReplace`.
+    pub fn BinaryReplace(
+        &mut self,
+        obj: T,
+        mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
+    ) -> bool {
+        match self.data.binary_search_by(|probe| compare(probe, &obj)) {
+            Ok(i) => {
+                self.make_writable()[i] = obj;
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Remove by extracted key. Returns `true` if found.
+    /// C++ `BinaryRemoveByKey`.
+    pub fn BinaryRemoveByKey<K: Ord>(
+        &mut self,
+        key: &K,
+        extract: impl Fn(&T) -> K,
+    ) -> bool {
+        match self.data.binary_search_by(|probe| extract(probe).cmp(key)) {
             Ok(i) => {
                 self.make_writable().remove(i);
                 true
