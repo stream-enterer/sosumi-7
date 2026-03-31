@@ -61,6 +61,12 @@ impl emButton {
         self.border.caption = text.to_string();
     }
 
+    /// Returns the caption text set via `SetCaption`.
+    /// Matches C++ `emBorder::GetCaption`.
+    pub fn GetCaption(&self) -> &str {
+        &self.border.caption
+    }
+
     /// Whether clicking this button is not an "End Of Interaction".
     /// If false (the default), an EOI signal would be sent on every click.
     /// Matches C++ `emButton::IsNoEOI`.

@@ -186,6 +186,18 @@ impl emTextField {
         self.border.caption = caption.to_string();
     }
 
+    /// Returns the caption text set via `SetCaption`.
+    /// Matches C++ `emBorder::GetCaption`.
+    pub fn GetCaption(&self) -> &str {
+        &self.border.caption
+    }
+
+    /// Set the description (tooltip/how-to) text.
+    /// Matches C++ `emBorder::SetDescription`.
+    pub fn SetDescription(&mut self, description: &str) {
+        self.border.description = description.to_string();
+    }
+
     pub(crate) fn border_mut(&mut self) -> &mut emBorder {
         &mut self.border
     }
