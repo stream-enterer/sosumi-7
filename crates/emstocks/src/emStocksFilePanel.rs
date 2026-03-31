@@ -152,26 +152,34 @@ impl PanelBehavior for emStocksFilePanel {
                 }
                 InputKey::Key('X') => {
                     // C++: ListBox->CutStocks()
-                    let _clipboard = list_box.CutStocks(&mut self.rec);
-                    // TODO: put _clipboard text on system clipboard
+                    if let Some(clipboard_text) = list_box.CutStocks(&mut self.rec) {
+                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                            let _ = clipboard.set_text(&clipboard_text);
+                        }
+                    }
                     return true;
                 }
                 InputKey::Key('C') => {
                     // C++: ListBox->CopyStocks()
-                    let _clipboard = list_box.CopyStocks(&self.rec);
-                    // TODO: put _clipboard text on system clipboard
+                    if let Some(clipboard_text) = list_box.CopyStocks(&self.rec) {
+                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                            let _ = clipboard.set_text(&clipboard_text);
+                        }
+                    }
                     return true;
                 }
                 InputKey::Key('V') => {
                     // C++: ListBox->PasteStocks()
-                    // TODO: read clipboard_text from system clipboard
-                    let clipboard_text = String::new();
-                    if !clipboard_text.is_empty() {
-                        let _result = list_box.PasteStocks(
-                            &mut self.rec,
-                            &self.config,
-                            &clipboard_text,
-                        );
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        if let Ok(clipboard_text) = clipboard.get_text() {
+                            if !clipboard_text.is_empty() {
+                                let _result = list_box.PasteStocks(
+                                    &mut self.rec,
+                                    &self.config,
+                                    &clipboard_text,
+                                );
+                            }
+                        }
                     }
                     return true;
                 }
@@ -189,8 +197,11 @@ impl PanelBehavior for emStocksFilePanel {
                 }
                 InputKey::Key('H') => {
                     // C++: ListBox->FindSelected()
-                    // TODO: read selection text from system clipboard
-                    let text = self.config.search_text.clone();
+                    let text = if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        clipboard.get_text().unwrap_or_else(|_| self.config.search_text.clone())
+                    } else {
+                        self.config.search_text.clone()
+                    };
                     let _found = list_box.FindSelected(
                         &self.rec,
                         &mut self.config,
