@@ -8,7 +8,9 @@ use std::rc::Rc;
 
 use emcore::emColor::emColor;
 use emcore::emContext::emContext;
-use emcore::emPanel::{PanelBehavior, PanelState};
+use emcore::emInput::emInputEvent;
+use emcore::emInputState::emInputState;
+use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::emPanelCtx::PanelCtx;
 use emcore::emPanelTree::PanelId;
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
@@ -39,40 +41,51 @@ pub struct emDirEntryAltPanel {
     config: Rc<RefCell<emFileManViewConfig>>,
     content_panel: Option<PanelId>,
     alt_panel: Option<PanelId>,
+    content_dirty: bool,
+    alt_dirty: bool,
+    last_viewed: bool,
+    last_in_active_path: bool,
+    last_config_gen: u64,
 }
 
 impl emDirEntryAltPanel {
     pub fn new(ctx: Rc<emContext>, dir_entry: emDirEntry, alternative: i32) -> Self {
         let config = emFileManViewConfig::Acquire(&ctx);
+        let last_config_gen = config.borrow().GetChangeSignal();
         Self {
             data: emDirEntryAltPanelData::new(dir_entry, alternative),
             ctx,
             config,
             content_panel: None,
             alt_panel: None,
+            content_dirty: true,
+            alt_dirty: true,
+            last_viewed: false,
+            last_in_active_path: false,
+            last_config_gen,
         }
     }
 
     pub fn update_dir_entry(&mut self, dir_entry: emDirEntry) {
         self.data.dir_entry = dir_entry;
+        self.content_dirty = true;
+        self.alt_dirty = true;
     }
 
-    fn update_content_panel(
-        &mut self,
-        ctx: &mut PanelCtx,
-        force_recreation: bool,
-    ) {
-        if force_recreation {
+    fn update_content_panel(&mut self, ctx: &mut PanelCtx) {
+        if !self.content_dirty {
+            return;
+        }
+        self.content_dirty = false;
+
+        let should_create = self.last_viewed;
+        let should_delete = !self.last_in_active_path && !self.last_viewed;
+
+        if should_delete {
             if let Some(child) = self.content_panel.take() {
                 ctx.delete_child(child);
             }
-        }
-
-        let config = self.config.borrow();
-        let theme = config.GetTheme();
-        let theme_rec = theme.GetRec();
-
-        if self.content_panel.is_none() {
+        } else if should_create && self.content_panel.is_none() {
             let fppl = emcore::emFpPlugin::emFpPluginList::Acquire(&self.ctx);
             let fppl = fppl.borrow();
             let parent_arg = emcore::emFpPlugin::PanelParentArg::new(Rc::clone(&self.ctx));
@@ -90,33 +103,23 @@ impl emDirEntryAltPanel {
             );
             let child_id = ctx.create_child_with(crate::emDirEntryPanel::CONTENT_NAME, behavior);
             self.content_panel = Some(child_id);
-
-            let bg = emColor::from_packed(theme_rec.BackgroundColor);
-            ctx.layout_child_canvas(
-                child_id,
-                theme_rec.AltContentX, theme_rec.AltContentY,
-                theme_rec.AltContentW, theme_rec.AltContentH,
-                bg,
-            );
         }
     }
 
-    fn update_alt_panel(
-        &mut self,
-        ctx: &mut PanelCtx,
-        force_recreation: bool,
-    ) {
-        if force_recreation {
+    fn update_alt_panel(&mut self, ctx: &mut PanelCtx) {
+        if !self.alt_dirty {
+            return;
+        }
+        self.alt_dirty = false;
+
+        let should_create = self.last_viewed;
+        let should_delete = !self.last_in_active_path && !self.last_viewed;
+
+        if should_delete {
             if let Some(child) = self.alt_panel.take() {
                 ctx.delete_child(child);
             }
-        }
-
-        let config = self.config.borrow();
-        let theme = config.GetTheme();
-        let theme_rec = theme.GetRec();
-
-        if self.alt_panel.is_none() {
+        } else if should_create && self.alt_panel.is_none() {
             let next_alt = emDirEntryAltPanel::new(
                 Rc::clone(&self.ctx),
                 self.data.dir_entry.clone(),
@@ -127,19 +130,41 @@ impl emDirEntryAltPanel {
                 Box::new(next_alt),
             );
             self.alt_panel = Some(child_id);
-
-            let canvas = ctx.GetCanvasColor();
-            ctx.layout_child_canvas(
-                child_id,
-                theme_rec.AltAltX, theme_rec.AltAltY,
-                theme_rec.AltAltW, theme_rec.AltAltH,
-                canvas,
-            );
         }
     }
 }
 
 impl PanelBehavior for emDirEntryAltPanel {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+        if flags.intersects(
+            NoticeFlags::VIEW_CHANGED
+                | NoticeFlags::SOUGHT_NAME_CHANGED
+                | NoticeFlags::ACTIVE_CHANGED,
+        ) {
+            let viewed_changed = state.viewed != self.last_viewed;
+            let active_changed = state.in_active_path != self.last_in_active_path;
+            self.last_viewed = state.viewed;
+            self.last_in_active_path = state.in_active_path;
+            if viewed_changed || active_changed {
+                self.content_dirty = true;
+                self.alt_dirty = true;
+            }
+        }
+    }
+
+    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+        let cfg = self.config.borrow();
+        let gen = cfg.GetChangeSignal();
+        drop(cfg);
+        if gen != self.last_config_gen {
+            self.last_config_gen = gen;
+            self.content_dirty = true;
+            self.alt_dirty = true;
+            return true;
+        }
+        false
+    }
+
     fn IsOpaque(&self) -> bool {
         false
     }
@@ -171,9 +196,47 @@ impl PanelBehavior for emDirEntryAltPanel {
         );
     }
 
+    fn Input(
+        &mut self,
+        _event: &emInputEvent,
+        _state: &PanelState,
+        _input_state: &emInputState,
+    ) -> bool {
+        // Mouse events in alt content area: content panel receives
+        // the event via panel tree propagation. Nothing to handle here.
+        false
+    }
+
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
-        self.update_content_panel(ctx, false);
-        self.update_alt_panel(ctx, false);
+        self.update_content_panel(ctx);
+        self.update_alt_panel(ctx);
+
+        // Layout content panel
+        if let Some(child_id) = self.content_panel {
+            let config = self.config.borrow();
+            let theme = config.GetTheme();
+            let theme_rec = theme.GetRec();
+            let bg = emColor::from_packed(theme_rec.BackgroundColor);
+            ctx.layout_child_canvas(
+                child_id,
+                theme_rec.AltContentX, theme_rec.AltContentY,
+                theme_rec.AltContentW, theme_rec.AltContentH,
+                bg,
+            );
+        }
+        // Layout alt panel
+        if let Some(child_id) = self.alt_panel {
+            let config = self.config.borrow();
+            let theme = config.GetTheme();
+            let theme_rec = theme.GetRec();
+            let canvas = ctx.GetCanvasColor();
+            ctx.layout_child_canvas(
+                child_id,
+                theme_rec.AltAltX, theme_rec.AltAltY,
+                theme_rec.AltAltW, theme_rec.AltAltH,
+                canvas,
+            );
+        }
     }
 }
 

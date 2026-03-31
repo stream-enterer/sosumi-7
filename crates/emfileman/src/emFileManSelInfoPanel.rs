@@ -94,7 +94,8 @@ pub fn work_on_detail_entry(
     }
     if entry.IsRegularFile() {
         details.regular_files += 1;
-        details.size += entry.GetStat().st_size as u64;
+        // Size is accumulated by the caller using GetLStat (for all entry
+        // types, not just regular files), matching C++ WorkOnDetailEntry.
     } else if entry.IsDirectory() {
         details.subdirectories += 1;
     } else {
@@ -118,6 +119,7 @@ pub struct emFileManSelInfoPanel {
     file_man: Rc<RefCell<emFileManModel>>,
     pub(crate) state: SelInfoState,
     pub(crate) allow_business: bool,
+    pub(crate) last_selection_gen: u64,
     dir_stack: Vec<String>,
     initial_dir_stack: Vec<String>,
     sel_list: Vec<String>,
@@ -142,10 +144,12 @@ pub struct emFileManSelInfoPanel {
 impl emFileManSelInfoPanel {
     pub fn new(ctx: Rc<emContext>) -> Self {
         let file_man = emFileManModel::Acquire(&ctx);
+        let last_selection_gen = file_man.borrow().GetSelectionSignal();
         let mut panel = Self {
             file_man,
             state: SelInfoState::new(),
             allow_business: false,
+            last_selection_gen,
             dir_stack: Vec::new(),
             initial_dir_stack: Vec::new(),
             sel_list: Vec::new(),
@@ -218,11 +222,14 @@ impl emFileManSelInfoPanel {
         self.details_y = self.details_frame_y + (self.details_frame_h - self.details_h) * 0.5;
     }
 
-    fn _reset_details(&mut self) {
+    /// DIVERGED: C++ name is ResetDetails (private). Renamed to
+    /// reset_details with pub(crate) visibility for test access.
+    pub(crate) fn reset_details(&mut self) {
         self.state = SelInfoState::new();
         self.dir_stack.clear();
         self.initial_dir_stack.clear();
         self.sel_list.clear();
+        self.sel_index = 0;
         self.dir_path.clear();
         self.dir_handle = None;
     }
@@ -649,6 +656,11 @@ impl emFileManSelInfoPanel {
 
 impl PanelBehavior for emFileManSelInfoPanel {
     fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+        let gen = self.file_man.borrow().GetSelectionSignal();
+        if gen != self.last_selection_gen {
+            self.last_selection_gen = gen;
+            self.reset_details();
+        }
         self.work_on_details()
     }
 
@@ -842,5 +854,37 @@ mod tests {
         panel.set_rectangles(0.2); // wide panel (height < 0.3)
         assert!(panel.text_w > 0.0);
         assert!(panel.details_w > 0.0);
+    }
+
+    #[test]
+    fn reset_details_clears_state() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emFileManSelInfoPanel::new(Rc::clone(&ctx));
+        // Simulate scanning state
+        panel.state.direct.state = ScanState::Scanning;
+        panel.state.direct.entries = 5;
+        panel.sel_list.push("/tmp".to_string());
+        panel.sel_index = 3;
+
+        panel.reset_details();
+
+        assert_eq!(panel.state.direct.state, ScanState::Costly);
+        assert_eq!(panel.state.direct.entries, 0);
+        assert!(panel.sel_list.is_empty());
+        assert_eq!(panel.sel_index, 0);
+    }
+
+    #[test]
+    fn generation_tracking_detects_selection_change() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let panel = emFileManSelInfoPanel::new(Rc::clone(&ctx));
+        let initial_gen = panel.last_selection_gen;
+
+        // Change selection
+        panel.file_man.borrow_mut().SelectAsTarget("/tmp");
+
+        // Generation should have changed
+        let new_gen = panel.file_man.borrow().GetSelectionSignal();
+        assert_ne!(new_gen, initial_gen);
     }
 }

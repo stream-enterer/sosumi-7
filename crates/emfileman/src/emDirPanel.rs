@@ -5,13 +5,18 @@ use std::rc::Rc;
 
 use emcore::emColor::emColor;
 use emcore::emContext::emContext;
-use emcore::emFilePanel::{emFilePanel, VirtualFileState};
+use emcore::emFilePanel::emFilePanel;
+use emcore::emInput::{emInputEvent, InputKey};
+use emcore::emInputState::emInputState;
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::emPanelCtx::PanelCtx;
+use emcore::emPanelTree::PanelId;
 use emcore::emPainter::emPainter;
 
+use crate::emDirEntry::emDirEntry;
 use crate::emDirEntryPanel::emDirEntryPanel;
 use crate::emDirModel::emDirModel;
+use crate::emFileManModel::emFileManModel;
 use crate::emFileManViewConfig::emFileManViewConfig;
 
 pub struct LayoutRect {
@@ -97,32 +102,56 @@ pub fn compute_grid_layout(
     rects
 }
 
+struct KeyWalkState {
+    search: String,
+    last_key_time: std::time::Instant,
+}
+
 /// Directory grid panel.
 /// Port of C++ `emDirPanel` (extends emFilePanel).
 ///
 /// Displays directory entries in a grid layout. Lazily acquires emDirModel
 /// when viewed. Creates/updates emDirEntryPanel children from model entries.
+///
+/// DIVERGED: C++ emDirPanel connects emDirModel as a FileModelState via
+/// SetFileModel. Rust drives loading directly in Cycle (option b from spec)
+/// because emDirModel does not implement FileModelState — it wraps
+/// emDirModelData directly without scheduler integration.
 pub struct emDirPanel {
     pub(crate) file_panel: emFilePanel,
     ctx: Rc<emContext>,
     pub(crate) path: String,
     config: Rc<RefCell<emFileManViewConfig>>,
+    file_man: Rc<RefCell<emFileManModel>>,
     dir_model: Option<Rc<RefCell<emDirModel>>>,
     pub(crate) content_complete: bool,
     child_count: usize,
+    loading_started: bool,
+    loading_done: bool,
+    loading_error: Option<String>,
+    key_walk_state: Option<KeyWalkState>,
+    last_config_gen: u64,
 }
 
 impl emDirPanel {
     pub fn new(ctx: Rc<emContext>, path: String) -> Self {
         let config = emFileManViewConfig::Acquire(&ctx);
+        let file_man = emFileManModel::Acquire(&ctx);
+        let last_config_gen = config.borrow().GetChangeSignal();
         Self {
             file_panel: emFilePanel::new(),
             ctx,
+            file_man,
             path,
             config,
             dir_model: None,
             content_complete: false,
             child_count: 0,
+            loading_started: false,
+            loading_done: false,
+            loading_error: None,
+            key_walk_state: None,
+            last_config_gen,
         }
     }
 
@@ -134,52 +163,195 @@ impl emDirPanel {
         &self.path
     }
 
-    fn update_children(&mut self, ctx: &mut PanelCtx) {
-        if self.file_panel.GetVirFileState() == VirtualFileState::Loaded {
-            if let Some(ref dm_rc) = self.dir_model {
-                let dm = dm_rc.borrow();
-                let cfg = self.config.borrow();
-                let show_hidden = cfg.GetShowHiddenFiles();
-                let count = dm.GetEntryCount();
-
-                // Count visible entries
-                let mut visible_count = 0;
-                for i in 0..count {
-                    let entry = dm.GetEntry(i);
-                    if !entry.IsHidden() || show_hidden {
-                        visible_count += 1;
-                    }
-                }
-
-                // Only recreate if count changed
-                if visible_count != self.child_count {
-                    ctx.DeleteAllChildren();
-
-                    for i in 0..count {
-                        let entry = dm.GetEntry(i);
-                        if !entry.IsHidden() || show_hidden {
-                            let panel = emDirEntryPanel::new(
-                                Rc::clone(&self.ctx),
-                                entry.clone(),
-                            );
-                            ctx.create_child_with(entry.GetName(), Box::new(panel));
-                        }
-                    }
-
-                    self.child_count = visible_count;
-                    self.content_complete = true;
+    pub(crate) fn SelectAll(&self) {
+        if let Some(ref dm_rc) = self.dir_model {
+            let show_hidden = self.config.borrow().GetShowHiddenFiles();
+            let dm = dm_rc.borrow();
+            let mut fm = self.file_man.borrow_mut();
+            for i in 0..dm.GetEntryCount() {
+                let entry = dm.GetEntry(i);
+                if !entry.IsHidden() || show_hidden {
+                    fm.SelectAsTarget(entry.GetPath());
                 }
             }
-        } else {
+        }
+    }
+
+    fn key_walk(&mut self, ch: char) {
+        let now = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(1);
+
+        match &mut self.key_walk_state {
+            Some(state) if now.duration_since(state.last_key_time) < timeout => {
+                state.search.push(ch);
+                state.last_key_time = now;
+            }
+            _ => {
+                self.key_walk_state = Some(KeyWalkState {
+                    search: ch.to_string(),
+                    last_key_time: now,
+                });
+            }
+        }
+
+        // Search for matching entry
+        let search = &self.key_walk_state.as_ref().expect("just set").search;
+        let wildcard = search.starts_with('*');
+        let pattern = if wildcard { &search[1..] } else { search };
+        let pattern_lower = pattern.to_lowercase();
+
+        if let Some(ref dm_rc) = self.dir_model {
+            let dm = dm_rc.borrow();
+            for i in 0..dm.GetEntryCount() {
+                let name = dm.GetEntry(i).GetName();
+                let name_lower = name.to_lowercase();
+                let matches = if wildcard {
+                    name_lower.contains(&pattern_lower)
+                } else {
+                    name_lower.starts_with(&pattern_lower)
+                };
+                if matches {
+                    // TODO: scroll to this entry via seek_child_by_name
+                    // when panel tree integration is available
+                    break;
+                }
+            }
+        }
+    }
+
+    fn update_children(&mut self, ctx: &mut PanelCtx) {
+        if !self.loading_done {
             self.content_complete = false;
+            return;
+        }
+        if let Some(ref dm_rc) = self.dir_model {
+            let dm = dm_rc.borrow();
+            let cfg = self.config.borrow();
+            let show_hidden = cfg.GetShowHiddenFiles();
+            let count = dm.GetEntryCount();
+
+            // Collect visible entries
+            let mut visible: Vec<emDirEntry> = Vec::new();
+            for i in 0..count {
+                let entry = dm.GetEntry(i);
+                if !entry.IsHidden() || show_hidden {
+                    visible.push(entry.clone());
+                }
+            }
+
+            // Sort using config comparator
+            visible.sort_by(|a, b| {
+                let cmp = cfg.CompareDirEntries(a, b);
+                if cmp < 0 {
+                    std::cmp::Ordering::Less
+                } else if cmp > 0 {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            });
+
+            let visible_count = visible.len();
+
+            // Only recreate if count changed
+            if visible_count != self.child_count {
+                ctx.DeleteAllChildren();
+
+                for entry in &visible {
+                    let panel = emDirEntryPanel::new(
+                        Rc::clone(&self.ctx),
+                        entry.clone(),
+                    );
+                    ctx.create_child_with(entry.GetName(), Box::new(panel));
+                }
+
+                self.child_count = visible_count;
+                self.content_complete = true;
+            }
         }
     }
 }
 
 impl PanelBehavior for emDirPanel {
     fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+        let mut changed = false;
+
+        // Detect config changes (sort/filter) and force child re-creation
+        let cfg_gen = self.config.borrow().GetChangeSignal();
+        if cfg_gen != self.last_config_gen {
+            self.last_config_gen = cfg_gen;
+            // Reset child_count to force update_children to recreate
+            self.child_count = 0;
+            changed = true;
+        }
+
+        if let Some(ref dm_rc) = self.dir_model {
+            let mut dm = dm_rc.borrow_mut();
+            if !self.loading_started {
+                match dm.try_start_loading() {
+                    Ok(()) => {
+                        self.loading_started = true;
+                        self.loading_done = false;
+                        self.loading_error = None;
+                        self.file_panel.clear_custom_error();
+                    }
+                    Err(e) => {
+                        self.loading_error = Some(e.clone());
+                        self.file_panel.set_custom_error(&e);
+                    }
+                }
+                changed = true;
+            } else if !self.loading_done && self.loading_error.is_none() {
+                match dm.try_continue_loading() {
+                    Ok(true) => {
+                        dm.quit_loading();
+                        self.loading_done = true;
+                        self.file_panel.clear_custom_error();
+                        drop(dm);
+                        self.update_children(ctx);
+                        changed = true;
+                    }
+                    Ok(false) => {
+                        changed = true;
+                    }
+                    Err(e) => {
+                        self.loading_error = Some(e.clone());
+                        self.file_panel.set_custom_error(&e);
+                        changed = true;
+                    }
+                }
+            } else if self.loading_done {
+                drop(dm);
+                self.update_children(ctx);
+            }
+        }
+
         self.file_panel.refresh_vir_file_state();
-        self.update_children(ctx);
+        changed
+    }
+
+    fn Input(
+        &mut self,
+        event: &emInputEvent,
+        _state: &PanelState,
+        input_state: &emInputState,
+    ) -> bool {
+        // Alt+A: SelectAll
+        if event.is_key(InputKey::Key('a')) && input_state.IsAltMod() {
+            self.SelectAll();
+            return true;
+        }
+
+        // KeyWalk: printable characters
+        if event.is_keyboard_event() && !event.chars.is_empty() {
+            for ch in event.chars.chars() {
+                if ch.is_alphanumeric() || ch == '.' || ch == '_' || ch == '-' || ch == '*' {
+                    self.key_walk(ch);
+                    return true;
+                }
+            }
+        }
+
         false
     }
 
@@ -188,37 +360,46 @@ impl PanelBehavior for emDirPanel {
             if state.viewed {
                 if self.dir_model.is_none() {
                     self.dir_model = Some(emDirModel::Acquire(&self.ctx, &self.path));
+                    self.loading_started = false;
+                    self.loading_done = false;
+                    self.loading_error = None;
+                    self.child_count = 0;
+                    self.content_complete = false;
                 }
             } else if self.dir_model.is_some() {
                 self.dir_model = None;
                 self.file_panel.SetFileModel(None);
+                self.loading_started = false;
+                self.loading_done = false;
+                self.loading_error = None;
             }
         }
     }
 
     fn IsOpaque(&self) -> bool {
-        match self.file_panel.GetVirFileState() {
-            VirtualFileState::Loaded | VirtualFileState::NoFileModel => {
-                let cfg = self.config.borrow();
-                let theme = cfg.GetTheme();
-                let dc = theme.GetRec().DirContentColor;
-                (dc >> 24) == 0xFF
-            }
-            _ => false,
+        if self.loading_done {
+            let cfg = self.config.borrow();
+            let theme = cfg.GetTheme();
+            let dc = theme.GetRec().DirContentColor;
+            (dc >> 24) == 0xFF
+        } else {
+            false
         }
     }
 
     fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
-        match self.file_panel.GetVirFileState() {
-            VirtualFileState::Loaded | VirtualFileState::NoFileModel => {
-                let cfg = self.config.borrow();
-                let theme = cfg.GetTheme();
-                let dc = emColor::from_packed(theme.GetRec().DirContentColor);
-                painter.Clear(dc);
-            }
-            _ => {
-                self.file_panel.paint_status(painter, w, h);
-            }
+        if self.loading_done {
+            let cfg = self.config.borrow();
+            let theme = cfg.GetTheme();
+            let dc = emColor::from_packed(theme.GetRec().DirContentColor);
+            painter.Clear(dc);
+        } else if self.loading_error.is_some() || self.loading_started {
+            self.file_panel.paint_status(painter, w, h);
+        } else {
+            let cfg = self.config.borrow();
+            let theme = cfg.GetTheme();
+            let dc = emColor::from_packed(theme.GetRec().DirContentColor);
+            painter.Clear(dc);
         }
     }
 
@@ -234,11 +415,10 @@ impl PanelBehavior for emDirPanel {
         let theme_rec = theme.GetRec();
         let rect = ctx.layout_rect();
 
-        let canvas_color = match self.file_panel.GetVirFileState() {
-            VirtualFileState::Loaded | VirtualFileState::NoFileModel => {
-                emColor::from_packed(theme_rec.DirContentColor)
-            }
-            _ => emColor::TRANSPARENT,
+        let canvas_color = if self.loading_done {
+            emColor::from_packed(theme_rec.DirContentColor)
+        } else {
+            emColor::TRANSPARENT
         };
 
         if self.content_complete {
@@ -272,6 +452,11 @@ impl PanelBehavior for emDirPanel {
                 ctx.layout_child_canvas(*child, 0.0, 0.0, cw, ch, canvas_color);
             }
         }
+    }
+
+    fn CreateControlPanel(&mut self, parent_ctx: &mut PanelCtx, name: &str) -> Option<PanelId> {
+        let panel = crate::emFileManControlPanel::emFileManControlPanel::new(Rc::clone(&self.ctx));
+        Some(parent_ctx.create_child_with(name, Box::new(panel)))
     }
 
     fn GetIconFileName(&self) -> Option<String> {
@@ -340,5 +525,37 @@ mod tests {
         let ctx = emcore::emContext::emContext::NewRoot();
         let panel = emDirPanel::new(Rc::clone(&ctx), "/tmp".to_string());
         assert_eq!(panel.GetIconFileName(), Some("directory.tga".to_string()));
+    }
+
+    #[test]
+    fn key_walk_state_resets_on_timeout() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emDirPanel::new(Rc::clone(&ctx), "/tmp".to_string());
+
+        panel.key_walk('a');
+        assert_eq!(
+            panel.key_walk_state.as_ref().unwrap().search,
+            "a"
+        );
+
+        // Within timeout: appends
+        panel.key_walk('b');
+        assert_eq!(
+            panel.key_walk_state.as_ref().unwrap().search,
+            "ab"
+        );
+    }
+
+    #[test]
+    fn key_walk_wildcard() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emDirPanel::new(Rc::clone(&ctx), "/tmp".to_string());
+
+        panel.key_walk('*');
+        panel.key_walk('t');
+        assert_eq!(
+            panel.key_walk_state.as_ref().unwrap().search,
+            "*t"
+        );
     }
 }

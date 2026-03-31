@@ -747,6 +747,7 @@ dependencies = [
  "emcore",
  "libc",
  "log",
+ "slotmap",
 ]
 
 [[package]]

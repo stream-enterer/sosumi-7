@@ -12,6 +12,8 @@ use emcore::emPanelCtx::PanelCtx;
 use emcore::emPanelTree::PanelId;
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
 
+use crate::emDirEntry::emDirEntry;
+use crate::emDirEntryPanel::emDirEntryPanel;
 use crate::emFileManViewConfig::emFileManViewConfig;
 use crate::emFileLinkModel::emFileLinkModel;
 
@@ -54,12 +56,15 @@ pub fn CalcContentCoords(
 /// an emDirEntryPanel (if link has HaveDirEntry) or a plugin panel as child.
 pub struct emFileLinkPanel {
     pub(crate) file_panel: emFilePanel,
+    ctx: Rc<emContext>,
     config: Rc<RefCell<emFileManViewConfig>>,
     pub(crate) model: Option<Rc<RefCell<emFileLinkModel>>>,
     pub(crate) have_border: bool,
     have_dir_entry_panel: bool,
     full_path: String,
     child_panel: Option<PanelId>,
+    needs_update: bool,
+    last_viewed: bool,
 }
 
 impl emFileLinkPanel {
@@ -67,17 +72,63 @@ impl emFileLinkPanel {
         let config = emFileManViewConfig::Acquire(&ctx);
         Self {
             file_panel: emFilePanel::new(),
+            ctx,
             config,
             model: None,
             have_border,
             have_dir_entry_panel: false,
             full_path: String::new(),
             child_panel: None,
+            needs_update: true,
+            last_viewed: false,
         }
     }
 
     pub fn set_link_model(&mut self, model: Rc<RefCell<emFileLinkModel>>) {
         self.model = Some(model);
+    }
+
+    fn update_data_and_child_panel(&mut self, ctx: &mut PanelCtx, viewed: bool) {
+        if !viewed {
+            if let Some(child) = self.child_panel.take() {
+                ctx.delete_child(child);
+            }
+            return;
+        }
+
+        let Some(ref model_rc) = self.model else {
+            return;
+        };
+
+        let model = model_rc.borrow();
+        let new_full_path = model.GetFullPath();
+        let new_have_dir_entry = model.GetHaveDirEntry();
+        drop(model);
+
+        if new_full_path != self.full_path || new_have_dir_entry != self.have_dir_entry_panel {
+            // Path or type changed — recreate child
+            if let Some(child) = self.child_panel.take() {
+                ctx.delete_child(child);
+            }
+            self.full_path = new_full_path;
+            self.have_dir_entry_panel = new_have_dir_entry;
+        }
+
+        if self.child_panel.is_none() && !self.full_path.is_empty() {
+            if self.have_dir_entry_panel {
+                let entry = emDirEntry::from_path(&self.full_path);
+                let panel = emDirEntryPanel::new(Rc::clone(&self.ctx), entry);
+                let child_id = ctx.create_child_with("", Box::new(panel));
+                self.child_panel = Some(child_id);
+            } else {
+                let fppl = emcore::emFpPlugin::emFpPluginList::Acquire(&self.ctx);
+                let fppl = fppl.borrow();
+                let parent_arg = emcore::emFpPlugin::PanelParentArg::new(Rc::clone(&self.ctx));
+                let behavior = fppl.CreateFilePanel(&parent_arg, "", &self.full_path, 0);
+                let child_id = ctx.create_child_with("", behavior);
+                self.child_panel = Some(child_id);
+            }
+        }
     }
 
     fn layout_child_panel(&self, ctx: &mut PanelCtx, panel_height: f64) {
@@ -113,8 +164,11 @@ impl PanelBehavior for emFileLinkPanel {
         false
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {
-        // Child panel management deferred to LayoutChildren for borrow safety
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+        if flags.intersects(NoticeFlags::VIEW_CHANGED) {
+            self.last_viewed = state.viewed;
+            self.needs_update = true;
+        }
     }
 
     fn IsOpaque(&self) -> bool {
@@ -185,7 +239,13 @@ impl PanelBehavior for emFileLinkPanel {
         }
     }
 
+    /// DIVERGED: C++ calls UpdateDataAndChildPanel from Cycle() and Notice().
+    /// Rust version defers to LayoutChildren() for borrow safety.
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        if self.needs_update {
+            self.update_data_and_child_panel(ctx, self.last_viewed);
+            self.needs_update = false;
+        }
         let rect = ctx.layout_rect();
         self.layout_child_panel(ctx, rect.h);
     }

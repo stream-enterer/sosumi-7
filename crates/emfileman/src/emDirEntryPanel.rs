@@ -3,7 +3,9 @@ use std::rc::Rc;
 
 use emcore::emColor::emColor;
 use emcore::emContext::emContext;
-use emcore::emPanel::{PanelBehavior, PanelState};
+use emcore::emInput::{emInputEvent, InputKey};
+use emcore::emInputState::emInputState;
+use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::emPanelCtx::PanelCtx;
 use emcore::emPanelTree::PanelId;
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
@@ -68,13 +70,24 @@ pub fn compute_bg_color(
 /// The rendering workhorse of emFileMan. Draws themed background, name,
 /// info, borders, and content area. Creates content panels via the plugin
 /// system and alt panels for alternative views.
+///
+/// DIVERGED: C++ UpdateContentPanel/UpdateAltPanel are called from
+/// Notice()+Cycle() with full view state. Rust uses dirty flags set in
+/// notice() and defers creation/deletion to LayoutChildren() for borrow
+/// safety — LayoutChildren receives PanelCtx which allows child mutation.
 pub struct emDirEntryPanel {
+    ctx: Rc<emContext>,
     file_man: Rc<RefCell<emFileManModel>>,
     config: Rc<RefCell<emFileManViewConfig>>,
     dir_entry: emDirEntry,
     pub(crate) bg_color: u32,
     content_panel: Option<PanelId>,
     alt_panel: Option<PanelId>,
+    content_dirty: bool,
+    alt_dirty: bool,
+    last_viewed: bool,
+    last_in_active_path: bool,
+    last_viewed_width: f64,
 }
 
 impl emDirEntryPanel {
@@ -97,12 +110,18 @@ impl emDirEntryPanel {
         };
 
         Self {
+            ctx,
             file_man,
             config,
             dir_entry,
             bg_color,
             content_panel: None,
             alt_panel: None,
+            content_dirty: true,
+            alt_dirty: true,
+            last_viewed: false,
+            last_in_active_path: false,
+            last_viewed_width: 0.0,
         }
     }
 
@@ -121,6 +140,92 @@ impl emDirEntryPanel {
         }
     }
 
+    /// DIVERGED: C++ UpdateContentPanel is called from Notice+Cycle with
+    /// full view state. Rust version uses cached dirty flags set in notice()
+    /// and is called from LayoutChildren() for borrow safety.
+    fn update_content_panel(&mut self, ctx: &mut PanelCtx) {
+        if !self.content_dirty {
+            return;
+        }
+        self.content_dirty = false;
+
+        let (content_w, min_content_vw) = {
+            let cfg = self.config.borrow();
+            let theme = cfg.GetTheme();
+            let theme_rec = theme.GetRec();
+            let cw = if self.dir_entry.IsDirectory() {
+                theme_rec.DirContentW
+            } else {
+                theme_rec.FileContentW
+            };
+            (cw, theme_rec.MinContentVW)
+        };
+
+        let should_create = self.last_viewed
+            && self.last_viewed_width * content_w >= min_content_vw;
+        let should_delete = !self.last_in_active_path && !self.last_viewed;
+
+        if should_delete && self.content_panel.is_some() {
+            if let Some(child) = self.content_panel.take() {
+                ctx.delete_child(child);
+            }
+        } else if should_create && self.content_panel.is_none() {
+            let stat_mode = if self.dir_entry.IsDirectory() {
+                emcore::emFpPlugin::FileStatMode::Directory
+            } else {
+                emcore::emFpPlugin::FileStatMode::Regular
+            };
+            let fppl = emcore::emFpPlugin::emFpPluginList::Acquire(&self.ctx);
+            let fppl = fppl.borrow();
+            let parent_arg =
+                emcore::emFpPlugin::PanelParentArg::new(Rc::clone(&self.ctx));
+            let behavior = fppl.CreateFilePanelWithStat(
+                &parent_arg,
+                CONTENT_NAME,
+                self.dir_entry.GetPath(),
+                None,
+                stat_mode,
+                0,
+            );
+            let child_id = ctx.create_child_with(CONTENT_NAME, behavior);
+            self.content_panel = Some(child_id);
+        }
+    }
+
+    /// DIVERGED: C++ UpdateAltPanel is called from Notice+Cycle.
+    /// Rust version uses cached dirty flags, called from LayoutChildren().
+    fn update_alt_panel(&mut self, ctx: &mut PanelCtx) {
+        if !self.alt_dirty {
+            return;
+        }
+        self.alt_dirty = false;
+
+        let (alt_w, min_alt_vw) = {
+            let cfg = self.config.borrow();
+            let theme = cfg.GetTheme();
+            let theme_rec = theme.GetRec();
+            (theme_rec.AltW, theme_rec.MinAltVW)
+        };
+
+        let should_create = self.last_viewed
+            && self.last_viewed_width * alt_w >= min_alt_vw;
+        let should_delete = !self.last_in_active_path && !self.last_viewed;
+
+        if should_delete && self.alt_panel.is_some() {
+            if let Some(child) = self.alt_panel.take() {
+                ctx.delete_child(child);
+            }
+        } else if should_create && self.alt_panel.is_none() {
+            let alt = crate::emDirEntryAltPanel::emDirEntryAltPanel::new(
+                Rc::clone(&self.ctx),
+                self.dir_entry.clone(),
+                1,
+            );
+            let child_id = ctx.create_child_with(ALT_NAME, Box::new(alt));
+            self.alt_panel = Some(child_id);
+        }
+    }
+
     fn update_bg_color(&mut self) {
         let fm = self.file_man.borrow();
         let cfg = self.config.borrow();
@@ -134,12 +239,99 @@ impl emDirEntryPanel {
             theme_rec.TargetSelectionColor,
         );
     }
+
+    /// Port of C++ emDirEntryPanel::Select
+    /// DIVERGED: Shift-range selection is simplified — selects only the
+    /// current entry instead of walking sibling panels between
+    /// ShiftTgtSelPath and current. Full range selection requires panel
+    /// tree sibling enumeration not yet available.
+    fn select(&mut self, shift: bool, ctrl: bool) {
+        let path = self.dir_entry.GetPath().to_string();
+        let mut fm = self.file_man.borrow_mut();
+
+        if ctrl {
+            // Toggle target selection
+            if fm.IsSelectedAsTarget(&path) {
+                fm.DeselectAsTarget(&path);
+            } else {
+                fm.SelectAsTarget(&path);
+            }
+            fm.SetShiftTgtSelPath(&path);
+        } else if shift {
+            // Range selection — select from ShiftTgtSelPath to current
+            // For now, just select this entry (range requires sibling enumeration)
+            fm.SelectAsTarget(&path);
+            fm.SetShiftTgtSelPath(&path);
+        } else {
+            // Plain click: old targets become sources, select this as target
+            fm.ClearSourceSelection();
+            fm.SwapSelection();
+            fm.SelectAsTarget(&path);
+            fm.SetShiftTgtSelPath(&path);
+        }
+    }
+
+    /// Port of C++ emDirEntryPanel::SelectSolely
+    fn select_solely(&mut self) {
+        let path = self.dir_entry.GetPath().to_string();
+        let mut fm = self.file_man.borrow_mut();
+        fm.ClearSourceSelection();
+        fm.ClearTargetSelection();
+        fm.SelectAsTarget(&path);
+    }
 }
 
 impl PanelBehavior for emDirEntryPanel {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+        if flags.intersects(
+            NoticeFlags::VIEW_CHANGED
+                | NoticeFlags::SOUGHT_NAME_CHANGED
+                | NoticeFlags::ACTIVE_CHANGED,
+        ) {
+            let viewed_changed = state.viewed != self.last_viewed;
+            let active_changed = state.in_active_path != self.last_in_active_path;
+            self.last_viewed = state.viewed;
+            self.last_in_active_path = state.in_active_path;
+            self.last_viewed_width = state.viewed_rect.w;
+            if viewed_changed || active_changed {
+                self.content_dirty = true;
+                self.alt_dirty = true;
+            }
+        }
+    }
+
     fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
         self.update_bg_color();
         false
+    }
+
+    fn Input(
+        &mut self,
+        event: &emInputEvent,
+        _state: &PanelState,
+        input_state: &emInputState,
+    ) -> bool {
+        match event.key {
+            InputKey::MouseLeft => {
+                if event.repeat >= 2 {
+                    // Double-click: select solely (RunDefaultCommand out of scope)
+                    self.select_solely();
+                    true
+                } else {
+                    self.select(input_state.GetShift(), input_state.GetCtrl());
+                    true
+                }
+            }
+            InputKey::Enter => {
+                self.select_solely();
+                true
+            }
+            InputKey::Space => {
+                self.select(input_state.GetShift(), input_state.GetCtrl());
+                true
+            }
+            _ => false,
+        }
     }
 
     fn IsOpaque(&self) -> bool {
@@ -242,6 +434,11 @@ impl PanelBehavior for emDirEntryPanel {
         Some(self.dir_entry.GetPath().to_string())
     }
 
+    fn CreateControlPanel(&mut self, parent_ctx: &mut PanelCtx, name: &str) -> Option<PanelId> {
+        let panel = crate::emFileManControlPanel::emFileManControlPanel::new(Rc::clone(&self.ctx));
+        Some(parent_ctx.create_child_with(name, Box::new(panel)))
+    }
+
     fn GetIconFileName(&self) -> Option<String> {
         if self.dir_entry.IsDirectory() {
             Some("directory.tga".to_string())
@@ -251,6 +448,10 @@ impl PanelBehavior for emDirEntryPanel {
     }
 
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        // Create/delete children based on dirty flags
+        self.update_content_panel(ctx);
+        self.update_alt_panel(ctx);
+
         if let Some(child) = self.content_panel {
             let cfg = self.config.borrow();
             let theme = cfg.GetTheme();
@@ -358,5 +559,56 @@ mod tests {
         let entry = crate::emDirEntry::emDirEntry::from_path("/tmp");
         let panel = emDirEntryPanel::new(Rc::clone(&ctx), entry);
         assert_eq!(panel.get_title(), Some("/tmp".to_string()));
+    }
+
+    #[test]
+    fn select_solely_clears_and_selects() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let entry = crate::emDirEntry::emDirEntry::from_path("/tmp");
+        let mut panel = emDirEntryPanel::new(Rc::clone(&ctx), entry);
+
+        panel.select_solely();
+
+        let fm = panel.file_man.borrow();
+        assert!(fm.IsSelectedAsTarget("/tmp"));
+        assert_eq!(fm.GetTargetSelectionCount(), 1);
+        assert_eq!(fm.GetSourceSelectionCount(), 0);
+    }
+
+    #[test]
+    fn select_plain_swaps_selection() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let entry = crate::emDirEntry::emDirEntry::from_path("/tmp");
+        let mut panel = emDirEntryPanel::new(Rc::clone(&ctx), entry);
+
+        // First click: selects as target
+        panel.select(false, false);
+        {
+            let fm = panel.file_man.borrow();
+            assert!(fm.IsSelectedAsTarget("/tmp"));
+        }
+
+        // Create another panel and click it
+        let entry2 = crate::emDirEntry::emDirEntry::from_path("/var");
+        let mut panel2 = emDirEntryPanel::new(Rc::clone(&ctx), entry2);
+        panel2.select(false, false);
+
+        let fm = panel2.file_man.borrow();
+        assert!(fm.IsSelectedAsTarget("/var"));
+        // /tmp should now be a source (swapped)
+        assert!(fm.IsSelectedAsSource("/tmp"));
+    }
+
+    #[test]
+    fn select_ctrl_toggles() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let entry = crate::emDirEntry::emDirEntry::from_path("/tmp");
+        let mut panel = emDirEntryPanel::new(Rc::clone(&ctx), entry);
+
+        panel.select(false, true); // ctrl-click: select
+        assert!(panel.file_man.borrow().IsSelectedAsTarget("/tmp"));
+
+        panel.select(false, true); // ctrl-click: deselect
+        assert!(!panel.file_man.borrow().IsSelectedAsTarget("/tmp"));
     }
 }
