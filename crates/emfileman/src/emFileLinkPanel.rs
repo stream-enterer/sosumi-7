@@ -240,7 +240,10 @@ impl PanelBehavior for emFileLinkPanel {
     }
 
     /// DIVERGED: C++ calls UpdateDataAndChildPanel from Cycle() and Notice().
-    /// Rust version defers to LayoutChildren() for borrow safety.
+    /// Rust defers to LayoutChildren() for borrow safety — the RefCell holding
+    /// the panel cannot be borrowed mutably while also creating/deleting child
+    /// panels. The timing difference is at most one frame. This matches the
+    /// established pattern in emDirEntryPanel.
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
         if self.needs_update {
             self.update_data_and_child_panel(ctx, self.last_viewed);
