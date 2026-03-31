@@ -129,6 +129,50 @@ impl App {
     pub fn screen(&self) -> &emScreen {
         self.screen.as_ref().expect("Screen not initialized yet")
     }
+
+    /// Dispatch synthetic input events from the touch gesture machine.
+    /// Modifier keys are set/cleared on input_state to match C++ InputState
+    /// persistence: press events set modifiers, release events clear them.
+    fn dispatch_forward_events(
+        win: &mut ZuiWindow,
+        tree: &mut PanelTree,
+        input_state: &mut emInputState,
+    ) {
+        let forward_events = win.touch_vif_mut().drain_forward_events();
+        if forward_events.is_empty() {
+            return;
+        }
+        for event in &forward_events {
+            // C++ parity: modifiers are SET on press and CLEARED on release.
+            // They persist across frames so real events also see them.
+            match event.variant {
+                InputVariant::Press => {
+                    if event.shift {
+                        input_state.press(InputKey::Shift);
+                    }
+                    if event.ctrl {
+                        input_state.press(InputKey::Ctrl);
+                    }
+                }
+                InputVariant::Release => {
+                    if event.shift {
+                        input_state.release(InputKey::Shift);
+                    }
+                    if event.ctrl {
+                        input_state.release(InputKey::Ctrl);
+                    }
+                }
+                _ => {}
+            }
+            input_state.set_mouse(event.mouse_x, event.mouse_y);
+            let mut ev = event.clone();
+            ev.mouse_x = input_state.mouse_x;
+            ev.mouse_y = input_state.mouse_y;
+            win.dispatch_input(tree, &ev, input_state);
+        }
+        win.invalidate();
+        win.request_redraw();
+    }
 }
 
 impl ApplicationHandler for App {
@@ -203,6 +247,11 @@ impl ApplicationHandler for App {
             WindowEvent::Touch(ref touch) => {
                 if let Some(win) = self.windows.get_mut(&window_id) {
                     win.handle_touch(touch, &mut self.tree);
+                    Self::dispatch_forward_events(
+                        win,
+                        &mut self.tree,
+                        &mut self.input_state,
+                    );
                     win.invalidate();
                     win.request_redraw();
                 }
@@ -282,6 +331,7 @@ impl ApplicationHandler for App {
             .clamp(0.001, 0.1);
         self.last_frame_time = now;
         let tree = &mut self.tree;
+        let state = &mut self.input_state;
         for win in self.windows.values_mut() {
             // Layout changes from notices require viewed coordinate recomputation.
             if had_notices {
@@ -300,6 +350,40 @@ impl ApplicationHandler for App {
             // Tick VIF animations (wheel zoom spring, grip pan spring)
             if win.tick_vif_animations(tree, dt) {
                 needs_full_repaint = true;
+            }
+
+            // Dispatch synthetic events from gesture timer transitions
+            // (cycle_gesture may have fired 250ms timeouts → EmuMouse/Visit/Menu)
+            let forward_events = win.touch_vif_mut().drain_forward_events();
+            if !forward_events.is_empty() {
+                for event in &forward_events {
+                    match event.variant {
+                        InputVariant::Press => {
+                            if event.shift {
+                                state.press(InputKey::Shift);
+                            }
+                            if event.ctrl {
+                                state.press(InputKey::Ctrl);
+                            }
+                        }
+                        InputVariant::Release => {
+                            if event.shift {
+                                state.release(InputKey::Shift);
+                            }
+                            if event.ctrl {
+                                state.release(InputKey::Ctrl);
+                            }
+                        }
+                        _ => {}
+                    }
+                    state.set_mouse(event.mouse_x, event.mouse_y);
+                    let mut ev = event.clone();
+                    ev.mouse_x = state.mouse_x;
+                    ev.mouse_y = state.mouse_y;
+                    win.dispatch_input(tree, &ev, state);
+                }
+                win.invalidate();
+                win.request_redraw();
             }
 
             // Update view (recompute viewing coords, auto-select active)

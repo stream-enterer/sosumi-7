@@ -1783,6 +1783,9 @@ pub struct emDefaultTouchVIF {
     smoothed_vy: f64,
     /// C++ parity gesture tracker with 17-state machine.
     pub gesture_tracker: TouchTracker,
+    /// Synthetic input events from ForwardInput/InjectMenuKey that the window
+    /// must dispatch through its input pipeline.
+    pending_forward_events: Vec<emInputEvent>,
 }
 
 impl emDefaultTouchVIF {
@@ -1799,6 +1802,7 @@ impl emDefaultTouchVIF {
             smoothed_vx: 0.0,
             smoothed_vy: 0.0,
             gesture_tracker: TouchTracker::new(),
+            pending_forward_events: Vec::new(),
         }
     }
 
@@ -1970,7 +1974,8 @@ impl emDefaultTouchVIF {
             }
 
         self.run_gesture_loop(view, tree);
-        self.drain_gesture_actions(view);
+        let events = self.drain_gesture_actions(view);
+        self.pending_forward_events.extend(events);
         true
     }
 
@@ -2041,7 +2046,8 @@ impl emDefaultTouchVIF {
 
         if consumed {
             self.run_gesture_loop(view, tree);
-            self.drain_gesture_actions(view);
+            let events = self.drain_gesture_actions(view);
+            self.pending_forward_events.extend(events);
         }
         consumed
     }
@@ -2094,7 +2100,8 @@ impl emDefaultTouchVIF {
         }
 
         self.run_gesture_loop(view, tree);
-        self.drain_gesture_actions(view);
+        let events = self.drain_gesture_actions(view);
+        self.pending_forward_events.extend(events);
         true
     }
 
@@ -2148,20 +2155,53 @@ impl emDefaultTouchVIF {
     pub fn cycle_gesture(&mut self, view: &mut emView, tree: &mut PanelTree, dt_ms: i32) {
         self.gesture_tracker.next_touches(dt_ms);
         self.run_gesture_loop(view, tree);
-        self.drain_gesture_actions(view);
+        let events = self.drain_gesture_actions(view);
+        self.pending_forward_events.extend(events);
     }
 
     /// Process pending gesture actions that aren't handled inline by do_gesture.
-    fn drain_gesture_actions(&mut self, _view: &mut emView) {
+    /// Returns synthetic input events that must be dispatched through the
+    /// window's input pipeline (ForwardInput and InjectMenuKey actions).
+    fn drain_gesture_actions(&mut self, _view: &mut emView) -> Vec<emInputEvent> {
+        let mut forward_events = Vec::new();
         for action in self.gesture_tracker.pending_actions.drain(..) {
             match action {
                 GestureAction::InjectMenuKey => {
                     dlog!("Touch gesture: inject menu key");
-                    // TODO: emit Menu key press+release through input filter chain
+                    // Menu key press
+                    forward_events.push(emInputEvent {
+                        key: InputKey::Menu,
+                        variant: InputVariant::Press,
+                        chars: String::new(),
+                        repeat: 0,
+                        source_variant: 0,
+                        mouse_x: 0.0,
+                        mouse_y: 0.0,
+                        shift: false,
+                        ctrl: false,
+                        alt: false,
+                        meta: false,
+                        eaten: false,
+                    });
+                    // Menu key release
+                    forward_events.push(emInputEvent {
+                        key: InputKey::Menu,
+                        variant: InputVariant::Release,
+                        chars: String::new(),
+                        repeat: 0,
+                        source_variant: 0,
+                        mouse_x: 0.0,
+                        mouse_y: 0.0,
+                        shift: false,
+                        ctrl: false,
+                        alt: false,
+                        meta: false,
+                        eaten: false,
+                    });
                 }
                 GestureAction::ToggleSoftKeyboard => {
                     dlog!("Touch gesture: toggle soft keyboard");
-                    // TODO: view.show_soft_keyboard(!view.is_soft_keyboard_shown())
+                    // TODO: _view.ShowSoftKeyboard(!_view.IsSoftKeyboardShown())
                 }
                 GestureAction::ForwardInput {
                     key,
@@ -2178,11 +2218,29 @@ impl emDefaultTouchVIF {
                         mouse_x,
                         mouse_y
                     );
-                    // TODO: forward synthetic mouse event through the input filter chain
-                    let _ = (key, variant, mouse_x, mouse_y, shift, ctrl);
+                    forward_events.push(emInputEvent {
+                        key,
+                        variant,
+                        chars: String::new(),
+                        repeat: 0,
+                        source_variant: 0,
+                        mouse_x,
+                        mouse_y,
+                        shift,
+                        ctrl,
+                        alt: false,
+                        meta: false,
+                        eaten: false,
+                    });
                 }
             }
         }
+        forward_events
+    }
+
+    /// Drain buffered synthetic input events for the window to dispatch.
+    pub fn drain_forward_events(&mut self) -> Vec<emInputEvent> {
+        std::mem::take(&mut self.pending_forward_events)
     }
 }
 
@@ -2425,6 +2483,26 @@ mod tests {
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0);
         let view = emView::new(root, 800.0, 600.0);
         (tree, view)
+    }
+
+    #[test]
+    fn test_drain_gesture_actions_returns_forward_input() {
+        let mut vif = emDefaultTouchVIF::new();
+        // Manually push a ForwardInput action to simulate gesture machine output
+        vif.gesture_tracker.pending_actions.push(GestureAction::ForwardInput {
+            key: InputKey::MouseLeft,
+            variant: InputVariant::Press,
+            mouse_x: 100.0,
+            mouse_y: 200.0,
+            shift: false,
+            ctrl: false,
+        });
+        let (_tree, mut view) = setup();
+        let forward_events = vif.drain_gesture_actions(&mut view);
+        assert_eq!(forward_events.len(), 1);
+        assert_eq!(forward_events[0].key, InputKey::MouseLeft);
+        assert_eq!(forward_events[0].variant, InputVariant::Press);
+        assert!((forward_events[0].mouse_x - 100.0).abs() < 1e-6);
     }
 
     #[test]
