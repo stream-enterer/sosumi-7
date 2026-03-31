@@ -269,15 +269,11 @@ impl emDirPanel {
                 self.content_complete = true;
 
                 // Check for pending scroll target
-                // DIVERGED: C++ uses View.Visit() from Input handler. Rust stores the
-                // target and attempts lookup via find_child_by_name in update_children,
-                // but cannot trigger view navigation without view access from panels.
+                // DIVERGED: C++ uses View.Visit() from Input handler. Rust queues
+                // navigation via PanelCtx::request_visit, drained by emView each frame.
                 if let Some(target) = self.scroll_target.take() {
-                    if let Some(_child_id) = ctx.find_child_by_name(&target) {
-                        log::debug!(
-                            "scroll_to_entry: found child '{}', navigation pending",
-                            target
-                        );
+                    if let Some(child_id) = ctx.find_child_by_name(&target) {
+                        ctx.request_visit(child_id);
                     }
                 }
             }

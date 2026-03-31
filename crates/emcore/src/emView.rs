@@ -1220,6 +1220,11 @@ impl emView {
 
         // Auto-expansion dispatch
         self.update_auto_expansion(tree);
+
+        // Drain panel-to-view navigation requests
+        for target in tree.drain_navigation_requests() {
+            self.VisitFullsized(tree, target);
+        }
     }
 
     fn compute_viewed_recursive(

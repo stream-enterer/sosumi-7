@@ -252,6 +252,9 @@ pub struct PanelTree {
     has_pending_notices: bool,
     /// Panels that have opted into per-frame cycling via `request_cycle`.
     cycle_list: Vec<PanelId>,
+    /// Queue of panels that behaviors have requested the view navigate to.
+    /// Drained by emView each frame.
+    navigation_requests: Vec<PanelId>,
 }
 
 impl PanelTree {
@@ -262,6 +265,7 @@ impl PanelTree {
             name_index: HashMap::new(),
             has_pending_notices: false,
             cycle_list: Vec::new(),
+            navigation_requests: Vec::new(),
         }
     }
 
@@ -1060,6 +1064,17 @@ impl PanelTree {
                 self.cycle_list.retain(|&x| x != id);
             }
         }
+    }
+
+    /// Request that the view navigate to show this panel.
+    /// Called by panel behaviors; drained by emView each frame.
+    pub(crate) fn request_visit(&mut self, target: PanelId) {
+        self.navigation_requests.push(target);
+    }
+
+    /// Drain pending navigation requests. Called by emView::Update.
+    pub(crate) fn drain_navigation_requests(&mut self) -> Vec<PanelId> {
+        std::mem::take(&mut self.navigation_requests)
     }
 
     /// Deliver pending notices to all panels with behaviors.

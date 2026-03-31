@@ -163,6 +163,11 @@ impl<'a> PanelCtx<'a> {
         self.tree.find_child_by_name(self.id, name)
     }
 
+    /// Request view navigation to a child panel.
+    pub fn request_visit(&mut self, child: PanelId) {
+        self.tree.request_visit(child);
+    }
+
     /// Get the canvas color of the current panel.
     pub fn GetCanvasColor(&self) -> emColor {
         self.tree
