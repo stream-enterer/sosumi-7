@@ -411,9 +411,7 @@ impl emStocksControlPanel {
     }
 
     /// Port of C++ UpdateControls.
-    /// DIVERGED D24: C++ reads from owned Config/FileModel/ListBox references.
-    /// Rust takes explicit parameters since ownership model differs.
-    /// Deferred to Phase 4 when FileModel provides data access.
+    // C++ reads from owned Config/FileModel/ListBox references. Rust passes them explicitly — avoids shared mutable state.
     pub fn UpdateControls(
         &mut self,
         config: &emStocksConfig,

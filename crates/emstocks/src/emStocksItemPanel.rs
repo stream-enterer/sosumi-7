@@ -294,8 +294,7 @@ impl emStocksItemPanel {
 
     /// Port of C++ emStocksItemPanel::UpdateControls.
     /// Syncs stock record data to widget instances.
-    /// DIVERGED D45: Takes stock and selected_date as parameters instead of
-    /// accessing via C++ widget/model references.
+    // C++ reads stock/selected_date from owned FileModel/ListBox. Rust passes explicitly — avoids shared mutable state.
     pub fn UpdateControls(&mut self, stock: &StockRec, selected_date: &str) {
         self.update_controls_needed = false;
 

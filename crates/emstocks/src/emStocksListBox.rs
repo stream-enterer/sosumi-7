@@ -142,8 +142,7 @@ impl emStocksListBox {
     }
 
     /// Port of C++ GoBackInHistory.
-    /// DIVERGED: C++ takes no arguments (reads from owned FileModel reference).
-    /// Rust takes `rec` parameter since emStocksFileModel is not yet integrated.
+    // C++ reads from owned FileModel reference. Rust passes rec explicitly — avoids shared mutable state.
     pub fn GoBackInHistory(&mut self, rec: &emStocksRec) {
         let date = rec.GetPricesDateBefore(&self.selected_date);
         if !date.is_empty() {
@@ -152,8 +151,7 @@ impl emStocksListBox {
     }
 
     /// Port of C++ GoForwardInHistory.
-    /// DIVERGED: C++ takes no arguments (reads from owned FileModel reference).
-    /// Rust takes `rec` parameter since emStocksFileModel is not yet integrated.
+    // C++ reads from owned FileModel reference. Rust passes rec explicitly — avoids shared mutable state.
     pub fn GoForwardInHistory(&mut self, rec: &emStocksRec) {
         let date = rec.GetPricesDateAfter(&self.selected_date);
         if !date.is_empty() {
@@ -382,8 +380,7 @@ impl emStocksListBox {
     /// Port of C++ NewStock.
     /// Creates a new stock, assigns an ID, sets initial fields from config,
     /// updates items, and selects the new stock.
-    /// DIVERGED: C++ takes no arguments (reads from owned FileModel/Config).
-    /// Rust takes `rec` and `config` parameters.
+    // C++ reads from owned FileModel/Config references. Rust passes rec and config explicitly — avoids shared mutable state.
     pub fn NewStock(
         &mut self,
         rec: &mut emStocksRec,
@@ -545,8 +542,7 @@ impl emStocksListBox {
 
     /// Port of C++ DeleteSharePrices.
     /// Clears price data from all visible stocks.
-    /// DIVERGED: C++ takes no arguments (reads from owned FileModel).
-    /// Rust takes `rec` parameter.
+    // C++ reads from owned FileModel reference. Rust passes rec explicitly — avoids shared mutable state.
     pub fn DeleteSharePrices(&self, rec: &mut emStocksRec) {
         for &stock_idx in &self.visible_items {
             if let Some(stock) = rec.stocks.get_mut(stock_idx) {
