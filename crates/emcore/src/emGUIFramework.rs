@@ -200,6 +200,13 @@ impl ApplicationHandler for App {
                     win.request_redraw();
                 }
             }
+            WindowEvent::Touch(ref touch) => {
+                if let Some(win) = self.windows.get_mut(&window_id) {
+                    win.handle_touch(touch, &mut self.tree);
+                    win.invalidate();
+                    win.request_redraw();
+                }
+            }
             ref input_event => {
                 if let Some(mut input) = ZuiWindow::handle_input(input_event) {
                     // Update persistent input state

@@ -8,7 +8,7 @@ use emcore::emPanelTree::{PanelId, PanelTree};
 
 use emcore::emView::emView;
 
-use emcore::emViewInputFilter::{emKeyboardZoomScrollVIF, emMouseZoomScrollVIF, emViewInputFilter};
+use emcore::emViewInputFilter::{emDefaultTouchVIF, emKeyboardZoomScrollVIF, emMouseZoomScrollVIF, emViewInputFilter};
 use emcore::emScheduler::EngineScheduler;
 
 /// Test harness that dispatches Input through the FULL coordinate transform
@@ -24,6 +24,7 @@ pub struct PipelineTestHarness {
     pub scheduler: EngineScheduler,
     pub view: emView,
     pub vif_chain: Vec<Box<dyn emViewInputFilter>>,
+    pub touch_vif: emDefaultTouchVIF,
     pub input_state: emInputState,
     root: PanelId,
 }
@@ -55,6 +56,7 @@ impl PipelineTestHarness {
             scheduler: EngineScheduler::new(),
             view,
             vif_chain,
+            touch_vif: emDefaultTouchVIF::new(),
             input_state: emInputState::new(),
             root,
         }

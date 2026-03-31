@@ -5,7 +5,7 @@ use bitflags::bitflags;
 use crate::emImage::emImage;
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
-use crate::emViewInputFilter::{CheatAction, emCheatVIF, emKeyboardZoomScrollVIF, emMouseZoomScrollVIF, emViewInputFilter};
+use crate::emViewInputFilter::{CheatAction, emCheatVIF, emDefaultTouchVIF, emKeyboardZoomScrollVIF, emMouseZoomScrollVIF, emViewInputFilter};
 use crate::emPanelTree::{PanelId, PanelTree};
 use crate::emView::emView;
 use crate::emViewAnimator::emViewAnimator;
@@ -51,6 +51,7 @@ pub struct ZuiWindow {
     root_panel: PanelId,
     vif_chain: Vec<Box<dyn emViewInputFilter>>,
     cheat_vif: emCheatVIF,
+    touch_vif: emDefaultTouchVIF,
     pub active_animator: Option<Box<dyn emViewAnimator>>,
     window_icon: Option<emImage>,
     last_mouse_pos: (f64, f64),
@@ -164,6 +165,7 @@ impl ZuiWindow {
             root_panel,
             vif_chain,
             cheat_vif: emCheatVIF::new(),
+            touch_vif: emDefaultTouchVIF::new(),
             active_animator: None,
             window_icon: None,
             last_mouse_pos: (0.0, 0.0),
@@ -974,7 +976,54 @@ impl ZuiWindow {
                 active = true;
             }
         }
+        // Tick touch gesture timer (C++ emDefaultTouchVIF::Cycle)
+        let dt_ms = (dt * 1000.0) as i32;
+        self.touch_vif.cycle_gesture(view, tree, dt_ms);
+        // Tick fling animation
+        if self.touch_vif.animate_fling(view, dt) {
+            active = true;
+        }
         active
+    }
+
+    /// Handle a winit Touch event by routing to the emDefaultTouchVIF.
+    /// Returns true if the event was consumed.
+    pub fn handle_touch(
+        &mut self,
+        touch: &winit::event::Touch,
+        tree: &mut PanelTree,
+    ) -> bool {
+        use winit::event::TouchPhase;
+        match touch.phase {
+            TouchPhase::Started => {
+                self.touch_vif.touch_start(
+                    touch.id,
+                    touch.location.x,
+                    touch.location.y,
+                    &mut self.view,
+                    tree,
+                )
+            }
+            TouchPhase::Moved => {
+                // dt=0.016 is a reasonable default; the real frame delta is
+                // applied in cycle_gesture which runs each frame.
+                self.touch_vif.touch_move(
+                    touch.id,
+                    touch.location.x,
+                    touch.location.y,
+                    0.016,
+                    &mut self.view,
+                    tree,
+                )
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                self.touch_vif.touch_end(touch.id, &mut self.view, tree)
+            }
+        }
+    }
+
+    pub fn touch_vif_mut(&mut self) -> &mut emDefaultTouchVIF {
+        &mut self.touch_vif
     }
 
     pub fn root_panel(&self) -> PanelId {
