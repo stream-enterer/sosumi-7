@@ -31,22 +31,26 @@ use crate::emMainControlPanel::emMainControlPanel;
 /// Port of C++ `emMainPanel::SliderPanel` (emMainPanel.cpp:377-502).
 ///
 /// DIVERGED: C++ SliderPanel holds a `MainPanel&` and calls
-/// `MainPanel._DragSlider(dy)` / `MainPanel._DoubleClickSlider()` directly.
+/// `MainPanel.DragSlider(dy)` / `MainPanel.DoubleClickSlider()` directly.
 /// Rust cannot hold parent references in the panel tree. Instead, the parent
-/// (`emMainPanel`) reads this panel's state via `with_behavior_as` and calls
-/// its own `_DragSlider` / `_DoubleClickSlider`. The drag wiring is in Task 7.
+/// (`emMainPanel`) reads `pending_drag_delta` and `double_clicked` from this
+/// panel via `with_behavior_as` in its `Cycle` and dispatches accordingly.
 pub(crate) struct SliderPanel {
     mouse_over: bool,
     pressed: bool,
     hidden: bool,
     press_my: f64,
-    _press_slider_y: f64,
+    press_slider_y: f64,
     /// C++ reads MainPanel.SliderY/SliderMinY/SliderMaxY for arrow rendering.
     /// Parent sets these before Paint via `set_parent_slider_state`.
     parent_slider_y: f64,
     parent_slider_min_y: f64,
     parent_slider_max_y: f64,
     slider_image: emImage,
+    /// Pending drag delta computed during `Input`, consumed by parent `Cycle`.
+    pending_drag_delta: Option<f64>,
+    /// Set on double-click, consumed by parent `Cycle`.
+    double_clicked: bool,
 }
 
 impl SliderPanel {
@@ -58,43 +62,27 @@ impl SliderPanel {
             pressed: false,
             hidden: false,
             press_my: 0.0,
-            _press_slider_y: 0.0,
+            press_slider_y: 0.0,
             parent_slider_y: 0.0,
             parent_slider_min_y: 0.0,
             parent_slider_max_y: 0.0,
             slider_image,
+            pending_drag_delta: None,
+            double_clicked: false,
         }
     }
 
     /// Port of C++ `emMainPanel::SliderPanel::SetHidden`.
-    /// Wired by `UpdateSliderHiding` in Task 8.
+    /// Wired by `update_slider_hiding` in Task 2.
     pub(crate) fn _SetHidden(&mut self, hidden: bool) {
         if self.hidden != hidden {
             self.hidden = hidden;
         }
     }
 
-    /// Whether the slider is currently being dragged.
-    /// Wired in Task 7 when parent reads slider state.
-    pub(crate) fn _is_pressed(&self) -> bool {
-        self.pressed
-    }
-
-    /// Mouse Y at press start (panel-local coordinates).
-    /// Wired in Task 7 when parent reads slider state.
-    pub(crate) fn _press_my(&self) -> f64 {
-        self.press_my
-    }
-
-    /// SliderY at press start (parent coordinates).
-    /// Wired in Task 7 when parent reads slider state.
-    pub(crate) fn _get_press_slider_y(&self) -> f64 {
-        self._press_slider_y
-    }
-
     /// Whether the mouse is over the slider.
-    /// Wired in Task 7/8 for cursor and hiding logic.
-    pub(crate) fn _mouse_over(&self) -> bool {
+    /// Wired in Task 2/8 for cursor and hiding logic.
+    pub(crate) fn _mouse_over_state(&self) -> bool {
         self.mouse_over
     }
 
@@ -111,17 +99,6 @@ impl SliderPanel {
         self.parent_slider_max_y = slider_max_y;
     }
 
-    /// Called by parent to set press_slider_y to current SliderY on press.
-    /// Used in Task 7 when input wiring is connected.
-    pub(crate) fn _set_press_slider_y(&mut self, y: f64) {
-        self._press_slider_y = y;
-    }
-
-    /// Reset pressed state (called by parent after button release processing).
-    /// Used in Task 7 when input wiring is connected.
-    pub(crate) fn _set_pressed(&mut self, pressed: bool) {
-        self.pressed = pressed;
-    }
 }
 
 impl PanelBehavior for SliderPanel {
@@ -149,16 +126,23 @@ impl PanelBehavior for SliderPanel {
                 if event.repeat == 0 && !self.pressed {
                     self.pressed = true;
                     self.press_my = my;
-                    // press_slider_y is set by parent via set_press_slider_y
-                    // before Input dispatch (or in LayoutChildren).
+                    self.press_slider_y = self.parent_slider_y;
                 } else if event.repeat == 1 {
-                    // C++ unconditionally calls MainPanel._DoubleClickSlider()
-                    // here. In Rust, the parent reads slider state and
-                    // handles it (Task 7 wiring). Reset pressed if active.
+                    // C++ unconditionally calls MainPanel.DoubleClickSlider().
+                    // In Rust, the parent reads `double_clicked` in its Cycle.
+                    self.double_clicked = true;
                     self.pressed = false;
                 }
             }
             return true; // eat event (C++: event.Eat())
+        }
+
+        // Compute drag delta while pressed (C++ emMainPanel.cpp:424-432).
+        if self.pressed {
+            let sensitivity = if input_state.GetShift() { 0.25 } else { 1.0 };
+            let target_y =
+                self.press_slider_y + (my - self.press_my) * _state.height * sensitivity;
+            self.pending_drag_delta = Some(target_y - self.parent_slider_y);
         }
 
         // Release detection: if pressed but left button no longer held.
@@ -530,8 +514,8 @@ impl emMainPanel {
 
     /// Apply a slider drag delta in parent coordinate space.
     ///
-    /// Port of C++ `emMainPanel::_DragSlider` (emMainPanel.cpp:342-357).
-    pub(crate) fn _DragSlider(&mut self, delta_y: f64) {
+    /// Port of C++ `emMainPanel::DragSlider` (emMainPanel.cpp:342-357).
+    pub(crate) fn DragSlider(&mut self, delta_y: f64) {
         let mut y = self.slider_y + delta_y;
         if y <= self.slider_min_y {
             y = self.slider_min_y;
@@ -552,8 +536,8 @@ impl emMainPanel {
 
     /// Toggle the slider between open and closed on double-click.
     ///
-    /// Port of C++ `emMainPanel::_DoubleClickSlider` (emMainPanel.cpp:360-374).
-    pub(crate) fn _DoubleClickSlider(&mut self) {
+    /// Port of C++ `emMainPanel::DoubleClickSlider` (emMainPanel.cpp:360-374).
+    pub(crate) fn DoubleClickSlider(&mut self) {
         if self.unified_slider_pos < 0.01 {
             if self.config.borrow().GetControlViewSize() < 0.01 {
                 self.config.borrow_mut().SetControlViewSize(0.7);
@@ -574,6 +558,25 @@ impl PanelBehavior for emMainPanel {
 
     fn get_title(&self) -> Option<String> {
         Some("Eagle Mode".to_string())
+    }
+
+    fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+        if let Some(slider_id) = self.slider_panel {
+            let action = ctx.tree.with_behavior_as::<SliderPanel, _>(slider_id, |sp| {
+                let dc = sp.double_clicked;
+                let drag = sp.pending_drag_delta.take();
+                sp.double_clicked = false;
+                (dc, drag)
+            });
+            if let Some((double_clicked, drag_delta)) = action {
+                if double_clicked {
+                    self.DoubleClickSlider();
+                } else if let Some(dy) = drag_delta {
+                    self.DragSlider(dy);
+                }
+            }
+        }
+        false
     }
 
     fn Paint(&mut self, painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {
@@ -933,10 +936,10 @@ mod tests {
     #[test]
     fn test_slider_panel_initial_state() {
         let panel = SliderPanel::new();
-        assert!(!panel._is_pressed());
-        assert!(!panel._mouse_over());
-        assert!((panel._press_my() - 0.0).abs() < 1e-10);
-        assert!((panel._get_press_slider_y() - 0.0).abs() < 1e-10);
+        assert!(!panel.pressed);
+        assert!(!panel.mouse_over);
+        assert!((panel.press_my - 0.0).abs() < 1e-10);
+        assert!((panel.press_slider_y - 0.0).abs() < 1e-10);
     }
 
     #[test]
@@ -956,14 +959,14 @@ mod tests {
         assert!(!panel.hidden);
     }
 
-    // ── _DragSlider / _DoubleClickSlider tests ─────────────────────────────
+    // ── DragSlider / DoubleClickSlider tests ───────────────────────────────
 
     #[test]
     fn test_drag_slider_clamps_to_min() {
         let ctx = emcore::emContext::emContext::NewRoot();
         let mut panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
         panel.update_coordinates(1.0);
-        panel._DragSlider(-999.0);
+        panel.DragSlider(-999.0);
         assert!(panel.slider_y >= panel.slider_min_y);
     }
 
@@ -972,7 +975,7 @@ mod tests {
         let ctx = emcore::emContext::emContext::NewRoot();
         let mut panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
         panel.update_coordinates(1.0);
-        panel._DragSlider(999.0);
+        panel.DragSlider(999.0);
         assert!(panel.slider_y <= panel.slider_max_y);
     }
 
@@ -983,9 +986,9 @@ mod tests {
         panel.update_coordinates(1.0);
         panel.unified_slider_pos = 0.5;
         panel.update_coordinates(1.0);
-        panel._DoubleClickSlider();
+        panel.DoubleClickSlider();
         assert!(panel.unified_slider_pos < 0.01);
-        panel._DoubleClickSlider();
+        panel.DoubleClickSlider();
         assert!(panel.unified_slider_pos > 0.01);
     }
 
@@ -995,7 +998,7 @@ mod tests {
         let mut panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
         panel.update_coordinates(1.0);
         let old_pos = panel.unified_slider_pos;
-        panel._DragSlider(0.1);
+        panel.DragSlider(0.1);
         // If range > 0, position should have changed.
         if panel.slider_max_y > panel.slider_min_y {
             assert!((panel.unified_slider_pos - old_pos).abs() > 1e-10);
@@ -1092,5 +1095,54 @@ mod tests {
         // restart=true: unhides even when to_hide is true.
         panel.update_slider_hiding(true);
         assert!(!panel.slider_hidden);
+    }
+
+    // ── SliderPanel pending_drag_delta / double_clicked tests ────────────
+
+    #[test]
+    fn test_slider_panel_initial_pending_state() {
+        let panel = SliderPanel::new();
+        assert!(panel.pending_drag_delta.is_none());
+        assert!(!panel.double_clicked);
+    }
+
+    #[test]
+    fn test_slider_panel_double_click_sets_flag() {
+        use emcore::emInput::InputKey;
+        let mut panel = SliderPanel::new();
+        panel.mouse_over = true;
+        // First click (repeat=0) to set pressed.
+        let mut press_event = emInputEvent::press(InputKey::MouseLeft);
+        press_event.mouse_x = 0.5;
+        press_event.mouse_y = 0.1;
+        let state = PanelState::default_for_test();
+        let input_state = emInputState::default();
+        panel.Input(&press_event, &state, &input_state);
+        assert!(panel.pressed);
+        // Double-click (repeat=1).
+        let mut dbl_event = emInputEvent::press(InputKey::MouseLeft);
+        dbl_event.mouse_x = 0.5;
+        dbl_event.mouse_y = 0.1;
+        dbl_event.repeat = 1;
+        panel.Input(&dbl_event, &state, &input_state);
+        assert!(panel.double_clicked);
+        assert!(!panel.pressed);
+    }
+
+    #[test]
+    fn test_slider_panel_press_records_slider_y() {
+        use emcore::emInput::InputKey;
+        let mut panel = SliderPanel::new();
+        panel.mouse_over = true;
+        panel.parent_slider_y = 0.42;
+        let mut press_event = emInputEvent::press(InputKey::MouseLeft);
+        press_event.mouse_x = 0.5;
+        press_event.mouse_y = 0.2;
+        let state = PanelState::default_for_test();
+        let input_state = emInputState::default();
+        panel.Input(&press_event, &state, &input_state);
+        assert!(panel.pressed);
+        assert!((panel.press_slider_y - 0.42).abs() < 1e-10);
+        assert!((panel.press_my - 0.2).abs() < 1e-10);
     }
 }
