@@ -473,6 +473,247 @@ impl emAutoplayViewAnimator {
         self.SkipCurrent = false;
     }
 
+    //------------------------------------------------------------------
+    // Traversal: AdvanceCurrentPanel (C++ emAutoplay.cpp:327-516)
+    //------------------------------------------------------------------
+
+    /// Find the first eligible child of `panel` (skipping non-item cutoffs).
+    fn find_first_eligible_child(&self, tree: &PanelTree, panel: PanelId) -> Option<PanelId> {
+        let mut c = tree.GetFirstChild(panel);
+        while let Some(cid) = c {
+            if Self::IsItem(tree, cid) || !self.IsCutoff(tree, cid) {
+                return Some(cid);
+            }
+            c = tree.GetNext(cid);
+        }
+        None
+    }
+
+    /// Find the last eligible child of `panel` (skipping non-item cutoffs).
+    fn find_last_eligible_child(&self, tree: &PanelTree, panel: PanelId) -> Option<PanelId> {
+        let mut c = tree.GetLastChild(panel);
+        while let Some(cid) = c {
+            if Self::IsItem(tree, cid) || !self.IsCutoff(tree, cid) {
+                return Some(cid);
+            }
+            c = tree.GetPrev(cid);
+        }
+        None
+    }
+
+    /// Try to consume a skip or return Finished for the current item.
+    /// Returns `Some(Finished)` if the item should be visited, `None` if skipped.
+    fn try_finish_or_skip(&mut self) -> Option<AdvanceResult> {
+        self.NextLoopEndless = false;
+        if !self.SkipCurrent {
+            if self.SkipItemCount <= 0 {
+                return Some(AdvanceResult::Finished);
+            }
+            self.SkipItemCount -= 1;
+        }
+        None
+    }
+
+    /// Advance the current panel one step in the traversal.
+    ///
+    /// Port of C++ `emAutoplayViewAnimator::AdvanceCurrentPanel` (emAutoplay.cpp:327-516).
+    pub fn AdvanceCurrentPanel(&mut self, tree: &PanelTree) -> AdvanceResult {
+        let current_identity = self.CurrentPanelIdentity.clone();
+        let p = match tree.find_panel_by_identity(&current_identity) {
+            Some(id) => id,
+            None => return AdvanceResult::Failed,
+        };
+
+        if !self.Backwards {
+            // ── FORWARD TRAVERSAL ──
+            if self.CameFrom == CameFromType::Child {
+                // Came from a child — try next sibling
+                let came_from_name = self.CameFromChildName.clone();
+                let child = tree.find_child_by_name(p, &came_from_name);
+                if child.is_none() {
+                    return AdvanceResult::Failed;
+                }
+                let child = child.unwrap();
+
+                // Find next eligible sibling after the child we came from
+                let mut c = tree.GetNext(child);
+                while let Some(cid) = c {
+                    if Self::IsItem(tree, cid) || !self.IsCutoff(tree, cid) {
+                        break;
+                    }
+                    c = tree.GetNext(cid);
+                }
+                if let Some(cid) = c {
+                    self.go_child(tree, cid);
+                    return AdvanceResult::Again;
+                }
+
+                // No more siblings — go to parent if not cutoff
+                if !self.IsCutoff(tree, p) {
+                    if tree.GetParentContext(p).is_some() {
+                        self.go_parent(tree, p);
+                        return AdvanceResult::Again;
+                    }
+                    if self.Loop
+                        && Self::IsItem(tree, p)
+                        && let Some(result) = self.try_finish_or_skip()
+                    {
+                        return result;
+                    }
+                }
+
+                // Loop handling
+                if self.Loop && !self.NextLoopEndless {
+                    self.NextLoopEndless = true;
+
+                    if let Some(cid) = self.find_first_eligible_child(tree, p) {
+                        self.go_child(tree, cid);
+                        return AdvanceResult::Again;
+                    }
+
+                    self.go_same();
+                    return AdvanceResult::Again;
+                }
+            } else {
+                // CameFrom == None or Parent
+                if Self::IsItem(tree, p)
+                    && let Some(result) = self.try_finish_or_skip()
+                {
+                    return result;
+                }
+
+                // Try first child if not cutoff (or if CameFrom==None and not item)
+                if (!self.IsCutoff(tree, p)
+                    || (self.CameFrom == CameFromType::None && !Self::IsItem(tree, p)))
+                    && let Some(cid) = self.find_first_eligible_child(tree, p)
+                {
+                    self.go_child(tree, cid);
+                    return AdvanceResult::Again;
+                }
+
+                // Go to parent
+                if tree.GetParentContext(p).is_some()
+                    && (Self::IsItem(tree, p) || !self.IsCutoff(tree, p))
+                {
+                    self.go_parent(tree, p);
+                    return AdvanceResult::Again;
+                }
+
+                // Loop handling
+                if self.Loop && !self.NextLoopEndless {
+                    self.NextLoopEndless = true;
+                    self.go_same();
+                    return AdvanceResult::Again;
+                }
+            }
+        } else {
+            // ── BACKWARD TRAVERSAL ──
+            if self.CameFrom == CameFromType::Child {
+                // Came from a child — try prev sibling
+                let came_from_name = self.CameFromChildName.clone();
+                let child = tree.find_child_by_name(p, &came_from_name);
+                if child.is_none() {
+                    return AdvanceResult::Failed;
+                }
+                let child = child.unwrap();
+
+                let mut c = tree.GetPrev(child);
+                while let Some(cid) = c {
+                    if Self::IsItem(tree, cid) || !self.IsCutoff(tree, cid) {
+                        break;
+                    }
+                    c = tree.GetPrev(cid);
+                }
+                if let Some(cid) = c {
+                    self.go_child(tree, cid);
+                    return AdvanceResult::Again;
+                }
+
+                // No more siblings
+                if !self.IsCutoff(tree, p) {
+                    if Self::IsItem(tree, p)
+                        && let Some(result) = self.try_finish_or_skip()
+                    {
+                        return result;
+                    }
+                    if tree.GetParentContext(p).is_some() {
+                        self.go_parent(tree, p);
+                        return AdvanceResult::Again;
+                    }
+                }
+
+                // Loop handling
+                if self.Loop && !self.NextLoopEndless {
+                    self.NextLoopEndless = true;
+
+                    if let Some(cid) = self.find_last_eligible_child(tree, p) {
+                        self.go_child(tree, cid);
+                        return AdvanceResult::Again;
+                    }
+
+                    self.go_same();
+                    return AdvanceResult::Again;
+                }
+            } else if self.CameFrom == CameFromType::None {
+                // Backward from None
+                if Self::IsItem(tree, p)
+                    && let Some(result) = self.try_finish_or_skip()
+                {
+                    return result;
+                }
+
+                if tree.GetParentContext(p).is_some()
+                    && (Self::IsItem(tree, p) || !self.IsCutoff(tree, p))
+                {
+                    self.go_parent(tree, p);
+                    return AdvanceResult::Again;
+                }
+
+                if (!self.IsCutoff(tree, p) || !Self::IsItem(tree, p))
+                    && let Some(cid) = self.find_last_eligible_child(tree, p)
+                {
+                    self.go_child(tree, cid);
+                    return AdvanceResult::Again;
+                }
+
+                // Loop handling
+                if self.Loop && !self.NextLoopEndless {
+                    self.NextLoopEndless = true;
+                    self.go_same();
+                    return AdvanceResult::Again;
+                }
+            } else {
+                // CameFrom == Parent (backward)
+                if !self.IsCutoff(tree, p)
+                    && let Some(cid) = self.find_last_eligible_child(tree, p)
+                {
+                    self.go_child(tree, cid);
+                    return AdvanceResult::Again;
+                }
+
+                if Self::IsItem(tree, p)
+                    && let Some(result) = self.try_finish_or_skip()
+                {
+                    return result;
+                }
+
+                if tree.GetParentContext(p).is_some() {
+                    self.go_parent(tree, p);
+                    return AdvanceResult::Again;
+                }
+
+                // Loop handling
+                if self.Loop && !self.NextLoopEndless {
+                    self.NextLoopEndless = true;
+                    self.go_same();
+                    return AdvanceResult::Again;
+                }
+            }
+        }
+
+        AdvanceResult::Failed
+    }
+
     /// Invert the traversal direction (forward ↔ backward).
     ///
     /// Port of C++ `emAutoplayViewAnimator::InvertDirection`.
@@ -501,6 +742,16 @@ impl emAutoplayViewAnimator {
             self.CurrentPanelState = CurrentPanelState::NotVisited;
         }
     }
+}
+
+/// Result of a single `AdvanceCurrentPanel` step.
+///
+/// Port of C++ `emAutoplayViewAnimator::AdvanceResult`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdvanceResult {
+    Again,
+    Failed,
+    Finished,
 }
 
 impl Default for emAutoplayViewAnimator {
@@ -920,5 +1171,219 @@ mod tests {
         va.InvertDirection();
 
         assert!(!va.NextLoopEndless);
+    }
+
+    // ── AdvanceCurrentPanel tests ────────────────────────────────────
+
+    /// Build a simple test tree:
+    ///   root
+    ///   ├── a (ITEM, focusable)
+    ///   │   └── c (ITEM, focusable)
+    ///   └── b (ITEM, focusable)
+    fn make_test_tree() -> PanelTree {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        let child_a = tree.create_child(root, "a");
+        let child_b = tree.create_child(root, "b");
+        let grandchild = tree.create_child(child_a, "c");
+
+        tree.set_focusable(child_a, true);
+        tree.SetAutoplayHandling(child_a, AutoplayHandlingFlags::ITEM);
+        tree.set_focusable(child_b, true);
+        tree.SetAutoplayHandling(child_b, AutoplayHandlingFlags::ITEM);
+        tree.set_focusable(grandchild, true);
+        tree.SetAutoplayHandling(grandchild, AutoplayHandlingFlags::ITEM);
+
+        tree
+    }
+
+    #[test]
+    fn test_advance_result_enum() {
+        assert_ne!(AdvanceResult::Again, AdvanceResult::Failed);
+        assert_ne!(AdvanceResult::Again, AdvanceResult::Finished);
+        assert_ne!(AdvanceResult::Failed, AdvanceResult::Finished);
+    }
+
+    #[test]
+    fn test_advance_forward_from_root_visits_first_child() {
+        let tree = make_test_tree();
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        va.CurrentPanelIdentity = "root".to_string();
+        va.CameFrom = CameFromType::None;
+
+        // Root is not an item, not cutoff → should go to first child "a"
+        let result = va.AdvanceCurrentPanel(&tree);
+        assert_eq!(result, AdvanceResult::Again);
+        assert_eq!(va.CurrentPanelIdentity, "root:a");
+        assert_eq!(va.CameFrom, CameFromType::Parent);
+    }
+
+    #[test]
+    fn test_advance_forward_item_finishes() {
+        let tree = make_test_tree();
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        va.CurrentPanelIdentity = "root:a".to_string();
+        va.CameFrom = CameFromType::Parent;
+
+        // "a" is an item → should return Finished
+        let result = va.AdvanceCurrentPanel(&tree);
+        assert_eq!(result, AdvanceResult::Finished);
+    }
+
+    #[test]
+    fn test_advance_forward_full_traversal() {
+        let tree = make_test_tree();
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        va.CurrentPanelIdentity = "root".to_string();
+        va.CameFrom = CameFromType::None;
+
+        // Collect visited items by advancing until Failed
+        let mut visited = Vec::new();
+        for _ in 0..20 {
+            let result = va.AdvanceCurrentPanel(&tree);
+            match result {
+                AdvanceResult::Again => continue,
+                AdvanceResult::Finished => {
+                    visited.push(va.CurrentPanelIdentity.clone());
+                    // Mark as visited and continue from same position with CameFrom=Parent
+                    // (simulating what the outer loop does after visiting)
+                    va.SkipCurrent = true;
+                }
+                AdvanceResult::Failed => break,
+            }
+        }
+        // Forward recursive: a, then (since a is item+cutoff when recursive with no
+        // CUTOFF_AT_SUBITEMS parent) it depends on cutoff logic.
+        // With Recursive=true, ITEM panels are cutoff unless ancestors lack CUTOFF_AT_SUBITEMS.
+        // Here a is ITEM+focusable, Recursive=true, parent (root) has no CUTOFF_AT_SUBITEMS
+        // and root is not focusable+ITEM/DIRECTORY, so ancestor walk reaches root with no match → not cutoff.
+        // So forward: a (Finished), then into c (Finished), back to a (CameFrom=Child), then to b (Finished).
+        assert!(visited.contains(&"root:a".to_string()));
+        assert!(visited.contains(&"root:b".to_string()));
+    }
+
+    #[test]
+    fn test_advance_backward_from_root_item() {
+        let tree = make_test_tree();
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        va.Backwards = true;
+        va.CurrentPanelIdentity = "root:b".to_string();
+        va.CameFrom = CameFromType::None;
+
+        // "b" is an item → Finished (backward, CameFrom=None)
+        let result = va.AdvanceCurrentPanel(&tree);
+        assert_eq!(result, AdvanceResult::Finished);
+    }
+
+    #[test]
+    fn test_advance_failed_for_missing_panel() {
+        let tree = make_test_tree();
+        let mut va = emAutoplayViewAnimator::new();
+        va.CurrentPanelIdentity = "nonexistent".to_string();
+
+        let result = va.AdvanceCurrentPanel(&tree);
+        assert_eq!(result, AdvanceResult::Failed);
+    }
+
+    #[test]
+    fn test_advance_forward_skip_item() {
+        let tree = make_test_tree();
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        va.CurrentPanelIdentity = "root:a".to_string();
+        va.CameFrom = CameFromType::Parent;
+        va.SkipItemCount = 1; // skip one item
+
+        // "a" is an item but SkipItemCount > 0 → decrement and continue
+        let result = va.AdvanceCurrentPanel(&tree);
+        // It decrements SkipItemCount and falls through to try children
+        assert_eq!(va.SkipItemCount, 0);
+        // Then it should go to child "c" since a is not cutoff in recursive mode
+        assert_eq!(result, AdvanceResult::Again);
+    }
+
+    #[test]
+    fn test_advance_forward_came_from_child_next_sibling() {
+        let tree = make_test_tree();
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        va.CurrentPanelIdentity = "root".to_string();
+        va.CameFrom = CameFromType::Child;
+        va.CameFromChildName = "a".to_string();
+
+        // Came from child "a", should go to next sibling "b"
+        let result = va.AdvanceCurrentPanel(&tree);
+        assert_eq!(result, AdvanceResult::Again);
+        assert_eq!(va.CurrentPanelIdentity, "root:b");
+    }
+
+    #[test]
+    fn test_advance_forward_came_from_child_no_more_siblings() {
+        let tree = make_test_tree();
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        va.CurrentPanelIdentity = "root".to_string();
+        va.CameFrom = CameFromType::Child;
+        va.CameFromChildName = "b".to_string();
+
+        // Came from child "b", no more siblings. Root has no parent → fails (no loop)
+        let result = va.AdvanceCurrentPanel(&tree);
+        assert_eq!(result, AdvanceResult::Failed);
+    }
+
+    #[test]
+    fn test_advance_forward_loop_wraps() {
+        let tree = make_test_tree();
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        va.Loop = true;
+        va.CurrentPanelIdentity = "root".to_string();
+        va.CameFrom = CameFromType::Child;
+        va.CameFromChildName = "b".to_string();
+
+        // Came from last child "b", Loop=true → should wrap to first child
+        let result = va.AdvanceCurrentPanel(&tree);
+        assert_eq!(result, AdvanceResult::Again);
+        assert_eq!(va.CurrentPanelIdentity, "root:a");
+        assert!(va.NextLoopEndless);
+    }
+
+    #[test]
+    fn test_advance_backward_came_from_parent() {
+        let tree = make_test_tree();
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        va.Backwards = true;
+        va.CurrentPanelIdentity = "root:a".to_string();
+        va.CameFrom = CameFromType::Parent;
+
+        // Backward, CameFrom=Parent: try last child first (a has child c, not cutoff)
+        let result = va.AdvanceCurrentPanel(&tree);
+        assert_eq!(result, AdvanceResult::Again);
+        assert_eq!(va.CurrentPanelIdentity, "root:a:c");
+    }
+
+    #[test]
+    fn test_find_panel_by_identity() {
+        let tree = make_test_tree();
+        let found = tree.find_panel_by_identity("root:a");
+        assert!(found.is_some());
+        assert_eq!(tree.GetIdentity(found.unwrap()), "root:a");
+
+        assert!(tree.find_panel_by_identity("root:z").is_none());
+    }
+
+    #[test]
+    fn test_get_panel_name() {
+        let tree = make_test_tree();
+        let a = tree.find_panel_by_identity("root:a").unwrap();
+        assert_eq!(tree.get_panel_name(a), "a");
+
+        let root = tree.find_panel_by_identity("root").unwrap();
+        assert_eq!(tree.get_panel_name(root), "root");
     }
 }

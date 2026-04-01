@@ -499,6 +499,26 @@ impl PanelTree {
             .map(|(id, _)| id)
     }
 
+    /// Find a panel by its full identity string.
+    ///
+    /// Walks all panels and compares their identity (built by walking to root).
+    pub fn find_panel_by_identity(&self, identity: &str) -> Option<PanelId> {
+        self.panels
+            .iter()
+            .map(|(id, _)| id)
+            .find(|&id| self.GetIdentity(id) == identity)
+    }
+
+    /// Extract the last segment (leaf name) from a panel's identity.
+    pub fn get_panel_name(&self, id: PanelId) -> String {
+        let identity = self.GetIdentity(id);
+        identity
+            .rsplit(':')
+            .next()
+            .unwrap_or(&identity)
+            .to_string()
+    }
+
     /// Check if a panel exists.
     pub fn contains(&self, id: PanelId) -> bool {
         self.panels.contains_key(id)
