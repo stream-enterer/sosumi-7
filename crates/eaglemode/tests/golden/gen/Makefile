@@ -1,6 +1,6 @@
 EM_ROOT := $(HOME)/git/eaglemode-0.96.4
 CXX     := g++
-CXXFLAGS := -O2 -std=c++17 -I$(EM_ROOT)/include -I$(EM_ROOT)
+CXXFLAGS := -O2 -std=c++17 -I$(EM_ROOT)/include -I$(EM_ROOT) -I$(dir $(lastword $(MAKEFILE_LIST)))
 LDFLAGS  := -L$(EM_ROOT)/lib -Wl,-rpath,$(EM_ROOT)/lib -lemCore -lemTestPanel -lm -lpthread -ldl
 
 OUTDIR  := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../../target/golden-gen)

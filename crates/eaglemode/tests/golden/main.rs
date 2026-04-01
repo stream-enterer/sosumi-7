@@ -1,6 +1,7 @@
 mod animator;
 mod common;
 mod composition;
+mod eagle_logo;
 mod compositor;
 mod input;
 mod input_filter;
