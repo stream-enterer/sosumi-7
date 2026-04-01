@@ -335,6 +335,10 @@ pub struct emMainPanel {
     // Mouse movement tracking for slider auto-hide (C++ emMainPanel::Input)
     old_mouse_x: f64,
     old_mouse_y: f64,
+
+    // Fullscreen / slider-hiding state (C++ emMainPanel::UpdateFullscreen / UpdateSliderHiding)
+    fullscreen_on: bool,
+    slider_hidden: bool,
 }
 
 impl emMainPanel {
@@ -379,6 +383,8 @@ impl emMainPanel {
             last_height: 1.0,
             old_mouse_x: 0.0,
             old_mouse_y: 0.0,
+            fullscreen_on: false,
+            slider_hidden: false,
         }
     }
 
@@ -435,6 +441,49 @@ impl emMainPanel {
         }
 
         self.last_height = h;
+    }
+
+    /// Port of C++ `emMainPanel::UpdateFullscreen` (fullscreen enter path).
+    pub fn update_fullscreen_on(&mut self) {
+        if !self.fullscreen_on {
+            self.fullscreen_on = true;
+            if self.config.borrow().GetAutoHideControlView() {
+                self.unified_slider_pos = 0.0;
+                self.update_coordinates(self.last_height);
+                self.update_slider_hiding(false);
+            }
+        }
+    }
+
+    /// Port of C++ `emMainPanel::UpdateFullscreen` (fullscreen exit path).
+    pub fn update_fullscreen_off(&mut self) {
+        if self.fullscreen_on {
+            self.fullscreen_on = false;
+            if self.config.borrow().GetAutoHideControlView() {
+                self.unified_slider_pos = self.config.borrow().GetControlViewSize();
+                self.update_coordinates(self.last_height);
+                self.update_slider_hiding(false);
+            }
+        }
+    }
+
+    /// Port of C++ `emMainPanel::UpdateSliderHiding`.
+    ///
+    /// Hides the slider after 5 seconds in fullscreen when control is collapsed
+    /// and AutoHideSlider is enabled.
+    fn update_slider_hiding(&mut self, restart: bool) {
+        let to_hide = self.unified_slider_pos < 1e-15
+            && self.fullscreen_on
+            && self.config.borrow().GetAutoHideSlider();
+
+        if !to_hide || restart {
+            self.slider_hidden = false;
+            // Timer cancel deferred to Cycle() integration (Phase 3).
+        }
+        if to_hide && !self.slider_hidden {
+            // Timer start deferred to Cycle() integration (Phase 3).
+            // When timer fires, set slider_hidden = true.
+        }
     }
 
     /// Show or hide the startup overlay.
@@ -495,7 +544,7 @@ impl emMainPanel {
             if self.unified_slider_pos != n {
                 self.unified_slider_pos = n;
                 self.update_coordinates(self.last_height);
-                // UpdateSliderHiding(false) — deferred to Task 8.
+                self.update_slider_hiding(false);
                 self.config.borrow_mut().SetControlViewSize(self.unified_slider_pos);
             }
         }
@@ -514,7 +563,7 @@ impl emMainPanel {
             self.unified_slider_pos = 0.0;
         }
         self.update_coordinates(self.last_height);
-        // UpdateSliderHiding(false) — deferred to Task 8.
+        self.update_slider_hiding(false);
     }
 }
 
@@ -606,7 +655,7 @@ impl PanelBehavior for emMainPanel {
         {
             self.old_mouse_x = input_state.mouse_x;
             self.old_mouse_y = input_state.mouse_y;
-            // UpdateSliderHiding(true) will be wired in Task 8
+            self.update_slider_hiding(true);
         }
         false
     }
@@ -951,5 +1000,97 @@ mod tests {
         if panel.slider_max_y > panel.slider_min_y {
             assert!((panel.unified_slider_pos - old_pos).abs() > 1e-10);
         }
+    }
+
+    // ── UpdateFullscreen / UpdateSliderHiding tests ──────────────────────
+
+    #[test]
+    fn test_update_fullscreen_on_auto_hide() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
+        panel.unified_slider_pos = 0.5;
+        panel.update_coordinates(1.0);
+        panel.config.borrow_mut().SetAutoHideControlView(true);
+        panel.update_fullscreen_on();
+        assert!(panel.fullscreen_on);
+        // With AutoHideControlView, slider collapses to 0.
+        assert!(panel.unified_slider_pos < 0.01);
+    }
+
+    #[test]
+    fn test_update_fullscreen_on_no_auto_hide() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
+        panel.unified_slider_pos = 0.5;
+        panel.update_coordinates(1.0);
+        // AutoHideControlView defaults to false.
+        panel.update_fullscreen_on();
+        assert!(panel.fullscreen_on);
+        // Without auto-hide, slider position unchanged.
+        assert!((panel.unified_slider_pos - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_update_fullscreen_off_restores() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
+        panel.config.borrow_mut().SetAutoHideControlView(true);
+        panel.config.borrow_mut().SetControlViewSize(0.6);
+        panel.update_fullscreen_on();
+        assert!(panel.fullscreen_on);
+        assert!(panel.unified_slider_pos < 0.01);
+        panel.update_fullscreen_off();
+        assert!(!panel.fullscreen_on);
+        // Restores from config.
+        assert!((panel.unified_slider_pos - 0.6).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_update_fullscreen_idempotent() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
+        panel.update_fullscreen_on();
+        panel.update_fullscreen_on(); // second call is no-op
+        assert!(panel.fullscreen_on);
+        panel.update_fullscreen_off();
+        panel.update_fullscreen_off(); // second call is no-op
+        assert!(!panel.fullscreen_on);
+    }
+
+    #[test]
+    fn test_update_slider_hiding_not_fullscreen() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
+        panel.unified_slider_pos = 0.0;
+        panel.config.borrow_mut().SetAutoHideSlider(true);
+        // Not fullscreen, so to_hide is false.
+        panel.update_slider_hiding(false);
+        assert!(!panel.slider_hidden);
+    }
+
+    #[test]
+    fn test_update_slider_hiding_fullscreen_collapsed() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
+        panel.fullscreen_on = true;
+        panel.unified_slider_pos = 0.0;
+        panel.config.borrow_mut().SetAutoHideSlider(true);
+        // to_hide is true; timer would start but deferred to Phase 3.
+        // slider_hidden stays false until timer fires.
+        panel.update_slider_hiding(false);
+        assert!(!panel.slider_hidden);
+    }
+
+    #[test]
+    fn test_update_slider_hiding_restart_unhides() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
+        panel.fullscreen_on = true;
+        panel.slider_hidden = true;
+        panel.unified_slider_pos = 0.0;
+        panel.config.borrow_mut().SetAutoHideSlider(true);
+        // restart=true: unhides even when to_hide is true.
+        panel.update_slider_hiding(true);
+        assert!(!panel.slider_hidden);
     }
 }
