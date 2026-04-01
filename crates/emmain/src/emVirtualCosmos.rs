@@ -4,7 +4,12 @@ use std::rc::Rc;
 
 use emcore::emColor::emColor;
 use emcore::emContext::emContext;
+use emcore::emFpPlugin::{emFpPluginList, FileStatMode, PanelParentArg};
 use emcore::emInstallInfo::emGetConfigDirOverloadable;
+use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
+use emcore::emPainter::emPainter;
+use emcore::emPanelCtx::PanelCtx;
+use emcore::emPanelTree::PanelId;
 use emcore::emRec::{RecError, RecStruct, RecValue};
 use emcore::emRecRecord::Record;
 use emcore::emRecRecTypes::emColorRec;
@@ -360,6 +365,369 @@ impl emVirtualCosmosModel {
     }
 }
 
+// ── emVirtualCosmosItemPanel ──────────────────────────────────────────────────
+
+/// Panel for a single VirtualCosmos item: renders border, title, and content.
+///
+/// Port of C++ `emVirtualCosmosItemPanel` from `emMain/emVirtualCosmosPanel.cpp`.
+pub struct emVirtualCosmosItemPanel {
+    ctx: Rc<emContext>,
+    item_rec: Option<emVirtualCosmosItemRec>,
+    content_panel: Option<PanelId>,
+    path: String,
+    alt: i32,
+    item_focusable: bool,
+    update_needed: bool,
+}
+
+impl emVirtualCosmosItemPanel {
+    /// Create a new item panel with no associated item record.
+    ///
+    /// Port of C++ `emVirtualCosmosItemPanel` constructor.
+    pub fn new(ctx: Rc<emContext>) -> Self {
+        Self {
+            ctx,
+            item_rec: None,
+            content_panel: None,
+            path: String::new(),
+            alt: 0,
+            item_focusable: true,
+            update_needed: false,
+        }
+    }
+
+    /// Update the item record, triggering a re-layout on the next cycle.
+    ///
+    /// Port of C++ `emVirtualCosmosItemPanel::SetItemRec`.
+    pub fn SetItemRec(&mut self, rec: emVirtualCosmosItemRec) {
+        let new_path = rec.ItemFilePath.clone();
+        let new_alt = rec.Alternative;
+        let new_focusable = rec.Focusable;
+        // If path or alt changed the content panel must be recreated.
+        if new_path != self.path || new_alt != self.alt {
+            self.path = new_path;
+            self.alt = new_alt;
+            if self.content_panel.is_some() {
+                self.update_needed = true; // will destroy+recreate in LayoutChildren
+            }
+        }
+        self.item_focusable = new_focusable;
+        self.item_rec = Some(rec);
+        self.update_needed = true;
+    }
+
+    /// Compute the four border fractions: (left, top, right, bottom).
+    ///
+    /// Port of C++ `emVirtualCosmosItemPanel::CalcBorders`.
+    ///
+    /// `b = min(1.0, tallness) * border_scaling`
+    /// then `l = b*0.03, t = b*0.05, r = b*0.03, bottom = b*0.03`.
+    pub fn CalcBorders(&self) -> (f64, f64, f64, f64) {
+        let Some(rec) = &self.item_rec else {
+            return (0.0, 0.0, 0.0, 0.0);
+        };
+        let b = rec.ContentTallness.min(1.0) * rec.BorderScaling;
+        (b * 0.03, b * 0.05, b * 0.03, b * 0.03)
+    }
+}
+
+impl PanelBehavior for emVirtualCosmosItemPanel {
+    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+        let Some(rec) = &self.item_rec else {
+            return;
+        };
+
+        let (l, t, r, b) = self.CalcBorders();
+
+        // Draw border region (all four sides) using the border color.
+        let border_color = rec.BorderColor;
+        // Top strip
+        painter.PaintRect(0.0, 0.0, w, t * h, border_color, border_color);
+        // Bottom strip
+        painter.PaintRect(0.0, (1.0 - b) * h, w, b * h, border_color, border_color);
+        // Left strip (between top and bottom)
+        painter.PaintRect(0.0, t * h, l * w, (1.0 - t - b) * h, border_color, border_color);
+        // Right strip
+        painter.PaintRect((1.0 - r) * w, t * h, r * w, (1.0 - t - b) * h, border_color, border_color);
+
+        // Draw background inside content area.
+        let bg_color = rec.BackgroundColor;
+        painter.PaintRect(
+            l * w,
+            t * h,
+            (1.0 - l - r) * w,
+            (1.0 - t - b) * h,
+            bg_color,
+            bg_color,
+        );
+
+        // Draw title text at top of border area.
+        if !rec.Title.is_empty() && t > 0.0 {
+            let title_color = rec.TitleColor;
+            let font_size = t * h * 0.7;
+            if font_size >= 1.0 {
+                painter.PaintText(
+                    l * w,
+                    t * h * 0.15,
+                    &rec.Title,
+                    font_size,
+                    1.0,
+                    title_color,
+                    title_color,
+                );
+            }
+        }
+    }
+
+    fn IsOpaque(&self) -> bool {
+        // Only opaque if border and background cover everything and are opaque.
+        false
+    }
+
+    fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        if !self.update_needed {
+            return;
+        }
+        self.update_needed = false;
+
+        let Some(rec) = &self.item_rec else {
+            return;
+        };
+
+        let (l, t, r, b) = self.CalcBorders();
+        let content_w = 1.0 - l - r;
+        let content_h = content_w * rec.ContentTallness;
+        let total_h = content_h + t + b;
+
+        // Ensure total_h is non-degenerate (avoid zero-height content).
+        if total_h < 1e-100 || content_w < 1e-100 {
+            return;
+        }
+
+        // If path changed, destroy old content panel.
+        if let Some(child) = self.content_panel.take() {
+            ctx.delete_child(child);
+        }
+
+        // Auto-expand: create content panel if path is set.
+        if !self.path.is_empty() {
+            let stat_mode = {
+                match std::fs::metadata(&self.path) {
+                    Ok(m) if m.is_dir() => FileStatMode::Directory,
+                    _ => FileStatMode::Regular,
+                }
+            };
+            let fppl = emFpPluginList::Acquire(&self.ctx);
+            let fppl = fppl.borrow();
+            let parent_arg = PanelParentArg::new(Rc::clone(&self.ctx));
+            let behavior = fppl.CreateFilePanelWithStat(
+                &parent_arg,
+                "content",
+                &self.path,
+                None,
+                stat_mode,
+                self.alt as usize,
+            );
+            let child_id = ctx.create_child_with("content", behavior);
+            self.content_panel = Some(child_id);
+        }
+
+        // Layout content panel within border.
+        if let Some(child) = self.content_panel {
+            let canvas = self
+                .item_rec
+                .as_ref()
+                .map(|r| r.BackgroundColor)
+                .unwrap_or(emColor::TRANSPARENT);
+            ctx.layout_child_canvas(child, l, t, content_w, content_h, canvas);
+        }
+    }
+
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+        if flags.intersects(NoticeFlags::VIEW_CHANGED) {
+            self.update_needed = true;
+        }
+    }
+
+    fn get_title(&self) -> Option<String> {
+        self.item_rec.as_ref().map(|r| r.Title.clone())
+    }
+
+    fn IsHopeForSeeking(&self) -> bool {
+        self.item_focusable
+    }
+}
+
+// ── emVirtualCosmosPanel ──────────────────────────────────────────────────────
+
+/// Panel name prefix for item sub-panels.
+const ITEM_PANEL_PREFIX: &str = "item:";
+
+/// The container panel that renders the starfield background and all cosmos
+/// item panels from the `emVirtualCosmosModel`.
+///
+/// Port of C++ `emVirtualCosmosPanel` from `emMain/emVirtualCosmosPanel.cpp`.
+pub struct emVirtualCosmosPanel {
+    ctx: Rc<emContext>,
+    model: Rc<RefCell<emVirtualCosmosModel>>,
+    background_panel: Option<PanelId>,
+    /// (item name, panel_id) — one entry per item from the model.
+    item_panels: Vec<(String, PanelId)>,
+    needs_update: bool,
+}
+
+impl emVirtualCosmosPanel {
+    /// Create a new cosmos panel, acquiring the model from the context.
+    ///
+    /// Port of C++ `emVirtualCosmosPanel` constructor.
+    pub fn new(ctx: Rc<emContext>) -> Self {
+        let model = emVirtualCosmosModel::Acquire(&ctx);
+        Self {
+            ctx,
+            model,
+            background_panel: None,
+            item_panels: Vec::new(),
+            needs_update: true,
+        }
+    }
+}
+
+impl PanelBehavior for emVirtualCosmosPanel {
+    fn IsOpaque(&self) -> bool {
+        // Starfield background is fully opaque (black).
+        true
+    }
+
+    fn get_title(&self) -> Option<String> {
+        Some("Virtual Cosmos".to_string())
+    }
+
+    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+        // In the full implementation, poll model change signal here.
+        // For now, just drain the flag set by notice().
+        false
+    }
+
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+        if flags.intersects(NoticeFlags::VIEW_CHANGED) {
+            self.needs_update = true;
+        }
+    }
+
+    fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        if !self.needs_update {
+            return;
+        }
+        self.needs_update = false;
+
+        // ── 1. Starfield background ──────────────────────────────────────────
+        if self.background_panel.is_none() {
+            // Derive a deterministic seed from the context (use a fixed value
+            // for the cosmos background — depth=50 matches C++ usage).
+            let seed: u32 = 0x7f3a_19c0;
+            let bg = crate::emStarFieldPanel::emStarFieldPanel::new(50, seed);
+            let child_id = ctx.create_child_with("background", Box::new(bg));
+            self.background_panel = Some(child_id);
+        }
+
+        // Layout background to cover the entire panel.
+        if let Some(bg_id) = self.background_panel {
+            // Compute tallness from layout_rect.
+            let lr = ctx.layout_rect();
+            let tallness = if lr.w > 1e-100 { lr.h / lr.w } else { 1.0 };
+            ctx.layout_child(bg_id, 0.0, 0.0, 1.0, tallness);
+        }
+
+        // ── 2. Item panels ───────────────────────────────────────────────────
+
+        // Collect desired items from model (snapshot to avoid borrow conflict).
+        let desired: Vec<emVirtualCosmosItemRec> = {
+            let m = self.model.borrow();
+            m.GetItemRecs().cloned().collect()
+        };
+
+        // Build a set of desired names for fast lookup.
+        let desired_names: std::collections::HashSet<String> =
+            desired.iter().map(|r| r.Name.clone()).collect();
+
+        // Remove item panels no longer in the model.
+        let mut to_remove = Vec::new();
+        self.item_panels.retain(|(name, panel_id)| {
+            if desired_names.contains(name) {
+                true
+            } else {
+                to_remove.push(*panel_id);
+                false
+            }
+        });
+        for panel_id in to_remove {
+            ctx.delete_child(panel_id);
+        }
+
+        // Build lookup: item name → existing panel_id.
+        let existing: std::collections::HashMap<String, PanelId> = self
+            .item_panels
+            .iter()
+            .map(|(n, id)| (n.clone(), *id))
+            .collect();
+
+        // Create or update item panels.
+        let mut new_item_panels: Vec<(String, PanelId)> = Vec::new();
+
+        for rec in &desired {
+            let child_name = format!("{}{}", ITEM_PANEL_PREFIX, rec.Name);
+
+            let child_id = if let Some(&existing_id) = existing.get(&rec.Name) {
+                // Update existing panel's item record.
+                // We must extract behavior, update, and put back.
+                if let Some(mut beh) = ctx.tree.take_behavior(existing_id) {
+                    if let Some(item_panel) = beh
+                        .as_any_mut()
+                        .downcast_mut::<emVirtualCosmosItemPanel>()
+                    {
+                        item_panel.SetItemRec(rec.clone());
+                    }
+                    ctx.tree.put_behavior(existing_id, beh);
+                }
+                existing_id
+            } else {
+                // Create new item panel.
+                let mut item_panel = emVirtualCosmosItemPanel::new(Rc::clone(&self.ctx));
+                item_panel.SetItemRec(rec.clone());
+                ctx.create_child_with(&child_name, Box::new(item_panel))
+            };
+
+            new_item_panels.push((rec.Name.clone(), child_id));
+        }
+
+        self.item_panels = new_item_panels;
+
+        // Layout each item panel at its (PosX, PosY, Width, computed_height).
+        for (name, child_id) in &self.item_panels {
+            if let Some(rec) = desired.iter().find(|r| r.Name == *name) {
+                // Compute full item height including borders.
+                // b_frac = min(1.0, tallness) * border_scaling
+                let b_frac = rec.ContentTallness.min(1.0) * rec.BorderScaling;
+                let l = b_frac * 0.03;
+                let t = b_frac * 0.05;
+                let r = b_frac * 0.03;
+                let b = b_frac * 0.03;
+                let content_w = 1.0 - l - r;
+                let content_h = content_w * rec.ContentTallness;
+                let item_height = (content_h + t + b) * rec.Width;
+                if rec.Width < 1e-100 || item_height < 1e-100 {
+                    continue;
+                }
+                ctx.layout_child(*child_id, rec.PosX, rec.PosY, rec.Width, item_height);
+            }
+        }
+    }
+
+    fn Paint(&mut self, _painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {
+        // Background is drawn by the emStarFieldPanel child. Nothing to paint here.
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -367,6 +735,65 @@ mod tests {
     use super::*;
     use emcore::emRec::RecStruct;
     use emcore::emRecRecord::Record;
+
+    #[test]
+    fn test_item_panel_new() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let panel = emVirtualCosmosItemPanel::new(Rc::clone(&ctx));
+        assert!(panel.item_rec.is_none());
+        assert!(panel.content_panel.is_none());
+    }
+
+    #[test]
+    fn test_item_panel_set_item_rec() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emVirtualCosmosItemPanel::new(Rc::clone(&ctx));
+        let mut item = emVirtualCosmosItemRec::default();
+        item.Title = "Test".to_string();
+        item.PosX = 0.5;
+        panel.SetItemRec(item);
+        assert!(panel.item_rec.is_some());
+        assert!(panel.update_needed);
+    }
+
+    #[test]
+    fn test_item_panel_calc_borders() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emVirtualCosmosItemPanel::new(Rc::clone(&ctx));
+        let mut item = emVirtualCosmosItemRec::default();
+        item.ContentTallness = 1.0;
+        item.BorderScaling = 1.0;
+        panel.SetItemRec(item);
+        let (l, t, r, b) = panel.CalcBorders();
+        // b_frac = min(1.0, 1.0) * 1.0 = 1.0
+        assert!((l - 0.03).abs() < 1e-10);
+        assert!((t - 0.05).abs() < 1e-10);
+        assert!((r - 0.03).abs() < 1e-10);
+        assert!((b - 0.03).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_cosmos_panel_new() {
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let panel = emVirtualCosmosPanel::new(Rc::clone(&ctx));
+        assert_eq!(panel.get_title(), Some("Virtual Cosmos".to_string()));
+    }
+
+    #[test]
+    fn test_item_panel_behavior() {
+        use emcore::emPanel::PanelBehavior;
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let panel = emVirtualCosmosItemPanel::new(Rc::clone(&ctx));
+        let _: Box<dyn PanelBehavior> = Box::new(panel);
+    }
+
+    #[test]
+    fn test_cosmos_panel_behavior() {
+        use emcore::emPanel::PanelBehavior;
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let panel = emVirtualCosmosPanel::new(Rc::clone(&ctx));
+        assert!(panel.IsOpaque());
+    }
 
     #[test]
     fn test_item_rec_defaults() {
