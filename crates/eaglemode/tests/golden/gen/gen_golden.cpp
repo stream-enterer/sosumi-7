@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <emCore/emContext.h>
+#include <emCore/emRes.h>
 #include <emCore/emEngine.h>
 #include <emCore/emImage.h>
 #include <emCore/emLinearLayout.h>
@@ -4899,6 +4900,137 @@ static void gen_eagle_logo() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Starfield golden generator
+// ═══════════════════════════════════════════════════════════════════
+
+// Standalone starfield PRNG and star generation, matching C++ emStarFieldPanel.
+// We replicate the constructor logic here because emStarFieldPanel requires
+// a parent panel (emPanel::ParentArg), which we don't have in the generator.
+
+struct GenStar {
+    double X, Y, Radius;
+    emColor Color;
+};
+
+static emUInt32 sf_lcg(emUInt32& seed) {
+    seed = seed * 1664525 + 1013904223;
+    return seed;
+}
+
+static double sf_random_range(emUInt32& seed, double minVal, double maxVal) {
+    emUInt32 r = sf_lcg(seed);
+    return r * (maxVal - minVal) / (double)EM_UINT32_MAX + minVal;
+}
+
+static void gen_starfield(const char* name, int depth, emUInt32 seed, int w, int h) {
+    // Constants matching C++ emStarFieldPanel
+    const double MinPanelSize = 64.0;
+    const double MinStarRadius = 0.3;
+    const emColor BgColor(0x000000FF);
+
+    // Generate stars (replicates emStarFieldPanel constructor)
+    int starCount = 0;
+    std::vector<GenStar> stars;
+    if (depth >= 1) {
+        int maxCount = (depth * 3 < 400) ? depth * 3 : 400;
+        starCount = (int)(maxCount * sf_random_range(seed, 0.5, 1.0));
+        stars.resize(starCount);
+        for (int i = 0; i < starCount; i++) {
+            double r = MinStarRadius / MinPanelSize * sf_random_range(seed, 0.5, 1.0);
+            stars[i].X = sf_random_range(seed, r, 1.0 - r);
+            stars[i].Y = sf_random_range(seed, r, 1.0 - r);
+            stars[i].Radius = r;
+            stars[i].Color.SetHSVA(
+                (float)sf_random_range(seed, 0.0, 360.0),
+                (float)sf_random_range(seed, 0.0, 15.0),
+                100.0F
+            );
+        }
+    }
+
+    // Advance PRNG for child seeds (not used for painting, but must match)
+    sf_lcg(seed); // ^ 0x74fc8324
+    sf_lcg(seed); // ^ 0x058f56a9
+    sf_lcg(seed); // ^ 0xfc863e37
+    sf_lcg(seed); // ^ 0x8bef7891
+
+    // Load star texture
+    emImage starShape = emGetInsResImage(*g_ctx, "emMain", "Star.tga", 1);
+
+    // Create image and painter
+    emImage img(w, h, 4);
+    // Don't fill -- Clear will paint BgColor
+
+    emPainter p;
+    if (!img.PreparePainter(&p, *g_ctx,
+                            0.0, 0.0,
+                            (double)w, (double)h)) {
+        fprintf(stderr, "PreparePainter failed for %s!\n", name);
+        exit(1);
+    }
+
+    // Scale painter: map panel coords (0,0)-(1,1) to pixels (0,0)-(w,h)
+    emPainter sp(
+        p,
+        p.GetClipX1(), p.GetClipY1(),
+        p.GetClipX2(), p.GetClipY2(),
+        p.GetOriginX(), p.GetOriginY(),
+        (double)w, (double)h
+    );
+
+    // Clear to black background
+    sp.Clear(BgColor, 0);
+
+    // Paint stars (replicates PaintOverlay logic)
+    double scaleX = (double)w; // PanelToViewDeltaX(r) = r * scaleX
+    for (int i = 0; i < starCount; i++) {
+        double r = stars[i].Radius;
+        double vr = scaleX * r;
+        if (vr > MinStarRadius) {
+            if (vr > 4.0) {
+                // Tier 1: textured glow
+                float hue = stars[i].Color.GetHue();
+                float sat = stars[i].Color.GetSat();
+                float alpha = sat * 18.0F;
+                if (alpha > 255.0F) alpha = 255.0F;
+                double x = stars[i].X - r;
+                double y = stars[i].Y - r;
+                double d = r * 2;
+                // Glow pass
+                emColor c1;
+                c1.SetHSVA(hue, 100.0F, 100.0F, (emByte)alpha);
+                sp.PaintImageColored(x, y, d, d, starShape, 0, c1, 0, emTexture::EXTEND_ZERO);
+                // Star pass
+                emColor c2;
+                c2.SetHSVA(hue, sat - 10.0F, 100.0F);
+                sp.PaintImageColored(x, y, d, d, starShape, 0, c2, 0, emTexture::EXTEND_ZERO);
+            }
+            else {
+                r *= 0.6;
+                vr = scaleX * r;
+                if (vr > 1.2) {
+                    // Tier 2: ellipse (C++ API: top-left + diameter)
+                    double x = stars[i].X - r;
+                    double y = stars[i].Y - r;
+                    double d = r * 2;
+                    sp.PaintEllipse(x, y, d, d, stars[i].Color);
+                }
+                else {
+                    // Tier 3: rect
+                    r *= 0.8862;
+                    double x = stars[i].X - r;
+                    double y = stars[i].Y - r;
+                    double d = r * 2;
+                    sp.PaintRect(x, y, d, d, stars[i].Color);
+                }
+            }
+        }
+    }
+
+    dump_painter(name, img);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════════
 
@@ -5164,6 +5296,10 @@ int main() {
 
     printf("Generating eagle logo golden files...\n");
     gen_eagle_logo();
+
+    printf("Generating starfield golden files...\n");
+    gen_starfield("starfield_small", 3, 0x12345678, 256, 256);
+    gen_starfield("starfield_large", 3, 0x12345678, 1024, 1024);
 
     printf("Done!\n");
 

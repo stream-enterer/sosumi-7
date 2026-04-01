@@ -219,14 +219,16 @@ impl PanelBehavior for emStarFieldPanel {
                 let vr = sx * r;
                 if vr > 1.2 {
                     // Tier 2: ellipse
-                    painter.PaintEllipse(star.X, star.Y, r, r, star.Color, bg);
+                    // C++ PaintOverlay passes no canvasColor (defaults to 0 = transparent)
+                    painter.PaintEllipse(star.X, star.Y, r, r, star.Color, emColor::TRANSPARENT);
                 } else {
                     // Tier 3: rect
                     r *= 0.8862;
                     let x = star.X - r;
                     let y = star.Y - r;
                     let d = r * 2.0;
-                    painter.PaintRect(x, y, d, d, star.Color, bg);
+                    // C++ PaintOverlay passes no canvasColor (defaults to 0 = transparent)
+                    painter.PaintRect(x, y, d, d, star.Color, emColor::TRANSPARENT);
                 }
             }
         }

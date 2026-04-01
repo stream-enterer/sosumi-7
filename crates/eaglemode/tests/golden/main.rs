@@ -11,6 +11,7 @@ mod notice;
 mod painter;
 mod parallel;
 mod scheduler;
+mod starfield;
 #[path = "../support/mod.rs"]
 mod support;
 mod test_panel;
