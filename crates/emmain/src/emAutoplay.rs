@@ -1,6 +1,7 @@
 use emcore::emConfigModel::emConfigModel;
 use emcore::emContext::emContext;
 use emcore::emInstallInfo::{emGetInstallPath, InstallDirType};
+use emcore::emPanelTree::{AutoplayHandlingFlags, DecodeIdentity, EncodeIdentity, PanelId, PanelTree};
 use emcore::emRec::{RecError, RecStruct};
 use emcore::emRecRecord::Record;
 use emcore::emSignal::SignalId;
@@ -368,6 +369,138 @@ impl emAutoplayViewAnimator {
             "emAutoplayViewAnimator::SkipToNextItem: panel traversal not yet implemented"
         );
     }
+
+    //------------------------------------------------------------------
+    // Traversal helpers (C++ emAutoplay.cpp:519-618)
+    //------------------------------------------------------------------
+
+    /// Static check: is a panel with the given focusability and flags an item?
+    ///
+    /// Port of the core logic in C++ `emAutoplayViewAnimator::IsItem`.
+    pub fn is_item_check(focusable: bool, flags: AutoplayHandlingFlags) -> bool {
+        focusable && flags.contains(AutoplayHandlingFlags::ITEM)
+    }
+
+    /// Check if a panel in the tree is an autoplay item.
+    ///
+    /// Port of C++ `emAutoplayViewAnimator::IsItem`.
+    pub fn IsItem(tree: &PanelTree, panel: PanelId) -> bool {
+        Self::is_item_check(tree.focusable(panel), tree.GetAutoplayHandling(panel))
+    }
+
+    /// Static check: is the current panel a cutoff point for traversal?
+    ///
+    /// Port of C++ `emAutoplayViewAnimator::IsCutoff`.
+    pub fn is_cutoff_check(&self, flags: AutoplayHandlingFlags) -> bool {
+        if flags.contains(AutoplayHandlingFlags::CUTOFF) {
+            return true;
+        }
+        // The remaining checks require the panel to be focusable, but
+        // this static helper doesn't have that info — it only fires on
+        // CUTOFF. The tree version handles the rest.
+        false
+    }
+
+    /// Check if a panel in the tree is a traversal cutoff point.
+    ///
+    /// Port of C++ `emAutoplayViewAnimator::IsCutoff`.
+    pub fn IsCutoff(&self, tree: &PanelTree, panel: PanelId) -> bool {
+        let f = tree.GetAutoplayHandling(panel);
+        if f.contains(AutoplayHandlingFlags::CUTOFF) {
+            return true;
+        }
+        if tree.focusable(panel) {
+            if f.contains(AutoplayHandlingFlags::DIRECTORY) && !self.Recursive {
+                return true;
+            }
+            if f.contains(AutoplayHandlingFlags::ITEM) {
+                if !self.Recursive {
+                    return true;
+                }
+                // Walk ancestors checking for CUTOFF_AT_SUBITEMS
+                let mut q = tree.GetParentContext(panel);
+                while let Some(qid) = q {
+                    let qf = tree.GetAutoplayHandling(qid);
+                    if qf.contains(AutoplayHandlingFlags::CUTOFF_AT_SUBITEMS) {
+                        return true;
+                    }
+                    if tree.focusable(qid)
+                        && qf.intersects(
+                            AutoplayHandlingFlags::ITEM | AutoplayHandlingFlags::DIRECTORY,
+                        )
+                    {
+                        break;
+                    }
+                    q = tree.GetParentContext(qid);
+                }
+            }
+        }
+        false
+    }
+
+    /// Navigate to the parent of the current panel.
+    ///
+    /// Port of C++ `emAutoplayViewAnimator::GoParent`.
+    pub fn go_parent(&mut self, tree: &PanelTree, current: PanelId) {
+        if let Some(parent) = tree.GetParentContext(current) {
+            let child_name = tree
+                .name(current)
+                .unwrap_or("")
+                .to_string();
+            self.SkipCurrent = false;
+            self.CameFrom = CameFromType::Child;
+            self.CameFromChildName = child_name;
+            self.CurrentPanelIdentity = tree.GetIdentity(parent);
+            self.CurrentPanelState = CurrentPanelState::NotVisited;
+        }
+    }
+
+    /// Navigate to a child panel.
+    ///
+    /// Port of C++ `emAutoplayViewAnimator::GoChild`.
+    pub fn go_child(&mut self, tree: &PanelTree, child: PanelId) {
+        self.SkipCurrent = false;
+        self.CameFrom = CameFromType::Parent;
+        self.CameFromChildName.clear();
+        self.CurrentPanelIdentity = tree.GetIdentity(child);
+        self.CurrentPanelState = CurrentPanelState::NotVisited;
+    }
+
+    /// Re-enter the current panel (reset skip flag).
+    ///
+    /// Port of C++ `emAutoplayViewAnimator::GoSame`.
+    pub fn go_same(&mut self) {
+        self.SkipCurrent = false;
+    }
+
+    /// Invert the traversal direction (forward ↔ backward).
+    ///
+    /// Port of C++ `emAutoplayViewAnimator::InvertDirection`.
+    pub fn InvertDirection(&mut self) {
+        self.Backwards = !self.Backwards;
+        self.NextLoopEndless = false;
+
+        if self.CameFrom == CameFromType::Parent {
+            let names = DecodeIdentity(&self.CurrentPanelIdentity);
+            let cnt = names.len();
+            if cnt > 0 {
+                self.CameFrom = CameFromType::Child;
+                self.CameFromChildName = names[cnt - 1].clone();
+                let parent_names: Vec<&str> =
+                    names[..cnt - 1].iter().map(|s| s.as_str()).collect();
+                self.CurrentPanelIdentity = EncodeIdentity(&parent_names);
+                self.CurrentPanelState = CurrentPanelState::NotVisited;
+            }
+        } else if self.CameFrom == CameFromType::Child {
+            let mut names = DecodeIdentity(&self.CurrentPanelIdentity);
+            names.push(self.CameFromChildName.clone());
+            self.CameFrom = CameFromType::Parent;
+            self.CameFromChildName.clear();
+            let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+            self.CurrentPanelIdentity = EncodeIdentity(&name_refs);
+            self.CurrentPanelState = CurrentPanelState::NotVisited;
+        }
+    }
 }
 
 impl Default for emAutoplayViewAnimator {
@@ -572,5 +705,220 @@ mod tests {
         assert_eq!(vm.GetDurationMS(), 100);
         vm.SetDurationMS(700_000); // above max
         assert_eq!(vm.GetDurationMS(), 600_000);
+    }
+
+    // ── Traversal helper tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_is_item_check() {
+        assert!(emAutoplayViewAnimator::is_item_check(
+            true,
+            AutoplayHandlingFlags::ITEM
+        ));
+        assert!(!emAutoplayViewAnimator::is_item_check(
+            false,
+            AutoplayHandlingFlags::ITEM
+        ));
+        assert!(!emAutoplayViewAnimator::is_item_check(
+            true,
+            AutoplayHandlingFlags::DIRECTORY
+        ));
+        assert!(!emAutoplayViewAnimator::is_item_check(
+            true,
+            AutoplayHandlingFlags::empty()
+        ));
+        // ITEM combined with others still counts
+        assert!(emAutoplayViewAnimator::is_item_check(
+            true,
+            AutoplayHandlingFlags::ITEM | AutoplayHandlingFlags::DIRECTORY
+        ));
+    }
+
+    #[test]
+    fn test_is_item_with_tree() {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        let child = tree.create_child(root, "child");
+        tree.set_focusable(child, true);
+        tree.SetAutoplayHandling(child, AutoplayHandlingFlags::ITEM);
+        assert!(emAutoplayViewAnimator::IsItem(&tree, child));
+
+        // Not focusable → not an item (use child since root can't be unfocusable)
+        tree.set_focusable(child, false);
+        assert!(!emAutoplayViewAnimator::IsItem(&tree, child));
+    }
+
+    #[test]
+    fn test_is_cutoff_check_cutoff_flag() {
+        let va = emAutoplayViewAnimator::new();
+        assert!(va.is_cutoff_check(AutoplayHandlingFlags::CUTOFF));
+        assert!(!va.is_cutoff_check(AutoplayHandlingFlags::empty()));
+        assert!(!va.is_cutoff_check(AutoplayHandlingFlags::ITEM));
+    }
+
+    #[test]
+    fn test_is_cutoff_with_tree_cutoff_flag() {
+        let va = emAutoplayViewAnimator::new();
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.SetAutoplayHandling(root, AutoplayHandlingFlags::CUTOFF);
+        assert!(va.IsCutoff(&tree, root));
+    }
+
+    #[test]
+    fn test_is_cutoff_directory_non_recursive() {
+        let va = emAutoplayViewAnimator::new(); // Recursive=false
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.set_focusable(root, true);
+        tree.SetAutoplayHandling(root, AutoplayHandlingFlags::DIRECTORY);
+        assert!(va.IsCutoff(&tree, root));
+    }
+
+    #[test]
+    fn test_is_cutoff_directory_recursive() {
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.set_focusable(root, true);
+        tree.SetAutoplayHandling(root, AutoplayHandlingFlags::DIRECTORY);
+        assert!(!va.IsCutoff(&tree, root));
+    }
+
+    #[test]
+    fn test_is_cutoff_item_non_recursive() {
+        let va = emAutoplayViewAnimator::new(); // Recursive=false
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.set_focusable(root, true);
+        tree.SetAutoplayHandling(root, AutoplayHandlingFlags::ITEM);
+        assert!(va.IsCutoff(&tree, root));
+    }
+
+    #[test]
+    fn test_is_cutoff_item_recursive_with_cutoff_at_subitems() {
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.set_focusable(root, true);
+        tree.SetAutoplayHandling(root, AutoplayHandlingFlags::CUTOFF_AT_SUBITEMS);
+
+        let child = tree.create_child(root, "child");
+        tree.set_focusable(child, true);
+        tree.SetAutoplayHandling(child, AutoplayHandlingFlags::ITEM);
+        // child is an ITEM, recursive, parent has CUTOFF_AT_SUBITEMS → cutoff
+        assert!(va.IsCutoff(&tree, child));
+    }
+
+    #[test]
+    fn test_is_cutoff_item_recursive_no_cutoff_at_subitems() {
+        let mut va = emAutoplayViewAnimator::new();
+        va.Recursive = true;
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.set_focusable(root, true);
+        tree.SetAutoplayHandling(root, AutoplayHandlingFlags::DIRECTORY);
+
+        let child = tree.create_child(root, "child");
+        tree.set_focusable(child, true);
+        tree.SetAutoplayHandling(child, AutoplayHandlingFlags::ITEM);
+        // Parent is DIRECTORY+focusable → stops ancestor walk, no cutoff
+        assert!(!va.IsCutoff(&tree, child));
+    }
+
+    #[test]
+    fn test_go_parent() {
+        let mut va = emAutoplayViewAnimator::new();
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        let child = tree.create_child(root, "child");
+
+        va.go_parent(&tree, child);
+        assert_eq!(va.CameFrom, CameFromType::Child);
+        assert_eq!(va.CameFromChildName, "child");
+        assert_eq!(va.CurrentPanelIdentity, tree.GetIdentity(root));
+        assert_eq!(va.CurrentPanelState, CurrentPanelState::NotVisited);
+        assert!(!va.SkipCurrent);
+    }
+
+    #[test]
+    fn test_go_child() {
+        let mut va = emAutoplayViewAnimator::new();
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        let child = tree.create_child(root, "child");
+
+        va.go_child(&tree, child);
+        assert_eq!(va.CameFrom, CameFromType::Parent);
+        assert!(va.CameFromChildName.is_empty());
+        assert_eq!(va.CurrentPanelIdentity, tree.GetIdentity(child));
+        assert_eq!(va.CurrentPanelState, CurrentPanelState::NotVisited);
+    }
+
+    #[test]
+    fn test_go_same() {
+        let mut va = emAutoplayViewAnimator::new();
+        va.SkipCurrent = true;
+        va.go_same();
+        assert!(!va.SkipCurrent);
+    }
+
+    #[test]
+    fn test_invert_direction_from_parent() {
+        let mut va = emAutoplayViewAnimator::new();
+        va.CameFrom = CameFromType::Parent;
+        va.CurrentPanelIdentity = "root:child".to_string();
+        va.Backwards = false;
+
+        va.InvertDirection();
+
+        assert!(va.Backwards);
+        assert_eq!(va.CameFrom, CameFromType::Child);
+        assert_eq!(va.CameFromChildName, "child");
+        assert_eq!(va.CurrentPanelIdentity, "root");
+        assert_eq!(va.CurrentPanelState, CurrentPanelState::NotVisited);
+    }
+
+    #[test]
+    fn test_invert_direction_from_child() {
+        let mut va = emAutoplayViewAnimator::new();
+        va.CameFrom = CameFromType::Child;
+        va.CameFromChildName = "child".to_string();
+        va.CurrentPanelIdentity = "root".to_string();
+        va.Backwards = true;
+
+        va.InvertDirection();
+
+        assert!(!va.Backwards);
+        assert_eq!(va.CameFrom, CameFromType::Parent);
+        assert!(va.CameFromChildName.is_empty());
+        assert_eq!(va.CurrentPanelIdentity, "root:child");
+        assert_eq!(va.CurrentPanelState, CurrentPanelState::NotVisited);
+    }
+
+    #[test]
+    fn test_invert_direction_from_none() {
+        let mut va = emAutoplayViewAnimator::new();
+        va.CameFrom = CameFromType::None;
+        va.Backwards = false;
+
+        va.InvertDirection();
+
+        assert!(va.Backwards);
+        assert_eq!(va.CameFrom, CameFromType::None);
+        assert!(!va.NextLoopEndless);
+    }
+
+    #[test]
+    fn test_invert_direction_clears_next_loop_endless() {
+        let mut va = emAutoplayViewAnimator::new();
+        va.NextLoopEndless = true;
+        va.CameFrom = CameFromType::None;
+
+        va.InvertDirection();
+
+        assert!(!va.NextLoopEndless);
     }
 }
