@@ -46,6 +46,9 @@ pub(crate) struct SliderPanel {
     parent_slider_y: f64,
     parent_slider_min_y: f64,
     parent_slider_max_y: f64,
+    /// Parent's layout width for this panel (= C++ GetLayoutWidth()).
+    /// Used to convert panel-local mouse delta to parent coordinates.
+    parent_layout_w: f64,
     slider_image: emImage,
     /// Pending drag delta computed during `Input`, consumed by parent `Cycle`.
     pending_drag_delta: Option<f64>,
@@ -66,6 +69,7 @@ impl SliderPanel {
             parent_slider_y: 0.0,
             parent_slider_min_y: 0.0,
             parent_slider_max_y: 0.0,
+            parent_layout_w: 1.0,
             slider_image,
             pending_drag_delta: None,
             double_clicked: false,
@@ -74,16 +78,10 @@ impl SliderPanel {
 
     /// Port of C++ `emMainPanel::SliderPanel::SetHidden`.
     /// Wired by `update_slider_hiding` in Task 2.
-    pub(crate) fn _SetHidden(&mut self, hidden: bool) {
+    pub(crate) fn SetHidden(&mut self, hidden: bool) {
         if self.hidden != hidden {
             self.hidden = hidden;
         }
-    }
-
-    /// Whether the mouse is over the slider.
-    /// Wired in Task 2/8 for cursor and hiding logic.
-    pub(crate) fn _mouse_over_state(&self) -> bool {
-        self.mouse_over
     }
 
     /// Set the parent's slider state so Paint can draw arrows conditionally.
@@ -93,10 +91,12 @@ impl SliderPanel {
         slider_y: f64,
         slider_min_y: f64,
         slider_max_y: f64,
+        layout_w: f64,
     ) {
         self.parent_slider_y = slider_y;
         self.parent_slider_min_y = slider_min_y;
         self.parent_slider_max_y = slider_max_y;
+        self.parent_layout_w = layout_w;
     }
 
 }
@@ -137,12 +137,19 @@ impl PanelBehavior for SliderPanel {
             return true; // eat event (C++: event.Eat())
         }
 
-        // Compute drag delta while pressed (C++ emMainPanel.cpp:424-432).
+        // Compute drag delta while pressed (C++ emMainPanel.cpp:439-444).
+        // C++: dy=(my-PressMY)*GetLayoutWidth();
+        //      if (shift) dy=(dy+MainPanel.SliderY-PressSliderY)*0.25
+        //                    +PressSliderY-MainPanel.SliderY;
+        //      MainPanel.DragSlider(dy);
         if self.pressed {
-            let sensitivity = if input_state.GetShift() { 0.25 } else { 1.0 };
-            let target_y =
-                self.press_slider_y + (my - self.press_my) * _state.height * sensitivity;
-            self.pending_drag_delta = Some(target_y - self.parent_slider_y);
+            let mut dy = (my - self.press_my) * self.parent_layout_w;
+            if input_state.GetShift() {
+                dy = (dy + self.parent_slider_y - self.press_slider_y) * 0.25
+                    + self.press_slider_y
+                    - self.parent_slider_y;
+            }
+            self.pending_drag_delta = Some(dy);
         }
 
         // Release detection: if pressed but left button no longer held.
@@ -323,6 +330,9 @@ pub struct emMainPanel {
     // Fullscreen / slider-hiding state (C++ emMainPanel::UpdateFullscreen / UpdateSliderHiding)
     fullscreen_on: bool,
     slider_hidden: bool,
+
+    // Timer for slider auto-hide (C++ emMainPanel::SliderTimer, 5-second one-shot)
+    slider_hide_timer_start: Option<std::time::Instant>,
 }
 
 impl emMainPanel {
@@ -369,6 +379,7 @@ impl emMainPanel {
             old_mouse_y: 0.0,
             fullscreen_on: false,
             slider_hidden: false,
+            slider_hide_timer_start: None,
         }
     }
 
@@ -455,6 +466,11 @@ impl emMainPanel {
     ///
     /// Hides the slider after 5 seconds in fullscreen when control is collapsed
     /// and AutoHideSlider is enabled.
+    /// Port of C++ `emMainPanel::UpdateSliderHiding` (emMainPanel.cpp:322-339).
+    ///
+    /// Hides the slider after 5 seconds in fullscreen when control is collapsed
+    /// and AutoHideSlider is enabled. Uses `slider_hide_timer_start` as a
+    /// 5-second one-shot; `Cycle` checks elapsed time and hides when expired.
     fn update_slider_hiding(&mut self, restart: bool) {
         let to_hide = self.unified_slider_pos < 1e-15
             && self.fullscreen_on
@@ -462,11 +478,11 @@ impl emMainPanel {
 
         if !to_hide || restart {
             self.slider_hidden = false;
-            // Timer cancel deferred to Cycle() integration (Phase 3).
+            self.slider_hide_timer_start = None;
         }
         if to_hide && !self.slider_hidden {
-            // Timer start deferred to Cycle() integration (Phase 3).
-            // When timer fires, set slider_hidden = true.
+            // Start (or restart) the 5-second timer.
+            self.slider_hide_timer_start = Some(std::time::Instant::now());
         }
     }
 
@@ -561,6 +577,23 @@ impl PanelBehavior for emMainPanel {
     }
 
     fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+        // Check slider auto-hide timer (C++ SliderTimer, 5-second one-shot).
+        if let Some(start) = self.slider_hide_timer_start
+            && start.elapsed().as_millis() >= 5000
+        {
+            self.slider_hidden = true;
+            self.slider_hide_timer_start = None;
+        }
+
+        // Propagate hidden state to SliderPanel.
+        if let Some(slider_id) = self.slider_panel {
+            let hidden = self.slider_hidden;
+            ctx.tree.with_behavior_as::<SliderPanel, _>(slider_id, |sp| {
+                sp.SetHidden(hidden);
+            });
+        }
+
+        // Read slider drag/double-click actions.
         if let Some(slider_id) = self.slider_panel {
             let action = ctx.tree.with_behavior_as::<SliderPanel, _>(slider_id, |sp| {
                 let dc = sp.double_clicked;
@@ -741,9 +774,10 @@ impl PanelBehavior for emMainPanel {
             let sy = self.slider_y;
             let smin = self.slider_min_y;
             let smax = self.slider_max_y;
+            let sw = self.slider_w;
             ctx.tree
                 .with_behavior_as::<SliderPanel, _>(slider, |sp| {
-                    sp.set_parent_slider_state(sy, smin, smax);
+                    sp.set_parent_slider_state(sy, smin, smax, sw);
                 });
         }
 
@@ -953,9 +987,9 @@ mod tests {
     fn test_slider_panel_set_hidden() {
         let mut panel = SliderPanel::new();
         assert!(!panel.hidden);
-        panel._SetHidden(true);
+        panel.SetHidden(true);
         assert!(panel.hidden);
-        panel._SetHidden(false);
+        panel.SetHidden(false);
         assert!(!panel.hidden);
     }
 
