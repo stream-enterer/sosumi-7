@@ -1,402 +1,386 @@
 [
   {
     "id": "a3-01",
-    "proposition": "The C++ golden data generator (gen_golden.cpp) is itself unverified bespoke test infrastructure, not production Eagle Mode code, so golden tests prove equivalence with the generator's configuration rather than with actual Eagle Mode runtime behavior.",
+    "proposition": "Previous investigations of Group A+B eliminated hypotheses at the wrong level of abstraction -- comparing inputs to divergent functions rather than their derived internal state -- creating permanent blind spots in the search space.",
     "scores": {
-      "defensibility": 0.92,
-      "specificity": 0.85,
-      "robustness": 0.80,
-      "compatibility": 0.60
+      "evidential_grounding": 0.80,
+      "actionability": 0.60,
+      "failure_resistance": 0.75,
+      "parity_convergence": 0.70
     },
     "reasoning": {
-      "defensibility": "This is a factual observation about the test architecture: the generator constructs scenes with StubClipboard, StubScreen, and headless scheduler, none of which match production Eagle Mode. The claim that equivalence is with the generator, not production, follows logically.",
-      "specificity": "Names the specific generator file (gen_golden.cpp) and specific divergences (StubClipboard, StubScreen, headless scheduler). Actionable: one could verify by comparing generator initialization against production Eagle Mode startup.",
-      "robustness": "Could be challenged by arguing that the generator calls into the same production emCore libraries, so the behavioral surface is identical for the subsystems under test. The stub components may not affect the specific code paths being tested.",
-      "compatibility": "Directly challenges the assumption that golden tests validate port fidelity, which is central to the project's verification methodology. Creates tension with any claim that the golden suite provides strong correctness guarantees."
+      "evidential_grounding": "Grounded in specific documented investigations: Investigation 2 compared ScanlineTool::Init input parameters, not the 12 derived values (ImgMap, ImgDX, ImgDY, etc.). The claim that 'inputs match does not imply derived state matches' is logically sound and references concrete code artifacts.",
+      "actionability": "Moderately actionable. Awareness that previous eliminations may be wrong suggests re-investigating Group A+B derived state, but the specific re-investigation path is not spelled out. Success criteria would be: verify that all 12 derived values in ScanlineTool::Init match their Rust equivalents.",
+      "failure_resistance": "Reasonably resistant. The observation about abstraction level mismatch is structural, not dependent on a specific hypothesis about the root cause. However, if the previous eliminations were actually correct, this awareness becomes a distraction.",
+      "parity_convergence": "Directly relevant to the 21 Group A+B tests. If the blind spot is real and these tests are failing because of unexamined derived state, correcting the search addresses 21/37 remaining failures."
     }
   },
   {
     "id": "a3-02",
-    "proposition": "The golden binary format has no schema version, magic number, or checksum, making it silently vulnerable to cross-platform endianness corruption and compiler-dependent struct padding changes.",
+    "proposition": "Each round of investigation that declares a subsystem 'structurally equivalent with minor differences' adds a layer of fog that concentrates specifically around the areas where the divergence actually lives, because those are the most-investigated and most-declared-equivalent areas.",
     "scores": {
-      "defensibility": 0.88,
-      "specificity": 0.90,
-      "robustness": 0.65,
-      "compatibility": 0.85
+      "evidential_grounding": 0.70,
+      "actionability": 0.40,
+      "failure_resistance": 0.65,
+      "parity_convergence": 0.45
     },
     "reasoning": {
-      "defensibility": "Factually verifiable by inspecting golden_format.h and common.rs. The absence of version/magic/checksum is concrete. The vulnerability claim follows from standard binary format engineering practice.",
-      "specificity": "Identifies the exact format components (u32 width/height, RGBA bytes) and exact missing safeguards (version, magic number, checksum). Directly actionable: add these safeguards.",
-      "robustness": "Weakened by the practical reality that the project currently builds and runs on a single platform (x86-64 Linux) with a single compiler. The vulnerability is theoretical until a platform change occurs. Also, the size check catches many corruption modes.",
-      "compatibility": "Compatible with most other concerns. Adding format validation would not conflict with any design goal and would strengthen the harness without changing test semantics."
+      "evidential_grounding": "Supported by the documented pattern of three investigation rounds on Group A+B producing zero fixes while declaring subsystems equivalent. The mechanism (fog concentrating around the divergence) is a plausible inference, though not directly proven by project data.",
+      "actionability": "Low actionability. This is a meta-observation about investigation quality, not a concrete next step. The implied action ('distrust previous equivalence verdicts') is vague. No clear success criteria beyond 'be more skeptical.'",
+      "failure_resistance": "Moderate. The observation is structurally sound -- if you keep investigating and declaring things equivalent, eventually the whole pipeline is 'equivalent' but still fails. Resistant to dismissal because the pattern is documented. However, could lead to paralysis ('we can't trust anything').",
+      "parity_convergence": "Indirectly relevant. Awareness of fog helps avoid repeating the pattern, but does not itself close any tests. The contribution is preventive, not corrective."
     }
   },
   {
     "id": "a3-03",
-    "proposition": "The compare_images function permanently excludes the alpha channel from comparison because C++ and Rust use semantically different alpha representations, creating a structural blind spot for any alpha-dependent behavioral divergence.",
+    "proposition": "Three investigation rounds targeting Group A+B produced real fixes (blend_colored_scanline, HowTo text wiring) but zero Group A+B fixes, demonstrating a systematic diversion pattern where agents fix adjacent bugs instead of the target root cause.",
     "scores": {
-      "defensibility": 0.90,
-      "specificity": 0.92,
-      "robustness": 0.75,
-      "compatibility": 0.55
+      "evidential_grounding": 0.95,
+      "actionability": 0.55,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.50
     },
     "reasoning": {
-      "defensibility": "The alpha exclusion is explicitly documented in compare_images code with a comment explaining the semantic difference. The claim that this creates a blind spot is logically sound: if alpha feeds downstream operations and is never compared, divergence in those operations is undetectable.",
-      "specificity": "Points to the exact function (compare_images), the exact channel (channel 3), and the exact semantic difference (canvas visibility tracking vs. standard compositing alpha). Highly concrete.",
-      "robustness": "Could be challenged by arguing that the Rust implementation deliberately chose standard alpha semantics as an intentional DIVERGED: decision, and that downstream operations in Rust correctly use the Rust alpha semantics. The blind spot only matters if Rust code incorrectly reads alpha expecting C++ semantics.",
-      "compatibility": "Conflicts with claims that the golden harness provides comprehensive pixel-level verification. But may be compatible with a design decision to intentionally diverge on alpha semantics if documented as DIVERGED:."
+      "evidential_grounding": "Directly documented in project history. Investigation round 1 fixed blend_colored_scanline (5 tests in other groups). Investigation round 2 found HowTo text wiring (20 tests). Each round targeted Group A+B and fixed something else. This is factual, not speculative.",
+      "actionability": "Moderately actionable. Implies that future Group A+B investigations should be scoped narrowly to avoid side-quest fixes. But the agent cannot easily distinguish 'side quest' from 'genuine prerequisite' in real time.",
+      "failure_resistance": "High. The pattern is concrete and documented across multiple rounds. Hard to dismiss as coincidence after three repetitions. Resistant to fog because it's about what happened, not what might happen.",
+      "parity_convergence": "Moderate. Understanding the diversion pattern helps avoid repeating it, but does not itself identify the Group A+B root cause. It's a process improvement, not a technical fix."
     }
   },
   {
     "id": "a3-04",
-    "proposition": "The require_golden!() macro causes all 232 golden tests to report 'ok' (passing) when golden data is absent, making it impossible for CI systems checking exit codes to distinguish between 'tested and passed' and 'silently skipped'.",
+    "proposition": "The C++ rendering pipeline uses #include-based macro template expansion (CHANNELS, EXTENSION parameters) that produces 12 variants of each interpolation function, and agents reading the generic template systematically misinterpret the specific variant (CHANNELS=4, CLAMP) that executes for failing tests.",
     "scores": {
-      "defensibility": 0.95,
-      "specificity": 0.95,
-      "robustness": 0.90,
-      "compatibility": 0.80
+      "evidential_grounding": 0.85,
+      "actionability": 0.70,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.75
     },
     "reasoning": {
-      "defensibility": "This is a straightforward factual claim about the macro's behavior: it returns Ok(()) when data is missing, causing the test runner to report success. Trivially verifiable by reading the macro source.",
-      "specificity": "Names the exact macro (require_golden!()), the exact mechanism (prints SKIP to stderr, returns success), and the exact consequence (CI reports green without actual testing). Directly actionable: change the macro to fail or use test filtering.",
-      "robustness": "Very robust because the failure mode is mechanical, not interpretive. The only counterargument is that developers 'should know' to generate golden data first, which is a human-process defense against a technical gap.",
-      "compatibility": "Compatible with virtually all other design goals. Fixing this (e.g., with #[ignore] or a CI gate) would strengthen the harness without conflicting with any other concern."
+      "evidential_grounding": "The C++ code structure (emPainter_ScTlIntImg.cpp, 1612 lines, #include-based expansion with CHANNELS and EXTENSION defines) is verifiable in the C++ source at ~/git/eaglemode-0.96.4/. The claim about agent misinterpretation is supported by the known difficulty of macro expansion for LLMs.",
+      "actionability": "Actionable. A concrete mitigation is to pre-expand the C++ macros for the specific CHANNELS=4/CLAMP variant and provide the expanded code to agents. This has clear success criteria: agents work with expanded code instead of templates.",
+      "failure_resistance": "High. The macro expansion difficulty is structural and affects every investigation session. Even if an agent correctly expands the macros once, the next session starts fresh and must re-expand. Pre-expansion is a durable fix.",
+      "parity_convergence": "Directly relevant. If agents are misreading the C++ code that the Rust code must match, every comparison is unreliable. Fixing this unblocks accurate comparison for the 21 Group A+B tests and the 2 G7 gradient tests."
     }
   },
   {
     "id": "a3-05",
-    "proposition": "Golden painter tests exercise individual drawing primitives in isolation but do not systematically test compositions of primitives within a shared painter context where state accumulation (clip rects, transforms, canvas color) could expose interaction bugs.",
+    "proposition": "The C++ ScanlineTool::Init computes stride reduction (modifying ImgW, ImgDX, ImgSX, ImgMap in-place) before computing transform parameters (tdx, tdy), creating an ordering dependency where the Rust code may compute transforms with pre-reduction values instead of post-reduction values.",
     "scores": {
-      "defensibility": 0.82,
-      "specificity": 0.80,
-      "robustness": 0.70,
-      "compatibility": 0.75
+      "evidential_grounding": 0.85,
+      "actionability": 0.90,
+      "failure_resistance": 0.85,
+      "parity_convergence": 0.90
     },
     "reasoning": {
-      "defensibility": "The document acknowledges multi_compose exists as a single test, so the claim is 'not systematic' rather than 'absent.' This is a reasonable coverage gap analysis. The combinatorial argument about composition space is sound.",
-      "specificity": "Lists specific primitive tests (rect_solid, ellipse_basic, etc.) and specific state accumulation concerns (clip rects, transforms). Somewhat actionable: add more composition golden tests.",
-      "robustness": "Weakened by the existence of multi_compose and widget rendering tests, which do implicitly test primitive composition. The claim could be overstating the gap if widget tests adequately cover common compositions.",
-      "compatibility": "Compatible with the project's testing goals. Adding composition tests would complement existing primitive tests without conflicting with any design principle."
+      "evidential_grounding": "References specific C++ code: lines 314-337 of emPainter_ScTl.cpp modifying ImgW then using modified ImgW at line 323 to compute tdx=ImgW*((emInt64)1<<24)/tw. This is verifiable against the C++ source.",
+      "actionability": "Highly actionable. Check whether the Rust code computes tdx/tdy using pre- or post-stride-reduction image dimensions. Success criteria: compare the specific value of ImgW used in tdx computation in C++ vs the equivalent value in Rust, at runtime, for a failing test case.",
+      "failure_resistance": "High. This is a specific, verifiable claim about code ordering. Either the Rust code uses pre-reduction or post-reduction ImgW for transform computation. The answer is binary and checkable.",
+      "parity_convergence": "Very high. If the Rust code computes transforms with pre-reduction dimensions, this single ordering bug could explain all 21 Group A+B failures. The transform parameters would be consistently wrong, producing small but systematic pixel differences across all border image tests."
     }
   },
   {
     "id": "a3-06",
-    "proposition": "All widget golden tests use a single viewport configuration (800x600, tallness 0.75, NO_ACTIVE_HIGHLIGHT), testing one point in a continuous parameter space that includes zoom-dependent rendering behavior controlled by ViewConditionType.",
+    "proposition": "The C++ area sampling loop carries state between pixels within a scanline (AreaSampleCarryState), and a 1-LSB error in pixel N propagates to pixel N+1, making this class of bug invisible to static code comparison and only visible through runtime tracing.",
     "scores": {
-      "defensibility": 0.85,
-      "specificity": 0.93,
-      "robustness": 0.72,
-      "compatibility": 0.80
+      "evidential_grounding": 0.80,
+      "actionability": 0.65,
+      "failure_resistance": 0.70,
+      "parity_convergence": 0.65
     },
     "reasoning": {
-      "defensibility": "The specific viewport parameters are verifiable in the test code. The claim that Eagle Mode renders differently at different zoom levels via ViewConditionType is architecturally documented in the C++ source.",
-      "specificity": "Provides exact parameters (800x600, 0.75, NO_ACTIVE_HIGHLIGHT) and the exact mechanism of concern (ViewConditionType). Directly actionable: add tests at other viewport configurations.",
-      "robustness": "Partially weakened if the specific widgets tested do not actually have zoom-dependent rendering logic. The concern is valid for widgets that use ViewConditionType but may be irrelevant for widgets that render identically at all zoom levels.",
-      "compatibility": "Compatible with existing testing methodology. Adding multi-viewport tests extends the approach rather than conflicting with it."
+      "evidential_grounding": "The carry state mechanism is documented in project memory (carry_over_investigation.md) and referenced in the C++ source. The claim about error propagation is supported by the nature of cumulative integer arithmetic. The memory note says 'max_diff=255' disproved the plus-minus-1 LSB claim, suggesting the carry-over issue has already been partially investigated.",
+      "actionability": "Moderately actionable. Runtime tracing of carry state requires instrumentation of both C++ and Rust scanline loops. The investigation is defined but labor-intensive. Success criteria: compare carry state values at each pixel in a divergent scanline.",
+      "failure_resistance": "Moderate. The carry_over_investigation.md notes that the plus-minus-1 LSB claim was disproven (max_diff=255), which means carry-state divergence is worse than initially expected. However, this may indicate the carry state itself is not the root cause but rather amplifies a root cause elsewhere.",
+      "parity_convergence": "Moderate. If carry state is an amplifier rather than a root cause, fixing it alone won't close tests. The root cause must be found first. But if carry state is the root cause, it affects all area-sampled rendering."
     }
   },
   {
     "id": "a3-07",
-    "proposition": "Golden test tolerances have ratcheted monotonically looser over time, from (ch_tol=1, max_fail=0.1%) for basic primitives to (ch_tol=3, max_fail=10.0%) for tunnel widgets and from 1e-6 to 1e-2 for animator trajectories, with no record of why each tolerance was chosen and no mechanism to detect or prevent widening.",
+    "proposition": "Groups G2 (polygon, 2 tests), G7 (gradient, 2 tests), G9 (polyline, 1 test), and other small groups may each require only a single targeted investigation round, making them higher expected-value targets than the deeply-investigated Group A+B.",
     "scores": {
-      "defensibility": 0.88,
-      "specificity": 0.95,
-      "robustness": 0.82,
-      "compatibility": 0.65
+      "evidential_grounding": 0.55,
+      "actionability": 0.80,
+      "failure_resistance": 0.50,
+      "parity_convergence": 0.70
     },
     "reasoning": {
-      "defensibility": "The specific tolerance values cited are verifiable in the test source code. The claim about monotonic loosening is an empirical observation about the trajectory, and the structural argument about path-of-least-resistance is sound.",
-      "specificity": "Provides exact tolerance values for multiple test categories with specific numbers. Identifies the specific missing safeguards (provenance, regression tracking, tightening mechanism). Highly actionable.",
-      "robustness": "Strong because the structural incentive (loosening is cheap, tightening is expensive) is inherent to the development process. Weakened slightly if some tolerances were deliberately set wide for legitimate algorithmic reasons (e.g., magnetic animator uses different math).",
-      "compatibility": "Creates tension with claims about the harness providing meaningful equivalence verification. If tolerances are too loose, the verification claim is weakened. Compatible with proposals to add tolerance provenance tracking."
+      "evidential_grounding": "Speculative. The claim that small groups are 'easy' is based on reasoning from group size and apparent code path simplicity, not on actual investigation. G2 'may be a single sign error' and G7 'may be a single coefficient' are hypotheses, not findings.",
+      "actionability": "Highly actionable. The proposal is clear: investigate G2, G3, G7, G9 before continuing on Group A+B. Success criteria: each group either falls to a single investigation or is identified as harder than expected.",
+      "failure_resistance": "Low-moderate. The hypothesis that small groups are easy could be wrong. Small groups might involve the same deep rendering pipeline issues as Group A+B. The assumption 'small group = easy fix' is plausible but unvalidated.",
+      "parity_convergence": "Good. If the small groups are indeed easy, fixing 7+ tests in 4 rounds is better velocity than 0 tests in 3 rounds on Group A+B. Even partial success (3/7 tests) improves the ratio."
     }
   },
   {
     "id": "a3-08",
-    "proposition": "The image comparison double gate (channel_tolerance + max_failure_pct) is structurally incapable of detecting localized catastrophic errors because it places no cap on how wrong failing pixels can be, only on how many pixels exceed the per-channel threshold.",
+    "proposition": "Building intermediate comparison harnesses (Approach B) risks the state-coupling problem: C++ ScanlineTool::Init computes all derived state in a single monolithic function, and testing stages separately may use pre-modification values that differ from the actual pipeline's post-modification values.",
     "scores": {
-      "defensibility": 0.90,
-      "specificity": 0.88,
-      "robustness": 0.85,
-      "compatibility": 0.75
+      "evidential_grounding": 0.80,
+      "actionability": 0.65,
+      "failure_resistance": 0.75,
+      "parity_convergence": 0.55
     },
     "reasoning": {
-      "defensibility": "Logically rigorous: the comparison function checks (channel_diff > ch_tol) for the fail count, but does not bound the magnitude of the diff for failing pixels. A single scanline of diff=255 pixels would pass if the pixel count is under max_failure_pct. Verifiable in the comparison code.",
-      "specificity": "Identifies the exact comparison parameters, the exact mechanism of failure (no magnitude cap on failing pixels), and a concrete example (256 wrong pixels in a 256x256 image at 0.4% passes 10% threshold). Actionable: add a max-diff cap.",
-      "robustness": "Very robust because the failure mode is mathematical, not interpretive. The only counter is that localized catastrophic errors are unlikely in practice for the specific primitives tested, but the structural gap remains.",
-      "compatibility": "Compatible with strengthening the harness. Adding a max-diff parameter would not conflict with existing tests that have well-behaved error distributions."
+      "evidential_grounding": "Grounded in the documented C++ code structure: ScanlineTool::Init is 280 lines that modify state in-place. The specific example (ImgW modified before tdx computation at line 323) is verifiable. The risk that intermediate harnesses test with wrong values is logically sound.",
+      "actionability": "Moderately actionable. If building intermediate harnesses, the mitigation is to capture all state at a single point (after Init completes) rather than at stage boundaries. Success criteria: harness captures post-Init state in C++ and compares against the equivalent Rust state.",
+      "failure_resistance": "Good. The state-coupling risk is structural to the C++ codebase and won't go away. Any harness-building approach must account for it. The warning is durable across investigation sessions.",
+      "parity_convergence": "Moderate. This is a warning about how to avoid wasting effort, not a direct path to closing tests. If heeded, it prevents false confidence from intermediate tests. If ignored, it leads to 'stages pass individually, pipeline fails' confusion."
     }
   },
   {
     "id": "a3-09",
-    "proposition": "The Rust port was developed by reading C++ source, violating Vouk's (1990) independence assumption for N-version testing, which means misunderstandings of C++ semantics propagate directly into the Rust implementation and are verified rather than detected by golden tests.",
+    "proposition": "Some of the 37 failing golden tests may have incorrect reference images generated by the C++ generator with wrong setup (fill, canvas, scale), making pixel parity with those references the wrong goal.",
     "scores": {
-      "defensibility": 0.78,
-      "specificity": 0.70,
-      "robustness": 0.65,
-      "compatibility": 0.50
+      "evidential_grounding": 0.60,
+      "actionability": 0.75,
+      "failure_resistance": 0.55,
+      "parity_convergence": 0.40
     },
     "reasoning": {
-      "defensibility": "The Vouk independence assumption is accurately cited, and the development methodology (reading C++ source to write Rust) factually violates it. However, this is inherent to any port and does not invalidate the testing approach -- it limits it. The claim is defensible but somewhat academic.",
-      "specificity": "References a specific academic framework (Vouk 1990) and a specific mechanism (correlated misunderstanding). But the actionable remedy is unclear -- you cannot un-read the C++ source. Less directly actionable than other propositions.",
-      "robustness": "Weakened by the practical reality that the alternative (independent reimplementation without reading source) would produce far more bugs. The correlation of understanding is also a correlation of correctness. The methodological critique is valid but the practical implication is ambiguous.",
-      "compatibility": "Challenges the fundamental verification methodology of the project. Creates tension with any claim that golden tests provide strong correctness guarantees, but may be overly nihilistic -- some verification is better than none."
+      "evidential_grounding": "Partially grounded: the user flagged this possibility in project memory (feedback_phase5_tests_suspect.md). However, no specific test has been identified as having a wrong reference. The possibility is acknowledged but not demonstrated.",
+      "actionability": "Actionable. Each reference image can be verified by re-running the C++ generator and comparing its output against the stored reference. If they differ, the stored reference is stale. Success criteria: all reference images match fresh C++ generator output.",
+      "failure_resistance": "Moderate. If reference images are verified and found correct, this concern is resolved. If some are found incorrect, it directly changes the target. However, the verification itself requires running the C++ generator, which has its own setup dependencies.",
+      "parity_convergence": "Low-moderate. If all references are correct, this investigation produces zero progress. If some are incorrect, it removes phantom failures from the count, potentially reducing the 37 to a smaller number. Either way, it doesn't fix real divergences."
     }
   },
   {
     "id": "a3-10",
-    "proposition": "The golden harness uses fixed, handcrafted inputs rather than random/generated inputs, eliminating the exploratory power of McKeeman-style differential testing and limiting verification to code paths the test author explicitly imagined.",
+    "proposition": "Zero-tolerance golden tests are fragile: a refactoring that changes floating-point operation order (e.g., replacing a*b+c with c+a*b) can change geometry by 1 ULP, shift sub-pixel edges, and fail tests despite producing mathematically equivalent results.",
     "scores": {
-      "defensibility": 0.80,
-      "specificity": 0.72,
-      "robustness": 0.68,
-      "compatibility": 0.70
+      "evidential_grounding": 0.75,
+      "actionability": 0.50,
+      "failure_resistance": 0.70,
+      "parity_convergence": 0.35
     },
     "reasoning": {
-      "defensibility": "Accurately describes the testing approach (fixed inputs) and correctly identifies the gap relative to McKeeman's methodology (random exploration). The limitation is real.",
-      "specificity": "Identifies the methodological gap but does not specify which unexplored code paths are most likely to harbor bugs. The remedy (add fuzz/property testing) is somewhat generic. Moderately actionable.",
-      "robustness": "Weakened by the fact that random input generation for a stateful UI system is extremely difficult to implement correctly, and the golden data approach was chosen precisely because it is tractable. The critique identifies a theoretical limitation but does not account for practical constraints.",
-      "compatibility": "Compatible with adding property-based or fuzz testing alongside golden tests. The claim does not invalidate golden testing, it argues it is insufficient alone."
+      "evidential_grounding": "Well-grounded in IEEE 754 floating-point semantics. Operation reordering can change results by 1 ULP. The project uses f64 for geometry feeding into integer pixel arithmetic. The chain from ULP to pixel difference is plausible. Project history confirms zero-tolerance is in use.",
+      "actionability": "Low-moderate. The implied action is 'be careful about float operation order during refactoring,' which is vague. More concretely: lock down float expression order in geometry functions with comments. But there's no clear one-time action that resolves this permanently.",
+      "failure_resistance": "Good. This is a well-understood property of floating-point arithmetic. Cannot be dismissed. Every future refactoring must contend with it.",
+      "parity_convergence": "Low. This is a stability concern about maintaining the 204 passing tests, not about closing the 37 failing tests. It's defensive, not offensive. Relevant to parity maintenance but not parity convergence."
     }
   },
   {
     "id": "a3-11",
-    "proposition": "The settle() function in stateful golden tests hardcodes a fixed iteration count (typically 5) to convert temporal convergence into a spatial snapshot, hiding convergence rate differences between C++ and Rust and creating fragile tests that break if convergence requirements change.",
+    "proposition": "The failing tests show divergences concentrated at specific pixel coordinates (edge pixels with small channel differences, max_diff=14), which is consistent with a sub-pixel positioning error in 9-slice subdivision rather than an interpolation or blending bug.",
     "scores": {
-      "defensibility": 0.85,
-      "specificity": 0.88,
-      "robustness": 0.78,
-      "compatibility": 0.70
+      "evidential_grounding": 0.70,
+      "actionability": 0.85,
+      "failure_resistance": 0.60,
+      "parity_convergence": 0.85
     },
     "reasoning": {
-      "defensibility": "The fixed iteration count is verifiable in the test code. The argument that this hides convergence dynamics and creates fragility is logically sound -- a change requiring 6 iterations would break tests hardcoded at 5.",
-      "specificity": "Names the exact function (settle()), the exact iteration count (5), and the exact failure mode (convergence rate mismatch). Actionable: implement convergence detection instead of fixed iteration count.",
-      "robustness": "Somewhat weakened if the C++ generator also uses a fixed iteration count (meaning both sides have the same temporal compression). Also weakened if the systems genuinely converge well within 5 iterations for all tested scenarios.",
-      "compatibility": "Compatible with improving test infrastructure. Replacing fixed settle counts with convergence detection would strengthen tests without conflicting with other goals."
+      "evidential_grounding": "The pixel divergence pattern (concentrated coordinates, small channel diffs, edge pixels) is described as consistent with sub-pixel positioning error. However, the same pattern is also consistent with interpolation weight errors, rounding differences, or coverage calculation bugs. The evidence is suggestive but not conclusive.",
+      "actionability": "Highly actionable. Compare 9-slice subdivision rectangle coordinates (sub-pixel precision) between C++ and Rust for a failing test case. If they differ, that's the root cause. If they match, sub-pixel positioning is eliminated. Success criteria: binary answer on whether subdivision coords match.",
+      "failure_resistance": "Moderate. The hypothesis is specific and testable, which is good. But if the coordinates match at one precision level and differ at another (e.g., match as f64 but differ when converted to fixed-point), the test may give a false negative.",
+      "parity_convergence": "Very high. If sub-pixel positioning is the root cause for Group A+B, fixing it addresses 21 tests. The hypothesis directly explains the observed failure pattern and points to a specific code location."
     }
   },
   {
     "id": "a3-12",
-    "proposition": "LLM sessions modifying tolerance values operate without provenance on why previous tolerances were set, causing tolerances to accumulate the maximum looseness ever needed across sessions because no session has context to tighten them.",
+    "proposition": "The 37 failing tests are grouped into 12 groups based on symptom similarity, but this grouping may be incorrect because groups that appear unrelated (e.g., Group A+B border images and G7 gradient) may share a root cause in upstream code like sub-pixel edge calculation.",
     "scores": {
-      "defensibility": 0.87,
-      "specificity": 0.82,
-      "robustness": 0.85,
-      "compatibility": 0.78
+      "evidential_grounding": 0.50,
+      "actionability": 0.60,
+      "failure_resistance": 0.55,
+      "parity_convergence": 0.60
     },
     "reasoning": {
-      "defensibility": "The session amnesia mechanism is inherent to LLM-based development: each session starts without history of tolerance decisions. The monotonic loosening dynamic follows logically from the asymmetry between loosening (easy) and tightening (hard).",
-      "specificity": "Identifies the specific mechanism (no tolerance provenance), the specific actor (LLM sessions), and the specific outcome (monotonic loosening). Actionable: add tolerance provenance comments or a tolerance registry.",
-      "robustness": "Robust because the failure mode is structural, not dependent on any particular LLM behavior. Even a careful LLM session cannot access cross-session history. The only mitigation is external tooling (tolerance tracking).",
-      "compatibility": "Compatible with adding tolerance management infrastructure. Does not conflict with other design goals."
+      "evidential_grounding": "Speculative. The possibility that groups share root causes is plausible but not demonstrated. No evidence is cited that Group A+B and G7 share code paths. The claim is a logical possibility, not an observed fact.",
+      "actionability": "Moderately actionable. Map which code functions are exercised by each group's failing tests. If two groups exercise the same function, investigate that function as a shared root cause. Success criteria: identify shared code paths across groups.",
+      "failure_resistance": "Moderate. The observation is reasonable but could lead to over-broadening investigation scope. If taken too seriously, it undermines the grouping that makes triage manageable. If ignored, potential shared causes are missed.",
+      "parity_convergence": "Moderate. If a shared root cause exists, finding it fixes multiple groups simultaneously. If it doesn't, the investigation is wasted time. Expected value depends on the probability of shared causes, which is unknown."
     }
   },
   {
     "id": "a3-13",
-    "proposition": "An LLM is structurally incentivized to widen golden test tolerances rather than investigate pixel-level divergence root causes, because widening is a one-character change producing green tests while investigation requires deep cross-referencing of C++ source.",
+    "proposition": "Neither Approach A (continue current hypothesis elimination) nor Approach B (incremental rebuild with intermediate harnesses) eliminates the fundamental 'last mile' problem: an agent must ultimately compare C++ and Rust integer arithmetic line-by-line, where both approaches are equally vulnerable to agent limitations.",
     "scores": {
-      "defensibility": 0.83,
-      "specificity": 0.78,
-      "robustness": 0.80,
-      "compatibility": 0.72
+      "evidential_grounding": 0.85,
+      "actionability": 0.35,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.30
     },
     "reasoning": {
-      "defensibility": "The incentive analysis is sound: LLMs optimize for task completion, and widening tolerance is the cheapest path to a passing test. The asymmetry between widening cost and investigation cost is real.",
-      "specificity": "Identifies the specific behavior pattern (sycophantic tolerance widening) and the specific cost asymmetry. Somewhat actionable: add CI gates on tolerance values or require justification comments.",
-      "robustness": "Robust as a structural observation about LLM development patterns. Could be weakened by arguing that CLAUDE.md instructions already mandate investigating divergences, but instructions are not enforcement.",
-      "compatibility": "Compatible with adding guardrails (tolerance freeze files, CI tolerance regression checks). Creates tension with claims about LLM-assisted development being efficient."
+      "evidential_grounding": "Well-grounded. Both approaches are described in detail and both converge on the same final step: reading and comparing ~230 lines of C++ interpolation code against the Rust equivalent. The agent's code comparison limitations (integer promotion, evaluation order, carry state) are documented failure modes.",
+      "actionability": "Low. This is a fundamental limitation observation, not an actionable step. The implied mitigation (don't rely on agents for the last-mile comparison) doesn't specify what to use instead. Possible mitigation: runtime value tracing instead of static comparison.",
+      "failure_resistance": "High. This is a structural observation about LLM capabilities. It cannot be dismissed by changing approaches. It applies to any approach that relies on agents reading both codebases.",
+      "parity_convergence": "Low. Identifying a bottleneck is not the same as fixing it. This observation doesn't close any tests. It argues that the closing mechanism itself is unreliable, which is important but not directly convergent."
     }
   },
   {
     "id": "a3-14",
-    "proposition": "The golden harness covers approximately 15 of 100 Rust source files in emCore, meaning file-level coverage is roughly 15%, and the 232-test count creates a completeness illusion that does not survive simple enumeration.",
+    "proposition": "The C++ code computes ImgMap as a raw pointer with byte-level arithmetic (ImgMap=texture.GetImage().GetMap()+(sy*(size_t)iw+sx)*channels) while Rust passes section bounds as SectionBounds { ox, oy, w, h }, and verifying these two representations produce identical sampling behavior requires tracing every downstream consumer.",
     "scores": {
-      "defensibility": 0.80,
-      "specificity": 0.85,
-      "robustness": 0.65,
-      "compatibility": 0.70
+      "evidential_grounding": 0.85,
+      "actionability": 0.70,
+      "failure_resistance": 0.75,
+      "parity_convergence": 0.75
     },
     "reasoning": {
-      "defensibility": "The 15/100 ratio is presented as approximate and could be verified by enumeration. The claim that 232 tests creates a completeness illusion is subjective but reasonable -- test count is often used as a proxy for coverage.",
-      "specificity": "Provides specific numbers (15/100 files, 232 tests, 13 modules) and names specific uncovered files (emConfigModel, emDialog, etc.). Actionable: enumerate uncovered files and prioritize golden test creation.",
-      "robustness": "Weakened if many of the 85 uncovered files are not yet ported, are trivial wrappers, or are covered by non-golden unit tests. The 15% figure may overstate the gap if golden tests are not the only verification mechanism.",
-      "compatibility": "Compatible with expanding test coverage. Does not conflict with existing tests but challenges claims about verification completeness."
+      "evidential_grounding": "Directly references specific C++ code (ImgMap pointer arithmetic) and specific Rust code (SectionBounds struct). Both are verifiable in the respective codebases. The observation that different representations need not produce identical behavior is logically sound.",
+      "actionability": "Actionable. Write a test that computes the effective pixel offset from ImgMap pointer arithmetic (C++) and from SectionBounds (Rust) for each pixel in a failing scanline, and compare. Success criteria: offsets match or specific divergence point identified.",
+      "failure_resistance": "Good. The representation difference is a fact of the codebase, not a hypothesis. The question 'do these representations produce identical behavior' has a definitive answer obtainable through testing.",
+      "parity_convergence": "High. If the representation difference causes sampling to read different source pixels, this is a root cause for Group A+B. The fix would be to ensure the Rust SectionBounds computation produces the same effective offsets as the C++ pointer arithmetic."
     }
   },
   {
     "id": "a3-15",
-    "proposition": "The MEASURE_DIVERGENCE metric system exists but is opt-in, outputs to stderr, and has no storage, comparison, or alerting mechanism, making it a diagnostic tool rather than a regression detection system.",
+    "proposition": "The reward signal from fixing adjacent bugs during Group A+B investigation (blend_colored_scanline, HowTo text) biases agents toward broad investigation over deep investigation, which is the wrong direction for a root cause in a specific 10-line code section.",
     "scores": {
-      "defensibility": 0.92,
-      "specificity": 0.90,
-      "robustness": 0.88,
-      "compatibility": 0.90
+      "evidential_grounding": 0.75,
+      "actionability": 0.50,
+      "failure_resistance": 0.65,
+      "parity_convergence": 0.45
     },
     "reasoning": {
-      "defensibility": "Factually verifiable by examining the implementation. The distinction between a diagnostic tool and a monitoring system is precise and well-supported by the described limitations.",
-      "specificity": "Names the exact feature (MEASURE_DIVERGENCE=1), its exact output mechanism (JSONL to stderr), and exactly what is missing (storage, comparison, alerting). Highly actionable: connect the metric output to a tracking system.",
-      "robustness": "Very robust because the gap is structural and factual, not interpretive. The infrastructure literally exists but is not connected to anything automated.",
-      "compatibility": "Highly compatible with all other concerns. Connecting the metric system to CI would strengthen the harness without conflicting with any design goal."
+      "evidential_grounding": "The pattern of broad investigation producing fixes is documented (three rounds). The claim about reinforcement learning within the context window is an analogy, not a proven mechanism. The directional claim (deep > broad for root causes) is well-supported by debugging methodology.",
+      "actionability": "Moderately actionable. Implies constraining future investigations to a narrow scope (e.g., 'only investigate area sampling weights for pixel (32, 289)'). But agents cannot easily self-constrain when they encounter adjacent bugs.",
+      "failure_resistance": "Moderate. The observation is plausible but the 'reinforcement learning' framing for agents is metaphorical. An agent with explicit instructions to stay narrow might not exhibit this bias. The failure mode is real for undirected investigation but addressable through prompting.",
+      "parity_convergence": "Low-moderate. Understanding the bias helps design better investigation prompts, but doesn't itself identify the root cause. It's a process improvement that indirectly helps convergence."
     }
   },
   {
     "id": "a3-16",
-    "proposition": "Golden data is stored in the same repository as Rust code, allowing a single commit to modify both implementation and golden data simultaneously, which undermines the golden data's purpose as a fixed reference point.",
+    "proposition": "The 204 passing golden tests at zero tolerance are the project's most valuable asset, and any structural rewrite of paint_9slice_section risks the 'fix one, break three' pattern where correcting incorrect sections changes the behavior of already-correct sections.",
     "scores": {
-      "defensibility": 0.82,
-      "specificity": 0.80,
-      "robustness": 0.60,
-      "compatibility": 0.65
+      "evidential_grounding": 0.70,
+      "actionability": 0.60,
+      "failure_resistance": 0.65,
+      "parity_convergence": 0.50
     },
     "reasoning": {
-      "defensibility": "The co-location of golden data and Rust code in one repo is factual. The argument that this allows simultaneous modification is valid. However, this is a common pattern in software testing (snapshot tests) and is not inherently problematic if the regeneration process is disciplined.",
-      "specificity": "Identifies the specific risk (simultaneous modification) and the specific repository structure enabling it. Actionable: separate golden data versioning or add CI checks for golden data modification.",
-      "robustness": "Weakened by practical considerations: separate versioning adds complexity, and regeneration is sometimes legitimately needed (e.g., when adding new tests). The risk depends on developer discipline rather than being a structural inevitability.",
-      "compatibility": "Some tension with practical development workflows. Separating golden data versioning would add friction to adding new tests."
+      "evidential_grounding": "The 204 passing tests at zero tolerance are a documented project state. The 'fix one, break three' risk is a well-known pattern in rendering code where all 9 sections share computation. The specific scenario (3 pass, 5 regress, net negative) is illustrative but not observed.",
+      "actionability": "Moderately actionable. Implies that changes to shared computation should be tested incrementally per section. Also implies building per-section regression tests before restructuring. Success criteria: no regression in passing tests after any change.",
+      "failure_resistance": "Moderate. The risk is real but manageable with proper testing discipline. Golden tests already serve as regression guards. The concern is about test coverage granularity (end-to-end vs per-section), not about whether regressions can be detected.",
+      "parity_convergence": "Moderate. This is a defensive proposition about not losing ground rather than gaining it. Important for maintaining 204/241 while pushing toward 241/241, but doesn't directly advance the count."
     }
   },
   {
     "id": "a3-17",
-    "proposition": "The C++ reference version is fixed at Eagle Mode 0.96.4, meaning the golden data may encode bugs that were fixed in later versions, and the Rust port faithfully reproduces those bugs as verified-correct behavior.",
+    "proposition": "Approach B's pipeline decomposition targets only image rendering (Groups A+B+D, 21 tests), leaving 16 tests across 8 groups (G2 polygon, G3 composition, G5 starfield, G7 gradient, G8 layout, G9 polyline) that require entirely different investigation approaches and get zero benefit from the infrastructure.",
     "scores": {
-      "defensibility": 0.85,
-      "specificity": 0.82,
-      "robustness": 0.75,
-      "compatibility": 0.60
+      "evidential_grounding": 0.90,
+      "actionability": 0.65,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.60
     },
     "reasoning": {
-      "defensibility": "Logically sound: if 0.96.4 has bugs and the golden data captures those bugs, the Rust port reproduces them. This is inherent to any frozen-oracle approach. The question is whether this is a problem or a feature (bug-compatibility is sometimes desirable).",
-      "specificity": "Names the exact version (0.96.4) and the exact mechanism (frozen bugs). Somewhat actionable: document known 0.96.4 bugs or upgrade the reference version.",
-      "robustness": "Weakened by the project's explicit design choice to port 0.96.4 specifically. Bug-for-bug compatibility with the reference version may be intentional. The concern is more about documentation than about a testing failure.",
-      "compatibility": "Creates tension with the project's stated goal of porting emCore from 0.96.4. If the goal is fidelity to 0.96.4, reproducing its bugs is correct behavior."
+      "evidential_grounding": "The group breakdown (21 image rendering + 16 in 8 other groups) is directly from the divergence inventory. The claim that image-rendering infrastructure doesn't help with polygon, gradient, or layout tests is factually correct -- these are different code paths.",
+      "actionability": "Moderately actionable. Implies that any investigation plan must allocate effort across all 12 groups, not just the largest. Success criteria: a plan that addresses all groups, not just A+B.",
+      "failure_resistance": "High. The diversity of failing groups is a fact. No approach can avoid dealing with multiple code paths. Infrastructure for one code path doesn't transfer to another.",
+      "parity_convergence": "Moderate. This observation argues for breadth over depth in group coverage, which may or may not be the optimal strategy. 241/241 requires all groups to pass, so ignoring the tail groups is not an option."
     }
   },
   {
     "id": "a3-18",
-    "proposition": "The parallel rendering tests prove determinism and consistency between single-threaded and multi-threaded paths but provide zero additional correctness confidence, since both paths share the same scanline rendering code and would have the same bugs.",
+    "proposition": "C++ unsigned-times-signed integer arithmetic involves implicit conversion to unsigned, while Rust requires explicit casts, and agents rarely track signedness through multi-step arithmetic when comparing the two codebases.",
     "scores": {
-      "defensibility": 0.88,
-      "specificity": 0.85,
-      "robustness": 0.82,
-      "compatibility": 0.80
+      "evidential_grounding": 0.75,
+      "actionability": 0.70,
+      "failure_resistance": 0.70,
+      "parity_convergence": 0.60
     },
     "reasoning": {
-      "defensibility": "The analysis correctly distinguishes between testing determinism (parallel == single-threaded) and testing correctness (output == C++ reference). If both paths share scanline code, bugs are correlated. This is logically sound.",
-      "specificity": "Names the specific test module (parallel.rs), the specific property being tested (determinism), and the specific architectural reason (shared scanline code) that limits correctness value. Somewhat actionable: add C++ golden comparisons for parallel output.",
-      "robustness": "Robust analysis. Could only be weakened if the parallel path introduces additional bugs through tiling/synchronization, in which case the determinism tests do catch a class of bugs (just not C++ equivalence bugs).",
-      "compatibility": "Compatible with existing tests. The claim does not say parallel tests are useless, just that they test a different property than correctness."
+      "evidential_grounding": "The C++ integer promotion rules for unsigned*signed are well-documented in the C++ standard. The claim about agents mishandling signedness tracking is supported by the general difficulty of implicit conversion analysis. Whether this specific issue exists in the painter code requires verification.",
+      "actionability": "Actionable. Systematically identify all mixed-sign arithmetic in the C++ painter code and verify each corresponding Rust expression handles signedness identically. Success criteria: audit complete with no mismatches, or mismatches identified and fixed.",
+      "failure_resistance": "Good. Integer promotion is a well-defined language semantic, not a matter of interpretation. Each instance can be verified mechanically. The concern is durable and concrete.",
+      "parity_convergence": "Moderate. If a signedness mismatch exists in the painter code, fixing it could close multiple tests. If no mismatch exists, the audit confirms correctness. Either outcome is useful."
     }
   },
   {
     "id": "a3-19",
-    "proposition": "The notice, behavioral, and input golden test modules each verify one aspect of panel tree behavior in isolation, but cross-cutting interactions where input triggers notices that trigger behavior callbacks are not tested by any golden comparison.",
+    "proposition": "The CLAUDE.md boundary between 'pixel arithmetic' (literal C++ port required) and 'geometry' (same algorithm, idiomatic Rust OK) is ambiguous for functions like paint_9slice_section's coordinate computation, and investigators classify the same function inconsistently across rounds.",
     "scores": {
-      "defensibility": 0.83,
-      "specificity": 0.80,
-      "robustness": 0.70,
-      "compatibility": 0.75
+      "evidential_grounding": 0.65,
+      "actionability": 0.55,
+      "failure_resistance": 0.60,
+      "parity_convergence": 0.50
     },
     "reasoning": {
-      "defensibility": "The isolation of test modules is verifiable in the test structure. The claim about untested interactions is reasonable but partially weakened by widget_interaction tests that come closer to testing cross-cutting behavior.",
-      "specificity": "Names the specific modules (notice.rs, interaction.rs, input.rs) and the specific interaction pattern (input -> notices -> behavior callbacks). Actionable: add integration golden tests.",
-      "robustness": "Somewhat weakened by widget_interaction.rs and composition.rs tests that do exercise some cross-cutting behavior, even if not systematically.",
-      "compatibility": "Compatible with adding integration tests. Does not conflict with existing modular testing approach."
+      "evidential_grounding": "The CLAUDE.md classification rules are documented. The 'gray zone' observation (is ImgMap pointer arithmetic 'pixel arithmetic' or 'geometry'?) is a genuine ambiguity. However, no evidence is cited that investigators have actually classified the same function inconsistently.",
+      "actionability": "Moderately actionable. Resolve the ambiguity by explicitly classifying each golden-test-feeding function as 'literal port' or 'idiomatic.' Document the classification. Success criteria: all ambiguous functions have recorded classifications.",
+      "failure_resistance": "Moderate. The ambiguity is real but may not be causing actual failures -- it's possible all investigators have happened to make the same classification. The concern is about process inconsistency, not about a known bug.",
+      "parity_convergence": "Low-moderate. Resolving the classification helps ensure consistent investigation depth, but doesn't directly identify or fix divergences."
     }
   },
   {
     "id": "a3-20",
-    "proposition": "A bug in shared test infrastructure (TestHarness, NoticeBehavior, InputTrackingBehavior) would be invisible because all tests using that infrastructure were calibrated against its behavior, making the bug baked into expectations across the entire suite.",
+    "proposition": "Infrastructure investment in intermediate comparison harnesses creates commitment to using that infrastructure, and if the infrastructure's comparison is at the wrong granularity or wrong pipeline point, it becomes a trusted oracle that is systematically wrong.",
     "scores": {
-      "defensibility": 0.86,
-      "specificity": 0.82,
-      "robustness": 0.78,
-      "compatibility": 0.72
+      "evidential_grounding": 0.60,
+      "actionability": 0.45,
+      "failure_resistance": 0.65,
+      "parity_convergence": 0.35
     },
     "reasoning": {
-      "defensibility": "This is a well-known testing anti-pattern (shared fixture bugs). The argument that calibration against buggy infrastructure hides the bug is logically sound. All tests that passed when written would continue to pass with the buggy infrastructure.",
-      "specificity": "Names specific infrastructure components (TestHarness, NoticeBehavior, InputTrackingBehavior) and gives a concrete example (wrong time step in tick()). Somewhat actionable: add infrastructure-level tests or cross-validate against independent implementations.",
-      "robustness": "Robust as a general principle. Weakened slightly if the test infrastructure is simple enough that bugs are unlikely, or if the infrastructure closely mirrors C++ test infrastructure providing implicit validation.",
-      "compatibility": "Compatible with adding meta-tests for test infrastructure. Does not conflict with other design goals."
+      "evidential_grounding": "The commitment bias from infrastructure investment is a well-documented phenomenon in software engineering. However, no intermediate harnesses have been built yet in this project, so the failure mode is predicted, not observed.",
+      "actionability": "Low-moderate. The implied action is 'don't build intermediate harnesses' or 'if building them, verify the harnesses themselves.' Neither is a concrete next step with clear success criteria.",
+      "failure_resistance": "Moderate. The observation about trusted-but-wrong oracles is structurally sound. However, it's an argument against a specific approach (B) rather than a failure mode of the current state.",
+      "parity_convergence": "Low. This is a warning about a potential future mistake, not a path to closing tests."
     }
   },
   {
     "id": "a3-21",
-    "proposition": "The frozen oracle converts the relational property 'C++ and Rust produce the same output for the same input' into the weaker unary property 'Rust produces this specific output,' which does not guarantee equivalence for inputs not in the golden set.",
+    "proposition": "A backward trace from a pixel divergence through the rendering pipeline has approximately 0.35 probability of being error-free over 10 steps (at P=0.1 per step), meaning most deep traces by agents will contain at least one error.",
     "scores": {
-      "defensibility": 0.92,
-      "specificity": 0.75,
-      "robustness": 0.88,
-      "compatibility": 0.55
+      "evidential_grounding": 0.45,
+      "actionability": 0.40,
+      "failure_resistance": 0.55,
+      "parity_convergence": 0.30
     },
     "reasoning": {
-      "defensibility": "This is a precise logical observation. The relational property (forall inputs: C++(x) == Rust(x)) implies the unary property (Rust(golden_x) == golden_output) but not vice versa. Formally correct and well-stated.",
-      "specificity": "Precisely formulated but somewhat abstract. The practical implication is clear (coverage is limited to golden inputs) but the remedy is not concrete -- it amounts to 'test more inputs' which is always true.",
-      "robustness": "Very robust as a logical claim. Cannot be refuted without changing the testing methodology fundamentally (e.g., to live comparison). This is an inherent limitation of any frozen oracle approach.",
-      "compatibility": "Creates fundamental tension with the project's reliance on golden testing. However, this limitation is inherent and accepted by most projects using snapshot testing. The critique is valid but the alternative (live comparison) may be impractical."
+      "evidential_grounding": "The mathematical calculation (0.9^10 = 0.35) is correct. However, the per-step error probability of P=0.1 is an assumption with no empirical basis. Actual agent error rates may be higher or lower. The 10-step trace depth is described as 'realistic' but not validated.",
+      "actionability": "Low. The observation argues that deep traces are unreliable, but doesn't propose an alternative. The implied action is 'avoid deep traces' or 'use runtime tracing instead,' neither of which is spelled out.",
+      "failure_resistance": "Moderate. The general principle (compound error probability) is mathematically sound. But the specific numbers are assumed, making the precise claim fragile. The directional claim (deeper traces are less reliable) is robust.",
+      "parity_convergence": "Low. This argues that a specific investigation technique is unreliable, but doesn't offer a replacement. It's a critique, not a path forward."
     }
   },
   {
     "id": "a3-22",
-    "proposition": "The translate_cpp_notice_flags function contains 10 manual bit-position mappings that are a single point of unverified trust; a transposition error would cause symmetric false positives where every affected test passes while behavioral semantics diverge.",
+    "proposition": "The sunk cost of three investigation rounds on Group A+B creates trajectory lock: the context window contains investigation history that primes agents to continue on A+B rather than pivot to higher-expected-value targets like the smaller groups.",
     "scores": {
-      "defensibility": 0.89,
-      "specificity": 0.92,
-      "robustness": 0.82,
-      "compatibility": 0.80
+      "evidential_grounding": 0.70,
+      "actionability": 0.75,
+      "failure_resistance": 0.60,
+      "parity_convergence": 0.65
     },
     "reasoning": {
-      "defensibility": "The symmetric false positive mechanism is precisely described and logically correct: if the mapping is wrong in the same way for both expectation generation and checking, wrong behavior confirms wrong expectations. This is a genuine verification gap.",
-      "specificity": "Names the exact function (translate_cpp_notice_flags), the exact count (10 mappings), and gives a concrete example of a transposition error (NF_ENABLE_CHANGED vs NF_ACTIVE_CHANGED). Actionable: auto-generate mappings from shared definitions or add independent validation.",
-      "robustness": "Robust because the symmetry of the error is structural. The only defense is manual correctness of 10 mappings, which is plausible but unverified.",
-      "compatibility": "Compatible with adding automated mapping generation. Does not conflict with other goals."
+      "evidential_grounding": "Sunk cost escalation is a well-documented cognitive bias. The project history shows three rounds on Group A+B. The claim that context window priming creates this effect in agents is plausible but not empirically demonstrated for LLMs specifically.",
+      "actionability": "Actionable. Start fresh investigation sessions targeting small groups (G2, G7, G9) without loading Group A+B investigation history. Success criteria: at least one small group is fixed in a single round.",
+      "failure_resistance": "Moderate. The trajectory lock is addressable by deliberate pivoting. An explicit decision to investigate small groups first can break the pattern. The failure mode is real but not unavoidable.",
+      "parity_convergence": "Moderate-good. If pivoting to small groups yields quick wins, it directly increases the passing test count. The document estimates 7 tests across 4 groups that might each fall in one round."
     }
   },
   {
     "id": "a3-23",
-    "proposition": "The cascade of silent skip + tolerance ratchet + session amnesia across multiple LLM sessions can produce a test suite with loose tolerances comparing against stale golden data that may not exist in some environments, all while reporting green.",
+    "proposition": "The Rust and C++ pipelines have fundamentally different decompositions: C++ ScanlineTool::Init is a 280-line monolithic function whose responsibilities are distributed across four separate Rust structs (Transform24, SectionBounds, InterpolationBuffer, BlendMode), making stage-boundary comparison inherently ambiguous.",
     "scores": {
-      "defensibility": 0.80,
-      "specificity": 0.78,
-      "robustness": 0.75,
-      "compatibility": 0.65
+      "evidential_grounding": 0.85,
+      "actionability": 0.55,
+      "failure_resistance": 0.75,
+      "parity_convergence": 0.50
     },
     "reasoning": {
-      "defensibility": "The cascade scenario is plausible and each step is individually defensible. However, it is a worst-case narrative that assumes no human oversight at any point. The compound probability of all steps occurring may be lower than implied.",
-      "specificity": "Describes a concrete 5-step scenario with specific consequences at each stage. Actionable in aggregate: fixing any one step (silent skip, tolerance tracking, session context) breaks the cascade.",
-      "robustness": "Somewhat weakened by the assumption that no developer ever examines test output closely, regeneration provenance, or tolerance changes. The cascade requires sustained inattention across multiple sessions.",
-      "compatibility": "Compatible with adding safeguards at any point in the cascade. Each individual fix (CI golden data gates, tolerance freezing, session context) is independently valuable."
+      "evidential_grounding": "The C++ structure (ScanlineTool::Init as monolithic function) and Rust structure (four separate structs) are verifiable in the respective codebases. The decomposition mismatch is a structural fact, not a hypothesis.",
+      "actionability": "Moderately actionable. Implies that comparison should happen at the monolithic level (all of Init's output state compared against all four Rust structs simultaneously) rather than at artificial stage boundaries. Success criteria: define a comprehensive state-comparison point.",
+      "failure_resistance": "Good. The structural mismatch is a fact that any approach must contend with. It cannot be wished away or resolved by choosing a different investigation strategy.",
+      "parity_convergence": "Moderate. Understanding the decomposition mismatch helps design better comparisons, but doesn't itself close tests."
     }
   },
   {
     "id": "a3-24",
-    "proposition": "The uniform layout test epsilon of 1e-6 creates an illusion of uniform precision because it represents wildly different relative tolerances across tests: 0.1% for layouts with widths of 0.001 versus 0.0003% for layouts with widths of 0.333.",
+    "proposition": "After Group A+B is fixed by either approach, 16 tests remain across 8 diverse groups (polygon, composition, starfield, gradient, layout, polyline), each potentially requiring its own investigation methodology, and the project returns to incremental investigation for the tail regardless of approach choice.",
     "scores": {
-      "defensibility": 0.86,
-      "specificity": 0.90,
-      "robustness": 0.72,
-      "compatibility": 0.82
+      "evidential_grounding": 0.85,
+      "actionability": 0.50,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.55
     },
     "reasoning": {
-      "defensibility": "The mathematical observation is correct: 1e-6 absolute tolerance has different relative significance at different scales. Whether this matters depends on whether the relevant correctness criterion is absolute or relative.",
-      "specificity": "Provides exact numbers (1e-6 epsilon, 0.001 width, 0.333 width) and exact relative tolerance calculations. Actionable: switch to relative tolerance or per-test absolute tolerances.",
-      "robustness": "Weakened if the absolute tolerance is the correct criterion (e.g., if pixel-level accuracy requires absolute coordinate precision regardless of widget scale). The relative tolerance argument assumes relative precision matters, which may not be true for all layout scenarios.",
-      "compatibility": "Compatible with refining tolerance strategy. Could conflict with simplicity goals if per-test tolerances add maintenance burden."
-    }
-  },
-  {
-    "id": "a3-25",
-    "proposition": "As more golden tests are added, the coverage gap between tested and untested code paths can widen rather than narrow because the total state space grows combinatorially with features while test count grows linearly.",
-    "scores": {
-      "defensibility": 0.75,
-      "specificity": 0.65,
-      "robustness": 0.70,
-      "compatibility": 0.60
-    },
-    "reasoning": {
-      "defensibility": "The combinatorial argument is mathematically valid in the abstract. However, not all state combinations are reachable or meaningful. The practical coverage gap depends on the structure of the state space, not just its cardinality.",
-      "specificity": "Provides the general argument (linear vs. combinatorial growth) and approximate numbers (100 files, 15 exercised). Less actionable than other propositions because the remedy ('test more') is unbounded.",
-      "robustness": "Weakened by practical considerations: most state combinations are unreachable, and coverage of common paths provides diminishing-returns safety. The combinatorial explosion argument applies to all software testing and is not specific to this harness.",
-      "compatibility": "Creates tension with any claim that the test suite is approaching completeness. Compatible with prioritized coverage analysis but may be overly pessimistic about the value of incremental testing."
+      "evidential_grounding": "The tail group distribution is documented in the divergence inventory. The claim that each group may need different methodology follows from the different code paths involved (PaintPolygon vs PaintImage vs gradient interpolation).",
+      "actionability": "Low-moderate. This is a planning observation, not an immediate action. The implied action is 'plan for the tail groups now rather than after Group A+B,' which is reasonable but not urgent.",
+      "failure_resistance": "High. The diversity of remaining groups is a fact. No approach eliminates the need to address them individually. This observation survives any approach choice.",
+      "parity_convergence": "Moderate. Awareness of the tail prevents false sense of completion after Group A+B. But awareness alone doesn't close the tail group tests."
     }
   }
 ]

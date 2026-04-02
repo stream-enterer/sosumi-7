@@ -1,370 +1,402 @@
 [
   {
     "id": "a2-01",
-    "proposition": "The verification harness should be composed of shell scripts, JSON schemas, and Rust integration tests that compose via Unix pipes and shared file conventions, rather than being a framework.",
+    "proposition": "The classify-hypothesize-investigate-fix methodology has produced monotonic progress from 199/241 to 204/241 passing golden tests with zero regressions.",
     "scores": {
-      "defensibility": 0.80,
-      "specificity": 0.75,
-      "robustness": 0.65,
-      "compatibility": 0.85
+      "evidential_grounding": 0.95,
+      "actionability": 0.20,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.40
     },
     "reasoning": {
-      "defensibility": "Unix composability is well-proven for CI/build tooling and avoids framework lock-in. However, shell scripts can be fragile and harder to test than library code.",
-      "specificity": "Identifies concrete implementation approach (shell scripts + JSON + Rust tests + pipes) but leaves many details to each component.",
-      "robustness": "Shell scripts are prone to quoting bugs, platform differences, and subtle failures. The approach lacks type safety across component boundaries.",
-      "compatibility": "Aligns well with the project's existing CLI-first approach (cargo test, pre-commit hooks, coverage scripts already in shell)."
+      "evidential_grounding": "Directly supported by git history (commits b272bf8, 620938e, 73905a2, 147e3de) and the divergence inventory. The 5-test improvement and zero-regression claim are verifiable facts.",
+      "actionability": "This is a retrospective observation, not a next step. It provides motivation but not a concrete action with success criteria.",
+      "failure_resistance": "The monotonic ratchet property is real and verifiable. However, 5 tests out of 42 over multiple investigation rounds is a slow rate that could stall.",
+      "parity_convergence": "Past progress is necessary but not sufficient. The 5 fixed tests moved the needle from 82.6% to 84.6%, still far from 100%. The claim is about past trajectory, not future convergence."
     }
   },
   {
     "id": "a2-02",
-    "proposition": "A single JSON contract registry file (contract.json) should enumerate every golden test case, its category, oracle relationship, and tolerance parameters, serving as the single source of truth.",
+    "proposition": "The 37 remaining golden test failures have been classified into 12 distinct groups with verified root causes, spatial evidence, and confidence labels.",
     "scores": {
-      "defensibility": 0.90,
-      "specificity": 0.92,
-      "robustness": 0.75,
-      "compatibility": 0.80
+      "evidential_grounding": 0.92,
+      "actionability": 0.65,
+      "failure_resistance": 0.75,
+      "parity_convergence": 0.60
     },
     "reasoning": {
-      "defensibility": "Centralizing test metadata in a structured file makes auditing, tooling, and cross-referencing straightforward. Well-established pattern in CI systems.",
-      "specificity": "Very concrete: specifies JSON format, field names, file path, and exactly what the file must contain. The schema is given inline.",
-      "robustness": "A single file becomes a merge-conflict hotspot when multiple developers add tests. Also, 214 entries in one file can become unwieldy. Schema validation partially mitigates corruption.",
-      "compatibility": "The existing golden test infrastructure uses per-file conventions, not a centralized registry. Retrofitting all 214 cases into one JSON file is a significant migration effort that could conflict with other work."
+      "evidential_grounding": "The divergence inventory memory file confirms 12 groups with per-group root causes. The catalog exists as a concrete artifact in the project.",
+      "actionability": "The classification enables targeted action on each group, but the classification itself is a deliverable, not an action. It lowers the cost of future actions.",
+      "failure_resistance": "Classification can be wrong. The document itself notes that Group A was misdiagnosed (text rendering vs 9-slice). Reclassification may happen again for other groups.",
+      "parity_convergence": "Classification is a prerequisite for efficient fixing but does not itself fix any tests. Its value is realized only when fixes are executed against the classified groups."
     }
   },
   {
     "id": "a2-03",
-    "proposition": "The harness must refuse to run if any golden data file on disk is not present in the contract, or if any contract entry lacks a corresponding golden file.",
+    "proposition": "Group A+B (20 tests) failures are caused by 9-slice border image section boundary rounding divergence between Rust paint_9slice_section and C++ PaintBorderImage/ScanlineTool::Init.",
     "scores": {
-      "defensibility": 0.92,
-      "specificity": 0.95,
-      "robustness": 0.85,
-      "compatibility": 0.75
+      "evidential_grounding": 0.75,
+      "actionability": 0.85,
+      "failure_resistance": 0.55,
+      "parity_convergence": 0.90
     },
     "reasoning": {
-      "defensibility": "Bidirectional completeness checking is a strong invariant that prevents orphaned tests and phantom entries. Logically sound.",
-      "specificity": "Extremely concrete: two clearly falsifiable conditions with exact enforcement semantics.",
-      "robustness": "Robust against silent test skipping and untracked oracles. Could cause friction during development when adding new tests (must update both file and contract atomically).",
-      "compatibility": "Adds a hard gate that may slow down iterative development. Could conflict with workflows where golden data is regenerated before contract is updated."
+      "evidential_grounding": "Three investigation rounds eliminated other hypotheses (area sampling, transform params, PaintImageColored). Pixel tracing confirmed divergent pixels are in 9-slice border regions. However, the specific sub-cause (source bounds clamping) is a hypothesis, not yet proven by a fix.",
+      "actionability": "The target is narrowed to ~170 lines of Rust vs ~160 lines of C++. A side-by-side comparison is a concrete, scoped task with clear success criteria (20 tests pass).",
+      "failure_resistance": "Group A root cause has already been misdiagnosed once (originally attributed to PaintTextBoxed). The current attribution to 9-slice boundary rounding is better supported but still a hypothesis until a fix proves it. Could be another misdirection.",
+      "parity_convergence": "If correct, fixing this one root cause would move from 204/241 to 224/241 (93%). This is the single highest-leverage fix remaining."
     }
   },
   {
     "id": "a2-04",
-    "proposition": "Tolerance parameters should only be allowed to decrease (tighten); increasing (relaxing) them requires a separate script with a mandatory --reason flag that writes a JSONL audit entry.",
+    "proposition": "The C++ ScanlineTool::Init uses clamped source width (ImgW after bounds checking) whereas Rust paint_9slice_section passes unclamped sw, which is the likely cause of Group A divergence.",
     "scores": {
-      "defensibility": 0.88,
-      "specificity": 0.90,
-      "robustness": 0.70,
-      "compatibility": 0.70
+      "evidential_grounding": 0.60,
+      "actionability": 0.90,
+      "failure_resistance": 0.45,
+      "parity_convergence": 0.85
     },
     "reasoning": {
-      "defensibility": "Preventing silent tolerance relaxation is a strong defense against gradual quality erosion. The audit trail provides accountability.",
-      "specificity": "Specifies the exact mechanism: a separate script, a --reason flag, and a JSONL audit file. Very actionable.",
-      "robustness": "Can be circumvented by editing contract.json directly if pre-commit checks are bypassed. The JSONL file could grow indefinitely without pruning policy.",
-      "compatibility": "May conflict with legitimate tolerance changes during active porting (e.g., discovering C++ behavior that requires wider tolerance). Adds ceremony to routine work."
+      "evidential_grounding": "This is identified by code reading, not by empirical validation. The document notes the structural difference (clamped vs unclamped) but no test has confirmed this is THE cause. The C++ lines 230-246 clamping logic is cited but not yet compared against actual divergent pixel values.",
+      "actionability": "Highly actionable: compare lines 228-293 of emPainter_ScTl.cpp with paint_9slice_section, port the clamping logic, run tests. Clear success criteria.",
+      "failure_resistance": "This is a specific sub-hypothesis within the 9-slice attribution. If it's wrong, the investigator has narrowed further but hasn't fixed anything. The document's history shows three prior hypotheses for Group A were wrong.",
+      "parity_convergence": "If this specific clamping difference is the cause, porting it would fix 20 tests. But it could also be one of several differences in the 330-line comparison space."
     }
   },
   {
     "id": "a2-05",
-    "proposition": "A test case is classified as 'suspicious' if it passes but its failure percentage exceeds 50% of the category's max_failure_pct threshold, or its max_diff exceeds 75% of channel_tolerance.",
+    "proposition": "G3 (Hermite factor table, 2 tests, max_diff=1) can be fixed by replacing f64 runtime computation with a literal port of the C++ compile-time table constants.",
     "scores": {
-      "defensibility": 0.82,
-      "specificity": 0.95,
-      "robustness": 0.60,
-      "compatibility": 0.85
+      "evidential_grounding": 0.88,
+      "actionability": 0.95,
+      "failure_resistance": 0.85,
+      "parity_convergence": 0.30
     },
     "reasoning": {
-      "defensibility": "Early warning for drift toward failure is valuable. The thresholds (50%, 75%) are reasonable but somewhat arbitrary without empirical calibration.",
-      "specificity": "Extremely concrete: exact numeric thresholds and exact conditions. Directly implementable.",
-      "robustness": "The fixed thresholds may produce false positives for tests that naturally sit near boundaries, or miss slow drift that stays just below 50%. No mechanism for tuning per-test.",
-      "compatibility": "Integrates cleanly with the existing JSONL divergence output. Does not conflict with other harness components."
+      "evidential_grounding": "The divergence inventory confirms G3 as 'runtime f64 vs C++ compile-time FactorsTable[257]' with max_diff=1. The root cause is well-understood: floating-point computation vs precomputed integer table.",
+      "actionability": "Mechanical fix: copy the 257-entry table from C++ source into Rust. Clear success criteria (2 tests pass). Estimated effort: under 30 minutes.",
+      "failure_resistance": "Low risk of misdiagnosis. A single-LSB difference from table vs runtime computation is a well-understood phenomenon. The fix is deterministic.",
+      "parity_convergence": "Fixes only 2 of 37 remaining tests (5.4%). Valuable but low leverage compared to Group A+B."
     }
   },
   {
     "id": "a2-06",
-    "proposition": "The divergence ledger should cross-reference reported test cases against the contract registry, flagging any missing cases as 'unreported' and exiting non-zero to catch silently skipped tests.",
+    "proposition": "G5 (blend_hash_lookup, 1 test, max_diff=1) can be fixed by replacing (c*a+127)/255 with the C++ (x*257+0x8073)>>16 Blinn formula.",
     "scores": {
-      "defensibility": 0.93,
-      "specificity": 0.88,
-      "robustness": 0.85,
-      "compatibility": 0.80
+      "evidential_grounding": 0.90,
+      "actionability": 0.97,
+      "failure_resistance": 0.90,
+      "parity_convergence": 0.15
     },
     "reasoning": {
-      "defensibility": "Silent test skipping is a well-known failure mode in test suites. Cross-referencing against a known-complete registry is the correct mitigation.",
-      "specificity": "Clear mechanism: compare reported set vs. contract set, flag gaps, exit non-zero.",
-      "robustness": "Robust against the specific failure mode it targets. Could produce false alarms if a test legitimately cannot run in certain environments (e.g., missing C++ libraries).",
-      "compatibility": "Depends on the contract registry (a2-02) existing and being complete. Compatible with the rest of the pipeline."
+      "evidential_grounding": "The divergence inventory confirms G5 as '(c*a+127)/255 vs blend_hash_lookup(c, a)'. The CLAUDE.md explicitly mandates the Blinn formula. The feedback memory confirms this architectural mismatch was a known issue.",
+      "actionability": "One-line fix with explicit CLAUDE.md mandate. Success criteria: 1 test passes. Effort: minutes.",
+      "failure_resistance": "The Blinn formula is already documented as required in CLAUDE.md. This is not a hypothesis; it is a known deviation from a stated requirement.",
+      "parity_convergence": "Fixes only 1 of 37 remaining tests (2.7%). Minimal leverage, though the fix is trivially cheap."
     }
   },
   {
     "id": "a2-07",
-    "proposition": "The correspondence auditor should enforce that every C++ header has exactly one of a .rs file or a .no_rust_equivalent marker, and every non-mod .rs file has a matching C++ header, a .rust_only marker, or a SPLIT: comment.",
+    "proposition": "G3 + G5 combined can be fixed in approximately 30 minutes, advancing the count from 204/241 to 207/241.",
     "scores": {
-      "defensibility": 0.88,
-      "specificity": 0.93,
-      "robustness": 0.80,
-      "compatibility": 0.90
+      "evidential_grounding": 0.82,
+      "actionability": 0.93,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.25
     },
     "reasoning": {
-      "defensibility": "Directly enforces the project's File and Name Correspondence rules as stated in CLAUDE.md. Structurally verifiable.",
-      "specificity": "Very concrete: exact filesystem conventions, exact markers, exact comment format. Already partially implemented in the codebase.",
-      "robustness": "Filesystem-based markers are simple and hard to break. The SPLIT: comment check (head -5 | grep) is slightly fragile if formatting changes.",
-      "compatibility": "Perfectly aligned with existing project conventions documented in CLAUDE.md. This is codifying existing rules rather than introducing new ones."
+      "evidential_grounding": "Both root causes are well-understood with max_diff=1. The 30-minute estimate is plausible for mechanical table-copy and formula-swap tasks. However, time estimates for code changes are inherently uncertain.",
+      "actionability": "Two independent, parallelizable fixes with clear success criteria. Could be done in a single session.",
+      "failure_resistance": "Both are low-risk fixes targeting single-LSB differences. Unlikely to have hidden complications.",
+      "parity_convergence": "3 tests out of 37 (8.1%). Useful quick wins but does not substantially close the gap to 241/241."
     }
   },
   {
     "id": "a2-08",
-    "proposition": "The regression gate should compare each harness run's classification against the previous run (via a 'latest' symlink), flagging any test that moved from pass to fail/suspicious as a regression.",
+    "proposition": "Each of the three disproven Group A hypotheses produced collateral value: 5 tests fixed, one subsystem permanently verified correct, and root cause attribution corrected.",
     "scores": {
-      "defensibility": 0.85,
-      "specificity": 0.88,
-      "robustness": 0.65,
-      "compatibility": 0.80
+      "evidential_grounding": 0.88,
+      "actionability": 0.15,
+      "failure_resistance": 0.60,
+      "parity_convergence": 0.35
     },
     "reasoning": {
-      "defensibility": "Regression detection by comparing consecutive runs is standard practice. Using a symlink for state relay is simple and transparent.",
-      "specificity": "Concrete mechanism: symlink, JSON comparison, specific transition rules (pass->fail = regression, suspicious->worse = drift).",
-      "robustness": "The 'latest' symlink is fragile: it can be deleted, point to stale data, or be corrupted by concurrent runs. Only compares against the immediately previous run, so gradual drift over many runs can go undetected.",
-      "compatibility": "Works well with the filesystem-based state protocol. The symlink approach is Unix-idiomatic."
+      "evidential_grounding": "The area sampling fix (5 tests) is in git history. Transform parameter verification and PaintImageColored elimination are documented in the investigation record. These are factual claims about past work.",
+      "actionability": "This is a retrospective justification, not a forward-looking action. It defends the methodology but does not specify what to do next.",
+      "failure_resistance": "The 'collateral value' framing is partially valid but also partially rationalization. Three rounds of investigation targeted at 23+ tests yielded 5 actual fixes. The elimination value is real but the rate of direct progress is slow.",
+      "parity_convergence": "The 5 collateral fixes contributed to parity. But the primary target (Group A) remains unfixed after three rounds, which is a concerning signal about convergence rate."
     }
   },
   {
     "id": "a2-09",
-    "proposition": "Convergence should be defined as: zero regressions, zero failures, zero unreported cases, and suspicious count non-increasing across the last 3 runs.",
+    "proposition": "Building intermediate comparison harnesses (C++ instrumentation logging + Rust log alignment + diff tooling) would cost more than reading the two functions side-by-side and produce no additional test fixes.",
     "scores": {
-      "defensibility": 0.78,
-      "specificity": 0.90,
-      "robustness": 0.60,
-      "compatibility": 0.75
+      "evidential_grounding": 0.50,
+      "actionability": 0.30,
+      "failure_resistance": 0.35,
+      "parity_convergence": 0.40
     },
     "reasoning": {
-      "defensibility": "The criteria are reasonable but the 3-run window is arbitrary. True convergence should perhaps consider the suspicious count decreasing, not just non-increasing.",
-      "specificity": "Very concrete and directly implementable: four boolean conditions, specific window size.",
-      "robustness": "Requires exactly 3 historical runs to be available, which may not hold early in the project. Does not account for flaky tests or environmental variation between runs.",
-      "compatibility": "Depends on the regression gate's run history tracking. May conflict with workflows where suspicious count legitimately fluctuates (e.g., during active porting)."
+      "evidential_grounding": "This is a counterfactual argument with no empirical evidence. The claim that harnesses 'would cost more' is an assertion, not a demonstrated fact. Some porting projects have found intermediate comparison invaluable.",
+      "actionability": "This is an argument against an action, not a proposed action. It provides no concrete next step.",
+      "failure_resistance": "The argument assumes the 9-slice comparison will be straightforward, but three prior hypotheses for Group A were wrong. If the side-by-side comparison fails to find the issue, the absence of intermediate tooling could become costly.",
+      "parity_convergence": "Rejecting tooling that might accelerate diagnosis is only justified if the current approach converges. After three failed rounds on Group A, this is uncertain."
     }
   },
   {
     "id": "a2-10",
-    "proposition": "Test independence should be verified by running golden tests in both sequential (--test-threads=1) and parallel (--test-threads=4) modes and comparing JSONL output; differing results indicate an independence violation.",
+    "proposition": "The 12 classified failure groups can be attacked independently and in parallel, unlike a unified comparison harness which would force all groups through a single infrastructure bottleneck.",
     "scores": {
-      "defensibility": 0.85,
-      "specificity": 0.92,
-      "robustness": 0.55,
-      "compatibility": 0.80
+      "evidential_grounding": 0.70,
+      "actionability": 0.60,
+      "failure_resistance": 0.50,
+      "parity_convergence": 0.55
     },
     "reasoning": {
-      "defensibility": "Running tests in different orderings is a well-known technique for detecting order-dependent tests. Sound principle.",
-      "specificity": "Very concrete: exact thread counts, exact comparison method (sort + diff JSONL).",
-      "robustness": "Doubles the test execution time. Parallel execution may produce non-deterministic floating-point results due to thread scheduling, leading to false positives. Only catches ordering bugs exposed by this specific parallelism level.",
-      "compatibility": "The parallel run adds significant time to harness_full.sh. May conflict with CI time budgets."
+      "evidential_grounding": "The group independence is partially supported by the classification (different code paths). However, some groups may share underlying causes (e.g., G6 is noted as 'related to G2'). A unified harness does not necessarily preclude parallel work.",
+      "actionability": "Parallel attack is actionable if multiple investigators are available. With a single agent, the parallelism advantage is limited to prioritization flexibility.",
+      "failure_resistance": "The independence claim is overstated. Groups D and A share the same root cause (9-slice). G6 is related to G2. True independence is likely for 8-9 groups, not all 12.",
+      "parity_convergence": "Independent parallelism accelerates convergence if multiple workers are available. With a single worker, the benefit is reduced to better prioritization."
     }
   },
   {
     "id": "a2-11",
-    "proposition": "The harness should wrap golden test execution with a global 120-second timeout to detect hangs, classifying exit code 124 as HANG and exit codes >128 as CRASH with signal extraction.",
+    "proposition": "The investigation has verified 7 subsystems as correct (interpolation, transform parameters, PaintImageColored, area sampling inner loop, compositing, RoundX/RoundY rounding, border image TGA data), permanently removing them from suspicion.",
     "scores": {
-      "defensibility": 0.82,
-      "specificity": 0.93,
-      "robustness": 0.70,
-      "compatibility": 0.85
+      "evidential_grounding": 0.80,
+      "actionability": 0.40,
+      "failure_resistance": 0.65,
+      "parity_convergence": 0.50
     },
     "reasoning": {
-      "defensibility": "Timeout-based hang detection is standard practice. Signal-based crash classification is correct Unix semantics.",
-      "specificity": "Very concrete: exact timeout value, exact exit code interpretation, exact JSONL output format.",
-      "robustness": "A global 120s timeout for all 214 tests is coarse. A single slow test could consume the entire budget. No per-test granularity. The timeout value may need tuning for different hardware.",
-      "compatibility": "Compatible with the existing cargo test infrastructure. The timeout command is standard on Linux."
+      "evidential_grounding": "Each verification is documented in the investigation record. However, 'verified correct' means 'no divergence found in the tested scenarios' which is not the same as 'proven correct for all inputs'. New test cases could reveal issues in these subsystems.",
+      "actionability": "This narrows future investigation scope but is not itself an action. It is useful context for whoever investigates next.",
+      "failure_resistance": "Verification by hypothesis testing is not exhaustive. If a future test reveals divergence in a 'verified' subsystem, the permanent removal claim fails. The verification is as strong as the test coverage.",
+      "parity_convergence": "Narrowing the search space is valuable for convergence efficiency but does not directly fix any tests."
     }
   },
   {
     "id": "a2-12",
-    "proposition": "The self-conformance verifier must run before all other harness phases, and if it fails, the entire harness must abort without running any further checks.",
+    "proposition": "The projected fix trajectory is: G3+G5 (207/241), then Group A+B (227/241), then G2 (233/241), then long tail (241/241), achievable in approximately 6 sessions.",
     "scores": {
-      "defensibility": 0.90,
-      "specificity": 0.85,
-      "robustness": 0.80,
-      "compatibility": 0.85
+      "evidential_grounding": 0.40,
+      "actionability": 0.70,
+      "failure_resistance": 0.30,
+      "parity_convergence": 0.65
     },
     "reasoning": {
-      "defensibility": "Fail-fast on meta-level violations is sound: if the harness itself is broken, its results cannot be trusted.",
-      "specificity": "Clear ordering requirement with gate semantics. The phase numbering (Phase 0) makes it concrete.",
-      "robustness": "Self-conformance checks that invoke cargo test (e.g., SC-4) add overhead and could themselves hang or fail for environmental reasons, blocking all other checks.",
-      "compatibility": "Aligns with the phased pipeline architecture. No conflicts with other components."
+      "evidential_grounding": "G3+G5 projections are well-grounded. Group A+B projection assumes the 9-slice hypothesis is correct (unproven). G2 and long-tail estimates have no detailed analysis. The 6-session timeline is speculative.",
+      "actionability": "Provides a concrete session-by-session plan. However, the Group A+B step depends on a hypothesis that has not been validated, and each long-tail group needs its own investigation.",
+      "failure_resistance": "The plan assumes no surprises. Three prior Group A hypotheses were wrong. If the 9-slice fix does not resolve 20 tests, the entire trajectory shifts. Planning fallacy risk is high.",
+      "parity_convergence": "If the trajectory holds, it leads directly to 241/241. But the conditional probability of the trajectory holding as specified is low given the project's history of hypothesis failures."
     }
   },
   {
     "id": "a2-13",
-    "proposition": "The self-conformance verifier should check that no #[ignore] attributes exist on golden tests and no tolerance overrides exist without a diverged=true flag and reason, to prevent silent result suppression.",
+    "proposition": "Golden pixel comparison at zero tolerance is the correct and sufficient verification level; intermediate value comparison (transform parameters, interpolation weights) adds debugging aid but not stronger evidence.",
     "scores": {
-      "defensibility": 0.92,
-      "specificity": 0.93,
-      "robustness": 0.80,
-      "compatibility": 0.85
+      "evidential_grounding": 0.85,
+      "actionability": 0.25,
+      "failure_resistance": 0.70,
+      "parity_convergence": 0.45
     },
     "reasoning": {
-      "defensibility": "Preventing #[ignore] and undocumented tolerance overrides directly addresses the risk of silent suppression. Logically sound and important.",
-      "specificity": "Exact grep pattern for #[ignore], exact jq query for tolerance_override without diverged=true. Directly implementable.",
-      "robustness": "Could be circumvented by using #[cfg(not(...))] instead of #[ignore], or by using conditional compilation to skip tests. The grep check is syntactic, not semantic.",
-      "compatibility": "Aligns with CLAUDE.md's prohibition on #[allow(...)] suppression. Compatible with the diverged-case mechanism in a2-16."
+      "evidential_grounding": "The CLAUDE.md explicitly states tol=0 pixel comparison as the goal. The argument that identical transforms can produce different pixels (and vice versa) is mathematically valid.",
+      "actionability": "This is a methodological stance, not an action. It justifies continuing golden tests but does not specify what to do next.",
+      "failure_resistance": "The argument is sound for verification but ignores that intermediate comparisons are useful for diagnosis when pixel-level comparison fails to localize the bug. Verification and diagnosis serve different purposes.",
+      "parity_convergence": "Pixel comparison is necessary for parity but the claim that it is sufficient ignores that diagnostic tooling can accelerate the rate at which fixes are found and applied."
     }
   },
   {
     "id": "a2-14",
-    "proposition": "When multiple tests fail in the same category with similar max_diff values (within 2x of each other), they should be flagged as coincident failures suggesting a shared root cause.",
+    "proposition": "The CLAUDE.md port fidelity rules (reproduce C++ integer formulas exactly for pixel arithmetic, same algorithm for geometry) already encode the methodology and no additional infrastructure is needed to convey the requirements.",
     "scores": {
-      "defensibility": 0.75,
-      "specificity": 0.85,
-      "robustness": 0.55,
-      "compatibility": 0.85
+      "evidential_grounding": 0.80,
+      "actionability": 0.30,
+      "failure_resistance": 0.55,
+      "parity_convergence": 0.35
     },
     "reasoning": {
-      "defensibility": "Coincident failure detection is useful for diagnosis, but the 2x heuristic is arbitrary and may not reflect actual causal relationships.",
-      "specificity": "Concrete threshold (2x ratio) and trigger condition (>3 tests in one category). Actionable.",
-      "robustness": "The 2x heuristic could miss correlated failures with varying magnitudes or flag unrelated failures that happen to have similar diffs. No mechanism to validate the heuristic.",
-      "compatibility": "Purely informational (annotates, does not suppress). Low risk of interfering with other components."
+      "evidential_grounding": "The CLAUDE.md rules exist and are explicit. However, having rules does not guarantee compliance. The G5 divergence (direct division vs Blinn formula) persists despite the rule explicitly prohibiting it.",
+      "actionability": "This is an argument that existing rules suffice, not a proposed action. It does not help an investigator who knows the rules but cannot find the specific divergent line.",
+      "failure_resistance": "Rules are necessary but not sufficient. The project has rules against f64 in blend paths yet G5 still exists. Rules without enforcement tooling have limited failure resistance.",
+      "parity_convergence": "Rules guide correct implementation but do not themselves converge the test count. Enforcement mechanisms (like the Blinn formula check) would be more directly convergent."
     }
   },
   {
     "id": "a2-15",
-    "proposition": "The harness should support change-guided coverage via a --changed-files flag that restricts golden test runs to only tests whose contract entries reference modified Rust files, using git diff to determine changes.",
+    "proposition": "Switching to a different methodology would not transfer the accumulated investigation knowledge (failure catalog, verified-correct subsystems, spatial evidence) and would require re-derivation through the new methodology's lens.",
     "scores": {
-      "defensibility": 0.78,
-      "specificity": 0.85,
-      "robustness": 0.55,
-      "compatibility": 0.70
+      "evidential_grounding": 0.65,
+      "actionability": 0.15,
+      "failure_resistance": 0.50,
+      "parity_convergence": 0.30
     },
     "reasoning": {
-      "defensibility": "Change-guided testing reduces feedback loop time and is a standard optimization. However, it can miss failures caused by transitive dependencies.",
-      "specificity": "Concrete mechanism: git diff, contract cross-reference, filtered cargo test invocation.",
-      "robustness": "The contract must map tests to source files accurately, which requires maintaining an additional mapping. Changes to shared code (e.g., color math used by all painters) would need to trigger all dependent tests, which this simple mapping may miss.",
-      "compatibility": "Could conflict with the exhaustiveness check (a2-06) if the partial run is treated as a complete run. Needs clear separation between partial and full run modes."
+      "evidential_grounding": "Partially true: the failure catalog and subsystem verifications are methodology-independent artifacts that any approach could use. The spatial evidence and pixel traces are more methodology-specific. The claim overstates the switching cost.",
+      "actionability": "This is a defensive argument against changing approach, not an actionable step. It does not help fix any tests.",
+      "failure_resistance": "The argument assumes a binary choice (current methodology OR switch entirely). In practice, supplementing the current approach with targeted tooling does not discard existing knowledge.",
+      "parity_convergence": "The switching cost argument is relevant only if the alternative is a complete methodology replacement, which is a straw man. Most proposals suggest augmentation, not replacement."
     }
   },
   {
     "id": "a2-16",
-    "proposition": "When a golden test failure is determined to be an intentional divergence from C++ behavior (e.g., fixing a C++ bug), the contract should record this with diverged=true, a reason string, and a tolerance_override, and the classifier should distinguish these from regressions.",
+    "proposition": "The next Group A investigation step is a ~330-line side-by-side comparison of Rust paint_9slice_section (lines 2838-3003) with C++ PaintBorderImage (emPainter.cpp 1892-1982) and ScanlineTool::Init (emPainter_ScTl.cpp 228-293).",
     "scores": {
-      "defensibility": 0.88,
-      "specificity": 0.90,
-      "robustness": 0.75,
-      "compatibility": 0.80
+      "evidential_grounding": 0.75,
+      "actionability": 0.92,
+      "failure_resistance": 0.50,
+      "parity_convergence": 0.80
     },
     "reasoning": {
-      "defensibility": "Distinguishing intentional divergence from accidental regression is essential for a port project. The documentation requirement provides accountability.",
-      "specificity": "Concrete schema: diverged boolean, reason string, tolerance_override object. Clear classifier behavior.",
-      "robustness": "Could be abused to mark genuine regressions as 'intentional'. The reason string has no validation beyond existence. However, the audit trail in the contract makes this visible in code review.",
-      "compatibility": "Works with the tolerance enforcement (a2-04) since overrides require diverged=true. Aligns with the DIVERGED: comment convention in CLAUDE.md."
+      "evidential_grounding": "The specific line ranges are cited from the codebase. The elimination of other subsystems supports focusing here. However, line numbers may have shifted since the investigation.",
+      "actionability": "Highly actionable: read two specific code regions, find differences, port the C++ logic. Clear scope and success criteria (20 tests pass).",
+      "failure_resistance": "The comparison scope is well-defined, but three prior rounds thought they knew where to look for Group A and were wrong. The 330-line window may not contain the divergence if the root cause is upstream.",
+      "parity_convergence": "If the divergence is within these lines, this directly fixes 20 tests (54% of remaining failures). Highest-leverage single action available."
     }
   },
   {
     "id": "a2-17",
-    "proposition": "The harness must verify 8 distinct output domains (painter, compositor, layout, behavioral, trajectory, widget_state, notice, input) with tolerance regimes varying from exact-match to per-channel pixel tolerance to floating-point epsilon.",
+    "proposition": "Every prior correctness improvement (area sampling, HowTo text, blend_colored_scanline, pixel_scale passthrough) was discovered as a side effect of investigating golden test failure hypotheses.",
     "scores": {
-      "defensibility": 0.90,
-      "specificity": 0.88,
-      "robustness": 0.80,
-      "compatibility": 0.90
+      "evidential_grounding": 0.90,
+      "actionability": 0.10,
+      "failure_resistance": 0.55,
+      "parity_convergence": 0.30
     },
     "reasoning": {
-      "defensibility": "The 8 categories directly reflect the project's actual golden test categories as described in CLAUDE.md. Well-grounded in project reality.",
-      "specificity": "Enumerates all 8 categories by name and characterizes their tolerance regimes. Concrete and verifiable.",
-      "robustness": "Adding a 9th category would require updating the contract schema, all self-conformance checks, and the classifier. Somewhat rigid but that rigidity is intentional.",
-      "compatibility": "Directly reflects the existing golden test infrastructure. High compatibility with current codebase."
+      "evidential_grounding": "The git history confirms each fix was committed during investigation sessions. The causal claim (discovered as side effect of hypothesis testing) is well-supported by the investigation record.",
+      "actionability": "This is a historical observation with no forward-looking action. It argues that the methodology produces serendipitous fixes but provides no concrete next step.",
+      "failure_resistance": "Serendipitous discovery is not a reliable planning basis. Future investigation rounds may or may not produce collateral fixes. Depending on serendipity is fragile.",
+      "parity_convergence": "Past collateral fixes contributed to parity, but the rate of collateral discovery is unpredictable and cannot be planned for."
     }
   },
   {
     "id": "a2-18",
-    "proposition": "The golden data files are binary snapshots of C++ execution output generated by gen_golden.cpp linked against libemCore.so, satisfying the requirement that oracles capture actual behavior rather than specified behavior.",
+    "proposition": "The monotonic ratchet property (tolerances only decrease, test counts only increase, no regressions) is a structural feature of the literal-port methodology, not accidental.",
     "scores": {
-      "defensibility": 0.92,
-      "specificity": 0.85,
-      "robustness": 0.75,
-      "compatibility": 0.90
+      "evidential_grounding": 0.75,
+      "actionability": 0.20,
+      "failure_resistance": 0.70,
+      "parity_convergence": 0.40
     },
     "reasoning": {
-      "defensibility": "Using actual C++ execution output as the oracle is the correct approach for a behavioral equivalence port. Eliminates specification ambiguity.",
-      "specificity": "Identifies the exact mechanism: gen_golden.cpp, libemCore.so linkage, binary snapshots.",
-      "robustness": "Depends on the C++ code being available and compilable. If the C++ library changes or becomes unavailable, the oracle becomes stale. Also, C++ bugs become the 'correct' behavior unless marked as diverged.",
-      "compatibility": "Aligns with the existing golden test generation infrastructure (Makefile, gen directory). Consistent with CLAUDE.md's Port Fidelity rules."
+      "evidential_grounding": "The zero-regression record is factual. The attribution to literal porting as the cause is plausible but not uniquely explanatory -- any correct fix methodology would also avoid regressions if well-executed.",
+      "actionability": "This is a property claim about the methodology, not an action. It provides confidence in past work but no next step.",
+      "failure_resistance": "The monotonic ratchet is real for tests that have been fixed. However, it says nothing about the rate of forward progress, which has been slow (5 tests over multiple rounds).",
+      "parity_convergence": "Monotonicity ensures fixes are durable but does not accelerate convergence. A methodology could be monotonic yet never reach 241/241 if progress stalls."
     }
   },
   {
     "id": "a2-19",
-    "proposition": "The full harness run should be a sequential 7-phase pipeline (self-conformance, contract validation, correspondence audit, divergence measurement, independence verification, classification, summary) where each phase gates the next.",
+    "proposition": "G2 (polygon rasterizer floating-point divergence, 6 tests) is a fully independent group that can be fixed by porting C++ edge-crossing accumulation to match in-place arithmetic.",
     "scores": {
-      "defensibility": 0.85,
-      "specificity": 0.90,
-      "robustness": 0.70,
-      "compatibility": 0.80
+      "evidential_grounding": 0.65,
+      "actionability": 0.75,
+      "failure_resistance": 0.55,
+      "parity_convergence": 0.45
     },
     "reasoning": {
-      "defensibility": "Phased execution with gating is a standard pattern for verification pipelines. Each phase has clear preconditions.",
-      "specificity": "All 7 phases named in order with clear gate semantics. Directly maps to harness_full.sh.",
-      "robustness": "A failure in an early phase blocks all subsequent phases, including potentially useful diagnostics. The independence verification phase (running tests twice) significantly increases total execution time.",
-      "compatibility": "Aligns with CLAUDE.md's instruction that plans should be phased and gated. The pipeline structure is consistent with existing project tooling patterns."
+      "evidential_grounding": "The divergence inventory classifies G2 as 'edge-crossing accumulation x_cur += dx_per_row vs C++ in-place'. The root cause description is plausible but has not been validated by a fix attempt. G6 is noted as related, complicating the independence claim.",
+      "actionability": "The code path is identified and the fix approach (match C++ accumulation pattern) is clear. Medium effort, not as trivial as G3/G5 but well-scoped.",
+      "failure_resistance": "The root cause is a classification from the catalog, not yet validated by a fix. If the actual cause is different, the effort is wasted. The G6 relationship suggests possible shared complexity.",
+      "parity_convergence": "6 tests (16% of remaining) is meaningful but secondary to Group A+B (54% of remaining)."
     }
   },
   {
     "id": "a2-20",
-    "proposition": "Each harness component should include its own self-test mode that verifies correct behavior on synthetic inputs (e.g., the contract checker tests rejection of missing entries, the classifier tests detection of known regressions).",
+    "proposition": "The Phase 5 golden test setup (fill color, canvas color, scale) may be wrong for some tests, and test setup must be verified against the C++ generator before investigating rendering code.",
     "scores": {
-      "defensibility": 0.88,
-      "specificity": 0.80,
-      "robustness": 0.70,
-      "compatibility": 0.85
+      "evidential_grounding": 0.90,
+      "actionability": 0.85,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.50
     },
     "reasoning": {
-      "defensibility": "Testing the test infrastructure is a well-known best practice. Self-tests prevent the harness from silently becoming ineffective.",
-      "specificity": "Gives concrete examples of self-tests but does not exhaustively enumerate them. The principle is clear and implementable.",
-      "robustness": "Self-tests on synthetic inputs may not cover real-world edge cases. The synthetic inputs must be maintained alongside the scripts.",
-      "compatibility": "Aligns with the self-conformance philosophy. Adds maintenance burden but provides proportional safety."
+      "evidential_grounding": "The eagle_logo test was confirmed wrong (WHITE fill + BLACK canvas in C++ vs BLACK fill + TRANSPARENT canvas in Rust). The memory file explicitly warns that all Phase 5 tests are suspect.",
+      "actionability": "Concrete action: for each failing test, compare Rust test setup against C++ gen_golden.cpp setup before investigating rendering. Clear verification criteria.",
+      "failure_resistance": "This is a known failure mode with a confirmed instance. Checking test setup first prevents wasting investigation rounds on correct rendering code with wrong test inputs.",
+      "parity_convergence": "If some failures are caused by wrong test setup rather than rendering bugs, fixing the tests is cheaper than fixing rendering. But the number of affected tests is unknown."
     }
   },
   {
     "id": "a2-21",
-    "proposition": "The harness state protocol should be filesystem-based, using target/harness/ as the output directory with timestamped subdirectories and a 'latest' symlink, enabling stateful tracking across Claude Code sessions without in-memory state.",
+    "proposition": "Inserting printf/logging into C++ instrumentation code can change register allocation and floating-point rounding, making intermediate comparison harnesses potentially unreliable.",
     "scores": {
-      "defensibility": 0.83,
-      "specificity": 0.88,
-      "robustness": 0.65,
-      "compatibility": 0.85
+      "evidential_grounding": 0.70,
+      "actionability": 0.15,
+      "failure_resistance": 0.45,
+      "parity_convergence": 0.20
     },
     "reasoning": {
-      "defensibility": "Filesystem-based state is transparent, inspectable, and survives process restarts. Good fit for a CLI-first workflow.",
-      "specificity": "Concrete directory structure, naming convention (timestamps), symlink mechanics.",
-      "robustness": "Symlinks can be stale or broken. Timestamped directories accumulate without cleanup policy. Concurrent runs could race on the 'latest' symlink. The target/ directory is typically gitignored, so state does not survive clean builds.",
-      "compatibility": "target/ is the standard Rust build output directory. Using it for harness state follows convention. Compatible with the existing coverage scripts that also write to target/."
+      "evidential_grounding": "This is a known phenomenon in optimized C/C++ code (observer effect on FP register allocation). However, it applies mainly to x87 FPU, not modern SSE/AVX which uses dedicated registers. On modern x86-64 with -mfpmath=sse (default), this risk is minimal.",
+      "actionability": "This is an argument against building harnesses, not a proposed action. It does not help fix any tests.",
+      "failure_resistance": "The argument is technically valid for x87 but largely irrelevant for modern compilers. It overstates the risk to support the anti-harness position.",
+      "parity_convergence": "No direct contribution to parity. This is a risk assessment for a rejected approach."
     }
   },
   {
     "id": "a2-22",
-    "proposition": "The contract registry must enumerate all 214 golden data files across 8 categories (42 painter + 61 compositor + 31 layout + 25 behavioral + 20 trajectory + 16 widget_state + 13 notice + 6 input), each mapping a golden file name to a Rust test function name.",
+    "proposition": "The remaining 37 failures decompose into three effort tiers: 3 tests with known trivial fixes (G3+G5), 20 tests with a localized root cause needing side-by-side comparison (A+B), and 14 tests requiring standard per-group investigation (G2, G4, G7, G8, G9, C, D).",
     "scores": {
-      "defensibility": 0.80,
-      "specificity": 0.95,
-      "robustness": 0.60,
-      "compatibility": 0.75
+      "evidential_grounding": 0.72,
+      "actionability": 0.80,
+      "failure_resistance": 0.50,
+      "parity_convergence": 0.70
     },
     "reasoning": {
-      "defensibility": "Explicit enumeration ensures completeness, but the specific counts (214 total) become stale as tests are added or removed.",
-      "specificity": "Extremely concrete: exact counts per category, exact field mapping (name -> rust_test).",
-      "robustness": "Hardcoding the count (214) in the design document creates a maintenance burden. As the port progresses, these numbers will change, requiring document updates. The actual enforcement should be dynamic, not based on hardcoded counts.",
-      "compatibility": "Consistent with the bidirectional completeness check (a2-03) but the specific numbers may already be outdated given the project's active development."
+      "evidential_grounding": "The tier classification is grounded in the divergence inventory. Tier 1 (G3+G5) is well-supported. Tier 2 (A+B) depends on the unproven 9-slice hypothesis. Tier 3 groupings are from the catalog but effort estimates are speculative.",
+      "actionability": "Provides a clear prioritization framework. Each tier has different skill requirements and time horizons. An investigator can choose their entry point rationally.",
+      "failure_resistance": "The three-tier model collapses if the Group A+B hypothesis is wrong and the 20-test fix becomes another multi-round investigation. Tier 3 items have not been investigated, so effort estimates are guesses.",
+      "parity_convergence": "The tiered approach, if accurate, provides the shortest path to 241/241: easy wins first, then the big group, then the tail. But accuracy of tier assignments is uncertain for Tier 2."
     }
   },
   {
     "id": "a2-23",
-    "proposition": "The self-conformance verifier should run all checks and report all failures at once (not fail-fast within the self-check phase), while the overall harness should abort if any self-conformance check fails.",
+    "proposition": "The Group A root cause was corrected from 'PaintTextBoxed text rendering divergence' to '9-slice border image section boundary rounding' based on pixel tracing evidence showing divergent pixels at widget borders, not text regions.",
     "scores": {
-      "defensibility": 0.87,
-      "specificity": 0.85,
-      "robustness": 0.80,
-      "compatibility": 0.85
+      "evidential_grounding": 0.85,
+      "actionability": 0.70,
+      "failure_resistance": 0.65,
+      "parity_convergence": 0.75
     },
     "reasoning": {
-      "defensibility": "Collecting all self-conformance failures before aborting gives the developer a complete picture, reducing fix-retry cycles. Sound UX decision.",
-      "specificity": "Clear behavioral distinction: non-fail-fast within self-check, fail-fast at the harness level.",
-      "robustness": "If a self-conformance check itself hangs or crashes, it could block reporting of other check results. But this is an unlikely edge case.",
-      "compatibility": "Consistent with the phased pipeline design. No conflicts with other components."
+      "evidential_grounding": "The reclassification is documented in the divergence inventory with specific pixel coordinates (x=24-35, y=288-305 for checkbox indicator vs x=170-776 for text). The spatial evidence is concrete and falsifiable.",
+      "actionability": "The corrected attribution focuses future investigation on 9-slice code rather than text rendering code, which is a more tractable target.",
+      "failure_resistance": "The reclassification is based on spatial evidence (where divergent pixels are) rather than root cause proof (what code produces them). Spatial attribution has been wrong before.",
+      "parity_convergence": "Correct root cause attribution is critical for convergence. If the 9-slice attribution is correct, it directs effort to the right 160-170 lines of code for 20 tests."
+    }
+  },
+  {
+    "id": "a2-24",
+    "proposition": "The C++ rendering pipeline for 9-slice sections goes through PaintBorderImage -> PaintImage -> PaintRect -> ScanlineTool::Init, whereas Rust uses an inline transform computation in paint_9slice_section, and this structural difference is the source of divergence.",
+    "scores": {
+      "evidential_grounding": 0.60,
+      "actionability": 0.80,
+      "failure_resistance": 0.45,
+      "parity_convergence": 0.80
+    },
+    "reasoning": {
+      "evidential_grounding": "The structural difference is identified by code reading and is verifiable in both codebases. However, structural difference does not prove behavioral divergence -- the inline computation could produce identical results if implemented correctly.",
+      "actionability": "If structural mismatch is the cause, the fix is to restructure Rust to match the C++ call chain. This is a well-defined refactoring task.",
+      "failure_resistance": "This is a structural observation, not a proven causal claim. The inline computation could be correct despite being structured differently. Matching structure is a heuristic, not a guarantee.",
+      "parity_convergence": "If structural mismatch causes the 20-test divergence, matching it would be the highest-impact single change. But this remains conditional on the causal claim."
+    }
+  },
+  {
+    "id": "a2-25",
+    "proposition": "The rate of progress constraint is investigator availability (how often someone sits down to do the work), not methodological limitation.",
+    "scores": {
+      "evidential_grounding": 0.35,
+      "actionability": 0.10,
+      "failure_resistance": 0.25,
+      "parity_convergence": 0.20
+    },
+    "reasoning": {
+      "evidential_grounding": "This is an unfalsifiable claim. Three rounds of focused investigation on Group A failed to fix the target, suggesting methodological limitations may also constrain progress. The claim shifts accountability from the method to the schedule.",
+      "actionability": "No actionable content. This is a framing argument, not a step to take.",
+      "failure_resistance": "This proposition is a rationalization that resists scrutiny. If the methodology were sufficient, three focused rounds should have found the Group A fix. The claim that more time would have worked is unfalsifiable and therefore epistemically weak.",
+      "parity_convergence": "No direct contribution to convergence. This argues against changing approach, which could delay convergence if the current approach is actually stalled."
     }
   }
 ]

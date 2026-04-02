@@ -2248,6 +2248,8 @@ impl<'a> emPainter<'a> {
         //  6=LL  3=B   0=LR
 
         // Corners.
+        eprintln!("RUST_9SLICE_PARAMS: x={:.6} y={:.6} w={:.6} h={:.6} l={:.6} t={:.6} r={:.6} b={:.6} sl={} st={} sr={} sb={} scale_x={:.1} scale_y={:.1}",
+            x, y, w, h, l, t, r, b, src_l, src_t, src_r, src_b, self.state.scale_x, self.state.scale_y);
         if which_sub_rects & (1 << 8) != 0 {
             self.paint_9slice_section(proof, x, y, l, t, image, 0.0, 0.0, sl, st, quality, ext);
         }

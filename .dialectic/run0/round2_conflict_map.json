@@ -1,338 +1,198 @@
 [
   {
     "tension_id": "t-01",
-    "propositions": ["a1-01", "a2-18"],
-    "type": "undermining",
-    "severity": 0.75,
-    "description": "a1-01 demands verification of input identity between C++ and Rust sides. a2-18 describes golden data as binary snapshots from gen_golden.cpp without mentioning input provenance metadata, meaning the harness architect's oracle design lacks the input identity verification the purist requires."
+    "propositions": ["a1-07", "a2-09"],
+    "type": "contradiction",
+    "severity": 0.92,
+    "description": "a1-07 estimates stage-level harnesses cost 4-8 hours and break even against time spent on disproven hypotheses; a2-09 claims harnesses would cost MORE than side-by-side code reading and produce no additional test fixes. These are mutually exclusive cost assessments of the same proposed work, and the decision to build or skip harnesses depends entirely on which estimate is correct."
   },
   {
     "tension_id": "t-02",
-    "propositions": ["a1-01", "a3-01"],
-    "type": "undermining",
-    "severity": 0.82,
-    "description": "a1-01 requires verifying that C++ and Rust receive the same inputs. a3-01 reveals the C++ generator uses StubClipboard/StubScreen/headless scheduler rather than production Eagle Mode, meaning even if input identity is verified, it is identity with a bespoke test harness, not with production behavior."
+    "propositions": ["a1-08", "a2-13"],
+    "type": "contradiction",
+    "severity": 0.88,
+    "description": "a1-08 claims stage-level verification eliminates the classification problem by definitionally localizing divergence to the compositing stage when upstream harnesses pass; a2-13 claims pixel comparison at zero tolerance is sufficient and intermediate comparison adds only debugging aid, not stronger evidence. These represent fundamentally opposed views on whether diagnostic infrastructure changes the epistemic quality of the investigation or merely adds cost."
   },
   {
     "tension_id": "t-03",
-    "propositions": ["a1-02", "a2-17"],
-    "type": "latent_tension",
-    "severity": 0.60,
-    "description": "a1-02 demands exhaustive comparison of every output channel C++ produces. a2-17 enumerates 8 output domains with varying tolerance regimes. The tension is whether the 8 categories fully cover all C++ output channels or if channels exist that fall outside these categories, potentially violating a1-02's exhaustiveness requirement."
+    "propositions": ["a1-09", "a2-08"],
+    "type": "contradiction",
+    "severity": 0.85,
+    "description": "a1-09 cites the three-time reclassification of Group A+B as evidence that end-to-end golden tests provide insufficient signal for reliable root-cause classification; a2-08 frames the same three rounds as producing 'collateral value' (5 tests fixed, subsystems verified, attribution corrected). The same historical evidence is interpreted as methodology failure vs. methodology success."
   },
   {
     "tension_id": "t-04",
-    "propositions": ["a1-02", "a3-03"],
+    "propositions": ["a1-20", "a2-25"],
     "type": "contradiction",
-    "severity": 0.88,
-    "description": "a1-02 requires every output channel to have a golden comparison. a3-03 identifies that the alpha channel is permanently excluded from image comparison, directly violating the exhaustive output comparison requirement."
+    "severity": 0.82,
+    "description": "a1-20 claims the project is at an inflection point where continuing hypothesis-cascade yields diminishing returns because the remaining uninvestigated areas are precisely those the cascade systematically skipped; a2-25 claims the rate-of-progress constraint is investigator availability, not methodological limitation. One says the method has hit a wall; the other says the method is fine but underutilized."
   },
   {
     "tension_id": "t-05",
-    "propositions": ["a1-02", "a3-14"],
+    "propositions": ["a1-04", "a3-08"],
     "type": "undermining",
-    "severity": 0.78,
-    "description": "a1-02 demands exhaustive output comparison. a3-14 shows only ~15% of Rust source files are exercised by golden tests, meaning exhaustive comparison applies only to a small fraction of the codebase, severely undermining the requirement's intent."
+    "severity": 0.80,
+    "description": "a1-04 proposes a Stage 1 harness comparing 9-slice section rectangles as an 'immediate reveal' of root cause; a3-08 warns that C++ ScanlineTool::Init computes derived state monolithically with in-place mutations, so testing stages separately may use pre-modification values that differ from actual pipeline values. The harness approach is undermined by the structural coupling in the code it must instrument."
   },
   {
     "tension_id": "t-06",
-    "propositions": ["a1-03", "a2-19"],
-    "type": "latent_tension",
-    "severity": 0.55,
-    "description": "a1-03 requires the harness to support four-category classification of disagreements (port fault, oracle fault, specification ambiguity, acceptable difference). a2-19's 7-phase pipeline has a classification phase but only categorizes pass/fail/suspicious/regression, not the root-cause taxonomy a1-03 demands."
+    "propositions": ["a1-10", "a3-17"],
+    "type": "undermining",
+    "severity": 0.78,
+    "description": "a1-10 claims 36/37 failing tests pass through shared pipeline stages, so harnesses built once provide diagnostic capability for nearly all failures; a3-17 counters that the pipeline decomposition targets only image rendering (21 tests), leaving 16 tests across 8 groups that require entirely different investigation approaches with zero benefit from the infrastructure. The 36/37 coverage claim is significantly overstated."
   },
   {
     "tension_id": "t-07",
-    "propositions": ["a1-03", "a3-13"],
+    "propositions": ["a2-16", "a3-04"],
     "type": "undermining",
-    "severity": 0.80,
-    "description": "a1-03 requires thorough investigation of each disagreement with root-cause classification. a3-13 identifies that LLMs are structurally incentivized to widen tolerances rather than investigate disagreements, meaning the investigation process a1-03 demands is undermined by the primary development tool's incentive structure."
+    "severity": 0.85,
+    "description": "a2-16 proposes a ~330-line side-by-side comparison of Rust paint_9slice_section with C++ PaintBorderImage/ScanlineTool::Init as the next concrete step; a3-04 warns that the C++ code uses #include-based macro template expansion producing 12 variants, and agents reading the generic template systematically misinterpret the specific variant that executes for failing tests. The proposed action's success depends on an agent capability that a3-04 identifies as unreliable."
   },
   {
     "tension_id": "t-08",
-    "propositions": ["a1-04", "a3-09"],
-    "type": "latent_tension",
-    "severity": 0.45,
-    "description": "a1-04 and a3-09 both identify the failure independence violation, but frame it differently: a1-04 calls it 'the worst case for Vouk's detection probability model' while a3-09 concludes that golden tests 'verify rather than detect' misunderstandings. These compatible framings create a compound pessimism that could justify nihilistic conclusions about the entire testing approach."
+    "propositions": ["a2-11", "a3-01"],
+    "type": "contradiction",
+    "severity": 0.83,
+    "description": "a2-11 claims 7 subsystems have been verified correct and permanently removed from suspicion; a3-01 argues that previous investigations eliminated hypotheses at the wrong level of abstraction (comparing inputs rather than derived internal state), creating permanent blind spots. If a3-01 is correct, some of the 'verified correct' subsystems in a2-11 may have been prematurely cleared."
   },
   {
     "tension_id": "t-09",
-    "propositions": ["a1-05", "a2-18"],
-    "type": "mutual_exclusion",
-    "severity": 0.85,
-    "description": "a1-05 argues generated test inputs are essential to differential testing. a2-18 describes the oracle as binary snapshots from a pre-executed C++ generator. Generated inputs require re-executing the C++ oracle for each new input, which the frozen oracle model cannot support, making these two approaches mutually exclusive without major architectural changes."
+    "propositions": ["a1-06", "a2-24", "a3-23"],
+    "type": "latent_tension",
+    "severity": 0.77,
+    "description": "All three agents agree the Rust architecture diverges from C++ (inline vs call chain), but disagree on implications. a1-06 says this manifests at sub-pixel boundary conditions and requires routing through shared logic; a2-24 says it is the source of divergence fixable by matching C++ call chain; a3-23 warns the decomposition mismatch (1 monolithic C++ function vs 4 Rust structs) makes any stage-boundary comparison inherently ambiguous. They agree on the structural fact but disagree on whether it can be resolved by restructuring, side-by-side comparison, or neither."
   },
   {
     "tension_id": "t-10",
-    "propositions": ["a1-05", "a3-10"],
-    "type": "latent_tension",
-    "severity": 0.50,
-    "description": "a1-05 asserts generated inputs are essential. a3-10 identifies the current harness uses only fixed handcrafted inputs. Both agree on the gap, but a3-10 implicitly acknowledges the practical difficulty (generating valid UI tree configurations is non-trivial), while a1-05 treats it as a requirement without fully addressing feasibility."
+    "propositions": ["a2-12", "a3-07", "a3-22"],
+    "type": "mutual_exclusion",
+    "severity": 0.75,
+    "description": "a2-12 projects a fix trajectory starting with G3+G5 then Group A+B as the primary target; a3-07 and a3-22 argue that small groups (G2, G7, G9) are higher expected-value targets than deeply-investigated Group A+B, and that sunk-cost trajectory lock biases agents toward continuing A+B. The two approaches prescribe opposite sequencing after the quick wins: a2-12 says tackle A+B next for maximum leverage; a3-07/a3-22 say pivot away from A+B to harvest more easy wins first."
   },
   {
     "tension_id": "t-11",
-    "propositions": ["a1-06", "a2-13"],
-    "type": "latent_tension",
-    "severity": 0.30,
-    "description": "a1-06 forbids undocumented #[ignore] annotations. a2-13 enforces this via grep-based self-conformance checks. These are largely aligned, but a2-13's syntactic grep could miss semantic equivalents (#[cfg(not(...))]) that a1-06 would still consider violations, creating a coverage gap in enforcement."
+    "propositions": ["a1-17", "a2-14"],
+    "type": "contradiction",
+    "severity": 0.70,
+    "description": "a1-17 argues golden tests should serve only as composition verification, not component verification, and that conflating these roles is the root cause of diagnostic fog; a2-14 argues the CLAUDE.md port fidelity rules already encode the methodology and no additional infrastructure is needed. One demands new testing infrastructure to separate concerns; the other says existing rules suffice."
   },
   {
     "tension_id": "t-12",
-    "propositions": ["a1-06", "a3-04"],
+    "propositions": ["a1-13", "a2-21"],
     "type": "undermining",
-    "severity": 0.90,
-    "description": "a1-06 forbids suppressing failures without documentation. a3-04 reveals that require_golden!() silently reports success when golden data is absent, achieving the same suppression effect as #[ignore] but through a different mechanism that a1-06's prohibition does not cover."
+    "severity": 0.65,
+    "description": "a1-13 proposes modifying the C++ generator to emit intermediate values alongside pixel data; a2-21 warns that inserting printf/logging into C++ code can change register allocation and floating-point rounding, making intermediate comparison harnesses potentially unreliable. The proposed diagnostic mechanism could itself introduce the very divergences it is trying to detect."
   },
   {
     "tension_id": "t-13",
-    "propositions": ["a1-07", "a1-13"],
+    "propositions": ["a2-17", "a3-03"],
     "type": "contradiction",
-    "severity": 0.70,
-    "description": "Internal a1 tension surfaced for cross-agent relevance: a1-07 says sub-tolerance treatment is a design choice not addressed by sources, while a1-13 demands MEASURE_DIVERGENCE be always-on to report all sub-tolerance disagreements. This internal inconsistency weakens a1's position when a2 or a3 propositions interact with either claim."
+    "severity": 0.80,
+    "description": "a2-17 frames every prior fix as discovered via hypothesis investigation, arguing the methodology produces serendipitous corrections; a3-03 frames the same history as a 'systematic diversion pattern' where agents fix adjacent bugs instead of the target root cause. The identical evidence (fixes found while investigating Group A+B) is cast as a feature of the methodology vs. a symptom of its failure."
   },
   {
     "tension_id": "t-14",
-    "propositions": ["a1-10", "a2-16"],
-    "type": "contradiction",
-    "severity": 0.82,
-    "description": "a1-10 argues that 'blessing' Rust output as golden data provides zero fault detection power and is methodologically dangerous. a2-16 provides a structured mechanism for exactly this: marking failures as intentional divergence with diverged=true, effectively formalizing the blessing process a1-10 condemns."
+    "propositions": ["a1-15", "a3-15"],
+    "type": "latent_tension",
+    "severity": 0.68,
+    "description": "a1-15 acknowledges the tdx_init fix from a disproven hypothesis improved 5 tests, demonstrating collateral value; a3-15 argues that these reward signals from adjacent fixes bias agents toward broad investigation when the Group A+B root cause requires deep, narrow investigation. The collateral value that a1-15 concedes is exactly the mechanism that a3-15 identifies as harmful to convergence on the primary target."
   },
   {
     "tension_id": "t-15",
-    "propositions": ["a1-10", "a3-17"],
-    "type": "latent_tension",
-    "severity": 0.65,
-    "description": "a1-10 insists golden data must come from C++ execution, not Rust. a3-17 notes the C++ reference is frozen at 0.96.4 and may encode bugs. Together they create a dilemma: the oracle is both sacrosanct (a1-10) and potentially buggy (a3-17), with no clear resolution when a C++ bug is discovered."
+    "propositions": ["a2-18", "a3-10"],
+    "type": "undermining",
+    "severity": 0.60,
+    "description": "a2-18 claims the monotonic ratchet property (tolerances only decrease, no regressions) is a structural feature of literal-port methodology; a3-10 warns that zero-tolerance golden tests are fragile and a refactoring that changes float operation order by 1 ULP can fail tests despite mathematical equivalence. The monotonic ratchet may not survive the refactoring needed to fix Group A+B, undermining the safety guarantee."
   },
   {
     "tension_id": "t-16",
-    "propositions": ["a1-11", "a3-02"],
+    "propositions": ["a1-03", "a2-03"],
     "type": "latent_tension",
     "severity": 0.55,
-    "description": "a1-11 requires recording compiler versions and source revisions in golden data. a3-02 notes the golden binary format lacks even basic safeguards like magic numbers or checksums. These are complementary gaps but create tension: a1-11's metadata requirements are moot if the binary format itself (a3-02) cannot reliably carry or validate that metadata."
+    "description": "a1-03 says Group A+B is 21 tests caused by 9-slice boundary rounding; a2-03 says Group A+B is 20 tests with the same attribution. The test count disagrees (21 vs 20), suggesting the group boundary itself is uncertain. If the agents cannot agree on how many tests are in the group, the root cause classification and projected impact of a fix are imprecise."
   },
   {
     "tension_id": "t-17",
-    "propositions": ["a1-12", "a3-15"],
-    "type": "undermining",
+    "propositions": ["a2-04", "a3-05"],
+    "type": "latent_tension",
     "severity": 0.72,
-    "description": "a1-12 requires quantitative disagreement metrics (pixel percentages, max channel diff, distributions). a3-15 notes MEASURE_DIVERGENCE exists but is opt-in, outputs only to stderr, and has no storage or comparison mechanism, meaning the quantitative metrics a1-12 demands exist in primitive form but lack the infrastructure to fulfill the requirement."
+    "description": "a2-04 identifies the likely sub-cause as clamped vs unclamped source width (sw); a3-05 identifies the likely sub-cause as stride-reduction ordering dependency (ImgW modified before tdx computation). Both target the ScanlineTool::Init divergence but name different specific mechanisms. They cannot both be THE singular cause, and investigating one first delays investigating the other, risking another wasted round if the first is wrong."
   },
   {
     "tension_id": "t-18",
-    "propositions": ["a1-13", "a2-05"],
+    "propositions": ["a1-05", "a3-01"],
     "type": "undermining",
-    "severity": 0.65,
-    "description": "a1-13 demands always-on divergence reporting for all sub-tolerance disagreements. a2-05 defines 'suspicious' only when failure percentage exceeds 50% of threshold or max_diff exceeds 75% of tolerance. The architect's suspicious threshold creates a gap below which sub-tolerance divergence goes unreported, contradicting the purist's always-on requirement."
+    "severity": 0.73,
+    "description": "a1-05 proposes a Stage 2 harness comparing fixed-point transform parameters, but acknowledges Hypothesis 2 already verified transforms match; a3-01 argues previous investigations compared inputs rather than derived internal state, so the 'verified match' may be at the wrong abstraction level. The Stage 2 harness either redundantly re-verifies a correct result (waste) or catches what a3-01 says was missed (valuable), but you cannot know which without building it."
   },
   {
     "tension_id": "t-19",
-    "propositions": ["a1-14", "a2-01"],
+    "propositions": ["a2-15", "a1-01"],
     "type": "mutual_exclusion",
-    "severity": 0.75,
-    "description": "a1-14 demands full automation of the generate-execute-compare cycle without human intervention. a2-01 proposes shell scripts and Unix pipes as the harness, which can automate the Rust side but cannot automate the C++ generation step that requires a separate build environment, making full automation impractical in the proposed architecture."
+    "severity": 0.67,
+    "description": "a2-15 argues switching methodology would not transfer accumulated investigation knowledge and would require re-derivation; a1-01 argues the inability to localize divergences from end-to-end tests is a mathematical property requiring methodology change. If a1-01 is correct, accumulated knowledge cannot help because the methodology structurally cannot converge. If a2-15 is correct, switching wastes the knowledge needed to converge. The decision to switch or stay depends on which structural claim holds."
   },
   {
     "tension_id": "t-20",
-    "propositions": ["a1-14", "a3-21"],
+    "propositions": ["a1-14", "a3-20"],
     "type": "undermining",
-    "severity": 0.70,
-    "description": "a1-14 requires automating the full generate-execute-compare cycle per McKeeman. a3-21 identifies that the frozen oracle converts the relational property into a weaker unary property. Even if full automation were achieved, the frozen oracle fundamentally cannot support the live differential comparison that McKeeman's automated cycle requires."
+    "severity": 0.62,
+    "description": "a1-14 proposes adding stage-level tracing via compile-time feature flag to make intermediate values permanent infrastructure; a3-20 warns that infrastructure investment creates commitment to using it, and if the harness compares at the wrong granularity, it becomes a trusted oracle that is systematically wrong. The permanence a1-14 advocates amplifies the commitment-bias risk a3-20 identifies."
   },
   {
     "tension_id": "t-21",
-    "propositions": ["a1-15", "a3-11"],
-    "type": "latent_tension",
+    "propositions": ["a2-10", "a3-12"],
+    "type": "undermining",
     "severity": 0.58,
-    "description": "a1-15 requires golden tests to test observable behavior, not implementation artifacts. a3-11 identifies that settle() uses a fixed iteration count (5), which is an implementation artifact of temporal discretization rather than observable behavior. Tests depending on exactly 5 iterations could break under refactoring, violating a1-15."
+    "description": "a2-10 claims the 12 classified groups can be attacked independently and in parallel; a3-12 warns the grouping may be incorrect because apparently unrelated groups (e.g., A+B border images and G7 gradient) may share upstream root causes. If groups share causes, independent parallel attack wastes effort treating symptoms while the shared cause persists across groups."
   },
   {
     "tension_id": "t-22",
     "propositions": ["a1-16", "a2-16"],
-    "type": "latent_tension",
-    "severity": 0.50,
-    "description": "a1-16 notes the asymmetric oracle relationship (C++ as authority) is a project choice, not methodological. a2-16 provides the diverged=true mechanism for when Rust intentionally departs from C++, implicitly acknowledging the asymmetry is sometimes wrong. Together they undermine the simple oracle model without providing a clear replacement."
+    "type": "undermining",
+    "severity": 0.70,
+    "description": "a1-16 argues investigator hypothesis selection is biased toward stages they understand best, systematically skipping structurally simple code assumed correct; a2-16 proposes exactly the kind of investigator-driven side-by-side comparison that a1-16 identifies as bias-prone. If a1-16 is correct, the side-by-side comparison in a2-16 will repeat the pattern of skipping the actual divergent section because it looks 'obviously correct.'"
   },
   {
     "tension_id": "t-23",
-    "propositions": ["a1-17", "a2-02"],
+    "propositions": ["a1-25", "a3-24"],
     "type": "latent_tension",
-    "severity": 0.48,
-    "description": "a1-17 requires detecting golden data staleness against the current C++ source. a2-02's contract registry enumerates test cases and tolerances but does not include C++ source revision metadata per test, meaning the contract cannot support the staleness detection a1-17 requires without schema extension."
+    "severity": 0.55,
+    "description": "a1-25 proposes extending the golden test format to permanently store intermediate values for all tests; a3-24 observes that after Group A+B is fixed, 16 tests across 8 diverse groups remain, each requiring its own methodology. Building permanent infrastructure for image rendering intermediates provides no value for the tail groups, creating wasted investment for nearly half the remaining work."
   },
   {
     "tension_id": "t-24",
-    "propositions": ["a1-18", "a3-07"],
+    "propositions": ["a3-13", "a1-04", "a2-16"],
     "type": "undermining",
-    "severity": 0.85,
-    "description": "a1-18 requires that tolerances be tight enough that only the correct implementation passes. a3-07 documents that tolerances have ratcheted monotonically looser over time (up to ch_tol=3, max_fail=10%), with no tracking or prevention mechanism, directly undermining the tight-tolerance requirement."
+    "severity": 0.88,
+    "description": "a3-13 identifies the 'last mile' problem: regardless of approach (harness or side-by-side), an agent must ultimately compare C++ and Rust integer arithmetic line-by-line, where both approaches are equally vulnerable to agent limitations. This undermines both a1-04 (harness will 'immediately reveal' root cause) and a2-16 (side-by-side comparison will find the divergence), because neither addresses the fundamental bottleneck of agent code-comparison accuracy in integer arithmetic."
   },
   {
     "tension_id": "t-25",
-    "propositions": ["a1-18", "a3-08"],
-    "type": "undermining",
-    "severity": 0.80,
-    "description": "a1-18 requires tests specific enough that only the correct implementation satisfies them. a3-08 identifies that the comparison function has no cap on how wrong individual failing pixels can be, meaning a completely wrong scanline can pass the test if few enough pixels are affected, allowing wrong implementations to satisfy the test."
+    "propositions": ["a3-16", "a1-06"],
+    "type": "latent_tension",
+    "severity": 0.72,
+    "description": "a3-16 warns that structural rewriting of paint_9slice_section risks breaking the 204 passing tests via the 'fix one, break three' pattern; a1-06 proposes exactly such a structural refactoring (routing through shared PaintImage path). The highest-leverage fix (a1-06) carries the highest regression risk (a3-16), creating a tension between forward progress and preserving existing correctness."
   },
   {
     "tension_id": "t-26",
-    "propositions": ["a1-19", "a3-12"],
-    "type": "undermining",
-    "severity": 0.73,
-    "description": "a1-19 requires documenting methodology deviations at the exact point of divergence. a3-12 identifies that LLM sessions lack provenance on why previous tolerances were set, meaning documentation written in one session may not survive or be accessible in subsequent sessions, undermining the documentation requirement's effectiveness."
+    "propositions": ["a2-20", "a3-09"],
+    "type": "latent_tension",
+    "severity": 0.63,
+    "description": "Both a2-20 and a3-09 warn about incorrect test setup, but with different implications. a2-20 says verify test setup before investigating rendering code (a preprocessing step within the current methodology). a3-09 says some reference images may be wrong, making pixel parity with those references the wrong goal entirely. One treats setup verification as routine triage; the other treats it as potentially invalidating the golden test framework."
   },
   {
     "tension_id": "t-27",
-    "propositions": ["a1-20", "a3-14"],
+    "propositions": ["a3-14", "a1-05"],
     "type": "undermining",
-    "severity": 0.72,
-    "description": "a1-20 requires the harness to identify which code paths have golden coverage and report gaps. a3-14 reveals the actual gap is enormous (~85% of files uncovered). If the harness reports this gap, the sheer size of it may make the requirement feel unactionable, creating organizational tension between knowing the gap and being able to address it."
+    "severity": 0.70,
+    "description": "a1-05 proposes comparing fixed-point transform parameters between Rust and C++; a3-14 observes that C++ uses raw pointer arithmetic (ImgMap with byte offsets) while Rust uses SectionBounds { ox, oy, w, h }, and verifying equivalence requires tracing every downstream consumer. The parameters a1-05 wants to compare are expressed in incommensurable representations, making direct numerical comparison insufficient without a semantic mapping layer."
   },
   {
     "tension_id": "t-28",
-    "propositions": ["a1-21", "a2-08"],
-    "type": "latent_tension",
-    "severity": 0.45,
-    "description": "a1-21 requires distinguishing regressions from pre-existing failures. a2-08 implements this via a 'latest' symlink comparing consecutive runs. The tension is that the symlink only compares against the immediately previous run, so a pre-existing failure that was temporarily fixed and then regressed looks like a new regression rather than a recurrence."
-  },
-  {
-    "tension_id": "t-29",
-    "propositions": ["a1-23", "a2-18"],
-    "type": "latent_tension",
-    "severity": 0.55,
-    "description": "a1-23 insists every gap introduced by the frozen oracle must be justified as a deviation from published methodology. a2-18 presents the frozen oracle model without acknowledging it as a methodological deviation, treating it as the natural architecture rather than a compromise requiring documentation."
-  },
-  {
-    "tension_id": "t-30",
-    "propositions": ["a1-25", "a2-22"],
-    "type": "undermining",
-    "severity": 0.60,
-    "description": "a1-25 warns that losing the C++ build environment permanently freezes the test suite. a2-22 hardcodes 214 golden data files as the registry count, implicitly treating the current set as complete rather than extensible, which accelerates the problem a1-25 identifies by treating the frozen state as the target state."
-  },
-  {
-    "tension_id": "t-31",
-    "propositions": ["a2-02", "a3-04"],
-    "type": "undermining",
-    "severity": 0.78,
-    "description": "a2-02 proposes a contract registry as the single source of truth for all golden tests. a3-04 reveals require_golden!() silently passes when data is absent. The contract registry cannot serve as truth if the test execution layer silently skips entries, as the registry would show 214 tests while the actual execution silently runs zero."
-  },
-  {
-    "tension_id": "t-32",
-    "propositions": ["a2-03", "a3-04"],
-    "type": "mutual_exclusion",
-    "severity": 0.72,
-    "description": "a2-03 requires the harness to refuse to run if contract entries lack golden files. a3-04 shows the current macro silently succeeds when golden data is absent. These are not directly exclusive, but implementing a2-03 would change the behavior a3-04 describes, meaning one of these states must not persist."
-  },
-  {
-    "tension_id": "t-33",
-    "propositions": ["a2-04", "a3-07"],
-    "type": "latent_tension",
-    "severity": 0.62,
-    "description": "a2-04 proposes that tolerance changes can only tighten (loosening requires audited justification). a3-07 documents that tolerances have already ratcheted to loose levels. The tension is whether a2-04's mechanism would be retroactive (requiring justification for all existing loose tolerances) or only forward-looking (locking in the already-loose status quo)."
-  },
-  {
-    "tension_id": "t-34",
-    "propositions": ["a2-04", "a3-13"],
-    "type": "latent_tension",
-    "severity": 0.68,
-    "description": "a2-04 requires a separate script with --reason for tolerance loosening. a3-13 identifies LLMs as structurally incentivized to widen tolerances. The audit mechanism in a2-04 is designed for human accountability, but an LLM can trivially provide a plausible --reason string without genuine investigation, weakening the guardrail."
-  },
-  {
-    "tension_id": "t-35",
-    "propositions": ["a2-05", "a3-08"],
-    "type": "undermining",
-    "severity": 0.75,
-    "description": "a2-05 defines 'suspicious' tests based on proximity to failure thresholds (50% of max_failure_pct, 75% of channel_tolerance). a3-08 identifies that the comparison lacks a magnitude cap on failing pixels. A test with a few pixels at diff=255 would not trigger suspicious status under a2-05's criteria because the pixel count is low, even though the error is catastrophic."
-  },
-  {
-    "tension_id": "t-36",
-    "propositions": ["a2-09", "a3-25"],
-    "type": "undermining",
-    "severity": 0.58,
-    "description": "a2-09 defines convergence as zero failures/regressions with non-increasing suspicious count across 3 runs. a3-25 argues the coverage gap can widen even as tests are added because the state space grows combinatorially. Convergence in a2-09's terms (stable pass rate) does not imply convergence in coverage, meaning the harness can declare convergence while coverage deteriorates."
-  },
-  {
-    "tension_id": "t-37",
-    "propositions": ["a2-10", "a3-18"],
-    "type": "latent_tension",
-    "severity": 0.52,
-    "description": "a2-10 verifies test independence by comparing sequential and parallel execution results. a3-18 notes parallel rendering tests prove determinism but not correctness. Together they suggest the independence verification effort (which doubles execution time) catches ordering bugs but not the correctness bugs that are the primary concern."
-  },
-  {
-    "tension_id": "t-38",
-    "propositions": ["a2-15", "a3-19"],
-    "type": "undermining",
-    "severity": 0.55,
-    "description": "a2-15 proposes change-guided coverage restricting tests to those referencing modified files. a3-19 identifies that cross-cutting interactions (input->notices->behavior) are untested. Change-guided coverage would further fragment testing by running only tests mapped to changed files, making it even less likely that cross-cutting interaction bugs are detected."
-  },
-  {
-    "tension_id": "t-39",
-    "propositions": ["a2-16", "a3-17"],
-    "type": "latent_tension",
-    "severity": 0.62,
-    "description": "a2-16 provides the diverged=true mechanism for intentional departures from C++. a3-17 notes the C++ reference may encode bugs from version 0.96.4. The tension is that a2-16's mechanism treats divergence as an exception requiring justification, but if many C++ behaviors are actually bugs, the exception mechanism becomes the norm rather than the exception."
-  },
-  {
-    "tension_id": "t-40",
-    "propositions": ["a2-06", "a3-04"],
-    "type": "latent_tension",
-    "severity": 0.70,
-    "description": "a2-06 requires the divergence ledger to flag unreported test cases (tests in the contract but not in the results). a3-04 shows require_golden!() reports tests as 'ok' even when skipped. If skipped tests report as passing, they appear in the results as reported, defeating a2-06's unreported-case detection."
-  },
-  {
-    "tension_id": "t-41",
-    "propositions": ["a1-08", "a2-09"],
-    "type": "contradiction",
-    "severity": 0.72,
-    "description": "a1-08 insists the stopping criterion must be reliability-based (statistical fault estimation), not coverage-based. a2-09 defines convergence purely in terms of pass/fail/suspicious counts across runs, which is exactly the coverage-based stopping criterion a1-08 rejects as insufficient."
-  },
-  {
-    "tension_id": "t-42",
-    "propositions": ["a1-09", "a3-21"],
-    "type": "latent_tension",
-    "severity": 0.55,
-    "description": "a1-09 warns the frozen oracle permanently bakes in coincident failures. a3-21 formalizes that the frozen oracle converts a relational property to a weaker unary property. Together they compound: not only is the property weaker (a3-21), but the weakness is permanent and cannot be discovered by any amount of Rust-side testing (a1-09)."
-  },
-  {
-    "tension_id": "t-43",
-    "propositions": ["a1-24", "a2-15"],
-    "type": "latent_tension",
-    "severity": 0.50,
-    "description": "a1-24 argues golden tests should prioritize code paths most likely to diverge in translation (integer arithmetic, pointer semantics). a2-15's change-guided coverage restricts tests to recently modified files. These prioritization schemes may conflict: a recently modified file may not contain translation-hazardous code, and high-risk code paths may not have been recently modified."
-  },
-  {
-    "tension_id": "t-44",
-    "propositions": ["a2-14", "a3-20"],
-    "type": "undermining",
-    "severity": 0.55,
-    "description": "a2-14 detects coincident failures by grouping tests with similar max_diff values within a category. a3-20 warns that shared test infrastructure bugs would cause consistent failures baked into expectations. If the shared infrastructure bug produces consistent behavior across tests, a2-14's coincident failure detection would correctly flag correlation but misattribute the cause to implementation rather than test infrastructure."
-  },
-  {
-    "tension_id": "t-45",
-    "propositions": ["a1-12", "a2-05"],
-    "type": "latent_tension",
-    "severity": 0.42,
-    "description": "a1-12 demands quantitative metrics including distributions of differences. a2-05 reduces these to a binary suspicious/not-suspicious classification using fixed thresholds. The rich quantitative data a1-12 requires is collapsed into a boolean by a2-05's design, losing the distribution information the purist considers essential."
-  },
-  {
-    "tension_id": "t-46",
-    "propositions": ["a2-07", "a3-14"],
-    "type": "latent_tension",
-    "severity": 0.45,
-    "description": "a2-07 enforces that every C++ header has a corresponding Rust file or marker. a3-14 reveals only ~15% of files have golden test coverage. The correspondence auditor ensures structural completeness (files exist) but not behavioral completeness (files are tested), creating a false sense of coverage when structural and behavioral completeness are conflated."
-  },
-  {
-    "tension_id": "t-47",
-    "propositions": ["a1-18", "a3-24"],
+    "propositions": ["a3-18", "a2-16"],
     "type": "undermining",
     "severity": 0.68,
-    "description": "a1-18 requires tight tolerances so only correct implementations pass. a3-24 reveals the uniform 1e-6 layout epsilon represents wildly different relative tolerances (0.1% vs 0.0003%) depending on the scale of values, meaning 'tight' in absolute terms may actually be loose in relative terms for small-valued layouts."
-  },
-  {
-    "tension_id": "t-48",
-    "propositions": ["a2-12", "a3-22"],
-    "type": "latent_tension",
-    "severity": 0.52,
-    "description": "a2-12 requires the self-conformance verifier to run first and gate all subsequent phases. a3-22 identifies translate_cpp_notice_flags as unverified trust with potential symmetric false positives. The self-conformance verifier checks harness structure but not semantic correctness of data translation functions, so it would pass even if translate_cpp_notice_flags has transposition errors."
+    "description": "a2-16 proposes side-by-side code comparison as the next concrete action; a3-18 warns that C++ unsigned-times-signed integer arithmetic involves implicit conversions that agents rarely track through multi-step arithmetic. The side-by-side comparison is specifically vulnerable to the integer promotion blind spot that a3-18 identifies, potentially producing another false 'structurally equivalent' verdict."
   }
 ]
