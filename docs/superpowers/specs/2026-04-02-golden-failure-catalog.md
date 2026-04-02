@@ -8,13 +8,14 @@ Supersedes the 2026-04-01 catalog. 37 tests across 12 groups.
 - G2-G9 hypotheses **re-validated** — all confirmed with identical divergence patterns
 - widget_listbox max_diff dropped 136→25 (IO field overlay fixed, remaining divergence is HowTo text)
 - **HowTo text fix applied** — 7 widget types now populate `how_to_text` in `Paint()`. Groups A+B root cause reclassified from "missing HowTo text" to "PaintTextBoxed text rendering divergence". 11 tests improved (max_diff reduced), 4 slightly regressed (text rendering divergence > old flat-background divergence at some glyph positions), 5 composite tests unchanged.
+- **Group A+B root cause CORRECTED** — pixel tracing proves divergence is in 9-slice border image rendering (`PaintBorderImage`/`PaintImage`), NOT `PaintTextBoxed`/`PaintImageColored`. Divergent pixels at (24-35, 288-305) for checkbox and (31-42, 288-311) for button are the widget border/indicator area; `PaintImageColored` is not called at these coordinates. The `PaintImageColored` pipeline was ported to match C++ single-step structure (`blend_colored_scanline`) as a correctness cleanup but has no effect on these tests.
 
 ## Summary
 
 | Group | Code Path | Tests | max_diff range | Status | Likely cause |
 |-------|-----------|-------|----------------|--------|--------------|
-| A | `PaintTextBoxed` via `emBorder::paint_border` | 15 | 13-54 | verified | HowTo text populated (fixed), residual divergence is `PaintTextBoxed` rendering vs C++ |
-| B | Same as A (composite) | 5 | 153-255 | verified | Composite widgets aggregating Sub-group A child divergences |
+| A | `PaintBorderImage` / `PaintImage` 9-slice boundary | 15 | 13-54 | root cause corrected | 9-slice border image section boundary rounding diverges from C++ |
+| B | Same as A (composite) | 5 | 153-255 | root cause corrected | Composite widgets aggregating Group A child divergences |
 | G2 | `fill_polygon_aa` / `rasterize_polynomial` | 6 | 12-255 | carried forward | Polygon rasterizer FP edge-crossing accumulation differs from C++ |
 | C | `PaintEllipse` / `PaintImageColored` | 2 | 53-69 | verified | Star rendering sub-pixel interpolation differs from C++ |
 | G3 | `ADAPTIVE_TABLE` / `interpolate_scanline_adaptive_premul` | 2 | 1 | carried forward | Runtime f64 Hermite factor table rounds differently from C++ compile-time table |
@@ -30,11 +31,13 @@ Supersedes the 2026-04-01 catalog. 37 tests across 12 groups.
 
 ---
 
-## Group A: HowTo Text Rendering Divergence — 15 tests
+## Group A: 9-Slice Border Image Boundary Divergence — 15 tests
 
-**Priority:** 1 (largest group — needs `PaintTextBoxed` fix to resolve)
+**Priority:** 1 (largest group — needs 9-slice section boundary fix to resolve)
 
-**Status: PARTIALLY FIXED.** HowTo text is now populated (7 widgets wired to call `GetHowTo()` in `Paint()`). Residual divergence is `PaintTextBoxed` producing different glyph pixels from C++.
+**Status: ROOT CAUSE CORRECTED.** Previously misdiagnosed as `PaintTextBoxed` glyph rendering divergence. Pixel tracing (2026-04-02) proves divergence is in `PaintBorderImage`/`PaintImage` 9-slice rendering, not text. `PaintImageColored` is not called at the divergent pixel coordinates.
+
+**Evidence:** For widget_checkbox_unchecked, all 182 divergent pixels are at x=24-35, y=288-305 (the checkbox indicator border area). `PaintImageColored` is only called at x=170-776 (label text "Check Option") with zero divergence. For widget_button_normal, all 148 divergent pixels are at x=31-42, y=288-311 (the button border area).
 
 **Tests (15):**
 
@@ -56,25 +59,27 @@ Supersedes the 2026-04-01 catalog. 37 tests across 12 groups.
 | widget_colorfield_alpha_zero | 24 | 14 | -10 |
 | widget_checkbox_unchecked | 22 | 13 | -9 |
 
-**Divergent code path:** `emBorder::paint_border()` → `PaintTextBoxed()` for the HowTo pill text. Both Rust and C++ now render the same text content onto the pill, but `PaintTextBoxed` produces different glyph anti-aliasing pixels.
+**Divergent code path:** `emBorder::paint_border()` → `PaintBorderImage()` / `PaintImage()` for widget border/indicator 9-slice rendering. The 9-slice section boundary coordinates differ between Rust and C++ due to sub-pixel rounding, producing different interpolated pixels at section edges.
 
-**C++ reference:** `emBorder.cpp:904-928` (HowTo pill rendering), `emPainter.cpp` `PaintTextBoxed` (text rasterization).
+**C++ reference:** `emPainter.cpp` `PaintBorderImage` (9-slice subdivision), `emPainter_ScTl.cpp` (ScanlineTool Init for IMAGE type).
 
-**Spatial pattern:** Divergent pixels cluster in the HowTo pill region (left edge of border, y≈288-295). Both sides render text — the divergence is in glyph edge anti-aliasing, not missing content.
+**Spatial pattern:** Divergent pixels cluster at the left edge of the widget border/indicator area (x≈24-42, y≈288-311). This was previously misidentified as the "HowTo pill region" but is actually the 9-slice border image content.
 
 **Root cause:** Two layers:
 1. ~~Missing `how_to_text`~~ **(FIXED)** — 7 widget types now call `self.border.how_to_text = self.GetHowTo(enabled, true)` before `paint_border()`.
-2. **`PaintTextBoxed` rendering divergence (REMAINING)** — Rust text rasterization produces different anti-aliased glyph pixels from C++. This is a sub-pixel precision issue in text layout and glyph rendering, not a missing feature. At some glyph positions the Rust rendering differs more from C++ than the old flat background did, explaining the 4 tests that show slightly increased max_diff.
+2. **9-slice border image section boundary rounding (REMAINING)** — The 9-slice rendering computes section boundaries at sub-pixel precision. Rust and C++ produce slightly different boundary coordinates, causing the area sampling or adaptive interpolation to sample different source pixels at section edges. Max_diff 13-54 across the 15 tests. Related to Group D (splitter grip 9-slice boundary, same code path).
 
-**Note:** colorfield_expanded (max_diff=54) also has ±1-5 LSB divergences in IO field overlay content beyond the HowTo region, keeping its max_diff unchanged.
+**Note:** colorfield_expanded (max_diff=54) also has ±1-5 LSB divergences in IO field overlay content beyond the border region, keeping its max_diff unchanged.
+
+**Cleanup applied:** `PaintImageColored` pipeline was ported to match C++ single-step structure (`blend_colored_scanline` matching `PaintScanlineIntG1/G2/G1G2`). This is a correctness improvement but does not affect Group A tests since the divergence is not from `PaintImageColored`.
 
 ---
 
-## Group B: Composite Widget HowTo Text — 5 tests
+## Group B: Composite Widget 9-Slice Divergence — 5 tests
 
-**Priority:** 2 (resolves when Group A's PaintTextBoxed divergence is fixed)
+**Priority:** 2 (resolves when Group A's 9-slice section boundary divergence is fixed)
 
-**Status: PARTIALLY FIXED.** HowTo text populated in child widgets. Composite max_diff unchanged because it's dominated by child PaintTextBoxed divergences composited onto dark backgrounds.
+**Status: ROOT CAUSE CORRECTED.** Same correction as Group A — divergence is from 9-slice border rendering in child widgets, not text rendering.
 
 **Tests (5):**
 
@@ -86,11 +91,11 @@ Supersedes the 2026-04-01 catalog. 37 tests across 12 groups.
 | widget_file_selection_box | 237 | 14190 | 2.96% |
 | composed_border_nest | 153 | 9944 | 2.07% |
 
-**Divergent code path:** Same as Group A. These tests render multiple child widgets, each contributing HowTo-text-sized blocks of divergent pixels.
+**Divergent code path:** Same as Group A. These tests render multiple child widgets, each contributing border-image-sized blocks of divergent pixels from 9-slice section boundary rounding.
 
 **C++ reference:** Same as Group A.
 
-**Spatial pattern:** Large max_diff (153-255) because composited HowTo text rendering divergences on dark backgrounds produce high contrast. Both sides now render text, but glyph pixel differences amplify through compositing.
+**Spatial pattern:** Large max_diff (153-255) because composited 9-slice border divergences on dark backgrounds produce high contrast. The divergences amplify through compositing of multiple child widgets.
 
 **Root cause:** Aggregates of Group A divergences. testpanel_expanded renders 4 TkTestPanels containing all widget types; composition_tktest_1x/2x render all widget types in a raster grid; widget_file_selection_box contains child text fields + buttons; composed_border_nest contains Button + TextField children.
 
@@ -351,11 +356,11 @@ All 37 failing tests are accounted for, each in exactly one group:
 
 | Priority | Group(s) | Tests | Effort | Notes |
 |----------|----------|-------|--------|-------|
-| 1 | A + B | 20 | Medium | ~~Wire `GetHowTo()`~~ (DONE). Remaining: fix `PaintTextBoxed` glyph rendering |
+| 1 | A + B + D | 21 | Medium | ~~Wire `GetHowTo()`~~ (DONE). ~~`PaintTextBoxed`~~ (MISDIAGNOSED). Actual: fix 9-slice section boundary rounding in `PaintBorderImage`/`PaintImage` |
 | 2 | G2 | 6 | Medium | Match C++ in-place `dx/dy` accumulation in polygon rasterizer |
 | 3 | C | 2 | Medium | Per-function investigation of PaintEllipse/PaintImageColored |
 | 4 | G3 | 2 | Low | Port C++ compile-time Hermite factor table literally |
-| 5 | D | 1 | Low | Investigate splitter grip 9-slice boundary |
+| 5 | D | 1 | Low | Same root cause as A+B — splitter grip 9-slice boundary (merged into priority 1) |
 | 6 | G4 | 1 | Low | Fix bridge construction in PaintRoundRectOutline |
 | 7 | G5 | 1 | Low | Switch to hash table lookup for source premul |
 | 8 | G6 | 1 | Low | May be fixed by G2 polygon rasterizer fix |
