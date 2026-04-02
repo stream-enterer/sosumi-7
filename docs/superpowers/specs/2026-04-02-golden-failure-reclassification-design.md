@@ -8,11 +8,11 @@ Reclassify all 37 remaining golden test failures into groups by root cause, inco
 
 The original catalog (2026-04-01) classified 42 failures into 9 groups. Since then:
 - **5 tests fixed** by the area sampling inner loop literal port (commit on main)
-- **G1 hypothesis disproven:** The remaining 18 former-G1 tests do NOT fail due to area sampling carry-over or 9-slice transform parameters. The 9-slice investigation found three actual root causes:
+- **G1 hypothesis disproven:** The remaining 23 former-G1 tests do NOT fail due to area sampling carry-over or 9-slice transform parameters. The 9-slice investigation found three actual root causes:
   1. Missing HowTo pill text (~12 tests) — widgets never set `how_to_text` on their border
   2. Text rendering divergence — `PaintTextBoxed` produces different pixels from C++
   3. Large-divergence unknowns (~11 tests, max_diff 33-255) — systematic rendering differences, root cause unknown
-- **G2-G9 unchanged:** 19 tests with original hypotheses still applicable
+- **G2-G9 unchanged:** 14 tests with original hypotheses still applicable (G3 lost 4 tests, G4 lost 1 test to the area sampling fix)
 - **pixel_scale passthrough** and **paint_image_full tdx_init fix** merged — correctness improvements, no test impact
 
 ## Scope
@@ -23,9 +23,9 @@ Classification only — no code changes. Output is an updated catalog document.
 
 The original catalog's methodology (diff images + code path tracing) is still correct. What's new:
 
-1. **Former G1 tests need splitting** into sub-groups based on the three root causes identified by the 9-slice investigation
+1. **23 former G1 tests need splitting** into sub-groups based on the three root causes identified by the 9-slice investigation
 2. **The "large-divergence unknown" sub-group needs investigation** — the 9-slice agent found these tests have pixels ~80-100 channels lighter than expected but couldn't identify the root cause
-3. **G2-G9 hypotheses should be re-validated** — confirm they still hold with the current codebase (area sampling and tdx_init changes could theoretically affect some paths)
+3. **14 G2-G9 tests should be re-validated** — confirm hypotheses still hold with the current codebase (area sampling and tdx_init changes could theoretically affect some paths)
 
 ## Classification Methodology
 
