@@ -5471,16 +5471,20 @@ impl<'a> emPainter<'a> {
                     255
                 };
                 // factor is 0–255: 0=center (inner), 255=edge (outer).
-                // C++ gradient pipeline uses hash formula, not GetBlended.
-                let g = factor as i32;
-                let mix = |a: i32, b: i32| -> u8 {
-                    (((a * (255 - g) + b * g) * 257 + 0x8073) >> 16) as u8
+                // C++ PaintScanlineInt G1G2: hash(Color1, 255-g) + hash(Color2, g)
+                // per channel. Must use TWO separate hash lookups to match C++
+                // rounding (floor(a*k) + floor(b*k) ≠ floor((a+b)*k)).
+                let g = factor;
+                let inv_g = 255 - g;
+                let mix = |a: u8, b: u8| -> u8 {
+                    (blend_hash_lookup(a, inv_g) as u16
+                        + blend_hash_lookup(b, g) as u16) as u8
                 };
                 emColor::rgba(
-                    mix(color_inner.GetRed() as i32, color_outer.GetRed() as i32),
-                    mix(color_inner.GetGreen() as i32, color_outer.GetGreen() as i32),
-                    mix(color_inner.GetBlue() as i32, color_outer.GetBlue() as i32),
-                    mix(color_inner.GetAlpha() as i32, color_outer.GetAlpha() as i32),
+                    mix(color_inner.GetRed(), color_outer.GetRed()),
+                    mix(color_inner.GetGreen(), color_outer.GetGreen()),
+                    mix(color_inner.GetBlue(), color_outer.GetBlue()),
+                    mix(color_inner.GetAlpha(), color_outer.GetAlpha()),
                 )
             }
             PixelTexture::emImage {
