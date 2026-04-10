@@ -1,11 +1,7 @@
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use emcore::emImage::emImage;
 use emcore::emPainterDrawList::DrawOp;
-
-static SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Returns true if DUMP_DRAW_OPS=1 is set in the environment.
 pub fn dump_draw_ops_enabled() -> bool {
@@ -42,14 +38,13 @@ pub fn dump_draw_ops(name: &str, ops: &[DrawOp]) {
         .open(&path)
         .expect("open rust_ops.jsonl");
 
-    for op in ops {
-        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    for (seq, op) in ops.iter().enumerate() {
         let line = serialize_op(seq, op);
         writeln!(f, "{line}").expect("write line");
     }
 }
 
-fn serialize_op(seq: u64, op: &DrawOp) -> String {
+fn serialize_op(seq: usize, op: &DrawOp) -> String {
     match op {
         DrawOp::PushState => {
             format!(r#"{{"seq":{seq},"op":"PushState"}}"#)

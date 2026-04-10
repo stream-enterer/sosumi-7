@@ -308,7 +308,7 @@ impl<'a> emPainter<'a> {
     /// State management (push/pop, offset, clip) is tracked locally so
     /// that getters like `clip_is_empty()` and `canvas_color()` return
     /// correct values during the recording phase.
-    pub(crate) fn new_recording(width: u32, height: u32, ops: &'a mut Vec<DrawOp>) -> Self {
+    pub fn new_recording(width: u32, height: u32, ops: &'a mut Vec<DrawOp>) -> Self {
         Self {
             target: PaintTarget::DrawList(ops),
             target_width: width,
