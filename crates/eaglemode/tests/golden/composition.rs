@@ -20,7 +20,10 @@ use emcore::emPanelTree::{PanelId, PanelTree, ViewConditionType};
 use emcore::emBorder::{emBorder, InnerBorderType, OuterBorderType};
 use emcore::emPainter::emPainter;
 use emcore::emView::{emView, ViewFlags};
+use emcore::emPainterDrawList::DrawOp;
 use emcore::emViewRenderer::SoftwareCompositor;
+
+use super::draw_op_dump::{dump_draw_ops, dump_draw_ops_enabled};
 
 use emcore::emButton::emButton;
 
@@ -812,13 +815,19 @@ fn composition_tktest_1x() {
     // C++ gen_golden.cpp: TerminateEngine ctrl(sched, 200)
     settle(&mut tree, &mut view, 200);
 
+    if dump_draw_ops_enabled() {
+        let mut ops: Vec<DrawOp> = Vec::new();
+        {
+            let mut rec = emPainter::new_recording(w, h, &mut ops);
+            view.Paint(&mut tree, &mut rec);
+        }
+        dump_draw_ops("tktest_1x", &ops);
+    }
+
     let mut compositor = SoftwareCompositor::new(w, h);
     compositor.render(&mut tree, &view);
     let actual = compositor.framebuffer().GetMap();
 
-    // After fixing captions, removing grid indirection, and using real emTunnel,
-    // remaining ~11% (at tol=0) is from widget-level rendering differences
-    // (border image interpolation, text positioning, scalar field arrows).
     let result = compare_images("tktest_1x", actual, expected_data, w, h, 0, 0.0);
     if result.is_err() && dump_golden_enabled() {
         dump_test_images("tktest_1x", actual, expected_data, w, h);
@@ -858,6 +867,15 @@ fn composition_tktest_2x() {
     view.Zoom(2.0, 400.0, 300.0);
     // C++ gen_golden.cpp: TerminateEngine ctrl(sched, 10)
     settle(&mut tree, &mut view, 10);
+
+    if dump_draw_ops_enabled() {
+        let mut ops: Vec<DrawOp> = Vec::new();
+        {
+            let mut rec = emPainter::new_recording(w, h, &mut ops);
+            view.Paint(&mut tree, &mut rec);
+        }
+        dump_draw_ops("tktest_2x", &ops);
+    }
 
     let mut compositor = SoftwareCompositor::new(w, h);
     compositor.render(&mut tree, &view);
