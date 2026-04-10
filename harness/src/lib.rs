@@ -930,3 +930,65 @@ pub unsafe extern "C" fn rust_paint_round_rect(
     0
 }
 
+// ── Layer 17: PaintPolyline (solid polyline with stroke) ───────
+
+use emcore::emStroke::{emStroke, LineJoin, LineCap};
+
+/// Paint a solid polyline using the full Rust pipeline.
+///
+/// `canvas`: RGBA framebuffer (canvas_w * canvas_h * 4 bytes).
+/// `vertices`: flat array of x,y pairs (n_vertices * 2 doubles).
+/// `stroke_color`: packed RGBA u32.
+/// `rounded`: whether stroke is rounded (join+cap).
+/// `canvas_color`: packed RGBA u32 (0 = transparent/source-over).
+///
+/// # Safety
+/// `canvas` must point to `canvas_w * canvas_h * 4` read/write bytes.
+/// `vertices` must point to `n_vertices * 2` doubles.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn rust_paint_polyline(
+    canvas: *mut u8,
+    canvas_w: i32,
+    canvas_h: i32,
+    scale_x: f64,
+    scale_y: f64,
+    offset_x: f64,
+    offset_y: f64,
+    vertices: *const f64,
+    n_vertices: i32,
+    thickness: f64,
+    stroke_color: u32,
+    rounded: i32,
+    canvas_color: u32,
+) -> i32 {
+    let fb_size = (canvas_w * canvas_h * 4) as usize;
+    let fb_slice = std::slice::from_raw_parts(canvas, fb_size);
+    let mut target = emImage::new(canvas_w as u32, canvas_h as u32, 4);
+    target.GetWritableMap()[..fb_size].copy_from_slice(fb_slice);
+
+    let mut painter = emPainter::new(&mut target);
+    painter.SetOrigin(offset_x, offset_y);
+    painter.SetScaling(scale_x, scale_y);
+
+    let n = n_vertices as usize;
+    let xy_slice = std::slice::from_raw_parts(vertices, n * 2);
+    let verts: Vec<(f64, f64)> = (0..n).map(|i| (xy_slice[i * 2], xy_slice[i * 2 + 1])).collect();
+
+    let cc = emColor::from_packed(canvas_color);
+    let sc = emColor::from_packed(stroke_color);
+    let mut stroke = emStroke::new(sc, thickness);
+    if rounded != 0 {
+        stroke.join = LineJoin::Round;
+        stroke.cap = LineCap::Round;
+    }
+
+    painter.PaintSolidPolyline(&verts, &stroke, false, cc);
+
+    let result = target.GetMap();
+    let out_slice = std::slice::from_raw_parts_mut(canvas, fb_size);
+    out_slice.copy_from_slice(&result[..fb_size]);
+
+    0
+}
+

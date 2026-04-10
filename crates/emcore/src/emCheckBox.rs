@@ -7,7 +7,7 @@ use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emPanel::PanelState;
 use crate::emPainter::{emPainter, BORDER_EDGES_ONLY};
-use crate::emStroke::{LineCap, LineJoin, emStroke};
+use crate::emStroke::{LineJoin, emStroke, emStrokeEnd, StrokeEndType};
 
 use super::emBorder::{emBorder, OuterBorderType};
 use crate::emLook::emLook;
@@ -162,7 +162,8 @@ impl emCheckBox {
             ];
             let mut stroke = emStroke::new(check_color, fw * 0.16);
             stroke.join = LineJoin::Round;
-            stroke.cap = LineCap::Round;
+            stroke.start_end = emStrokeEnd::new(StrokeEndType::Cap);
+            stroke.finish_end = emStrokeEnd::new(StrokeEndType::Cap);
             painter.PaintSolidPolyline(&verts, &stroke, false, face_color);
         }
 
