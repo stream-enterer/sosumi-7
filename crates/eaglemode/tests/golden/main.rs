@@ -1,4 +1,5 @@
 mod animator;
+mod draw_op_dump;
 mod common;
 mod composition;
 mod control_panel;

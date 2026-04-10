@@ -11,7 +11,7 @@ use super::emTexture::{ImageExtension, ImageQuality, emTexture};
 /// draw operations into a `DrawList`. During the replay phase, multiple
 /// threads independently replay the list into their own tile buffers.
 #[derive(Debug)]
-pub(crate) enum DrawOp {
+pub enum DrawOp {
     // State management
     PushState,
     PopState,
