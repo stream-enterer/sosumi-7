@@ -41,7 +41,10 @@ use emcore::emStrokeEnd::{emStrokeEnd, StrokeEndType};
 use emcore::emTexture::{emTexture, ImageExtension, ImageQuality};
 
 use emcore::emBorder::{emBorder, InnerBorderType, OuterBorderType};
+use emcore::emPainterDrawList::DrawOp;
 use emcore::emViewRenderer::SoftwareCompositor;
+
+use super::draw_op_dump::{dump_draw_ops, dump_draw_ops_enabled};
 
 use emcore::emButton::emButton;
 
@@ -2077,6 +2080,16 @@ fn render_testpanel(
     let (w, h, ref expected_data) = *expected;
 
     settle(tree, view, settle_rounds);
+
+    // Record DrawOps for parameter diff diagnosis when DUMP_DRAW_OPS=1.
+    if dump_draw_ops_enabled() {
+        let mut ops: Vec<DrawOp> = Vec::new();
+        {
+            let mut rec = emPainter::new_recording(w, h, &mut ops);
+            view.Paint(tree, &mut rec);
+        }
+        dump_draw_ops(name, &ops);
+    }
 
     let mut compositor = SoftwareCompositor::new(w, h);
     compositor.render(tree, view);
