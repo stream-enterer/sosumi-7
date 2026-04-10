@@ -446,23 +446,29 @@ impl emVirtualCosmosItemPanel {
 }
 
 impl PanelBehavior for emVirtualCosmosItemPanel {
+    // DIVERGED: C++ Paint(const emPainter&, emColor canvasColor)
+    // Rust PanelBehavior::Paint doesn't receive canvasColor; use painter.GetCanvasColor().
+    // C++ uses PaintPolygon (hollow border frame) + PaintBorderImage (decorations)
+    // + PaintTextBoxed. This simplified version uses PaintRect strips to match
+    // the golden test generator's approach.
     fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
         let Some(rec) = &self.item_rec else {
             return;
         };
 
         let (l, t, r, b) = self.CalcBorders();
+        let canvas_color = painter.GetCanvasColor();
 
         // Draw border region (all four sides) using the border color.
         let border_color = rec.BorderColor;
         // Top strip
-        painter.PaintRect(0.0, 0.0, w, t * h, border_color, border_color);
+        painter.PaintRect(0.0, 0.0, w, t * h, border_color, canvas_color);
         // Bottom strip
-        painter.PaintRect(0.0, (1.0 - b) * h, w, b * h, border_color, border_color);
+        painter.PaintRect(0.0, (1.0 - b) * h, w, b * h, border_color, canvas_color);
         // Left strip (between top and bottom)
-        painter.PaintRect(0.0, t * h, l * w, (1.0 - t - b) * h, border_color, border_color);
+        painter.PaintRect(0.0, t * h, l * w, (1.0 - t - b) * h, border_color, canvas_color);
         // Right strip
-        painter.PaintRect((1.0 - r) * w, t * h, r * w, (1.0 - t - b) * h, border_color, border_color);
+        painter.PaintRect((1.0 - r) * w, t * h, r * w, (1.0 - t - b) * h, border_color, canvas_color);
 
         // Draw background inside content area.
         let bg_color = rec.BackgroundColor;
@@ -472,7 +478,7 @@ impl PanelBehavior for emVirtualCosmosItemPanel {
             (1.0 - l - r) * w,
             (1.0 - t - b) * h,
             bg_color,
-            bg_color,
+            canvas_color,
         );
 
         // Draw title text at top of border area.
@@ -487,7 +493,7 @@ impl PanelBehavior for emVirtualCosmosItemPanel {
                     font_size,
                     1.0,
                     title_color,
-                    title_color,
+                    canvas_color,
                 );
             }
         }
