@@ -1606,7 +1606,7 @@ const HOWTO_SINGLE_SELECTION: &str = concat!(
     "  Space                        - Select the focused item.\n\n",
     "  Enter                        - Trigger the focused item (application-defined\n",
     "                                 function).\n\n",
-    "  Any normal key               - To find and focus an item, you can simply\n",
+    "  Any normal key               - To find, focus and select an item, you can simply\n",
     "                                 enter the first characters of its caption.\n",
 );
 
