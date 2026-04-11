@@ -175,10 +175,17 @@ def track_state(ops):
             state["scale_x"] = op.get("sx", 1.0)
             state["scale_y"] = op.get("sy", 1.0)
         elif kind == "ClipRect":
-            state["clip_x"] = op.get("x")
-            state["clip_y"] = op.get("y")
-            state["clip_w"] = op.get("w")
-            state["clip_h"] = op.get("h")
+            # ClipRect values are in user-space; transform to pixel-space
+            # using current offset/scale so they're comparable with C++ inline
+            # state (which is already in pixel-space).
+            ux, uy = op.get("x", 0), op.get("y", 0)
+            uw, uh = op.get("w", 0), op.get("h", 0)
+            sx, sy = state["scale_x"], state["scale_y"]
+            ox, oy = state["offset_x"], state["offset_y"]
+            state["clip_x"] = ux * sx + ox
+            state["clip_y"] = uy * sy + oy
+            state["clip_w"] = uw * sx
+            state["clip_h"] = uh * sy
         elif kind == "SetCanvasColor":
             state["canvas_color"] = op.get("color", "00000000")
         elif kind not in STATE_OPS:
@@ -197,7 +204,13 @@ def track_state(ops):
                 }
                 paint_ops.append((op, snap))
             else:
-                paint_ops.append((op, dict(state)))
+                snap = dict(state)
+                # Use per-call canvas_color from paint op (both C++ and Rust
+                # have it) instead of accumulated SetCanvasColor state, since
+                # widget code can pass explicit canvas_color to individual calls.
+                if "canvas_color" in op:
+                    snap["canvas_color"] = op["canvas_color"]
+                paint_ops.append((op, snap))
     return paint_ops
 
 
