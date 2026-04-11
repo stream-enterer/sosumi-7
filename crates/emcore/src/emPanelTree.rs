@@ -1139,7 +1139,7 @@ impl PanelTree {
                 if let Some(mut behavior) = self.take_behavior(id) {
                     let state = self.build_panel_state(id, window_focused, pixel_tallness);
                     behavior.notice(flags, &state);
-                    if flags.contains(NoticeFlags::LAYOUT_CHANGED) && self.GetFirstChild(id).is_some()
+                    if flags.intersects(NoticeFlags::LAYOUT_CHANGED | NoticeFlags::CHILDREN_CHANGED) && self.GetFirstChild(id).is_some()
                     {
                         let mut ctx = PanelCtx::new(self, id);
                         behavior.LayoutChildren(&mut ctx);
