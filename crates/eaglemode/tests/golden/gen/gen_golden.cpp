@@ -682,13 +682,24 @@ static void dump_layout(const char* name, emPanel* layout) {
 }
 
 // Recursive panel tree dump — writes one JSONL line per panel.
+// Escape backslashes in identity for valid JSON (emCore uses \: as separator escape).
+static emString json_escape_identity(const emString& id) {
+    emString out;
+    for (int i = 0; i < id.GetLen(); i++) {
+        if (id[i] == '\\') out += "\\\\";
+        else out += id[i];
+    }
+    return out;
+}
+
 static void dump_panel_tree_recursive(FILE* f, emPanel* panel, int depth) {
+    emString escaped = json_escape_identity(panel->GetIdentity());
     fprintf(f,
         "{\"path\":\"%s\",\"depth\":%d,"
         "\"lx\":%.17g,\"ly\":%.17g,\"lw\":%.17g,\"lh\":%.17g,"
         "\"children\":%d,\"ae_expanded\":%d,\"viewed\":%d,"
         "\"ae_thresh\":%.17g}\n",
-        panel->GetIdentity().Get(),
+        escaped.Get(),
         depth,
         panel->GetLayoutX(), panel->GetLayoutY(),
         panel->GetLayoutWidth(), panel->GetLayoutHeight(),

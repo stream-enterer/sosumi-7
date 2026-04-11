@@ -94,7 +94,7 @@ fn dump_panel_recursive(
     depth: usize,
     out: &mut Vec<String>,
 ) {
-    let path = tree.GetIdentity(id);
+    let path = tree.GetIdentity(id).replace('\\', "\\\\");
     let lr = tree.layout_rect(id).unwrap();
     let child_count = tree.child_count(id);
     let ae_expanded = tree.IsAutoExpanded(id);
