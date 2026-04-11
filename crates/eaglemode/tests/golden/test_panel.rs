@@ -267,6 +267,16 @@ impl PanelBehavior for ColorFieldPanel {
     fn IsOpaque(&self) -> bool {
         true
     }
+    fn auto_expand(&self) -> bool {
+        true
+    }
+    fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        if ctx.children().is_empty() {
+            self.widget.create_expansion_children(ctx);
+        }
+        let rect = ctx.layout_rect();
+        self.widget.LayoutChildren(ctx, rect.w, rect.h);
+    }
 }
 
 struct ListBoxPanel {
@@ -282,6 +292,16 @@ impl PanelBehavior for ListBoxPanel {
     }
     fn IsOpaque(&self) -> bool {
         true
+    }
+    fn auto_expand(&self) -> bool {
+        true
+    }
+    fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        if ctx.children().is_empty() {
+            self.widget.create_item_children(ctx);
+        }
+        let rect = ctx.layout_rect();
+        self.widget.layout_item_children(ctx, rect.w, rect.h);
     }
 }
 
@@ -1323,6 +1343,8 @@ impl TkTestPanel {
             let id = ctx.tree.create_child(gid, "cf1");
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf1 }));
+            ctx.tree
+                .SetAutoExpansionThreshold(id, 9.0, ViewConditionType::MinExt);
 
             let mut cf2 = emColorField::new(look.clone());
             cf2.SetCaption("Editable");
@@ -1331,6 +1353,8 @@ impl TkTestPanel {
             let id = ctx.tree.create_child(gid, "cf2");
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf2 }));
+            ctx.tree
+                .SetAutoExpansionThreshold(id, 9.0, ViewConditionType::MinExt);
 
             let mut cf3 = emColorField::new(look.clone());
             cf3.SetCaption("Editable, Alpha Enabled");
@@ -1340,6 +1364,8 @@ impl TkTestPanel {
             let id = ctx.tree.create_child(gid, "cf3");
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf3 }));
+            ctx.tree
+                .SetAutoExpansionThreshold(id, 9.0, ViewConditionType::MinExt);
         }
 
         // 7. Tunnels (C++ emTestPanel.cpp:662-680)
