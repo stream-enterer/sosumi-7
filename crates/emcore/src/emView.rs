@@ -2434,19 +2434,20 @@ impl emView {
         };
 
         painter.push_state();
-        // Set absolute offset (not cumulative) — viewed coords are in
-        // absolute viewport pixels, so each panel computes its offset
-        // from the base (tile) offset independently.
+        // Reset scale to 1.0 before SetClipping — inherited parent scale
+        // would corrupt the user-space → pixel conversion for clip coords.
+        // SetTransformation below sets the real scale for painting.
+        painter.SetScaling(1.0, 1.0);
         painter.set_offset(base_offset.0 + vx, base_offset.1 + vy);
         painter.SetClipping(clip_x - vx, clip_y - vy, clip_w, clip_h);
         // Match C++ emView::Paint: set painter transformation so widgets
         // operate in panel-local coordinates (width=1.0, height=tallness).
-        painter.SetTransformation(
-            base_offset.0 + vx,
-            base_offset.1 + vy,
-            vw,
-            vw / self.pixel_tallness,
-        );
+        // C++ uses ViewedWidth/CurrentPixelTallness for sy.  CurrentPixelTallness
+        // is the physical pixel aspect ratio (1.0 for square pixels), NOT the
+        // viewport tallness.  Rust pixel_tallness = viewport_h/viewport_w, which
+        // is the viewport aspect ratio — a different quantity.  For square pixels
+        // both sx and sy equal vw.
+        painter.SetTransformation(base_offset.0 + vx, base_offset.1 + vy, vw, vw);
 
         // Skip this panel and its entire subtree if it doesn't intersect
         // the current tile's clip region.
