@@ -1047,6 +1047,19 @@ impl PanelTree {
         result
     }
 
+    /// Check if a panel's behavior reports as opaque.
+    /// Corresponds to C++ `emPanel::IsOpaque()`.
+    pub fn IsOpaque(&mut self, id: PanelId) -> bool {
+        match self.take_behavior(id) {
+            Some(behavior) => {
+                let opaque = behavior.IsOpaque();
+                self.put_behavior(id, behavior);
+                opaque
+            }
+            None => false,
+        }
+    }
+
     /// Register `id` for per-frame cycling. Idempotent.
     ///
     /// Corresponds to the C++ `emEngine::WakeUp` call from within a panel's
