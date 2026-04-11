@@ -802,10 +802,10 @@ How to move or set the focus:\n\
 * Click with the left or right mouse button on a panel to give it the focus.\n\
 \n\
 * Press Tab or Shift+Tab to move the focus to the next or previous sister\n\
-  panel.\n\
+\x20\x20panel.\n\
 \n\
 * Press the cursor keys to move the focus to a sister panel in the desired\n\
-  direction.\n\
+\x20\x20direction.\n\
 \n\
 * Press Page-Up or -Down to move the focus to a child or parent panel.\n";
 
