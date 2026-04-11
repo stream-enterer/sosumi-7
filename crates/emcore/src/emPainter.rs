@@ -681,7 +681,7 @@ impl<'a> emPainter<'a> {
         if rx <= 0.0 || ry <= 0.0 {
             return;
         }
-        let Some(proof) = self.try_record(DrawOp::PaintEllipse {
+        let Some(_proof) = self.try_record(DrawOp::PaintEllipse {
             cx,
             cy,
             rx,
@@ -689,11 +689,8 @@ impl<'a> emPainter<'a> {
             color,
             canvas_color,
         }) else { return; };
-        let saved_canvas = self.state.canvas_color;
-        self.state.canvas_color = canvas_color;
         let verts = self.ellipse_polygon(cx, cy, rx, ry);
-        self.fill_polygon_aa(proof, &verts, color, WindingRule::NonZero);
-        self.state.canvas_color = saved_canvas;
+        self.PaintPolygon(&verts, color, canvas_color);
     }
 
     /// Fill an ellipse sector (pie slice) defined by center, radii, and angle range.
