@@ -112,8 +112,10 @@ impl emStarFieldPanel {
                 let r = MIN_STAR_RADIUS / MIN_PANEL_SIZE * get_random_range(&mut random_seed, 0.5, 1.0);
                 let x = get_random_range(&mut random_seed, r, 1.0 - r);
                 let y = get_random_range(&mut random_seed, r, 1.0 - r);
-                let h = get_random_range(&mut random_seed, 0.0, 360.0);
+                // C++ SetHSVA(GetRandom(0,360), GetRandom(0,15), 100) — GCC evaluates
+                // args right-to-left, so sat PRNG call executes before hue.
                 let s = get_random_range(&mut random_seed, 0.0, 15.0);
+                let h = get_random_range(&mut random_seed, 0.0, 360.0);
                 stars.push(Star {
                     X: x,
                     Y: y,
