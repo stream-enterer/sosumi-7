@@ -1,1078 +1,484 @@
 [
   {
-    "cluster": ["t-01", "t-02"],
-    "cluster_rationale": "Both tensions involve a1-01 (input identity verification). t-01 concerns the oracle design lacking input provenance; t-02 deepens this by showing even verified inputs are identity with a bespoke generator, not production behavior.",
+    "tension_id": "t-01",
+    "tensions_included": ["t-01", "t-02", "t-11", "t-12"],
+    "cluster_rationale": "All four tensions concern the value proposition of intermediate comparison harnesses vs. existing methodology. t-01 is about cost estimates (a1-07 vs a2-09), t-02 about epistemic value (a1-08 vs a2-13), t-11 about testing philosophy (a1-17 vs a2-14), and t-12 about instrumentation reliability (a1-13 vs a2-21). These form a coherent question: should intermediate harnesses be built?",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-01": {"robustness": -0.15, "compatibility": -0.10},
-          "a2-18": {"robustness": -0.10, "specificity": -0.05},
-          "a3-01": {"compatibility": -0.05}
+          "a1-07": {"evidential_grounding": -0.15, "actionability": -0.15},
+          "a1-08": {"actionability": -0.10, "parity_convergence": -0.10},
+          "a1-17": {"evidential_grounding": -0.10, "parity_convergence": -0.10},
+          "a1-13": {"failure_resistance": -0.10},
+          "a2-09": {"evidential_grounding": -0.20, "failure_resistance": -0.15},
+          "a2-13": {"failure_resistance": -0.15},
+          "a2-14": {"evidential_grounding": -0.15, "failure_resistance": -0.15},
+          "a2-21": {"evidential_grounding": -0.25, "actionability": -0.10}
         },
-        "reasoning": "a1-01's demand for input identity verification is undermined on two fronts. First, a2-18's oracle design contains no input provenance metadata, so the verification a1-01 demands has no substrate to operate on (t-01). Second, and more damaging, a3-01 reveals that even perfect input identity verification only proves equivalence with a bespoke test generator using StubClipboard/StubScreen, not with production Eagle Mode (t-02). This second point strikes at a1-01's implicit assumption that verifying input identity is sufficient -- even verified inputs are identity with the wrong system. a2-18 should also lose robustness because its description of binary snapshots omits the input provenance question entirely, a significant design gap. a3-01 loses slight compatibility because its critique, while valid, is somewhat at odds with the pragmatic reality that testing against the generator's libemCore calls is still useful for the specific subsystems under test."
+        "reasoning": "Starting with the pro-harness side: a1-07's 4-8 hour estimate is speculative with no prototype evidence. C++ instrumentation of template-heavy code with virtual dispatch is routinely underestimated by 2-3x. The break-even argument depends entirely on this estimate. Downgrade evidential_grounding because the number is fabricated, and actionability because acting on a wrong estimate leads to over-commitment. a1-08's claim that stage verification 'eliminates' the classification problem is theoretically sound but practically vacuous -- it motivates infrastructure without specifying how, so actionability and parity_convergence should drop. a1-17 overstates its case by calling conflated testing 'the root cause' of fog when code complexity and architectural divergence also contribute. a1-13's printf instrumentation assumption is vulnerable to the complexity of C++ template expansion. Now the anti-harness side: a2-09 is the weakest proposition in the entire set -- a counterfactual cost claim with zero evidence that dismisses tooling based on an assertion. It deserves a steep evidential_grounding cut. a2-13 conflates verification (pixel comparison is sufficient) with diagnosis (intermediate comparison accelerates finding fixes) -- these serve different purposes and the proposition's failure_resistance drops because it cannot withstand this distinction. a2-14 is directly contradicted by the G5 divergence: the Blinn formula rule exists in CLAUDE.md yet was violated, proving rules without enforcement are insufficient. a2-21's register allocation concern applies to x87 FPU but is largely irrelevant on modern x86-64 with SSE; the proposition significantly overstates a technical risk to support the anti-harness position."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-01": {"robustness": 0.10, "compatibility": 0.05},
-          "a2-18": {"robustness": 0.05},
-          "a3-01": {"compatibility": 0.05}
+          "a1-07": {"evidential_grounding": 0.05, "actionability": 0.10},
+          "a1-08": {"actionability": 0.05},
+          "a1-17": {"evidential_grounding": 0.05},
+          "a1-13": {"failure_resistance": 0.05},
+          "a2-09": {"evidential_grounding": 0.10, "failure_resistance": 0.05},
+          "a2-13": {"failure_resistance": 0.10},
+          "a2-14": {"evidential_grounding": 0.10, "failure_resistance": 0.05},
+          "a2-21": {"evidential_grounding": 0.10}
         },
-        "reasoning": "The prosecution overstates the damage to a1-01. Input identity verification remains valuable even within the bespoke generator context -- verifying that C++ and Rust receive the same parameters (viewport size, color values, blend modes) prevents a real class of bugs where test inputs silently drift between the two codebases. The prosecution conflates two distinct questions: (1) are inputs identical between C++ and Rust? and (2) are inputs representative of production? a1-01 addresses (1), which is independently valuable regardless of (2). a2-18's oracle design could incorporate input metadata without architectural changes -- this is an additive enhancement, not a fundamental flaw. a3-01's observation about StubClipboard/StubScreen is valid but overstated: the generator calls into the same emPainter/emView code paths that constitute the core rendering pipeline being ported, so the behavioral surface is relevant even if the initialization context differs."
+        "reasoning": "The prosecution was too aggressive on several points. a1-07's estimate, while speculative, is grounded in the fact that the C++ generator infrastructure (Makefile, gen_golden.cpp) already exists, lowering the cold-start cost. The instrumentation target (ScanlineTool::Init) is a single concrete function, not a diffuse set of templates -- the prosecution conflated the broader C++ codebase complexity with the specific instrumentation point. a1-08's theoretical property is genuinely useful as a decision framework even if not directly actionable. a2-09 deserves partial restoration because the core insight -- that a focused 330-line code comparison might be faster than building cross-language tooling -- is a legitimate pragmatic argument, even if it was stated as certainty rather than probability. a2-13's distinction between verification and diagnosis is real, but pixel comparison genuinely is the final arbiter (CLAUDE.md mandates tol=0), so intermediate comparison is useful for diagnosis but truly does not add 'stronger evidence' for correctness. a2-14 is partially right that the rules exist and encode the methodology; the G5 violation shows enforcement gaps but doesn't invalidate the rules themselves. a2-21 deserves restoration because while the x87 point is overstated, it correctly identifies that any C++ instrumentation carries observer-effect risk, which is not zero even with SSE."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-01": {"robustness": -0.05, "compatibility": -0.05},
-          "a2-18": {"robustness": -0.05},
-          "a3-01": {}
+          "a1-07": {"evidential_grounding": -0.10, "actionability": -0.10},
+          "a1-08": {"actionability": -0.05, "parity_convergence": -0.05},
+          "a1-17": {"evidential_grounding": -0.05, "parity_convergence": -0.05},
+          "a1-13": {"failure_resistance": -0.05},
+          "a2-09": {"evidential_grounding": -0.15, "failure_resistance": -0.10},
+          "a2-13": {"failure_resistance": -0.10},
+          "a2-14": {"evidential_grounding": -0.10, "failure_resistance": -0.10},
+          "a2-21": {"evidential_grounding": -0.15, "actionability": -0.05}
         },
-        "reasoning": "The defense successfully argues that input identity verification has independent value even within the bespoke generator context. However, a1-01's robustness takes a small hit because the proposition implicitly assumes input identity is sufficient for correctness, when t-02 shows it is necessary but not sufficient. a2-18 loses a small amount of robustness for omitting input provenance from its design -- this is a genuine gap, though addressable. a3-01 holds steady: the defense's point about shared libemCore code paths is valid, but so is the prosecution's observation about initialization context differences. These cancel out."
+        "reasoning": "The harness cost debate is unresolvable without a prototype, so both cost claims (a1-07 and a2-09) lose credibility -- but a2-09 loses more because it makes the stronger counterfactual claim ('would cost MORE and produce no fixes') with even less evidence than a1-07's speculative estimate. a1-07 at least has the generator infrastructure as a concrete starting point. On the epistemic question: a2-13 is right that pixel comparison is the final arbiter, but wrong to dismiss intermediate comparison as 'only debugging aid' -- the three failed Group A+B investigation rounds demonstrate that debugging aid IS the bottleneck. a2-13 loses failure_resistance because it cannot survive the observation that three rounds of pixel-only comparison failed to localize the bug. a2-14 loses on both axes because G5's existence is a direct counterexample to 'existing rules suffice.' a2-21 takes a steep evidential_grounding hit because the x87 register allocation argument is technically outdated for modern compilers targeting SSE, making it misleading rather than cautionary. a1-08 takes modest cuts because while theoretically sound, it does not itself advance any test. a1-17 takes modest cuts because 'root cause of fog' overstates what is one contributing factor among several."
       }
     ]
   },
   {
-    "cluster": ["t-04", "t-05", "t-03"],
-    "cluster_rationale": "All three tensions involve a1-02 (exhaustive output comparison). t-04 is a direct contradiction (alpha channel excluded), t-05 undermines via limited file coverage, t-03 questions whether 8 categories cover all channels.",
+    "tension_id": "t-03",
+    "tensions_included": ["t-03", "t-13", "t-14"],
+    "cluster_rationale": "All three tensions concern how to interpret the historical record of hypothesis-driven investigation: as valuable collateral discovery (a2-08, a2-17, a1-15) or as systematic diversion from the primary target (a3-03, a3-15). The same evidence is interpreted as feature vs. failure of the methodology.",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-02": {"robustness": -0.20, "compatibility": -0.15, "defensibility": -0.05},
-          "a3-03": {"compatibility": 0.05},
-          "a3-14": {"specificity": 0.05}
+          "a2-08": {"failure_resistance": -0.15, "parity_convergence": -0.15},
+          "a2-17": {"failure_resistance": -0.20, "parity_convergence": -0.15},
+          "a1-15": {"parity_convergence": -0.10},
+          "a1-09": {"actionability": -0.05},
+          "a3-03": {"actionability": -0.10},
+          "a3-15": {"evidential_grounding": -0.10}
         },
-        "reasoning": "a1-02's demand for exhaustive output comparison is severely undermined by the convergence of three findings. Most damaging is t-04 (severity 0.88): a3-03 shows the alpha channel is permanently excluded from comparison, which is a direct, documented violation of exhaustive comparison for every single image comparison in the suite. This is not a gap to be filled but a deliberate design decision with a documented rationale (different alpha semantics), meaning exhaustiveness is knowingly violated. t-05 (severity 0.78) compounds this: even the channels that are compared only cover ~15% of source files, meaning exhaustive comparison applies to a small fraction of the codebase. Together, these reduce a1-02 from a meaningful requirement to an aspirational goal that is violated both by specific channel exclusion and by massive coverage gaps. a1-02's defensibility also takes a minor hit because the requirement assumes it is possible to capture all C++ output channels, which a3-03 shows is not always semantically meaningful (when representations differ). t-03 (severity 0.60) adds a softer concern: the 8 categories in a2-17 may not fully enumerate all output channels, though this is speculative."
+        "reasoning": "The 'collateral value' narrative (a2-08, a2-17) is a post-hoc rationalization that fails the failure_resistance test. Three rounds targeted Group A+B and fixed zero Group A+B tests. Framing this as 'collateral value' is equivalent to a salesperson counting missed-target bonuses as successful client engagement. a2-17 deserves a steeper failure_resistance cut because it elevates serendipity to methodology: 'every fix was discovered via hypothesis investigation' is trivially true when all work IS hypothesis investigation. It would be equally true under any methodology. The parity_convergence drops are justified because the 5 collateral fixes represent 2.1% of 241 tests over multiple rounds, while the primary target (21 tests = 8.7%) remains unfixed. This is poor ROI by any measure. a1-15 gets a smaller parity_convergence cut because it honestly acknowledges the collateral nature. On the other side: a1-09 is a retrospective observation that does not prescribe action, limiting its value. a3-03's 'systematic diversion pattern' is descriptive but does not explain how to avoid diversion in practice. a3-15's 'reinforcement learning bias' framing is metaphorical and unverified for LLM agents."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-02": {"robustness": 0.10, "compatibility": 0.05},
-          "a3-03": {"compatibility": -0.05}
+          "a2-08": {"failure_resistance": 0.05, "parity_convergence": 0.10},
+          "a2-17": {"failure_resistance": 0.10, "parity_convergence": 0.05},
+          "a1-15": {"parity_convergence": 0.05},
+          "a3-03": {"actionability": 0.05},
+          "a3-15": {"evidential_grounding": 0.05}
         },
-        "reasoning": "The prosecution treats the alpha exclusion as fatal to a1-02, but this is one channel with a documented, deliberate semantic divergence. a1-02's value lies in establishing the principle that output channels should not be silently omitted -- the alpha exclusion is precisely the kind of case that should be documented per a1-19. The existence of a documented exception does not invalidate the rule; it proves the rule is being applied (with justified deviations). On coverage (t-05), a1-02's scope is about output channels per test, not about which files are tested -- those are separate requirements. For the files that are tested, a1-02 correctly demands all their output channels be compared. a3-03's compatibility should decrease slightly because it treats a deliberate design decision (standard alpha semantics) as a blind spot when it is actually a DIVERGED: case."
+        "reasoning": "The prosecution's sales analogy is unfair. Correct hypothesis elimination IS progress in scientific investigation. The three disproven hypotheses for Group A+B narrowed the search space from 'anywhere in the rendering pipeline' to 'section boundary computation or Init ordering.' This is not rationalization; it is standard scientific method. a2-08's parity_convergence should be partially restored because 5 real test fixes is 5 real test fixes -- dismissing concrete progress as 'poor ROI' ignores that the alternative (doing nothing) yields zero. a2-17 deserves partial failure_resistance restoration because the observation that all fixes came from investigation (not from building tooling) is a legitimate data point about what has actually worked in this project, even if one wishes a different methodology had been tried. a3-15's reinforcement learning framing, while metaphorical, captures a real phenomenon: agents do demonstrably pursue lines of investigation where they previously found success."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-02": {"robustness": -0.10, "compatibility": -0.10, "defensibility": -0.03},
-          "a3-03": {},
-          "a3-14": {"specificity": 0.03}
+          "a2-08": {"failure_resistance": -0.10, "parity_convergence": -0.10},
+          "a2-17": {"failure_resistance": -0.15, "parity_convergence": -0.10},
+          "a1-15": {"parity_convergence": -0.05},
+          "a1-09": {"actionability": -0.05},
+          "a3-03": {"actionability": -0.05},
+          "a3-15": {"evidential_grounding": -0.05}
         },
-        "reasoning": "The defense makes a valid distinction: a1-02 is about channels per test, not file coverage. However, the alpha exclusion (t-04) is still a significant violation of the exhaustiveness principle, even if documented. The documentation does not restore the missing detection power -- divergence in alpha-dependent behavior remains structurally undetectable. The defense's argument that documented exceptions prove the rule is philosophically sound but does not restore robustness: the requirement is robustly violated. The coverage gap (t-05) is partially the wrong scope for a1-02 but does reduce the practical impact of the requirement, so compatibility drops. a3-14 gains a small specificity boost for providing concrete numbers that contextualize the gap."
+        "reasoning": "The defense is right that hypothesis elimination is standard science and the collateral fixes are real. But the prosecution's core point stands: three rounds targeting 21 tests with zero direct fixes is a signal that cannot be dismissed as normal scientific progress. Normal science adjusts its approach when three consecutive rounds fail on the primary target. a2-08 loses failure_resistance because its framing is genuinely fragile -- an adversary asking 'what is your success rate on the stated target?' demolishes it. a2-17 takes the largest hit because it makes the strongest claim (every fix came from investigation, therefore investigation works) while being the most vulnerable to the counterargument (every fix was off-target, therefore investigation is undirected). a1-15 gets a small parity_convergence cut because while factually correct, it serves as evidence for BOTH sides and its current score already accounts for this ambiguity. a3-03 and a3-15 take small cuts because they are descriptive rather than prescriptive -- identifying a problem pattern without offering a concrete solution is helpful but limited."
       }
     ]
   },
   {
-    "cluster": ["t-07"],
-    "cluster_rationale": "Standalone high-severity tension between a1-03 (disagreement investigation) and a3-13 (LLM incentive to widen tolerances).",
+    "tension_id": "t-04",
+    "tensions_included": ["t-04", "t-19"],
+    "cluster_rationale": "Both tensions concern whether the current methodology has hit a structural wall (a1-01, a1-20) or is simply underutilized (a2-25), and whether switching methodology would lose accumulated knowledge (a2-15). These are the meta-level questions about methodology continuation vs. change.",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-03": {"robustness": -0.15, "compatibility": -0.10}
+          "a2-25": {"evidential_grounding": -0.15, "failure_resistance": -0.20},
+          "a2-15": {"evidential_grounding": -0.15, "failure_resistance": -0.15},
+          "a1-20": {"evidential_grounding": -0.10, "failure_resistance": -0.10}
         },
-        "reasoning": "a1-03 demands thorough investigation of each disagreement with root-cause classification into four categories. a3-13 identifies that the primary development tool (LLM) is structurally incentivized to widen tolerances rather than investigate, because widening is cheap and investigation requires deep cross-referencing of C++ source that LLMs do poorly with bounded context. This is not a theoretical concern but a structural property of the development workflow. The investigation process a1-03 demands requires a human or tool that (1) understands both C++ and Rust implementations deeply, (2) can trace pixel-level differences to algorithmic choices, and (3) is incentivized to spend time investigating rather than resolving quickly. LLMs fail on all three when operating under session time pressure. This makes a1-03's requirement theoretically sound but practically unrealizable with the current development methodology."
+        "reasoning": "a2-25 is one of the weakest propositions in the entire set. It claims the rate-of-progress constraint is investigator availability, not methodology. This is unfalsifiable: any failure can be attributed to 'not enough time.' Three focused investigation rounds on Group A+B constitute significant dedicated effort, and all three failed on the primary target. The proposition deserves severe downgrades on both evidential_grounding (no evidence that more time would succeed) and failure_resistance (the unfalsifiability IS the failure mode -- it can never be proven wrong, which means it provides no useful guidance). a2-15's switching-cost argument overstates the loss: the failure catalog, verified subsystems, and spatial evidence are methodology-independent artifacts that any approach can use. The proposition frames supplementation as wholesale replacement, which is a straw man. a1-20's 'inflection point' framing is also speculative -- 'diminishing returns' from three data points is a weak inductive claim. The remaining uninvestigated areas (section boundaries, Init ordering) were not 'systematically skipped' by the cascade; they were simply next in the queue after three other areas were checked."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-03": {"robustness": 0.08, "compatibility": 0.05}
+          "a2-25": {"evidential_grounding": 0.05},
+          "a2-15": {"evidential_grounding": 0.10, "failure_resistance": 0.05},
+          "a1-20": {"evidential_grounding": 0.05, "failure_resistance": 0.05}
         },
-        "reasoning": "The prosecution assumes LLMs are the only actors performing disagreement investigation, but a1-03 is a process requirement that can be enforced through code review by human developers. CLAUDE.md already mandates investigating divergences rather than widening tolerances. Furthermore, a2-04's tolerance audit mechanism (--reason flag) provides a structural guardrail that forces documentation even if the LLM is incentivized to widen. The prosecution also overstates LLM limitations: an LLM with access to both C++ source and Rust code can perform meaningful root-cause analysis, especially for arithmetic differences where the comparison is mechanical rather than requiring deep domain understanding."
+        "reasoning": "The prosecution is right that a2-25 is weak, but overstates the case. The proposition has a grain of truth: the project is part-time and investigation sessions are intermittent. A concentrated effort might succeed where distributed sessions fail because each session starts with context reconstruction overhead. This doesn't save the proposition but partially mitigates the 'unfalsifiable' charge -- the claim about availability is observable (session frequency, duration). a2-15 deserves meaningful restoration because the switching cost is not zero even if the artifacts are portable: the mental model of which subsystems were checked, which pixel coordinates were traced, and which hypotheses were tested is embedded in investigation logs that a new approach must re-read and re-interpret. The prosecution's straw man accusation is fair for wholesale replacement but some proposals (like Approach B's pipeline decomposition) genuinely would require re-framing the investigation from scratch. a1-20 deserves modest restoration because the directional claim is reasonable even if three data points is thin: the cascade has been working through the most complex/investigated stages first, and the remaining stages are the ones that seemed 'too simple to be wrong' -- this IS a known bias pattern."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-03": {"robustness": -0.10, "compatibility": -0.05}
+          "a2-25": {"evidential_grounding": -0.10, "failure_resistance": -0.20},
+          "a2-15": {"evidential_grounding": -0.10, "failure_resistance": -0.10},
+          "a1-20": {"evidential_grounding": -0.05, "failure_resistance": -0.05}
         },
-        "reasoning": "The defense correctly notes that a1-03 is not solely dependent on LLM capabilities and that human code review provides a backstop. However, the prosecution's structural observation is sound: if the dominant development methodology is LLM-assisted, the process requirement must be achievable within that methodology to be effective. Relying on human review as the primary enforcement mechanism reduces a1-03 from a harness requirement to an organizational requirement, which is exactly the weakness a1-03's own robustness score acknowledged. The delta is moderate because the concern is real but not fatal -- human oversight exists."
+        "reasoning": "a2-25 takes the hardest hit in this cluster. The defense's point about session frequency is fair but does not rescue the core claim. The proposition says the constraint is availability, not methodology. Three focused rounds failed. This is not an availability problem. The failure_resistance drop is severe (-0.20) because the proposition's unfalsifiability is genuinely harmful to decision-making: it provides a permanent excuse to avoid methodological reflection. a2-15 takes moderate hits. The switching cost is real but overstated. Supplementing the current approach with targeted tooling (which is what most proposals actually suggest) does not require discarding the accumulated catalog. The straw-man framing weakens it. a1-20 takes small hits. The 'inflection point' rhetoric is too strong for three data points, but the directional observation (the easy-to-check stages have been checked, the remaining stages are in the bias blind spot) has merit. The overall judgment: the current methodology has not definitively hit a wall, but the evidence that it can converge on Group A+B is weak, and propositions defending it on principle rather than evidence deserve downgrades."
       }
     ]
   },
   {
-    "tension_id": "t-09",
+    "tension_id": "t-05",
+    "tensions_included": ["t-05", "t-20", "t-23"],
+    "cluster_rationale": "These tensions all concern structural obstacles to the harness/infrastructure approach: state coupling in C++ Init (t-05), commitment bias from infrastructure investment (t-20), and the fundamental decomposition mismatch between C++ monolith and Rust structs (t-23). Together they form the 'can harnesses even work given this codebase?' question.",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-05": {"robustness": -0.15, "compatibility": -0.15},
-          "a2-18": {"compatibility": -0.10}
+          "a1-04": {"failure_resistance": -0.15, "parity_convergence": -0.10},
+          "a1-14": {"failure_resistance": -0.10},
+          "a1-25": {"evidential_grounding": -0.10, "actionability": -0.10}
         },
-        "reasoning": "a1-05 claims generated test inputs are essential to differential testing. a2-18 describes the oracle as pre-executed binary snapshots. These are mutually exclusive architectures: generated inputs require live C++ execution for each new input, while the frozen oracle by definition does not support this. The practical consequence is that implementing a1-05 would require either (a) maintaining a live C++ build environment in CI, which conflicts with the frozen oracle model, or (b) pre-generating a large corpus of inputs, which is not truly generated testing but rather a larger handcrafted corpus. a1-05's compatibility drops because it is architecturally incompatible with the project's chosen oracle model. a2-18's compatibility drops because the frozen oracle design structurally precludes a class of testing that the methodology considers essential."
+        "reasoning": "a3-08's warning about state coupling is devastating to a1-04's 'immediately reveal' claim. If ScanlineTool::Init modifies ImgW in-place before computing tdx (line 323), then a harness that captures section rectangles at Stage 1 may be comparing pre-modification values against post-modification expectations. The harness would report a divergence that doesn't exist or miss one that does. a1-04 should lose failure_resistance because it cannot survive this specific structural objection without a design that accounts for in-place mutation ordering. It should also lose parity_convergence because a harness that tests with wrong values produces false confidence, actively delaying parity rather than advancing it. a1-14's feature-flag tracing is similarly undermined: if the Rust code's four-struct decomposition doesn't map cleanly to C++ Init's monolithic state, the trace points will be at artificial boundaries that don't correspond to the C++ pipeline's actual state transitions. a1-25 (permanent test format extension) should lose further ground because it proposes making permanent what hasn't been validated as useful at all."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-05": {"robustness": 0.05, "compatibility": 0.10},
-          "a2-18": {"compatibility": 0.05}
+          "a1-04": {"failure_resistance": 0.10, "parity_convergence": 0.05},
+          "a1-14": {"failure_resistance": 0.05},
+          "a1-25": {"evidential_grounding": 0.05}
         },
-        "reasoning": "The mutual exclusion is overstated. Generated inputs and frozen oracles can coexist through batch generation: periodically run the C++ generator with a corpus of generated inputs, store all outputs as golden data, then compare Rust against the entire corpus. This is exactly how property-based snapshot testing works. The C++ environment only needs to be available during golden data generation, not during every test run. a1-05 explicitly acknowledges this in its own compatibility reasoning ('generated inputs require the C++ oracle to be executable for each new input, which conflicts with the frozen oracle model'). The resolution is temporal separation, which the frozen oracle model already uses."
+        "reasoning": "The prosecution assumes harnesses must test at artificial stage boundaries, but a3-08 itself suggests the mitigation: capture ALL state at a single point after Init completes, rather than at intermediate stages. a1-04's section rectangle comparison is not about intermediate Init state -- it's about the FINAL section rectangles passed to the rendering functions. These are concrete inputs to downstream processing, captured after all in-place modifications are complete. The prosecution conflated 'stage-level comparison' with 'mid-function comparison.' A harness that compares Init's complete output state (all 12 derived values) against Rust's equivalent four-struct state is not vulnerable to the ordering problem. a1-14's trace points can be placed at function boundaries (entry/exit of paint_9slice_section) rather than at struct construction points, avoiding the decomposition mismatch. a1-25's permanent format proposal, while premature, is reasonable planning if the approach proves valuable."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-05": {"robustness": -0.05, "compatibility": -0.05},
-          "a2-18": {"compatibility": -0.05}
+          "a1-04": {"failure_resistance": -0.05, "parity_convergence": -0.05},
+          "a1-14": {"failure_resistance": -0.05},
+          "a1-25": {"evidential_grounding": -0.05, "actionability": -0.10},
+          "a3-08": {"actionability": 0.05},
+          "a3-20": {"evidential_grounding": -0.05},
+          "a3-23": {"actionability": 0.05}
         },
-        "reasoning": "The defense's batch generation argument is valid and reduces the severity of the mutual exclusion. However, the defense's resolution still requires a live C++ build environment for each batch, which a1-25 warns may become permanently unavailable. The tension is real but temporal rather than absolute: as long as the C++ environment exists, batch generation is feasible. The deltas are moderate because the approaches are reconcilable in principle but require infrastructure investment that may not be practical."
-      }
-    ]
-  },
-  {
-    "cluster": ["t-12", "t-40"],
-    "cluster_rationale": "Both tensions involve a3-04 (require_golden!() silently passes when golden data is absent). t-12 undermines a1-06 (no undocumented suppression), t-40 undermines a2-06 (divergence ledger flagging unreported cases).",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a1-06": {"robustness": -0.15},
-          "a2-06": {"robustness": -0.15},
-          "a3-04": {"defensibility": 0.05}
-        },
-        "reasoning": "a3-04 identifies a critical gap: require_golden!() silently reports success when golden data is absent. This directly undermines two supposedly strong safeguards. a1-06 (severity 0.90) forbids suppressing failures without documentation, but require_golden!()'s silent skip is functionally equivalent to an undocumented #[ignore] -- it suppresses testing entirely while reporting success. This is arguably worse than #[ignore] because #[ignore] at least shows up as 'ignored' in test output, while require_golden!() reports 'ok'. a2-06 (severity 0.70) requires the divergence ledger to flag unreported test cases, but if skipped tests report as passing, they appear in results as reported, defeating the unreported-case detection entirely. The prosecution argues a3-04 should gain defensibility because both a1-06 and a2-06 were designed without awareness of this failure mode, proving a3-04's observation identifies a genuine blind spot."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a1-06": {"robustness": 0.10},
-          "a2-06": {"robustness": 0.10}
-        },
-        "reasoning": "a3-04 identifies a real problem, but the prosecution treats it as undermining the principles of a1-06 and a2-06 when it actually validates them. a1-06's requirement that failures not be silently suppressed is exactly what require_golden!() violates -- this means a1-06 correctly identified the risk pattern, even if it did not anticipate this specific manifestation. Similarly, a2-06's requirement to cross-reference contract entries against results would catch the require_golden!() gap if implemented: the contract would list 214 tests, but the JSONL output would show 214 'ok' results with no divergence data, which a well-designed ledger could flag as suspicious. The propositions are not undermined by the gap; they correctly predict it."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a1-06": {"robustness": -0.05},
-          "a2-06": {"robustness": -0.08},
-          "a3-04": {"defensibility": 0.03}
-        },
-        "reasoning": "The defense makes a philosophically compelling point: a1-06 and a2-06 correctly identify the risk pattern that a3-04 instantiates. However, the prosecution's point is narrower and more concrete: right now, the require_golden!() behavior exists and neither a1-06's prohibition nor a2-06's cross-referencing catches it, because neither was designed with awareness of this mechanism. a2-06 takes a slightly larger hit than a1-06 because its cross-referencing claim is more specific and more directly defeated by the silent-ok behavior. a3-04 gains a small defensibility boost for identifying a concrete failure mode that two safeguard propositions missed."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-13",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a1-07": {"robustness": -0.10, "compatibility": -0.10},
-          "a1-13": {"defensibility": -0.10, "robustness": -0.10}
-        },
-        "reasoning": "This is an internal contradiction within agent 1's propositions. a1-07 explicitly states that sub-tolerance treatment is 'a design choice the sources do not address,' while a1-13 demands that MEASURE_DIVERGENCE be always-on to report all sub-tolerance disagreements. If sub-tolerance treatment is not addressed by sources (a1-07), then demanding always-on sub-tolerance reporting (a1-13) cannot be justified as a methodological requirement -- it is a design preference being presented as a requirement. This internal inconsistency damages the credibility of both propositions: a1-07's careful textual analysis undermines a1-13's stronger claim, and a1-13's urgency undermines a1-07's measured restraint."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a1-07": {"robustness": 0.05},
-          "a1-13": {"defensibility": 0.05}
-        },
-        "reasoning": "The contradiction is overstated. a1-07 says the sources do not require inspecting sub-tolerance differences, while a1-13 says sub-tolerance reporting should be always-on for practical reasons (tolerance introduces gaps). These are compatible positions: you can report sub-tolerance differences without requiring inspection of each one. a1-07 addresses the V8 requirement (inspection), while a1-13 addresses monitoring infrastructure (reporting). One can have always-on reporting as a monitoring best practice while acknowledging the sources do not mandate inspection of every reported item."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a1-07": {"compatibility": -0.05},
-          "a1-13": {"defensibility": -0.05, "robustness": -0.05}
-        },
-        "reasoning": "The defense's distinction between reporting and inspection is valid but thin. a1-13's actual claim is that always-on reporting is needed 'for methodology compliance,' which directly invokes the methodological authority that a1-07 says does not apply to sub-tolerance treatment. If a1-13 had framed itself as a practical best practice rather than a compliance requirement, the contradiction would dissolve. As stated, a1-13 loses defensibility for over-claiming methodological support, and a1-07 loses slight compatibility for creating tension with a reasonable (if overstated) monitoring request."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-14",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a1-10": {"compatibility": -0.15, "robustness": -0.10},
-          "a2-16": {"defensibility": -0.05}
-        },
-        "reasoning": "a1-10 condemns 'blessing' Rust output as golden data as providing 'zero fault detection power' and being 'methodologically dangerous.' a2-16 provides a structured mechanism for exactly this: diverged=true with a reason string. The contradiction is sharp (severity 0.82). a1-10's absolutist stance ('zero fault detection power') is undermined by a2-16's practical reality: when a C++ bug is discovered and the Rust port intentionally fixes it, you must either (a) reproduce the C++ bug in Rust to match golden data, or (b) update the golden data to reflect the fix. a1-10 offers no path for case (b), making it incompatible with legitimate divergence. a2-16 loses slight defensibility because it normalizes a mechanism that, if abused, does reduce fault detection power as a1-10 warns."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a1-10": {"compatibility": 0.10, "robustness": 0.05},
-          "a2-16": {"defensibility": 0.05}
-        },
-        "reasoning": "a1-10 and a2-16 are not contradictory but complementary when read carefully. a1-10 specifically warns against 'blessing' without independent verification -- its concern is the process, not the outcome. a2-16 provides the process: diverged=true requires a reason string and the tolerance_override is explicitly flagged as an exception. a1-10 says 'testing a system against its own output is tautological,' which is true, but a2-16's diverged=true mechanism is not self-testing -- it is documenting an intentional departure from C++ behavior with justification. The two propositions together create a healthy tension: a1-10 establishes the principle (do not blindly bless), a2-16 provides the escape valve (with documentation and justification)."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a1-10": {"compatibility": -0.05, "robustness": -0.05},
-          "a2-16": {}
-        },
-        "reasoning": "The defense makes a strong case that a1-10 and a2-16 can be complementary. However, a1-10's language ('zero fault detection power,' 'methodologically dangerous') is absolutist in a way that does not accommodate a2-16's mechanism, even when used properly. If a1-10 had said 'blessing without independent verification provides zero fault detection power,' the tension would dissolve. As stated, a1-10 condemns the entire category of action that a2-16 carefully enables. a1-10 loses moderate robustness and compatibility for over-stating the case. a2-16 holds because the defense correctly characterizes its mechanism as structured and documented, not blind blessing."
-      }
-    ]
-  },
-  {
-    "cluster": ["t-24", "t-25", "t-47"],
-    "cluster_rationale": "All three tensions involve a1-18 (tight tolerances for test specificity). t-24 shows tolerances ratcheting looser, t-25 shows no magnitude cap on errors, t-47 shows uniform epsilon creates non-uniform relative precision.",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a1-18": {"robustness": -0.20, "specificity": -0.10},
-          "a3-07": {"defensibility": 0.05},
-          "a3-08": {"defensibility": 0.05}
-        },
-        "reasoning": "a1-18 requires tolerances tight enough that 'only the correct implementation satisfies' the test. Three findings converge to show this requirement is comprehensively violated in practice. t-24 (severity 0.85): a3-07 documents monotonic loosening from ch_tol=1 to ch_tol=3 and max_fail from 0.1% to 10%, with no tracking or prevention mechanism. At 10% failure rate with ch_tol=3, substantially wrong implementations could pass. t-25 (severity 0.80): a3-08 shows the comparison has no magnitude cap -- a few pixels at diff=255 pass if the count is low. This means a completely wrong scanline passes if it is short enough. t-47 (severity 0.68): a3-24 shows the uniform 1e-6 layout epsilon means vastly different relative tolerances at different scales. Together, these three findings show a1-18's requirement is violated by the tolerance magnitude (too loose), tolerance structure (no magnitude cap), and tolerance uniformity (same absolute tolerance means different relative precision). a1-18 should lose robustness for being comprehensively contradicted by observed practice, and specificity for not defining what 'tight enough' means."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a1-18": {"robustness": 0.10, "specificity": 0.05}
-        },
-        "reasoning": "The prosecution conflates the principle with its enforcement. a1-18 states that tolerances should be tight enough for test specificity; the fact that current tolerances are too loose (a3-07, a3-08, a3-24) validates the principle rather than undermining it. If tolerances are already perfect, a1-18 is unnecessary. The value of a1-18 lies precisely in diagnosing the problem that a3-07, a3-08, and a3-24 document. Furthermore, a1-18 is a design principle, not a claim about current state. Its robustness should be measured against whether the principle is correct, not whether it is currently followed. The prosecution's evidence actually strengthens the argument for a1-18 by showing what happens when its principle is violated."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a1-18": {"robustness": -0.08, "specificity": -0.05},
-          "a3-07": {"defensibility": 0.03},
-          "a3-08": {"defensibility": 0.03}
-        },
-        "reasoning": "The defense makes a valid philosophical point: a principle is not undermined by evidence of its violation. However, a1-18 is not just stating a principle -- it is claiming to be a requirement for the harness. A requirement that is comprehensively violated in practice without any mechanism to enforce it loses robustness as a requirement, even if the underlying principle is sound. The specificity loss stands because a1-18 does not define what 'tight enough' means, which a3-07's ratcheting dynamic exploits. a3-07 and a3-08 each gain small defensibility boosts for providing concrete evidence that instantiates a1-18's abstract concern."
-      }
-    ]
-  },
-  {
-    "cluster": ["t-19", "t-20"],
-    "cluster_rationale": "Both tensions involve a1-14 (full automation of generate-execute-compare). t-19 shows the shell-based architecture cannot automate C++ generation; t-20 shows the frozen oracle fundamentally cannot support live comparison.",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a1-14": {"robustness": -0.20, "compatibility": -0.15},
-          "a2-01": {"compatibility": -0.05}
-        },
-        "reasoning": "a1-14 demands full automation of McKeeman's generate-execute-compare cycle. Two findings show this is both practically and structurally impossible. t-19 (severity 0.75): a2-01's shell-script architecture can automate the Rust side but cannot automate C++ generation, which requires a separate build environment with libemCore.so and the gen_golden binary. Even if shell scripts could invoke the C++ generator, maintaining a C++ build environment in CI is a separate infrastructure challenge. t-20 (severity 0.70): a3-21 shows the frozen oracle converts the relational property (C++==Rust for all inputs) into a unary property (Rust==golden_output), which is structurally weaker than what McKeeman's cycle tests. Even if automation were achieved, the frozen oracle cannot support the live differential comparison McKeeman requires. Together, these show a1-14 is both impractical (t-19) and structurally incoherent within the frozen oracle model (t-20)."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a1-14": {"robustness": 0.10, "compatibility": 0.10}
-        },
-        "reasoning": "The prosecution applies a1-14 too literally. McKeeman's method is about automating the cycle of input generation, execution on both systems, and comparison. Within the frozen oracle model, this cycle exists but is split temporally: generation (make -C gen && make -C gen run) and comparison (cargo test --test golden) are separate automated steps. The full cycle is automated -- it just is not a single script invocation. a1-14 should be interpreted as 'each step must be automated,' not 'all steps must run in a single invocation.' The Makefile for generation is already automated, and the comparison is already automated through cargo test."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a1-14": {"robustness": -0.10, "compatibility": -0.10},
-          "a2-01": {"compatibility": -0.03}
-        },
-        "reasoning": "The defense's reinterpretation of 'full automation' as 'each step automated separately' is pragmatically reasonable but stretches a1-14's text, which says 'without human intervention.' The current workflow requires a human to decide when to regenerate golden data, which is an intervention. However, the prosecution's claim of structural incoherence (t-20) is overstated: McKeeman's cycle applied to the frozen oracle model means 'automate golden data regeneration and comparison,' which is achievable. The delta splits the difference: a1-14 takes a meaningful but not fatal hit for requiring something that is achievable in principle but requires infrastructure investment that does not exist."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-26",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a1-19": {"robustness": -0.10, "specificity": -0.05}
-        },
-        "reasoning": "a1-19 requires documenting methodology deviations at the exact point of divergence. a3-12 identifies that LLM sessions lack provenance on why previous tolerances were set: each session starts fresh without history of tolerance decisions. This means documentation written by one LLM session (inline comments explaining a tolerance choice) may not be found or understood by a subsequent session, and the subsequent session has no context to evaluate whether the documentation is still accurate. The structural amnesia of LLM development undermines the effectiveness of point-of-divergence documentation because the documentation must be both written and consumed correctly, and a3-12 shows consumption is unreliable."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a1-19": {"robustness": 0.05, "specificity": 0.03}
-        },
-        "reasoning": "Documentation at the point of divergence serves multiple audiences: human developers reviewing code, future LLM sessions that read surrounding code, and automated tooling that could parse structured comments. LLM session amnesia does not prevent documentation from being written or from being useful to humans. Furthermore, CLAUDE.md explicitly instructs LLM sessions to follow conventions including DIVERGED: comments, providing cross-session continuity through project instructions rather than session memory. The prosecution assumes documentation only works if sessions have memory, but documentation works precisely because it does not require memory."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a1-19": {"robustness": -0.03}
-        },
-        "reasoning": "The defense makes a strong point: documentation's value lies precisely in externalizing knowledge that would otherwise be lost, which is exactly the LLM session amnesia problem. However, a3-12's concern has a residual kernel of truth: an LLM session cannot evaluate the accuracy of documentation written by a previous session, which means stale or inaccurate documentation persists unchallenged. The delta is small because the prosecution's concern is real but does not significantly undermine a1-19's principle."
-      }
-    ]
-  },
-  {
-    "cluster": ["t-31", "t-32"],
-    "cluster_rationale": "Both tensions involve the interaction between the contract registry (a2-02/a2-03) and require_golden!()'s silent skip (a3-04).",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-02": {"robustness": -0.10},
-          "a2-03": {"robustness": -0.05}
-        },
-        "reasoning": "a2-02 proposes a contract registry as the single source of truth. a3-04 shows require_golden!() reports 'ok' when golden data is absent. This means the contract can enumerate 214 tests, but if golden data is missing for all of them, the test runner reports 214 'ok' results. The contract becomes a catalog of intentions, not a catalog of verified behaviors. a2-03 requires refusing to run if contract entries lack golden files, which would actually fix the a3-04 problem -- but a2-03 does not yet exist, so a2-02's current design lacks this protection. a2-03 loses a small amount of robustness because its bidirectional check is a filesystem check that would need to be coordinated with the require_golden!() macro behavior, and the two enforcement points could be inconsistent."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-02": {"robustness": 0.05},
-          "a2-03": {"robustness": 0.05}
-        },
-        "reasoning": "The prosecution describes the current state (no contract exists), not a flaw in a2-02's design. a2-02 proposes the contract; a2-03 proposes the bidirectional check. Together they would fix the a3-04 problem entirely: the contract lists expected golden files, the check verifies they exist before running. a3-04's criticism applies to the status quo, not to the proposed design. The whole point of a2-02 and a2-03 is to address exactly the kind of gap a3-04 identifies."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-02": {"robustness": -0.03},
-          "a2-03": {}
-        },
-        "reasoning": "The defense is largely correct: a2-02 and a2-03 together would fix the a3-04 problem. The remaining concern is that a2-02's contract registry design does not explicitly account for the require_golden!() silent-skip behavior, meaning the contract could be implemented and still not catch the issue if require_golden!() is not also modified. a2-02 takes a small robustness hit for not identifying this interaction. a2-03 holds because it explicitly requires refusing to run when golden files are absent, which directly addresses a3-04."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-35",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-05": {"robustness": -0.10, "specificity": -0.05}
-        },
-        "reasoning": "a2-05 defines 'suspicious' tests based on proximity to failure thresholds (50% of max_failure_pct, 75% of channel_tolerance). a3-08 identifies that the comparison function has no magnitude cap on failing pixels. This creates a blind spot in a2-05's suspicious classification: a test with 3 pixels at diff=255 in a 256x256 image (0.005% failure rate at ch_tol=1) would not trigger suspicious status because the failure count is far below the threshold, even though those pixels are catastrophically wrong. a2-05's thresholds are designed around the assumption that failure rate and magnitude correlate, but a3-08 shows they can be orthogonal."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-05": {"robustness": 0.05}
-        },
-        "reasoning": "a2-05's suspicious classification is one layer of defense, not the only one. The comparison function itself catches tests that exceed the failure threshold. a2-05 adds an early warning layer for tests approaching that threshold. The magnitude-cap gap identified by a3-08 is a gap in the comparison function (a2-17's domain), not in the suspicious classification. a2-05 correctly flags tests based on the metrics it receives; if the metrics themselves are incomplete (missing magnitude information), that is an upstream problem."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-05": {"robustness": -0.05}
-        },
-        "reasoning": "The defense correctly identifies that a2-05 operates on the metrics it receives and cannot compensate for upstream gaps. However, a2-05's design claims to detect suspicious patterns in test results, and the magnitude blindness means it misses a real class of suspicious results. The proposition should lose a moderate amount of robustness for this blind spot, even if the root cause is upstream."
+        "reasoning": "The defense successfully rescued most of a1-04's position. The section rectangles ARE post-computation outputs, not mid-Init intermediates, so the state-coupling warning (a3-08) applies to the design of the harness but does not invalidate the concept. a1-04 takes small cuts because its 'immediately reveal' language oversells what is actually a 'narrow the search space' capability. a3-08 gets an actionability upgrade because its specific warning about capture-point design is directly useful for anyone building harnesses. a1-14 takes a small failure_resistance cut because the decomposition mismatch is real and trace-point placement requires careful thought that the proposition glosses over. a1-25 takes an actionability hit because it proposes permanence before validation -- classic premature infrastructure. a3-20's commitment-bias warning is theoretically sound but predicted rather than observed, so its evidential_grounding drops slightly. a3-23 gets an actionability upgrade because its observation about the monolithic-vs-distributed decomposition is directly useful for designing any comparison approach."
       }
     ]
   },
   {
     "tension_id": "t-06",
+    "tensions_included": ["t-06"],
+    "cluster_rationale": "Standalone tension about the coverage claim for stage-level harnesses.",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-03": {"specificity": -0.05},
-          "a2-19": {"specificity": -0.05}
+          "a1-10": {"evidential_grounding": -0.15, "failure_resistance": -0.15}
         },
-        "reasoning": "a1-03 demands a four-category root-cause classification (port fault, oracle fault, specification ambiguity, acceptable difference). a2-19's classification phase only categorizes pass/fail/suspicious/regression. These are different taxonomies operating at different levels: a2-19's classification is about test status, while a1-03's classification is about failure cause. The harness design does not include the root-cause classification a1-03 requires, meaning a1-03's requirement has no implementation path in the proposed architecture."
+        "reasoning": "a3-17 lands a clean hit: the pipeline decomposition targets image rendering (21 tests in Groups A+B+D), but 16 tests across 8 other groups (polygon, composition, starfield, gradient, layout, polyline) use entirely different code paths. a1-10's claim that 36/37 tests pass through 'one or more shared pipeline stages' is technically true but misleading -- saying G8 layout tests pass through a 'Stage 1 equivalent for polygon construction' is a stretch that conflates 'passes through some stage' with 'is diagnosable by the image-rendering harness.' The 36/37 number is an inflated coverage metric that would not survive scrutiny."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-03": {"specificity": 0.03},
-          "a2-19": {"specificity": 0.03}
+          "a1-10": {"evidential_grounding": 0.05, "failure_resistance": 0.05}
         },
-        "reasoning": "The two classification systems are not in conflict -- they operate at different levels and are both needed. a2-19's automated classification (pass/fail/suspicious) feeds into a1-03's human-driven root-cause analysis. The harness automates what can be automated and flags items for human investigation. This is standard practice in testing pipelines."
+        "reasoning": "The prosecution correctly identifies the overstatement, but the core point of a1-10 has merit. Even if the harness coverage is 21/37 rather than 36/37, that's still 57% of remaining failures covered by one piece of infrastructure. The proposition's numerical claim is wrong but its directional argument (shared infrastructure has broad impact) is sound. Additionally, the principle of stage-level comparison could be applied to other pipelines (polygon rasterizer, gradient interpolation) using the same methodology even if different harnesses are needed."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-03": {"specificity": -0.02},
-          "a2-19": {"specificity": -0.02}
+          "a1-10": {"evidential_grounding": -0.15, "failure_resistance": -0.10}
         },
-        "reasoning": "The defense correctly distinguishes automated status classification from root-cause analysis. The tension is real but low severity (0.55). Both propositions lose a tiny amount of specificity for not explicitly connecting their classification systems, but the gap is bridgeable."
+        "reasoning": "a3-17's counterargument is factually decisive. 36/37 is wrong; 21/37 is the realistic coverage. The defense's point about methodology transfer is reasonable but does not rescue the specific numerical claim. a1-10 takes a steep evidential_grounding hit because the 36/37 figure is verifiably overstated, and a moderate failure_resistance hit because the inflated number undermines credibility even when the directional argument survives. The proposition started at 0.60 and 0.50 respectively, which were already cautious scores; these further reductions bring them to levels that reflect the actual 21/37 coverage accurately."
+      }
+    ]
+  },
+  {
+    "tension_id": "t-07",
+    "tensions_included": ["t-07", "t-22", "t-24", "t-28"],
+    "cluster_rationale": "All four tensions concern agent limitations when comparing C++ and Rust code: macro template misinterpretation (t-07), investigator bias toward familiar code (t-22), the last-mile comparison bottleneck (t-24), and integer promotion blind spots (t-28). Together they form the question: can agents reliably perform the line-by-line comparison that both approaches require?",
+    "passes": [
+      {
+        "pass": "prosecution",
+        "proposed_deltas": {
+          "a2-16": {"failure_resistance": -0.20, "parity_convergence": -0.15},
+          "a1-04": {"failure_resistance": -0.10},
+          "a1-05": {"failure_resistance": -0.10}
+        },
+        "reasoning": "This cluster is damaging to ALL proposed approaches, but most damaging to a2-16 (side-by-side comparison) because it relies most directly on agent code-comparison capability. a3-04 shows the C++ code uses macro template expansion with 12 variants, and agents systematically misread the generic template instead of the specific CHANNELS=4/CLAMP variant. a3-18 shows unsigned-times-signed arithmetic involves implicit conversions agents miss. a3-13 identifies this as the fundamental last-mile bottleneck that no approach avoids. a1-16 predicts that bias will cause agents to declare 'structurally equivalent' for the very code sections containing the bug. These four observations compound: an agent performing a2-16's 330-line comparison will (1) read the wrong C++ variant due to macros, (2) miss signedness conversions, (3) skip 'obviously correct' sections due to bias, and (4) hit the last-mile bottleneck on integer arithmetic regardless. a2-16's failure_resistance should drop substantially because it is specifically vulnerable to all four identified agent limitations. Its parity_convergence should also drop because a comparison that misses the divergence does not advance parity. The harness propositions (a1-04, a1-05) are less vulnerable because runtime value comparison sidesteps some agent limitations (you compare numbers, not code), but a3-13 still applies to interpreting harness results."
+      },
+      {
+        "pass": "defense",
+        "proposed_deltas": {
+          "a2-16": {"failure_resistance": 0.10, "parity_convergence": 0.10},
+          "a1-04": {"failure_resistance": 0.05},
+          "a1-05": {"failure_resistance": 0.05}
+        },
+        "reasoning": "The prosecution treats agent limitations as fixed when they are mitigable. a3-04's macro expansion problem has a concrete solution: pre-expand the C++ macros for CHANNELS=4/CLAMP and provide the expanded code. This is a one-time 30-minute task that permanently removes the variant-selection failure mode. a3-18's signedness concern can be mitigated by an explicit audit checklist: for each arithmetic operation in the comparison window, verify signedness matches. a1-16's bias can be countered by systematic comparison (every line, in order, with explicit sign-off) rather than intuition-driven scanning. a3-13's last-mile observation applies to both approaches equally, so it does not differentially disadvantage a2-16 vs harnesses. The prosecution is correct that these are real risks, but they are addressable through investigation discipline, not methodology change. a2-16 deserves partial restoration because it remains the most direct path to finding the divergence: read the code, find the difference, fix it. Three prior rounds did not do this specific comparison (they investigated other subsystems), so 'three rounds failed' does not predict that this round will fail."
+      },
+      {
+        "pass": "adjudication",
+        "final_deltas": {
+          "a2-16": {"failure_resistance": -0.10, "parity_convergence": -0.05},
+          "a1-04": {"failure_resistance": -0.05},
+          "a1-05": {"failure_resistance": -0.05},
+          "a3-04": {"actionability": 0.10, "parity_convergence": 0.10},
+          "a3-18": {"actionability": 0.05},
+          "a3-13": {"evidential_grounding": 0.05, "failure_resistance": 0.05}
+        },
+        "reasoning": "The defense successfully argues that agent limitations are mitigable, but the prosecution's core point survives: three prior comparison attempts failed, and the identified limitations explain why. a2-16 takes meaningful cuts because the prosecution identified four specific, compounding failure modes that the defense can only partially mitigate. The defense is right that pre-expanding macros and using checklists help, but these are not standard practice and the proposition as stated does not include them. If a2-16 were restated as 'side-by-side comparison with pre-expanded C++ macros, explicit signedness audit, and systematic line-by-line sign-off,' it would score higher -- but that is a different proposition. Meanwhile, a3-04 deserves significant upgrades: its observation about macro expansion is the single most actionable insight for improving ANY comparison approach. Pre-expanding the specific C++ variant is a concrete, cheap, high-value preparatory step. a3-18 gets a small actionability upgrade for the same reason. a3-13 gets modest upgrades because its 'last mile' observation is well-grounded and structurally sound. The harness propositions (a1-04, a1-05) take smaller hits because runtime value comparison partially sidesteps the code-reading bottleneck."
       }
     ]
   },
   {
     "tension_id": "t-08",
+    "tensions_included": ["t-08", "t-18"],
+    "cluster_rationale": "Both tensions concern the reliability of previous verification work: t-08 asks whether 7 'verified correct' subsystems were actually verified at the right abstraction level, and t-18 asks whether the Stage 2 harness would re-verify already-verified transforms or catch what was missed.",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-04": {"compatibility": -0.05},
-          "a3-09": {"robustness": -0.05}
+          "a2-11": {"evidential_grounding": -0.15, "failure_resistance": -0.15},
+          "a1-05": {"evidential_grounding": -0.10, "parity_convergence": -0.10}
         },
-        "reasoning": "a1-04 and a3-09 both identify failure independence violation but together create compound pessimism that could justify nihilistic conclusions about the entire testing approach. If misunderstandings are 'faithfully reproducible' (a1-04) and golden tests 'verify rather than detect' them (a3-09), the logical conclusion is that the entire golden test suite provides no assurance, which is an overly pessimistic and unactionable conclusion."
+        "reasoning": "a3-01's argument is sharp: if previous investigations compared inputs to divergent functions rather than their derived internal state, then 'verified correct' means 'inputs were the same' not 'outputs were the same.' This is a genuine abstraction-level error. For example, if Investigation 2 verified that ScanlineTool::Init receives the same TX/TY/TDX/TDY parameters in both C++ and Rust, but did NOT verify that Init produces the same ImgMap/ImgDX/ImgDY derived values, then the 'transform parameters verified' claim is about inputs, not about the transform computation itself. a2-11 should lose evidential_grounding because 'verified correct' overstates what was actually verified. It should lose failure_resistance because the abstraction-level criticism is precisely the kind of attack that 'permanently removed from suspicion' claims should survive but cannot. a1-05 (Stage 2 harness for transforms) should also lose ground: if Hypothesis 2 already verified transforms match at the input level, and a Stage 2 harness re-verifies at the same level, it adds nothing. But if it verifies at the derived-state level, it catches what was missed -- which means it is fixing the previous verification's error, not building new infrastructure."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-04": {"compatibility": 0.05},
-          "a3-09": {"robustness": 0.03}
+          "a2-11": {"evidential_grounding": 0.05, "failure_resistance": 0.10},
+          "a1-05": {"evidential_grounding": 0.05, "parity_convergence": 0.05}
         },
-        "reasoning": "The compound pessimism is a misreading. Both propositions identify a limitation, not a nullification. Correlation of understanding also means correlation of correctness: a developer who correctly understands the C++ algorithm will correctly translate it to Rust, and the golden test confirms this. The independence violation limits the detection ceiling, not the detection floor."
+        "reasoning": "The prosecution assumes all 7 verified subsystems suffer from the abstraction-level error, but this is only demonstrated for one (transform parameters). Some verifications -- like area sampling inner loop, interpolation, and compositing -- may have been verified at the correct level (comparing actual output values, not just inputs). Blanket downgrading all 7 based on one example overstates the case. a2-11 deserves partial failure_resistance restoration because even input-level verification has value: if inputs match and outputs diverge, the divergence is definitionally in the function's internal logic, which narrows the search. The verification is incomplete but not useless. a1-05 deserves partial restoration because a3-01's observation actually increases its value: if previous verification was at the wrong level, a Stage 2 harness at the right level fills the gap. This makes the harness more justified, not less."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-04": {},
-          "a3-09": {"robustness": -0.02}
+          "a2-11": {"evidential_grounding": -0.10, "failure_resistance": -0.10},
+          "a1-05": {"evidential_grounding": -0.05, "parity_convergence": -0.05},
+          "a3-01": {"actionability": 0.10, "parity_convergence": 0.10}
         },
-        "reasoning": "The defense makes the key point: correlation of understanding implies correlation of correctness, not just of errors. The compound pessimism concern (severity 0.45) is valid but low-impact. a3-09 takes a tiny robustness hit for framing the issue in a way that could be over-interpreted, but the observation is fundamentally sound."
+        "reasoning": "The prosecution's core insight is correct and damaging to a2-11: 'verified correct' is too strong a claim for input-level verification. The defense is right that not all 7 subsystems necessarily suffer from this, but the proposition makes a blanket 'permanently removed from suspicion' claim that is only as strong as its weakest verification. a2-11 takes meaningful hits on both axes. a1-05 takes smaller hits because, as the defense notes, the abstraction-level gap actually justifies the harness rather than undermines it -- but the proposition's current framing ('already verified') weakens its own case for being built. The biggest winner is a3-01, which gets significant upgrades on both actionability and parity_convergence: the observation that derived state (not just inputs) must be compared is the single most important diagnostic insight for Group A+B. It directly tells the next investigator where to look (Init's 12 derived values) and is directly relevant to 21 failing tests."
+      }
+    ]
+  },
+  {
+    "tension_id": "t-09",
+    "tensions_included": ["t-09", "t-25"],
+    "cluster_rationale": "These tensions concern the architectural divergence between C++ and Rust rendering paths. t-09 is a three-way latent tension about the monolithic vs. distributed decomposition. t-25 is about the regression risk of restructuring. All agents agree the structural mismatch exists; they disagree on what to do about it.",
+    "passes": [
+      {
+        "pass": "prosecution",
+        "proposed_deltas": {
+          "a1-06": {"failure_resistance": -0.10},
+          "a2-24": {"evidential_grounding": -0.10, "failure_resistance": -0.10},
+          "a3-16": {"evidential_grounding": -0.10}
+        },
+        "reasoning": "The core weakness shared by a1-06 and a2-24 is that structural difference does not prove behavioral divergence. The Rust inline implementation could compute identical values to C++ despite different code structure. Both propositions assert that the architectural mismatch IS the divergence, but neither provides runtime evidence. This is hypothesis, not finding. a2-24 gets an additional evidential_grounding cut because it frames structural observation as causal claim without qualification. a3-16's regression warning is legitimate but its evidential_grounding should drop because the 'fix one, break three' scenario is illustrative rather than observed -- zero regressions have occurred in the project history, and golden tests provide immediate regression detection."
+      },
+      {
+        "pass": "defense",
+        "proposed_deltas": {
+          "a1-06": {"failure_resistance": 0.05},
+          "a2-24": {"evidential_grounding": 0.05},
+          "a3-16": {"evidential_grounding": 0.05}
+        },
+        "reasoning": "The prosecution's point that structural difference doesn't prove behavioral divergence is logically sound but ignores the project's own lesson: feedback_match_cpp_architecture.md exists as a memory entry precisely because architectural divergence caused prior bugs. The project has learned from experience that matching C++ architecture reduces divergence risk. This is not proof but it is strong evidence that structural mismatches correlate with behavioral bugs in this specific codebase. a3-16's regression warning, while not yet observed, is appropriate for zero-tolerance testing where one changed line can flip multiple tests."
+      },
+      {
+        "pass": "adjudication",
+        "final_deltas": {
+          "a1-06": {"failure_resistance": -0.05},
+          "a2-24": {"evidential_grounding": -0.05, "failure_resistance": -0.05},
+          "a3-16": {"evidential_grounding": -0.05},
+          "a3-23": {"evidential_grounding": 0.05}
+        },
+        "reasoning": "The prosecution's logical point survives but the defense's empirical counter (the memory entry about architectural matching) partially mitigates it. a1-06 and a2-24 take small hits because they present the architectural divergence as definitively causal rather than correlatively suggestive. a2-24 takes an extra hit because it frames the observation as more certain than a1-06 does. a3-16 takes a small evidential_grounding cut because the regression scenario is predicted not observed, but the warning remains valuable. a3-23 gets a small upgrade because its observation about the decomposition mismatch is the most neutral and structurally useful of the three perspectives: it names the problem without prescribing a specific solution, making it useful regardless of which approach is adopted."
       }
     ]
   },
   {
     "tension_id": "t-10",
+    "tensions_included": ["t-10"],
+    "cluster_rationale": "Standalone tension about investigation sequencing: Group A+B first (a2-12) vs. small groups first (a3-07, a3-22).",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-05": {"specificity": -0.05}
+          "a2-12": {"evidential_grounding": -0.15, "failure_resistance": -0.15},
+          "a3-07": {"evidential_grounding": -0.10},
+          "a3-22": {"evidential_grounding": -0.10}
         },
-        "reasoning": "a1-05 and a3-10 agree on the gap but a1-05 treats generated inputs as essential without addressing the feasibility challenges a3-10 implicitly acknowledges. This lack of feasibility analysis weakens a1-05's specificity."
+        "reasoning": "a2-12's projected trajectory (207 -> 227 -> 233 -> 241 in ~6 sessions) is a planning fantasy. The Group A+B step assumes the 9-slice hypothesis is correct, which is unproven after three failed hypotheses. The 6-session timeline is pulled from nowhere. This is textbook planning fallacy. Its evidential_grounding and failure_resistance should drop sharply. On the other side, a3-07's claim that small groups are 'higher expected-value targets' is also speculative: G2 'may be a single sign error' and G7 'may be a single coefficient' are hypotheses stated as near-certainties. Small groups might involve the same deep pipeline issues. a3-22's sunk-cost framing is a real cognitive bias but the application to LLM agents is metaphorical and untested."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-05": {"specificity": 0.03}
+          "a2-12": {"evidential_grounding": 0.05, "failure_resistance": 0.05},
+          "a3-07": {"evidential_grounding": 0.05},
+          "a3-22": {"evidential_grounding": 0.05}
         },
-        "reasoning": "a1-05 is stating a methodological requirement, not a feasibility analysis. It correctly identifies what the methodology demands; feasibility is a separate question."
+        "reasoning": "a2-12's G3+G5 step IS well-grounded (both are mechanical fixes), so the first step of the trajectory is reliable. The prosecution attacks the entire plan but the first phase is solid. a3-07 deserves partial restoration because the expected-value argument is directionally correct even if the specific estimates are rough: uninvestigated groups have not yet shown resistance, while Group A+B has resisted three rounds. The prior probability of success is higher for untried groups than for repeatedly-tried ones. a3-22's context-window priming is observable in practice (prior investigation history does appear in prompts), even if the cognitive science terminology is metaphorical."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-05": {"specificity": -0.02}
+          "a2-12": {"evidential_grounding": -0.10, "failure_resistance": -0.15},
+          "a3-07": {"evidential_grounding": -0.05},
+          "a3-22": {"evidential_grounding": -0.05}
         },
-        "reasoning": "Minimal delta for a low-severity (0.50) tension. a1-05 correctly states the requirement; the lack of feasibility analysis is a minor gap given the proposition's role as a methodological claim."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-11",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-13": {"robustness": -0.05}
-        },
-        "reasoning": "a2-13's grep for #[ignore] could miss semantic equivalents like #[cfg(not(...))] that achieve the same suppression effect."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-13": {"robustness": 0.03}
-        },
-        "reasoning": "The grep check catches the common case. Exotic suppression mechanisms are rare and visible in code review."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-13": {"robustness": -0.02}
-        },
-        "reasoning": "Low severity (0.30). The grep check is good enough for the common case. Tiny robustness delta for the acknowledged bypass possibility."
+        "reasoning": "a2-12 takes the largest hits because its trajectory is conditional on an unproven hypothesis and its timeline is fabricated. The defense is right that the G3+G5 step is solid, but the trajectory's value depends on the full plan, not just the first step. The prosecution correctly identifies planning fallacy. a3-07 and a3-22 take small hits because their 'small groups are easier' claim is speculative, but their directional argument (try untried things before retrying failed things) is sound on Bayesian grounds. The sequencing recommendation (G3+G5 quick wins first, then breadth over depth) is better supported than a2-12's depth-first trajectory, because the expected value of untried investigations exceeds the expected value of a fourth attempt at Group A+B. This is a genuine judgment: the evidence favors the breadth-first approach for the next 2-3 rounds."
       }
     ]
   },
   {
     "tension_id": "t-15",
+    "tensions_included": ["t-15"],
+    "cluster_rationale": "Standalone tension about whether the monotonic ratchet survives refactoring.",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-10": {"compatibility": -0.05},
-          "a3-17": {"compatibility": 0.05}
+          "a2-18": {"failure_resistance": -0.10}
         },
-        "reasoning": "a1-10 insists golden data must come from C++. a3-17 notes C++ 0.96.4 may have bugs. Together: the oracle is sacrosanct but potentially wrong. When a C++ bug is discovered, a1-10 offers no path forward -- you cannot fix the golden data (that would be blessing Rust output) and you cannot reproduce the bug in Rust (that defeats the port's purpose)."
+        "reasoning": "a3-10 makes a valid technical point: zero-tolerance testing means that mathematically equivalent refactorings (changing a*b+c to c+a*b) can produce 1-ULP differences that shift sub-pixel edges and fail tests. This means the monotonic ratchet (a2-18) may not survive the refactoring needed to fix Group A+B. The ratchet holds for correct fixes to incorrect code but may not hold for refactoring correct code in the process of fixing adjacent incorrect code."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-10": {"compatibility": 0.05}
+          "a2-18": {"failure_resistance": 0.05}
         },
-        "reasoning": "a1-10 does not forbid oracle regeneration from corrected C++ code -- it forbids blessing Rust output as golden data. If a C++ bug is found, the correct path is to fix the C++ generator, regenerate golden data from the corrected C++, and compare Rust against the corrected output. This is consistent with a1-10."
+        "reasoning": "The prosecution overstates the ULP risk. The CLAUDE.md rules already mandate 'same algorithm and operation order on golden-tested paths,' which means refactorings that change operation order are prohibited by project rules. The ratchet survives because the rules prevent the refactorings that would break it. a3-10's concern applies to a hypothetical project without these rules, not to this one."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-10": {"compatibility": -0.02},
-          "a3-17": {}
+          "a2-18": {"failure_resistance": -0.05},
+          "a3-10": {"evidential_grounding": -0.05}
         },
-        "reasoning": "The defense's resolution (fix C++ then regenerate) is correct and resolves the dilemma. However, fixing C++ code in a frozen 0.96.4 snapshot introduces its own questions about whether the 'fixed' C++ is still the authoritative reference. Very small delta for a medium-severity tension (0.65)."
+        "reasoning": "The defense makes a good point: the CLAUDE.md rules mitigate the ULP risk for deliberate refactoring. But the prosecution's point survives in reduced form: accidental operation reordering during bug-fixing (as opposed to deliberate refactoring) is harder to guard against, and the ratchet's survival depends on developer discipline, not just on structural properties. a2-18 takes a small hit because 'structural feature' overstates what is actually 'maintained by discipline.' a3-10 also takes a small hit because its concern, while technically valid for IEEE 754, is partially addressed by existing project rules and thus less impactful than presented."
       }
     ]
   },
   {
     "tension_id": "t-16",
+    "tensions_included": ["t-16"],
+    "cluster_rationale": "Standalone tension about the test count disagreement (21 vs 20 tests in Group A+B).",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-11": {"robustness": -0.05}
+          "a1-03": {"evidential_grounding": -0.05},
+          "a2-03": {"evidential_grounding": -0.05}
         },
-        "reasoning": "a1-11's metadata requirements are moot if the binary format (a3-02) cannot reliably carry that metadata. The format lacks even basic safeguards, so adding metadata to an unsafe format does not solve the underlying problem."
+        "reasoning": "The agents cannot agree on whether Group A+B contains 20 or 21 tests. This is a factual disagreement about a countable quantity, which means at least one agent is wrong. This undermines both propositions' evidential_grounding because the group boundary -- the most basic factual claim -- is imprecise."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-11": {"robustness": 0.03}
+          "a1-03": {"evidential_grounding": 0.02},
+          "a2-03": {"evidential_grounding": 0.02}
         },
-        "reasoning": "Metadata can be stored alongside golden data in separate sidecar files (JSON, TOML) rather than in the binary format itself. a1-11's requirement is about recording provenance, not about the storage mechanism."
+        "reasoning": "A difference of 1 test between 20 and 21 likely reflects one test being on the boundary between Group A+B and Group D (which shares the 9-slice root cause). This is a classification ambiguity, not a fundamental disagreement about the failure mode. The root cause attribution is the same in both propositions."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-11": {"robustness": -0.02}
+          "a1-03": {"evidential_grounding": -0.03},
+          "a2-03": {"evidential_grounding": -0.03}
         },
-        "reasoning": "The defense's sidecar file suggestion is practical and resolves the tension. Small delta for a moderate-severity (0.55) tension."
+        "reasoning": "The defense correctly identifies this as likely a boundary classification issue rather than a deep disagreement. But the prosecution's point has merit: if the agents are imprecise about group membership, the impact projections ('fixing this resolves 20/21 tests') are also imprecise. Both take tiny hits. This is a minor tension."
       }
     ]
   },
   {
     "tension_id": "t-17",
+    "tensions_included": ["t-17", "t-27"],
+    "cluster_rationale": "Both tensions concern competing sub-hypotheses for the Group A+B root cause. t-17 has clamped vs unclamped sw (a2-04) vs stride-reduction ordering (a3-05). t-27 has transform parameter comparison (a1-05) vs representation mismatch (a3-14). All target ScanlineTool::Init but name different specific mechanisms.",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-12": {"robustness": -0.10},
-          "a3-15": {"defensibility": 0.03}
+          "a2-04": {"evidential_grounding": -0.10, "failure_resistance": -0.10},
+          "a1-05": {"evidential_grounding": -0.10, "parity_convergence": -0.10},
+          "a3-05": {"evidential_grounding": -0.05},
+          "a3-14": {"evidential_grounding": -0.05}
         },
-        "reasoning": "a1-12 demands quantitative disagreement metrics. a3-15 shows MEASURE_DIVERGENCE exists but is opt-in, outputs to stderr, and has no storage or comparison mechanism. The metrics exist in primitive form but lack infrastructure to fulfill the requirement. This means a1-12's requirement is partially met in spirit but unmet in practice, reducing its robustness as a requirement that can be claimed as satisfied."
+        "reasoning": "Having four different sub-hypotheses for the same root cause is itself evidence that none of them is well-grounded. a2-04 (clamped vs unclamped sw) and a3-05 (stride-reduction ordering) cannot both be THE singular cause. If the next investigation round tests a2-04 first and it's wrong, another round is wasted. a2-04 deserves extra downgrade because its claim is identified 'by code reading, not by empirical validation.' a1-05's Stage 2 harness loses further ground from a3-14's observation that C++ uses raw pointer arithmetic while Rust uses SectionBounds, making the parameters incommensurable without a semantic mapping layer -- the harness design is more complex than presented. a3-05 and a3-14 take smaller hits because they identify mechanisms more precisely (specific line numbers, specific ordering dependencies)."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-12": {"robustness": 0.05}
+          "a2-04": {"evidential_grounding": 0.05, "failure_resistance": 0.05},
+          "a1-05": {"evidential_grounding": 0.05},
+          "a3-05": {"evidential_grounding": 0.02},
+          "a3-14": {"evidential_grounding": 0.02}
         },
-        "reasoning": "MEASURE_DIVERGENCE's existence validates a1-12's requirement: someone already saw the need for quantitative metrics. The gap is infrastructure (storage, comparison), not concept. a1-12's requirement is about what the harness must produce, and the mechanism already exists. Connecting it to storage and alerting is an incremental step, not a fundamental gap."
+        "reasoning": "Multiple hypotheses for the same root cause is normal in early investigation, not evidence of weakness. a2-04 and a3-05 may even be the SAME observation from different angles: clamped vs unclamped sw IS a stride-reduction ordering issue (sw is modified during stride reduction). The prosecution treats these as competing when they may be complementary descriptions of the same bug. a1-05's parameter comparison, while complicated by representation differences, can be done at the semantic level (compare effective pixel offsets derived from both representations)."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-12": {"robustness": -0.05},
-          "a3-15": {"defensibility": 0.02}
+          "a2-04": {"evidential_grounding": -0.05, "failure_resistance": -0.05},
+          "a1-05": {"evidential_grounding": -0.05, "parity_convergence": -0.05},
+          "a3-05": {"parity_convergence": 0.05},
+          "a3-14": {"actionability": 0.05}
         },
-        "reasoning": "The defense correctly notes the mechanism exists and the gap is infrastructure. However, an existing mechanism that is opt-in and outputs to stderr is not a quantitative metrics system -- it is a debugging tool. a1-12 loses moderate robustness because the requirement sounds more fulfilled than it actually is. a3-15 gains a small boost for precisely identifying the gap between the diagnostic tool and the monitoring system a1-12 envisions."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-18",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a1-13": {"compatibility": -0.05},
-          "a2-05": {"specificity": -0.03}
-        },
-        "reasoning": "a1-13 wants always-on sub-tolerance reporting. a2-05 defines suspicious thresholds at 50%/75% of limits, creating a gap below which sub-tolerance divergence goes unreported. These reflect different philosophies on monitoring granularity."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a1-13": {"compatibility": 0.03},
-          "a2-05": {"specificity": 0.03}
-        },
-        "reasoning": "a2-05's thresholds and a1-13's always-on reporting can coexist: always-on reporting provides the data, and a2-05's thresholds provide the classification. They operate at different levels."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a1-13": {"compatibility": -0.02},
-          "a2-05": {}
-        },
-        "reasoning": "Medium-low severity (0.65). The two approaches can coexist. a1-13 takes a small hit for its always-on claim creating noise that a2-05's thresholds are designed to filter."
+        "reasoning": "The defense makes an excellent point: a2-04 and a3-05 may describe the same bug from different angles. Clamped vs unclamped sw IS related to stride reduction ordering. However, a2-04 still takes hits because it lacks the precision of a3-05 (which cites specific lines and ordering dependencies). a1-05 loses ground because a3-14's representation mismatch is a genuine obstacle to simple numerical comparison. a3-05 gets a parity_convergence upgrade because its specific identification of the ordering dependency (ImgW modified before tdx at line 323) is the most precise and testable sub-hypothesis, making it the highest-value investigation target. a3-14 gets an actionability upgrade because its observation about representation incommensurability is directly useful for designing the comparison methodology."
       }
     ]
   },
   {
     "tension_id": "t-21",
+    "tensions_included": ["t-21"],
+    "cluster_rationale": "Standalone tension about whether failure groups are truly independent.",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-15": {"robustness": -0.05},
-          "a3-11": {"specificity": 0.03}
+          "a2-10": {"evidential_grounding": -0.10, "failure_resistance": -0.10}
         },
-        "reasoning": "a1-15 requires testing observable behavior, not implementation artifacts. settle()'s fixed iteration count (5) is an implementation artifact that tests depend on. If the convergence rate changes, tests break even though observable behavior is correct."
+        "reasoning": "a3-12 correctly notes that the 12-group classification is based on symptom similarity, not verified code-path independence. Groups that appear unrelated might share upstream code. The independence claim is strongest between clearly different code paths (polygon vs gradient) but weakest between groups that exercise the same rendering pipeline (A+B and D share 9-slice). a2-10's parallel-attack recommendation is premature without verifying independence."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-15": {"robustness": 0.03}
+          "a2-10": {"evidential_grounding": 0.05, "failure_resistance": 0.05}
         },
-        "reasoning": "The settle() iteration count is a test setup parameter, not the tested behavior itself. The test compares the final state, not the iteration count. This is like testing a function's output after calling it -- the number of calls is setup, not the subject of testing."
+        "reasoning": "Even if some groups share upstream causes, the classification provides useful triage structure. The proposition does not claim ALL groups are independent, only that they 'can be attacked independently.' For most group pairs (e.g., G2 polygon vs G3 Hermite table vs G7 gradient), the code paths are genuinely distinct. The prosecution overgeneralizes from a few shared-cause possibilities."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-15": {"robustness": -0.02},
-          "a3-11": {"specificity": 0.02}
+          "a2-10": {"evidential_grounding": -0.05, "failure_resistance": -0.05},
+          "a3-12": {"evidential_grounding": -0.05}
         },
-        "reasoning": "The defense has a point about setup vs. subject, but a3-11's concern is that the setup (iteration count) encodes an assumption about convergence rate that could fail. Low-medium severity (0.58). Small deltas."
+        "reasoning": "Both propositions take small hits. a2-10's independence claim is mostly correct but overstated for the groups known to share code paths (A+B and D, G2 and G6). a3-12's speculation about hidden shared causes is plausible but undemonstrated for the specific cross-group combinations it cites (A+B and G7 sharing sub-pixel edge calculation is speculative). Both sides are arguing from reasonable priors without decisive evidence."
       }
     ]
   },
   {
-    "tension_id": "t-22",
+    "tension_id": "t-26",
+    "tensions_included": ["t-26"],
+    "cluster_rationale": "Standalone tension about test setup verification: routine triage (a2-20) vs. potential framework invalidation (a3-09).",
     "passes": [
       {
         "pass": "prosecution",
         "proposed_deltas": {
-          "a1-16": {"compatibility": -0.03}
+          "a3-09": {"evidential_grounding": -0.10, "parity_convergence": -0.10}
         },
-        "reasoning": "a1-16 and a2-16 together acknowledge the C++ oracle is sometimes wrong, undermining the simple asymmetric oracle model without providing a clear replacement."
+        "reasoning": "a3-09 escalates a routine test setup verification into a potential invalidation of the golden test framework. The proposition says 'making pixel parity with those references the wrong goal entirely,' but one confirmed wrong setup (eagle_logo) does not demonstrate systemic reference image corruption. a2-20's framing as routine triage is more proportionate to the evidence."
       },
       {
         "pass": "defense",
         "proposed_deltas": {
-          "a1-16": {"compatibility": 0.03}
+          "a3-09": {"evidential_grounding": 0.05, "parity_convergence": 0.05}
         },
-        "reasoning": "a2-16's diverged=true mechanism IS the replacement. The asymmetry holds by default with explicit exceptions documented when it does not."
+        "reasoning": "The prosecution underweights the memory file feedback_phase5_tests_suspect.md, which explicitly flags ALL Phase 5 tests as suspect. This is not a3-09 speculating -- the user has flagged this as a known risk. The number of affected tests is unknown, which means the proposition correctly raises the flag that some failures may be phantom."
       },
       {
         "pass": "adjudication",
         "final_deltas": {
-          "a1-16": {}
+          "a3-09": {"evidential_grounding": -0.05, "parity_convergence": -0.05},
+          "a2-20": {"parity_convergence": 0.05}
         },
-        "reasoning": "Low severity (0.50). The defense correctly identifies that the exception mechanism IS the resolution. No delta needed."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-23",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-02": {"specificity": -0.03}
-        },
-        "reasoning": "a1-17 requires staleness detection using C++ source revision. a2-02's contract registry does not include this metadata, leaving a gap in the schema."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-02": {"specificity": 0.02}
-        },
-        "reasoning": "The contract schema can be extended to include source revision metadata. This is a feature request, not a design flaw."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-02": {"specificity": -0.01}
-        },
-        "reasoning": "Low severity (0.48). The gap is addressable through schema extension. Minimal delta."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-27",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a1-20": {"robustness": -0.10, "compatibility": -0.05}
-        },
-        "reasoning": "a1-20 requires reporting golden coverage gaps. a3-14 reveals the gap is enormous (~85% of files uncovered). Reporting an 85% gap could make the requirement feel unactionable, potentially leading to the report being ignored. The sheer size of the gap transforms a useful diagnostic into a demoralizing metric that may reduce motivation to close it."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a1-20": {"robustness": 0.07, "compatibility": 0.03}
-        },
-        "reasoning": "Knowing the gap is enormous is strictly more useful than not knowing. The organizational tension of an unactionable metric is a management problem, not a technical flaw in the requirement. Furthermore, the 85% figure includes files not yet ported, trivial wrappers, and files covered by non-golden unit tests, so the actual gap may be smaller than stated."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a1-20": {"robustness": -0.05, "compatibility": -0.02}
-        },
-        "reasoning": "The defense correctly argues that knowing the gap is better than not knowing. However, the prosecution has a point about actionability: reporting a permanent 85% gap without a plan to address it reduces the signal-to-noise ratio of the harness output. Moderate delta because the concern is real but the principle is sound."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-28",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-08": {"robustness": -0.03}
-        },
-        "reasoning": "The latest symlink only compares consecutive runs, so regression-then-fix-then-regression appears as a new regression rather than a recurrence."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-08": {"robustness": 0.02}
-        },
-        "reasoning": "Treating recurrence as a new regression is the safer behavior -- it forces investigation regardless of history."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-08": {"robustness": -0.01}
-        },
-        "reasoning": "Low severity (0.45). The defense makes a valid point about safe defaults. Minimal delta."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-29",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-18": {"specificity": -0.05}
-        },
-        "reasoning": "a2-18 presents the frozen oracle as natural architecture without acknowledging it as a methodological deviation per a1-23."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-18": {"specificity": 0.03}
-        },
-        "reasoning": "a2-18 describes the architecture; methodological justification is a separate concern addressed by a1-23."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-18": {"specificity": -0.02}
-        },
-        "reasoning": "Medium-low severity (0.55). a2-18 should acknowledge the methodological deviation even if a1-23 provides the full justification. Small delta."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-30",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-22": {"robustness": -0.05, "specificity": -0.03}
-        },
-        "reasoning": "a2-22 hardcodes 214 as the registry count, treating the current set as complete. a1-25 warns that losing the C++ build environment permanently freezes the test suite. By hardcoding the count, a2-22 implicitly treats the frozen state as the target rather than as a constraint, accelerating the problem a1-25 identifies."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-22": {"robustness": 0.03}
-        },
-        "reasoning": "The count 214 is the current state for validation purposes, not a target. The contract registry is designed to grow as new tests are added. Hardcoding the current count in documentation does not prevent adding more tests."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-22": {"robustness": -0.02}
-        },
-        "reasoning": "Low-medium severity (0.60). The defense is correct that the count is descriptive, not prescriptive. Small delta for the fragility of hardcoded counts."
-      }
-    ]
-  },
-  {
-    "cluster": ["t-33", "t-34"],
-    "cluster_rationale": "Both involve a2-04 (tolerance tightening mechanism) interacting with tolerance dynamics (a3-07 existing loose tolerances, a3-13 LLM incentives).",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-04": {"robustness": -0.10}
-        },
-        "reasoning": "a2-04's tolerance ratchet has two weaknesses. t-33 (severity 0.62): if the mechanism is only forward-looking, it locks in the already-loose tolerances documented by a3-07 without requiring retroactive justification. t-34 (severity 0.68): an LLM can trivially provide a plausible --reason string for the audit mechanism, since the guardrail was designed for human accountability. Together, the ratchet could lock in loose tolerances (t-33) and fail to prevent future loosening by LLM actors (t-34)."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-04": {"robustness": 0.05}
-        },
-        "reasoning": "Any guardrail can be circumvented with sufficient effort. The --reason flag creates an audit trail that is visible in code review, which is the actual enforcement mechanism. The LLM-generated reason strings are still reviewed by human developers. The forward-looking nature of the ratchet is pragmatic -- retroactive justification of all existing tolerances is a separate project."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-04": {"robustness": -0.05}
-        },
-        "reasoning": "The defense correctly identifies code review as the ultimate enforcement mechanism. However, the prosecution's point about LLM-generated plausible reasons is structurally sound: the guardrail's audit trail is only as good as the scrutiny applied to it. Moderate delta reflecting that the mechanism works in principle but has a weaker enforcement surface than designed for."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-36",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-09": {"robustness": -0.05, "defensibility": -0.03}
-        },
-        "reasoning": "a2-09's convergence definition (zero failures, non-increasing suspicious count) could declare convergence while the coverage gap widens per a3-25. Convergence in pass rate does not imply convergence in verification completeness."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-09": {"robustness": 0.03}
-        },
-        "reasoning": "a2-09 defines harness convergence, not project convergence. It correctly measures stability of the existing test suite. Coverage completeness is a separate metric tracked by a1-20."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-09": {"robustness": -0.02, "defensibility": -0.01}
-        },
-        "reasoning": "Low-medium severity (0.58). The defense's scope distinction is valid, but a2-09's use of the word 'convergence' implies completeness that it does not measure. Small delta for the semantic overstatement."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-37",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-10": {"robustness": -0.05}
-        },
-        "reasoning": "a2-10's independence verification doubles execution time to catch ordering bugs, but a3-18 shows this catches determinism issues, not correctness bugs. The effort-to-value ratio is questionable."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-10": {"robustness": 0.03}
-        },
-        "reasoning": "Test independence is a separate concern from correctness. Both are valuable. Determinism verification prevents a class of CI instability bugs that would undermine trust in the harness."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-10": {"robustness": -0.02}
-        },
-        "reasoning": "Low-medium severity (0.52). Test independence is valuable but the tension correctly identifies it tests a different property than the primary concern (correctness). Small delta."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-38",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-15": {"robustness": -0.05}
-        },
-        "reasoning": "Change-guided coverage (a2-15) restricts testing to modified files, but cross-cutting interactions (a3-19) mean changes in one module can affect behavior in another. The file-level granularity misses transitive dependencies."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-15": {"robustness": 0.03}
-        },
-        "reasoning": "a2-15 is an optimization for fast feedback, not a replacement for full runs. The full harness run (a2-19) catches cross-cutting issues. Change-guided coverage is complementary."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-15": {"robustness": -0.02}
-        },
-        "reasoning": "Low-medium severity (0.55). The defense correctly frames it as optimization, not replacement. Small delta for the acknowledged transitive dependency blind spot."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-39",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-16": {"robustness": -0.05}
-        },
-        "reasoning": "If many C++ 0.96.4 behaviors are bugs (a3-17), a2-16's diverged=true mechanism becomes routine rather than exceptional, normalizing the exception path."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-16": {"robustness": 0.03}
-        },
-        "reasoning": "The number of C++ bugs is likely small relative to total behaviors. Even if diverged=true is used frequently, the documentation requirement ensures each case is justified."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-16": {"robustness": -0.02}
-        },
-        "reasoning": "Medium severity (0.62). The concern about normalization is valid but speculative without evidence of widespread C++ bugs. Small delta."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-41",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a1-08": {"compatibility": -0.10},
-          "a2-09": {"defensibility": -0.05, "robustness": -0.05}
-        },
-        "reasoning": "a1-08 insists the stopping criterion must be reliability-based (statistical fault estimation). a2-09 defines convergence in terms of pass/fail/suspicious counts across 3 runs, which is exactly the coverage-based criterion a1-08 rejects. This is a direct contradiction (severity 0.72). a2-09's convergence definition ignores the distinction between 'all tests pass' and 'remaining faults are below threshold,' which is a1-08's core point. a1-08 also takes a compatibility hit because reliability-based stopping is impractical for this project, as acknowledged in its own robustness score."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a1-08": {"compatibility": 0.05},
-          "a2-09": {"defensibility": 0.03}
-        },
-        "reasoning": "a1-08 sets the theoretical ideal; a2-09 provides a practical approximation. In practice, all test suites use coverage-based stopping criteria because reliability estimation requires data that does not exist before deployment. a2-09's 3-run window with suspicious count tracking is a reasonable heuristic that provides more signal than 'all tests pass.' The two propositions can coexist: a1-08 as the aspiration, a2-09 as the implementation with documented deviation per a1-19."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a1-08": {"compatibility": -0.05},
-          "a2-09": {"defensibility": -0.02}
-        },
-        "reasoning": "The defense's pragmatic resolution is sound: a1-08 is aspirational, a2-09 is practical. However, a1-08 takes a compatibility hit because it requires something that is acknowledged as impractical. a2-09 takes a small defensibility hit because its convergence definition does not acknowledge the limitation a1-08 identifies."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-42",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a1-09": {"specificity": -0.03},
-          "a3-21": {"specificity": -0.03}
-        },
-        "reasoning": "Together a1-09 and a3-21 compound the frozen oracle's weakness: the property is both weaker (unary vs. relational) and permanently so (baked-in coincident failures). The compound effect is somewhat academic since neither proposes a feasible mitigation."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a1-09": {"specificity": 0.02},
-          "a3-21": {"specificity": 0.02}
-        },
-        "reasoning": "Both propositions correctly identify structural limitations. Their convergence strengthens rather than weakens each -- they describe the same limitation from different angles."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a1-09": {},
-          "a3-21": {}
-        },
-        "reasoning": "Low severity (0.55). The two propositions are compatible and mutually reinforcing. No delta needed -- the compound observation is an inherent limitation of frozen oracles that both propositions correctly identify."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-43",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-15": {"specificity": -0.03}
-        },
-        "reasoning": "a1-24's risk-based prioritization and a2-15's change-guided coverage may conflict: recently modified files may not be the highest-risk translation areas."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-15": {"specificity": 0.02}
-        },
-        "reasoning": "The two prioritization schemes address different concerns (what to test first vs. what to test during active development) and can coexist."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-15": {"specificity": -0.01}
-        },
-        "reasoning": "Low severity (0.50). The prioritization schemes serve different purposes. Minimal delta."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-44",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-14": {"robustness": -0.05}
-        },
-        "reasoning": "a2-14's coincident failure detection could correctly detect correlation but misattribute it to implementation bugs when the root cause is shared test infrastructure per a3-20."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-14": {"robustness": 0.03}
-        },
-        "reasoning": "Detecting correlation is still valuable even if the root cause is misattributed. The alert prompts investigation, which would discover the infrastructure bug."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-14": {"robustness": -0.02}
-        },
-        "reasoning": "Low-medium severity (0.55). The detection is still valuable. Small delta for potential misattribution."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-45",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-05": {"specificity": -0.02}
-        },
-        "reasoning": "a2-05 reduces rich quantitative distributions (a1-12) to a binary suspicious classification, losing information."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-05": {"specificity": 0.02}
-        },
-        "reasoning": "Classification does not destroy the underlying data. a2-05 classifies for alerting; the full data remains available for investigation."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-05": {}
-        },
-        "reasoning": "Low severity (0.42). The classification is an additional layer, not a replacement. No delta."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-46",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-07": {"robustness": -0.03}
-        },
-        "reasoning": "a2-07 ensures structural completeness (files exist) but not behavioral completeness (files are tested). Conflating these could create a false sense of coverage."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-07": {"robustness": 0.02}
-        },
-        "reasoning": "a2-07 explicitly checks file correspondence, not test coverage. These are separate concerns. The proposition does not claim behavioral completeness."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-07": {"robustness": -0.01}
-        },
-        "reasoning": "Low severity (0.45). The defense correctly distinguishes the scopes. Minimal delta for the risk of conflation by users."
-      }
-    ]
-  },
-  {
-    "tension_id": "t-48",
-    "passes": [
-      {
-        "pass": "prosecution",
-        "proposed_deltas": {
-          "a2-12": {"robustness": -0.05}
-        },
-        "reasoning": "a2-12's self-conformance verifier checks structural properties but not semantic correctness of data translation functions like translate_cpp_notice_flags (a3-22). A transposition error would pass all self-conformance checks."
-      },
-      {
-        "pass": "defense",
-        "proposed_deltas": {
-          "a2-12": {"robustness": 0.03}
-        },
-        "reasoning": "Self-conformance is about structural integrity, not exhaustive semantic verification. Data translation correctness is the domain of golden tests themselves, not the meta-verifier."
-      },
-      {
-        "pass": "adjudication",
-        "final_deltas": {
-          "a2-12": {"robustness": -0.02}
-        },
-        "reasoning": "Low-medium severity (0.52). The defense correctly scopes self-conformance. Small delta for the acknowledged gap in what self-conformance can catch."
+        "reasoning": "a3-09's escalation to 'wrong goal entirely' is too strong given one confirmed instance, even with the memory file flag. The setup verification is important but is best treated as a2-20 frames it: a preprocessing step within the current methodology, not a framework-level crisis. a3-09 takes small cuts for overstatement. a2-20 gets a parity_convergence upgrade because 'verify setup before investigating rendering' is a concrete step that prevents wasted investigation rounds, directly supporting convergence efficiency."
       }
     ]
   }

@@ -1,402 +1,402 @@
 [
   {
     "id": "a1-01",
-    "proposition": "The frozen oracle model (C++ executed once to produce golden files, Rust compared later) must verify input identity rather than merely assume it, because the temporal decoupling means 'same input' is no longer guaranteed by construction.",
+    "proposition": "The inability of end-to-end golden tests to localize divergences to a specific pipeline stage is a mathematical property of composed functions, not a tooling limitation that can be resolved by better pixel-diff analysis or smarter hypothesis selection.",
     "scores": {
-      "defensibility": 0.92,
-      "specificity": 0.80,
-      "robustness": 0.85,
-      "compatibility": 0.75
+      "evidential_grounding": 0.90,
+      "actionability": 0.25,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.30
     },
     "reasoning": {
-      "defensibility": "Directly grounded in Vouk Section 2's foundational axiom that all programs are tested with the same input data. The temporal decoupling argument is logically sound: if inputs are reconstructed independently in two codebases, drift is possible.",
-      "specificity": "Identifies the problem (input drift) and suggests solutions (encode input in golden file or share input spec), but does not prescribe a single concrete implementation.",
-      "robustness": "The concern is real and hard to dismiss -- independently hardcoded inputs in C++ generator and Rust tests are fragile. However, an adversary could argue that version-controlled test code makes drift detectable via code review.",
-      "compatibility": "Could conflict with practical concerns about golden file format complexity. Encoding full input configuration in golden files adds overhead that a harness designer might resist."
+      "evidential_grounding": "The claim that f=h.g makes root-cause ambiguous from f(x) alone is mathematically sound and directly demonstrated by three disproven hypotheses in the project history.",
+      "actionability": "This is a diagnosis of the problem, not an action. It motivates the stage-decomposition approach but does not itself specify a concrete next step with success criteria.",
+      "failure_resistance": "Resistant to fog because it names the structural issue rather than proposing a hypothesis. However, the claim that the fog is 'structural' could overstate the difficulty -- some pipelines have stages where divergences do not compose ambiguously.",
+      "parity_convergence": "Indirectly supports parity by arguing for a methodology change, but does not itself fix any test or produce any closer-to-parity output."
     }
   },
   {
     "id": "a1-02",
-    "proposition": "Every output channel the C++ produces (pixels, layout rects, behavioral state, notice flags, trajectory data) must have a corresponding golden comparison; comparing only a subset of output channels violates Vouk's exhaustive pair comparison requirement.",
+    "proposition": "Three rounds of hypothesis-driven investigation (area sampling inner loop, transform parameters TX/TY/TDX/TDY, PaintImageColored color mapping) consumed 5-10 hours of agentic compute and produced zero direct fixes for the 21-test Group A+B failure cluster.",
     "scores": {
-      "defensibility": 0.88,
-      "specificity": 0.85,
-      "robustness": 0.70,
-      "compatibility": 0.65
+      "evidential_grounding": 0.95,
+      "actionability": 0.15,
+      "failure_resistance": 0.85,
+      "parity_convergence": 0.20
     },
     "reasoning": {
-      "defensibility": "Faithfully derived from Vouk Section 3 on comparing outputs of all possible program pair combinations, extended to all output variables per Vouk Figure 6.",
-      "specificity": "Enumerates the specific output channels that must be compared, making the requirement actionable.",
-      "robustness": "Vulnerable to the argument that some output channels may be impractical to capture from C++ (e.g., internal state not exposed via public API), creating an impossible mandate.",
-      "compatibility": "Likely to conflict with practical harness design constraints. Capturing all intermediate state from C++ requires instrumentation that may not exist or be feasible to add."
+      "evidential_grounding": "This is a direct recounting of project history documented in memory files. The tdx_init side-effect fix and three disproven hypotheses are verifiable from commit history.",
+      "actionability": "Pure historical observation. No action is prescribed. The 5-10 hour estimate is plausible but approximate.",
+      "failure_resistance": "Strong as a factual claim. An adversary could note that correct eliminations have value (narrowing the search space), which the proposition acknowledges but frames negatively.",
+      "parity_convergence": "Describes why parity has not been achieved, but does not directly advance toward it."
     }
   },
   {
     "id": "a1-03",
-    "proposition": "Thorough investigation of disagreements is a process requirement, not merely a diagnostic output requirement; the harness must support classifying each disagreement as (a) port fault, (b) oracle fault, (c) specification ambiguity, or (d) acceptable implementation difference.",
+    "proposition": "The root cause of Group A+B (21 tests) is 9-slice border image section boundary rounding divergence from C++, with divergent pixels clustering at section edges.",
     "scores": {
-      "defensibility": 0.85,
-      "specificity": 0.75,
-      "robustness": 0.65,
-      "compatibility": 0.70
+      "evidential_grounding": 0.65,
+      "actionability": 0.70,
+      "failure_resistance": 0.50,
+      "parity_convergence": 0.75
     },
     "reasoning": {
-      "defensibility": "Vouk Section 4.1 explicitly requires 'thorough investigation' of disagreements, which logically implies classification beyond raw diagnostic data.",
-      "specificity": "Provides a concrete four-category classification scheme, but does not specify how the harness should enforce or track this classification.",
-      "robustness": "An adversary could argue that classification is a human process that cannot be automated into a harness, making this an organizational requirement rather than a harness requirement.",
-      "compatibility": "Partially conflicts with fully automated testing aspirations -- human classification creates bottlenecks. Also tensions with M9's full automation requirement."
+      "evidential_grounding": "The failure catalog identifies this as the likely cause, but this is itself a hypothesis that has not been empirically verified with a stage-level comparison. Previous 'likely causes' for this group were revised multiple times.",
+      "actionability": "If true, the fix is concrete: adjust section boundary computation to match C++. But the 'if true' caveat is significant given the reclassification history.",
+      "failure_resistance": "Medium. This is the latest hypothesis for a group that has been reclassified from 'missing HowTo text' to 'PaintTextBoxed divergence' to this. The pattern of reclassification itself argues for caution.",
+      "parity_convergence": "If correct, fixing this resolves 21 of 37 failures -- a major advance. But reclassification risk means the expected value is discounted."
     }
   },
   {
     "id": "a1-04",
-    "proposition": "In a manual C++-to-Rust port, failure independence is systematically violated because the port author reads and translates the C++ code, making misunderstandings faithfully reproducible in Rust -- this is the worst case for Vouk's detection probability model.",
+    "proposition": "A Stage 1 harness that compares the 9 section rectangles computed by Rust vs C++ PaintBorderImage for the same inputs would immediately reveal whether section boundary rounding is the root cause of Group A+B, without hypothesis formation or pixel forensics.",
     "scores": {
-      "defensibility": 0.93,
-      "specificity": 0.70,
-      "robustness": 0.90,
-      "compatibility": 0.80
+      "evidential_grounding": 0.75,
+      "actionability": 0.80,
+      "failure_resistance": 0.70,
+      "parity_convergence": 0.65
     },
     "reasoning": {
-      "defensibility": "Logically airtight: Vouk's model requires failure independence (Section 3), and a manual port from source code maximally violates this by construction. The same developer reading the same algorithm will reproduce the same misunderstandings.",
-      "specificity": "Identifies the mechanism (shared understanding from reading source) but does not prescribe specific mitigations beyond generated inputs.",
-      "robustness": "Very hard to counter -- the correlation between source-reading and translation errors is well-established in N-version programming literature.",
-      "compatibility": "Compatible with most other propositions; strengthens the case for M4 (generated inputs) and V7 (inspection). Might tension with claims that the golden test suite provides high assurance."
+      "evidential_grounding": "Logically sound: comparing intermediate values eliminates downstream ambiguity by construction. The C++ generator infrastructure already exists. However, no such harness has been built yet, so the 'immediately reveal' claim is untested.",
+      "actionability": "Concrete and buildable: modify gen_golden.cpp to emit section rectangles, add equivalent tracing in Rust, diff the output. The C++ build infrastructure (Makefile) exists.",
+      "failure_resistance": "Moderately resistant. Risk: the harness might show section rectangles match, pushing the divergence downstream -- this would be informative but would not 'immediately reveal the root cause.' The harness reveals where the divergence is, not necessarily what it is.",
+      "parity_convergence": "Directly diagnostic for 21 tests. Even if section rects match (negative result), that eliminates a stage and focuses investigation on transforms/interpolation."
     }
   },
   {
     "id": "a1-05",
-    "proposition": "Generated test inputs are essential to differential testing, not merely complementary to hand-written tests; McKeeman argues they are the primary mechanism for discovering unexpected disagreements because hand-written tests share cognitive biases with the code.",
+    "proposition": "A Stage 2 harness comparing fixed-point transform parameters (TX, TY, TDX, TDY, stride_x, stride_y, off_x, off_y) between Rust paint_9slice_section and C++ ScanlineTool::Init would localize transform-level divergences to the exact parameter and section.",
     "scores": {
-      "defensibility": 0.87,
-      "specificity": 0.65,
-      "robustness": 0.75,
-      "compatibility": 0.60
+      "evidential_grounding": 0.70,
+      "actionability": 0.75,
+      "failure_resistance": 0.65,
+      "parity_convergence": 0.60
     },
     "reasoning": {
-      "defensibility": "McKeeman Section 2 explicitly argues for random testing as the way to make testing more complete. The cognitive bias argument is well-supported in testing literature.",
-      "specificity": "States a principle but does not define what generated inputs look like for a UI framework port, how many to generate, or what input domains to cover.",
-      "robustness": "An adversary could argue that for pixel-exact rendering, generated inputs produce so many false positives from tolerance issues that they are impractical. Also, generating valid UI tree configurations is non-trivial.",
-      "compatibility": "Tensions with practical harness constraints -- generated inputs require the C++ oracle to be executable for each new input, which conflicts with the frozen oracle model (Gap 4). This is a significant internal tension."
+      "evidential_grounding": "The document claims Hypothesis 2 already verified transforms match. If transforms were already verified to match exactly, this harness would confirm a known result rather than reveal new information for Group A+B. Its value is for other groups.",
+      "actionability": "Concrete: the parameters are well-defined numerical values that can be logged and compared. The C++ ScanlineTool::Init is a single function.",
+      "failure_resistance": "Partially undermined by the fact that Hypothesis 2 already checked this and found transforms matching. Building a harness to re-verify something already verified is low-value unless the previous verification was incomplete.",
+      "parity_convergence": "If transforms were already verified, this stage's contribution to parity is limited to catching future regressions or verifying other groups (C, D)."
     }
   },
   {
     "id": "a1-06",
-    "proposition": "The harness must not have a mechanism to mark a failing golden test as 'expected failure' without explicit documentation of why it fails and what investigation was performed; a blanket #[ignore] annotation violates Vouk's V3 and V8.",
+    "proposition": "The Rust paint_9slice_section reimplements C++ ScanlineTool::Init logic inline rather than routing through the shared PaintImage -> PaintRect -> Init path, creating an architectural divergence that manifests at sub-pixel boundary conditions.",
     "scores": {
-      "defensibility": 0.90,
-      "specificity": 0.88,
-      "robustness": 0.80,
-      "compatibility": 0.70
+      "evidential_grounding": 0.80,
+      "actionability": 0.85,
+      "failure_resistance": 0.60,
+      "parity_convergence": 0.80
     },
     "reasoning": {
-      "defensibility": "Directly supported by Vouk Section 4.1 requiring inspection of all conflict warnings. Suppressing disagreements without documentation defeats the purpose of differential testing.",
-      "specificity": "Very concrete -- names the specific anti-pattern (#[ignore]) and the specific requirement (documentation of why and what investigation was done).",
-      "robustness": "Could be challenged on the grounds that during active development, temporary ignores are necessary for CI stability. However, the proposition only forbids undocumented suppression, not all suppression.",
-      "compatibility": "May conflict with practical CI/CD workflows where failing tests block all development. A harness designer might argue for a documented-ignore mechanism, which this proposition actually allows."
+      "evidential_grounding": "Supported by project memory (feedback_match_cpp_architecture.md exists as a memory entry). The C++ architecture (PaintImage -> PaintRect -> Init shared path) is verifiable from the C++ source. The claim that Rust reimplements inline is verifiable from emPainter.rs.",
+      "actionability": "Highly actionable: refactor paint_9slice_section to route through the same shared path as C++. Success criteria: transform parameters match C++ for all golden test inputs.",
+      "failure_resistance": "Moderate. The architectural mismatch is real, but the document's own Hypothesis 2 found that transform parameters already match. This suggests the architectural divergence may not be where the document claims, or the previous verification missed edge cases.",
+      "parity_convergence": "If the architectural mismatch is the root cause of Group A+B, fixing it resolves 21 tests. The memory entry 'Match C++ internal architecture' supports this as a validated strategy."
     }
   },
   {
     "id": "a1-07",
-    "proposition": "The 'even within tolerance' clause in requirement V8 is not supported by Vouk's text; Vouk assumes exact comparison, so the correct requirement is that every disagreement exceeding the comparison threshold must be inspected, while sub-tolerance treatment is a design choice the sources do not address.",
+    "proposition": "The total engineering cost of building stage-level comparison harnesses (C++ instrumentation, Rust instrumentation, comparison tooling) is estimated at 4-8 hours, which is already at break-even against the 5-10 hours spent on three disproven hypotheses.",
     "scores": {
-      "defensibility": 0.82,
-      "specificity": 0.85,
-      "robustness": 0.75,
-      "compatibility": 0.55
+      "evidential_grounding": 0.40,
+      "actionability": 0.50,
+      "failure_resistance": 0.35,
+      "parity_convergence": 0.40
     },
     "reasoning": {
-      "defensibility": "A careful textual reading -- Vouk's model does assume exact comparison and does not discuss tolerance. The correction is faithful to the source.",
-      "specificity": "Precisely identifies the over-extension and provides a corrected formulation.",
-      "robustness": "An adversary could argue that the spirit of Vouk's requirement (inspect everything suspicious) naturally extends to near-threshold values, especially when tolerance itself is an approximation.",
-      "compatibility": "Creates significant tension with proposition a1-13 (MEASURE_DIVERGENCE should be always-on) and with the general purist stance of maximizing detection. Weakening V8 opens a gap that practical concerns will exploit."
+      "evidential_grounding": "The 4-8 hour estimate is speculative. C++ instrumentation of ScanlineTool::Init requires understanding the C++ call paths, threading trace output through existing generator infrastructure, and handling all the rendering branches. The estimate assumes straightforward printf instrumentation but the C++ is template-heavy and uses virtual dispatch.",
+      "actionability": "The time estimate provides a cost frame but may be significantly underestimated. Building differential testing infrastructure across two languages with different build systems is typically harder than estimated.",
+      "failure_resistance": "Vulnerable to the common failure mode of underestimating infrastructure work. If the actual cost is 15-20 hours, the break-even argument collapses and the opportunity cost of not spending those hours on direct fixes becomes significant.",
+      "parity_convergence": "The harnesses are diagnostic, not curative. They locate divergences but do not fix them. The 4-8 hours is investment in diagnosis, after which additional fix time is needed."
     }
   },
   {
     "id": "a1-08",
-    "proposition": "Vouk's stopping criterion is reliability-based (statistical estimation of remaining faults), not coverage-based; simply defining 'all golden tests pass' as a stopping criterion does not satisfy Vouk's requirement because passing tests says nothing about faults in untested paths.",
+    "proposition": "Stage-level verification eliminates the classification problem: when all upstream stage harnesses pass, any remaining pixel divergence is definitionally in the compositing stage, with no spatial analysis or rendering-function attribution needed.",
     "scores": {
-      "defensibility": 0.80,
-      "specificity": 0.72,
-      "robustness": 0.60,
-      "compatibility": 0.55
+      "evidential_grounding": 0.85,
+      "actionability": 0.30,
+      "failure_resistance": 0.75,
+      "parity_convergence": 0.35
     },
     "reasoning": {
-      "defensibility": "Vouk Section 4.3 does discuss reliability estimation as the stopping criterion basis. The logical gap between 'all tests pass' and 'reliability target met' is real.",
-      "specificity": "Identifies the deficiency but does not explain how to implement reliability-based stopping for a UI framework port, which may not have a meaningful fault detection model.",
-      "robustness": "Vulnerable to the argument that reliability estimation requires fault injection or operational profile data that simply does not exist for this project, making the requirement theoretically correct but practically impossible.",
-      "compatibility": "Tensions with any practical stopping criterion. If reliability-based stopping is the only valid approach but is impractical, the project has no valid stopping criterion at all, which is an unhelpful conclusion."
+      "evidential_grounding": "Logically correct by construction: if f=h.g and g is verified correct, then divergence in f must be in h. This is a standard property of compositional verification.",
+      "actionability": "This is a theoretical property of the proposed infrastructure, not an action. It motivates building the infrastructure but does not specify how.",
+      "failure_resistance": "Strong against fog and misclassification. However, assumes clean stage boundaries -- if stages share mutable state or have side effects that cross boundaries, the compositional argument weakens.",
+      "parity_convergence": "Contributes to parity indirectly by improving diagnostic efficiency, but does not itself fix any test."
     }
   },
   {
     "id": "a1-09",
-    "proposition": "The frozen oracle permanently bakes in any coincident failures present at capture time; unlike live back-to-back testing where new inputs might expose different manifestations, the golden data is fixed and no amount of Rust-side testing will find coincident failures.",
+    "proposition": "The Group A+B failure classification was revised three times (missing HowTo text -> PaintTextBoxed divergence -> 9-slice section boundary rounding), demonstrating that end-to-end golden tests provide insufficient signal for reliable root-cause classification.",
     "scores": {
-      "defensibility": 0.91,
-      "specificity": 0.78,
-      "robustness": 0.88,
-      "compatibility": 0.80
+      "evidential_grounding": 0.90,
+      "actionability": 0.20,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.25
     },
     "reasoning": {
-      "defensibility": "Logically follows from the combination of Vouk V6 (coincident failures undetectable) and the frozen oracle constraint (golden data never changes unless manually regenerated).",
-      "specificity": "Clearly states the problem and its permanence, but does not prescribe a concrete mitigation beyond acknowledging the gap.",
-      "robustness": "Very difficult to counter -- the permanence of baked-in failures is a structural property of frozen oracles. An adversary can only argue that the risk is acceptable, not that it doesn't exist.",
-      "compatibility": "Compatible with most propositions. Strengthens the case for V7 (inspection of uncovered code) and M4 (generated inputs). Tensions slightly with practical acceptance of the frozen oracle model."
+      "evidential_grounding": "The reclassification history is documented in project memory. Each reclassification was driven by investigation that disproved the previous attribution.",
+      "actionability": "Historical observation that motivates methodology change but does not prescribe a specific action.",
+      "failure_resistance": "Strong factual claim. Resistant to reinterpretation. An adversary might note that reclassification is normal scientific progress, not evidence of a broken methodology.",
+      "parity_convergence": "Does not advance parity. Argues that the current approach is slow but does not provide an alternative path to fixing the 37 failures."
     }
   },
   {
     "id": "a1-10",
-    "proposition": "If the harness allows 'blessing' Rust output as golden data, it is no longer characterizing C++ behavior but testing Rust against itself, which provides zero fault detection power; save_trajectory_golden is methodologically dangerous.",
+    "proposition": "36 of 37 failing golden tests pass through one or more shared pipeline stages (section rectangle computation, transform initialization, interpolation, compositing), so stage-level harnesses built once provide diagnostic capability for nearly all failures.",
     "scores": {
-      "defensibility": 0.94,
-      "specificity": 0.90,
-      "robustness": 0.85,
-      "compatibility": 0.65
+      "evidential_grounding": 0.60,
+      "actionability": 0.45,
+      "failure_resistance": 0.50,
+      "parity_convergence": 0.55
     },
     "reasoning": {
-      "defensibility": "Directly follows from Feathers F3: characterization data must be captured from the existing system, not the new one. Testing a system against its own output is tautological.",
-      "specificity": "Names the specific function (save_trajectory_golden) and the specific methodological violation, making this highly actionable.",
-      "robustness": "An adversary could argue that when C++ infrastructure is unavailable, blessing Rust output after independent verification is better than having no test at all. The proposition acknowledges this edge case but restricts it.",
-      "compatibility": "Conflicts with practical reality that C++ build infrastructure may become unavailable (Gap 4). Also tensions with the need to extend test coverage over time as new Rust code is written."
+      "evidential_grounding": "The mapping of 36/37 tests to pipeline stages is asserted but not individually verified. Some mappings (e.g., G8/G9 structural divergences mapped to 'Stage 1 equivalent for polygon construction') are stretches -- structural issues may not decompose into the same 4-stage model.",
+      "actionability": "The claim motivates building shared infrastructure, but the 'one or more stages' qualifier is weak -- coverage of a stage does not mean the harness for that stage will diagnose the specific divergence.",
+      "failure_resistance": "Moderate. The 36/37 number could be challenged by noting that some failures (G8 wrong canvas_color, G9 wrong stroke polygon) are structural issues that stage harnesses may not catch cleanly.",
+      "parity_convergence": "If the diagnostic coverage claim holds, this is strong for parity. But diagnostic capability is not the same as fix capability."
     }
   },
   {
     "id": "a1-11",
-    "proposition": "The harness must record the exact C++ compiler version, flags, and source revision used to generate golden data, and the exact Rust compiler version and flags used to execute the port, because without this the golden data cannot be traced back to the build that produced it.",
+    "proposition": "The PaintImageColored investigation (Hypothesis 3) was examining the wrong rendering function entirely -- the divergent pixels at coordinates (x=24-35, y=288-305) correspond to the border indicator area, not the label text area where PaintImageColored operates (x=170-776).",
     "scores": {
-      "defensibility": 0.85,
-      "specificity": 0.90,
-      "robustness": 0.82,
-      "compatibility": 0.85
+      "evidential_grounding": 0.85,
+      "actionability": 0.30,
+      "failure_resistance": 0.75,
+      "parity_convergence": 0.30
     },
     "reasoning": {
-      "defensibility": "Vouk Section 2 discusses configuration management as important to back-to-back testing. Traceability of golden data to its source build is a standard software engineering practice.",
-      "specificity": "Lists exactly what must be recorded (compiler version, flags, source revision for both C++ and Rust), making this immediately implementable.",
-      "robustness": "Hard to argue against -- metadata recording is low-cost and high-value. An adversary could only argue it is low priority, not that it is wrong.",
-      "compatibility": "Highly compatible with other propositions. Supports Gap 3 (oracle staleness detection) and V1 (input identity verification)."
+      "evidential_grounding": "The pixel coordinate ranges and rendering function attribution are specific, verifiable claims. The divergence between border indicator coordinates and PaintImageColored operating range is a concrete factual claim.",
+      "actionability": "Retrospective finding. Useful for understanding what went wrong but does not prescribe a next action.",
+      "failure_resistance": "Strong as evidence for the fog problem. An adversary would have difficulty arguing that investigating the wrong function was productive.",
+      "parity_convergence": "Does not advance parity. Serves as cautionary evidence for the methodology argument."
     }
   },
   {
     "id": "a1-12",
-    "proposition": "The harness must produce quantitative disagreement metrics (percentage of pixels differing, maximum channel difference, distribution of differences), not merely binary pass/fail outcomes, because Vouk's detection model is inherently quantitative.",
+    "proposition": "The hypothesis cascade approach has a hidden cost: false confidence from correct eliminations consumes the investigation budget on diagnosis rather than leaving it available for fixing the actual root cause.",
     "scores": {
-      "defensibility": 0.83,
-      "specificity": 0.85,
-      "robustness": 0.78,
-      "compatibility": 0.82
+      "evidential_grounding": 0.70,
+      "actionability": 0.20,
+      "failure_resistance": 0.60,
+      "parity_convergence": 0.25
     },
     "reasoning": {
-      "defensibility": "Vouk Section 3 reasons about detection probabilities, not pass/fail. Quantitative metrics provide strictly more information than binary outcomes.",
-      "specificity": "Lists specific metrics (pixel percentage, max channel diff, distribution), making implementation straightforward.",
-      "robustness": "An adversary might argue that MEASURE_DIVERGENCE already provides this and the requirement is already met. The proposition's value depends on whether existing implementation is sufficient.",
-      "compatibility": "Compatible with most propositions. Supports V3 (thorough investigation) and the general principle of maximum diagnostic information."
+      "evidential_grounding": "The 'budget consumed on diagnosis not fix' observation is supported by the project history. However, 'false confidence' is a characterization -- the eliminations were correct and valuable, even if they did not fix the target group.",
+      "actionability": "Observation about methodology, not a concrete action.",
+      "failure_resistance": "Moderate. An adversary could argue that correct eliminations reduce the search space and are valuable, not sources of 'false confidence.' The framing is rhetorical.",
+      "parity_convergence": "Does not advance parity directly."
     }
   },
   {
     "id": "a1-13",
-    "proposition": "MEASURE_DIVERGENCE reporting must be always-on for methodology compliance, not opt-in via environment variable, because any tolerance-based comparison introduces a gap and all measured disagreements should be reported regardless of whether they exceed the threshold.",
+    "proposition": "For each failing golden test, the C++ generator should be modified to emit intermediate values (section rectangles, transform parameters, interpolated scanline values) alongside pixel data, creating a per-stage oracle.",
     "scores": {
-      "defensibility": 0.75,
-      "specificity": 0.88,
-      "robustness": 0.60,
-      "compatibility": 0.50
+      "evidential_grounding": 0.65,
+      "actionability": 0.70,
+      "failure_resistance": 0.55,
+      "parity_convergence": 0.60
     },
     "reasoning": {
-      "defensibility": "The argument that tolerance introduces a gap is sound, but a1-07 already established that sub-tolerance treatment is a design choice the sources do not address. This creates internal tension.",
-      "specificity": "Very specific -- names the exact mechanism (MEASURE_DIVERGENCE), the exact current behavior (env var opt-in), and the required change (always-on).",
-      "robustness": "Vulnerable to performance and noise arguments: always-on divergence reporting could slow tests and generate voluminous output that developers ignore, achieving the opposite of its intent.",
-      "compatibility": "Tensions with a1-07 (which says sub-tolerance treatment is not addressed by sources) and with practical CI concerns about test output volume and performance."
+      "evidential_grounding": "The C++ generator exists and builds via Makefile. Modifying it to emit intermediates is feasible. However, the specific instrumentation points (ScanlineTool::Init, PaintBorderImage section rects, interpolation scanlines) have not been prototyped.",
+      "actionability": "Concrete: add printf/trace calls to gen_golden.cpp at specified points. Success criteria: intermediate values appear in output. Risk: C++ template instantiation and virtual dispatch may make instrumentation more complex than 'add printf' suggests.",
+      "failure_resistance": "Moderate. The C++ codebase may resist easy instrumentation if the relevant functions are inlined, templated, or called through complex dispatch. The document assumes straightforward printf instrumentation.",
+      "parity_convergence": "Enables diagnosis of divergences but requires subsequent fix work. A necessary step if the stage-decomposition approach is adopted."
     }
   },
   {
     "id": "a1-14",
-    "proposition": "The full generate-execute-compare cycle must be automated without human intervention; a harness requiring manual steps (manually running the C++ generator, then manually running Rust tests, then manually comparing) violates McKeeman's method.",
+    "proposition": "The Rust pipeline should add stage-level tracing via a compile-time feature flag (#[cfg(feature = \"stage-trace\")]) to emit intermediate values at section entry, transform computation, and interpolation output.",
     "scores": {
-      "defensibility": 0.82,
-      "specificity": 0.75,
-      "robustness": 0.55,
-      "compatibility": 0.50
+      "evidential_grounding": 0.70,
+      "actionability": 0.80,
+      "failure_resistance": 0.65,
+      "parity_convergence": 0.55
     },
     "reasoning": {
-      "defensibility": "McKeeman Section 3 is predicated on automation of the entire generate-execute-compare cycle. The requirement is textually supported.",
-      "specificity": "Identifies the three manual steps that should be automated, but does not address the practical challenge of requiring C++ compilation in an automated pipeline.",
-      "robustness": "Directly conflicts with the frozen oracle model, which by design decouples generation from comparison. Full automation requires the C++ environment to be available in CI, which may be impractical or impossible.",
-      "compatibility": "Strong tension with the frozen oracle adaptation (Gap 3, Gap 4). If the C++ generator cannot run in CI, full automation is impossible, making this requirement impractical for the chosen architecture."
+      "evidential_grounding": "Feature-flag-gated tracing is a standard Rust pattern. The Rust paint_9slice_section function is identified at specific line numbers (2838-3003 of emPainter.rs), making the instrumentation points concrete.",
+      "actionability": "Highly actionable: add #[cfg(feature = \"stage-trace\")] println! at defined points in paint_9slice_section. Clear success criteria: values match C++ oracle output.",
+      "failure_resistance": "Moderate. Risk: the trace output format must exactly match C++ output for comparison to work. Floating-point formatting differences between C++ printf and Rust println could create false divergences.",
+      "parity_convergence": "Diagnostic infrastructure that enables fixes but does not itself fix any test."
     }
   },
   {
     "id": "a1-15",
-    "proposition": "Golden tests must test observable behavior, not implementation artifacts; a test that depends on Rust-specific implementation details (e.g., HashMap iteration order) rather than behavioral output violates Feathers's principle that characterization tests survive refactoring.",
+    "proposition": "The tdx_init computation fix discovered during the area sampling investigation (Hypothesis 1) improved 5 unrelated tests, demonstrating that even disproven hypotheses can produce valuable side-effect fixes.",
     "scores": {
-      "defensibility": 0.90,
-      "specificity": 0.80,
-      "robustness": 0.85,
-      "compatibility": 0.90
+      "evidential_grounding": 0.95,
+      "actionability": 0.15,
+      "failure_resistance": 0.80,
+      "parity_convergence": 0.40
     },
     "reasoning": {
-      "defensibility": "Feathers Chapter 13 explicitly designs characterization tests to survive refactoring by testing behavior not structure. This is a core principle of the approach.",
-      "specificity": "Gives a concrete example (HashMap iteration order) and a clear principle (observable behavior only).",
-      "robustness": "Hard to argue against in principle. An adversary could only note that the boundary between 'observable behavior' and 'implementation artifact' is sometimes blurry.",
-      "compatibility": "Highly compatible -- testing observable behavior is a widely accepted principle that aligns with all three source methodologies."
+      "evidential_grounding": "The tdx_init fix and its 5-test improvement are documented in project history and verifiable from commits.",
+      "actionability": "Historical observation, not a prescribed action.",
+      "failure_resistance": "Strong factual claim. An adversary could use this to argue that the hypothesis cascade approach does produce value, weakening the case for abandoning it.",
+      "parity_convergence": "The fix itself advanced parity (5 tests), but the proposition is about retrospective credit for the hypothesis cascade, not about future parity progress."
     }
   },
   {
     "id": "a1-16",
-    "proposition": "The asymmetric oracle relationship (C++ is oracle, Rust is subject) is a project decision, not a methodological requirement of differential testing; McKeeman's original formulation treats all systems as peers and flags any disagreement for investigation.",
+    "proposition": "Investigator hypothesis selection is biased toward stages they understand best, code they read most recently, and divergence patterns they have seen before, leading to systematically skipping structurally simple code assumed to be correct.",
     "scores": {
-      "defensibility": 0.88,
-      "specificity": 0.82,
-      "robustness": 0.80,
-      "compatibility": 0.70
+      "evidential_grounding": 0.75,
+      "actionability": 0.20,
+      "failure_resistance": 0.65,
+      "parity_convergence": 0.20
     },
     "reasoning": {
-      "defensibility": "McKeeman Section 1 does treat comparable systems symmetrically. The asymmetric adaptation is indeed a project choice that should be documented.",
-      "specificity": "Clearly distinguishes methodological requirement from project decision and identifies the specific adaptation.",
-      "robustness": "An adversary could argue that in a porting context, asymmetry is the only sensible interpretation -- the original system is by definition more trusted. But the proposition correctly notes this is pragmatic, not methodological.",
-      "compatibility": "Tensions with F8 (deployed-system bug policy) which implicitly assumes C++ is authoritative. Also tensions with Gap 1 which discusses what happens when this asymmetry is wrong."
+      "evidential_grounding": "Supported by the investigation history: area sampling (complex, recently fixed), transform parameters (easy to verify), and PaintImageColored (recently ported) were investigated while section boundary computation (simple, assumed correct) was not. The bias pattern matches cognitive science findings on availability heuristic.",
+      "actionability": "Observation about cognitive bias, not an actionable step. Motivates automated verification but does not specify it.",
+      "failure_resistance": "Moderate. The claim is plausible but somewhat speculative about the investigators' internal reasoning. An adversary could argue the hypotheses were selected on technical merit, not bias.",
+      "parity_convergence": "Does not advance parity."
     }
   },
   {
     "id": "a1-17",
-    "proposition": "When oracle regeneration is required, it is a manual step outside the normal test cycle; the harness must detect staleness -- if golden data was generated from a different version of the C++ source than what is currently checked in, the comparison is unsound.",
+    "proposition": "Golden tests should serve only as composition verification (do correctly-implemented stages compose correctly), not double as component verification (does each stage produce correct intermediates), because conflating these two roles is the root cause of diagnostic fog.",
     "scores": {
-      "defensibility": 0.86,
-      "specificity": 0.82,
-      "robustness": 0.72,
-      "compatibility": 0.78
+      "evidential_grounding": 0.70,
+      "actionability": 0.40,
+      "failure_resistance": 0.60,
+      "parity_convergence": 0.35
     },
     "reasoning": {
-      "defensibility": "Follows logically from Vouk V4 (regression after correction) and the frozen oracle constraint. If golden data is stale relative to the C++ source, comparisons are against an outdated oracle.",
-      "specificity": "Names the specific problem (staleness) and a detection mechanism (comparing C++ source revision in golden data vs. checked-in source).",
-      "robustness": "An adversary could note that C++ source changes may not affect all golden tests, so staleness detection needs to be granular, not binary. A blanket 'stale' flag would cause unnecessary regeneration.",
-      "compatibility": "Compatible with a1-11 (configuration management) -- recording source revision enables staleness detection. Tensions slightly with practical reality that C++ source may not change at all once the port is complete."
+      "evidential_grounding": "The separation of unit vs integration testing is well-established in testing literature. The claim that conflation causes fog is supported by the project history. However, 'root cause' is a strong claim -- fog also arises from code complexity and incomplete understanding.",
+      "actionability": "Prescribes a testing philosophy but not a specific implementation. The actionable version is 'build stage harnesses' (covered in other propositions).",
+      "failure_resistance": "Moderate. An adversary could argue that the test suite already has unit tests for individual functions, and the fog arises from specific architectural choices, not from the testing philosophy.",
+      "parity_convergence": "Indirectly supports parity by arguing for infrastructure investment. Does not itself advance toward 241/241."
     }
   },
   {
     "id": "a1-18",
-    "proposition": "Each golden test should be specific enough that only the correct implementation satisfies it; large tolerances in pixel comparison weaken branch path uniqueness and allow wrong implementations to pass.",
+    "proposition": "The polygon rasterization divergence in Group G2 (6 tests) can be localized by a harness comparing edge-crossing x-coordinates per scanline between Rust and C++, specifically where x_cur += dx_per_row diverges from C++'s in-place x1 += dx mutation.",
     "scores": {
-      "defensibility": 0.85,
-      "specificity": 0.78,
-      "robustness": 0.68,
-      "compatibility": 0.60
+      "evidential_grounding": 0.55,
+      "actionability": 0.65,
+      "failure_resistance": 0.50,
+      "parity_convergence": 0.55
     },
     "reasoning": {
-      "defensibility": "Feathers Chapter 13 p.190 explicitly asks whether there is any other way a test could pass aside from executing the correct branch. Large tolerances directly undermine this.",
-      "specificity": "States the principle clearly and gives the concrete example (pixel comparison tolerance), but does not define what tolerance is 'too large.'",
-      "robustness": "Vulnerable to the argument that some tolerance is necessary due to legitimate platform differences (floating-point rounding, font rendering). Zero tolerance may be unachievable, so the question is where to draw the line.",
-      "compatibility": "Tensions with practical necessity of tolerances in pixel comparison. Also tensions with a1-07 which acknowledges tolerance as a design choice not addressed by sources."
+      "evidential_grounding": "The specific divergence mechanism (accumulation in x_cur vs in-place x1 mutation) is plausible but unverified. The document presents this as a known fact but it is actually a hypothesis about where the polygon rasterization diverges.",
+      "actionability": "Moderately actionable: building a polygon edge-crossing harness is concrete, though it requires understanding both C++ and Rust polygon rasterization internals.",
+      "failure_resistance": "Medium. If the divergence is not in edge-crossing computation but in polygon setup or winding-rule logic, this harness would show a negative result, requiring additional harnesses.",
+      "parity_convergence": "Targets 6 of 37 tests. If the diagnosis is correct, building and using this harness could resolve those 6 tests."
     }
   },
   {
     "id": "a1-19",
-    "proposition": "Where practicality forces a deviation from published methodology, the deviation must be documented at the exact point where it occurs, with the specific methodological requirement it violates and the rationale for accepting the gap.",
+    "proposition": "When a stage-level divergence is found, the correct fix depends on its category: literal port error (change formula), architectural divergence (route through shared logic), intentional idiom difference (port C++ approach for golden path), C++ bug reproduction (port exact formula), or test setup error (align test parameters).",
     "scores": {
-      "defensibility": 0.92,
-      "specificity": 0.80,
-      "robustness": 0.88,
-      "compatibility": 0.90
+      "evidential_grounding": 0.80,
+      "actionability": 0.60,
+      "failure_resistance": 0.70,
+      "parity_convergence": 0.50
     },
     "reasoning": {
-      "defensibility": "A meta-requirement that is self-consistent: if you must deviate, documenting the deviation is strictly better than not documenting it. This is standard engineering practice.",
-      "specificity": "Specifies where documentation must occur (at the point of deviation) and what it must contain (requirement violated + rationale), making it actionable.",
-      "robustness": "Hard to argue against in principle. An adversary could only argue that the overhead of documenting every deviation is high, but this is about methodology deviations, not code changes.",
-      "compatibility": "Highly compatible with all propositions -- it is the escape valve that allows methodological purity to coexist with practical necessity."
+      "evidential_grounding": "The five categories are well-grounded in the project's CLAUDE.md rules (port fidelity tiers) and match observed divergence types (tdx_init = literal port error, paint_9slice_section = architectural divergence, gradient hash = C++ bug reproduction).",
+      "actionability": "Provides a decision framework but requires stage-level diagnosis first. Each category has a clear fix pattern, making this a useful taxonomy once a divergence is localized.",
+      "failure_resistance": "Reasonably robust. The categories are mutually exclusive and collectively exhaustive for the observed divergence types. Risk: a divergence could span multiple categories.",
+      "parity_convergence": "Supports parity by providing a systematic approach to fixing diagnosed divergences, but requires the stage-level infrastructure to exist first."
     }
   },
   {
     "id": "a1-20",
-    "proposition": "The harness must identify which Rust code paths are exercised by golden comparisons and which are not, so that inspection effort per Vouk V7 can be directed at uncovered code; if 40% of code paths have no golden coverage, the harness must report this.",
+    "proposition": "The project is at an inflection point where continuing the hypothesis cascade approach yields diminishing returns, because the remaining uninvestigated areas (section rectangle computation, Init logic divergence) are precisely those that the cascade systematically skipped.",
     "scores": {
-      "defensibility": 0.87,
-      "specificity": 0.83,
-      "robustness": 0.78,
-      "compatibility": 0.82
+      "evidential_grounding": 0.60,
+      "actionability": 0.30,
+      "failure_resistance": 0.45,
+      "parity_convergence": 0.35
     },
     "reasoning": {
-      "defensibility": "Vouk Section 5 states back-to-back testing must be combined with inspection, and McKeeman Section 4 identifies statement coverage as the simplest completeness measure. Both support this requirement.",
-      "specificity": "Gives a concrete threshold example (40%) and a concrete action (report uncovered paths), though the 40% is illustrative rather than prescriptive.",
-      "robustness": "An adversary might argue that code coverage measurement is standard practice and already done, making this a non-controversial requirement. That actually strengthens the proposition.",
-      "compatibility": "Compatible with all other propositions. Supports the general theme of knowing the limits of the test suite."
+      "evidential_grounding": "The 'inflection point' framing is rhetorical rather than empirically grounded. The claim that the cascade 'systematically skipped' these areas assumes a pattern where three data points may not be sufficient. The uninvestigated areas were simply next in the queue.",
+      "actionability": "Strategic framing, not a concrete action. The 'diminishing returns' claim would need to be tested by actually trying the next hypothesis in the cascade.",
+      "failure_resistance": "Weak. An adversary could argue that the next hypothesis (section boundary computation) could be tested directly without building stage-level infrastructure, and might succeed quickly. The 'inflection point' argument assumes the cascade will continue to fail.",
+      "parity_convergence": "Does not advance parity. Argues for a methodology switch that might improve parity convergence rate."
     }
   },
   {
     "id": "a1-21",
-    "proposition": "The harness must distinguish regressions (newly-introduced failures) from pre-existing failures, which requires either a known-failure list or a mechanism to compare current results against previous results.",
+    "proposition": "Vouk (1990) found that in interlanguage conversion projects, testing only at the system boundary causes defects to cluster in module interactions, while incremental module-boundary testing catches defects at their point of introduction.",
     "scores": {
-      "defensibility": 0.84,
-      "specificity": 0.82,
-      "robustness": 0.75,
-      "compatibility": 0.80
+      "evidential_grounding": 0.75,
+      "actionability": 0.25,
+      "failure_resistance": 0.65,
+      "parity_convergence": 0.20
     },
     "reasoning": {
-      "defensibility": "Vouk Section 4.2 states regression testing is used to check applied corrections. Distinguishing new failures from old is essential to this purpose.",
-      "specificity": "Identifies two concrete implementation approaches (known-failure list or result comparison), making the requirement implementable.",
-      "robustness": "An adversary could argue that in a CI pipeline, any failure is a blocker regardless of whether it is new or pre-existing, so the distinction is academic. But during active porting, pre-existing failures are expected.",
-      "compatibility": "Compatible with a1-06 (no undocumented suppression) -- a known-failure list is documented suppression. Also compatible with practical CI needs."
+      "evidential_grounding": "References established literature. The Vouk citation is specific. However, the applicability to eaglemode-rs depends on how closely this project matches Vouk's studied projects (typically FORTRAN-to-C conversions of numerical code).",
+      "actionability": "Academic reference that motivates an approach but does not specify a concrete implementation step.",
+      "failure_resistance": "Moderate. An adversary could question whether a 1990 paper on FORTRAN conversion applies to a C++-to-Rust pixel-rendering port with different failure modes.",
+      "parity_convergence": "Does not advance parity directly. Provides theoretical justification for the stage-decomposition approach."
     }
   },
   {
     "id": "a1-22",
-    "proposition": "The six missing requirements (V11 configuration management, V12 quantitative metrics, M9 full automation, M10 input domain characterization, F9 intermediate sensing variables, F10 behavior-not-structure testing) are directly supported by the source texts and are not merely nice-to-haves.",
+    "proposition": "The previous assessment that paint_9slice_section was 'structurally equivalent with minor differences that don't cause divergence in normal cases' was made without per-case numerical comparison and should be re-verified with stage-level harness data.",
     "scores": {
-      "defensibility": 0.78,
-      "specificity": 0.60,
-      "robustness": 0.55,
-      "compatibility": 0.70
+      "evidential_grounding": 0.80,
+      "actionability": 0.75,
+      "failure_resistance": 0.70,
+      "parity_convergence": 0.70
     },
     "reasoning": {
-      "defensibility": "Each individual missing requirement is traced to a specific section of a source text. However, 'directly supported' is a strong claim -- some (like M10) are more implied than explicit.",
-      "specificity": "Lists the six requirements but as a bundle; each would need separate analysis for actionability. As a meta-claim about completeness, it is somewhat abstract.",
-      "robustness": "Vulnerable to prioritization arguments: even if all six are supported by sources, implementing all of them may be infeasible. An adversary can accept them in theory while arguing they are lower priority than other work.",
-      "compatibility": "Some internal tension: M9 (full automation) conflicts with the frozen oracle model that other propositions accept as valid."
+      "evidential_grounding": "The original assessment is documented in project history. The claim that it lacked per-case numerical comparison is supported by the fact that no stage-level harness existed at the time.",
+      "actionability": "Concrete: re-verify paint_9slice_section against C++ ScanlineTool::Init for all failing test inputs, either via harness or manual computation. Success criteria: identify any numerical divergence.",
+      "failure_resistance": "Good. Even if the re-verification confirms equivalence, that is valuable information that eliminates a stage. If it finds divergences, those are directly fixable.",
+      "parity_convergence": "Directly targets the hypothesized root cause of 21 tests. Re-verification could either confirm or eliminate the most promising lead."
     }
   },
   {
     "id": "a1-23",
-    "proposition": "The frozen oracle is a valid practical adaptation of Vouk's live back-to-back model, but none of the three source texts describe or endorse it, so every gap it introduces is a deviation from published methodology that must be justified on its own terms.",
+    "proposition": "A differential testing harness in the sense of McKeeman (1998), applied at each pipeline stage rather than only at the output, would automate the comparison of Rust and C++ intermediate values for all golden test inputs.",
     "scores": {
-      "defensibility": 0.90,
-      "specificity": 0.72,
-      "robustness": 0.82,
-      "compatibility": 0.75
+      "evidential_grounding": 0.65,
+      "actionability": 0.55,
+      "failure_resistance": 0.50,
+      "parity_convergence": 0.45
     },
     "reasoning": {
-      "defensibility": "Factually accurate: none of the three sources discuss frozen oracles. The conclusion that deviations must be justified follows from standard methodological rigor.",
-      "specificity": "States the general principle but relies on the five specific gaps (identified elsewhere) for concreteness.",
-      "robustness": "An adversary could argue that practical adaptations are ubiquitous and that insisting on justification for every gap is pedantic. But in a methodology purist analysis, this is exactly the right stance.",
-      "compatibility": "Creates productive tension: it accepts the frozen oracle (compatible with practical concerns) while insisting on documentation (compatible with methodological purity)."
+      "evidential_grounding": "McKeeman's differential testing is a well-established technique. Its application to per-stage comparison is a reasonable extension. However, McKeeman's original work focused on compiler testing with random inputs, not on porting verification with fixed golden inputs.",
+      "actionability": "The 'comparison script' is concrete in concept but underspecified. Matching output formats between C++ printf and Rust trace, handling floating-point representation differences, and managing the data flow adds complexity.",
+      "failure_resistance": "Moderate. The harness itself could have bugs that create false divergences or miss real ones. Infrastructure testing is needed.",
+      "parity_convergence": "Supports parity by automating diagnosis, but does not itself fix any divergence."
     }
   },
   {
     "id": "a1-24",
-    "proposition": "In the porting context where all code is being changed, Feathers's 'coverage guided by change' principle means the harness must prioritize golden test coverage for code paths most likely to diverge in translation (integer arithmetic, pointer semantics, memory layout) rather than aiming for uniform coverage.",
+    "proposition": "The gradient pipeline divergence in Group G7 can be diagnosed by a stage harness comparing the 1-byte g values before the hash lookup, which would determine whether the divergence is in the gradient walk or in the hash mediation.",
     "scores": {
-      "defensibility": 0.83,
-      "specificity": 0.78,
-      "robustness": 0.72,
-      "compatibility": 0.80
+      "evidential_grounding": 0.70,
+      "actionability": 0.65,
+      "failure_resistance": 0.55,
+      "parity_convergence": 0.40
     },
     "reasoning": {
-      "defensibility": "A reasonable extension of Feathers Chapter 13 p.189 to the porting context. The specific divergence-prone areas (integer arithmetic, pointer semantics) are well-known C++-to-Rust translation hazards.",
-      "specificity": "Names specific high-risk areas (integer arithmetic, pointer semantics, memory layout), giving developers concrete guidance on where to focus.",
-      "robustness": "An adversary could argue that all code paths are equally at risk in a full port, so prioritization is misguided. But empirically, certain translation patterns (signed/unsigned, pointer aliasing) are more error-prone.",
-      "compatibility": "Compatible with F6 (conversion boundaries) and the general principle of risk-based testing. Slightly tensions with V2/V10 (exhaustive comparison of all channels) by implying some areas matter more."
+      "evidential_grounding": "The zero-tolerance failure report (2026-04-01) identified the SharedPixelFormat architectural mismatch. The gradient hash formula was recently fixed (commit 3a2c1c1). The g-value comparison is a reasonable diagnostic step.",
+      "actionability": "Concrete: add tracing before the hash lookup in both C++ and Rust gradient paths. Success criteria: g values match or diverge, localizing the issue.",
+      "failure_resistance": "Moderate. The gradient pipeline was recently patched (hash formula fix), so the remaining divergence may be subtle. If g values match, the issue is definitionally in the hash mediation or compositing.",
+      "parity_convergence": "Targets only 1 test. Low leverage compared to Group A+B harnesses."
     }
   },
   {
     "id": "a1-25",
-    "proposition": "If the C++ build environment becomes unavailable, the ability to extend the golden test suite is permanently lost; the harness must document this dependency and the consequences of losing it.",
+    "proposition": "The existing golden test format (.painter.golden, .layout.golden) should be extended with a stage-trace variant that stores intermediate values alongside pixel data, making stage-level comparison a permanent part of the test infrastructure rather than a one-time diagnostic.",
     "scores": {
-      "defensibility": 0.88,
-      "specificity": 0.80,
-      "robustness": 0.85,
-      "compatibility": 0.70
+      "evidential_grounding": 0.45,
+      "actionability": 0.40,
+      "failure_resistance": 0.40,
+      "parity_convergence": 0.30
     },
     "reasoning": {
-      "defensibility": "Logically follows from the frozen oracle model: golden data requires C++ execution, and C++ build environments degrade over time. This is a well-known problem in software preservation.",
-      "specificity": "Identifies the specific risk (C++ build env loss) and the specific consequence (inability to extend tests), with a concrete mitigation (documentation).",
-      "robustness": "Very hard to counter -- build environment bitrot is a known and common problem. An adversary can only argue about timing and likelihood, not the structural risk.",
-      "compatibility": "Tensions with a1-05 (generated inputs as essential) -- if the C++ build env is lost, generated inputs become impossible, making the essential requirement unachievable. This is a productive tension."
+      "evidential_grounding": "No precedent for this in the project. The existing golden format is binary pixel data with metadata. Adding intermediate values would significantly change the format and the test comparison logic. The document presents this as a 'may need' rather than a definite requirement.",
+      "actionability": "Underspecified. What format? How do intermediate values map to the existing comparison functions in common.rs? How large would the files be? These are open design questions.",
+      "failure_resistance": "Weak. This is infrastructure-on-infrastructure: building a permanent format extension before validating that stage-level comparison works at all. Premature commitment risk.",
+      "parity_convergence": "Regression prevention (future parity maintenance) rather than achieving initial parity. Low priority until 241/241 is reached."
     }
   }
 ]

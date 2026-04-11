@@ -375,6 +375,7 @@ pub unsafe extern "C" fn rust_sample_adaptive_lum(
     )
 }
 
+
 // ── Layer 8: Border image boundary computation ──────────────────
 
 use emcore::emPainter::emPainter;
@@ -991,4 +992,3 @@ pub unsafe extern "C" fn rust_paint_polyline(
 
     0
 }
-

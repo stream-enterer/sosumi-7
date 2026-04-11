@@ -24,12 +24,12 @@ impl InterpolationBuffer {
     }
 
     #[inline]
-    pub(crate) fn max_pixels(&self) -> usize {
+    pub fn max_pixels(&self) -> usize {
         MAX_INTERP_BYTES / self.ch as usize
     }
 
     #[inline]
-    pub(crate) fn set_len(&mut self, n: usize) {
+    pub fn set_len(&mut self, n: usize) {
         debug_assert!(n <= self.max_pixels());
         self.len = n;
     }
@@ -42,7 +42,7 @@ impl InterpolationBuffer {
 
     /// Expand pixel `i` to RGBA for blending. Missing channels filled per C++ convention.
     #[inline]
-    pub(crate) fn pixel_rgba(&self, i: usize) -> [u8; 4] {
+    pub fn pixel_rgba(&self, i: usize) -> [u8; 4] {
         let ch = self.ch as usize;
         let off = i * ch;
         match ch {
@@ -62,7 +62,7 @@ impl InterpolationBuffer {
     }
 
     #[inline]
-    pub(crate) fn set_pixel(&mut self, i: usize, rgba: [u8; 4]) {
+    pub fn set_pixel(&mut self, i: usize, rgba: [u8; 4]) {
         let ch = self.ch as usize;
         let off = i * ch;
         match ch {
