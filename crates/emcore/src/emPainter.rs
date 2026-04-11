@@ -1107,7 +1107,7 @@ impl<'a> emPainter<'a> {
         color: emColor,
         canvas_color: emColor,
     ) {
-        let Some(proof) = self.try_record(DrawOp::PaintRoundRect {
+        let Some(_proof) = self.try_record(DrawOp::PaintRoundRect {
             x,
             y,
             w,
@@ -1119,11 +1119,8 @@ impl<'a> emPainter<'a> {
         if w <= 0.0 || h <= 0.0 {
             return;
         }
-        let saved_canvas = self.state.canvas_color;
-        self.state.canvas_color = canvas_color;
         let verts = self.round_rect_polygon(x, y, w, h, radius);
-        self.fill_polygon_aa(proof, &verts, color, WindingRule::NonZero);
-        self.state.canvas_color = saved_canvas;
+        self.PaintPolygon(&verts, color, canvas_color);
     }
 
     /// Draw a source image at the given position (convenience wrapper).
