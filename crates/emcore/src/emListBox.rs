@@ -256,6 +256,9 @@ pub struct emListBox {
     focus_index: usize,
     scroll_y: f64,
     selection_mode: SelectionMode,
+    /// Raster layout config used to position item children directly.
+    /// C++ emListBox inherits from emRasterGroup; we use composition instead.
+    raster_layout: emRasterLayout,
     /// Index of the last item that received input (for shift-range selection).
     prev_input_index: Option<usize>,
     /// Index of the last triggered item.
@@ -304,6 +307,7 @@ impl emListBox {
             focus_index: 0,
             scroll_y: 0.0,
             selection_mode: SelectionMode::Single,
+            raster_layout: emRasterLayout::new(),
             prev_input_index: None,
             triggered_index: None,
             keywalk_chars: String::new(),
@@ -326,6 +330,7 @@ impl emListBox {
     /// Port of C++ `emListBox::SetFixedColumnCount`.
     pub fn set_fixed_column_count(&mut self, count: Option<usize>) {
         self.fixed_column_count = count;
+        self.raster_layout.fixed_columns = count;
     }
 
     pub fn SetCaption(&mut self, caption: &str) {
@@ -933,30 +938,27 @@ impl emListBox {
         }
     }
 
-    /// Create child panels for all items and a emRasterLayout to position them.
+    /// Create child panels for all items as direct children of the listbox.
     ///
     /// Called when the emListBox expands. Each item becomes a
-    /// `DefaultItemPanelBehavior` child under a emRasterLayout, matching C++
-    /// `emListBox` (which inherits from `emRasterGroup`).
+    /// `DefaultItemPanelBehavior` direct child, matching C++ `emListBox`
+    /// (which inherits from `emRasterGroup` — items are direct children).
     pub fn create_item_children(&mut self, ctx: &mut PanelCtx) {
         if !self.expanded {
             self.auto_expand_items();
         }
 
-        // Create a emRasterLayout child to handle grid positioning.
-        // C++ emListBox inherits from emRasterGroup with default settings.
-        let mut layout = emRasterLayout::new();
+        // Configure raster layout settings for later use in layout_item_children.
         if let Some(cols) = self.fixed_column_count {
-            layout.fixed_columns = Some(cols);
+            self.raster_layout.fixed_columns = Some(cols);
         }
-        let layout_id = ctx.create_child_with("emListBox::Grid", Box::new(layout));
 
-        // Create a child panel for each item under the layout.
+        // Create item panels as DIRECT children of the listbox (matching C++).
         let look = self.look.clone();
         let sel_mode = self.selection_mode;
         let enabled = self.enabled;
         for (i, item) in self.items.iter().enumerate() {
-            let child = ctx.tree.create_child(layout_id, &item.name);
+            let child = ctx.create_child(&item.name);
             let behavior: Box<dyn PanelBehavior> =
                 if let Some(factory) = &self.item_behavior_factory {
                     factory(i, &item.text, item.selected, look.clone(), sel_mode, enabled)
@@ -973,19 +975,19 @@ impl emListBox {
         }
     }
 
-    /// Layout the emRasterLayout child that contains item panels.
+    /// Layout item children directly using the raster layout engine.
     ///
-    /// The emRasterLayout fills the content rect (C++ emRasterGroup base handles
-    /// this automatically since emListBox IS a emRasterGroup).
-    pub fn layout_item_children(&self, ctx: &mut PanelCtx, w: f64, h: f64) {
+    /// C++ emListBox inherits from emRasterGroup, which positions children
+    /// in a grid. We use `do_layout_skip` to achieve the same layout on
+    /// direct children without an intermediate panel.
+    pub fn layout_item_children(&mut self, ctx: &mut PanelCtx, w: f64, h: f64) {
         let children = ctx.children();
         if children.is_empty() {
             return;
         }
 
-        // The single child is the emRasterLayout grid.
         let cr = self.border.GetContentRectUnobscured(w, h, &self.look);
-        ctx.layout_child(children[0], cr.x, cr.y, cr.w, cr.h);
+        self.raster_layout.do_layout_skip(ctx, None, Some(cr));
 
         // Propagate content canvas color to children.
         let cc = self

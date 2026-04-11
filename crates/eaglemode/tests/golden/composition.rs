@@ -668,7 +668,13 @@ impl TkTestPanel {
         // 8. List Boxes (C++ :756-798)
         let gid = Self::make_category(ctx.tree, ctx.id, "listboxes", "List Boxes", Some(0.4), None);
         {
-            let items7: Vec<String> = (1..=7).map(|i| format!("Item {i}")).collect();
+            // Helper: add items with numeric names matching C++
+            // AddItem(Format("%d",i), Format("Item %d",i))
+            fn add_items_1_to_7(lb: &mut emListBox) {
+                for i in 1..=7 {
+                    lb.AddItem(format!("{i}"), format!("Item {i}"));
+                }
+            }
 
             // C++ emTestPanel.cpp:686-731
             let mut lb1 = emListBox::new(look.clone());
@@ -680,7 +686,7 @@ impl TkTestPanel {
             let mut lb2 = emListBox::new(look.clone());
             lb2.SetCaption("Single-Selection");
             lb2.SetSelectionType(SelectionMode::Single);
-            lb2.set_items(items7.clone());
+            add_items_1_to_7(&mut lb2);
             lb2.SetSelectedIndex(0);
             let id = ctx.tree.create_child(gid, "l2");
             ctx.tree
@@ -689,7 +695,7 @@ impl TkTestPanel {
             let mut lb3 = emListBox::new(look.clone());
             lb3.SetCaption("Read-Only");
             lb3.SetSelectionType(SelectionMode::ReadOnly);
-            lb3.set_items(items7.clone());
+            add_items_1_to_7(&mut lb3);
             lb3.SetSelectedIndex(2);
             let id = ctx.tree.create_child(gid, "l3");
             ctx.tree
@@ -698,7 +704,7 @@ impl TkTestPanel {
             let mut lb4 = emListBox::new(look.clone());
             lb4.SetCaption("Multi-Selection");
             lb4.SetSelectionType(SelectionMode::Multi);
-            lb4.set_items(items7.clone());
+            add_items_1_to_7(&mut lb4);
             lb4.Select(1, false);
             lb4.Select(2, false);
             lb4.Select(3, false);
@@ -710,7 +716,7 @@ impl TkTestPanel {
             let mut lb5 = emListBox::new(look.clone());
             lb5.SetCaption("Toggle-Selection");
             lb5.SetSelectionType(SelectionMode::Toggle);
-            lb5.set_items(items7.clone());
+            add_items_1_to_7(&mut lb5);
             lb5.Select(2, false);
             lb5.Select(4, false);
             let id = ctx.tree.create_child(gid, "l5");
@@ -720,7 +726,7 @@ impl TkTestPanel {
             let mut lb6 = emListBox::new(look.clone());
             lb6.SetCaption("Single Column");
             lb6.SetSelectionType(SelectionMode::Single);
-            lb6.set_items(items7.clone());
+            add_items_1_to_7(&mut lb6);
             lb6.set_fixed_column_count(Some(1));
             lb6.SetSelectedIndex(0);
             let id = ctx.tree.create_child(gid, "l6");
@@ -731,7 +737,7 @@ impl TkTestPanel {
             let mut lb7 = emListBox::new(look.clone());
             lb7.SetCaption("Custom List Box");
             lb7.SetSelectionType(SelectionMode::Multi);
-            lb7.set_items(items7);
+            add_items_1_to_7(&mut lb7);
             lb7.SetSelectedIndex(0);
             let id = ctx.tree.create_child(gid, "l7");
             ctx.tree
@@ -785,7 +791,7 @@ impl TkTestPanel {
             None,
         );
         {
-            let id = ctx.tree.create_child(gid, "fsb");
+            let id = ctx.tree.create_child(gid, "l8");
             let mut fsb = emFileSelectionBox::new("File Selection Box");
             fsb.set_filters(&[
                 "All Files (*)".to_string(),
