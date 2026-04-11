@@ -200,6 +200,14 @@ fn serialize_op(seq: usize, op: &DrawOp) -> String {
             format!(r#"{{"seq":{seq},"op":"PaintRadialGradient","cx":{cx},"cy":{cy},"rx":{rx},"ry":{ry},"color_inner":"{color_inner}","color_outer":"{color_outer}","canvas_color":"{canvas_color}"}}"#)
         }
 
+        DrawOp::PaintRectOutline { x, y, w, h, stroke, canvas_color } => {
+            let color = color_hex(stroke.color);
+            let thickness = stroke.width;
+            let canvas_color = color_hex(*canvas_color);
+            let hf = hex_fields(&[("x", *x), ("y", *y), ("w", *w), ("h", *h), ("thickness", thickness)]);
+            format!(r#"{{"seq":{seq},"op":"PaintRectOutline","x":{x},"y":{y},"w":{w},"h":{h},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf}}}"#)
+        }
+
         // Catch-all for variants not individually serialized above.
         other => {
             let variant = variant_name(other);

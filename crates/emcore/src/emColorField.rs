@@ -669,15 +669,12 @@ impl emColorField {
         let ch = (cr.h - 2.0 * d).max(0.0);
 
         // Position the emRasterLayout child in the right half.
+        // C++ Exp->Layout->Layout(x+w*0.5,y,w*0.5,h) — no canvasColor arg,
+        // so child gets default canvasColor=0 (transparent).
+        // C++ emBorder::LayoutChildren() only touches the Aux panel (none here),
+        // so no child gets canvas_color propagated.
         let layout_id = children[0];
         ctx.layout_child(layout_id, x + cw * 0.5, y, cw * 0.5, ch);
-
-        // C++ LayoutChildren passes canvasColor to child->Layout().
-        // The content area canvas color is determined by the border painting.
-        let cc = self
-            .border
-            .content_canvas_color(ctx.GetCanvasColor(), &self.look, ctx.is_enabled());
-        ctx.set_all_children_canvas_color(cc);
     }
 
     /// Whether this color field provides how-to help text.
