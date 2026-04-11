@@ -2689,29 +2689,108 @@ impl emTextField {
 }
 
 /// C++ `emTextField::HowToTextField`.
-const HOWTO_TEXT_FIELD: &str = "\n\n\
-    TEXT FIELD\n\n\
-    This is a text field. In such a field, a text can be viewed and edited.\n\n\
-    Quick hint about an incompatibility against other user interfaces: For inserting\n\
-    selected text, press Ctrl + left mouse button instead of the middle mouse\n\
-    button.\n";
+const HOWTO_TEXT_FIELD: &str = "\n\
+\n\
+TEXT FIELD\n\
+\n\
+This is a text field. In such a field, a text can be viewed and edited.\n\
+\n\
+Quick hint about an incompatibility against other user interfaces: For inserting\n\
+selected text, press Ctrl + left mouse button instead of the middle mouse\n\
+button.\n\
+\n\
+Mouse control:\n\
+\n\
+  Left-Button-Click        - Set cursor position, clear selection.\n\
+\n\
+  Left-Button-Double-Click - Select a word.\n\
+\n\
+  Left-Button-Triple-Click - Select a row.\n\
+\n\
+  Left-Button-Quad-Click   - Select all.\n\
+\n\
+  Left-Button-Drag         - Select passed characters.\n\
+\n\
+  Shift+Left-Button-Drag   - Extend or reduce selection by passed characters.\n\
+\n\
+  Ctrl+Left-Button-Click on non-selected area - Insert a copy of common selected\n\
+                                                text.\n\
+\n\
+  Ctrl+Left-Button-Drag on selected area      - Move selected text.\n\
+\n\
+\n\
+Keyboard control:\n\
+\n\
+  Normal key input inserts the corresponding character at the cursor position.\n\
+  Any selected text is replaced by the character. Special key combinations are:\n\
+\n\
+  Cursor-Keys             - Move the cursor.\n\
+\n\
+  Ctrl+Cursor-Keys        - Move the cursor by words or paragraphs.\n\
+\n\
+  Home or End             - Move the cursor to beginning or end of row.\n\
+\n\
+  Ctrl+Home or Ctrl+End   - Move the cursor to beginning or end of all.\n\
+\n\
+  Shift+<Cursor Movement> - Select text: Hold the Shift key while moving the\n\
+                            cursor with one of the above key combinations, to\n\
+                            select the passed characters.\n\
+\n\
+  Ctrl+A                  - Select the whole text.\n\
+\n\
+  Shift+Ctrl+A            - Clear the selection.\n\
+\n\
+  Insert                  - Switch between insert mode and replace mode.\n\
+\n\
+  Backspace               - Delete the selected text, or the character on the\n\
+                            left side of the cursor.\n\
+\n\
+  Delete                  - Delete the selected text, or the character on the\n\
+                            right side of the cursor.\n\
+\n\
+  Ctrl+Z                  - Undo last change.\n\
+\n\
+  Shift+Ctrl+Z or Ctrl+Y  - Redo last undone change.\n\
+\n\
+  Shift+Delete or Ctrl+X  - Cut operation: Copy the selected text to the\n\
+                            clipboard and delete it.\n\
+\n\
+  Ctrl+Insert or Ctrl+C   - Copy operation: Copy the selected text to the\n\
+                            clipboard.\n\
+\n\
+  Shift+Insert or Ctrl+V  - Paste operation: Insert text from the clipboard. Any\n\
+                            selected text is replaced by the insertion.\n\
+\n\
+  Ctrl+Backspace          - Delete to the left until beginning of a word.\n\
+\n\
+  Ctrl+Delete             - Delete to the right until beginning of a word.\n\
+\n\
+  Shift+Ctrl+Backspace    - Delete all on the left side of the cursor.\n\
+\n\
+  Shift+Ctrl+Delete       - Delete all on the right side of the cursor.\n";
 
 /// C++ `emTextField::HowToMultiLineOff`.
-const HOWTO_MULTI_LINE_OFF: &str = "\n\n\
-    MULTI-LINE: DISABLED\n\n\
-    This text field has the multi-line mode disabled. You can view or edit only\n\
-    a single line.\n";
+const HOWTO_MULTI_LINE_OFF: &str = "\n\
+\n\
+MULTI-LINE: DISABLED\n\
+\n\
+This text field has the multi-line mode disabled. You can view or edit only\n\
+a single line.\n";
 
 /// C++ `emTextField::HowToMultiLineOn`.
-const HOWTO_MULTI_LINE_ON: &str = "\n\n\
-    MULTI-LINE: ENABLED\n\n\
-    This text field has the multi-line mode enabled. You may view or edit multiple\n\
-    lines.\n";
+const HOWTO_MULTI_LINE_ON: &str = "\n\
+\n\
+MULTI-LINE: ENABLED\n\
+\n\
+This text field has the multi-line mode enabled. You may view or edit multiple\n\
+lines.\n";
 
 /// C++ `emTextField::HowToReadOnly`.
-const HOWTO_READ_ONLY: &str = "\n\n\
-    READ-ONLY\n\n\
-    This text field is read-only. You cannot edit the text.\n";
+const HOWTO_READ_ONLY: &str = "\n\
+\n\
+READ-ONLY\n\
+\n\
+This text field is read-only. You cannot edit the text.\n";
 
 #[cfg(test)]
 mod tests {
