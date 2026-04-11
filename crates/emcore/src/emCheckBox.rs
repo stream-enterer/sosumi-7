@@ -12,7 +12,7 @@ use crate::emStroke::{LineJoin, emStroke, emStrokeEnd, StrokeEndType};
 use super::emBorder::{emBorder, OuterBorderType};
 use crate::emLook::emLook;
 use crate::emBorder::with_toolkit_images;
-use crate::emButton::HOWTO_BUTTON;
+use crate::emButton::{HOWTO_BUTTON, HOWTO_EOI_BUTTON};
 
 /// emCheckBox widget — Margin border with ShownBoxed paint path.
 /// Matches C++ `emCheckBox` (which extends `emCheckButton` extends `emButton`).
@@ -354,6 +354,7 @@ impl emCheckBox {
     pub fn GetHowTo(&self, enabled: bool, focusable: bool) -> String {
         let mut text = self.border.GetHowTo(enabled, focusable);
         text.push_str(HOWTO_BUTTON);
+        text.push_str(HOWTO_EOI_BUTTON);
         text.push_str(HOWTO_CHECK_BUTTON);
         if self.checked {
             text.push_str(HOWTO_CHECKED);

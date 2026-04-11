@@ -12,7 +12,7 @@ use crate::emPanel::PanelState;
 use crate::emPainter::{emPainter, BORDER_EDGES_ONLY};
 
 use super::emBorder::{emBorder, OuterBorderType};
-use crate::emButton::HOWTO_BUTTON;
+use crate::emButton::{HOWTO_BUTTON, HOWTO_EOI_BUTTON};
 use crate::emLook::emLook;
 use crate::emBorder::with_toolkit_images;
 
@@ -536,6 +536,7 @@ impl emRadioButton {
     pub fn GetHowTo(&self, enabled: bool, focusable: bool) -> String {
         let mut text = self.border.GetHowTo(enabled, focusable);
         text.push_str(HOWTO_BUTTON);
+        text.push_str(HOWTO_EOI_BUTTON);
         text.push_str(HOWTO_CHECK_BUTTON);
         if self.IsSelected() {
             text.push_str(HOWTO_CHECKED);

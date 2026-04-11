@@ -456,7 +456,7 @@ pub(crate) const HOWTO_BUTTON: &str = "\n\n\
     Enter key.\n";
 
 /// C++ `emButton::HowToEOIButton`.
-const HOWTO_EOI_BUTTON: &str = "\n\n\
+pub(crate) const HOWTO_EOI_BUTTON: &str = "\n\n\
     EOI BUTTON\n\n\
     This is an End Of Interaction button. The exact behavior is application defined,\n\
     but it usually means that if the button is in a view that has popped up, the\n\
