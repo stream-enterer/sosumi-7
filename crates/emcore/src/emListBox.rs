@@ -1576,84 +1576,94 @@ impl emListBox {
 }
 
 /// C++ `emListBox::HowToListBox`.
-const HOWTO_LIST_BOX: &str = "\n\n\
-    LIST BOX\n\n\
-    This is a list box. It may show any number of items from which one or more may\n\
-    be selected (by program or by user). Selected items are shown highlighted.\n";
+const HOWTO_LIST_BOX: &str = concat!(
+    "\n\n",
+    "LIST BOX\n\n",
+    "This is a list box. It may show any number of items from which one or more may\n",
+    "be selected (by program or by user). Selected items are shown highlighted.\n",
+);
 
 /// C++ `emListBox::HowToReadOnlySelection`.
-const HOWTO_READ_ONLY_SELECTION: &str = "\n\n\
-    READ-ONLY\n\n\
-    This list box is read-only. You cannot modify the selection.\n\n\
-    Keyboard control:\n\n\
-      Any normal key               - To find and focus an item, you can simply\n\
-                                     enter the first characters of its caption.\n";
+const HOWTO_READ_ONLY_SELECTION: &str = concat!(
+    "\n\n",
+    "READ-ONLY\n\n",
+    "This list box is read-only. You cannot modify the selection.\n\n",
+    "Keyboard control:\n\n",
+    "  Any normal key               - To find and focus an item, you can simply\n",
+    "                                 enter the first characters of its caption.\n",
+);
 
 /// C++ `emListBox::HowToSingleSelection`.
-const HOWTO_SINGLE_SELECTION: &str = "\n\n\
-    SINGLE-SELECTION\n\n\
-    This is a single-selection list box. You can select only one item.\n\n\
-    Mouse control:\n\n\
-      Left-Button-Click            - Select the clicked item.\n\n\
-      Left-Button-Double-Click     - Trigger the clicked item (application-defined\n\
-                                     function).\n\n\
-    Keyboard control:\n\n\
-      Space                        - Select the focused item.\n\n\
-      Enter                        - Trigger the focused item (application-defined\n\
-                                     function).\n\n\
-      Any normal key               - To find and focus an item, you can simply\n\
-                                     enter the first characters of its caption.\n";
+const HOWTO_SINGLE_SELECTION: &str = concat!(
+    "\n\n",
+    "SINGLE-SELECTION\n\n",
+    "This is a single-selection list box. You can select only one item.\n\n",
+    "Mouse control:\n\n",
+    "  Left-Button-Click            - Select the clicked item.\n\n",
+    "  Left-Button-Double-Click     - Trigger the clicked item (application-defined\n",
+    "                                 function).\n\n",
+    "Keyboard control:\n\n",
+    "  Space                        - Select the focused item.\n\n",
+    "  Enter                        - Trigger the focused item (application-defined\n",
+    "                                 function).\n\n",
+    "  Any normal key               - To find and focus an item, you can simply\n",
+    "                                 enter the first characters of its caption.\n",
+);
 
 /// C++ `emListBox::HowToMultiSelection`.
-const HOWTO_MULTI_SELECTION: &str = "\n\n\
-    MULTI-SELECTION\n\n\
-    This list box supports multi-selection. You can select one or more items.\n\n\
-    Mouse control:\n\n\
-      Left-Button-Click            - Select the clicked item.\n\n\
-      Shift+Left-Button-Click      - Select the range of items from the previously\n\
-                                     clicked item to this clicked item.\n\n\
-      Ctrl+Left-Button-Click       - Invert the selection of the clicked item.\n\n\
-      Shift+Ctrl+Left-Button-Click - Invert the selection of a range of items or\n\
-                                     select an additional range.\n\n\
-      Left-Button-Double-Click     - Trigger the clicked item (application-defined\n\
-                                     function).\n\n\
-    Keyboard control:\n\n\
-      Space                        - Select the focused item.\n\n\
-      Shift+Space                  - Select the range of items from the previously\n\
-                                     selected item to the focused item.\n\n\
-      Ctrl+Space                   - Invert the selection of the focused item.\n\n\
-      Shift+Ctrl+Space             - Invert the selection of a range of items or\n\
-                                     select an additional range.\n\n\
-      Ctrl+A                       - Select all items.\n\n\
-      Shift+Ctrl+A                 - Clear the selection.\n\n\
-      Enter                        - Trigger the focused item (application-defined\n\
-                                     function).\n\n\
-      Any normal key               - To find, focus and select an item, you can simply\n\
-                                     enter the first characters of its caption.\n";
+const HOWTO_MULTI_SELECTION: &str = concat!(
+    "\n\n",
+    "MULTI-SELECTION\n\n",
+    "This list box supports multi-selection. You can select one or more items.\n\n",
+    "Mouse control:\n\n",
+    "  Left-Button-Click            - Select the clicked item.\n\n",
+    "  Shift+Left-Button-Click      - Select the range of items from the previously\n",
+    "                                 clicked item to this clicked item.\n\n",
+    "  Ctrl+Left-Button-Click       - Invert the selection of the clicked item.\n\n",
+    "  Shift+Ctrl+Left-Button-Click - Invert the selection of a range of items or\n",
+    "                                 select an additional range.\n\n",
+    "  Left-Button-Double-Click     - Trigger the clicked item (application-defined\n",
+    "                                 function).\n\n",
+    "Keyboard control:\n\n",
+    "  Space                        - Select the focused item.\n\n",
+    "  Shift+Space                  - Select the range of items from the previously\n",
+    "                                 selected item to the focused item.\n\n",
+    "  Ctrl+Space                   - Invert the selection of the focused item.\n\n",
+    "  Shift+Ctrl+Space             - Invert the selection of a range of items or\n",
+    "                                 select an additional range.\n\n",
+    "  Ctrl+A                       - Select all items.\n\n",
+    "  Shift+Ctrl+A                 - Clear the selection.\n\n",
+    "  Enter                        - Trigger the focused item (application-defined\n",
+    "                                 function).\n\n",
+    "  Any normal key               - To find, focus and select an item, you can simply\n",
+    "                                 enter the first characters of its caption.\n",
+);
 
 /// C++ `emListBox::HowToToggleSelection`.
-const HOWTO_TOGGLE_SELECTION: &str = "\n\n\
-    TOGGLE-SELECTION\n\n\
-    This is a toggle-selection list box. You can select or deselect\n\
-    individual items independently from other items.\n\n\
-    Mouse control:\n\n\
-      Left-Button-Click            - Invert the selection of the clicked item.\n\n\
-      Shift+Left-Button-Click      - Invert the selection of the range of items from\n\
-                                     the previously clicked item to this clicked\n\
-                                     item.\n\n\
-      Left-Button-Double-Click     - Trigger the clicked item (application-defined\n\
-                                     function).\n\n\
-    Keyboard control:\n\n\
-      Space                        - Invert the selection of the focused item.\n\n\
-      Shift+Space                  - Invert the selection of the range of items from\n\
-                                     the previously selected item to the focused\n\
-                                     item.\n\n\
-      Ctrl+A                       - Select all items.\n\n\
-      Shift+Ctrl+A                 - Deselect all items.\n\n\
-      Enter                        - Trigger the focused item (application-defined\n\
-                                     function).\n\n\
-      Any normal key               - To find, focus and select an item, you can simply\n\
-                                     enter the first characters of its caption.\n";
+const HOWTO_TOGGLE_SELECTION: &str = concat!(
+    "\n\n",
+    "TOGGLE-SELECTION\n\n",
+    "This is a toggle-selection list box. You can select or deselect\n",
+    "individual items independently from other items.\n\n",
+    "Mouse control:\n\n",
+    "  Left-Button-Click            - Invert the selection of the clicked item.\n\n",
+    "  Shift+Left-Button-Click      - Invert the selection of the range of items from\n",
+    "                                 the previously clicked item to this clicked\n",
+    "                                 item.\n\n",
+    "  Left-Button-Double-Click     - Trigger the clicked item (application-defined\n",
+    "                                 function).\n\n",
+    "Keyboard control:\n\n",
+    "  Space                        - Invert the selection of the focused item.\n\n",
+    "  Shift+Space                  - Invert the selection of the range of items from\n",
+    "                                 the previously selected item to the focused\n",
+    "                                 item.\n\n",
+    "  Ctrl+A                       - Select all items.\n\n",
+    "  Shift+Ctrl+A                 - Deselect all items.\n\n",
+    "  Enter                        - Trigger the focused item (application-defined\n",
+    "                                 function).\n\n",
+    "  Any normal key               - To find, focus and select an item, you can simply\n",
+    "                                 enter the first characters of its caption.\n",
+);
 
 #[cfg(test)]
 mod tests {
