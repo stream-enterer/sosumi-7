@@ -7,3 +7,8 @@ src/.rustc_info.json
 *.profraw
 
 .worktrees/
+
+# Golden test debug/generated artifacts
+crates/target/golden-debug/
+crates/eaglemode/target/golden-divergence/*.cpp_ops.jsonl
+crates/eaglemode/target/golden-divergence/*.rust_ops.jsonl
