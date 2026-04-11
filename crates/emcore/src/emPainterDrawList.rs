@@ -44,7 +44,7 @@ pub enum DrawOp {
         color: emColor,
         canvas_color: emColor,
     },
-    PaintRectOutlined {
+    PaintRectOutline {
         x: f64,
         y: f64,
         w: f64,
@@ -52,7 +52,7 @@ pub enum DrawOp {
         stroke: emStroke,
         canvas_color: emColor,
     },
-    PaintRoundRectOutlined {
+    PaintRoundRectOutline {
         x: f64,
         y: f64,
         w: f64,
@@ -418,7 +418,7 @@ impl DrawList {
                     canvas_color,
                 } => painter.PaintRoundRect(*x, *y, *w, *h, *radius, *color, *canvas_color),
 
-                DrawOp::PaintRectOutlined {
+                DrawOp::PaintRectOutline {
                     x,
                     y,
                     w,
@@ -427,7 +427,7 @@ impl DrawList {
                     canvas_color,
                 } => painter.PaintRectOutline(*x, *y, *w, *h, stroke, *canvas_color),
 
-                DrawOp::PaintRoundRectOutlined {
+                DrawOp::PaintRoundRectOutline {
                     x,
                     y,
                     w,

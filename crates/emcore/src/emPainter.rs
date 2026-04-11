@@ -2984,7 +2984,7 @@ impl<'a> emPainter<'a> {
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
-        let Some(proof) = self.try_record(DrawOp::PaintRectOutlined {
+        let Some(proof) = self.try_record(DrawOp::PaintRectOutline {
             x,
             y,
             w,
@@ -3072,7 +3072,7 @@ impl<'a> emPainter<'a> {
         if w <= 0.0 || h <= 0.0 || stroke.width <= 0.0 {
             return;
         }
-        let Some(proof) = self.try_record(DrawOp::PaintRoundRectOutlined {
+        let Some(proof) = self.try_record(DrawOp::PaintRoundRectOutline {
             x,
             y,
             w,

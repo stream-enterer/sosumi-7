@@ -2456,9 +2456,16 @@ impl emView {
             return;
         }
 
-        // C++ canvasColor inheritance: if a panel has no explicit canvas
-        // color (TRANSPARENT), inherit from the parent. The root's parent
-        // is the view background.
+        // C++ PaintView passes canvasColor differently for the supreme
+        // viewed panel vs all other panels:
+        //   SVP (line 1098):  p->Paint(pnt, canvasColor) where canvasColor
+        //       was resolved to BackgroundColor if p->CanvasColor is
+        //       non-opaque (lines 1080-1083).
+        //   Others (line 1118): p->Paint(pnt, p->CanvasColor) — raw stored
+        //       value, no inheritance from parent.
+        // Here parent_canvas carries BackgroundColor for the SVP call and
+        // TRANSPARENT for all descendants, so the fallback only fires at
+        // the SVP level.
         let effective_canvas = if canvas_color.GetAlpha() > 0 {
             canvas_color
         } else {
@@ -2497,7 +2504,17 @@ impl emView {
 
         let children: Vec<PanelId> = tree.children(id).collect();
         for child in children {
-            self.paint_panel_recursive(tree, painter, child, base_offset, effective_canvas);
+            // C++ line 1118: p->Paint(pnt, p->CanvasColor) — children
+            // receive their own stored CanvasColor, not the parent's
+            // resolved value.  Pass TRANSPARENT so the fallback in
+            // effective_canvas never fires for non-SVP panels.
+            self.paint_panel_recursive(
+                tree,
+                painter,
+                child,
+                base_offset,
+                emColor::TRANSPARENT,
+            );
         }
 
         painter.pop_state();
