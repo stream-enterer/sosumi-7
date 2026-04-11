@@ -1594,8 +1594,8 @@ const HOWTO_SINGLE_SELECTION: &str = "\n\n\
     SINGLE-SELECTION\n\n\
     This is a single-selection list box. You can select only one item.\n\n\
     Mouse control:\n\n\
-      Left-emButton-Click            - Select the clicked item.\n\n\
-      Left-emButton-Double-Click     - Trigger the clicked item (application-defined\n\
+      Left-Button-Click            - Select the clicked item.\n\n\
+      Left-Button-Double-Click     - Trigger the clicked item (application-defined\n\
                                      function).\n\n\
     Keyboard control:\n\n\
       Space                        - Select the focused item.\n\n\
@@ -1609,13 +1609,13 @@ const HOWTO_MULTI_SELECTION: &str = "\n\n\
     MULTI-SELECTION\n\n\
     This list box supports multi-selection. You can select one or more items.\n\n\
     Mouse control:\n\n\
-      Left-emButton-Click            - Select the clicked item.\n\n\
-      Shift+Left-emButton-Click      - Select the range of items from the previously\n\
+      Left-Button-Click            - Select the clicked item.\n\n\
+      Shift+Left-Button-Click      - Select the range of items from the previously\n\
                                      clicked item to this clicked item.\n\n\
-      Ctrl+Left-emButton-Click       - Invert the selection of the clicked item.\n\n\
-      Shift+Ctrl+Left-emButton-Click - Invert the selection of a range of items or\n\
+      Ctrl+Left-Button-Click       - Invert the selection of the clicked item.\n\n\
+      Shift+Ctrl+Left-Button-Click - Invert the selection of a range of items or\n\
                                      select an additional range.\n\n\
-      Left-emButton-Double-Click     - Trigger the clicked item (application-defined\n\
+      Left-Button-Double-Click     - Trigger the clicked item (application-defined\n\
                                      function).\n\n\
     Keyboard control:\n\n\
       Space                        - Select the focused item.\n\n\
@@ -1637,11 +1637,11 @@ const HOWTO_TOGGLE_SELECTION: &str = "\n\n\
     This is a toggle-selection list box. You can select or deselect\n\
     individual items independently from other items.\n\n\
     Mouse control:\n\n\
-      Left-emButton-Click            - Invert the selection of the clicked item.\n\n\
-      Shift+Left-emButton-Click      - Invert the selection of the range of items from\n\
+      Left-Button-Click            - Invert the selection of the clicked item.\n\n\
+      Shift+Left-Button-Click      - Invert the selection of the range of items from\n\
                                      the previously clicked item to this clicked\n\
                                      item.\n\n\
-      Left-emButton-Double-Click     - Trigger the clicked item (application-defined\n\
+      Left-Button-Double-Click     - Trigger the clicked item (application-defined\n\
                                      function).\n\n\
     Keyboard control:\n\n\
       Space                        - Invert the selection of the focused item.\n\n\
