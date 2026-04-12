@@ -552,7 +552,7 @@ impl TkTestPanel {
         {
             let mut tf1 = emTextField::new(look.clone());
             tf1.SetCaption("Read-Only");
-
+            tf1.SetDescription("This is a read-only text field.");
             tf1.SetText("Read-Only");
             let id = ctx.tree.create_child(gid, "tf1");
             ctx.tree
@@ -560,7 +560,7 @@ impl TkTestPanel {
 
             let mut tf2 = emTextField::new(look.clone());
             tf2.SetCaption("Editable");
-
+            tf2.SetDescription("This is an editable text field.");
             tf2.SetEditable(true);
             tf2.SetText("Editable");
             let id = ctx.tree.create_child(gid, "tf2");
@@ -569,7 +569,7 @@ impl TkTestPanel {
 
             let mut tf3 = emTextField::new(look.clone());
             tf3.SetCaption("Password");
-
+            tf3.SetDescription("This is an editable password text field.");
             tf3.SetEditable(true);
             tf3.SetText("Password");
             tf3.SetPasswordMode(true);
@@ -579,7 +579,7 @@ impl TkTestPanel {
 
             let mut mltf1 = emTextField::new(look.clone());
             mltf1.SetCaption("Multi-Line");
-
+            mltf1.SetDescription("This is an editable multi-line text field.");
             mltf1.SetEditable(true);
             mltf1.SetMultiLineMode(true);
             mltf1.SetText("first line\nsecond line\n...");
