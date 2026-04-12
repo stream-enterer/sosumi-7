@@ -120,14 +120,11 @@ fn serialize_op(seq: usize, depth: u32, op: &DrawOp, state: &RecordedState) -> S
             format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintSolidPolyline","vertices":{verts},"stroke_color":"{stroke_color}","stroke_width":{stroke_width},"closed":{closed},"canvas_color":"{canvas_color}",{sf}}}"#)
         }
 
-        DrawOp::PaintImageFull { x, y, w, h, image_ptr, alpha, canvas_color } => {
-            // SAFETY: image_ptr is valid for the lifetime of the DrawOp list (owned by panel behavior).
-            let (img_w, img_h, img_ch) = unsafe {
-                let img: &emImage = &**image_ptr;
-                (img.GetWidth(), img.GetHeight(), img.GetChannelCount())
-            };
+        DrawOp::PaintImageFull { x, y, w, h, canvas_color, .. } => {
+            let color = "00000000";
             let canvas_color = color_hex(*canvas_color);
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintImageFull","x":{x},"y":{y},"w":{w},"h":{h},"img_w":{img_w},"img_h":{img_h},"img_ch":{img_ch},"alpha":{alpha},"canvas_color":"{canvas_color}",{sf}}}"#)
+            let hf = hex_fields(&[("x", *x), ("y", *y), ("w", *w), ("h", *h)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRect","x":{x},"y":{y},"w":{w},"h":{h},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
         DrawOp::PaintImageColored {
             x, y, w, h, image_ptr, src_x, src_y, src_w, src_h,
@@ -240,7 +237,7 @@ fn variant_name(op: &DrawOp) -> &'static str {
         DrawOp::PaintEllipse { .. } => "PaintEllipse",
         DrawOp::PaintPolygon { .. } => "PaintPolygon",
         DrawOp::PaintSolidPolyline { .. } => "PaintSolidPolyline",
-        DrawOp::PaintImageFull { .. } => "PaintImageFull",
+        DrawOp::PaintImageFull { .. } => "PaintRect",
         DrawOp::PaintImageColored { .. } => "PaintImageColored",
         DrawOp::PaintImageScaled { .. } => "PaintImageScaled",
         DrawOp::PaintBorderImage { .. } => "PaintBorderImage",
