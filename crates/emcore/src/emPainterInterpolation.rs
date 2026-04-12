@@ -168,8 +168,9 @@ pub struct AreaSampleTransform {
 /// start of each scanline row and passed to each batch call.
 pub struct AreaSampleCarryState {
     /// Y-accumulated column value (up to 4 channels), after FINPREMUL.
-    /// Corresponds to C++ `cy` (cyr, cyg, cyb, cya).
-    pub cy: [u64; 4],
+    /// Corresponds to C++ `cy` (cyr, cyg, cyb, cya).  Uses u32 to match
+    /// C++ `emUInt32` wrapping behaviour at extreme downscale ratios.
+    pub cy: [u32; 4],
     /// Column index of cached cy. `i32::MIN` means NULL/invalid.
     /// Corresponds to C++ `pCy` (as pointer → column index).
     pub pcy_col: i32,
@@ -452,7 +453,7 @@ fn y_accumulate(
     col: i32,
     yw: &YWeights,
     xfm: &AreaSampleTransform,
-) -> (u64, u64, u64, u64) {
+) -> (u32, u32, u32, u32) {
     let p = read_area_pixel(image, sec, col, yw.row0, xfm);
 
     match ch {
@@ -472,57 +473,59 @@ fn y_accumulate_4ch(
     yw: &YWeights,
     xfm: &AreaSampleTransform,
     p: &[u8],
-) -> (u64, u64, u64, u64) {
-    // READ_PREMUL_MUL_COLOR(cy, p, oy1) for CHANNELS=4
-    let mut ca = p[3] as u64 * yw.oy1 as u64;
-    let mut cr = p[0] as u64 * ca;
-    let mut cg = p[1] as u64 * ca;
-    let mut cb = p[2] as u64 * ca;
+) -> (u32, u32, u32, u32) {
+    // All accumulators are emUInt32 in C++ — wrapping arithmetic at extreme
+    // downscale ratios is intentional and must be reproduced exactly.
 
-    let mut oys = yw.oy1n as u64;
+    // READ_PREMUL_MUL_COLOR(cy, p, oy1) for CHANNELS=4
+    let mut ca = (p[3] as u32).wrapping_mul(yw.oy1);
+    let mut cr = (p[0] as u32).wrapping_mul(ca);
+    let mut cg = (p[1] as u32).wrapping_mul(ca);
+    let mut cb = (p[2] as u32).wrapping_mul(ca);
+
+    let mut oys = yw.oy1n;
     if oys > 0 {
         let mut r = yw.row0 + 1;
-        if oys > yw.ody as u64 {
-            // Interior rows: DEFINE_AND_READ_PREMUL_COLOR + ADD_READ_PREMUL_COLOR
+        if oys > yw.ody {
+            // DEFINE_AND_READ_PREMUL_COLOR + ADD_READ_PREMUL_COLOR loop
             let pi = read_area_pixel(image, sec, col, r, xfm);
-            let mut ta = pi[3] as u64;
-            let mut tr = pi[0] as u64 * ta;
-            let mut tg = pi[1] as u64 * ta;
-            let mut tb = pi[2] as u64 * ta;
+            let mut ta = pi[3] as u32;
+            let mut tr = (pi[0] as u32).wrapping_mul(ta);
+            let mut tg = (pi[1] as u32).wrapping_mul(ta);
+            let mut tb = (pi[2] as u32).wrapping_mul(ta);
             r += 1;
-            oys -= yw.ody as u64;
-            while oys > yw.ody as u64 {
+            oys -= yw.ody;
+            while oys > yw.ody {
                 let pi = read_area_pixel(image, sec, col, r, xfm);
-                let a = pi[3] as u64;
-                ta += a;
-                tr += pi[0] as u64 * a;
-                tg += pi[1] as u64 * a;
-                tb += pi[2] as u64 * a;
+                let a = pi[3] as u32;
+                ta = ta.wrapping_add(a);
+                tr = tr.wrapping_add((pi[0] as u32).wrapping_mul(a));
+                tg = tg.wrapping_add((pi[1] as u32).wrapping_mul(a));
+                tb = tb.wrapping_add((pi[2] as u32).wrapping_mul(a));
                 r += 1;
-                oys -= yw.ody as u64;
+                oys -= yw.ody;
             }
             // ADD_MUL_COLOR(cy, ctmp, ody)
-            ca += ta * yw.ody as u64;
-            cr += tr * yw.ody as u64;
-            cg += tg * yw.ody as u64;
-            cb += tb * yw.ody as u64;
+            ca = ca.wrapping_add(ta.wrapping_mul(yw.ody));
+            cr = cr.wrapping_add(tr.wrapping_mul(yw.ody));
+            cg = cg.wrapping_add(tg.wrapping_mul(yw.ody));
+            cb = cb.wrapping_add(tb.wrapping_mul(yw.ody));
         }
-        // Last row: ADD_READ_PREMUL_MUL_COLOR(cy, p, oys)
+        // ADD_READ_PREMUL_MUL_COLOR(cy, p, oys)
         let pl = read_area_pixel(image, sec, col, r, xfm);
-        let al = pl[3] as u64 * oys;
-        ca += al;
-        cr += pl[0] as u64 * al;
-        cg += pl[1] as u64 * al;
-        cb += pl[2] as u64 * al;
+        let al = (pl[3] as u32).wrapping_mul(oys);
+        ca = ca.wrapping_add(al);
+        cr = cr.wrapping_add((pl[0] as u32).wrapping_mul(al));
+        cg = cg.wrapping_add((pl[1] as u32).wrapping_mul(al));
+        cb = cb.wrapping_add((pl[2] as u32).wrapping_mul(al));
     }
 
     // FINPREMUL_SHR_COLOR(cy, 8) for CHANNELS=4
-    // RGB: integer division (x + 0x7F7F) / 0xFF00  (NOT shift!)
-    // Alpha: shift (x + 0x7F) >> 8
-    let fr = (cr + 0x7F7F) / 0xFF00;
-    let fg = (cg + 0x7F7F) / 0xFF00;
-    let fb = (cb + 0x7F7F) / 0xFF00;
-    let fa = (ca + 0x7F) >> 8;
+    // RGB: (x + 0x7F7F) / 0xFF00   Alpha: (x + 0x7F) >> 8
+    let fr = cr.wrapping_add(0x7F7F) / 0xFF00;
+    let fg = cg.wrapping_add(0x7F7F) / 0xFF00;
+    let fb = cb.wrapping_add(0x7F7F) / 0xFF00;
+    let fa = ca.wrapping_add(0x7F) >> 8;
     (fr, fg, fb, fa)
 }
 
@@ -536,41 +539,41 @@ fn y_accumulate_3ch(
     yw: &YWeights,
     xfm: &AreaSampleTransform,
     p: &[u8],
-) -> (u64, u64, u64, u64) {
-    let mut cr = p[0] as u64 * yw.oy1 as u64;
-    let mut cg = p[1] as u64 * yw.oy1 as u64;
-    let mut cb = p[2] as u64 * yw.oy1 as u64;
+) -> (u32, u32, u32, u32) {
+    let mut cr = (p[0] as u32).wrapping_mul(yw.oy1);
+    let mut cg = (p[1] as u32).wrapping_mul(yw.oy1);
+    let mut cb = (p[2] as u32).wrapping_mul(yw.oy1);
 
-    let mut oys = yw.oy1n as u64;
+    let mut oys = yw.oy1n;
     if oys > 0 {
         let mut r = yw.row0 + 1;
-        if oys > yw.ody as u64 {
+        if oys > yw.ody {
             let pi = read_area_pixel(image, sec, col, r, xfm);
-            let mut tr = pi[0] as u64;
-            let mut tg = pi[1] as u64;
-            let mut tb = pi[2] as u64;
+            let mut tr = pi[0] as u32;
+            let mut tg = pi[1] as u32;
+            let mut tb = pi[2] as u32;
             r += 1;
-            oys -= yw.ody as u64;
-            while oys > yw.ody as u64 {
+            oys -= yw.ody;
+            while oys > yw.ody {
                 let pi = read_area_pixel(image, sec, col, r, xfm);
-                tr += pi[0] as u64;
-                tg += pi[1] as u64;
-                tb += pi[2] as u64;
+                tr = tr.wrapping_add(pi[0] as u32);
+                tg = tg.wrapping_add(pi[1] as u32);
+                tb = tb.wrapping_add(pi[2] as u32);
                 r += 1;
-                oys -= yw.ody as u64;
+                oys -= yw.ody;
             }
-            cr += tr * yw.ody as u64;
-            cg += tg * yw.ody as u64;
-            cb += tb * yw.ody as u64;
+            cr = cr.wrapping_add(tr.wrapping_mul(yw.ody));
+            cg = cg.wrapping_add(tg.wrapping_mul(yw.ody));
+            cb = cb.wrapping_add(tb.wrapping_mul(yw.ody));
         }
         let pl = read_area_pixel(image, sec, col, r, xfm);
-        cr += pl[0] as u64 * oys;
-        cg += pl[1] as u64 * oys;
-        cb += pl[2] as u64 * oys;
+        cr = cr.wrapping_add((pl[0] as u32).wrapping_mul(oys));
+        cg = cg.wrapping_add((pl[1] as u32).wrapping_mul(oys));
+        cb = cb.wrapping_add((pl[2] as u32).wrapping_mul(oys));
     }
 
     // FINPREMUL_SHR_COLOR(cy, 8) for CHANNELS=3: shift only
-    ((cr + 0x7F) >> 8, (cg + 0x7F) >> 8, (cb + 0x7F) >> 8, 0)
+    (cr.wrapping_add(0x7F) >> 8, cg.wrapping_add(0x7F) >> 8, cb.wrapping_add(0x7F) >> 8, 0)
 }
 
 /// CHANNELS=1: single gray channel, no premultiplication.
@@ -582,30 +585,30 @@ fn y_accumulate_1ch(
     yw: &YWeights,
     xfm: &AreaSampleTransform,
     p: &[u8],
-) -> (u64, u64, u64, u64) {
-    let mut cg = p[0] as u64 * yw.oy1 as u64;
+) -> (u32, u32, u32, u32) {
+    let mut cg = (p[0] as u32).wrapping_mul(yw.oy1);
 
-    let mut oys = yw.oy1n as u64;
+    let mut oys = yw.oy1n;
     if oys > 0 {
         let mut r = yw.row0 + 1;
-        if oys > yw.ody as u64 {
+        if oys > yw.ody {
             let pi = read_area_pixel(image, sec, col, r, xfm);
-            let mut tg = pi[0] as u64;
+            let mut tg = pi[0] as u32;
             r += 1;
-            oys -= yw.ody as u64;
-            while oys > yw.ody as u64 {
+            oys -= yw.ody;
+            while oys > yw.ody {
                 let pi = read_area_pixel(image, sec, col, r, xfm);
-                tg += pi[0] as u64;
+                tg = tg.wrapping_add(pi[0] as u32);
                 r += 1;
-                oys -= yw.ody as u64;
+                oys -= yw.ody;
             }
-            cg += tg * yw.ody as u64;
+            cg = cg.wrapping_add(tg.wrapping_mul(yw.ody));
         }
         let pl = read_area_pixel(image, sec, col, r, xfm);
-        cg += pl[0] as u64 * oys;
+        cg = cg.wrapping_add((pl[0] as u32).wrapping_mul(oys));
     }
 
-    let fg = (cg + 0x7F) >> 8;
+    let fg = cg.wrapping_add(0x7F) >> 8;
     (fg, fg, fg, 0)
 }
 
@@ -1517,12 +1520,12 @@ fn interpolate_scanline_area_inner<const CH: usize>(
         // === C++ inner loop ===
         let mut cur_tx = tx;
         loop {
-            let mut cyx: [u64; 4] = [0x7F_FFFF; 4];
+            let mut cyx: [u32; 4] = [0x7F_FFFF; 4];
             let mut oxs: u32 = 0x10000;
 
             while ox < oxs {
                 for (c, cy) in cyx.iter_mut().zip(carry.cy.iter()).take(CH) {
-                    *c += *cy * ox as u64;
+                    *c = c.wrapping_add(cy.wrapping_mul(ox));
                 }
                 oxs -= ox;
                 carry.pcy_col = col;
@@ -1542,7 +1545,7 @@ fn interpolate_scanline_area_inner<const CH: usize>(
             }
 
             for (c, cy) in cyx.iter_mut().zip(carry.cy.iter()).take(CH) {
-                *c += *cy * oxs as u64;
+                *c = c.wrapping_add(cy.wrapping_mul(oxs));
             }
 
             let rgba = match CH {
