@@ -786,11 +786,11 @@ impl emFileSelectionBox {
     fn selection_to_list_box(&self, ctx: &mut PanelCtx) {
         if let Some(lb_id) = self.files_lb_id {
             // Build item data outside the tree borrow.
+            // C++ uses file name as both item name and text.
             let items: Vec<(String, String)> = self
                 .listing
                 .iter()
-                .enumerate()
-                .map(|(i, (name, _))| (format!("{}", i), name.clone()))
+                .map(|(name, _)| (name.clone(), name.clone()))
                 .collect();
             let selected_indices: Vec<usize> = self
                 .listing

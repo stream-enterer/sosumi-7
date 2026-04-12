@@ -5,6 +5,7 @@ use crate::emCursor::emCursor;
 use crate::emInput::emInputEvent;
 use crate::emInputState::emInputState;
 use crate::emPanel::{NoticeFlags, PanelBehavior, PanelState};
+use crate::emPanelCtx::PanelCtx;
 use crate::emPainter::emPainter;
 
 use super::emBorder::{InnerBorderType, OuterBorderType};
@@ -145,6 +146,18 @@ impl PanelBehavior for ListBoxPanel {
         if flags.intersects(NoticeFlags::ENABLE_CHANGED) {
             self.list_box.on_enable_changed(state.enabled);
         }
+    }
+
+    fn auto_expand(&self) -> bool {
+        true
+    }
+
+    fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        if ctx.children().is_empty() {
+            self.list_box.create_item_children(ctx);
+        }
+        let rect = ctx.layout_rect();
+        self.list_box.layout_item_children(ctx, rect.w, rect.h);
     }
 }
 

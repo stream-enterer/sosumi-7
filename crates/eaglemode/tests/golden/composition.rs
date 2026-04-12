@@ -49,6 +49,9 @@ use emcore::emTunnel::emTunnel;
 
 use emcore::emFileSelectionBox::emFileSelectionBox;
 
+use emcore::emLabel::emLabel;
+use emcore::emLinearGroup::emLinearGroup;
+
 use super::common::*;
 
 /// Skip test if golden data hasn't been generated yet.
@@ -61,10 +64,11 @@ macro_rules! require_golden {
     };
 }
 
-/// Settle: deliver notices and update viewing until stable.
+/// Settle: deliver notices, run panel cycles, and update viewing until stable.
 fn settle(tree: &mut PanelTree, view: &mut emView, rounds: usize) {
     for _ in 0..rounds {
         tree.HandleNotice(view.IsFocused(), view.GetCurrentPixelTallness());
+        tree.run_panel_cycles();
         view.Update(tree);
     }
 }
@@ -311,6 +315,94 @@ impl PanelBehavior for ListBoxPanel {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+/// Wraps emLabel as a PanelBehavior for use as a child panel.
+struct LabelPanel {
+    widget: emLabel,
+}
+impl PanelBehavior for LabelPanel {
+    fn Paint(&mut self, p: &mut emPainter, w: f64, h: f64, s: &PanelState) {
+        let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
+        self.widget.PaintContent(p, w, h, s.enabled, pixel_scale);
+    }
+}
+
+/// Custom list box item panel — matches C++ emTestPanel::CustomItemPanel.
+///
+/// C++ CustomItemPanel inherits emLinearGroup (horizontal, border_scaling=5.0).
+/// On expand, creates "t" (label) and "l" (recursive child CustomListBox).
+/// When selected, changes look bg_color to (224,80,128).
+struct CustomItemPanelBehavior {
+    group: emLinearGroup,
+    look: Rc<emLook>,
+    children_created: bool,
+}
+
+impl CustomItemPanelBehavior {
+    fn new(text: String, selected: bool, look: Rc<emLook>) -> Self {
+        let mut group = emLinearGroup::horizontal();
+        group.border.SetBorderScaling(5.0);
+        group.border.caption = text.clone();
+        // C++ ItemSelectionChanged: if selected, set look bg to (224,80,128)
+        if selected {
+            let mut item_look = (*look).clone();
+            item_look.bg_color = emColor::rgb(224, 80, 128);
+            group.look = item_look;
+        } else {
+            group.look = (*look).clone();
+        }
+        Self {
+            group,
+            look,
+            children_created: false,
+        }
+    }
+}
+
+impl PanelBehavior for CustomItemPanelBehavior {
+    fn Paint(&mut self, p: &mut emPainter, w: f64, h: f64, s: &PanelState) {
+        self.group.Paint(p, w, h, s);
+    }
+
+    fn auto_expand(&self) -> bool {
+        true
+    }
+
+    fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        if !self.children_created {
+            self.children_created = true;
+
+            // C++: label = new emLabel(this, "t", "This is a custom list\n...")
+            let label = emLabel::new(
+                "This is a custom list\nbox item panel (it is\nrecursive...)",
+                self.look.clone(),
+            );
+            ctx.create_child_with("t", Box::new(LabelPanel { widget: label }));
+
+            // C++: listBox = new CustomListBox(this, "l", "Child List Box")
+            let mut child_lb = emListBox::new(self.look.clone());
+            child_lb.SetCaption("Child List Box");
+            child_lb.SetSelectionType(SelectionMode::Multi);
+            for i in 1..=7 {
+                child_lb.AddItem(format!("{i}"), format!("Item {i}"));
+            }
+            child_lb.SetSelectedIndex(0);
+            // Recursive: child listbox items also use CustomItemPanelBehavior
+            child_lb.set_item_behavior_factory(
+                move |_i, text, selected, look, _sel_mode, _enabled| {
+                    Box::new(CustomItemPanelBehavior::new(
+                        text.to_string(),
+                        selected,
+                        look,
+                    ))
+                },
+            );
+            ctx.create_child_with("l", Box::new(ListBoxPanel { widget: child_lb }));
+        }
+        // Delegate layout to the emLinearGroup
+        self.group.LayoutChildren(ctx);
+    }
+}
+
 // TkTestPanel — widget showcase grid (from test_panel.rs)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -733,12 +825,21 @@ impl TkTestPanel {
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb6 }));
 
-            // C++ l7 is a CustomListBox — approximate with standard multi-selection
+            // l7: custom list box — C++ CustomListBox with CustomItemPanel items
             let mut lb7 = emListBox::new(look.clone());
             lb7.SetCaption("Custom List Box");
             lb7.SetSelectionType(SelectionMode::Multi);
             add_items_1_to_7(&mut lb7);
             lb7.SetSelectedIndex(0);
+            lb7.set_item_behavior_factory(
+                move |_i, text, selected, look, _sel_mode, _enabled| {
+                    Box::new(CustomItemPanelBehavior::new(
+                        text.to_string(),
+                        selected,
+                        look,
+                    ))
+                },
+            );
             let id = ctx.tree.create_child(gid, "l7");
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb7 }));
@@ -798,7 +899,8 @@ impl TkTestPanel {
                 "Image Files (*.bmp *.gif *.jpg *.png *.tga)".to_string(),
                 "HTML Files (*.htm *.html)".to_string(),
             ]);
-            fsb.set_parent_directory(std::path::Path::new("/nonexistent_golden_test_dir"));
+            // C++ gen_golden runs with CWD=crates/eaglemode/ — match that.
+            fsb.set_parent_directory(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
             ctx.tree.set_behavior(id, Box::new(fsb));
 
             // C++ emTestPanel.cpp:759-763
