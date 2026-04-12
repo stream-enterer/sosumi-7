@@ -220,6 +220,21 @@ fn serialize_op(seq: usize, depth: u32, op: &DrawOp, state: &RecordedState) -> S
             format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRectOutline","x":{x},"y":{y},"w":{w},"h":{h},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
 
+        DrawOp::PaintRoundRectOutline { x, y, w, h, radius, stroke } => {
+            let color = color_hex(stroke.color);
+            let thickness = stroke.width;
+            let hf = hex_fields(&[("x", *x), ("y", *y), ("w", *w), ("h", *h), ("radius", *radius), ("thickness", thickness)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRoundRectOutline","x":{x},"y":{y},"w":{w},"h":{h},"radius":{radius},"thickness":{thickness},"color":"{color}",{hf},{sf}}}"#)
+        }
+
+        DrawOp::PaintEllipseOutline { cx, cy, rx, ry, stroke, canvas_color } => {
+            let color = color_hex(stroke.color);
+            let thickness = stroke.width;
+            let canvas_color = color_hex(*canvas_color);
+            let hf = hex_fields(&[("cx", *cx), ("cy", *cy), ("rx", *rx), ("ry", *ry), ("thickness", thickness)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipseOutline","cx":{cx},"cy":{cy},"rx":{rx},"ry":{ry},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
+        }
+
         // Catch-all for variants not individually serialized above.
         other => {
             let variant = variant_name(other);
