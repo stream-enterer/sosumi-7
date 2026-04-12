@@ -1012,6 +1012,23 @@ impl emListBox {
             return;
         }
 
+        // C++ emListBox inherits from emRasterGroup and has no PaintContent
+        // override — items are only visible through child panels when the
+        // panel is auto-expanded.  When the panel pixel area is below the
+        // default auto-expansion threshold (150 px²), items would never be
+        // created in C++, so skip inline painting to match.
+        //
+        // pixel_scale = viewed_area / (w * h), so pixel_area = pixel_scale * w * h.
+        //
+        // DIVERGED: C++ emListBox::PaintContent — no C++ equivalent; inline
+        // painting is Rust-only. This guard reproduces the C++ effect where
+        // tiny (non-expanded) listboxes show only the border frame.
+        let pixel_area = pixel_scale * w * h;
+        if pixel_area < 150.0 {
+            self.border.paint_inner_overlay(painter, w, h, &self.look);
+            return;
+        }
+
         let Rect {
             x: cx,
             y: cy,
