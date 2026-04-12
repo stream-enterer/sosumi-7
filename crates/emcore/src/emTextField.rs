@@ -1126,16 +1126,12 @@ impl emTextField {
             h: ch,
         } = content;
 
-        painter.push_state();
-        painter.SetClipping(cx, cy, cw, ch);
-
+        // C++ DoTextField does NOT set clipping before painting content.
         if self.multi_line {
             self.paint_multi_line(painter, cx, cy, cw, ch, radius);
         } else {
             self.paint_single_line(painter, cx, cy, cw, ch, radius);
         }
-
-        painter.pop_state();
 
         // C++ paints content, THEN overlays the IO field border image.
         self.border.paint_inner_overlay(painter, w, h, &self.look);
