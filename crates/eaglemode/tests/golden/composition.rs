@@ -634,12 +634,23 @@ impl TkTestPanel {
             sf5.SetValue(14400000.0);
             // C++ emTestPanel.cpp:636
             sf5.SetScaleMarkIntervals(&[3600000, 900000, 300000, 60000, 10000, 1000, 100, 10, 1]);
-            sf5.SetTextOfValueFunc(Box::new(|val, _interval| {
-                let ms = val.unsigned_abs();
-                let s = ms / 1000;
-                let m = s / 60;
-                let h = m / 60;
-                format!("{:02}:{:02}:{:02}", h, m % 60, s % 60)
+            sf5.SetTextOfValueFunc(Box::new(|val, mark_interval| {
+                let v = val.unsigned_abs();
+                let h = (v / 3600000) as i64;
+                let m = ((v / 60000) % 60) as i64;
+                let s = ((v / 1000) % 60) as i64;
+                let ms = (v % 1000) as i64;
+                if mark_interval < 10 {
+                    format!("{h:02}:{m:02}:{s:02}\n.{ms:03}")
+                } else if mark_interval < 100 {
+                    format!("{h:02}:{m:02}:{s:02}\n.{:02}", ms / 10)
+                } else if mark_interval < 1000 {
+                    format!("{h:02}:{m:02}:{s:02}\n.{:01}", ms / 100)
+                } else if mark_interval < 60000 {
+                    format!("{h:02}:{m:02}:{s:02}")
+                } else {
+                    format!("{h:02}:{m:02}")
+                }
             }));
             let id = ctx.tree.create_child(gid, "sf5");
             ctx.tree
@@ -650,12 +661,23 @@ impl TkTestPanel {
             sf6.SetEditable(true);
             // C++ emTestPanel.cpp:643
             sf6.SetScaleMarkIntervals(&[3600000, 900000, 300000, 60000, 10000, 1000, 100, 10, 1]);
-            sf6.SetTextOfValueFunc(Box::new(|val, _interval| {
-                let ms = val.unsigned_abs();
-                let s = ms / 1000;
-                let m = s / 60;
-                let h = m / 60;
-                format!("{:02}:{:02}:{:02}", h, m % 60, s % 60)
+            sf6.SetTextOfValueFunc(Box::new(|val, mark_interval| {
+                let v = val.unsigned_abs();
+                let h = (v / 3600000) as i64;
+                let m = ((v / 60000) % 60) as i64;
+                let s = ((v / 1000) % 60) as i64;
+                let ms = (v % 1000) as i64;
+                if mark_interval < 10 {
+                    format!("{h:02}:{m:02}:{s:02}\n.{ms:03}")
+                } else if mark_interval < 100 {
+                    format!("{h:02}:{m:02}:{s:02}\n.{:02}", ms / 10)
+                } else if mark_interval < 1000 {
+                    format!("{h:02}:{m:02}:{s:02}\n.{:01}", ms / 100)
+                } else if mark_interval < 60000 {
+                    format!("{h:02}:{m:02}:{s:02}")
+                } else {
+                    format!("{h:02}:{m:02}")
+                }
             }));
             let id = ctx.tree.create_child(gid, "sf6");
             ctx.tree
