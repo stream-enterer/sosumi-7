@@ -2559,7 +2559,7 @@ impl<'a> emPainter<'a> {
         if alpha == 0 || w <= 0.0 || h <= 0.0 {
             return;
         }
-        let Some(_proof) = self.try_record(DrawOp::PaintBorderImage {
+        let is_recording = self.try_record(DrawOp::PaintBorderImage {
             x,
             y,
             w,
@@ -2576,7 +2576,13 @@ impl<'a> emPainter<'a> {
             alpha,
             canvas_color,
             which_sub_rects,
-        }) else { return; };
+        }).is_none();
+        if is_recording {
+            if !self.record_subops {
+                return;
+            }
+            self.record_depth += 1;
+        }
 
         // C++ PaintBorderImage (emPainter.cpp:2221-2338):
         // RoundX/RoundY adjustment, then 9 PaintImage calls (each = PaintRect).
@@ -2589,7 +2595,10 @@ impl<'a> emPainter<'a> {
             0, 0, iw_i, ih_i,
             src_l, src_t, src_r, src_b,
             canvas_color,
-        ) else { return; };
+        ) else {
+            if is_recording { self.record_depth -= 1; }
+            return;
+        };
 
         // C++ PaintBorderImage passes EXTEND_EDGE to each PaintImage call.
         let ext = super::emTexture::ImageExtension::Clamp;
@@ -2609,6 +2618,7 @@ impl<'a> emPainter<'a> {
             let (sx, sy, sw, sh) = slices.source_rects[si];
             self.PaintImageSrcRect(dx, dy, dw, dh, image, sx, sy, sw, sh, alpha, canvas_color, ext);
         }
+        if is_recording { self.record_depth -= 1; }
     }
 
     /// Draw a 9-slice border image from a sub-rectangle of the source image.
