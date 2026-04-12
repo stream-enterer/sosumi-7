@@ -354,15 +354,36 @@ pub enum DrawOp {
 unsafe impl Send for DrawOp {}
 unsafe impl Sync for DrawOp {}
 
+/// Painter state snapshot captured alongside each recorded paint op.
+/// Matches C++ inline state fields: state_sx, state_sy, state_ox, state_oy,
+/// state_clip_x1, state_clip_y1, state_clip_x2, state_clip_y2.
+#[derive(Debug, Clone, Copy)]
+pub struct RecordedState {
+    pub scale_x: f64,
+    pub scale_y: f64,
+    pub offset_x: f64,
+    pub offset_y: f64,
+    pub clip_x1: f64,
+    pub clip_y1: f64,
+    pub clip_x2: f64,
+    pub clip_y2: f64,
+}
+
+// SAFETY: RecordedState is all f64 — trivially Send/Sync.
+// Manual impls needed because RecordedOp has manual Send/Sync impls.
+unsafe impl Send for RecordedState {}
+unsafe impl Sync for RecordedState {}
+
 /// A recorded op paired with the painter's nesting depth at recording time.
 /// Matches C++'s `g_draw_op_depth` field in the JSONL output.
 #[derive(Debug)]
 pub struct RecordedOp {
     pub depth: u32,
     pub op: DrawOp,
+    pub state: RecordedState,
 }
 
-// SAFETY: same reasoning as DrawOp — RecordedOp just wraps DrawOp + u32.
+// SAFETY: same reasoning as DrawOp — RecordedOp just wraps DrawOp + u32 + RecordedState.
 unsafe impl Send for RecordedOp {}
 unsafe impl Sync for RecordedOp {}
 

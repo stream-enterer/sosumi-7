@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use crate::emPainterDrawList::{DrawOp, RecordedOp};
+use crate::emPainterDrawList::{DrawOp, RecordedOp, RecordedState};
 use super::emFontCache;
 use super::emPainterInterpolation;
 use super::emPainterScanline::{self, WindingRule};
@@ -371,7 +371,20 @@ impl<'a> emPainter<'a> {
     /// `None` if the op was recorded (recording mode).
     fn try_record(&mut self, op: DrawOp) -> Option<DirectProof> {
         if let PaintTarget::DrawList(ops) = &mut self.target {
-            ops.push(RecordedOp { depth: self.record_depth, op });
+            ops.push(RecordedOp {
+                depth: self.record_depth,
+                op,
+                state: RecordedState {
+                    scale_x: self.state.scale_x,
+                    scale_y: self.state.scale_y,
+                    offset_x: self.state.offset_x,
+                    offset_y: self.state.offset_y,
+                    clip_x1: self.state.clip.x1,
+                    clip_y1: self.state.clip.y1,
+                    clip_x2: self.state.clip.x2,
+                    clip_y2: self.state.clip.y2,
+                },
+            });
             None
         } else {
             Some(DirectProof(()))
@@ -392,7 +405,20 @@ impl<'a> emPainter<'a> {
     /// mutate local state regardless of mode).
     fn record_state(&mut self, op: DrawOp) {
         if let PaintTarget::DrawList(ops) = &mut self.target {
-            ops.push(RecordedOp { depth: self.record_depth, op });
+            ops.push(RecordedOp {
+                depth: self.record_depth,
+                op,
+                state: RecordedState {
+                    scale_x: self.state.scale_x,
+                    scale_y: self.state.scale_y,
+                    offset_x: self.state.offset_x,
+                    offset_y: self.state.offset_y,
+                    clip_x1: self.state.clip.x1,
+                    clip_y1: self.state.clip.y1,
+                    clip_x2: self.state.clip.x2,
+                    clip_y2: self.state.clip.y2,
+                },
+            });
         }
     }
 
