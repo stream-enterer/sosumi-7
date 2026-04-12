@@ -333,6 +333,37 @@ impl emListBox {
         self.raster_layout.fixed_columns = count;
     }
 
+    /// Set minimum number of cells for the raster grid layout.
+    /// Port of C++ `emRasterLayout::SetMinCellCount`.
+    pub fn SetMinCellCount(&mut self, count: usize) {
+        self.raster_layout.min_cell_count = count;
+    }
+
+    /// Set preferred, minimum, and maximum child tallness to the same value.
+    /// Port of C++ `emRasterLayout::SetChildTallness`.
+    pub fn SetChildTallness(&mut self, tallness: f64) {
+        self.raster_layout.preferred_child_tallness = tallness;
+        self.raster_layout.min_child_tallness = tallness;
+        self.raster_layout.max_child_tallness = tallness;
+    }
+
+    /// Set the maximum child tallness.
+    /// Port of C++ `emRasterLayout::SetMaxChildTallness`.
+    pub fn SetMaxChildTallness(&mut self, max_ct: f64) {
+        self.raster_layout.max_child_tallness = max_ct;
+    }
+
+    /// Set horizontal and vertical alignment for the raster grid.
+    /// Port of C++ `emRasterLayout::SetAlignment`.
+    pub fn SetAlignment(
+        &mut self,
+        h: crate::emTiling::AlignmentH,
+        v: crate::emTiling::AlignmentV,
+    ) {
+        self.raster_layout.alignment_h = h;
+        self.raster_layout.alignment_v = v;
+    }
+
     pub fn SetCaption(&mut self, caption: &str) {
         self.border.caption = caption.to_string();
     }
