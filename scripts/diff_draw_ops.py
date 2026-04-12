@@ -2,9 +2,9 @@
 """Compare C++ and Rust DrawOp JSONL files parameter-by-parameter.
 
 Usage:
-    python3 scripts/diff_draw_ops.py <test_name> [divergence_dir]
+    python3 scripts/diff_draw_ops.py <test_name> [divergence_dir] [--depth N]
     python3 scripts/diff_draw_ops.py cosmos_item_border
-    python3 scripts/diff_draw_ops.py testpanel_root crates/eaglemode/target/golden-divergence
+    python3 scripts/diff_draw_ops.py testpanel_root --depth 2
 """
 
 import json
@@ -152,11 +152,10 @@ def diff_ops(cpp_ops, rust_ops, name):
 
 
 def track_state(ops):
-    """Walk ops in order, tracking painter state. Return list of (paint_op, state_snapshot)
-    for each paint op, where state_snapshot captures the accumulated painter state."""
+    """Walk ops and extract state. Uses inline state_* fields when present (both
+    C++ and Rust after Phase A), falls back to accumulated state ops for older formats."""
     state = {"offset_x": 0.0, "offset_y": 0.0, "scale_x": 1.0, "scale_y": 1.0,
-             "clip_x": None, "clip_y": None, "clip_w": None, "clip_h": None,
-             "canvas_color": "00000000"}
+             "clip_x1": None, "clip_y1": None, "clip_x2": None, "clip_y2": None}
     stack = []
     paint_ops = []
     for op in ops:
@@ -178,42 +177,32 @@ def track_state(ops):
             state["scale_x"] = op.get("sx", 1.0)
             state["scale_y"] = op.get("sy", 1.0)
         elif kind == "ClipRect":
-            # ClipRect values are in user-space; transform to pixel-space
-            # using current offset/scale so they're comparable with C++ inline
-            # state (which is already in pixel-space).
-            ux, uy = op.get("x", 0), op.get("y", 0)
-            uw, uh = op.get("w", 0), op.get("h", 0)
             sx, sy = state["scale_x"], state["scale_y"]
             ox, oy = state["offset_x"], state["offset_y"]
-            state["clip_x"] = ux * sx + ox
-            state["clip_y"] = uy * sy + oy
-            state["clip_w"] = uw * sx
-            state["clip_h"] = uh * sy
+            ux, uy = op.get("x", 0), op.get("y", 0)
+            uw, uh = op.get("w", 0), op.get("h", 0)
+            state["clip_x1"] = ux * sx + ox
+            state["clip_y1"] = uy * sy + oy
+            state["clip_x2"] = (ux + uw) * sx + ox
+            state["clip_y2"] = (uy + uh) * sy + oy
         elif kind == "SetCanvasColor":
-            state["canvas_color"] = op.get("color", "00000000")
+            pass  # canvas_color is per-call, not accumulated state
         elif kind not in STATE_OPS:
-            # Paint op — use inline state if present (C++), else accumulated state (Rust)
+            # Paint op — use inline state fields if present
             if "state_sx" in op:
                 snap = {
                     "offset_x": op.get("state_ox", 0.0),
                     "offset_y": op.get("state_oy", 0.0),
                     "scale_x": op.get("state_sx", 1.0),
                     "scale_y": op.get("state_sy", 1.0),
-                    "clip_x": op.get("state_clip_x1"),
-                    "clip_y": op.get("state_clip_y1"),
-                    "clip_w": (op["state_clip_x2"] - op["state_clip_x1"]) if "state_clip_x1" in op else None,
-                    "clip_h": (op["state_clip_y2"] - op["state_clip_y1"]) if "state_clip_y1" in op else None,
-                    "canvas_color": op.get("canvas_color", "00000000"),
+                    "clip_x1": op.get("state_clip_x1"),
+                    "clip_y1": op.get("state_clip_y1"),
+                    "clip_x2": op.get("state_clip_x2"),
+                    "clip_y2": op.get("state_clip_y2"),
                 }
-                paint_ops.append((op, snap))
             else:
                 snap = dict(state)
-                # Use per-call canvas_color from paint op (both C++ and Rust
-                # have it) instead of accumulated SetCanvasColor state, since
-                # widget code can pass explicit canvas_color to individual calls.
-                if "canvas_color" in op:
-                    snap["canvas_color"] = op["canvas_color"]
-                paint_ops.append((op, snap))
+            paint_ops.append((op, snap))
     return paint_ops
 
 
@@ -293,14 +282,18 @@ def diff_with_state(cpp_ops, rust_ops, name):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: diff_draw_ops.py <test_name> [divergence_dir]")
-        sys.exit(1)
+    import argparse
+    parser = argparse.ArgumentParser(description="Compare C++ and Rust DrawOp JSONL files")
+    parser.add_argument("test_name", help="Test name (e.g., tktest_1x)")
+    parser.add_argument("divergence_dir", nargs="?",
+                        default="crates/eaglemode/target/golden-divergence",
+                        help="Directory containing JSONL files")
+    parser.add_argument("--depth", type=int, default=None,
+                        help="Filter to ops at this depth level only")
+    args = parser.parse_args()
 
-    name = sys.argv[1]
-    div_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(
-        "crates/eaglemode/target/golden-divergence"
-    )
+    name = args.test_name
+    div_dir = Path(args.divergence_dir)
 
     cpp_path = div_dir / f"{name}.cpp_ops.jsonl"
     rust_path = div_dir / f"{name}.rust_ops.jsonl"
@@ -319,7 +312,11 @@ def main():
     cpp_ops = load_ops(cpp_path)
     rust_ops = load_ops(rust_path)
 
-    # Full comparison (including state ops)
+    if args.depth is not None:
+        cpp_ops = [o for o in cpp_ops if o.get("depth", 0) == args.depth]
+        rust_ops = [o for o in rust_ops if o.get("depth", 0) == args.depth]
+
+    # Full comparison (including state ops from C++ side)
     n = diff_ops(cpp_ops, rust_ops, name)
 
     # Paint-only comparison (filter state ops for alignment)
