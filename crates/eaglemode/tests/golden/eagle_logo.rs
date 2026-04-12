@@ -56,6 +56,7 @@ fn eagle_logo() {
         let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(800, 600, &mut ops);
+            rec.set_record_subops(true);
             rec.SetCanvasColor(emColor::TRANSPARENT);
             rec.scale(800.0, 800.0);
             let state = PanelState::default_for_test();

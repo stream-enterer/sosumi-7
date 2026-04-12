@@ -34,6 +34,7 @@ fn record_painter_ops<F: FnOnce(&mut emPainter)>(name: &str, w: u32, h: u32, pai
     let mut ops: Vec<RecordedOp> = Vec::new();
     {
         let mut rec = emPainter::new_recording(w, h, &mut ops);
+            rec.set_record_subops(true);
         rec.SetCanvasColor(emColor::TRANSPARENT);
         paint(&mut rec);
     }

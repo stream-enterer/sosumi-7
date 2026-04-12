@@ -79,6 +79,7 @@ fn cosmos_item_border() {
         let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(400, 300, &mut ops);
+            rec.set_record_subops(true);
             rec.SetCanvasColor(emColor::TRANSPARENT);
             rec.scale(sx, sy);
             panel.Paint(&mut rec, 1.0, panel_h, &state);

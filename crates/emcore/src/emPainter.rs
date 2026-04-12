@@ -247,6 +247,11 @@ pub struct emPainter<'a> {
     state_stack: Vec<PainterState>,
     /// Nesting depth for compound ops (matches C++ g_draw_op_depth).
     record_depth: u32,
+    /// When true, compound ops execute their body in recording mode so
+    /// sub-ops (e.g. PaintText inside PaintTextBoxed) get recorded at
+    /// depth+1. Only used for diagnostic dumps (DUMP_DRAW_OPS=1).
+    /// Production recording keeps this false for correct replay.
+    record_subops: bool,
 }
 
 /// The 9 target rectangles computed by PaintBorderImage's boundary logic.
@@ -302,6 +307,7 @@ impl<'a> emPainter<'a> {
             },
             state_stack: Vec::new(),
             record_depth: 0,
+            record_subops: false,
         }
     }
 
@@ -332,7 +338,16 @@ impl<'a> emPainter<'a> {
             },
             state_stack: Vec::new(),
             record_depth: 0,
+            record_subops: false,
         }
+    }
+
+    /// Enable sub-op recording for diagnostic dumps. When set, compound ops
+    /// (PaintTextBoxed, etc.) execute their body in recording mode so sub-calls
+    /// get recorded at depth+1. Must NOT be used on painters whose DrawList
+    /// will be replayed — sub-ops would double-render.
+    pub fn set_record_subops(&mut self, enable: bool) {
+        self.record_subops = enable;
     }
 
     /// Get a mutable reference to the target image.
@@ -1969,7 +1984,7 @@ impl<'a> emPainter<'a> {
         if text.is_empty() || w <= 0.0 || h <= 0.0 || max_char_height <= 0.0 {
             return;
         }
-        self.try_record(DrawOp::PaintTextBoxed {
+        let is_recording = self.try_record(DrawOp::PaintTextBoxed {
             x,
             y,
             w,
@@ -1984,16 +1999,20 @@ impl<'a> emPainter<'a> {
             min_width_scale,
             formatted,
             rel_line_space,
-        });
-        // C++ increments g_draw_op_depth after logging PaintTextBoxed,
-        // so sub-calls (PaintText) record at depth+1.
-        self.record_depth += 1;
+        }).is_none();
+        if is_recording {
+            if !self.record_subops {
+                return;
+            }
+            // Diagnostic mode: execute body so sub-ops get recorded at depth+1.
+            self.record_depth += 1;
+        }
 
         // Literal port of C++ PaintTextBoxed (emPainter.cpp:2174-2284).
         let (mut tw, mut th) =
             Self::GetTextSize(text, max_char_height, formatted, rel_line_space);
         if tw <= 0.0 {
-            self.record_depth -= 1;
+            if is_recording { self.record_depth -= 1; }
             return;
         }
 
@@ -2136,7 +2155,7 @@ impl<'a> emPainter<'a> {
         } else {
             self.PaintText(bx, by, text, ch, ws, color, canvas_color);
         }
-        self.record_depth -= 1;
+        if is_recording { self.record_depth -= 1; }
     }
 
     /// Convenience: measure text width for a single un-formatted line.

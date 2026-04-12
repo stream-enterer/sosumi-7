@@ -2221,6 +2221,7 @@ fn render_testpanel(
         let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(w, h, &mut ops);
+            rec.set_record_subops(true);
             view.Paint(tree, &mut rec, emColor::TRANSPARENT);
         }
         dump_draw_ops(name, &ops);

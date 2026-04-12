@@ -47,6 +47,7 @@ fn starfield_small() {
         let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(ew, eh, &mut ops);
+            rec.set_record_subops(true);
             rec.scale(ew as f64, eh as f64);
             rec.SetCanvasColor(emColor::TRANSPARENT);
             let mut panel = emStarFieldPanel::new(3, 0x12345678);
@@ -71,6 +72,7 @@ fn starfield_large() {
         let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(ew, eh, &mut ops);
+            rec.set_record_subops(true);
             rec.scale(ew as f64, eh as f64);
             rec.SetCanvasColor(emColor::TRANSPARENT);
             let mut panel = emStarFieldPanel::new(3, 0x12345678);
