@@ -6138,10 +6138,14 @@ impl<'a> emPainter<'a> {
 
     fn blend_pixel(&mut self, proof: DirectProof, x: i32, y: i32, color: emColor) {
         let clip = self.state.clip;
-        if (x as f64) < clip.x1
-            || (x as f64) >= clip.x2
-            || (y as f64) < clip.y1
-            || (y as f64) >= clip.y2
+        // C++ uses integer floor/ceil for scanline bounds (sly1 = (int)minY,
+        // sly2 = ceil(maxY)).  Match that here — fractional clip boundaries
+        // must not reject integer pixel coords that fall within the scanline
+        // range.
+        if x < clip.x1 as i32
+            || x >= clip.x2.ceil() as i32
+            || y < clip.y1 as i32
+            || y >= clip.y2.ceil() as i32
         {
             return;
         }
