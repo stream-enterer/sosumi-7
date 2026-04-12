@@ -933,7 +933,7 @@ impl TkTestPanel {
 
 impl PanelBehavior for TkTestPanel {
     fn IsOpaque(&self) -> bool {
-        true
+        self.border.IsOpaque(&self.look)
     }
 
     fn auto_expand(&self) -> bool {
