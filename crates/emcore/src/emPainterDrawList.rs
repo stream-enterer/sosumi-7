@@ -266,18 +266,6 @@ pub enum DrawOp {
     // Polylines
     PaintPolyline {
         vertices: Vec<(f64, f64)>,
-        stroke_color: emColor,
-        thickness: f64,
-        canvas_color: emColor,
-    },
-    PaintPolylineWithoutArrows {
-        vertices: Vec<(f64, f64)>,
-        stroke: emStroke,
-        closed: bool,
-        canvas_color: emColor,
-    },
-    PaintPolylineWithArrows {
-        vertices: Vec<(f64, f64)>,
         stroke: emStroke,
         closed: bool,
         canvas_color: emColor,
@@ -789,24 +777,10 @@ impl DrawList {
 
                 DrawOp::PaintPolyline {
                     vertices,
-                    stroke_color,
-                    thickness,
-                    canvas_color,
-                } => painter.PaintPolyline(vertices, *stroke_color, *thickness, *canvas_color),
-
-                DrawOp::PaintPolylineWithoutArrows {
-                    vertices,
                     stroke,
                     closed,
                     canvas_color,
-                } => painter.PaintPolylineWithoutArrows(vertices, stroke, *closed, *canvas_color),
-
-                DrawOp::PaintPolylineWithArrows {
-                    vertices,
-                    stroke,
-                    closed,
-                    canvas_color,
-                } => painter.PaintPolylineWithArrows(vertices, stroke, *closed, *canvas_color, None),
+                } => painter.PaintPolyline(vertices, stroke, *closed, *canvas_color),
 
                 DrawOp::PaintDashedPolyline {
                     vertices,

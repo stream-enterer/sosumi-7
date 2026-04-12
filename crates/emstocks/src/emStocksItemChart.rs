@@ -3,6 +3,7 @@
 use emcore::emColor::emColor;
 use emcore::emPainter::emPainter;
 use emcore::emPainter::{TextAlignment, VAlign};
+use emcore::emStroke::emStroke;
 use emcore::emTexture::emTexture;
 
 use super::emStocksConfig::emStocksConfig;
@@ -1239,8 +1240,7 @@ impl emStocksItemChart {
         }
 
         // C++ uses per-segment PaintLine with emRoundedStroke and emStrokeEnd.
-        // Rust emPainter::PaintLine does not accept stroke parameters; PaintPolyline with
-        // thickness is the closest equivalent and produces visually similar output.
+        // PaintPolyline with a simple stroke is the closest equivalent.
         let mut vertices: Vec<(f64, f64)> = Vec::new();
         for i in i0..=i3 {
             if !self.prices[i].valid {
@@ -1251,7 +1251,8 @@ impl emStocksItemChart {
             vertices.push((x2, y2));
         }
         if vertices.len() >= 2 {
-            painter.PaintPolyline(&vertices, c1, thickness, emColor::TRANSPARENT);
+            let stroke = emStroke::new(c1, thickness);
+            painter.PaintPolyline(&vertices, &stroke, false, emColor::TRANSPARENT);
         }
 
         if !have_points {

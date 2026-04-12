@@ -1182,45 +1182,42 @@ impl<'a> emPainter<'a> {
         self.PaintPolylineWithoutArrows(vertices, &stroke, true, canvas_color);
     }
 
-    /// Draw a polyline (open path) outline by stroking each segment.
+    /// Draw a polyline with full stroke support (joins, caps, dashes, arrows).
+    /// Matches C++ `PaintPolyline(xy, n, thickness, stroke, strokeStart, strokeEnd, canvasColor)`.
+    /// Records as a compound op: PaintPolyline at depth N, sub-ops at depth N+1.
     pub fn PaintPolyline(
         &mut self,
         vertices: &[(f64, f64)],
-        stroke_color: emColor,
-        thickness: f64,
+        stroke: &emStroke,
+        closed: bool,
         canvas_color: emColor,
     ) {
-        let Some(_proof) = self.try_record(DrawOp::PaintPolyline {
-            vertices: vertices.to_vec(),
-            stroke_color,
-            thickness,
-            canvas_color,
-        }) else { return; };
-        if vertices.len() < 2 {
+        if vertices.is_empty() || stroke.width <= 0.0 {
             return;
         }
-        let half_w = thickness / 2.0;
-        for i in 0..vertices.len() - 1 {
-            let (x0, y0) = vertices[i];
-            let (x1, y1) = vertices[i + 1];
-            let dx = x1 - x0;
-            let dy = y1 - y0;
-            let len = (dx * dx + dy * dy).sqrt();
-            if len < 0.001 {
-                continue;
-            }
-            let nx = -dy / len * half_w;
-            let ny = dx / len * half_w;
-            self.PaintPolygon(
-                &[
-                    (x0 + nx, y0 + ny),
-                    (x1 + nx, y1 + ny),
-                    (x1 - nx, y1 - ny),
-                    (x0 - nx, y0 - ny),
-                ],
-                stroke_color,
+        let is_recording = self
+            .try_record(DrawOp::PaintPolyline {
+                vertices: vertices.to_vec(),
+                stroke: stroke.clone(),
+                closed,
                 canvas_color,
-            );
+            })
+            .is_none();
+        if is_recording {
+            if !self.record_subops {
+                return;
+            }
+            self.record_depth += 1;
+        }
+        let with_arrows = !closed
+            && (stroke.start_end.IsDecorated() || stroke.finish_end.IsDecorated());
+        if with_arrows {
+            self.PaintPolylineWithArrows(vertices, stroke, closed, canvas_color, None);
+        } else {
+            self.PaintPolylineWithoutArrows(vertices, stroke, closed, canvas_color);
+        }
+        if is_recording {
+            self.record_depth -= 1;
         }
     }
 
@@ -3944,7 +3941,8 @@ impl<'a> emPainter<'a> {
     }
 
     /// Dispatch polyline rendering: if dashed call dashed, else call solid.
-    /// Corresponds to C++ `PaintPolylineWithoutArrows`.
+    /// Corresponds to C++ `PaintPolylineWithoutArrows` (inline in emPainter.h,
+    /// does not log or manage depth — pure dispatch).
     pub fn PaintPolylineWithoutArrows(
         &mut self,
         vertices: &[(f64, f64)],
@@ -3952,12 +3950,6 @@ impl<'a> emPainter<'a> {
         closed: bool,
         canvas_color: emColor,
     ) {
-        let Some(_proof) = self.try_record(DrawOp::PaintPolylineWithoutArrows {
-            vertices: vertices.to_vec(),
-            stroke: stroke.clone(),
-            closed,
-            canvas_color,
-        }) else { return; };
         if stroke.is_dashed() {
             self.PaintDashedPolyline(vertices, stroke, closed, canvas_color);
         } else {
@@ -3966,8 +3958,8 @@ impl<'a> emPainter<'a> {
     }
 
     /// Dispatch polyline rendering with arrow support.
-    /// Corresponds to C++ `PaintPolylineWithArrows`: uses pre-computed direction
-    /// vectors (nx1,ny1,nx2,ny2), shortens endpoints, then paints arrows.
+    /// Corresponds to C++ `PaintPolylineWithArrows` (does not log or manage
+    /// depth — internal dispatch called by `PaintPolyline`).
     ///
     /// `arrow_dirs`: optional pre-computed direction vectors `((nx1,ny1),(nx2,ny2))`
     /// matching C++ parameters. When `None`, directions are extracted from vertices.
@@ -3979,12 +3971,6 @@ impl<'a> emPainter<'a> {
         canvas_color: emColor,
         arrow_dirs: Option<((f64, f64), (f64, f64))>,
     ) {
-        let Some(_proof) = self.try_record(DrawOp::PaintPolylineWithArrows {
-            vertices: vertices.to_vec(),
-            stroke: stroke.clone(),
-            closed,
-            canvas_color,
-        }) else { return; };
         if vertices.len() < 2 {
             return;
         }

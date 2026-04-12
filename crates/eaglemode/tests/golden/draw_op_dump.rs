@@ -256,8 +256,6 @@ fn variant_name(op: &DrawOp) -> &'static str {
         DrawOp::PaintPolygonTexturedEvenOdd { .. } => "PaintPolygonTexturedEvenOdd",
         DrawOp::PaintPolygonOutline { .. } => "PaintPolygonOutline",
         DrawOp::PaintPolyline { .. } => "PaintPolyline",
-        DrawOp::PaintPolylineWithoutArrows { .. } => "PaintPolylineWithoutArrows",
-        DrawOp::PaintPolylineWithArrows { .. } => "PaintPolylineWithArrows",
         DrawOp::PaintDashedPolyline { .. } => "PaintDashedPolyline",
         DrawOp::PaintBezier { .. } => "PaintBezier",
         DrawOp::PaintBezierOutline { .. } => "PaintBezierOutline",

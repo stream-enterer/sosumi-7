@@ -164,7 +164,7 @@ impl emCheckBox {
             stroke.join = LineJoin::Round;
             stroke.start_end = emStrokeEnd::new(StrokeEndType::Cap);
             stroke.finish_end = emStrokeEnd::new(StrokeEndType::Cap);
-            painter.PaintSolidPolyline(&verts, &stroke, false, face_color);
+            painter.PaintPolyline(&verts, &stroke, false, face_color);
         }
 
         // Paint checkbox image overlay (C++ lines 318-331).
