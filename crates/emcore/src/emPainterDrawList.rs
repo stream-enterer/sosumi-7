@@ -354,9 +354,21 @@ pub enum DrawOp {
 unsafe impl Send for DrawOp {}
 unsafe impl Sync for DrawOp {}
 
+/// A recorded op paired with the painter's nesting depth at recording time.
+/// Matches C++'s `g_draw_op_depth` field in the JSONL output.
+#[derive(Debug)]
+pub struct RecordedOp {
+    pub depth: u32,
+    pub op: DrawOp,
+}
+
+// SAFETY: same reasoning as DrawOp — RecordedOp just wraps DrawOp + u32.
+unsafe impl Send for RecordedOp {}
+unsafe impl Sync for RecordedOp {}
+
 /// A list of recorded drawing operations for a frame.
 pub(crate) struct DrawList {
-    ops: Vec<DrawOp>,
+    ops: Vec<RecordedOp>,
 }
 
 impl DrawList {
@@ -366,7 +378,7 @@ impl DrawList {
         }
     }
 
-    pub fn ops_mut(&mut self) -> &mut Vec<DrawOp> {
+    pub fn ops_mut(&mut self) -> &mut Vec<RecordedOp> {
         &mut self.ops
     }
 
@@ -381,8 +393,8 @@ impl DrawList {
         // viewport pixels in the tile's region map to tile-local coordinates.
         painter.set_offset(-tile_offset.0, -tile_offset.1);
 
-        for op in &self.ops {
-            match op {
+        for recorded in &self.ops {
+            match &recorded.op {
                 DrawOp::PushState => painter.push_state(),
                 DrawOp::PopState => painter.pop_state(),
                 DrawOp::SetOffset(x, y) => {

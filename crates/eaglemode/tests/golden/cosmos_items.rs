@@ -3,7 +3,7 @@ use std::rc::Rc;
 use emcore::emColor::emColor;
 use emcore::emImage::emImage;
 use emcore::emPainter::emPainter;
-use emcore::emPainterDrawList::DrawOp;
+use emcore::emPainterDrawList::RecordedOp;
 use emcore::emPanel::{PanelBehavior, PanelState};
 
 use emMain::emVirtualCosmos::{emVirtualCosmosItemPanel, emVirtualCosmosItemRec};
@@ -76,7 +76,7 @@ fn cosmos_item_border() {
 
     // Record DrawOps for parameter diff diagnosis when DUMP_DRAW_OPS=1.
     if dump_draw_ops_enabled() {
-        let mut ops: Vec<DrawOp> = Vec::new();
+        let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(400, 300, &mut ops);
             rec.SetCanvasColor(emColor::TRANSPARENT);

@@ -20,7 +20,7 @@ use emcore::emPanelTree::{PanelId, PanelTree, ViewConditionType};
 use emcore::emBorder::{emBorder, InnerBorderType, OuterBorderType};
 use emcore::emPainter::emPainter;
 use emcore::emView::{emView, ViewFlags};
-use emcore::emPainterDrawList::DrawOp;
+use emcore::emPainterDrawList::RecordedOp;
 use emcore::emViewRenderer::SoftwareCompositor;
 
 use super::draw_op_dump::{dump_draw_ops, dump_draw_ops_enabled};
@@ -1001,7 +1001,7 @@ fn composition_tktest_1x() {
     }
 
     if dump_draw_ops_enabled() {
-        let mut ops: Vec<DrawOp> = Vec::new();
+        let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(w, h, &mut ops);
             view.Paint(&mut tree, &mut rec, emColor::TRANSPARENT);
@@ -1054,7 +1054,7 @@ fn composition_tktest_2x() {
     settle(&mut tree, &mut view, 10);
 
     if dump_draw_ops_enabled() {
-        let mut ops: Vec<DrawOp> = Vec::new();
+        let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(w, h, &mut ops);
             view.Paint(&mut tree, &mut rec, emColor::TRANSPARENT);

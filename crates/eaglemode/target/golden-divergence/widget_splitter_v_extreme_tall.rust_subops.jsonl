@@ -1,0 +1,9 @@
+{"seq":0,"depth":0,"op":"PaintRect","x":0,"y":0,"w":800,"h":600}
+{"seq":1,"depth":0,"op":"PaintRect","x":0,"y":3.94,"w":1,"h":0.12}
+{"seq":2,"depth":0,"op":"PaintBorderImage","x":0,"y":3.94,"w":1,"h":0.12,"which":495}
+{"seq":3,"depth":1,"op":"PaintImageRect","slice":0,"dx":0,"dy":3.94,"dw":0.06,"dh":0.06,"sx":0,"sy":0,"sw":150,"sh":150}
+{"seq":4,"depth":1,"op":"PaintImageRect","slice":1,"dx":0.06,"dy":3.94,"dw":0.8799999999999999,"dh":0.06,"sx":150,"sy":0,"sw":1,"sh":150}
+{"seq":5,"depth":1,"op":"PaintImageRect","slice":2,"dx":0.94,"dy":3.94,"dw":0.06,"dh":0.06,"sx":151,"sy":0,"sw":149,"sh":150}
+{"seq":6,"depth":1,"op":"PaintImageRect","slice":6,"dx":0,"dy":3.9999999999999996,"dw":0.06,"dh":0.06,"sx":0,"sy":151,"sw":150,"sh":149}
+{"seq":7,"depth":1,"op":"PaintImageRect","slice":7,"dx":0.06,"dy":3.9999999999999996,"dw":0.8799999999999999,"dh":0.06,"sx":150,"sy":151,"sw":1,"sh":149}
+{"seq":8,"depth":1,"op":"PaintImageRect","slice":8,"dx":0.94,"dy":3.9999999999999996,"dw":0.06,"dh":0.06,"sx":151,"sy":151,"sw":149,"sh":149}

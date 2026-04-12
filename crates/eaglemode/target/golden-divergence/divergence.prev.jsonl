@@ -1,1 +1,1 @@
-{"test":"widget_border_roundrect_thin","fail":4,"total":480000,"pct":0.0008,"max_diff":24}
+{"test":"composition_click_through_tree","type":"widget_state","checks":1,"failures":0,"pass":true}

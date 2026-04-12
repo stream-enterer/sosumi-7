@@ -3,7 +3,7 @@ use std::rc::Rc;
 use emcore::emColor::emColor;
 use emcore::emImage::emImage;
 use emcore::emPainter::emPainter;
-use emcore::emPainterDrawList::DrawOp;
+use emcore::emPainterDrawList::RecordedOp;
 use emcore::emPanel::{PanelBehavior, PanelState};
 
 use emMain::emMainContentPanel::emMainContentPanel;
@@ -53,7 +53,7 @@ fn eagle_logo() {
     }
 
     if dump_draw_ops_enabled() {
-        let mut ops: Vec<DrawOp> = Vec::new();
+        let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(800, 600, &mut ops);
             rec.SetCanvasColor(emColor::TRANSPARENT);

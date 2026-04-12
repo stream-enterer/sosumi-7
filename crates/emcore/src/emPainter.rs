@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use crate::emPainterDrawList::DrawOp;
+use crate::emPainterDrawList::{DrawOp, RecordedOp};
 use super::emFontCache;
 use super::emPainterInterpolation;
 use super::emPainterScanline::{self, WindingRule};
@@ -230,7 +230,7 @@ pub(crate) enum PaintTarget<'a> {
     /// Direct pixel rendering to an image buffer.
     emImage(&'a mut emImage),
     /// Recording mode: draw operations are captured for parallel replay.
-    DrawList(&'a mut Vec<DrawOp>),
+    DrawList(&'a mut Vec<RecordedOp>),
 }
 
 /// Zero-sized proof that the painter is in direct (non-recording) mode.
@@ -245,6 +245,8 @@ pub struct emPainter<'a> {
     target_height: u32,
     state: PainterState,
     state_stack: Vec<PainterState>,
+    /// Nesting depth for compound ops (matches C++ g_draw_op_depth).
+    record_depth: u32,
 }
 
 /// The 9 target rectangles computed by PaintBorderImage's boundary logic.
@@ -299,6 +301,7 @@ impl<'a> emPainter<'a> {
                 alpha: 255,
             },
             state_stack: Vec::new(),
+            record_depth: 0,
         }
     }
 
@@ -308,7 +311,7 @@ impl<'a> emPainter<'a> {
     /// State management (push/pop, offset, clip) is tracked locally so
     /// that getters like `clip_is_empty()` and `canvas_color()` return
     /// correct values during the recording phase.
-    pub fn new_recording(width: u32, height: u32, ops: &'a mut Vec<DrawOp>) -> Self {
+    pub fn new_recording(width: u32, height: u32, ops: &'a mut Vec<RecordedOp>) -> Self {
         Self {
             target: PaintTarget::DrawList(ops),
             target_width: width,
@@ -328,6 +331,7 @@ impl<'a> emPainter<'a> {
                 alpha: 255,
             },
             state_stack: Vec::new(),
+            record_depth: 0,
         }
     }
 
@@ -352,7 +356,7 @@ impl<'a> emPainter<'a> {
     /// `None` if the op was recorded (recording mode).
     fn try_record(&mut self, op: DrawOp) -> Option<DirectProof> {
         if let PaintTarget::DrawList(ops) = &mut self.target {
-            ops.push(op);
+            ops.push(RecordedOp { depth: self.record_depth, op });
             None
         } else {
             Some(DirectProof(()))
@@ -373,7 +377,7 @@ impl<'a> emPainter<'a> {
     /// mutate local state regardless of mode).
     fn record_state(&mut self, op: DrawOp) {
         if let PaintTarget::DrawList(ops) = &mut self.target {
-            ops.push(op);
+            ops.push(RecordedOp { depth: self.record_depth, op });
         }
     }
 
@@ -1965,7 +1969,7 @@ impl<'a> emPainter<'a> {
         if text.is_empty() || w <= 0.0 || h <= 0.0 || max_char_height <= 0.0 {
             return;
         }
-        let Some(_proof) = self.try_record(DrawOp::PaintTextBoxed {
+        self.try_record(DrawOp::PaintTextBoxed {
             x,
             y,
             w,
@@ -1980,12 +1984,16 @@ impl<'a> emPainter<'a> {
             min_width_scale,
             formatted,
             rel_line_space,
-        }) else { return; };
+        });
+        // C++ increments g_draw_op_depth after logging PaintTextBoxed,
+        // so sub-calls (PaintText) record at depth+1.
+        self.record_depth += 1;
 
         // Literal port of C++ PaintTextBoxed (emPainter.cpp:2174-2284).
         let (mut tw, mut th) =
             Self::GetTextSize(text, max_char_height, formatted, rel_line_space);
         if tw <= 0.0 {
+            self.record_depth -= 1;
             return;
         }
 
@@ -2128,6 +2136,7 @@ impl<'a> emPainter<'a> {
         } else {
             self.PaintText(bx, by, text, ch, ws, color, canvas_color);
         }
+        self.record_depth -= 1;
     }
 
     /// Convenience: measure text width for a single un-formatted line.

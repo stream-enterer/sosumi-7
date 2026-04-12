@@ -41,7 +41,7 @@ use emcore::emStrokeEnd::{emStrokeEnd, StrokeEndType};
 use emcore::emTexture::{emTexture, ImageExtension, ImageQuality};
 
 use emcore::emBorder::{emBorder, InnerBorderType, OuterBorderType};
-use emcore::emPainterDrawList::DrawOp;
+use emcore::emPainterDrawList::RecordedOp;
 use emcore::emViewRenderer::SoftwareCompositor;
 
 use super::draw_op_dump::{dump_draw_ops, dump_draw_ops_enabled};
@@ -2218,7 +2218,7 @@ fn render_testpanel(
 
     // Record DrawOps for parameter diff diagnosis when DUMP_DRAW_OPS=1.
     if dump_draw_ops_enabled() {
-        let mut ops: Vec<DrawOp> = Vec::new();
+        let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(w, h, &mut ops);
             view.Paint(tree, &mut rec, emColor::TRANSPARENT);

@@ -1,0 +1,6 @@
+{"seq":0,"depth":0,"op":"PaintBezierLine","n":4}
+{"seq":1,"depth":1,"op":"PaintPolylineWithArrows","n":33,"closed":false}
+{"seq":2,"depth":2,"op":"PaintPolylineWithoutArrows","n":31,"closed":false}
+{"seq":3,"depth":3,"op":"PaintSolidPolyline","n":31,"closed":false}
+{"seq":4,"depth":2,"op":"PaintPolygon","n":4,"vertices":[[20,200],[15.256210486831845,166.79613785935803],[26.64055927200558,180.07757613755342],[43.71681600461267,176.2826511050803]]}
+{"seq":5,"depth":2,"op":"PaintPolygon","n":4,"vertices":[[236,200],[212.76733992849373,175.80819341178014],[229.76341620465803,179.94744349057513],[241.4138492276721,166.89878798986305]]}

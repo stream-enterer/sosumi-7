@@ -1,7 +1,7 @@
 use emcore::emColor::emColor;
 use emcore::emImage::emImage;
 use emcore::emPainter::emPainter;
-use emcore::emPainterDrawList::DrawOp;
+use emcore::emPainterDrawList::RecordedOp;
 use emcore::emPanel::{PanelBehavior, PanelState};
 
 use emMain::emStarFieldPanel::emStarFieldPanel;
@@ -44,7 +44,7 @@ fn starfield_small() {
     let (ew, eh, expected) = load_painter_golden("starfield_small");
     let img = render_starfield(3, 0x12345678, ew, eh);
     if dump_draw_ops_enabled() {
-        let mut ops: Vec<DrawOp> = Vec::new();
+        let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(ew, eh, &mut ops);
             rec.scale(ew as f64, eh as f64);
@@ -68,7 +68,7 @@ fn starfield_large() {
     let (ew, eh, expected) = load_painter_golden("starfield_large");
     let img = render_starfield(3, 0x12345678, ew, eh);
     if dump_draw_ops_enabled() {
-        let mut ops: Vec<DrawOp> = Vec::new();
+        let mut ops: Vec<RecordedOp> = Vec::new();
         {
             let mut rec = emPainter::new_recording(ew, eh, &mut ops);
             rec.scale(ew as f64, eh as f64);

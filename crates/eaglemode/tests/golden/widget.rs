@@ -42,7 +42,7 @@ use emcore::emTextField::emTextField;
 
 use emcore::emTunnel::emTunnel;
 
-use emcore::emPainterDrawList::DrawOp;
+use emcore::emPainterDrawList::RecordedOp;
 
 use super::common::*;
 use super::draw_op_dump::{dump_draw_ops, dump_draw_ops_enabled};
@@ -70,7 +70,7 @@ fn maybe_record_draw_ops(name: &str, tree: &mut PanelTree, view: &emView, w: u32
     if !dump_draw_ops_enabled() {
         return;
     }
-    let mut ops: Vec<DrawOp> = Vec::new();
+    let mut ops: Vec<RecordedOp> = Vec::new();
     {
         let mut rec = emPainter::new_recording(w, h, &mut ops);
         view.Paint(tree, &mut rec, emColor::TRANSPARENT);

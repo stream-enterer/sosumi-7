@@ -1,7 +1,7 @@
 use emcore::emColor::emColor;
 use emcore::emImage::emImage;
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
-use emcore::emPainterDrawList::DrawOp;
+use emcore::emPainterDrawList::RecordedOp;
 
 use emcore::emStroke::{DashType, LineCap, LineJoin, emStroke};
 
@@ -31,7 +31,7 @@ fn record_painter_ops<F: FnOnce(&mut emPainter)>(name: &str, w: u32, h: u32, pai
     if !dump_draw_ops_enabled() {
         return;
     }
-    let mut ops: Vec<DrawOp> = Vec::new();
+    let mut ops: Vec<RecordedOp> = Vec::new();
     {
         let mut rec = emPainter::new_recording(w, h, &mut ops);
         rec.SetCanvasColor(emColor::TRANSPARENT);
