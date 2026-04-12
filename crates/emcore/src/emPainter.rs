@@ -778,16 +778,23 @@ impl<'a> emPainter<'a> {
         if rx <= 0.0 || ry <= 0.0 {
             return;
         }
-        let Some(_proof) = self.try_record(DrawOp::PaintEllipse {
+        let is_recording = self.try_record(DrawOp::PaintEllipse {
             cx,
             cy,
             rx,
             ry,
             color,
             canvas_color,
-        }) else { return; };
+        }).is_none();
+        if is_recording {
+            if !self.record_subops {
+                return;
+            }
+            self.record_depth += 1;
+        }
         let verts = self.ellipse_polygon(cx, cy, rx, ry);
         self.PaintPolygon(&verts, color, canvas_color);
+        if is_recording { self.record_depth -= 1; }
     }
 
     /// Fill an ellipse sector (pie slice) defined by center, radii, and angle range.
