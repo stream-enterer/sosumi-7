@@ -1131,14 +1131,7 @@ fn widget_file_selection_box() {
 
     let mut view = emView::new(root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
-    // C++ runs 30 scheduler cycles which include Cycle() calls.
-    // We must drive cycles so that Cycle() fires and ReloadListing() populates
-    // the file list (with just ".." for a nonexistent directory).
-    for _ in 0..30 {
-        tree.run_panel_cycles();
-        tree.HandleNotice(view.IsFocused(), view.GetCurrentPixelTallness());
-        view.Update(&mut tree);
-    }
+    settle(&mut tree, &mut view);
 
     maybe_record_draw_ops("widget_file_selection_box", &mut tree, &view, w, h);
 

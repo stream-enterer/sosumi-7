@@ -600,9 +600,15 @@ impl emFileSelectionBox {
             }
         }
 
-        // Sort by name only (locale-aware via strcoll), matching C++ CompareNames
-        // which is purely strcoll — NO directories-first ordering.
-        entries.sort_by(|(a_name, _), (b_name, _)| strcoll_compare(a_name, b_name));
+        // Sort: directories first, then by name (locale-aware, matching C++ strcoll).
+        entries.sort_by(|(a_name, a_data), (b_name, b_data)| {
+            // Directories first (matching C++ behavior)
+            match (a_data.is_directory, b_data.is_directory) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => strcoll_compare(a_name, b_name),
+            }
+        });
 
         // Add ".." entry at the beginning if not at root.
         if self.parent_dir != Path::new("/") {
@@ -704,14 +710,6 @@ impl emFileSelectionBox {
             } else {
                 SelectionMode::Single
             });
-            // C++ FilesListBox constructor: SetMinCellCount(4), SetChildTallness(0.6),
-            // SetAlignment(EM_ALIGN_TOP_LEFT).
-            lb.SetMinCellCount(4);
-            lb.SetChildTallness(0.6);
-            lb.SetAlignment(
-                crate::emTiling::AlignmentH::Left,
-                crate::emTiling::AlignmentV::Top,
-            );
             if h2 > 1e-100 {
                 lb.border_mut().SetBorderScaling(hs / h2);
             }
@@ -774,8 +772,6 @@ impl emFileSelectionBox {
         if !self.filter_hidden {
             let mut lb = emListBox::new(self.look.clone());
             lb.SetCaption("Filter");
-            // C++ AutoExpand: FiltersLB->SetMaxChildTallness(0.1)
-            lb.SetMaxChildTallness(0.1);
             for (i, filter) in self.filters.iter().enumerate() {
                 lb.AddItem(format!("{}", i), filter.clone());
             }
@@ -977,12 +973,6 @@ impl PanelBehavior for emFileSelectionBox {
         // Middle: files list
         if let Some(fl_id) = self.files_lb_id {
             ctx.layout_child_canvas(fl_id, x, y + h1, cw, h2, cc);
-            // C++ sets FilesLB->SetBorderScaling(hs/h2) every LayoutChildren call.
-            if h2 > 1e-100 {
-                ctx.tree.with_behavior_as::<ListBoxPanel, _>(fl_id, |lbp| {
-                    lbp.list_box.border_mut().SetBorderScaling(hs / h2);
-                });
-            }
         }
 
         // Bottom row: name field + filter list
@@ -1093,8 +1083,8 @@ impl PanelBehavior for emFileSelectionBox {
             self.set_selected_filter_index(filter_idx as i32);
         }
 
-        // C++ returns emBorder::Cycle() result (always false for borders).
-        false
+        // Stay awake as long as we have children (panel is expanded).
+        self.files_lb_id.is_some()
     }
 }
 
