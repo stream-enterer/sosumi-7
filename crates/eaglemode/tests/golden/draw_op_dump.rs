@@ -50,40 +50,33 @@ pub fn dump_draw_ops(name: &str, ops: &[RecordedOp]) {
         .open(&path)
         .expect("open rust_ops.jsonl");
 
-    for (seq, recorded) in ops.iter().enumerate() {
+    let mut seq = 0;
+    for recorded in ops.iter() {
+        if is_state_op(&recorded.op) {
+            continue;
+        }
         let line = serialize_op(seq, recorded.depth, &recorded.op);
         writeln!(f, "{line}").expect("write line");
+        seq += 1;
     }
+}
+
+fn is_state_op(op: &DrawOp) -> bool {
+    matches!(
+        op,
+        DrawOp::PushState
+            | DrawOp::PopState
+            | DrawOp::SetOffset(..)
+            | DrawOp::SetScaling(..)
+            | DrawOp::SetTransformation { .. }
+            | DrawOp::ClipRect { .. }
+            | DrawOp::SetCanvasColor(..)
+            | DrawOp::SetAlpha(..)
+    )
 }
 
 fn serialize_op(seq: usize, depth: u32, op: &DrawOp) -> String {
     match op {
-        DrawOp::PushState => {
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PushState"}}"#)
-        }
-        DrawOp::PopState => {
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PopState"}}"#)
-        }
-        DrawOp::SetOffset(dx, dy) => {
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"SetOffset","dx":{dx},"dy":{dy}}}"#)
-        }
-        DrawOp::SetScaling(sx, sy) => {
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"SetScaling","sx":{sx},"sy":{sy}}}"#)
-        }
-        DrawOp::SetTransformation { ox, oy, sx, sy } => {
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"SetTransformation","ox":{ox},"oy":{oy},"sx":{sx},"sy":{sy}}}"#)
-        }
-        DrawOp::ClipRect { x, y, w, h } => {
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"ClipRect","x":{x},"y":{y},"w":{w},"h":{h}}}"#)
-        }
-        DrawOp::SetCanvasColor(c) => {
-            let color = color_hex(*c);
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"SetCanvasColor","color":"{color}"}}"#)
-        }
-        DrawOp::SetAlpha(a) => {
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"SetAlpha","alpha":{a}}}"#)
-        }
-
         DrawOp::PaintRect { x, y, w, h, color, canvas_color } => {
             let color = color_hex(*color);
             let canvas_color = color_hex(*canvas_color);
