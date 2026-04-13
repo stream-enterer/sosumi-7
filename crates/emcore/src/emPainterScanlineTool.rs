@@ -711,48 +711,43 @@ pub fn blend_colored_scanline_rgb(
         let o1 = if !c1_transparent { (o * c1a as i32 + 127) / 255 } else { 0 };
         let o2 = if !c2_transparent { (o * c2a as i32 + 127) / 255 } else { 0 };
 
-        let (pix_r, pix_g, pix_b, a): (u8, u8, u8, u32);
+        // Per-channel alpha (ar, ag, ab) for compositing — C++ uses these
+        // independently for source-over and canvas blending when CHANNELS>=3.
+        let (pix_r, pix_g, pix_b, ar, ag, ab): (u8, u8, u8, u32, u32, u32);
 
         if c1_transparent && !c2_transparent {
             // G2: color2 only
             if o2 < 0x1000 {
-                let ar = (sr as i32 * o2 + 0x800) >> 12;
-                let ag = (sg as i32 * o2 + 0x800) >> 12;
-                let ab = (sb as i32 * o2 + 0x800) >> 12;
-                let a_val = (ar + ag + ab) as u32;
-                if a_val == 0 { continue; }
+                ar = ((sr as i32 * o2 + 0x800) >> 12) as u32;
+                ag = ((sg as i32 * o2 + 0x800) >> 12) as u32;
+                ab = ((sb as i32 * o2 + 0x800) >> 12) as u32;
+                if ar + ag + ab == 0 { continue; }
                 pix_r = blend_hash_lookup(c2r as u8, ar as u8);
                 pix_g = blend_hash_lookup(c2g as u8, ag as u8);
                 pix_b = blend_hash_lookup(c2b as u8, ab as u8);
-                a = a_val;
             } else {
-                if sr + sg + sb == 0 { continue; }
-                pix_r = blend_hash_lookup(c2r as u8, sr as u8);
-                pix_g = blend_hash_lookup(c2g as u8, sg as u8);
-                pix_b = blend_hash_lookup(c2b as u8, sb as u8);
-                a = sr + sg + sb;
+                ar = sr; ag = sg; ab = sb;
+                if ar + ag + ab == 0 { continue; }
+                pix_r = blend_hash_lookup(c2r as u8, ar as u8);
+                pix_g = blend_hash_lookup(c2g as u8, ag as u8);
+                pix_b = blend_hash_lookup(c2b as u8, ab as u8);
             }
         } else if !c1_transparent && c2_transparent {
             // G1: color1 only
             if o1 < 0x1000 {
-                let ar = ((sa - sr) as i32 * o1 + 0x800) >> 12;
-                let ag = ((sa - sg) as i32 * o1 + 0x800) >> 12;
-                let ab = ((sa - sb) as i32 * o1 + 0x800) >> 12;
-                let a_val = (ar + ag + ab) as u32;
-                if a_val == 0 { continue; }
-                pix_r = blend_hash_lookup(c1r as u8, ar as u8);
-                pix_g = blend_hash_lookup(c1g as u8, ag as u8);
-                pix_b = blend_hash_lookup(c1b as u8, ab as u8);
-                a = a_val;
-            } else {
-                let ar = sa - sr;
-                let ag = sa - sg;
-                let ab = sa - sb;
+                ar = (((sa - sr) as i32 * o1 + 0x800) >> 12) as u32;
+                ag = (((sa - sg) as i32 * o1 + 0x800) >> 12) as u32;
+                ab = (((sa - sb) as i32 * o1 + 0x800) >> 12) as u32;
                 if ar + ag + ab == 0 { continue; }
                 pix_r = blend_hash_lookup(c1r as u8, ar as u8);
                 pix_g = blend_hash_lookup(c1g as u8, ag as u8);
                 pix_b = blend_hash_lookup(c1b as u8, ab as u8);
-                a = ar + ag + ab;
+            } else {
+                ar = sa - sr; ag = sa - sg; ab = sa - sb;
+                if ar + ag + ab == 0 { continue; }
+                pix_r = blend_hash_lookup(c1r as u8, ar as u8);
+                pix_g = blend_hash_lookup(c1g as u8, ag as u8);
+                pix_b = blend_hash_lookup(c1b as u8, ab as u8);
             }
         } else if !c1_transparent && !c2_transparent {
             // G1G2: both colors
@@ -763,38 +758,28 @@ pub fn blend_colored_scanline_rgb(
                 let ar2 = (sr as i32 * o2 + 0x800) >> 12;
                 let ag2 = (sg as i32 * o2 + 0x800) >> 12;
                 let ab2 = (sb as i32 * o2 + 0x800) >> 12;
-                let ar = (ar1 + ar2) as u32;
-                let ag = (ag1 + ag2) as u32;
-                let ab = (ab1 + ab2) as u32;
+                ar = (ar1 + ar2) as u32;
+                ag = (ag1 + ag2) as u32;
+                ab = (ab1 + ab2) as u32;
                 if ar + ag + ab == 0 { continue; }
                 pix_r = blend_hash_lookup(255, (((c1r * ar1 as u32 + c2r * ar2 as u32) * 257 + 0x8073) >> 16) as u8);
                 pix_g = blend_hash_lookup(255, (((c1g * ag1 as u32 + c2g * ag2 as u32) * 257 + 0x8073) >> 16) as u8);
                 pix_b = blend_hash_lookup(255, (((c1b * ab1 as u32 + c2b * ab2 as u32) * 257 + 0x8073) >> 16) as u8);
-                a = ar + ag + ab;
             } else {
-                // Full opacity
-                let ar1 = sa - sr;
-                let ag1 = sa - sg;
-                let ab1 = sa - sb;
-                let ar2 = sr;
-                let ag2 = sg;
-                let ab2 = sb;
-                let ar = ar1 + ar2;
-                let ag = ag1 + ag2;
-                let ab = ab1 + ab2;
-                if ar + ag + ab == 0 { continue; }
-                pix_r = blend_hash_lookup(255, (((c1r * ar1 + c2r * ar2) * 257 + 0x8073) >> 16) as u8);
-                pix_g = blend_hash_lookup(255, (((c1g * ag1 + c2g * ag2) * 257 + 0x8073) >> 16) as u8);
-                pix_b = blend_hash_lookup(255, (((c1b * ab1 + c2b * ab2) * 257 + 0x8073) >> 16) as u8);
-                a = ar + ag + ab;
+                // Full opacity: ar1+ar2 = ag1+ag2 = ab1+ab2 = sa (= 255 for opaque)
+                ar = sa; ag = sa; ab = sa;
+                pix_r = blend_hash_lookup(255, (((c1r * (sa - sr) + c2r * sr) * 257 + 0x8073) >> 16) as u8);
+                pix_g = blend_hash_lookup(255, (((c1g * (sa - sg) + c2g * sg) * 257 + 0x8073) >> 16) as u8);
+                pix_b = blend_hash_lookup(255, (((c1b * (sa - sb) + c2b * sb) * 257 + 0x8073) >> 16) as u8);
             }
         } else {
             continue;
         }
 
-        // Compositing
+        // Per-channel compositing (C++ PaintScanlineIntG1G2 lines 356-366)
         let off = i * 4;
-        if a >= 255 {
+        // Opaque fast path: all per-channel alphas at max
+        if ar >= 255 && ag >= 255 && ab >= 255 {
             dest[off] = pix_r;
             dest[off + 1] = pix_g;
             dest[off + 2] = pix_b;
@@ -803,20 +788,26 @@ pub fn blend_colored_scanline_rgb(
             }
             continue;
         }
-        let a8 = a as u8;
         if let Some(canvas) = canvas_opt {
-            let cr = blend_hash_lookup(canvas.GetRed(), a8) as i32;
-            let cg = blend_hash_lookup(canvas.GetGreen(), a8) as i32;
-            let cb = blend_hash_lookup(canvas.GetBlue(), a8) as i32;
+            // Canvas blend: per-channel canvas attenuation
+            let cr = blend_hash_lookup(canvas.GetRed(), ar as u8) as i32;
+            let cg = blend_hash_lookup(canvas.GetGreen(), ag as u8) as i32;
+            let cb = blend_hash_lookup(canvas.GetBlue(), ab as u8) as i32;
             dest[off] = (dest[off] as i32 + pix_r as i32 - cr).clamp(0, 255) as u8;
             dest[off + 1] = (dest[off + 1] as i32 + pix_g as i32 - cg).clamp(0, 255) as u8;
             dest[off + 2] = (dest[off + 2] as i32 + pix_b as i32 - cb).clamp(0, 255) as u8;
         } else {
-            let t = (255 - a) * 257;
-            dest[off] = (((dest[off] as u32 * t + 0x8073) >> 16) + pix_r as u32) as u8;
-            dest[off + 1] = (((dest[off + 1] as u32 * t + 0x8073) >> 16) + pix_g as u32) as u8;
-            dest[off + 2] = (((dest[off + 2] as u32 * t + 0x8073) >> 16) + pix_b as u32) as u8;
-            dest[off + 3] = (((dest[off + 3] as u32 * t + 0x8073) >> 16) + blend_hash_lookup(255, a8) as u32) as u8;
+            // Source-over: per-channel destination attenuation
+            let tr = (255 - ar) * 257;
+            let tg = (255 - ag) * 257;
+            let tb = (255 - ab) * 257;
+            dest[off] = (((dest[off] as u32 * tr + 0x8073) >> 16) + pix_r as u32) as u8;
+            dest[off + 1] = (((dest[off + 1] as u32 * tg + 0x8073) >> 16) + pix_g as u32) as u8;
+            dest[off + 2] = (((dest[off + 2] as u32 * tb + 0x8073) >> 16) + pix_b as u32) as u8;
+            // Alpha channel: use max of per-channel alphas
+            let a_max = ar.max(ag).max(ab);
+            let ta = (255 - a_max) * 257;
+            dest[off + 3] = (((dest[off + 3] as u32 * ta + 0x8073) >> 16) + blend_hash_lookup(255, a_max as u8) as u32) as u8;
         }
     }
 }
