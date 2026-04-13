@@ -1802,36 +1802,68 @@ impl<'a> emPainter<'a> {
             let tdy_init = ((sh_u as i64) << 24) as f64 / th_px;
             let tdx_i = tdx_init as i64;
             let tdy_i = tdy_init as i64;
-            let stride_x = if tdx_i > 0xFFFF00 { ((tdx_i / 3 + 0xFFFFFF) >> 24) as u32 } else { 1 }.max(1);
-            let stride_y = if tdy_i > 0xFFFF00 { ((tdy_i / 3 + 0xFFFFFF) >> 24) as u32 } else { 1 }.max(1);
-            let red_w = sw_u.div_ceil(stride_x);
-            let red_h = sh_u.div_ceil(stride_y);
-            let off_x = (sw_u as i32 - (red_w as i32 - 1) * stride_x as i32 - 1) / 2;
-            let off_y = (sh_u as i32 - (red_h as i32 - 1) * stride_y as i32 - 1) / 2;
-            // area_sample_transform_24 uses texture coords for the origin calculation.
-            let mut xfm = self.area_sample_transform_24(red_w, red_h, tex_x, tex_y, tex_w, tex_h);
-            xfm.stride_x = stride_x;
-            xfm.stride_y = stride_y;
-            xfm.off_x = off_x;
-            xfm.off_y = off_y;
 
-            for row in start_y..end_y {
-                let mut carry = emPainterInterpolation::AreaSampleCarryState::new();
-                let mut col = start_x;
-                while col < end_x {
-                    let batch = ((end_x - col) as usize).min(max_batch);
-                    emPainterInterpolation::interpolate_scanline_area_sampled(
-                        image, col, row, batch, &xfm, &sec, ext, &mut ibuf, &mut carry,
-                    );
-                    let all_full = sp.batch_coverages_cpp_y(
-                        row, col, &mut coverages[..batch], cpp_iy1, cpp_iy2, cpp_ay1, cpp_ay2,
-                    );
-                    let dest_offset = (row as usize * tw + col as usize) * 4;
-                    let data = self.GetImage(proof).GetWritableMap();
-                    let dest = &mut data[dest_offset..];
-                    if all_full { blend_scanline_premul(dest, &ibuf, batch, None, &mode); }
-                    else { blend_scanline_premul(dest, &ibuf, batch, Some(&coverages[..batch]), &mode); }
-                    col += batch as i32;
+            // C++ emPainter_ScTl.cpp:296-311: near-1:1 pixel-aligned → NEAREST
+            let tx_pixel = tex_x * self.state.scale_x + self.state.offset_x;
+            let ty_pixel = tex_y * self.state.scale_y + self.state.offset_y;
+            let near_1_to_1 = tdx_i < 0x10000FF && tdy_i < 0x10000FF
+                && tdx_i > 0x0FFFF00 && tdy_i > 0x0FFFF00
+                && ((tx_pixel * tdx_init) as i64 + 0x800) & 0xFFF000 == 0
+                && ((ty_pixel * tdy_init) as i64 + 0x800) & 0xFFF000 == 0;
+
+            if near_1_to_1 {
+                // C++ uses NEAREST with (tx-0.5)*tdx offset (same as upscale path)
+                let sxfm = self.scale_transform_24(src_w as u32, src_h as u32, tex_x, tex_y, tex_w, tex_h);
+                for row in start_y..end_y {
+                    let mut col = start_x;
+                    while col < end_x {
+                        let batch = ((end_x - col) as usize).min(max_batch);
+                        emPainterInterpolation::interpolate_scanline_nearest(
+                            image, px, py, col, row, batch, &sxfm, ext, &mut ibuf,
+                        );
+                        let all_full = sp.batch_coverages_cpp_y(
+                            row, col, &mut coverages[..batch], cpp_iy1, cpp_iy2, cpp_ay1, cpp_ay2,
+                        );
+                        let dest_offset = (row as usize * tw + col as usize) * 4;
+                        let data = self.GetImage(proof).GetWritableMap();
+                        let dest = &mut data[dest_offset..];
+                        if all_full { blend_scanline(dest, &ibuf, batch, None, &mode); }
+                        else { blend_scanline(dest, &ibuf, batch, Some(&coverages[..batch]), &mode); }
+                        col += batch as i32;
+                    }
+                }
+            } else {
+                let stride_x = if tdx_i > 0xFFFF00 { ((tdx_i / 3 + 0xFFFFFF) >> 24) as u32 } else { 1 }.max(1);
+                let stride_y = if tdy_i > 0xFFFF00 { ((tdy_i / 3 + 0xFFFFFF) >> 24) as u32 } else { 1 }.max(1);
+                let red_w = sw_u.div_ceil(stride_x);
+                let red_h = sh_u.div_ceil(stride_y);
+                let off_x = (sw_u as i32 - (red_w as i32 - 1) * stride_x as i32 - 1) / 2;
+                let off_y = (sh_u as i32 - (red_h as i32 - 1) * stride_y as i32 - 1) / 2;
+                // area_sample_transform_24 uses texture coords for the origin calculation.
+                let mut xfm = self.area_sample_transform_24(red_w, red_h, tex_x, tex_y, tex_w, tex_h);
+                xfm.stride_x = stride_x;
+                xfm.stride_y = stride_y;
+                xfm.off_x = off_x;
+                xfm.off_y = off_y;
+
+                for row in start_y..end_y {
+                    let mut carry = emPainterInterpolation::AreaSampleCarryState::new();
+                    let mut col = start_x;
+                    while col < end_x {
+                        let batch = ((end_x - col) as usize).min(max_batch);
+                        emPainterInterpolation::interpolate_scanline_area_sampled(
+                            image, col, row, batch, &xfm, &sec, ext, &mut ibuf, &mut carry,
+                        );
+                        let all_full = sp.batch_coverages_cpp_y(
+                            row, col, &mut coverages[..batch], cpp_iy1, cpp_iy2, cpp_ay1, cpp_ay2,
+                        );
+                        let dest_offset = (row as usize * tw + col as usize) * 4;
+                        let data = self.GetImage(proof).GetWritableMap();
+                        let dest = &mut data[dest_offset..];
+                        if all_full { blend_scanline_premul(dest, &ibuf, batch, None, &mode); }
+                        else { blend_scanline_premul(dest, &ibuf, batch, Some(&coverages[..batch]), &mode); }
+                        col += batch as i32;
+                    }
                 }
             }
         } else {
