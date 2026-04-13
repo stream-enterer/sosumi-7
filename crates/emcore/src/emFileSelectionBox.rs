@@ -10,12 +10,13 @@ use crate::emPanelTree::PanelId;
 use crate::emPainter::emPainter;
 use crate::emStroke::emStroke;
 
-use super::emBorder::{emBorder, InnerBorderType, OuterBorderType};
+use super::emBorder::{emBorder, InnerBorderType, OuterBorderType, with_toolkit_images};
 use crate::emCheckBox::emCheckBox;
 use super::emColorFieldFieldPanel::{CheckBoxPanel, ListBoxPanel, TextFieldPanel};
 use super::emListBox::{emListBox, SelectionMode};
 use crate::emLook::emLook;
 use crate::emTextField::emTextField;
+use crate::emTexture::ImageExtension;
 
 /// Data associated with each file entry in the listing.
 #[derive(Clone, Debug)]
@@ -149,93 +150,98 @@ impl PanelBehavior for FileItemPanelBehavior {
             );
         }
 
-        // 3. Directory icon area (C++ lines 1001-1044).
+        // 3. Directory icon area (C++ lines 1001-1061).
         if self.is_directory {
-            // Icon region: aspect-ratio-preserving box.
-            // C++ uses actual image dimensions; we use a 310:216 aspect ratio
-            // matching the dir image dimensions from C++.
-            let img_aspect = 216.0 / 310.0; // height/width
+            // C++ selects Dir.tga or DirUp.tga based on item text.
+            let is_parent = self.name == "..";
 
-            let mut fx = 0.06;
-            let mut fw = 1.0 - 2.0 * fx;
-            let mut fy = nh * 0.1;
-            let mut fh = nh * 0.62;
+            with_toolkit_images(|imgs| {
+                let img = if is_parent { &imgs.dir_up } else { &imgs.dir };
+                let img_w = img.GetWidth();
+                let img_h = img.GetHeight();
+                let img_aspect = img_h as f64 / img_w as f64; // height/width
 
-            // Aspect ratio preservation (C++ lines 1019-1026).
-            if fh / fw < img_aspect {
-                fw = fh / img_aspect;
-                fx = (1.0 - fw) * 0.5;
-            } else {
-                fy += (fh - fw * img_aspect) * 0.5;
-                fh = fw * img_aspect;
-            }
+                let mut fx = 0.06;
+                let mut fw = 1.0 - 2.0 * fx;
+                let mut fy = nh * 0.1;
+                let mut fh = nh * 0.62;
 
-            // Draw a simple folder icon as a colored rectangle with a tab.
-            let icon_color = if self.is_selected { bg } else { fg_color };
-            let icon_alpha = icon_color.SetAlpha(180);
+                // Aspect ratio preservation (C++ lines 1019-1026).
+                if fh / fw < img_aspect {
+                    fw = fh / img_aspect;
+                    fx = (1.0 - fw) * 0.5;
+                } else {
+                    fy += (fh - fw * img_aspect) * 0.5;
+                    fh = fw * img_aspect;
+                }
 
-            // Folder body
-            let bx = fx * w;
-            let by = (fy + fh * 0.15) * w;
-            let bw = fw * w;
-            let bh = (fh * 0.85) * w;
-            painter.PaintRoundRect(bx, by, bw, bh, bw * 0.05, bw * 0.05, icon_alpha, canvas_color);
-
-            // Folder tab (top-left flap)
-            let tx = fx * w;
-            let ty = fy * w;
-            let tw = fw * 0.4 * w;
-            let th = fh * 0.2 * w;
-            painter.PaintRoundRect(tx, ty, tw, th, tw * 0.1, tw * 0.1, icon_alpha, canvas_color);
-
-            // 4. "Parent Directory" overlay for ".." (C++ lines 1031-1044).
-            if self.name == ".." {
-                let pd_color = fg_color.GetTransparented(40.0);
-                let pdx = (fx + fw * 115.0 / 310.0) * w;
-                let pdy = (fy + fh * 168.0 / 216.0) * w;
-                let pdw = (fw * 150.0 / 310.0) * w;
-                let pdh = (fh * 23.0 / 216.0) * w;
-                painter.PaintTextBoxed(
-                    pdx,
-                    pdy,
-                    pdw,
-                    pdh,
-                    "Parent Directory",
+                // C++ PaintImageColored(fx,fy,fw,fh, *img, 0, fgCol, canvasColor, EXTEND_ZERO)
+                // color1=0 (transparent), color2=fgCol
+                painter.PaintImageColored(
+                    fx * w,
+                    fy * w,
+                    fw * w,
                     fh * w,
-                    pd_color,
+                    img,
+                    0,
+                    0,
+                    img_w,
+                    img_h,
+                    emColor::TRANSPARENT,
+                    fg_color,
                     canvas_color,
-                    crate::emPainter::TextAlignment::Center,
-                    crate::emPainter::VAlign::Center,
-                    crate::emPainter::TextAlignment::Center,
-                    0.5,
-                    true,
-                    0.0,
+                    ImageExtension::Zero,
                 );
-            }
 
-            // 5. Not-readable indicator (C++ lines 1045-1059).
-            if !self.is_readable {
-                let r = fw.min(fh) * 0.35;
-                let cx = (fx + fw * 0.5) * w;
-                let cy = (fy + fh * 0.5) * w;
-                let rw = r * w;
+                // 4. "Parent Directory" overlay for ".." (C++ lines 1031-1044).
+                if is_parent {
+                    let pd_color = fg_color.GetTransparented(40.0);
+                    let pdx = (fx + fw * 115.0 / 310.0) * w;
+                    let pdy = (fy + fh * 168.0 / 216.0) * w;
+                    let pdw = (fw * 150.0 / 310.0) * w;
+                    let pdh = (fh * 23.0 / 216.0) * w;
+                    painter.PaintTextBoxed(
+                        pdx,
+                        pdy,
+                        pdw,
+                        pdh,
+                        "Parent Directory",
+                        fh * w,
+                        pd_color,
+                        emColor::TRANSPARENT,
+                        crate::emPainter::TextAlignment::Center,
+                        crate::emPainter::VAlign::Center,
+                        crate::emPainter::TextAlignment::Center,
+                        0.5,
+                        true,
+                        0.0,
+                    );
+                }
 
-                // Circle outline via ellipse outlined.
-                let stroke = emStroke::new(fg_color, rw * 0.26);
-                painter.PaintEllipseOutline(cx, cy, rw, rw, &stroke, canvas_color);
+                // 5. Not-readable indicator (C++ lines 1045-1059).
+                if !self.is_readable {
+                    let r = fw.min(fh) * 0.35;
+                    let cx = (fx + fw * 0.5) * w;
+                    let cy = (fy + fh * 0.5) * w;
+                    let rw = r * w;
 
-                // Diagonal line.
-                let t = rw * std::f64::consts::FRAC_1_SQRT_2;
-                let line_stroke = emStroke::new(fg_color, rw * 0.22);
-                painter.paint_line_stroked(
-                    cx - t,
-                    cy - t,
-                    cx + t,
-                    cy + t,
-                    &line_stroke,
-                    canvas_color,
-                );
-            }
+                    // Circle outline via ellipse outlined.
+                    let stroke = emStroke::new(fg_color, rw * 0.26);
+                    painter.PaintEllipseOutline(cx, cy, rw, rw, &stroke, canvas_color);
+
+                    // Diagonal line.
+                    let t = rw * std::f64::consts::FRAC_1_SQRT_2;
+                    let line_stroke = emStroke::new(fg_color, rw * 0.22);
+                    painter.paint_line_stroked(
+                        cx - t,
+                        cy - t,
+                        cx + t,
+                        cy + t,
+                        &line_stroke,
+                        canvas_color,
+                    );
+                }
+            });
         }
     }
 
