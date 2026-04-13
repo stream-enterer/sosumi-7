@@ -236,6 +236,109 @@ fn serialize_op(seq: usize, depth: u32, op: &DrawOp, state: &RecordedState) -> S
             format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipseOutline","cx":{cx},"cy":{cy},"rx":{rx},"ry":{ry},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
 
+        // C++ PaintLine takes stroke params; Rust splits into PaintLine (bare) + PaintLineStroked.
+        // Serialize as "PaintLine" to match C++ recording.
+        DrawOp::PaintLineStroked { x0, y0, x1, y1, stroke, canvas_color } => {
+            let color = color_hex(stroke.color);
+            let thickness = stroke.width;
+            let canvas_color = color_hex(*canvas_color);
+            let hf = hex_fields(&[("x1", *x0), ("y1", *y0), ("x2", *x1), ("y2", *y1), ("thickness", thickness)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintLine","x1":{x0},"y1":{y0},"x2":{x1},"y2":{y1},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
+        }
+
+        DrawOp::PaintEllipseSector { cx, cy, rx, ry, start_angle, sweep_angle, color, canvas_color } => {
+            let color = color_hex(*color);
+            let canvas_color = color_hex(*canvas_color);
+            let x = cx - rx;
+            let y = cy - ry;
+            let w = rx * 2.0;
+            let h = ry * 2.0;
+            let hf = hex_fields(&[("x", x), ("y", y), ("w", w), ("h", h)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipseSector","x":{x},"y":{y},"w":{w},"h":{h},"start_angle":{start_angle},"range_angle":{sweep_angle},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
+        }
+        DrawOp::PaintEllipseSectorOutline { cx, cy, rx, ry, start_angle, sweep_angle, stroke, canvas_color } => {
+            let color = color_hex(stroke.color);
+            let thickness = stroke.width;
+            let canvas_color = color_hex(*canvas_color);
+            let x = cx - rx;
+            let y = cy - ry;
+            let w = rx * 2.0;
+            let h = ry * 2.0;
+            let hf = hex_fields(&[("x", x), ("y", y), ("w", w), ("h", h), ("thickness", thickness)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipseSectorOutline","x":{x},"y":{y},"w":{w},"h":{h},"start_angle":{start_angle},"range_angle":{sweep_angle},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
+        }
+        DrawOp::PaintEllipseArc { cx, cy, rx, ry, start_angle, range_angle, stroke, canvas_color } => {
+            let color = color_hex(stroke.color);
+            let thickness = stroke.width;
+            let canvas_color = color_hex(*canvas_color);
+            let x = cx - rx;
+            let y = cy - ry;
+            let w = rx * 2.0;
+            let h = ry * 2.0;
+            let hf = hex_fields(&[("x", x), ("y", y), ("w", w), ("h", h), ("thickness", thickness)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipseArc","x":{x},"y":{y},"w":{w},"h":{h},"start_angle":{start_angle},"range_angle":{range_angle},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
+        }
+
+        DrawOp::PaintPolygonOutline { vertices, stroke_color, thickness, canvas_color } => {
+            let verts = vertices_json(vertices);
+            let color = color_hex(*stroke_color);
+            let canvas_color = color_hex(*canvas_color);
+            let hf = hex_fields(&[("thickness", *thickness)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintPolyline","vertices":{verts},"n":{},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#, vertices.len())
+        }
+
+        DrawOp::PaintPolygonTextured { vertices, texture: _, canvas_color } => {
+            let verts = vertices_json(vertices);
+            let canvas_color = color_hex(*canvas_color);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintPolygon","vertices":{verts},"n":{},"canvas_color":"{canvas_color}",{sf}}}"#, vertices.len())
+        }
+
+        DrawOp::PaintBezier { points, color, canvas_color } => {
+            let n = points.len();
+            let color = color_hex(*color);
+            let canvas_color = color_hex(*canvas_color);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintBezier","n":{n},"color":"{color}","canvas_color":"{canvas_color}",{sf}}}"#)
+        }
+        DrawOp::PaintBezierOutline { points, stroke, canvas_color } => {
+            let n = points.len();
+            let color = color_hex(stroke.color);
+            let thickness = stroke.width;
+            let canvas_color = color_hex(*canvas_color);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintBezierLine","n":{n},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{sf}}}"#)
+        }
+        DrawOp::PaintBezierLine { points, stroke, canvas_color } => {
+            let n = points.len();
+            let color = color_hex(stroke.color);
+            let thickness = stroke.width;
+            let canvas_color = color_hex(*canvas_color);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintBezierLine","n":{n},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{sf}}}"#)
+        }
+
+        DrawOp::PaintImageTextured {
+            rect_x, rect_y, rect_w, rect_h, image_ptr, src_x, src_y, src_w, src_h, alpha, ..
+        } => {
+            let (img_w, img_h, img_ch) = unsafe {
+                let img: &emImage = &**image_ptr;
+                (img.GetWidth(), img.GetHeight(), img.GetChannelCount())
+            };
+            let canvas_color = "00000000";
+            let hf = hex_fields(&[("x", *rect_x), ("y", *rect_y), ("w", *rect_w), ("h", *rect_h)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRect","x":{rect_x},"y":{rect_y},"w":{rect_w},"h":{rect_h},"img_w":{img_w},"img_h":{img_h},"img_ch":{img_ch},"src_x":{src_x},"src_y":{src_y},"src_w":{src_w},"src_h":{src_h},"alpha":{alpha},"canvas_color":"{canvas_color}",{hf},{sf}}}"#)
+        }
+        DrawOp::PaintImageColoredTextured {
+            rect_x, rect_y, rect_w, rect_h, image_ptr, color1, color2, canvas_color, ..
+        } => {
+            let (img_w, img_h, img_ch) = unsafe {
+                let img: &emImage = &**image_ptr;
+                (img.GetWidth(), img.GetHeight(), img.GetChannelCount())
+            };
+            let color1 = color_hex(*color1);
+            let color2 = color_hex(*color2);
+            let canvas_color = color_hex(*canvas_color);
+            let hf = hex_fields(&[("x", *rect_x), ("y", *rect_y), ("w", *rect_w), ("h", *rect_h)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRect","x":{rect_x},"y":{rect_y},"w":{rect_w},"h":{rect_h},"img_w":{img_w},"img_h":{img_h},"img_ch":{img_ch},"color1":"{color1}","color2":"{color2}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
+        }
+
         // Catch-all for variants not individually serialized above.
         other => {
             let variant = variant_name(other);
