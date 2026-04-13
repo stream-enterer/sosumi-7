@@ -1000,15 +1000,59 @@ impl TestPanel {
             emColor::TRANSPARENT,
         );
 
-        // emImage scaled
-        p.paint_image_scaled(
-            0.26,
-            0.94,
-            0.02,
-            0.01,
+        // emImageTexture: tiled image (C++ emTestPanel.cpp:430-439)
+        let h_ratio = 0.001 * self.test_image.GetHeight() as f64
+            / self.test_image.GetWidth() as f64;
+        let iw = self.test_image.GetWidth() as i32;
+        let ih = self.test_image.GetHeight() as i32;
+        p.PaintImageTextured(
+            0.26, 0.94, 0.02, 0.01,         // paint rect
+            0.26, 0.94, 0.001, h_ratio,      // texture coords
             &self.test_image,
-            ImageQuality::Bilinear,
+            0, 0, iw, ih,                    // full image
+            255,
             ImageExtension::Repeat,
+        );
+
+        // emImageColoredTexture (C++ emTestPanel.cpp:441-451)
+        p.PaintImageColoredTextured(
+            0.2625, 0.942, 0.02, 0.01,      // paint rect
+            1.0005, 0.942, 0.001, h_ratio,   // texture coords
+            &self.test_image,
+            emColor::from_packed(0x00FF_FFFF), // color1
+            emColor::from_packed(0xFF00_00FF), // color2
+            emColor::TRANSPARENT,
+            ImageExtension::Repeat,
+        );
+
+        // emImageTexture with src rect + EXTEND_TILED (C++ emTestPanel.cpp:453-460)
+        p.PaintImageTextured(
+            0.275, 0.907, 0.002, 0.002,      // paint rect
+            0.2755, 0.9075, 0.001, 0.001,    // texture coords
+            &self.test_image,
+            50, 10, 110, 110,                // src rect
+            255,
+            ImageExtension::Repeat,
+        );
+
+        // emImageTexture with src rect + EXTEND_EDGE (C++ emTestPanel.cpp:462-469)
+        p.PaintImageTextured(
+            0.275, 0.910, 0.002, 0.002,      // paint rect
+            0.2755, 0.9105, 0.001, 0.001,    // texture coords
+            &self.test_image,
+            50, 10, 110, 110,                // src rect
+            255,
+            ImageExtension::Clamp,
+        );
+
+        // emImageTexture with src rect + EXTEND_ZERO (C++ emTestPanel.cpp:471-478)
+        p.PaintImageTextured(
+            0.275, 0.913, 0.002, 0.002,      // paint rect
+            0.2755, 0.9135, 0.001, 0.001,    // texture coords
+            &self.test_image,
+            50, 10, 110, 110,                // src rect
+            255,
+            ImageExtension::Zero,
         );
     }
 }

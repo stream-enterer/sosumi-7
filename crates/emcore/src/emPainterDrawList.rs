@@ -117,6 +117,38 @@ pub enum DrawOp {
         quality: ImageQuality,
         extension: ImageExtension,
     },
+    PaintImageTextured {
+        rect_x: f64,
+        rect_y: f64,
+        rect_w: f64,
+        rect_h: f64,
+        tex_x: f64,
+        tex_y: f64,
+        tex_w: f64,
+        tex_h: f64,
+        image_ptr: *const emImage,
+        src_x: i32,
+        src_y: i32,
+        src_w: i32,
+        src_h: i32,
+        alpha: u8,
+        extension: ImageExtension,
+    },
+    PaintImageColoredTextured {
+        rect_x: f64,
+        rect_y: f64,
+        rect_w: f64,
+        rect_h: f64,
+        tex_x: f64,
+        tex_y: f64,
+        tex_w: f64,
+        tex_h: f64,
+        image_ptr: *const emImage,
+        color1: emColor,
+        color2: emColor,
+        canvas_color: emColor,
+        extension: ImageExtension,
+    },
     PaintBorderImage {
         x: f64,
         y: f64,
@@ -546,6 +578,39 @@ impl DrawList {
                 } => {
                     let image = unsafe { &**image_ptr };
                     painter.paint_image_scaled(*x, *y, *w, *h, image, *quality, *extension);
+                }
+
+                DrawOp::PaintImageTextured {
+                    rect_x, rect_y, rect_w, rect_h,
+                    tex_x, tex_y, tex_w, tex_h,
+                    image_ptr,
+                    src_x, src_y, src_w, src_h,
+                    alpha,
+                    extension,
+                } => {
+                    let image = unsafe { &**image_ptr };
+                    painter.PaintImageTextured(
+                        *rect_x, *rect_y, *rect_w, *rect_h,
+                        *tex_x, *tex_y, *tex_w, *tex_h,
+                        image, *src_x, *src_y, *src_w, *src_h,
+                        *alpha, *extension,
+                    );
+                }
+
+                DrawOp::PaintImageColoredTextured {
+                    rect_x, rect_y, rect_w, rect_h,
+                    tex_x, tex_y, tex_w, tex_h,
+                    image_ptr,
+                    color1, color2,
+                    canvas_color,
+                    extension,
+                } => {
+                    let image = unsafe { &**image_ptr };
+                    painter.PaintImageColoredTextured(
+                        *rect_x, *rect_y, *rect_w, *rect_h,
+                        *tex_x, *tex_y, *tex_w, *tex_h,
+                        image, *color1, *color2, *canvas_color, *extension,
+                    );
                 }
 
                 DrawOp::PaintBorderImage {

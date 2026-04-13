@@ -264,6 +264,8 @@ fn variant_name(op: &DrawOp) -> &'static str {
         DrawOp::PaintImageFull { .. } => "PaintRect",
         DrawOp::PaintImageColored { .. } => "PaintImageColored",
         DrawOp::PaintImageScaled { .. } => "PaintImageScaled",
+        DrawOp::PaintImageTextured { .. } => "PaintImageTextured",
+        DrawOp::PaintImageColoredTextured { .. } => "PaintImageColoredTextured",
         DrawOp::PaintBorderImage { .. } => "PaintBorderImage",
         DrawOp::PaintText { .. } => "PaintText",
         DrawOp::PaintTextBoxed { .. } => "PaintTextBoxed",
