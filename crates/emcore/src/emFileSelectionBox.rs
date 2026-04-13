@@ -537,7 +537,7 @@ impl TextFilePanel {
         let t = 0.5 * page_gap_chars / (page_cols as f64 + page_gap_chars);
         let page_count_f =
             (t + ((2.0 * rows as f64 / (h * f * page_gap_chars) + t) * t).sqrt()).floor();
-        let page_count = (page_count_f as i32).max(1);
+        let page_count = page_count_f as i32;
 
         if page_count < 1 {
             // Single page.

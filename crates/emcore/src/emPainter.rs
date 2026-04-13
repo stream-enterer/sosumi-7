@@ -743,9 +743,6 @@ impl<'a> emPainter<'a> {
         color: emColor,
         canvas_color: emColor,
     ) {
-        if w <= 0.0 || h <= 0.0 || color.GetAlpha() == 0 {
-            return;
-        }
         let Some(proof) = self.try_record(DrawOp::PaintRect {
             x,
             y,
