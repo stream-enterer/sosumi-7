@@ -4,7 +4,7 @@ use crate::emPainterDrawList::{DrawOp, RecordedOp, RecordedState};
 use super::emFontCache;
 use super::emPainterInterpolation;
 use super::emPainterScanline::{self, WindingRule};
-use super::emPainterScanlineTool::{blend_colored_scanline, blend_scanline, blend_scanline_premul, BlendMode, InterpolationBuffer, MAX_INTERP_BYTES};
+use super::emPainterScanlineTool::{blend_colored_scanline, blend_colored_scanline_rgb, blend_scanline, blend_scanline_premul, BlendMode, InterpolationBuffer, MAX_INTERP_BYTES};
 use super::emStroke::{emStroke, emStrokeEnd, StrokeEndType};
 use super::emTexture::{ImageExtension, ImageQuality, emTexture};
 use crate::emColor::{blend_hash_lookup, emColor};
@@ -1871,47 +1871,27 @@ impl<'a> emPainter<'a> {
                     emPainterInterpolation::interpolate_scanline_area_sampled(
                         image, col, row, batch, &xfm, &sec, ext, &mut ibuf, &mut carry,
                     );
-                    for (i, lum) in lums[..batch].iter_mut().enumerate() {
-                        let p = ibuf.pixel_rgba(i);
-                        *lum = if ch == 1 {
-                            p[0]
-                        } else {
-                            ((p[0] as u32 * 77 + p[1] as u32 * 150 + p[2] as u32 * 29) >> 8)
-                                as u8
-                        };
-                    }
-                    // DIAGNOSTIC
-                    if row == 945 && col == start_x {
-                        use std::io::Write;
-                        let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/diag_colored.txt").unwrap();
-                        writeln!(f, "row={} col={} batch={} lums={:?}", row, col, batch, &lums[..batch.min(5)]).ok();
-                        let p0 = ibuf.pixel_rgba(0);
-                        writeln!(f, "  pixel[0] rgba=({},{},{},{}) lum={}", p0[0], p0[1], p0[2], p0[3], lums[0]).ok();
-                        writeln!(f, "  stride=({},{}) red_w={} red_h={} sec=({},{},{},{}) ext={:?}",
-                            xfm.stride_x, xfm.stride_y, red_w, red_h, sec.ox, sec.oy, sec.w, sec.h, ext).ok();
-                        writeln!(f, "  tdx={} tdy={} ratio=({:.1},{:.1})", tdx_i, tdy_i, ratio_x, ratio_y).ok();
-                        writeln!(f, "  tex=({},{},{},{}) src=({},{})", tex_x, tex_y, tex_w, tex_h, src_w, src_h).ok();
-                        writeln!(f, "  img_ch={} img_size={}x{}", ch, iw, ih).ok();
-                        // Try direct pixel access
-                        let direct_p = image.GetPixel(0, 0);
-                        writeln!(f, "  direct image[0,0] = ({},{},{},{})", direct_p[0], direct_p[1], direct_p[2], if ch >= 4 { direct_p[3] } else { 255 }).ok();
-                        let map = image.GetMap();
-                        writeln!(f, "  image data ptr={:p} len={} first_bytes={:?}", map.as_ptr(), map.len(), &map[..16.min(map.len())]).ok();
-                    }
                     let all_full =
                         sp.batch_coverages_cpp_y(row, col, &mut coverages[..batch], cpp_iy1, cpp_iy2, cpp_ay1, cpp_ay2);
                     let dest_offset = (row as usize * target_w + col as usize) * 4;
                     let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
-                    blend_colored_scanline(
-                        dest,
-                        &lums[..batch],
-                        batch,
-                        if all_full { None } else { Some(&coverages[..batch]) },
-                        color1,
-                        color2,
-                        &mode,
-                    );
+                    if ch >= 3 {
+                        blend_colored_scanline_rgb(
+                            dest, &ibuf, batch,
+                            if all_full { None } else { Some(&coverages[..batch]) },
+                            color1, color2, &mode,
+                        );
+                    } else {
+                        for (i, lum) in lums[..batch].iter_mut().enumerate() {
+                            *lum = ibuf.pixel_rgba(i)[0];
+                        }
+                        blend_colored_scanline(
+                            dest, &lums[..batch], batch,
+                            if all_full { None } else { Some(&coverages[..batch]) },
+                            color1, color2, &mode,
+                        );
+                    }
                     col += batch as i32;
                 }
             }
@@ -1926,39 +1906,42 @@ impl<'a> emPainter<'a> {
                 let mut col = start_x;
                 while col < end_x {
                     let batch = ((end_x - col) as usize).min(max_batch);
-                    for (i, lum) in lums[..batch].iter_mut().enumerate() {
-                        let c = col + i as i32;
-                        let tx64 = (c - px) as i64 * sxfm.tdx
-                            + sxfm.base_x
-                            - 0x180_0000;
-                        let ty64 = (row - py) as i64 * sxfm.tdy
-                            + sxfm.base_y
-                            - 0x180_0000;
-                        let src_ix = (tx64 >> 24) as i32;
-                        let src_iy = (ty64 >> 24) as i32;
-                        let ox =
-                            (((tx64 & 0xFF_FFFF) as u32).wrapping_add(0x7FFF)) >> 16;
-                        let oy =
-                            (((ty64 & 0xFF_FFFF) as u32).wrapping_add(0x7FFF)) >> 16;
-
-                        *lum = emPainterInterpolation::sample_adaptive_lum_section(
-                            image, src_ix, src_iy, ox, oy, &sec, ext,
+                    if ch >= 3 {
+                        emPainterInterpolation::interpolate_scanline_adaptive_premul_section(
+                            image, px, py, col, row, batch, &sxfm, &sec, ext, &mut ibuf,
                         );
+                    } else {
+                        for (i, lum) in lums[..batch].iter_mut().enumerate() {
+                            let c = col + i as i32;
+                            let tx64 = (c - px) as i64 * sxfm.tdx + sxfm.base_x - 0x180_0000;
+                            let ty64 = (row - py) as i64 * sxfm.tdy + sxfm.base_y - 0x180_0000;
+                            let src_ix = (tx64 >> 24) as i32;
+                            let src_iy = (ty64 >> 24) as i32;
+                            let ox = (((tx64 & 0xFF_FFFF) as u32).wrapping_add(0x7FFF)) >> 16;
+                            let oy = (((ty64 & 0xFF_FFFF) as u32).wrapping_add(0x7FFF)) >> 16;
+                            *lum = emPainterInterpolation::sample_adaptive_lum_section(
+                                image, src_ix, src_iy, ox, oy, &sec, ext,
+                            );
+                        }
                     }
                     let all_full =
                         sp.batch_coverages_cpp_y(row, col, &mut coverages[..batch], cpp_iy1, cpp_iy2, cpp_ay1, cpp_ay2);
                     let dest_offset = (row as usize * target_w + col as usize) * 4;
                     let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
-                    blend_colored_scanline(
-                        dest,
-                        &lums[..batch],
-                        batch,
-                        if all_full { None } else { Some(&coverages[..batch]) },
-                        color1,
-                        color2,
-                        &mode,
-                    );
+                    if ch >= 3 {
+                        blend_colored_scanline_rgb(
+                            dest, &ibuf, batch,
+                            if all_full { None } else { Some(&coverages[..batch]) },
+                            color1, color2, &mode,
+                        );
+                    } else {
+                        blend_colored_scanline(
+                            dest, &lums[..batch], batch,
+                            if all_full { None } else { Some(&coverages[..batch]) },
+                            color1, color2, &mode,
+                        );
+                    }
                     col += batch as i32;
                 }
             }
@@ -2555,36 +2538,35 @@ impl<'a> emPainter<'a> {
                     emPainterInterpolation::interpolate_scanline_area_sampled(
                         image, col, row, batch, &xfm, &sec, ext, &mut ibuf, &mut carry,
                     );
-                    // Extract luminance from interpolated data
-                    for (i, lum) in lums[..batch].iter_mut().enumerate() {
-                        let p = ibuf.pixel_rgba(i);
-                        *lum = if ch == 1 {
-                            p[0]
-                        } else {
-                            ((p[0] as u32 * 77 + p[1] as u32 * 150 + p[2] as u32 * 29) >> 8)
-                                as u8
-                        };
-                    }
                     let all_full =
                         sp.batch_coverages_cpp_y(row, col, &mut coverages[..batch], cpp_iy1, cpp_iy2, cpp_ay1, cpp_ay2);
                     let dest_offset = (row as usize * tw + col as usize) * 4;
                     let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
-                    blend_colored_scanline(
-                        dest,
-                        &lums[..batch],
-                        batch,
-                        if all_full { None } else { Some(&coverages[..batch]) },
-                        color1,
-                        color2,
-                        &mode,
-                    );
+                    if ch >= 3 {
+                        // Multi-channel: per-channel mapping (C++ PaintScanlineIntG1G2 CHANNELS=3/4)
+                        blend_colored_scanline_rgb(
+                            dest, &ibuf, batch,
+                            if all_full { None } else { Some(&coverages[..batch]) },
+                            color1, color2, &mode,
+                        );
+                    } else {
+                        // Single-channel: luminance-based mapping
+                        for (i, lum) in lums[..batch].iter_mut().enumerate() {
+                            let p = ibuf.pixel_rgba(i);
+                            *lum = p[0];
+                        }
+                        blend_colored_scanline(
+                            dest, &lums[..batch], batch,
+                            if all_full { None } else { Some(&coverages[..batch]) },
+                            color1, color2, &mode,
+                        );
+                    }
                     col += batch as i32;
                 }
             }
         } else {
-            // Adaptive upscaling with lum extraction — matches C++ UQ_ADAPTIVE
-            // for font glyph rendering (PaintImageColored with upscaling).
+            // Adaptive upscaling — matches C++ UQ_ADAPTIVE.
             let sxfm =
                 self.scale_transform_24(src_w, src_h, x, y, w, h);
             let sec = emPainterInterpolation::SectionBounds {
@@ -2597,39 +2579,44 @@ impl<'a> emPainter<'a> {
                 let mut col = start_x;
                 while col < end_x {
                     let batch = ((end_x - col) as usize).min(max_batch);
-                    for (i, lum) in lums[..batch].iter_mut().enumerate() {
-                        let c = col + i as i32;
-                        let tx64 = (c - px) as i64 * sxfm.tdx
-                            + sxfm.base_x
-                            - 0x180_0000;
-                        let ty64 = (row - py) as i64 * sxfm.tdy
-                            + sxfm.base_y
-                            - 0x180_0000;
-                        let src_ix = (tx64 >> 24) as i32;
-                        let src_iy = (ty64 >> 24) as i32;
-                        let ox =
-                            (((tx64 & 0xFF_FFFF) as u32).wrapping_add(0x7FFF)) >> 16;
-                        let oy =
-                            (((ty64 & 0xFF_FFFF) as u32).wrapping_add(0x7FFF)) >> 16;
-
-                        *lum = emPainterInterpolation::sample_adaptive_lum_section(
-                            image, src_ix, src_iy, ox, oy, &sec, ext,
+                    if ch >= 3 {
+                        // Multi-channel: full RGBA adaptive interpolation
+                        emPainterInterpolation::interpolate_scanline_adaptive_premul_section(
+                            image, px, py, col, row, batch, &sxfm, &sec, ext, &mut ibuf,
                         );
+                    } else {
+                        // Single-channel: luminance adaptive
+                        for (i, lum) in lums[..batch].iter_mut().enumerate() {
+                            let c = col + i as i32;
+                            let tx64 = (c - px) as i64 * sxfm.tdx + sxfm.base_x - 0x180_0000;
+                            let ty64 = (row - py) as i64 * sxfm.tdy + sxfm.base_y - 0x180_0000;
+                            let src_ix = (tx64 >> 24) as i32;
+                            let src_iy = (ty64 >> 24) as i32;
+                            let ox = (((tx64 & 0xFF_FFFF) as u32).wrapping_add(0x7FFF)) >> 16;
+                            let oy = (((ty64 & 0xFF_FFFF) as u32).wrapping_add(0x7FFF)) >> 16;
+                            *lum = emPainterInterpolation::sample_adaptive_lum_section(
+                                image, src_ix, src_iy, ox, oy, &sec, ext,
+                            );
+                        }
                     }
                     let all_full =
                         sp.batch_coverages_cpp_y(row, col, &mut coverages[..batch], cpp_iy1, cpp_iy2, cpp_ay1, cpp_ay2);
                     let dest_offset = (row as usize * tw + col as usize) * 4;
                     let data = self.GetImage(proof).GetWritableMap();
                     let dest = &mut data[dest_offset..];
-                    blend_colored_scanline(
-                        dest,
-                        &lums[..batch],
-                        batch,
-                        if all_full { None } else { Some(&coverages[..batch]) },
-                        color1,
-                        color2,
-                        &mode,
-                    );
+                    if ch >= 3 {
+                        blend_colored_scanline_rgb(
+                            dest, &ibuf, batch,
+                            if all_full { None } else { Some(&coverages[..batch]) },
+                            color1, color2, &mode,
+                        );
+                    } else {
+                        blend_colored_scanline(
+                            dest, &lums[..batch], batch,
+                            if all_full { None } else { Some(&coverages[..batch]) },
+                            color1, color2, &mode,
+                        );
+                    }
                     col += batch as i32;
                 }
             }
@@ -3919,16 +3906,55 @@ impl<'a> emPainter<'a> {
             self.PaintEllipseOutline(cx, cy, rx, ry, stroke, canvas_color);
             return;
         }
-        let segments = adaptive_circle_segments(rx, ry, self.state.scale_x, self.state.scale_y);
-        let arc_segs =
-            ((segments as f64 * abs_range / (2.0 * std::f64::consts::PI)).ceil() as usize).max(3);
-        let mut verts = Vec::with_capacity(arc_segs + 1);
-        for i in 0..=arc_segs {
-            let t = i as f64 / arc_segs as f64;
-            let angle = start_angle + t * range_angle;
+        // C++ includes half-thickness in quality (emPainter.cpp:1759)
+        let t2 = stroke.width * 0.5;
+        let mut f = CIRCLE_QUALITY
+            * ((rx + t2) * self.state.scale_x + (ry + t2) * self.state.scale_y).sqrt();
+        if f > 256.0 { f = 256.0; }
+        f = f * abs_range / (2.0 * std::f64::consts::PI);
+        let n = if f <= 3.0 { 3 } else if f >= 256.0 { 256 } else { (f + 0.5) as usize };
+        let step = range_angle / n as f64;
+        let vn = n + 1;
+        let mut verts = Vec::with_capacity(vn);
+        for i in 0..vn {
+            let angle = start_angle + step * i as f64;
             verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
         }
-        self.PaintSolidPolyline(&verts, stroke, false, canvas_color);
+
+        // C++ computes exact ellipse tangent directions for arrow rendering
+        // (emPainter.cpp:1775-1801) instead of deriving them from polyline vertices.
+        let with_arrows = stroke.start_end.IsDecorated() || stroke.finish_end.IsDecorated();
+        if with_arrows {
+            let saved_canvas = self.state.canvas_color;
+            self.state.canvas_color = canvas_color;
+
+            let compute_normal = |angle: f64, forward: bool| -> (f64, f64) {
+                let (mut nx, mut ny) = if forward {
+                    (-angle.sin(), angle.cos())
+                } else {
+                    (angle.sin(), -angle.cos())
+                };
+                if range_angle < 0.0 { nx = -nx; ny = -ny; }
+                let tnx = nx * rx;
+                let tny = ny * ry;
+                let ll = tnx * tnx + tny * tny;
+                if ll > 1e-280 {
+                    let l = ll.sqrt();
+                    (tnx / l, tny / l)
+                } else {
+                    (nx, ny)
+                }
+            };
+
+            let n1 = compute_normal(start_angle, true);
+            let n2 = compute_normal(start_angle + range_angle, false);
+
+            self.PaintPolylineWithArrows(&verts, stroke, false, canvas_color, Some((n1, n2)));
+
+            self.state.canvas_color = saved_canvas;
+        } else {
+            self.PaintSolidPolyline(&verts, stroke, false, canvas_color);
+        }
     }
 
     /// Draw an ellipse sector outline. Routes through polyline if dashed.
