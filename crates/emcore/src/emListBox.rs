@@ -352,6 +352,12 @@ impl emListBox {
         self.raster_layout.max_child_tallness = tallness;
     }
 
+    /// Set maximum child tallness only (not min/preferred).
+    /// Port of C++ `emRasterLayout::SetMaxChildTallness`.
+    pub fn SetMaxChildTallness(&mut self, max_ct: f64) {
+        self.raster_layout.max_child_tallness = max_ct;
+    }
+
     /// Enable strict raster mode.
     /// Port of C++ `emRasterGroup::SetStrictRaster` (inherited by emListBox).
     pub fn SetStrictRaster(&mut self) {

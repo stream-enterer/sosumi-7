@@ -1185,6 +1185,7 @@ impl emFileSelectionBox {
         // 5. FiltersLB
         if !self.filter_hidden {
             let mut lb = emListBox::new(self.look.clone());
+            lb.SetMaxChildTallness(0.1); // C++ emFileSelectionBox.cpp:545
             lb.SetCaption("Filter");
             for (i, filter) in self.filters.iter().enumerate() {
                 lb.AddItem(format!("{}", i), filter.clone());
