@@ -30,11 +30,14 @@ pub struct emCheckButton {
 
 impl emCheckButton {
     pub fn new(caption: &str, look: Rc<emLook>) -> Self {
+        let mut border = emBorder::new(OuterBorderType::InstrumentMoreRound)
+            .with_caption(caption)
+            .with_label_in_border(false)
+            .with_how_to(true);
+        // C++ emButton constructor: SetLabelAlignment(EM_ALIGN_CENTER)
+        border.SetLabelAlignment(crate::emPainter::TextAlignment::Center);
         Self {
-            border: emBorder::new(OuterBorderType::InstrumentMoreRound)
-                .with_caption(caption)
-                .with_label_in_border(false)
-                .with_how_to(true),
+            border,
             look,
             checked: false,
             pressed: false,
