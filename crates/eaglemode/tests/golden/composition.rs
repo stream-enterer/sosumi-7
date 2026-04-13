@@ -615,8 +615,11 @@ impl TkTestPanel {
             ctx.tree
                 .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf2 }));
 
+            // C++ creates with defaults (min=0, max=10, value=0), then
+            // SetMinMaxValues(-1000,1000) — value stays 0.
             let mut sf3 = emScalarField::new(-1000.0, 1000.0, look.clone());
             sf3.SetEditable(true);
+            sf3.SetValue(0.0);
             sf3.SetScaleMarkIntervals(&[1000, 100, 10, 5, 1]);
             let id = ctx.tree.create_child(gid, "sf3");
             ctx.tree
@@ -852,9 +855,17 @@ impl TkTestPanel {
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb6 }));
 
             // l7: custom list box — C++ CustomListBox with CustomItemPanel items
+            // C++ CustomListBox constructor: SetChildTallness(0.4),
+            //   SetAlignment(EM_ALIGN_TOP_LEFT), SetStrictRaster()
             let mut lb7 = emListBox::new(look.clone());
             lb7.SetCaption("Custom List Box");
             lb7.SetSelectionType(SelectionMode::Multi);
+            lb7.SetChildTallness(0.4);
+            lb7.SetAlignment(
+                emcore::emTiling::AlignmentH::Left,
+                emcore::emTiling::AlignmentV::Top,
+            );
+            lb7.SetStrictRaster();
             add_items_1_to_7(&mut lb7);
             lb7.SetSelectedIndex(0);
             lb7.set_item_behavior_factory(

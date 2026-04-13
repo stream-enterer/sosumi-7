@@ -337,6 +337,25 @@ impl emListBox {
         self.border.caption = caption.to_string();
     }
 
+    /// Set preferred child tallness (h/w ratio) for items.
+    /// Port of C++ `emRasterGroup::SetPrefChildTallness` (inherited by emListBox).
+    pub fn SetChildTallness(&mut self, tallness: f64) {
+        self.raster_layout.preferred_child_tallness = tallness;
+    }
+
+    /// Enable strict raster mode.
+    /// Port of C++ `emRasterGroup::SetStrictRaster` (inherited by emListBox).
+    pub fn SetStrictRaster(&mut self) {
+        self.raster_layout.strict_raster = true;
+    }
+
+    /// Set horizontal and vertical alignment.
+    /// Port of C++ `emRasterGroup::SetAlignment` (inherited by emListBox).
+    pub fn SetAlignment(&mut self, h: crate::emTiling::AlignmentH, v: crate::emTiling::AlignmentV) {
+        self.raster_layout.alignment_h = h;
+        self.raster_layout.alignment_v = v;
+    }
+
     pub fn border_mut(&mut self) -> &mut emBorder {
         &mut self.border
     }
