@@ -263,8 +263,10 @@ impl PanelBehavior for FileItemPanelBehavior {
         if ctx.children().is_empty() && self.enabled && !self.is_directory {
             // C++ creates FilePanel("content") + FileOverlayPanel("overlay").
             // DIVERGED: C++ uses emFpPluginList::CreateFilePanel for content;
-            // we create a stub panel (file viewer plugins not ported).
-            let _content_id = ctx.create_child("content");
+            // we create a stub that paints an opaque white background
+            // (matching C++ file panels' default appearance).
+            let content_id = ctx.create_child("content");
+            ctx.tree.set_behavior(content_id, Box::new(FilePanelStub));
             let _overlay_id = ctx.create_child("overlay");
         }
         // C++ FileItemPanel::LayoutChildren (emFileSelectionBox.cpp:1095-1112):
@@ -289,6 +291,19 @@ impl PanelBehavior for FileItemPanelBehavior {
                 ctx.layout_child_canvas(child, fx, fy, fw, fh, bg);
             }
         }
+    }
+}
+
+/// Stub file content panel: paints an opaque white background matching
+/// the default appearance of C++ file viewer panels.
+struct FilePanelStub;
+
+impl PanelBehavior for FilePanelStub {
+    fn IsOpaque(&self) -> bool {
+        true
+    }
+    fn Paint(&mut self, p: &mut emPainter, w: f64, h: f64, _s: &PanelState) {
+        p.PaintRect(0.0, 0.0, w, h, emColor::WHITE, p.GetCanvasColor());
     }
 }
 
