@@ -337,10 +337,19 @@ impl emListBox {
         self.border.caption = caption.to_string();
     }
 
+    /// Set minimum number of cells in the raster grid (padding with empty cells).
+    /// Port of C++ `emRasterGroup::SetMinCellCount` (inherited by emListBox).
+    pub fn SetMinCellCount(&mut self, count: usize) {
+        self.raster_layout.min_cell_count = count;
+    }
+
     /// Set preferred child tallness (h/w ratio) for items.
-    /// Port of C++ `emRasterGroup::SetPrefChildTallness` (inherited by emListBox).
+    /// Port of C++ `emRasterLayout::SetChildTallness` (inherited by emListBox via emRasterGroup).
+    /// C++ sets PrefCT, MinCT, and MaxCT all to `tallness`.
     pub fn SetChildTallness(&mut self, tallness: f64) {
         self.raster_layout.preferred_child_tallness = tallness;
+        self.raster_layout.min_child_tallness = tallness;
+        self.raster_layout.max_child_tallness = tallness;
     }
 
     /// Enable strict raster mode.

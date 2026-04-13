@@ -708,9 +708,17 @@ impl emFileSelectionBox {
         }
 
         // 3. FilesLB (always created)
+        // Matches C++ FilesListBox constructor: SetMinCellCount(4), SetChildTallness(0.6),
+        // SetAlignment(EM_ALIGN_TOP_LEFT).
         {
             let mut lb = emListBox::new(self.look.clone());
             lb.SetCaption("Files");
+            lb.SetMinCellCount(4);
+            lb.SetChildTallness(0.6);
+            lb.SetAlignment(
+                crate::emTiling::AlignmentH::Left,
+                crate::emTiling::AlignmentV::Top,
+            );
             lb.SetSelectionType(if self.multi_selection_enabled {
                 SelectionMode::Multi
             } else {
@@ -793,6 +801,14 @@ impl emFileSelectionBox {
             self.filter_lb_id = Some(id);
         }
 
+        // Eagerly reload the listing now so that item panels can be created in the
+        // first LayoutChildren pass (matching C++ where the scheduler calls Cycle()
+        // before the first paint, ensuring ReloadListing runs before items are shown).
+        if self.listing_invalid {
+            self.reload_listing();
+            self.selection_to_list_box(ctx);
+        }
+
         // Register for per-frame cycling so we can process events.
         ctx.tree.Cycle(ctx.id);
     }
@@ -831,6 +847,10 @@ impl emFileSelectionBox {
                 }
                 lbp.list_box.SetSelectedIndices(&selected_indices);
             });
+            // Items changed — notify the listbox panel to re-run LayoutChildren
+            // so it creates/updates item panels. C++ does this implicitly via
+            // CreateItemPanel() in InsertItem() when IsAutoExpanded().
+            ctx.tree.queue_notice(lb_id, super::emPanel::NoticeFlags::LAYOUT_CHANGED);
         }
     }
 
@@ -977,8 +997,15 @@ impl PanelBehavior for emFileSelectionBox {
         }
 
         // Middle: files list
+        // C++ LayoutChildren calls SetBorderScaling(hs/h2) on FilesLB AFTER layout.
+        // Rust must do the same so the content rect matches C++ at every layout call.
         if let Some(fl_id) = self.files_lb_id {
             ctx.layout_child_canvas(fl_id, x, y + h1, cw, h2, cc);
+            if h2 > 1e-100 {
+                ctx.tree.with_behavior_as::<ListBoxPanel, _>(fl_id, |lbp| {
+                    lbp.list_box.border_mut().SetBorderScaling(hs / h2);
+                });
+            }
         }
 
         // Bottom row: name field + filter list

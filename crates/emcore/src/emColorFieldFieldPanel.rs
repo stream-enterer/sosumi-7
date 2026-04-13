@@ -157,7 +157,10 @@ impl PanelBehavior for ListBoxPanel {
             self.list_box.create_item_children(ctx);
         }
         let rect = ctx.layout_rect();
-        self.list_box.layout_item_children(ctx, rect.w, rect.h);
+        // C++ always calls layout in the panel's own coordinate space (w=1.0 normalized).
+        // Pass tallness = h/w so GetContentRectUnobscured gets the same aspect ratio as C++.
+        let tallness = if rect.w > 1e-100 { rect.h / rect.w } else { 1.0 };
+        self.list_box.layout_item_children(ctx, 1.0, tallness);
     }
 }
 

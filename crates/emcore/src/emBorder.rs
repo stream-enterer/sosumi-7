@@ -378,9 +378,10 @@ impl emBorder {
         let has_desc = !self.description.is_empty();
 
         // Step 1: caption
+        // C++: capW = emPainter::GetTextSize(Caption, 1.0, true, 0.0, &capH)
+        // formatted=true so multi-line captions (e.g. "Show\nHidden\nFiles") return capH > 1.0
         let (cap_w, cap_h) = if has_cap {
-            let w = emPainter::measure_text_width(&self.caption, 1.0);
-            (w, 1.0_f64)
+            emPainter::GetTextSize(&self.caption, 1.0, true, 0.0)
         } else {
             (0.0, 0.0)
         };
@@ -425,9 +426,9 @@ impl emBorder {
         }
 
         // Step 3: description
+        // C++: descW = emPainter::GetTextSize(Description, 1.0, true, 0.0, &descH)
         if has_desc {
-            let desc_w_raw = emPainter::measure_text_width(&self.description, 1.0);
-            let desc_h_raw = 1.0_f64;
+            let (desc_w_raw, desc_h_raw) = emPainter::GetTextSize(&self.description, 1.0, true, 0.0);
             if has_icon || has_cap {
                 let f = if has_cap {
                     cap_h * 0.15
