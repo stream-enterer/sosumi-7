@@ -90,7 +90,21 @@ enum PixelTexture<'t> {
         /// Additional alpha (0–255). C++ `texture.GetAlpha()`.
         alpha: u8,
         extension: ImageExtension,
-        quality: ImageQuality,
+        /// C++ ScanlineTool Alpha: (USP * texture_alpha + 127) / 255.
+        sct_alpha: u32,
+        /// True if HAVE_ALPHA (texture alpha < 255).
+        have_alpha: bool,
+        /// C++ ScanlineTool TDX (24fp step per dest pixel).
+        fp_tdx: i64,
+        /// C++ ScanlineTool TDY (24fp step per dest pixel).
+        fp_tdy: i64,
+        /// C++ ScanlineTool TX (24fp origin).
+        fp_tx: i64,
+        /// C++ ScanlineTool TY (24fp origin).
+        fp_ty: i64,
+        /// True if using area sampling (downscale).
+        is_area_sampled: bool,
+        // f64 fallback fields for sample_pixel_texture
         inv_scale_x: f64,
         inv_scale_y: f64,
         offset_x: f64,
@@ -5856,14 +5870,13 @@ impl<'a> emPainter<'a> {
         // Interior pixels — bulk scanline, no per-pixel clip/bounds checks.
         let ix1 = x_start + 1;
         let ix2 = x_end - 1;
-        if ix1 < ix2 {
-            if span.opacity_mid >= 0x1000 {
-                self.fill_span_blended(proof, y, ix1, ix2, color);
-            } else if span.opacity_mid > 0 {
-                // Uniform partial coverage: pre-compute alpha-adjusted color once.
-                let alpha =
-                    ((color.GetAlpha() as i32 * span.opacity_mid + 0x800) >> 12).clamp(0, 255) as u8;
-                let blended = emColor::rgba(color.GetRed(), color.GetGreen(), color.GetBlue(), alpha);
+        if ix1 < ix2 && span.opacity_mid > 0 {
+            // C++ PaintScanlineCol: alpha = (color_alpha * opacity + 0x800) >> 12
+            // Raw opacity can exceed 0x1000 for double-wound polygons.
+            let alpha =
+                ((color.GetAlpha() as i32 * span.opacity_mid + 0x800) >> 12).clamp(0, 255) as u8;
+            if alpha > 0 {
+                let blended = color.SetAlpha(alpha);
                 self.fill_span_blended(proof, y, ix1, ix2, blended);
             }
         }
@@ -5889,15 +5902,12 @@ impl<'a> emPainter<'a> {
         // First pixel
         self.blend_with_coverage(proof, ix, iy, color, a1);
         // Interior pixels
-        if iw > 2 {
+        if iw > 2 && a > 0 {
+            // C++ PaintScanlineCol: alpha = (color_alpha * opacity + 0x800) >> 12
             let combined_alpha = ((color.GetAlpha() as i32 * a + 0x800) >> 12).clamp(0, 255) as u8;
             if combined_alpha > 0 {
                 let interior_color = color.SetAlpha(combined_alpha);
-                if combined_alpha == 255 {
-                    self.fill_span_blended(proof, iy, ix + 1, ix + iw - 1, color);
-                } else {
-                    self.fill_span_blended(proof, iy, ix + 1, ix + iw - 1, interior_color);
-                }
+                self.fill_span_blended(proof, iy, ix + 1, ix + iw - 1, interior_color);
             }
         }
         // Last pixel (if width > 1)
@@ -5907,14 +5917,14 @@ impl<'a> emPainter<'a> {
     }
 
     fn blend_with_coverage(&mut self, proof: DirectProof, x: i32, y: i32, color: emColor, cov: i32) {
-        if cov >= 0x1000 {
-            self.blend_pixel(proof, x, y, color);
-        } else if cov > 0 {
-            // C++ single-step: alpha = (color_alpha * opacity_12bit + 0x800) >> 12
-            let alpha = ((color.GetAlpha() as i32 * cov + 0x800) >> 12).clamp(0, 255) as u8;
-            let blended = emColor::rgba(color.GetRed(), color.GetGreen(), color.GetBlue(), alpha);
-            self.blend_pixel(proof, x, y, blended);
-        }
+        if cov <= 0 { return; }
+        // C++ PaintScanlineCol: alpha = (color_alpha * opacity + 0x800) >> 12
+        // Must use raw opacity (not capped at 0x1000) so double winding (0x2000)
+        // with semi-transparent colors correctly produces alpha >= 255.
+        let alpha = ((color.GetAlpha() as i32 * cov + 0x800) >> 12).clamp(0, 255) as u8;
+        if alpha == 0 { return; }
+        let blended = color.SetAlpha(alpha);
+        self.blend_pixel(proof, x, y, blended);
     }
 
     /// Same as `blend_pixel` but without clip/bounds checks.
@@ -5986,13 +5996,12 @@ impl<'a> emPainter<'a> {
     /// Same as `blend_with_coverage` but without clip/bounds checks.
     #[inline(always)]
     fn blend_with_coverage_unchecked(&mut self, proof: DirectProof, x: i32, y: i32, color: emColor, cov: i32) {
-        if cov >= 0x1000 {
-            self.blend_pixel_unchecked(proof, x, y, color);
-        } else if cov > 0 {
-            let alpha = ((color.GetAlpha() as i32 * cov + 0x800) >> 12).clamp(0, 255) as u8;
-            let blended = emColor::rgba(color.GetRed(), color.GetGreen(), color.GetBlue(), alpha);
-            self.blend_pixel_unchecked(proof, x, y, blended);
-        }
+        if cov <= 0 { return; }
+        // C++ PaintScanlineCol: alpha = (color_alpha * opacity + 0x800) >> 12
+        let alpha = ((color.GetAlpha() as i32 * cov + 0x800) >> 12).clamp(0, 255) as u8;
+        if alpha == 0 { return; }
+        let blended = color.SetAlpha(alpha);
+        self.blend_pixel_unchecked(proof, x, y, blended);
     }
 
     /// Fill a polygon with a texture using the scanline rasterizer.
@@ -6095,29 +6104,57 @@ impl<'a> emPainter<'a> {
                 h,
                 alpha,
                 extension,
-                quality,
+                quality: _,
             } => {
-                // C++ emPainter_ScTl.cpp: tw = w * ScaleX, th = h * ScaleY
-                // tdx = (ImgW << 24) / tw, tdy = (ImgH << 24) / th
-                // tx = x * ScaleX + OriginX, ty = y * ScaleY + OriginY
-                // In our sampling code we convert pixel coords back to image
-                // coords: img_x = (px - tex_offset_x) * inv_tex_scale_x
-                let tw = w * state.scale_x;
-                let th = h * state.scale_y;
-                let tx = x * state.scale_x + state.offset_x;
-                let ty = y * state.scale_y + state.offset_y;
+                // C++ emPainter_ScTl.cpp ScanlineTool::Init for IMAGE (lines 228-378)
                 let iw = image.GetWidth() as f64;
                 let ih = image.GetHeight() as f64;
-                // inv_scale maps pixel distance to image-pixel distance
+                let tw = w * state.scale_x;
+                let th = h * state.scale_y;
+                let tx_px = x * state.scale_x + state.offset_x;
+                let ty_px = y * state.scale_y + state.offset_y;
+                let tdx_f64 = ((image.GetWidth() as i64) << 24) as f64 / tw;
+                let tdy_f64 = ((image.GetHeight() as i64) << 24) as f64 / th;
+                let fp_tdx = tdx_f64 as i64;
+                let fp_tdy = tdy_f64 as i64;
+
+                // C++ ScanlineTool Alpha for IMAGE
+                let sct_alpha = if *alpha < 255 {
+                    (4096u32 * *alpha as u32 + 127) / 255
+                } else {
+                    4096
+                };
+
+                // C++ downscale detection: TDX > 0xFFFF00 || TDY > 0xFFFF00
+                let is_area_sampled = fp_tdx > 0xFFFF00 || fp_tdy > 0xFFFF00;
+
+                // C++ area sampling origin: TX = (emInt64)(tx * tdx)
+                let fp_tx = if is_area_sampled {
+                    (tx_px * tdx_f64) as i64
+                } else {
+                    ((tx_px - 0.5) * tdx_f64) as i64
+                };
+                let fp_ty = if is_area_sampled {
+                    (ty_px * tdy_f64) as i64
+                } else {
+                    ((ty_px - 0.5) * tdy_f64) as i64
+                };
+
                 PixelTexture::emImage {
                     image,
                     alpha: *alpha,
                     extension: *extension,
-                    quality: *quality,
+                    sct_alpha,
+                    have_alpha: *alpha < 255,
+                    fp_tdx,
+                    fp_tdy,
+                    fp_tx,
+                    fp_ty,
+                    is_area_sampled,
                     inv_scale_x: iw / tw,
                     inv_scale_y: ih / th,
-                    offset_x: tx,
-                    offset_y: ty,
+                    offset_x: tx_px,
+                    offset_y: ty_px,
                 }
             }
             emTexture::ImageColored {
@@ -6184,10 +6221,13 @@ impl<'a> emPainter<'a> {
                 let row = (py - 0.5) as i64;
                 let tx = col * fp_tdx - fp_tx;
                 let ty = row * fp_tdy - fp_ty;
-                // C++ bounds check: (emUInt64)tx+(0xFF<<23) < (0x1FE<<23)
-                // Equivalent: -0xFF_0000_00 <= tx < 0xFF_0000_00 (and same for ty).
-                const LIMIT: i64 = 0xFF << 23; // 255 * 2^23
-                if tx.unsigned_abs() >= LIMIT as u64 || ty.unsigned_abs() >= LIMIT as u64 {
+                // C++ bounds check: (emUInt64)val+(0xFF<<23) >= (0x1FE<<23)
+                // Range [-LIMIT, LIMIT) via unsigned-addition trick.
+                const HALF_RANGE: u64 = 0xFF << 23;
+                const FULL_RANGE: u64 = 0x1FE << 23;
+                if (tx as u64).wrapping_add(HALF_RANGE) >= FULL_RANGE
+                    || (ty as u64).wrapping_add(HALF_RANGE) >= FULL_RANGE
+                {
                     return color_outer.GetBlended(*color_inner, 0.0);
                 }
                 let tyty = ty * ty + ((1i64 << 45) - 1);
@@ -6218,16 +6258,17 @@ impl<'a> emPainter<'a> {
             PixelTexture::emImage {
                 image,
                 alpha,
-                extension,
-                quality,
                 inv_scale_x,
                 inv_scale_y,
                 offset_x,
                 offset_y,
+                extension,
+                ..
             } => {
                 let lx = (px - offset_x) * inv_scale_x;
                 let ly = (py - offset_y) * inv_scale_y;
-                let sampled = Self::sample_image_at(image, lx, ly, *extension, *quality);
+                // Fallback: f64 bilinear sampling (used for upscaled or non-polygon paths)
+                let sampled = emPainterInterpolation::sample_bilinear(image, lx, ly, *extension);
                 if *alpha == 255 {
                     sampled
                 } else {
@@ -6317,11 +6358,9 @@ impl<'a> emPainter<'a> {
                     let opacity = span_opacity_at(span, x, x_start, x_end);
                     if opacity == 0 { continue; }
                     let color = Self::sample_pixel_texture(texture, x as f64 + 0.5, py);
-                    if opacity >= 0x1000 {
-                        self.blend_pixel_unchecked(proof, x, y, color);
-                    } else {
-                        self.blend_with_coverage_unchecked(proof, x, y, color, opacity);
-                    }
+                    // blend_with_coverage_unchecked handles all opacity values correctly,
+                    // including > 0x1000 for double-wound polygons.
+                    self.blend_with_coverage_unchecked(proof, x, y, color, opacity);
                 }
             }
         }
@@ -6422,10 +6461,13 @@ impl<'a> emPainter<'a> {
         // C++ ScanlineTool: ty = y * TDY - TY
         let row = y as i64;
         let ty = row * fp_tdy - fp_ty;
-        const LIMIT: i64 = 0xFF << 23;
+        // C++ range check: (emUInt64)ty+(0xFF<<23) >= (0x1FE<<23)
+        // Matches range [-LIMIT, LIMIT) via unsigned-addition trick.
+        const HALF_RANGE: u64 = 0xFF << 23;
+        const FULL_RANGE: u64 = 0x1FE << 23;
 
         // Precompute ty*ty + rounding constant (matching C++ line 213)
-        let ty_in_range = ty.unsigned_abs() < LIMIT as u64;
+        let ty_in_range = (ty as u64).wrapping_add(HALF_RANGE) < FULL_RANGE;
         let tyty = if ty_in_range { ty * ty + ((1i64 << 45) - 1) } else { 0 };
 
         let tw = self.target_width as usize;
@@ -6441,7 +6483,8 @@ impl<'a> emPainter<'a> {
             // C++ InterpolateRadialGradient: tx = x * TDX - TX
             let tx = x as i64 * fp_tdx - fp_tx;
 
-            let g = if !ty_in_range || tx.unsigned_abs() >= LIMIT as u64 {
+            // C++ bounds: (emUInt64)tx+(0xFF<<23) < (0x1FE<<23)
+            let g = if !ty_in_range || (tx as u64).wrapping_add(HALF_RANGE) >= FULL_RANGE {
                 255u32
             } else {
                 let t_idx = ((tx * tx + tyty) >> 46) as usize;
