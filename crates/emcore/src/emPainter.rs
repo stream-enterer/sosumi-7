@@ -66,8 +66,12 @@ enum PixelTexture<'t> {
     LinearGradient {
         color_a: emColor,
         color_b: emColor,
-        start: (f64, f64),
-        end: (f64, f64),
+        /// C++ ScanlineTool TX: `((i64)((tx1-0.5)*nx + (ty1-0.5)*ny)) - 0x7fffff`
+        fp_tx: i64,
+        /// C++ ScanlineTool TDX: `(i64)nx` where nx = (tx2-tx1) * f
+        fp_tdx: i64,
+        /// C++ ScanlineTool TDY: `(i64)ny` where ny = (ty2-ty1) * f
+        fp_tdy: i64,
     },
     RadialGradient {
         color_inner: emColor,
@@ -6003,18 +6007,31 @@ impl<'a> emPainter<'a> {
                 color_b,
                 start,
                 end,
-            } => PixelTexture::LinearGradient {
-                color_a: *color_a,
-                color_b: *color_b,
-                start: (
-                    start.0 * state.scale_x + state.offset_x,
-                    start.1 * state.scale_y + state.offset_y,
-                ),
-                end: (
-                    end.0 * state.scale_x + state.offset_x,
-                    end.1 * state.scale_y + state.offset_y,
-                ),
-            },
+            } => {
+                // C++ emPainter_ScTl.cpp ScanlineTool::Init LINEAR_GRADIENT (lines 174-186)
+                let tx1 = start.0 * state.scale_x + state.offset_x;
+                let ty1 = start.1 * state.scale_y + state.offset_y;
+                let tx2 = end.0 * state.scale_x + state.offset_x;
+                let ty2 = end.1 * state.scale_y + state.offset_y;
+                let mut nx = tx2 - tx1;
+                let mut ny = ty2 - ty1;
+                let nn = nx * nx + ny * ny;
+                let f = if nn < 1e-3 {
+                    0.0
+                } else {
+                    ((255_i64 << 24) as f64) / nn
+                };
+                nx *= f;
+                ny *= f;
+                let tx = (tx1 - 0.5) * nx + (ty1 - 0.5) * ny;
+                PixelTexture::LinearGradient {
+                    color_a: *color_a,
+                    color_b: *color_b,
+                    fp_tx: (tx as i64) - 0x7fffff,
+                    fp_tdx: nx as i64,
+                    fp_tdy: ny as i64,
+                }
+            }
             emTexture::RadialGradient {
                 color_inner,
                 color_outer,
@@ -6096,25 +6113,29 @@ impl<'a> emPainter<'a> {
             PixelTexture::LinearGradient {
                 color_a,
                 color_b,
-                start,
-                end,
+                fp_tx,
+                fp_tdx,
+                fp_tdy,
             } => {
-                let dx = end.0 - start.0;
-                let dy = end.1 - start.1;
-                let len_sq = dx * dx + dy * dy;
-                if len_sq < 1e-12 {
-                    return *color_a;
+                // C++ InterpolateLinearGradient (emPainter_ScTlIntGra.cpp:24-39)
+                let x = (px - 0.5) as i64;
+                let y = (py - 0.5) as i64;
+                let t = x * fp_tdx + y * fp_tdy - fp_tx;
+                let mut u = t >> 24;
+                if (u as u64) > 255 {
+                    u = !(u >> 48);
                 }
-                let t = ((px - start.0) * dx + (py - start.1) * dy) / len_sq;
-                let g = (t.clamp(0.0, 1.0) * 255.0 + 0.5) as i32;
-                let mix = |a: i32, b: i32| -> u8 {
-                    (((a * (255 - g) + b * g) * 257 + 0x8073) >> 16) as u8
+                let g = u as u32;
+                let inv_g = 255 - g;
+                let mix = |a: u8, b: u8| -> u8 {
+                    (blend_hash_lookup(a, inv_g as u8) as u16
+                        + blend_hash_lookup(b, g as u8) as u16) as u8
                 };
                 emColor::rgba(
-                    mix(color_a.GetRed() as i32, color_b.GetRed() as i32),
-                    mix(color_a.GetGreen() as i32, color_b.GetGreen() as i32),
-                    mix(color_a.GetBlue() as i32, color_b.GetBlue() as i32),
-                    mix(color_a.GetAlpha() as i32, color_b.GetAlpha() as i32),
+                    mix(color_a.GetRed(), color_b.GetRed()),
+                    mix(color_a.GetGreen(), color_b.GetGreen()),
+                    mix(color_a.GetBlue(), color_b.GetBlue()),
+                    mix(color_a.GetAlpha(), color_b.GetAlpha()),
                 )
             }
             PixelTexture::RadialGradient {
@@ -6245,6 +6266,12 @@ impl<'a> emPainter<'a> {
         if x_start >= x_end { return; }
 
         match texture {
+            PixelTexture::LinearGradient { color_a, color_b, fp_tx, fp_tdx, fp_tdy } => {
+                self.blit_span_linear_gradient_g1g2(
+                    proof, y, span, x_start, x_end,
+                    *color_a, *color_b, *fp_tx, *fp_tdx, *fp_tdy,
+                );
+            }
             PixelTexture::RadialGradient { color_inner, color_outer, fp_tx, fp_ty, fp_tdx, fp_tdy } => {
                 self.blit_span_radial_gradient_g1g2(
                     proof, y, span, x_start, x_end,
@@ -6265,6 +6292,82 @@ impl<'a> emPainter<'a> {
                     }
                 }
             }
+        }
+    }
+
+    /// Linear gradient span matching C++ PaintScanlineInt G1G2 + InterpolateLinearGradient.
+    ///
+    /// C++ computes gradient parameter per pixel using 24-bit fixed-point:
+    ///   t = x*TDX + y*TDY - TX; u = t>>24; clamp to [0,255]
+    /// Then blends: a1 = ((255-g)*o1+0x800)>>12, a2 = (g*o2+0x800)>>12
+    #[allow(clippy::too_many_arguments)]
+    fn blit_span_linear_gradient_g1g2(
+        &mut self, proof: DirectProof, y: i32,
+        span: &emPainterScanline::Span, x_start: i32, x_end: i32,
+        color1: emColor, color2: emColor,
+        fp_tx: i64, fp_tdx: i64, fp_tdy: i64,
+    ) {
+        let c1r = color1.GetRed() as u32;
+        let c1g = color1.GetGreen() as u32;
+        let c1b = color1.GetBlue() as u32;
+        let c2r = color2.GetRed() as u32;
+        let c2g = color2.GetGreen() as u32;
+        let c2b = color2.GetBlue() as u32;
+
+        // C++ InterpolateLinearGradient: t = x*TDX + y*TDY - TX (per pixel, incremental)
+        let row = y as i64;
+        let mut t = x_start as i64 * fp_tdx + row * fp_tdy - fp_tx;
+
+        let tw = self.target_width as usize;
+
+        for x in x_start..x_end {
+            let opacity = span_opacity_at(span, x, x_start, x_end);
+            if opacity == 0 {
+                t += fp_tdx;
+                continue;
+            }
+
+            // C++ emPainter_ScTlIntGra.cpp:34: u = t>>24; if ((emUInt64)u>255) u=~(u>>48);
+            let mut u = t >> 24;
+            if (u as u64) > 255 {
+                u = !(u >> 48);
+            }
+            let g = (u as u8) as u32;
+
+            // C++ PaintScanlineInt G1G2, CHANNELS=1:
+            let o1 = (opacity as u32 * color1.GetAlpha() as u32 + 127) / 255;
+            let o2 = (opacity as u32 * color2.GetAlpha() as u32 + 127) / 255;
+            let a1 = ((255 - g) * o1 + 0x800) >> 12;
+            let a2 = (g * o2 + 0x800) >> 12;
+            let a = a1 + a2;
+            if a == 0 {
+                t += fp_tdx;
+                continue;
+            }
+
+            let pr = ((c1r * a1 + c2r * a2) * 257 + 0x8073) >> 16;
+            let pg = ((c1g * a1 + c2g * a2) * 257 + 0x8073) >> 16;
+            let pb = ((c1b * a1 + c2b * a2) * 257 + 0x8073) >> 16;
+
+            let pix_r = (255 * pr * 257 + 0x8073) >> 16;
+            let pix_g = (255 * pg * 257 + 0x8073) >> 16;
+            let pix_b = (255 * pb * 257 + 0x8073) >> 16;
+
+            let offset = (y as usize * tw + x as usize) * 4;
+            let data = self.GetImage(proof).GetWritableMap();
+            let dest = &mut data[offset..offset + 4];
+            if a >= 255 {
+                dest[0] = pix_r as u8;
+                dest[1] = pix_g as u8;
+                dest[2] = pix_b as u8;
+            } else {
+                let tb = (255 - a) * 257;
+                dest[0] = (((dest[0] as u32 * tb + 0x8073) >> 16) + pix_r) as u8;
+                dest[1] = (((dest[1] as u32 * tb + 0x8073) >> 16) + pix_g) as u8;
+                dest[2] = (((dest[2] as u32 * tb + 0x8073) >> 16) + pix_b) as u8;
+            }
+
+            t += fp_tdx;
         }
     }
 

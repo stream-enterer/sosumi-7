@@ -1340,6 +1340,7 @@ impl PanelBehavior for TkTestGrpPanel {
 struct TkTestPanel {
     look: Rc<emLook>,
     border: emBorder,
+    layout: emRasterLayout,
     children_created: bool,
 }
 
@@ -1348,9 +1349,12 @@ impl TkTestPanel {
         let border = emBorder::new(OuterBorderType::Group)
             .with_inner(InnerBorderType::Group)
             .with_caption("Toolkit Test");
+        let mut layout = emRasterLayout::new();
+        layout.preferred_child_tallness = 0.3;
         Self {
             look,
             border,
+            layout,
             children_created: false,
         }
     }
@@ -1359,9 +1363,12 @@ impl TkTestPanel {
         let border = emBorder::new(OuterBorderType::Group)
             .with_inner(InnerBorderType::Group)
             .with_caption(caption);
+        let mut layout = emRasterLayout::new();
+        layout.preferred_child_tallness = 0.3;
         Self {
             look,
             border,
+            layout,
             children_created: false,
         }
     }
@@ -1389,7 +1396,8 @@ impl TkTestPanel {
         id
     }
 
-    fn create_all_categories(&self, ctx: &mut PanelCtx, grid_id: PanelId) {
+    fn create_all_categories(&self, ctx: &mut PanelCtx) {
+        let grid_id = ctx.id;
         let look = self.look.clone();
 
         // 1. Buttons (C++ emTestPanel.cpp:558-576)
@@ -1931,21 +1939,15 @@ impl PanelBehavior for TkTestPanel {
 
         if !self.children_created {
             self.children_created = true;
-
-            // Create grid child with emRasterLayout (PCT=0.3)
-            let mut layout = emRasterLayout::new();
-            layout.preferred_child_tallness = 0.3;
-            let grid_id = ctx.create_child_with("grid", Box::new(layout));
-
-            // Create all 10 category groups under the grid
-            self.create_all_categories(ctx, grid_id);
+            // Create all 10 category groups as direct children (C++ TkTest
+            // inherits from emRasterGroup, so categories are direct children)
+            self.create_all_categories(ctx);
         }
 
-        // Position grid in border content rect
+        // Position children using raster layout in border content rect
+        // (matches C++ emRasterGroup::LayoutChildren → emRasterLayout)
         let cr = self.border.GetContentRect(rect.w, rect.h, &self.look);
-        if let Some(grid) = ctx.find_child_by_name("grid") {
-            ctx.layout_child(grid, cr.x, cr.y, cr.w, cr.h);
-        }
+        self.layout.do_layout_skip(ctx, None, Some(cr));
         let cc =
             self.border
                 .content_canvas_color(ctx.GetCanvasColor(), &self.look, ctx.is_enabled());
