@@ -553,7 +553,8 @@ impl PanelBehavior for TestPanel {
                 color_inner: emColor::rgba(0xCC, 0xCC, 0x33, 0xFF),
                 color_outer: emColor::rgba(0, 0, 0xFF, 0x60),
                 center: (0.235, 0.918),
-                radius: 0.04,
+                radius_x: 0.04,
+                radius_y: 0.04,
             },
             emColor::TRANSPARENT,
         );
@@ -561,6 +562,11 @@ impl PanelBehavior for TestPanel {
             &star(0.240),
             &emTexture::emImage {
                 image: self.test_image.clone(),
+                x: 0.0,
+                y: 0.0,
+                w: 0.002,
+                h: 0.002,
+                alpha: 255,
                 extension: ImageExtension::Clamp,
                 quality: ImageQuality::Bilinear,
             },
@@ -599,7 +605,8 @@ impl PanelBehavior for TestPanel {
                 color_inner: emColor::TRANSPARENT,
                 color_outer: emColor::rgba(0, 204, 136, 255),
                 center: (0.24, 0.945),
-                radius: 0.01,
+                radius_x: 0.01,
+                radius_y: 0.01,
             },
             emColor::TRANSPARENT,
         );

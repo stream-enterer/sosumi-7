@@ -60,8 +60,22 @@ pub enum emTexture {
     /// Solid color fill.
     SolidColor(emColor),
     /// emImage fill with extension and quality options.
+    ///
+    /// Matches C++ `emImageTexture(x, y, w, h, image, alpha, extension, ...)`.
+    /// The image is mapped into the rectangle `(x, y, w, h)` in logical
+    /// coordinates, and `alpha` (0–255) applies additional blending.
     emImage {
         image: emImage,
+        /// Upper-left X of the target rectangle in logical coordinates.
+        x: f64,
+        /// Upper-left Y of the target rectangle in logical coordinates.
+        y: f64,
+        /// Width of the target rectangle in logical coordinates.
+        w: f64,
+        /// Height of the target rectangle in logical coordinates.
+        h: f64,
+        /// Additional alpha blending value (0–255).
+        alpha: u8,
         extension: ImageExtension,
         quality: ImageQuality,
     },
@@ -75,13 +89,18 @@ pub enum emTexture {
         end: (f64, f64),
     },
     /// Radial gradient between two colors.
+    ///
+    /// Matches C++ `emRadialGradientTexture(x, y, w, h, color1, color2)` where
+    /// center = `(x + w/2, y + h/2)` and radii = `(w/2, h/2)`.
     RadialGradient {
         color_inner: emColor,
         color_outer: emColor,
         /// Center (x, y) in local coordinates.
         center: (f64, f64),
-        /// Radius.
-        radius: f64,
+        /// X radius (half-width of bounding ellipse).
+        radius_x: f64,
+        /// Y radius (half-height of bounding ellipse).
+        radius_y: f64,
     },
     /// emImage tinted with a color (multiplied).
     ImageColored {

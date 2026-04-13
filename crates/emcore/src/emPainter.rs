@@ -83,6 +83,8 @@ enum PixelTexture<'t> {
     },
     emImage {
         image: &'t emImage,
+        /// Additional alpha (0–255). C++ `texture.GetAlpha()`.
+        alpha: u8,
         extension: ImageExtension,
         quality: ImageQuality,
         inv_scale_x: f64,
@@ -6017,12 +6019,13 @@ impl<'a> emPainter<'a> {
                 color_inner,
                 color_outer,
                 center,
-                radius,
+                radius_x,
+                radius_y,
             } => {
                 let pcx = center.0 * state.scale_x + state.offset_x;
                 let pcy = center.1 * state.scale_y + state.offset_y;
-                let prx = (radius * state.scale_x).max(1e-3);
-                let pry = (radius * state.scale_y).max(1e-3);
+                let prx = (radius_x * state.scale_x).max(1e-3);
+                let pry = (radius_y * state.scale_y).max(1e-3);
                 let nx = (255_i64 << 23) as f64 / prx;
                 let ny = (255_i64 << 23) as f64 / pry;
                 let _ = grad_sqrt_table();
@@ -6037,17 +6040,37 @@ impl<'a> emPainter<'a> {
             }
             emTexture::emImage {
                 image,
+                x,
+                y,
+                w,
+                h,
+                alpha,
                 extension,
                 quality,
-            } => PixelTexture::emImage {
-                image,
-                extension: *extension,
-                quality: *quality,
-                inv_scale_x: 1.0 / state.scale_x,
-                inv_scale_y: 1.0 / state.scale_y,
-                offset_x: state.offset_x,
-                offset_y: state.offset_y,
-            },
+            } => {
+                // C++ emPainter_ScTl.cpp: tw = w * ScaleX, th = h * ScaleY
+                // tdx = (ImgW << 24) / tw, tdy = (ImgH << 24) / th
+                // tx = x * ScaleX + OriginX, ty = y * ScaleY + OriginY
+                // In our sampling code we convert pixel coords back to image
+                // coords: img_x = (px - tex_offset_x) * inv_tex_scale_x
+                let tw = w * state.scale_x;
+                let th = h * state.scale_y;
+                let tx = x * state.scale_x + state.offset_x;
+                let ty = y * state.scale_y + state.offset_y;
+                let iw = image.GetWidth() as f64;
+                let ih = image.GetHeight() as f64;
+                // inv_scale maps pixel distance to image-pixel distance
+                PixelTexture::emImage {
+                    image,
+                    alpha: *alpha,
+                    extension: *extension,
+                    quality: *quality,
+                    inv_scale_x: iw / tw,
+                    inv_scale_y: ih / th,
+                    offset_x: tx,
+                    offset_y: ty,
+                }
+            }
             emTexture::ImageColored {
                 image,
                 color,
@@ -6141,6 +6164,7 @@ impl<'a> emPainter<'a> {
             }
             PixelTexture::emImage {
                 image,
+                alpha,
                 extension,
                 quality,
                 inv_scale_x,
@@ -6150,7 +6174,19 @@ impl<'a> emPainter<'a> {
             } => {
                 let lx = (px - offset_x) * inv_scale_x;
                 let ly = (py - offset_y) * inv_scale_y;
-                Self::sample_image_at(image, lx, ly, *extension, *quality)
+                let sampled = Self::sample_image_at(image, lx, ly, *extension, *quality);
+                if *alpha == 255 {
+                    sampled
+                } else {
+                    // C++ PSF_INT_A: multiply each channel by alpha/255
+                    let a = *alpha as u32;
+                    emColor::rgba(
+                        ((sampled.GetRed() as u32 * a * 257 + 0x8073) >> 16) as u8,
+                        ((sampled.GetGreen() as u32 * a * 257 + 0x8073) >> 16) as u8,
+                        ((sampled.GetBlue() as u32 * a * 257 + 0x8073) >> 16) as u8,
+                        ((sampled.GetAlpha() as u32 * a * 257 + 0x8073) >> 16) as u8,
+                    )
+                }
             }
             PixelTexture::ImageColored {
                 image,

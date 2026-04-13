@@ -934,10 +934,14 @@ impl TestPanel {
             emColor::TRANSPARENT,
         );
 
-        // Textured polygons — star shapes
-        let star = make_star(0.215, 0.917, 0.015, 0.015, 8);
+        // Textured polygons — star shapes (C++ emTestPanel.cpp:372-413)
+        // C++ uses hardcoded 8-vertex arrays, not generated star patterns.
+        let star1: [(f64, f64); 8] = [
+            (0.200, 0.905), (0.215, 0.912), (0.230, 0.900), (0.222, 0.915),
+            (0.230, 0.930), (0.220, 0.922), (0.205, 0.935), (0.212, 0.920),
+        ];
         p.paint_polygon_textured(
-            &star,
+            &star1,
             &emTexture::LinearGradient {
                 color_a: emColor::rgba(0, 0xFF, 0, 0x80),
                 color_b: emColor::rgba(0xFF, 0xFF, 0, 0xFF),
@@ -947,23 +951,41 @@ impl TestPanel {
             emColor::TRANSPARENT,
         );
 
-        let star2 = make_star(0.235, 0.917, 0.015, 0.015, 8);
+        // C++ emRadialGradientTexture(0.21, 0.90, 0.05, 0.035, ...)
+        // center = (0.21+0.025, 0.90+0.0175) = (0.235, 0.9175)
+        // rx = 0.025, ry = 0.0175
+        let star2: [(f64, f64); 8] = [
+            (0.220, 0.905), (0.235, 0.912), (0.250, 0.900), (0.242, 0.915),
+            (0.250, 0.930), (0.240, 0.922), (0.225, 0.935), (0.232, 0.920),
+        ];
         p.paint_polygon_textured(
             &star2,
             &emTexture::RadialGradient {
                 color_inner: emColor::rgba(0xCC, 0xCC, 0x33, 0xFF),
                 color_outer: emColor::rgba(0, 0, 0xFF, 0x60),
-                center: (0.21, 0.90),
-                radius: 0.05,
+                center: (0.235, 0.9175),
+                radius_x: 0.025,
+                radius_y: 0.0175,
             },
             emColor::TRANSPARENT,
         );
 
-        let star3 = make_star(0.255, 0.917, 0.015, 0.015, 8);
+        // C++ emImageTexture(0.0, 0.0, 0.002, 0.002*H/W, TestImage, 192)
+        let img_h_ratio = 0.002 * self.test_image.GetHeight() as f64
+            / self.test_image.GetWidth() as f64;
+        let star3: [(f64, f64); 8] = [
+            (0.240, 0.905), (0.255, 0.912), (0.270, 0.900), (0.262, 0.915),
+            (0.270, 0.930), (0.260, 0.922), (0.245, 0.935), (0.252, 0.920),
+        ];
         p.paint_polygon_textured(
             &star3,
             &emTexture::emImage {
                 image: self.test_image.clone(),
+                x: 0.0,
+                y: 0.0,
+                w: 0.002,
+                h: img_h_ratio,
+                alpha: 192,
                 extension: ImageExtension::Repeat,
                 quality: ImageQuality::Bilinear,
             },
@@ -2394,16 +2416,6 @@ impl PanelBehavior for PolyDrawPanel {
 // ═══════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════
-
-fn make_star(cx: f64, cy: f64, rx: f64, ry: f64, points: usize) -> Vec<(f64, f64)> {
-    let mut verts = Vec::with_capacity(points * 2);
-    for i in 0..(points * 2) {
-        let a = PI * i as f64 / points as f64 - PI / 2.0;
-        let r = if i % 2 == 0 { 1.0 } else { 0.4 };
-        verts.push((cx + a.cos() * rx * r, cy + a.sin() * ry * r));
-    }
-    verts
-}
 
 fn render_testpanel(
     name: &str,
