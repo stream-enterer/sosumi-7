@@ -169,6 +169,8 @@ impl Default for emPackLayout {
 
 impl PanelBehavior for emPackLayout {
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        let cc = ctx.GetCanvasColor();
+        ctx.set_all_children_canvas_color(cc);
         self.do_layout(ctx);
     }
 

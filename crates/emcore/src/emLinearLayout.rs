@@ -485,6 +485,8 @@ impl emLinearLayout {
 
 impl PanelBehavior for emLinearLayout {
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        let cc = ctx.GetCanvasColor();
+        ctx.set_all_children_canvas_color(cc);
         self.do_layout(ctx);
     }
 

@@ -335,6 +335,10 @@ impl emRasterLayout {
 
 impl PanelBehavior for emRasterLayout {
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        // Propagate parent canvas color to children. emRasterLayout has no
+        // border, so pass through unchanged — matches C++ emPanel default.
+        let cc = ctx.GetCanvasColor();
+        ctx.set_all_children_canvas_color(cc);
         self.do_layout(ctx);
     }
 
