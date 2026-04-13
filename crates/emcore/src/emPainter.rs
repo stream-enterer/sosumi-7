@@ -90,7 +90,7 @@ enum PixelTexture<'t> {
         /// Additional alpha (0–255). C++ `texture.GetAlpha()`.
         alpha: u8,
         extension: ImageExtension,
-        /// C++ ScanlineTool Alpha: (USP * texture_alpha + 127) / 255.
+        /// C++ ScanlineTool Alpha: raw 8-bit texture alpha.
         sct_alpha: u32,
         /// True if HAVE_ALPHA (texture alpha < 255).
         have_alpha: bool,
@@ -6211,11 +6211,7 @@ impl<'a> emPainter<'a> {
                     image,
                     alpha: *alpha,
                     extension: *extension,
-                    sct_alpha: if *alpha < 255 {
-                        (4096u32 * *alpha as u32 + 127) / 255
-                    } else {
-                        4096
-                    },
+                    sct_alpha: *alpha as u32,
                     have_alpha: *alpha < 255,
                     fp_tdx,
                     fp_tdy,
@@ -6686,9 +6682,6 @@ impl<'a> emPainter<'a> {
         for x in x_start..x_end {
             let opacity = span_opacity_at(span, x, x_start, x_end);
 
-            #[allow(unused)]
-            let dbg = false;
-
             // C++ cyx: row accumulator for this dest pixel, initialized with rounding.
             let mut cyx = [0x7F_FFFFu32; 4];
 
@@ -6708,19 +6701,6 @@ impl<'a> emPainter<'a> {
                 // Read first source row with oy1 weight.
                 // C++ READ_PREMUL_MUL_COLOR(cy, p, oy1)
                 let p_offset = (img_y + img_x) as usize;
-                if dbg {
-                    let p = &img_map[p_offset..p_offset+channels];
-                    // Also read directly from image for comparison
-                    let abs_off = img_map_offset + p_offset;
-                    let full_map = image.GetMap();
-                    let img_w_orig = image.GetWidth() as usize;
-                    let row = abs_off / (img_w_orig * channels);
-                    let col = (abs_off - row * img_w_orig * channels) / channels;
-                    let direct = image.GetPixel(col as u32, row as u32);
-                    eprintln!("  col: img_x={img_x} img_y={img_y} p_off={p_offset} abs={abs_off} → orig({col},{row}) map=({},{},{},{}) direct=({},{},{},{})",
-                        p[0], p[1], p[2], if channels>3 {p[3]} else {255},
-                        direct[0], direct[1], direct[2], if channels>3 {direct[3]} else {255});
-                }
                 Self::read_premul_mul_color(&mut cy, img_map, p_offset, channels, oy1);
 
                 // Add remaining source rows.
@@ -6735,14 +6715,6 @@ impl<'a> emPainter<'a> {
                         let mut ctmp = [0u32; 4];
                         loop {
                             let p_off = (img_y + img_x) as usize;
-                            if dbg && img_x == 560 {
-                                let abs = img_map_offset + p_off;
-                                let orig_row = abs / (image.GetWidth() as usize * channels);
-                                let orig_col = (abs - orig_row * image.GetWidth() as usize * channels) / channels;
-                                let pp = &img_map[p_off..p_off+channels];
-                                eprintln!("    Y-row: img_y={img_y} p_off={p_off} abs={abs} orig({orig_col},{orig_row}) px=({},{},{},{})",
-                                    pp[0], pp[1], pp[2], pp[3]);
-                            }
                             Self::add_read_premul_color(&mut ctmp, img_map, p_off, channels);
                             img_y += img_dy;
                             if img_y >= img_sy { img_y = 0; }
@@ -6764,11 +6736,6 @@ impl<'a> emPainter<'a> {
                 // FINPREMUL_SHR_COLOR(cy, 8)
                 Self::finpremul_shr_color(&mut cy, channels, 8);
 
-                if dbg {
-                    eprintln!("  Y-acc col {}: cy=({},{},{},{}) img_x_before={img_x}",
-                        img_x / img_dx, cy[0], cy[1], cy[2], cy[3]);
-                }
-
                 // INCREMENT_IMAGE_X: imgX += imgDX; if imgX >= imgSX { imgX = 0; }
                 img_x += img_dx;
                 if img_x >= img_sx { img_x = 0; }
@@ -6787,11 +6754,6 @@ impl<'a> emPainter<'a> {
             for ch in 0..channels {
                 s[ch] = (cyx[ch] >> 24) as u8;
             }
-            if dbg {
-                eprintln!("DBG ({x},{y}): s=({},{},{},{}) cyx=({:08X},{:08X},{:08X},{:08X}) opacity={} ox_remain={}",
-                    s[0], s[1], s[2], s[3], cyx[0], cyx[1], cyx[2], cyx[3], opacity, ox);
-            }
-
             ox -= oxs;
 
             // Skip blend if zero opacity.
@@ -6799,7 +6761,7 @@ impl<'a> emPainter<'a> {
 
             // --- PaintScanlineInt blend (no gradient) ---
             // C++ HAVE_ALPHA: o = (opacity * sct.Alpha + 127) / 255
-            // sct_alpha = (USP * texture_alpha + 127) / 255 where USP=4096.
+            // sct_alpha is raw 8-bit texture alpha (C++ sct.Alpha).
             let o: u32 = if have_alpha {
                 (opacity as u32 * sct_alpha + 127) / 255
             } else {
