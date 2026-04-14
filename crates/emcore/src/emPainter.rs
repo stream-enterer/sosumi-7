@@ -4706,6 +4706,7 @@ impl<'a> emPainter<'a> {
     ///
     /// `arrow_dirs`: optional pre-computed direction vectors `((nx1,ny1),(nx2,ny2))`
     /// matching C++ parameters. When `None`, directions are extracted from vertices.
+    /// C++ PaintPolylineWithArrowsAlterBuf (emPainter.cpp:2820-2906).
     pub(crate) fn PaintPolylineWithArrows(
         &mut self,
         vertices: &[(f64, f64)],
@@ -4714,136 +4715,75 @@ impl<'a> emPainter<'a> {
         canvas_color: emColor,
         arrow_dirs: Option<((f64, f64), (f64, f64))>,
     ) {
-        if vertices.len() < 2 {
-            return;
-        }
-        let has_start_arrow = !closed && stroke.start_end.IsDecorated();
-        let has_end_arrow = !closed && stroke.finish_end.IsDecorated();
-
-        if !has_start_arrow && !has_end_arrow {
-            self.PaintPolylineWithoutArrows(vertices, stroke, closed, canvas_color);
-            return;
-        }
-
         let n = vertices.len();
+        if n == 0 { return; }
 
-        // C++ passes (nx1,ny1,nx2,ny2) as explicit parameters from the caller.
-        // Use provided directions when available, otherwise extract from vertices.
-        let (start_dx, start_dy, end_dx, end_dy) = if let Some(((nx1, ny1), (nx2, ny2))) = arrow_dirs {
-            (nx1, ny1, -nx2, -ny2)
-        } else {
-            let (sdx, sdy) = Self::extract_segment_dir(vertices, true);
-            let (edx, edy) = Self::extract_segment_dir(vertices, false);
-            (sdx, sdy, edx, edy)
-        };
-
-        let rounded = stroke.join == super::emStroke::LineJoin::Round
-            || stroke.cap == super::emStroke::LineCap::Round;
-
-        // C++ PaintPolylineWithArrowsAlterBuf: iterate segments from each end,
-        // test each segment against the decoration shape boundary via CutLineAtArrow.
-        // When t < 1.0, interpolate the cut point on that segment and break.
-        // When t >= 1.0, the entire segment is inside the decoration — skip it.
-        let mut work_verts = vertices.to_vec();
+        let mut work = vertices.to_vec();
         let mut p1: usize = 0;
         let mut p2: usize = n - 1;
 
-        if has_start_arrow {
-            let x1 = work_verts[0].0;
-            let y1 = work_verts[0].1;
+        let ((nx1, ny1), (nx2, ny2)) = if let Some(dirs) = arrow_dirs {
+            dirs
+        } else {
+            let (sdx, sdy) = Self::extract_segment_dir(vertices, true);
+            let (edx, edy) = Self::extract_segment_dir(vertices, false);
+            ((sdx, sdy), (-edx, -edy))
+        };
+
+        let has_start = stroke.start_end.IsDecorated();
+        let has_end = stroke.finish_end.IsDecorated();
+
+        if has_start {
+            let (x0, y0) = work[0];
             while p1 < p2 {
-                let ex1 = work_verts[p1].0 - x1;
-                let ey1 = work_verts[p1].1 - y1;
-                let ex2 = work_verts[p1 + 1].0 - x1;
-                let ey2 = work_verts[p1 + 1].1 - y1;
-                // Transform to decoration-local coords: rotate by (nx1, ny1)
+                let (ex1, ey1) = (work[p1].0 - x0, work[p1].1 - y0);
+                let (ex2, ey2) = (work[p1 + 1].0 - x0, work[p1 + 1].1 - y0);
                 let t = Self::cut_line_at_arrow(
-                    ex1 * start_dx + ey1 * start_dy,
-                    ey1 * start_dx - ex1 * start_dy,
-                    ex2 * start_dx + ey2 * start_dy,
-                    ey2 * start_dx - ex2 * start_dy,
-                    stroke.width,
-                    stroke,
-                    &stroke.start_end,
+                    ex1 * nx1 + ey1 * ny1, ey1 * nx1 - ex1 * ny1,
+                    ex2 * nx1 + ey2 * ny1, ey2 * nx1 - ex2 * ny1,
+                    stroke.width, stroke, &stroke.start_end,
                 );
                 if t < 1.0 {
-                    work_verts[p1].0 = (1.0 - t) * work_verts[p1].0 + t * work_verts[p1 + 1].0;
-                    work_verts[p1].1 = (1.0 - t) * work_verts[p1].1 + t * work_verts[p1 + 1].1;
+                    work[p1].0 = (1.0 - t) * work[p1].0 + t * work[p1 + 1].0;
+                    work[p1].1 = (1.0 - t) * work[p1].1 + t * work[p1 + 1].1;
                     break;
                 }
                 p1 += 1;
             }
         }
 
-        if has_end_arrow {
-            let x2 = work_verts[p2].0;
-            let y2 = work_verts[p2].1;
+        if has_end {
+            let (x0, y0) = work[p2];
             while p2 > p1 {
-                let ex1 = work_verts[p2].0 - x2;
-                let ey1 = work_verts[p2].1 - y2;
-                let ex2 = work_verts[p2 - 1].0 - x2;
-                let ey2 = work_verts[p2 - 1].1 - y2;
-                // Direction for end is negated (nx2, ny2 point into the line)
+                let (ex1, ey1) = (work[p2].0 - x0, work[p2].1 - y0);
+                let (ex2, ey2) = (work[p2 - 1].0 - x0, work[p2 - 1].1 - y0);
                 let t = Self::cut_line_at_arrow(
-                    ex1 * (-end_dx) + ey1 * (-end_dy),
-                    ey1 * (-end_dx) - ex1 * (-end_dy),
-                    ex2 * (-end_dx) + ey2 * (-end_dy),
-                    ey2 * (-end_dx) - ex2 * (-end_dy),
-                    stroke.width,
-                    stroke,
-                    &stroke.finish_end,
+                    ex1 * nx2 + ey1 * ny2, ey1 * nx2 - ex1 * ny2,
+                    ex2 * nx2 + ey2 * ny2, ey2 * nx2 - ex2 * ny2,
+                    stroke.width, stroke, &stroke.finish_end,
                 );
                 if t < 1.0 {
-                    work_verts[p2].0 = (1.0 - t) * work_verts[p2].0 + t * work_verts[p2 - 1].0;
-                    work_verts[p2].1 = (1.0 - t) * work_verts[p2].1 + t * work_verts[p2 - 1].1;
+                    work[p2].0 = (1.0 - t) * work[p2].0 + t * work[p2 - 1].0;
+                    work[p2].1 = (1.0 - t) * work[p2].1 + t * work[p2 - 1].1;
                     break;
                 }
                 p2 -= 1;
             }
         }
 
-        // Paint the polyline body (only the non-skipped segment range).
-        let body = &work_verts[p1..=p2];
-        if body.len() >= 2 {
-            self.PaintPolylineWithoutArrows(body, stroke, closed, canvas_color);
-        }
+        
+        self.PaintPolylineWithoutArrows(&work[p1..=p2], stroke, closed, canvas_color);
 
-        // Direction vectors point INTO the line (toward the interior).
-        // Perpendicular = (dy, -dx) of the into-line direction, matching C++ convention.
-        if has_start_arrow {
+        let rounded = stroke.cap == super::emStroke::LineCap::Round
+            || stroke.join == super::emStroke::LineJoin::Round;
+
+        if has_start {
             let (x, y) = vertices[0];
-            let nx = start_dy;
-            let ny = -start_dx;
-            self.paint_stroke_end(
-                x,
-                y,
-                nx,
-                ny,
-                start_dx,
-                start_dy,
-                stroke.width,
-                stroke.color,
-                &stroke.start_end,
-                rounded,
-            );
+            self.paint_stroke_end(x, y, nx1, ny1, ny1, -nx1, stroke.width, stroke.color, &stroke.start_end, rounded);
         }
-
-        if has_end_arrow {
+        if has_end {
             let (x, y) = vertices[n - 1];
-            let nx = -end_dy;
-            let ny = end_dx;
-            self.paint_stroke_end(
-                x,
-                y,
-                nx,
-                ny,
-                -end_dx,
-                -end_dy,
-                stroke.width,
-                stroke.color,
-                &stroke.finish_end,
-                rounded,
-            );
+            self.paint_stroke_end(x, y, nx2, ny2, ny2, -nx2, stroke.width, stroke.color, &stroke.finish_end, rounded);
         }
     }
 
