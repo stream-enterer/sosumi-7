@@ -2958,147 +2958,85 @@ impl<'a> emPainter<'a> {
     ///   - Measures text at `max_char_height`, scales down if it exceeds the box.
     ///   - `box_h_align` / `box_v_align`: how to position the text block.
     ///   - `text_alignment`: how to align individual lines horizontally.
-    ///   - `min_width_scale`: minimum width squeeze factor (default 0.5).
-    ///   - `formatted`: interpret `\n`, `\r\n`, `\t` (default true).
-    ///   - `rel_line_space`: vertical space between lines in units of char_height.
+    /// C++ emPainter::PaintTextBoxed (emPainter.cpp:2566-2702).
     #[allow(clippy::too_many_arguments)]
     pub fn PaintTextBoxed(
         &mut self,
-        x: f64,
-        y: f64,
-        w: f64,
-        h: f64,
-        text: &str,
-        max_char_height: f64,
-        color: emColor,
-        canvas_color: emColor,
-        box_h_align: TextAlignment,
-        box_v_align: VAlign,
+        mut x: f64, mut y: f64, w: f64, h: f64,
+        text: &str, max_char_height: f64,
+        color: emColor, canvas_color: emColor,
+        box_h_align: TextAlignment, box_v_align: VAlign,
         text_alignment: TextAlignment,
-        min_width_scale: f64,
-        formatted: bool,
-        rel_line_space: f64,
+        min_width_scale: f64, formatted: bool, rel_line_space: f64,
     ) {
-        if text.is_empty() || w <= 0.0 || h <= 0.0 || max_char_height <= 0.0 {
-            return;
-        }
+        if text.is_empty() { return; }
         let is_recording = self.try_record(DrawOp::PaintTextBoxed {
-            x,
-            y,
-            w,
-            h,
-            text: text.to_string(),
-            max_char_height,
-            color,
-            canvas_color,
-            box_h_align,
-            box_v_align,
-            text_alignment,
-            min_width_scale,
-            formatted,
-            rel_line_space,
+            x, y, w, h, text: text.to_string(), max_char_height, color, canvas_color,
+            box_h_align, box_v_align, text_alignment, min_width_scale, formatted, rel_line_space,
         }).is_none();
         if is_recording {
-            if !self.record_subops {
-                return;
-            }
-            // Diagnostic mode: execute body so sub-ops get recorded at depth+1.
+            if !self.record_subops { return; }
             self.record_depth += 1;
         }
 
-        // Literal port of C++ PaintTextBoxed (emPainter.cpp:2174-2284).
-        let (mut tw, mut th) =
-            Self::GetTextSize(text, max_char_height, formatted, rel_line_space);
-        if tw <= 0.0 {
-            if is_recording { self.record_depth -= 1; }
-            return;
-        }
-
         let mut ch = max_char_height;
+        let (mut tw, mut th) = Self::GetTextSize(text, ch, formatted, rel_line_space);
+        if tw <= 0.0 { if is_recording { self.record_depth -= 1; } return; }
 
-        if th > h {
-            ch *= h / th;
-            tw *= h / th;
-            th = h;
-        }
+        // C++ lines 2605-2630: scale ch/tw/th to fit in (w,h)
+        if th > h { ch *= h / th; tw *= h / th; th = h; }
         let mut ws = w / tw;
         if ws < 1.0 {
             tw = w;
             if ws < min_width_scale {
-                th *= ws / min_width_scale;
-                ch *= ws / min_width_scale;
-                ws = min_width_scale;
+                th *= ws / min_width_scale; ch *= ws / min_width_scale; ws = min_width_scale;
             }
         } else {
             ws = 1.0;
             if ws < min_width_scale {
-                ws = min_width_scale;
-                tw *= ws;
-                if tw > w {
-                    th *= w / tw;
-                    ch *= w / tw;
-                    tw = w;
-                }
+                ws = min_width_scale; tw *= ws;
+                if tw > w { th *= w / tw; ch *= w / tw; tw = w; }
             }
         }
 
-        let mut bx = x;
+        // C++ lines 2631-2638: box alignment
         if box_h_align != TextAlignment::Left {
-            if box_h_align == TextAlignment::Right {
-                bx += w - tw;
-            } else {
-                bx += (w - tw) * 0.5;
-            }
+            if box_h_align == TextAlignment::Right { x += w - tw; }
+            else { x += (w - tw) * 0.5; }
         }
-        let mut by = y;
         if box_v_align != VAlign::Top {
-            if box_v_align == VAlign::Bottom {
-                by += h - th + ch * rel_line_space;
-            } else {
-                by += (h - th + ch * rel_line_space) * 0.5;
-            }
+            if box_v_align == VAlign::Bottom { y += h - th + ch * rel_line_space; }
+            else { y += (h - th + ch * rel_line_space) * 0.5; }
         }
 
         if formatted {
-            // Literal port of C++ formatted rendering (emPainter.cpp:2222-2279).
-            // Operates on raw bytes to match C++ byte-index column arithmetic.
+            // C++ lines 2639-2696: formatted rendering with tabs and line breaks
             let cw = ch * ws / emFontCache::CHAR_BOX_TALLNESS;
             let bytes = text.as_bytes();
             let text_len = bytes.len();
-            let mut ty = by;
+            let mut ty = y;
             let mut i = 0usize;
             loop {
-                let mut tx = bx;
-                // Per-line text alignment: measure line width first.
+                let mut tx = x;
                 if text_alignment != TextAlignment::Left {
                     let mut j2 = i;
                     let mut cols2 = -(j2 as i32);
                     while j2 < text_len {
                         let c = bytes[j2];
                         if c <= 0x0d {
-                            if c == 0x09 {
-                                cols2 = ((cols2 + j2 as i32 + 8) & !7) - j2 as i32;
-                            } else if c == 0x0a || c == 0x0d {
-                                break;
-                            }
+                            if c == 0x09 { cols2 = ((cols2 + j2 as i32 + 8) & !7) - j2 as i32; }
+                            else if c == 0x0a || c == 0x0d { break; }
                         } else if c >= 0x80 {
                             let n = utf8_char_len(c);
-                            if n > 1 {
-                                j2 += n - 1;
-                                cols2 -= (n - 1) as i32;
-                            }
+                            if n > 1 { j2 += n - 1; cols2 -= (n - 1) as i32; }
                         }
                         j2 += 1;
                     }
                     cols2 += j2 as i32;
-                    if text_alignment == TextAlignment::Right {
-                        tx += tw - cols2 as f64 * cw;
-                    } else {
-                        tx += (tw - cols2 as f64 * cw) * 0.5;
-                    }
+                    if text_alignment == TextAlignment::Right { tx += tw - cols2 as f64 * cw; }
+                    else { tx += (tw - cols2 as f64 * cw) * 0.5; }
                 }
 
-                // Render line segments (split by tabs).
                 let mut cols = 0i32;
                 let mut j = i;
                 let mut k = -(i as i32);
@@ -3106,52 +3044,29 @@ impl<'a> emPainter<'a> {
                     let c = bytes[i];
                     if c <= 0x0d {
                         if c == 0x09 {
-                            // Tab: flush preceding text segment, advance to tab stop.
                             if j < i {
-                                let seg = &text[j..i];
-                                self.PaintText(
-                                    tx + cols as f64 * cw,
-                                    ty, seg, ch, ws, color, canvas_color,
-                                );
+                                self.PaintText(tx + cols as f64 * cw, ty, &text[j..i], ch, ws, color, canvas_color);
                                 cols += k + i as i32;
                             }
                             cols = (cols + 8) & !7;
-                            j = i + 1;
-                            k = -(j as i32);
-                        } else if c == 0x0a || c == 0x0d {
-                            break;
-                        }
+                            j = i + 1; k = -(j as i32);
+                        } else if c == 0x0a || c == 0x0d { break; }
                     } else if c >= 0x80 {
                         let n = utf8_char_len(c);
-                        if n > 1 {
-                            i += n - 1;
-                            k -= (n - 1) as i32;
-                        }
+                        if n > 1 { i += n - 1; k -= (n - 1) as i32; }
                     }
                     i += 1;
                 }
-                // Flush remaining segment on this line.
                 if j < i {
-                    let seg = &text[j..i];
-                    self.PaintText(
-                        tx + cols as f64 * cw,
-                        ty, seg, ch, ws, color, canvas_color,
-                    );
+                    self.PaintText(tx + cols as f64 * cw, ty, &text[j..i], ch, ws, color, canvas_color);
                 }
-
-                // End of text?
-                if i >= text_len {
-                    break;
-                }
-                // Handle \r\n
-                if bytes[i] == 0x0d && i + 1 < text_len && bytes[i + 1] == 0x0a {
-                    i += 1;
-                }
+                if i >= text_len { break; }
+                if bytes[i] == 0x0d && i + 1 < text_len && bytes[i + 1] == 0x0a { i += 1; }
                 i += 1;
                 ty += ch * (1.0 + rel_line_space);
             }
         } else {
-            self.PaintText(bx, by, text, ch, ws, color, canvas_color);
+            self.PaintText(x, y, text, ch, ws, color, canvas_color);
         }
         if is_recording { self.record_depth -= 1; }
     }
