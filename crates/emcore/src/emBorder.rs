@@ -1476,6 +1476,7 @@ How to move or set the focus:\n\
                     sr,
                     sr,
                     &emStroke::new(color, e),
+                    painter.GetCanvasColor(),
                 );
             }
             OuterBorderType::Group => {

@@ -617,6 +617,7 @@ fn painter_outline_round_rect() {
     let mut img = white_canvas(ew, eh);
     {
         let mut p = white_painter(&mut img);
+        let cc = p.GetCanvasColor();
         p.PaintRoundRectOutline(
             20.0,
             20.0,
@@ -625,9 +626,11 @@ fn painter_outline_round_rect() {
             20.0,
             20.0,
             &emStroke::new(emColor::BLACK, 3.0),
+            cc,
         );
     }
     record_painter_ops("outline_round_rect", ew, eh, |p| {
+        let cc = p.GetCanvasColor();
         p.PaintRoundRectOutline(
             20.0,
             20.0,
@@ -636,6 +639,7 @@ fn painter_outline_round_rect() {
             20.0,
             20.0,
             &emStroke::new(emColor::BLACK, 3.0),
+            cc,
         );
     });
     // Residual: arc approximation segment GetCount differs slightly from C++.

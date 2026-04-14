@@ -784,6 +784,7 @@ impl TestPanel {
             0.001,
             0.001,
             &emStroke::new(emColor::WHITE, 0.001),
+            bg,
         );
         p.PaintRoundRectOutline(
             0.07,
@@ -793,6 +794,7 @@ impl TestPanel {
             0.001,
             0.002,
             &emStroke::new(emColor::WHITE, 0.001),
+            bg,
         );
         p.PaintRoundRectOutline(
             0.10,
@@ -802,6 +804,7 @@ impl TestPanel {
             0.003,
             0.002,
             &emStroke::new(emColor::WHITE, 0.003),
+            bg,
         );
         p.PaintRoundRectOutline(
             0.12,
@@ -811,11 +814,12 @@ impl TestPanel {
             0.001,
             0.011,
             &emStroke::new(emColor::WHITE, 0.0001),
+            bg,
         );
         {
             let mut dd_s = emStroke::new(emColor::WHITE, 0.00002);
             dd_s.dash_type = DashType::DashDotted;
-            p.PaintRoundRectOutline(0.135, 0.88, 0.01, 0.01, 0.001, 0.001, &dd_s);
+            p.PaintRoundRectOutline(0.135, 0.88, 0.01, 0.01, 0.001, 0.001, &dd_s, bg);
         }
         p.PaintRoundRectOutline(
             0.15,
@@ -825,6 +829,7 @@ impl TestPanel {
             -0.0004,
             -0.0004,
             &emStroke::new(emColor::WHITE, 0.001),
+            bg,
         );
 
         // Bezier curves

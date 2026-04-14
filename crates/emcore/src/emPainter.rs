@@ -4149,11 +4149,7 @@ impl<'a> emPainter<'a> {
     }
 
     /// Draw a rounded rectangle outline. emStroke is centered on the shape boundary.
-    ///
-    /// Matches C++ `PaintRoundRectOutline`: for solid strokes, builds outer +
-    /// inner round-rect polygons with a bridge for NonZero winding hole.
-    /// For dashed, routes through polyline.
-    /// Reads canvas_color from painter state (set by caller).
+    /// Matches C++ `PaintRoundRectOutline` (emPainter.cpp:2080-2218).
     #[allow(clippy::too_many_arguments)]
     pub fn PaintRoundRectOutline(
         &mut self,
@@ -4164,10 +4160,10 @@ impl<'a> emPainter<'a> {
         rx: f64,
         ry: f64,
         stroke: &emStroke,
+        canvas_color: emColor,
     ) {
-        if w <= 0.0 || h <= 0.0 || stroke.width <= 0.0 {
-            return;
-        }
+        let thickness = stroke.width;
+
         let Some(_proof) = self.try_record(DrawOp::PaintRoundRectOutline {
             x,
             y,
@@ -4176,46 +4172,116 @@ impl<'a> emPainter<'a> {
             rx,
             ry,
             stroke: stroke.clone(),
+            canvas_color,
         }) else { return; };
-        let sw = stroke.width;
-        let t2 = sw * 0.5;
+
+        if thickness <= 0.0 { return; }
+        let w = w.max(0.0);
+        let h = h.max(0.0);
+        let t2 = thickness * 0.5;
+
+        let mut rx = rx;
+        let mut ry = ry;
+        if rx > w * 0.5 { rx = w * 0.5; }
+        if ry > h * 0.5 { ry = h * 0.5; }
+        if rx <= 0.0 || ry <= 0.0 {
+            self.PaintRectOutline(x, y, w, h, stroke, canvas_color);
+            return;
+        }
+
+        rx += t2;
+        ry += t2;
+        let mut f = CIRCLE_QUALITY * (rx * self.state.scale_x + ry * self.state.scale_y).sqrt();
+        if f > 256.0 { f = 256.0; }
+        f *= 0.25;
+        let n: usize = if f <= 1.0 { 1 } else if f >= 64.0 { 64 } else { (f + 0.5) as usize };
+        let step = std::f64::consts::FRAC_PI_2 / n as f64;
+
+        // Corner centers (from outer bounding box edges + outer radii).
+        let mut x1 = x - t2 + rx;
+        let mut y1 = y - t2 + ry;
+        let mut x2 = x + w + t2 - rx;
+        let mut y2 = y + h + t2 - ry;
 
         if stroke.is_dashed() {
-            let verts = self.round_rect_polygon(x, y, w, h, rx, ry);
-            self.PaintPolylineWithoutArrows(&verts, stroke, true, self.state.canvas_color);
+            rx -= t2;
+            ry -= t2;
+            let mut verts = vec![(0.0, 0.0); 4 * (n + 1)];
+            for i in 0..=n {
+                let dx = (step * i as f64).cos();
+                let dy = (step * i as f64).sin();
+                verts[i] = (x1 - dx * rx, y1 - dy * ry);
+                verts[n + 1 + i] = (x2 + dy * rx, y1 - dx * ry);
+                verts[2 * n + 2 + i] = (x2 + dx * rx, y2 + dy * ry);
+                verts[3 * n + 3 + i] = (x1 - dy * rx, y2 + dx * ry);
+            }
+            let canvas_color = if w < thickness || h < thickness {
+                emColor::TRANSPARENT
+            } else {
+                canvas_color
+            };
+            self.PaintPolylineWithoutArrows(&verts, stroke, true, canvas_color);
             return;
         }
 
-        // Outer round-rect expanded by t2 on each side.
-        let ox = x - t2;
-        let oy = y - t2;
-        let ow = w + sw;
-        let oh = h + sw;
-        let orx = rx + t2;
-        let ory = ry + t2;
+        // Solid stroke: build outer vertices.
+        let outer_count = 4 * (n + 1);
+        let mut verts = vec![(0.0, 0.0); outer_count];
+        for i in 0..=n {
+            let dx = (step * i as f64).cos();
+            let dy = (step * i as f64).sin();
+            verts[i] = (x1 - dx * rx, y1 - dy * ry);
+            verts[n + 1 + i] = (x2 + dy * rx, y1 - dx * ry);
+            verts[2 * n + 2 + i] = (x2 + dx * rx, y2 + dy * ry);
+            verts[3 * n + 3 + i] = (x1 - dy * rx, y2 + dx * ry);
+        }
 
-        if sw * 2.0 >= w || sw * 2.0 >= h {
-            self.PaintRoundRect(ox, oy, ow, oh, orx, ory, stroke.color, self.state.canvas_color);
+        rx -= thickness;
+        ry -= thickness;
+        if rx < 0.0 {
+            x1 -= rx;
+            x2 += rx;
+            rx = 0.0;
+        }
+        if ry < 0.0 {
+            y1 -= ry;
+            y2 += ry;
+            ry = 0.0;
+        }
+
+        if x1 - rx >= x2 + rx || y1 - ry >= y2 + ry {
+            // Degenerate inner — fill as solid polygon.
+            self.PaintPolygon(&verts, stroke.color, canvas_color);
             return;
         }
 
-        // Inner round-rect contracted by t2 from shape boundary.
-        let ix = ox + sw;
-        let iy = oy + sw;
-        let iw = ow - 2.0 * sw;
-        let ih = oh - 2.0 * sw;
-        let irx = (rx - t2).max(0.0);
-        let iry = (ry - t2).max(0.0);
+        // Bridge from outer end back to outer start.
+        let outer_start = verts[0];
+        verts.push(outer_start);
 
-        let mut outer = self.round_rect_polygon(ox, oy, ow, oh, orx, ory);
-        let inner = self.round_rect_polygon(ix, iy, iw, ih, irx, iry);
+        // Inner ring with potentially different segment count.
+        let mut f = CIRCLE_QUALITY * (rx * self.state.scale_x + ry * self.state.scale_y).sqrt();
+        if f > 256.0 { f = 256.0; }
+        f *= 0.25;
+        let m: usize = if f <= 1.0 { 1 } else if f >= 64.0 { 64 } else { (f + 0.5) as usize };
+        let inner_step = std::f64::consts::FRAC_PI_2 / m as f64;
 
-        // Bridge + reversed inner for NonZero winding hole.
-        // C++ vertex order: outer[0..n-1], outer[0], inner[0], inner[m-1..1], inner[0]
-        outer.push(outer[0]);
-        outer.push(inner[0]);
-        outer.extend(inner.iter().rev());
-        self.PaintPolygon(&outer, stroke.color, self.state.canvas_color);
+        let final_count = 4 * n + 4 * m + 10;
+        verts.resize(final_count, (0.0, 0.0));
+
+        for i in 0..=m {
+            let dx = (inner_step * i as f64).cos();
+            let dy = (inner_step * i as f64).sin();
+            verts[4 * n + 4 * m + 9 - i] = (x1 - dx * rx, y1 - dy * ry);
+            verts[4 * n + 3 * m + 8 - i] = (x2 + dy * rx, y1 - dx * ry);
+            verts[4 * n + 2 * m + 7 - i] = (x2 + dx * rx, y2 + dy * ry);
+            verts[4 * n + m + 6 - i] = (x1 - dy * rx, y2 + dx * ry);
+        }
+
+        // Inner start repeated.
+        verts[4 * n + 5] = verts[4 * n + 4 * m + 9];
+
+        self.PaintPolygon(&verts, stroke.color, canvas_color);
     }
 
     /// Draw an ellipse outline. emStroke is centered on the shape boundary.
@@ -7578,54 +7644,6 @@ impl<'a> emPainter<'a> {
             let angle = step * i as f64;
             verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
         }
-        verts
-    }
-
-    /// Generate polygon vertices for a rounded rectangle with separate
-    /// horizontal (`rx`) and vertical (`ry`) corner radii.
-    fn round_rect_polygon(&self, x: f64, y: f64, w: f64, h: f64, rx: f64, ry: f64) -> Vec<(f64, f64)> {
-        let rx = rx.min(w * 0.5).max(0.0);
-        let ry = ry.min(h * 0.5).max(0.0);
-        // C++: if (rx<=0.0 || ry<=0.0) { PaintRect(...); return; }
-        if rx <= 0.0 || ry <= 0.0 {
-            return vec![(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
-        }
-        // C++ PaintRoundRect: f = CQ * sqrt(rx*SX + ry*SY), clamp 256,
-        // f *= 0.25, then n = round(f) clamped to [1, 64].
-        // Must multiply by 0.25 BEFORE rounding (not round then divide by 4).
-        let mut f = CIRCLE_QUALITY * (rx * self.state.scale_x + ry * self.state.scale_y).sqrt();
-        if f > 256.0 {
-            f = 256.0;
-        }
-        f *= 0.25;
-        let corner_segments = if f <= 1.0 {
-            1
-        } else if f >= 64.0 {
-            64
-        } else {
-            (f + 0.5) as usize
-        };
-        // C++ PaintRoundRect: single loop, 4 vertices per i.
-        // step = PI/2 / n. Corners stored sequentially:
-        //   [0..n] = top-left, [n+1..2n+1] = top-right,
-        //   [2n+2..3n+2] = bottom-right, [3n+3..4n+3] = bottom-left.
-        let n = corner_segments;
-        let step = std::f64::consts::FRAC_PI_2 / n as f64;
-        let x = x + rx;
-        let y = y + ry;
-        let x2 = x + w - 2.0 * rx;
-        let y2 = y + h - 2.0 * ry;
-        let total = 4 * (n + 1);
-        let mut verts = vec![(0.0, 0.0); total];
-        for i in 0..=n {
-            let dx = (step * i as f64).cos();
-            let dy = (step * i as f64).sin();
-            verts[i] = (x - dx * rx, y - dy * ry);                 // top-left
-            verts[n + 1 + i] = (x2 + dy * rx, y - dx * ry);       // top-right
-            verts[2 * n + 2 + i] = (x2 + dx * rx, y2 + dy * ry);  // bottom-right
-            verts[3 * n + 3 + i] = (x - dy * rx, y2 + dx * ry);   // bottom-left
-        }
-
         verts
     }
 

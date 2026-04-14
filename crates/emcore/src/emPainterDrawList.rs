@@ -62,6 +62,7 @@ pub enum DrawOp {
         rx: f64,
         ry: f64,
         stroke: emStroke,
+        canvas_color: emColor,
     },
     PaintEllipse {
         cx: f64,
@@ -496,7 +497,8 @@ impl DrawList {
                     rx,
                     ry,
                     stroke,
-                } => painter.PaintRoundRectOutline(*x, *y, *w, *h, *rx, *ry, stroke),
+                    canvas_color,
+                } => painter.PaintRoundRectOutline(*x, *y, *w, *h, *rx, *ry, stroke, *canvas_color),
 
                 DrawOp::PaintEllipse {
                     cx,

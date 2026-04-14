@@ -221,11 +221,12 @@ fn serialize_op(seq: usize, depth: u32, op: &DrawOp, state: &RecordedState) -> S
             format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRectOutline","x":{x},"y":{y},"w":{w},"h":{h},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
 
-        DrawOp::PaintRoundRectOutline { x, y, w, h, rx, ry, stroke } => {
+        DrawOp::PaintRoundRectOutline { x, y, w, h, rx, ry, stroke, canvas_color } => {
             let color = color_hex(stroke.color);
+            let canvas_color = color_hex(*canvas_color);
             let thickness = stroke.width;
             let hf = hex_fields(&[("x", *x), ("y", *y), ("w", *w), ("h", *h), ("rx", *rx), ("ry", *ry), ("thickness", thickness)]);
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRoundRectOutline","x":{x},"y":{y},"w":{w},"h":{h},"rx":{rx},"ry":{ry},"thickness":{thickness},"color":"{color}",{hf},{sf}}}"#)
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRoundRectOutline","x":{x},"y":{y},"w":{w},"h":{h},"rx":{rx},"ry":{ry},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
 
         DrawOp::PaintEllipseOutline { cx, cy, rx, ry, stroke, canvas_color } => {
