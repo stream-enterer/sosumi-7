@@ -3770,7 +3770,7 @@ impl<'a> emPainter<'a> {
 
         let thickness = stroke.width;
 
-        // C++ converts degrees to radians, normalizes negative range.
+        // C++ emPainter.cpp:2030-2041
         let mut start_rad = start_angle * std::f64::consts::PI / 180.0;
         let mut range_rad = sweep_angle * std::f64::consts::PI / 180.0;
         if range_rad <= 0.0 {
@@ -3783,10 +3783,24 @@ impl<'a> emPainter<'a> {
             return;
         }
         if thickness <= 0.0 { return; }
-        let rx = rx.max(0.0);
-        let ry = ry.max(0.0);
 
-        // C++ computes n from outer radii (rx+t2, ry+t2), scaled by sweep.
+        // C++ uses (x,y,w,h); Rust uses (cx,cy,rx,ry). Derive w,h,x,y for clip checks.
+        let w = (2.0 * rx).max(0.0);
+        let h = (2.0 * ry).max(0.0);
+        let x = cx - w * 0.5;
+        let y = cy - h * 0.5;
+
+        // C++ emPainter.cpp:2045-2049 — clip-rect early-out
+        let no_end = emStrokeEnd::butt();
+        let r = emPainter::CalculateLinePointMinMaxRadius(thickness, stroke, &no_end, &no_end);
+        if (x - r) * self.state.scale_x + self.state.offset_x >= self.state.clip.x2 { return; }
+        if (x + w + r) * self.state.scale_x + self.state.offset_x <= self.state.clip.x1 { return; }
+        if (y - r) * self.state.scale_y + self.state.offset_y >= self.state.clip.y2 { return; }
+        if (y + h + r) * self.state.scale_y + self.state.offset_y <= self.state.clip.y1 { return; }
+
+        // C++ emPainter.cpp:2053-2063
+        let rx = w * 0.5;
+        let ry = h * 0.5;
         let t2 = thickness * 0.5;
         let mut f = CIRCLE_QUALITY
             * ((rx + t2) * self.state.scale_x + (ry + t2) * self.state.scale_y).sqrt();
@@ -3795,7 +3809,7 @@ impl<'a> emPainter<'a> {
         let n: usize = if f <= 3.0 { 3 } else if f >= 256.0 { 256 } else { (f + 0.5) as usize };
         let step = range_rad / n as f64;
 
-        // Center + n+1 arc points = n+2 total vertices.
+        // C++ emPainter.cpp:2065-2071 — center + n+1 arc points = n+2 total vertices
         let mut verts = Vec::with_capacity(n + 2);
         verts.push((cx, cy));
         for i in 0..=n {
@@ -3803,14 +3817,14 @@ impl<'a> emPainter<'a> {
             verts.push((angle.cos() * rx + cx, angle.sin() * ry + cy));
         }
 
-        // C++ line 2072: canvasColor=0 for thin sectors.
-        let canvas_color = if 2.0 * rx < thickness || 2.0 * ry < thickness {
+        // C++ emPainter.cpp:2072
+        let canvas_color = if w < thickness || h < thickness {
             emColor::TRANSPARENT
         } else {
             canvas_color
         };
 
-        // C++ always uses PaintPolylineWithoutArrows (handles solid+dashed).
+        // C++ emPainter.cpp:2073-2075
         self.PaintPolylineWithoutArrows(&verts, stroke, false, canvas_color);
     }
 
