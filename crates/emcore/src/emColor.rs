@@ -61,6 +61,22 @@ pub(crate) fn blend_hash_lookup(color: u8, alpha: u8) -> u8 {
     BLEND_HASH[(color as usize) << 8 | alpha as usize]
 }
 
+/// Fused source-over channel blend matching C++ AVX2 PaintScanlineCol/Int.
+/// `result = round_div255(src * alpha + dst * (255 - alpha))`
+#[inline(always)]
+pub(crate) fn blend_channel_fused(src: u8, dst: u8, alpha: u8) -> u8 {
+    let v = src as u32 * alpha as u32 + dst as u32 * (255 - alpha as u32);
+    let v2 = v + 0x80;
+    ((v2 + (v2 >> 8)) >> 8) as u8
+}
+
+/// Fast div255 with round-to-nearest, matching C++ AVX2 `(v+0x80+((v+0x80)>>8))>>8`.
+#[inline(always)]
+pub(crate) fn fast_div255(x: u32) -> u8 {
+    let v = x + 0x80;
+    ((v + (v >> 8)) >> 8) as u8
+}
+
 // DIVERGED: Get — renamed to GetPacked because Rust has no implicit u32 conversion operator
 // DIVERGED: Set (all overloads) — not ported (emColor is Copy; use constructors rgba/rgb/SetAlpha instead of mutation)
 
@@ -303,8 +319,8 @@ impl emColor {
     /// 4-quadrant decomposition in emPainter's SharedPixelFormat (emPainter.cpp:190-234).
     pub fn canvas_blend(self, source: emColor, canvas: emColor, alpha: u8) -> emColor {
         let blend_ch = |target: u8, src: u8, cvs: u8| -> u8 {
-            let src_term = blend_hash_lookup(src, alpha) as i32;
-            let cvs_term = blend_hash_lookup(cvs, alpha) as i32;
+            let src_term = fast_div255(src as u32 * alpha as u32) as i32;
+            let cvs_term = fast_div255(cvs as u32 * alpha as u32) as i32;
             (target as i32 + src_term - cvs_term).clamp(0, 255) as u8
         };
         emColor::rgba(

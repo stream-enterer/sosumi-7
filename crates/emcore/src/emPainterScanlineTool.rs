@@ -193,8 +193,6 @@ fn blend_scanline_source_over(
     coverages: Option<&[i32]>,
     painter_alpha: u8,
 ) {
-    use super::emColor::blend_hash_lookup;
-
     // AVX2 fast path: full coverage, painter_alpha=255, 4-channel buffer.
     #[cfg(target_arch = "x86_64")]
     if coverages.is_none()
@@ -245,18 +243,13 @@ fn blend_scanline_source_over(
             continue;
         }
 
-        // Background: Blinn div255 (matches C++).
-        // Source: C++ hash table lookup (emPainter_ScTlPSCol.cpp:119).
+        // Fused source-over matching C++ AVX2 PaintScanlineInt.
+        use super::emColor::blend_channel_fused;
         let alpha = ea as u8;
-        let t = (255 - alpha as u32) * 257;
-        dest[off] = (((dest[off] as u32 * t + 0x8073) >> 16)
-            + blend_hash_lookup(src[0], alpha) as u32) as u8;
-        dest[off + 1] = (((dest[off + 1] as u32 * t + 0x8073) >> 16)
-            + blend_hash_lookup(src[1], alpha) as u32) as u8;
-        dest[off + 2] = (((dest[off + 2] as u32 * t + 0x8073) >> 16)
-            + blend_hash_lookup(src[2], alpha) as u32) as u8;
-        dest[off + 3] = (((dest[off + 3] as u32 * t + 0x8073) >> 16)
-            + blend_hash_lookup(255, alpha) as u32) as u8;
+        dest[off] = blend_channel_fused(src[0], dest[off], alpha);
+        dest[off + 1] = blend_channel_fused(src[1], dest[off + 1], alpha);
+        dest[off + 2] = blend_channel_fused(src[2], dest[off + 2], alpha);
+        dest[off + 3] = blend_channel_fused(255, dest[off + 3], alpha);
     }
 }
 
@@ -422,12 +415,13 @@ fn blend_scanline_premul_source_over(
             continue;
         }
 
-        // Blinn div255: (x * 257 + 0x8073) >> 16
-        let t = (255 - a) * 257;
-        dest[off] = (((dest[off] as u32 * t + 0x8073) >> 16) + pm[0] as u32) as u8;
-        dest[off + 1] = (((dest[off + 1] as u32 * t + 0x8073) >> 16) + pm[1] as u32) as u8;
-        dest[off + 2] = (((dest[off + 2] as u32 * t + 0x8073) >> 16) + pm[2] as u32) as u8;
-        dest[off + 3] = (((dest[off + 3] as u32 * t + 0x8073) >> 16) + a) as u8;
+        // Fused attenuation matching C++ AVX2: fast_div255(dest * (255-a)) + premul
+        let inv_a = 255 - a;
+        let att = |d: u8| -> u8 { super::emColor::fast_div255(d as u32 * inv_a) };
+        dest[off] = att(dest[off]).wrapping_add(pm[0]);
+        dest[off + 1] = att(dest[off + 1]).wrapping_add(pm[1]);
+        dest[off + 2] = att(dest[off + 2]).wrapping_add(pm[2]);
+        dest[off + 3] = att(dest[off + 3]).wrapping_add(a as u8);
     }
 }
 
@@ -643,7 +637,7 @@ pub fn blend_colored_scanline(
             dest[off + 2] = (dest[off + 2] as i32 + pix_b as i32 - cb).clamp(0, 255) as u8;
             // Canvas blend: dest alpha unchanged
         } else {
-            // Source-over (no canvas)
+            // Source-over: premultiplied gradient values + Blinn attenuation
             let t = (255 - a) * 257;
             dest[off] =
                 (((dest[off] as u32 * t + 0x8073) >> 16) + pix_r as u32) as u8;
@@ -652,7 +646,7 @@ pub fn blend_colored_scanline(
             dest[off + 2] =
                 (((dest[off + 2] as u32 * t + 0x8073) >> 16) + pix_b as u32) as u8;
             dest[off + 3] =
-                (((dest[off + 3] as u32 * t + 0x8073) >> 16) + blend_hash_lookup(255, a8) as u32)
+                (((dest[off + 3] as u32 * t + 0x8073) >> 16) + blend_hash_lookup(255, a as u8) as u32)
                     as u8;
         }
     }
@@ -848,16 +842,12 @@ mod tests {
             dest[3] = 255;
             return;
         }
-        let alpha = ea as u32;
-        let t = (255 - alpha) * 257;
-        dest[0] = (((dest[0] as u32 * t + 0x8073) >> 16)
-            + ((color.GetRed() as u32 * alpha + 127) / 255)) as u8;
-        dest[1] = (((dest[1] as u32 * t + 0x8073) >> 16)
-            + ((color.GetGreen() as u32 * alpha + 127) / 255)) as u8;
-        dest[2] = (((dest[2] as u32 * t + 0x8073) >> 16)
-            + ((color.GetBlue() as u32 * alpha + 127) / 255)) as u8;
-        dest[3] = (((dest[3] as u32 * t + 0x8073) >> 16)
-            + ((255u32 * alpha + 127) / 255)) as u8;
+        use crate::emColor::blend_channel_fused;
+        let alpha = ea as u8;
+        dest[0] = blend_channel_fused(color.GetRed(), dest[0], alpha);
+        dest[1] = blend_channel_fused(color.GetGreen(), dest[1], alpha);
+        dest[2] = blend_channel_fused(color.GetBlue(), dest[2], alpha);
+        dest[3] = blend_channel_fused(255, dest[3], alpha);
     }
 
     /// Reference per-pixel blend matching blend_pixel_unchecked (canvas).

@@ -6479,23 +6479,15 @@ impl<'a> emPainter<'a> {
                 out[3] = 255;
                 return;
             }
-            // Background: Blinn div255. Source: C++ hash table.
+            // Fused source-over matching C++ AVX2.
+            use super::emColor::blend_channel_fused;
             let bg = self.read_pixel(proof, xu, yu);
             let alpha = ea as u8;
-            let t = (255 - alpha as u32) * 257;
-            let r = ((bg[0] as u32 * t + 0x8073) >> 16)
-                + blend_hash_lookup(color.GetRed(), alpha) as u32;
-            let g = ((bg[1] as u32 * t + 0x8073) >> 16)
-                + blend_hash_lookup(color.GetGreen(), alpha) as u32;
-            let b = ((bg[2] as u32 * t + 0x8073) >> 16)
-                + blend_hash_lookup(color.GetBlue(), alpha) as u32;
-            let a =
-                ((bg[3] as u32 * t + 0x8073) >> 16) + blend_hash_lookup(255, alpha) as u32;
             let out = self.GetImage(proof).SetPixel(xu, yu);
-            out[0] = r as u8;
-            out[1] = g as u8;
-            out[2] = b as u8;
-            out[3] = a as u8;
+            out[0] = blend_channel_fused(color.GetRed(), bg[0], alpha);
+            out[1] = blend_channel_fused(color.GetGreen(), bg[1], alpha);
+            out[2] = blend_channel_fused(color.GetBlue(), bg[2], alpha);
+            out[3] = blend_channel_fused(255, bg[3], alpha);
         }
     }
 
@@ -7746,23 +7738,14 @@ impl<'a> emPainter<'a> {
                 out[2] = color.GetBlue();
                 out[3] = 255;
             } else {
-                // Background: Blinn div255. Source: C++ hash table.
+                // Fused source-over matching C++ AVX2.
+                use super::emColor::blend_channel_fused;
                 let alpha = ea as u8;
-                let t = (255 - alpha as u32) * 257;
-                let r = ((bg[0] as u32 * t + 0x8073) >> 16)
-                    + blend_hash_lookup(color.GetRed(), alpha) as u32;
-                let g = ((bg[1] as u32 * t + 0x8073) >> 16)
-                    + blend_hash_lookup(color.GetGreen(), alpha) as u32;
-                let b = ((bg[2] as u32 * t + 0x8073) >> 16)
-                    + blend_hash_lookup(color.GetBlue(), alpha) as u32;
-                let a =
-                    ((bg[3] as u32 * t + 0x8073) >> 16)
-                        + blend_hash_lookup(255, alpha) as u32;
                 let out = self.GetImage(proof).SetPixel(x as u32, y as u32);
-                out[0] = r as u8;
-                out[1] = g as u8;
-                out[2] = b as u8;
-                out[3] = a as u8;
+                out[0] = blend_channel_fused(color.GetRed(), bg[0], alpha);
+                out[1] = blend_channel_fused(color.GetGreen(), bg[1], alpha);
+                out[2] = blend_channel_fused(color.GetBlue(), bg[2], alpha);
+                out[3] = blend_channel_fused(255, bg[3], alpha);
             }
         }
     }
@@ -7833,21 +7816,19 @@ impl<'a> emPainter<'a> {
                     data[off..off + 4].copy_from_slice(&pixel);
                 }
             } else {
-                // Use hash table to match C++ PaintScanlineCol exactly.
-                use super::emColor::blend_hash_lookup;
+                // Fused source-over matching C++ AVX2 PaintScanlineCol.
+                use super::emColor::blend_channel_fused;
                 let alpha = ea as u8;
-                let t = (255 - alpha as u32) * 257;
-                let sr = blend_hash_lookup(color.GetRed(), alpha) as u32;
-                let sg = blend_hash_lookup(color.GetGreen(), alpha) as u32;
-                let sb = blend_hash_lookup(color.GetBlue(), alpha) as u32;
-                let sa = blend_hash_lookup(255, alpha) as u32;
+                let cr = color.GetRed();
+                let cg = color.GetGreen();
+                let cb = color.GetBlue();
                 let data = self.GetImage(proof).GetWritableMap();
                 for col in x1..x2 {
                     let off = row_base + col as usize * 4;
-                    data[off] = (((data[off] as u32 * t + 0x8073) >> 16) + sr) as u8;
-                    data[off + 1] = (((data[off + 1] as u32 * t + 0x8073) >> 16) + sg) as u8;
-                    data[off + 2] = (((data[off + 2] as u32 * t + 0x8073) >> 16) + sb) as u8;
-                    data[off + 3] = (((data[off + 3] as u32 * t + 0x8073) >> 16) + sa) as u8;
+                    data[off] = blend_channel_fused(cr, data[off], alpha);
+                    data[off + 1] = blend_channel_fused(cg, data[off + 1], alpha);
+                    data[off + 2] = blend_channel_fused(cb, data[off + 2], alpha);
+                    data[off + 3] = blend_channel_fused(255, data[off + 3], alpha);
                 }
             }
         }
