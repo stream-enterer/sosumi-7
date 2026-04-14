@@ -499,83 +499,169 @@ impl emBorder {
         look: &emLook,
         enabled: bool,
     ) -> (f64, f64, f64, f64, f64, f64, f64, f64, f64, emColor) {
-        // C++ emBorder.cpp DoBorder lines 578-899: outer border switch.
-        let (mut rnd_x, mut rnd_y, mut rnd_w, mut rnd_h, mut rnd_r,
-             min_space, how_to_space, label_space, mut canvas_color) = {
-            let s = w.min(h) * self.border_scaling;
-            match self.outer {
-                OuterBorderType::None | OuterBorderType::Filled => {
-                    let mut cc = canvas_color;
-                    if self.outer == OuterBorderType::Filled {
-                        let color = look.bg_color;
-                        if !color.IsTotallyTransparent() { cc = color; }
+        // C++ emBorder.cpp DoBorder lines 573-1191 (geometry only, no painting).
+
+        // C++ lines 580-899: outer border switch.
+        let mut canvas_color = canvas_color;
+        let mut rnd_x;
+        let mut rnd_y;
+        let mut rnd_w;
+        let mut rnd_h;
+        let mut rnd_r;
+        let min_space: f64;
+        let how_to_space: f64;
+        let label_space: f64;
+
+        match self.outer {
+            // C++ default: OBT_NONE or OBT_FILLED
+            OuterBorderType::None | OuterBorderType::Filled => {
+                rnd_x = 0.0;
+                rnd_y = 0.0;
+                rnd_w = w;
+                rnd_h = h;
+                rnd_r = 0.0;
+                min_space = 0.0;
+                how_to_space = 0.023;
+                label_space = 0.17;
+                if self.outer == OuterBorderType::Filled {
+                    let color = look.bg_color;
+                    if !color.IsTotallyTransparent() {
+                        canvas_color = color;
                     }
-                    (0.0, 0.0, w, h, 0.0, 0.0, 0.023, 0.17, cc)
-                }
-                OuterBorderType::Margin | OuterBorderType::MarginFilled => {
-                    let d = s * 0.04;
-                    let mut cc = canvas_color;
-                    if self.outer == OuterBorderType::MarginFilled {
-                        let color = look.bg_color;
-                        if !color.IsTotallyTransparent() { cc = color; }
-                    }
-                    (d, d, w - 2.0*d, h - 2.0*d, 0.0, 0.0, 0.023, 0.17, cc)
-                }
-                OuterBorderType::Rect => {
-                    let d = s * 0.023;
-                    let e = s * 0.02;
-                    let f = d + e;
-                    let color = look.bg_color;
-                    let mut cc = canvas_color;
-                    if !color.IsTotallyTransparent() { cc = color; }
-                    (f, f, w - 2.0*f, h - 2.0*f, 0.0, 0.023, 0.023, 0.17, cc)
-                }
-                OuterBorderType::RoundRect => {
-                    let d = s * 0.023;
-                    let e = s * 0.02;
-                    let f = s * 0.22;
-                    let g = d + e;
-                    let color = look.bg_color;
-                    let mut cc = canvas_color;
-                    if !color.IsTotallyTransparent() { cc = color; }
-                    (g, g, w - 2.0*g, h - 2.0*g, f - e, 0.023, 0.023, 0.17, cc)
-                }
-                OuterBorderType::Group => {
-                    let d = s * 0.0104;
-                    let color = look.bg_color;
-                    let mut cc = canvas_color;
-                    if !color.IsTotallyTransparent() { cc = color; }
-                    (d, d, w - 2.0*d, h - 2.0*d, s * 0.0188, 0.0046, 0.0046, 0.05, cc)
-                }
-                OuterBorderType::Instrument => {
-                    let d = s * 0.052;
-                    let color = look.bg_color;
-                    let mut cc = canvas_color;
-                    if !color.IsTotallyTransparent() { cc = color; }
-                    (d, d, w - 2.0*d, h - 2.0*d, s * 0.094, 0.023, 0.023, 0.17, cc)
-                }
-                OuterBorderType::InstrumentMoreRound => {
-                    let d = s * 0.052;
-                    let color = look.bg_color;
-                    let mut cc = canvas_color;
-                    if !color.IsTotallyTransparent() { cc = color; }
-                    (d, d, w - 2.0*d, h - 2.0*d, s * 0.223, 0.023, 0.023, 0.17, cc)
-                }
-                OuterBorderType::PopupRoot => {
-                    let d = s * 0.006;
-                    let color = look.bg_color;
-                    let mut cc = canvas_color;
-                    if !color.IsTotallyTransparent() { cc = color; }
-                    (d, d, w - 2.0*d, h - 2.0*d, 0.0, 0.0, 0.023, 0.17, cc)
                 }
             }
-        };
+            // C++ case OBT_MARGIN / OBT_MARGIN_FILLED
+            OuterBorderType::Margin | OuterBorderType::MarginFilled => {
+                let d = w.min(h) * self.border_scaling * 0.04;
+                rnd_x = d;
+                rnd_y = d;
+                rnd_w = w - 2.0 * d;
+                rnd_h = h - 2.0 * d;
+                rnd_r = 0.0;
+                min_space = 0.0;
+                how_to_space = 0.023;
+                label_space = 0.17;
+                if self.outer == OuterBorderType::MarginFilled {
+                    let color = look.bg_color;
+                    if !color.IsTotallyTransparent() {
+                        canvas_color = color;
+                    }
+                }
+            }
+            // C++ case OBT_RECT
+            OuterBorderType::Rect => {
+                let s = w.min(h) * self.border_scaling;
+                let d = s * 0.023;
+                let e = s * 0.02;
+                let f = d + e;
+                rnd_x = f;
+                rnd_y = f;
+                rnd_w = w - 2.0 * f;
+                rnd_h = h - 2.0 * f;
+                rnd_r = 0.0;
+                min_space = 0.023;
+                how_to_space = 0.023;
+                label_space = 0.17;
+                let color = look.bg_color;
+                if !color.IsTotallyTransparent() {
+                    canvas_color = color;
+                }
+            }
+            // C++ case OBT_ROUND_RECT
+            OuterBorderType::RoundRect => {
+                let s = w.min(h) * self.border_scaling;
+                let d = s * 0.023;
+                let e = s * 0.02;
+                let f = s * 0.22;
+                let g = d + e;
+                rnd_x = g;
+                rnd_y = g;
+                rnd_w = w - 2.0 * g;
+                rnd_h = h - 2.0 * g;
+                rnd_r = f - e;
+                min_space = 0.023;
+                how_to_space = 0.023;
+                label_space = 0.17;
+                let color = look.bg_color;
+                if !color.IsTotallyTransparent() {
+                    canvas_color = color;
+                }
+            }
+            // C++ case OBT_GROUP
+            OuterBorderType::Group => {
+                let s = w.min(h) * self.border_scaling;
+                let d = s * 0.0104;
+                rnd_x = d;
+                rnd_y = d;
+                rnd_w = w - 2.0 * d;
+                rnd_h = h - 2.0 * d;
+                rnd_r = s * 0.0188;
+                min_space = 0.0046;
+                how_to_space = 0.0046;
+                label_space = 0.05;
+                let color = look.bg_color;
+                if !color.IsTotallyTransparent() {
+                    canvas_color = color;
+                }
+            }
+            // C++ case OBT_INSTRUMENT
+            OuterBorderType::Instrument => {
+                let s = w.min(h) * self.border_scaling;
+                let d = s * 0.052;
+                rnd_x = d;
+                rnd_y = d;
+                rnd_w = w - 2.0 * d;
+                rnd_h = h - 2.0 * d;
+                rnd_r = s * 0.094;
+                min_space = 0.023;
+                how_to_space = 0.023;
+                label_space = 0.17;
+                let color = look.bg_color;
+                if !color.IsTotallyTransparent() {
+                    canvas_color = color;
+                }
+            }
+            // C++ case OBT_INSTRUMENT_MORE_ROUND
+            OuterBorderType::InstrumentMoreRound => {
+                let s = w.min(h) * self.border_scaling;
+                let d = s * 0.052;
+                rnd_x = d;
+                rnd_y = d;
+                rnd_w = w - 2.0 * d;
+                rnd_h = h - 2.0 * d;
+                rnd_r = s * 0.223;
+                min_space = 0.023;
+                how_to_space = 0.023;
+                label_space = 0.17;
+                let color = look.bg_color;
+                if !color.IsTotallyTransparent() {
+                    canvas_color = color;
+                }
+            }
+            // C++ case OBT_POPUP_ROOT
+            OuterBorderType::PopupRoot => {
+                let s = w.min(h) * self.border_scaling;
+                let d = s * 0.006;
+                rnd_x = d;
+                rnd_y = d;
+                rnd_w = w - 2.0 * d;
+                rnd_h = h - 2.0 * d;
+                rnd_r = 0.0;
+                min_space = 0.0;
+                how_to_space = 0.023;
+                label_space = 0.17;
+                let color = look.bg_color;
+                if !color.IsTotallyTransparent() {
+                    canvas_color = color;
+                }
+            }
+        }
 
-        // C++ line 901-902: s = min(rndW,rndH)*BorderScaling; minSpace *= s;
+        // C++ line 901-902
         let s = rnd_w.min(rnd_h) * self.border_scaling;
         let min_space = min_space * s;
 
-        // C++ lines 904-933: HowTo space.
+        // C++ lines 904-934: HowTo space
         if self.has_how_to {
             let how_to_space = how_to_space * s;
             if how_to_space > min_space {
@@ -584,17 +670,18 @@ impl emBorder {
             }
         }
 
-        // C++ lines 936-1065: label/aux/no-label paths.
-        let label_space = if self.label_in_border && self.HasLabel() {
-            label_space * s
-        } else {
-            0.0
-        };
+        // C++ lines 936-1065: label/aux/no-label paths
+        let mut rec_x;
+        let mut rec_y;
+        let mut rec_w;
+        let mut rec_h;
+        let has_aux = self.aux_panel_name.is_some();
 
-        let (mut rec_x, mut rec_y, mut rec_w, mut rec_h);
+        if self.label_in_border && self.HasLabel() {
+            // C++ lines 936-1003
+            let label_space = label_space * s;
 
-        if label_space > 0.0 {
-            // C++ lines 983-1002: has-label path.
+            // C++ lines 983-1002: geometry adjustments (same with or without Aux)
             rnd_x += min_space;
             rnd_w -= 2.0 * min_space;
             rnd_y += label_space;
@@ -606,14 +693,57 @@ impl emBorder {
                 rec_y = rnd_y;
                 rec_h = rnd_h - rnd_r * 0.5;
                 let d = min_space + rnd_r * 0.5 - label_space;
-                if d > 0.0 { rec_y += d; rec_h -= d; }
+                if d > 0.0 {
+                    rec_y += d;
+                    rec_h -= d;
+                }
             } else {
                 rnd_r = 0.0;
-                rec_x = rnd_x; rec_w = rnd_w;
-                rec_y = rnd_y; rec_h = rnd_h;
+                rec_x = rnd_x;
+                rec_w = rnd_w;
+                rec_y = rnd_y;
+                rec_h = rnd_h;
+            }
+        } else if has_aux {
+            // C++ lines 1004-1045: Aux without label
+            let s = rnd_w.min(rnd_h);
+            let mut tw = s * 0.1;
+            let mut th = tw * self.aux_tallness;
+            let d = s * 0.01;
+            let e = rnd_h - 2.0 * rnd_r.max(d);
+            if th > e {
+                th = e.max(1e-100);
+                tw = th / self.aux_tallness;
+            }
+            // C++ lines 1022-1024
+            let e = s * 0.015;
+            tw += e + d;
+            if tw < min_space {
+                tw = min_space;
+            }
+            rnd_x += min_space;
+            rnd_w -= min_space + tw;
+            rnd_y += min_space;
+            rnd_h -= 2.0 * min_space;
+            rnd_r -= min_space;
+            if rnd_r > 0.0 {
+                rec_x = rnd_x + rnd_r * 0.5;
+                rec_w = rnd_w - rnd_r * 0.5;
+                rec_y = rnd_y + rnd_r * 0.5;
+                rec_h = rnd_h - rnd_r;
+                let d = min_space + rnd_r * 0.5 - tw;
+                if d > 0.0 {
+                    rec_w -= d;
+                }
+            } else {
+                rnd_r = 0.0;
+                rec_x = rnd_x;
+                rec_w = rnd_w;
+                rec_y = rnd_y;
+                rec_h = rnd_h;
             }
         } else {
-            // C++ lines 1046-1064: no-label path.
+            // C++ lines 1046-1065: no label, no aux
             rnd_x += min_space;
             rnd_y += min_space;
             rnd_w -= 2.0 * min_space;
@@ -626,32 +756,40 @@ impl emBorder {
                 rec_h = rnd_h - rnd_r;
             } else {
                 rnd_r = 0.0;
-                rec_x = rnd_x; rec_w = rnd_w;
-                rec_y = rnd_y; rec_h = rnd_h;
+                rec_x = rnd_x;
+                rec_w = rnd_w;
+                rec_y = rnd_y;
+                rec_h = rnd_h;
             }
         }
 
-        // C++ lines 1067-1168: inner border switch.
+        // C++ lines 1067-1168: inner border switch
         match self.inner {
             InnerBorderType::None => {}
+            // C++ case IBT_GROUP (lines 1068-1090)
             InnerBorderType::Group => {
-                // C++ lines 1068-1089.
                 let r = rnd_w.min(rnd_h) * self.border_scaling * 0.0188;
-                if rnd_r < r { rnd_r = r; }
+                if rnd_r < r {
+                    rnd_r = r;
+                }
                 let d = rnd_r * (17.0 / 225.0);
-                rnd_x += d; rnd_y += d;
-                rnd_w -= 2.0 * d; rnd_h -= 2.0 * d;
+                rnd_x += d;
+                rnd_y += d;
+                rnd_w -= 2.0 * d;
+                rnd_h -= 2.0 * d;
                 rnd_r -= d;
                 rec_x = rnd_x + rnd_r * 0.5;
                 rec_y = rnd_y + rnd_r * 0.5;
                 rec_w = rnd_w - rnd_r;
                 rec_h = rnd_h - rnd_r;
             }
+            // C++ case IBT_INPUT_FIELD / IBT_OUTPUT_FIELD (lines 1091-1136)
             InnerBorderType::InputField | InnerBorderType::OutputField => {
-                // C++ lines 1091-1135.
                 let r = rnd_w.min(rnd_h) * self.border_scaling * 0.094;
-                if rnd_r < r { rnd_r = r; }
-                let d = (16.0 / 216.0) * rnd_r;
+                if rnd_r < r {
+                    rnd_r = r;
+                }
+                let d = (1.0 - (216.0 - 16.0) / 216.0) * rnd_r;
                 let tx = rnd_x + d;
                 let ty = rnd_y + d;
                 let tw = rnd_w - 2.0 * d;
@@ -672,25 +810,35 @@ impl emBorder {
                     color.GetBlended(look.bg_color, 80.0)
                 };
                 canvas_color = color;
-                // Update rnd to tx/ty/tw/th/tr (C++ lines 1130-1134).
-                rnd_x = tx; rnd_y = ty;
-                rnd_w = tw; rnd_h = th;
+                // C++ lines 1130-1134: update rnd to tx/ty/tw/th/tr
+                rnd_x = tx;
+                rnd_y = ty;
+                rnd_w = tw;
+                rnd_h = th;
                 rnd_r = tr;
             }
+            // C++ case IBT_CUSTOM_RECT (lines 1137-1165)
             InnerBorderType::CustomRect => {
-                // C++ lines 1137-1164.
                 let d = rnd_r * 0.25;
-                rnd_x += d; rnd_y += d;
-                rnd_w -= 2.0 * d; rnd_h -= 2.0 * d;
+                rnd_x += d;
+                rnd_y += d;
+                rnd_w -= 2.0 * d;
+                rnd_h -= 2.0 * d;
                 rnd_r -= d;
                 let r = w.min(h) * self.border_scaling * 0.0125;
-                if rnd_r < r { rnd_r = r; }
-                let d2 = rnd_r;
-                rnd_x += d2; rnd_y += d2;
-                rnd_w -= 2.0 * d2; rnd_h -= 2.0 * d2;
+                if rnd_r < r {
+                    rnd_r = r;
+                }
+                let d = rnd_r;
+                rnd_x += d;
+                rnd_y += d;
+                rnd_w -= 2.0 * d;
+                rnd_h -= 2.0 * d;
                 rnd_r = 0.0;
-                rec_x = rnd_x; rec_y = rnd_y;
-                rec_w = rnd_w; rec_h = rnd_h;
+                rec_x = rnd_x;
+                rec_y = rnd_y;
+                rec_w = rnd_w;
+                rec_h = rnd_h;
             }
         }
 
