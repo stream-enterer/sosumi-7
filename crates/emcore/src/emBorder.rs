@@ -963,6 +963,13 @@ impl emBorder {
         s * self.label_space_factor()
     }
 
+    /// Usable height within the label space for actual text/icon content.
+    ///
+    /// Eagle Mode: `d = labelSpace * 0.1; content_h = labelSpace - 2 * d`.
+    fn label_content_height(&self, rnd_w: f64, rnd_h: f64) -> f64 {
+        self.label_space(rnd_w, rnd_h) * 0.8
+    }
+
     /// Compute label layout within the given area.
     ///
     /// Literal port of C++ `DoLabel` geometry (emBorder.cpp:1194-1352).
@@ -1530,10 +1537,6 @@ How to move or set the focus:\n\
     }
 
     /// Paint the border chrome.
-    ///
-    /// Literal port of C++ `emBorder::DoBorder(BORDER_FUNC_PAINT, ...)`.
-    /// The C++ function also calls `PaintContent` at the end; in Rust the
-    /// caller does that separately after `paint_border` returns.
     #[allow(clippy::too_many_arguments)]
     pub fn paint_border(
         &self,
@@ -1545,144 +1548,102 @@ How to move or set the focus:\n\
         enabled: bool,
         pixel_scale: f64,
     ) {
-        // C++ DoBorder line 578: h=GetHeight();
-        // In Rust, h is already the panel height parameter.
+        let dim_color = |c: crate::emColor::emColor| -> crate::emColor::emColor {
+            if enabled { c } else { c.GetTransparented(75.0) }
+        };
 
-        // C++ lines 573-576: local variables
-        let mut canvas_color = painter.GetCanvasColor();
-        let mut rnd_x: f64;
-        let mut rnd_y: f64;
-        let mut rnd_w: f64;
-        let mut rnd_h: f64;
-        let mut rnd_r: f64;
-        let min_space: f64;
-        let how_to_space: f64;
-        let label_space: f64;
-
-        // C++ lines 580-899: switch((OuterBorderType)OuterBorder)
+        // Outer border
         match self.outer {
-            // C++ default: OBT_NONE or OBT_FILLED
-            OuterBorderType::None | OuterBorderType::Filled => {
-                rnd_x = 0.0;
-                rnd_y = 0.0;
-                rnd_w = w;
-                rnd_h = h;
-                rnd_r = 0.0;
-                min_space = 0.0;
-                how_to_space = 0.023;
-                label_space = 0.17;
-                if self.outer == OuterBorderType::Filled {
-                    let color = look.bg_color;
-                    if !color.IsTotallyTransparent() {
-                        // C++ painter->Clear(color, canvasColor)
-                        painter.PaintRect(0.0, 0.0, w, h, color, canvas_color);
-                        canvas_color = color;
-                    }
+            OuterBorderType::None => {}
+            OuterBorderType::Filled => {
+                // C++ DoBorder: only fill when bg is non-transparent
+                if !look.bg_color.IsTotallyTransparent() {
+                    painter.PaintRect(0.0, 0.0, w, h, look.bg_color, painter.GetCanvasColor());
+                    painter.SetCanvasColor(look.bg_color);
                 }
             }
-            // C++ case OBT_MARGIN / OBT_MARGIN_FILLED
-            OuterBorderType::Margin | OuterBorderType::MarginFilled => {
-                let d = w.min(h) * self.border_scaling * 0.04;
-                rnd_x = d;
-                rnd_y = d;
-                rnd_w = w - 2.0 * d;
-                rnd_h = h - 2.0 * d;
-                rnd_r = 0.0;
-                min_space = 0.0;
-                how_to_space = 0.023;
-                label_space = 0.17;
-                if self.outer == OuterBorderType::MarginFilled {
-                    let color = look.bg_color;
-                    if !color.IsTotallyTransparent() {
-                        // C++ painter->Clear(color, canvasColor)
-                        painter.PaintRect(0.0, 0.0, w, h, color, canvas_color);
-                        canvas_color = color;
-                    }
+            OuterBorderType::Margin => {}
+            OuterBorderType::MarginFilled => {
+                // C++ DoBorder: Clear fills the ENTIRE panel, not the inset rect.
+                if !look.bg_color.IsTotallyTransparent() {
+                    painter.PaintRect(0.0, 0.0, w, h, look.bg_color, painter.GetCanvasColor());
+                    painter.SetCanvasColor(look.bg_color);
                 }
             }
-            // C++ case OBT_RECT
             OuterBorderType::Rect => {
-                let s = w.min(h) * self.border_scaling;
-                let mut d = s * 0.023;
+                // C++ DoBorder: margin d, stroke e, fill at (d,d), outline centered on fill edge.
+                let s = self.base_unit(w, h);
+                let d = s * 0.023;
                 let e = s * 0.02;
-                let f = d + e;
-                rnd_x = f;
-                rnd_y = f;
-                rnd_w = w - 2.0 * f;
-                rnd_h = h - 2.0 * f;
-                rnd_r = 0.0;
-                min_space = 0.023;
-                how_to_space = 0.023;
-                label_space = 0.17;
-                let color = look.bg_color;
-                if !color.IsTotallyTransparent() {
-                    painter.PaintRect(d, d, w - 2.0 * d, h - 2.0 * d, color, canvas_color);
-                    canvas_color = color;
+                if !look.bg_color.IsTotallyTransparent() {
+                    painter.PaintRect(
+                        d,
+                        d,
+                        w - 2.0 * d,
+                        h - 2.0 * d,
+                        look.bg_color,
+                        painter.GetCanvasColor(),
+                    );
+                    // C++ updates canvasColor to bg_color after fill.
+                    painter.SetCanvasColor(look.bg_color);
                 }
-                // C++ line 664: d+=e*0.5
-                d += e * 0.5;
-                let mut color = look.fg_color;
-                if !enabled { color = color.GetTransparented(75.0); }
+                let color = dim_color(look.fg_color);
+                let sd = d + e * 0.5;
                 painter.PaintRectOutline(
-                    d, d, w - 2.0 * d, h - 2.0 * d,
+                    sd,
+                    sd,
+                    w - 2.0 * sd,
+                    h - 2.0 * sd,
                     &emStroke::new(color, e),
-                    canvas_color,
+                    painter.GetCanvasColor(),
                 );
             }
-            // C++ case OBT_ROUND_RECT
             OuterBorderType::RoundRect => {
-                let s = w.min(h) * self.border_scaling;
-                let mut d = s * 0.023;
+                // C++ DoBorder: margin d, stroke e, radius f, fill at (d,d), outline centered.
+                let s = self.base_unit(w, h);
+                let d = s * 0.023;
                 let e = s * 0.02;
-                let mut f = s * 0.22;
-                let g = d + e;
-                rnd_x = g;
-                rnd_y = g;
-                rnd_w = w - 2.0 * g;
-                rnd_h = h - 2.0 * g;
-                rnd_r = f - e;
-                min_space = 0.023;
-                how_to_space = 0.023;
-                label_space = 0.17;
-                let color = look.bg_color;
-                if !color.IsTotallyTransparent() {
-                    painter.PaintRoundRect(d, d, w - 2.0 * d, h - 2.0 * d, f, f, color, canvas_color);
-                    canvas_color = color;
+                let r = s * 0.22;
+                if !look.bg_color.IsTotallyTransparent() {
+                    painter.PaintRoundRect(d, d, w - 2.0 * d, h - 2.0 * d, r, r, look.bg_color, painter.GetCanvasColor());
+                    painter.SetCanvasColor(look.bg_color);
                 }
-                // C++ line 705-706: d+=e*0.5; f-=e*0.5
-                d += e * 0.5;
-                f -= e * 0.5;
-                let mut color = look.fg_color;
-                if !enabled { color = color.GetTransparented(75.0); }
+                let color = dim_color(look.fg_color);
+                let sd = d + e * 0.5;
+                let sr = r - e * 0.5;
                 painter.PaintRoundRectOutline(
-                    d, d, w - 2.0 * d, h - 2.0 * d, f, f,
+                    sd,
+                    sd,
+                    w - 2.0 * sd,
+                    h - 2.0 * sd,
+                    sr,
+                    sr,
                     &emStroke::new(color, e),
-                    canvas_color,
+                    painter.GetCanvasColor(),
                 );
             }
-            // C++ case OBT_GROUP
             OuterBorderType::Group => {
-                let s = w.min(h) * self.border_scaling;
+                let s = self.base_unit(w, h);
                 let d = s * 0.0104;
-                rnd_x = d;
-                rnd_y = d;
-                rnd_w = w - 2.0 * d;
-                rnd_h = h - 2.0 * d;
-                rnd_r = s * 0.0188;
-                min_space = 0.0046;
-                how_to_space = 0.0046;
-                label_space = 0.05;
+                let rnd_r = s * 0.0188;
+                let rnd_x = d;
+                let rnd_y = d;
+                let rnd_w = w - 2.0 * d;
+                let rnd_h = h - 2.0 * d;
                 let color = look.bg_color;
-                // C++ lines 737-751
-                let mut color2 = canvas_color;
-                if !color.IsTotallyTransparent()
-                    && (!color2.IsOpaque() || color2 != color)
-                {
+                let mut color2 = painter.GetCanvasColor();
+                if !color.IsTotallyTransparent() && (!color2.IsOpaque() || color2 != color) {
                     let r = rnd_r * (280.0 / 209.0);
                     let e = r - rnd_r;
                     painter.PaintRoundRect(
-                        rnd_x - e, rnd_y - e, rnd_w + 2.0 * e, rnd_h + 2.0 * e,
-                        r, r, color, color2,
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        r,
+                        color,
+                        painter.GetCanvasColor(),
                     );
                     color2 = emColor::TRANSPARENT;
                 }
@@ -1690,38 +1651,50 @@ How to move or set the focus:\n\
                 let e = r - rnd_r;
                 with_toolkit_images(|img| {
                     painter.PaintBorderImage(
-                        rnd_x - e, rnd_y - e, rnd_w + 2.0 * e, rnd_h + 2.0 * e,
-                        r, r, r, r,
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        r,
+                        r,
+                        r,
                         &img.group_border,
-                        286, 286, 286, 286,
-                        255, color2, BORDER_EDGES_ONLY,
+                        286,
+                        286,
+                        286,
+                        286,
+                        255,
+                        color2,
+                        BORDER_EDGES_ONLY,
                     );
                 });
-                if !color.IsTotallyTransparent() { canvas_color = color; }
+                if !color.IsTotallyTransparent() {
+                    painter.SetCanvasColor(color);
+                }
             }
-            // C++ case OBT_INSTRUMENT
             OuterBorderType::Instrument => {
-                let s = w.min(h) * self.border_scaling;
+                let s = self.base_unit(w, h);
                 let d = s * 0.052;
-                rnd_x = d;
-                rnd_y = d;
-                rnd_w = w - 2.0 * d;
-                rnd_h = h - 2.0 * d;
-                rnd_r = s * 0.094;
-                min_space = 0.023;
-                how_to_space = 0.023;
-                label_space = 0.17;
+                let rnd_r = s * 0.094;
+                let rnd_x = d;
+                let rnd_y = d;
+                let rnd_w = w - 2.0 * d;
+                let rnd_h = h - 2.0 * d;
                 let color = look.bg_color;
-                // C++ lines 786-809
-                let mut color2 = canvas_color;
-                if !color.IsTotallyTransparent()
-                    && (!color2.IsOpaque() || color2 != color)
-                {
+                let mut color2 = painter.GetCanvasColor();
+                if !color.IsTotallyTransparent() && (!color2.IsOpaque() || color2 != color) {
                     let r = rnd_r * (280.0 / 209.0);
                     let e = r - rnd_r;
                     painter.PaintRoundRect(
-                        rnd_x - e, rnd_y - e, rnd_w + 2.0 * e, rnd_h + 2.0 * e,
-                        r, r, color, color2,
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        r,
+                        color,
+                        painter.GetCanvasColor(),
                     );
                     color2 = emColor::TRANSPARENT;
                 }
@@ -1729,38 +1702,50 @@ How to move or set the focus:\n\
                 let e = r - rnd_r;
                 with_toolkit_images(|img| {
                     painter.PaintBorderImage(
-                        rnd_x - e, rnd_y - e, rnd_w + 2.0 * e, rnd_h + 2.0 * e,
-                        r, r, r, r,
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        r,
+                        r,
+                        r,
                         &img.group_border,
-                        286, 286, 286, 286,
-                        255, color2, BORDER_EDGES_ONLY,
+                        286,
+                        286,
+                        286,
+                        286,
+                        255,
+                        color2,
+                        BORDER_EDGES_ONLY,
                     );
                 });
-                if !color.IsTotallyTransparent() { canvas_color = color; }
+                if !color.IsTotallyTransparent() {
+                    painter.SetCanvasColor(color);
+                }
             }
-            // C++ case OBT_INSTRUMENT_MORE_ROUND
             OuterBorderType::InstrumentMoreRound => {
-                let s = w.min(h) * self.border_scaling;
+                let s = self.base_unit(w, h);
                 let d = s * 0.052;
-                rnd_x = d;
-                rnd_y = d;
-                rnd_w = w - 2.0 * d;
-                rnd_h = h - 2.0 * d;
-                rnd_r = s * 0.223;
-                min_space = 0.023;
-                how_to_space = 0.023;
-                label_space = 0.17;
+                let rnd_r = s * 0.223;
+                let rnd_x = d;
+                let rnd_y = d;
+                let rnd_w = w - 2.0 * d;
+                let rnd_h = h - 2.0 * d;
                 let color = look.bg_color;
-                // C++ lines 835-858
-                let mut color2 = canvas_color;
-                if !color.IsTotallyTransparent()
-                    && (!color2.IsOpaque() || color2 != color)
-                {
+                let mut color2 = painter.GetCanvasColor();
+                if !color.IsTotallyTransparent() && (!color2.IsOpaque() || color2 != color) {
                     let r = rnd_r * (336.0 / 293.4);
                     let e = r - rnd_r;
                     painter.PaintRoundRect(
-                        rnd_x - e, rnd_y - e, rnd_w + 2.0 * e, rnd_h + 2.0 * e,
-                        r, r, color, color2,
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        r,
+                        color,
+                        painter.GetCanvasColor(),
                     );
                     color2 = emColor::TRANSPARENT;
                 }
@@ -1768,73 +1753,104 @@ How to move or set the focus:\n\
                 let e = r - rnd_r;
                 with_toolkit_images(|img| {
                     painter.PaintBorderImage(
-                        rnd_x - e, rnd_y - e, rnd_w + 2.0 * e, rnd_h + 2.0 * e,
-                        r, r, r, r,
+                        rnd_x - e,
+                        rnd_y - e,
+                        rnd_w + 2.0 * e,
+                        rnd_h + 2.0 * e,
+                        r,
+                        r,
+                        r,
+                        r,
                         &img.button_border,
-                        340, 340, 340, 340,
-                        255, color2, BORDER_EDGES_ONLY,
+                        340,
+                        340,
+                        340,
+                        340,
+                        255,
+                        color2,
+                        BORDER_EDGES_ONLY,
                     );
                 });
-                if !color.IsTotallyTransparent() { canvas_color = color; }
+                if !color.IsTotallyTransparent() {
+                    painter.SetCanvasColor(color);
+                }
             }
-            // C++ case OBT_POPUP_ROOT
             OuterBorderType::PopupRoot => {
-                let s = w.min(h) * self.border_scaling;
+                let s = self.base_unit(w, h);
                 let d = s * 0.006;
-                rnd_x = d;
-                rnd_y = d;
-                rnd_w = w - 2.0 * d;
-                rnd_h = h - 2.0 * d;
-                rnd_r = 0.0;
-                min_space = 0.0;
-                how_to_space = 0.023;
-                label_space = 0.17;
                 let color = look.bg_color;
                 if !color.IsTotallyTransparent() {
-                    // C++ painter->Clear(color, canvasColor)
-                    painter.PaintRect(0.0, 0.0, w, h, color, canvas_color);
-                    canvas_color = color;
+                    painter.PaintRect(0.0, 0.0, w, h, color, painter.GetCanvasColor());
+                    painter.SetCanvasColor(color);
                 }
-                // C++ line 889: r=d*(159.0/159.0) — identity, kept for correspondence.
-                let r = d;
+                let r = d * (159.0 / 159.0);
+                // C++ passes canvasColor which was updated by Clear above
+                let cc = painter.GetCanvasColor();
                 with_toolkit_images(|img| {
                     painter.PaintBorderImage(
-                        0.0, 0.0, w, h,
-                        r, r, r, r,
+                        0.0,
+                        0.0,
+                        w,
+                        h,
+                        r,
+                        r,
+                        r,
+                        r,
                         &img.popup_border,
-                        159, 159, 159, 159,
-                        255, canvas_color, BORDER_EDGES_ONLY,
+                        159,
+                        159,
+                        159,
+                        159,
+                        255,
+                        cc,
+                        BORDER_EDGES_ONLY,
                     );
                 });
             }
         }
 
-        // C++ line 901-902: s=emMin(rndW,rndH)*BorderScaling; minSpace*=s;
-        let s = rnd_w.min(rnd_h) * self.border_scaling;
-        let min_space = min_space * s;
+        // emLabel area — only painted when label_in_border is true.
+        let (ox, oy, ow, oh) = self.outer_insets(w, h);
+        let mut rnd_x = ox;
+        let mut rnd_w = (w - ow).max(0.0);
+        let rnd_h = (h - oh).max(0.0);
 
-        // C++ lines 904-934: HowTo
+        // minSpace/howToSpace: C++ emBorder.cpp lines 901-933.
+        let s = rnd_w.min(rnd_h) * self.border_scaling;
+        let ms = s * self.min_space_factor();
+
+        // HowTo space: shift content rightward if howToSpace > minSpace.
         if self.has_how_to {
-            let how_to_space = how_to_space * s;
-            // C++ lines 906-928: paint HowTo indicator
-            let tw = how_to_space * 0.9;
+            let hts = s * self.how_to_space_factor();
+
+            // Paint HowTo indicator (C++ emBorder.cpp lines 906-928).
+            let tw = hts * 0.9;
             let th = tw * 2.0;
-            let tx = rnd_x + (how_to_space - tw) * 0.5;
-            let ty = rnd_y + (rnd_h - th) * 0.5;
+            let tx = rnd_x + (hts - tw) * 0.5;
+            let ty = oy + (rnd_h - th) * 0.5;
             painter.PaintRoundRect(
-                tx, ty, tw, th, tw * 0.01, tw * 0.01,
+                tx,
+                ty,
+                tw,
+                th,
+                tw * 0.01,
+                tw * 0.01,
                 look.fg_color.GetTransparented(90.0),
-                canvas_color,
+                painter.GetCanvasColor(),
             );
-            // C++ line 916: if(PanelToViewDeltaX(tw)*PanelToViewDeltaY(th)>100.0)
+
+            // C++ emBorder.cpp:916-927: paint text inside the pill when large enough.
             if tw * th * pixel_scale > 100.0 && !self.how_to_text.is_empty() {
                 let d = tw * 0.01;
                 painter.PaintTextBoxed(
-                    tx + d, ty + d, tw - d * 2.0, th - d * 2.0,
+                    tx + d,
+                    ty + d,
+                    tw - d * 2.0,
+                    th - d * 2.0,
                     &self.how_to_text,
                     th,
                     look.fg_color.GetTransparented(35.0),
-                    canvas_color,
+                    painter.GetCanvasColor(),
                     TextAlignment::Left,
                     VAlign::Top,
                     TextAlignment::Left,
@@ -1843,188 +1859,177 @@ How to move or set the focus:\n\
                     0.0,
                 );
             }
-            // C++ lines 930-933
-            if how_to_space > min_space {
-                rnd_x += how_to_space - min_space;
-                rnd_w -= how_to_space - min_space;
+
+            if hts > ms {
+                rnd_x += hts - ms;
+                rnd_w -= hts - ms;
             }
         }
 
-        // C++ lines 936-1003: label + aux
-        if self.label_in_border && self.HasLabel() {
-            let label_space = label_space * s;
-            // C++ lines 938-981: paint label (func==BORDER_FUNC_PAINT)
-            let d = label_space * 0.1;
-            let ty = rnd_y + d;
-            let mut th = label_space - 2.0 * d;
-            let mut e = d.max(min_space);
-            // C++ lines 943-948: corner clearance
-            if e < rnd_r {
-                let f = d * 0.77;
+        let label_area_w = rnd_w;
+        let ls = if self.label_in_border && self.HasLabel() {
+            self.label_space(label_area_w, rnd_h)
+        } else {
+            0.0
+        };
+
+        if ls > 0.0 {
+            let lch = self.label_content_height(label_area_w, rnd_h);
+            // C++ emBorder.cpp lines 939-951:
+            //   d = labelSpace*0.1; ty = rndY+d; th = labelSpace-2*d;
+            //   e = emMax(d, minSpace); [corner-clearance]; tx = rndX+e; tw = rndW-2*e
+            let d_label = ls * 0.1;
+            let mut e_label = d_label.max(ms);
+            // Corner-clearance: for rounded borders, e must clear the rounded corner
+            // so the label text doesn't overlap the corner arc. C++ lines 943-948.
+            let rnd_r = self.outer_radius(w, h);
+            if e_label < rnd_r {
+                let f = d_label * 0.77;
                 let r = rnd_r - f;
-                let g = r - d + f;
+                let g = r - d_label + f;
                 let f2 = rnd_r - (r * r - g * g).sqrt();
-                if e < f2 { e = f2; }
-            }
-            let tx = rnd_x + e;
-            let mut tw = rnd_w - 2.0 * e;
-            // C++ lines 952-972: Aux
-            if self.aux_panel_name.is_some() {
-                let mut d = th * 0.2;
-                let mut e = th / self.aux_tallness;
-                let f = d + e + th / self.GetBestLabelTallness().max(1e-100) * 0.5;
-                if tw < f {
-                    let f2 = tw / f;
-                    d *= f2;
-                    e *= f2;
-                    let old_th = th;
-                    th *= f2;
-                    let _ty = ty + (old_th - old_th * f2) * 0.5;
-                    // Note: C++ adjusts ty here but we handle it below
+                if e_label < f2 {
+                    e_label = f2;
                 }
-                // C++ line 971: tw-=d+e
-                tw -= d + e;
             }
-            // C++ lines 973-981: PaintLabel
-            let label_color = if enabled {
-                look.fg_color
-            } else {
-                look.fg_color.GetTransparented(75.0)
-            };
-            let dim_color = |c: emColor| -> emColor {
-                if enabled { c } else { c.GetTransparented(75.0) }
-            };
-            // C++ calls PaintLabel(*painter, tx, ty, tw, th, color, canvasColor)
-            // which delegates to DoLabel(LABEL_FUNC_PAINT, ...).
-            // In Rust we call paint_label_impl with the computed rect.
-            let _ = label_color;
             self.paint_label_impl(
                 painter,
-                Rect::new(tx, ty, tw, th),
+                Rect::new(
+                    rnd_x + e_label,
+                    oy + d_label,
+                    (label_area_w - 2.0 * e_label).max(0.0),
+                    lch,
+                ),
                 look,
                 &dim_color,
             );
-
-            // C++ lines 983-1002: geometry adjustments after label
-            rnd_x += min_space;
-            rnd_w -= 2.0 * min_space;
-            rnd_y += label_space;
-            rnd_h -= label_space + min_space;
-            rnd_r -= min_space;
-            if rnd_r <= 0.0 {
-                rnd_r = 0.0;
-            }
-        } else if self.aux_panel_name.is_some() {
-            // C++ lines 1004-1045: Aux without label
-            let s2 = rnd_w.min(rnd_h);
-            let mut tw = s2 * 0.1;
-            let mut th = tw * self.aux_tallness;
-            let d = s2 * 0.01;
-            let e = rnd_h - 2.0 * rnd_r.max(d);
-            if th > e {
-                th = e.max(1e-100);
-                tw = th / self.aux_tallness;
-            }
-            // C++ lines 1022-1026
-            let e = s2 * 0.015;
-            tw += e + d;
-            if tw < min_space { tw = min_space; }
-            rnd_x += min_space;
-            rnd_w -= min_space + tw;
-            rnd_y += min_space;
-            rnd_h -= 2.0 * min_space;
-            rnd_r -= min_space;
-            if rnd_r <= 0.0 {
-                rnd_r = 0.0;
-            }
-        } else {
-            // C++ lines 1046-1064: no label, no aux
-            rnd_x += min_space;
-            rnd_y += min_space;
-            rnd_w -= 2.0 * min_space;
-            rnd_h -= 2.0 * min_space;
-            rnd_r -= min_space;
-            if rnd_r <= 0.0 {
-                rnd_r = 0.0;
-            }
         }
 
-        // C++ lines 1067-1168: inner border switch
+        // Inner border — use do_border_geometry's pre-inner-border computation.
+        // This replicates C++ DoBorder lines 983-1065: minSpace+label adjustments.
+        let (inner_x, inner_y, inner_w, inner_h, mut inner_r) = {
+            let (ox2, oy2, ow2, oh2) = self.outer_insets(w, h);
+            let mut rx = ox2;
+            let mut rw = (w - ow2).max(0.0);
+            let rh = (h - oh2).max(0.0);
+            let s2 = rw.min(rh) * self.border_scaling;
+            let ms2 = s2 * self.min_space_factor();
+            if self.has_how_to {
+                let hts2 = s2 * self.how_to_space_factor();
+                if hts2 > ms2 { rx += hts2 - ms2; rw -= hts2 - ms2; }
+            }
+            let ls2 = if self.label_in_border && self.HasLabel() {
+                s2 * self.label_space_factor()
+            } else { 0.0 };
+            if ls2 > 0.0 {
+                rx += ms2; rw -= 2.0 * ms2;
+                let ry = oy2 + ls2;
+                let rh2 = rh - ls2 - ms2;
+                let rr = self.outer_radius(w, h) - ms2;
+                (rx, ry, rw, rh2, rr)
+            } else {
+                rx += ms2;
+                let ry = oy2 + ms2;
+                rw -= 2.0 * ms2;
+                let rh2 = rh - 2.0 * ms2;
+                let rr = self.outer_radius(w, h) - ms2;
+                (rx, ry, rw, rh2, rr)
+            }
+        };
+
         match self.inner {
             InnerBorderType::None => {}
-            // C++ case IBT_GROUP (lines 1068-1090)
             InnerBorderType::Group => {
-                let r = rnd_w.min(rnd_h) * self.border_scaling * 0.0188;
-                if rnd_r < r { rnd_r = r; }
+                // C++ line 1069-1070: r = min(rndW,rndH)*BorderScaling*0.0188; if(rndR<r) rndR=r;
+                let r = inner_w.min(inner_h) * self.border_scaling * 0.0188;
+                if inner_r < r { inner_r = r; }
+                let canvas = painter.GetCanvasColor();
                 with_toolkit_images(|img| {
                     painter.PaintBorderImage(
-                        rnd_x, rnd_y, rnd_w, rnd_h,
-                        rnd_r, rnd_r, rnd_r, rnd_r,
+                        inner_x, inner_y, inner_w, inner_h,
+                        inner_r, inner_r, inner_r, inner_r,
                         &img.group_inner_border,
                         225, 225, 225, 225,
-                        255, canvas_color, BORDER_EDGES_ONLY,
+                        255, canvas, BORDER_EDGES_ONLY,
                     );
                 });
             }
-            // C++ case IBT_INPUT_FIELD (lines 1091-1136)
             InnerBorderType::InputField => {
-                let r = rnd_w.min(rnd_h) * self.border_scaling * 0.094;
-                if rnd_r < r { rnd_r = r; }
-                // C++ line 1095: d=(1-(216.0-16.0)/216.0)*rndR
-                let d = (1.0 - (216.0 - 16.0) / 216.0) * rnd_r;
-                let tx = rnd_x + d;
-                let ty = rnd_y + d;
-                let tw = rnd_w - 2.0 * d;
-                let th = rnd_h - 2.0 * d;
-                let tr = rnd_r - d;
-                // C++ line 1105
-                let mut color = look.input_bg_color;
-                if !enabled { color = color.GetBlended(look.bg_color, 80.0); }
-                // C++ line 1109
-                painter.PaintRoundRect(tx, ty, tw, th, tr, tr, color, canvas_color);
-                canvas_color = color;
-                // C++ calls PaintContent here, then paints IO border image overlay.
-                // In Rust, caller paints content and calls paint_inner_overlay.
+                // C++ line 1093-1094: r = min(rndW,rndH)*BorderScaling*0.094; if(rndR<r) rndR=r;
+                let r = inner_w.min(inner_h) * self.border_scaling * 0.094;
+                if inner_r < r { inner_r = r; }
+                let bg = if enabled {
+                    look.input_bg_color
+                } else {
+                    look.input_bg_color.GetBlended(look.bg_color, 80.0)
+                };
+                let d = (16.0 / 216.0) * inner_r;
+                let tr = inner_r - d;
+                painter.PaintRoundRect(
+                    inner_x + d, inner_y + d,
+                    inner_w - 2.0 * d, inner_h - 2.0 * d,
+                    tr, tr, bg, painter.GetCanvasColor(),
+                );
+                painter.SetCanvasColor(bg);
             }
-            // C++ case IBT_OUTPUT_FIELD
             InnerBorderType::OutputField => {
-                let r = rnd_w.min(rnd_h) * self.border_scaling * 0.094;
-                if rnd_r < r { rnd_r = r; }
-                let d = (1.0 - (216.0 - 16.0) / 216.0) * rnd_r;
-                let tx = rnd_x + d;
-                let ty = rnd_y + d;
-                let tw = rnd_w - 2.0 * d;
-                let th = rnd_h - 2.0 * d;
-                let tr = rnd_r - d;
-                let mut color = look.output_bg_color;
-                if !enabled { color = color.GetBlended(look.bg_color, 80.0); }
-                painter.PaintRoundRect(tx, ty, tw, th, tr, tr, color, canvas_color);
-                canvas_color = color;
+                let r = inner_w.min(inner_h) * self.border_scaling * 0.094;
+                if inner_r < r { inner_r = r; }
+                let bg = if enabled {
+                    look.output_bg_color
+                } else {
+                    look.output_bg_color.GetBlended(look.bg_color, 80.0)
+                };
+                let d = (16.0 / 216.0) * inner_r;
+                let tr = inner_r - d;
+                painter.PaintRoundRect(
+                    inner_x + d, inner_y + d,
+                    inner_w - 2.0 * d, inner_h - 2.0 * d,
+                    tr, tr, bg, painter.GetCanvasColor(),
+                );
+                painter.SetCanvasColor(bg);
             }
-            // C++ case IBT_CUSTOM_RECT (lines 1137-1165)
             InnerBorderType::CustomRect => {
-                let d = rnd_r * 0.25;
-                rnd_x += d;
-                rnd_y += d;
-                rnd_w -= 2.0 * d;
-                rnd_h -= 2.0 * d;
-                rnd_r -= d;
+                // C++ lines 1137-1153: first inset by 25% of corner radius,
+                // then bump radius, then paint border image.
+                // The generic inner_r bump at lines 1830-1833 uses the wrong
+                // formula for CustomRect; recompute from the raw radius.
+                let raw_r = (self.outer_radius(w, h) - ms).max(0.0);
+                let d = raw_r * 0.25;
+                let cr_x = inner_x + d;
+                let cr_y = inner_y + d;
+                let cr_w = (inner_w - 2.0 * d).max(0.0);
+                let cr_h = (inner_h - 2.0 * d).max(0.0);
+                let mut cr_r = raw_r - d;
+                // C++ uses emMin(1.0, h) where 1.0 = normalized width.
+                // In pixel space: w.min(h) with original panel dimensions.
                 let r = w.min(h) * self.border_scaling * 0.0125;
-                if rnd_r < r { rnd_r = r; }
+                if cr_r < r {
+                    cr_r = r;
+                }
+                let canvas = painter.GetCanvasColor();
                 with_toolkit_images(|img| {
                     painter.PaintBorderImage(
-                        rnd_x, rnd_y, rnd_w, rnd_h,
-                        rnd_r, rnd_r, rnd_r, rnd_r,
+                        cr_x,
+                        cr_y,
+                        cr_w,
+                        cr_h,
+                        cr_r,
+                        cr_r,
+                        cr_r,
+                        cr_r,
                         &img.custom_rect_border,
-                        200, 200, 200, 200,
-                        255, canvas_color, BORDER_EDGES_ONLY,
+                        200,
+                        200,
+                        200,
+                        200,
+                        255,
+                        canvas,
+                        BORDER_EDGES_ONLY,
                     );
                 });
             }
         }
-
-        // Update the painter's canvas color to match C++ tracking.
-        painter.SetCanvasColor(canvas_color);
     }
     /// Paint the IO field border image overlay on top of content.
     ///

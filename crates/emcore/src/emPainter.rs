@@ -1117,8 +1117,7 @@ impl<'a> emPainter<'a> {
         color: emColor,
         canvas_color: emColor,
     ) {
-        // C++: log + g_draw_op_depth++
-        let is_recording = self.try_record(DrawOp::PaintEllipseSector {
+        let Some(_proof) = self.try_record(DrawOp::PaintEllipseSector {
             cx,
             cy,
             rx,
@@ -1127,89 +1126,55 @@ impl<'a> emPainter<'a> {
             sweep_angle,
             color,
             canvas_color,
-        }).is_none();
-        if is_recording {
-            if !self.record_subops {
-                return;
-            }
-            self.record_depth += 1;
-        }
-
-        // C++: startAngle*=M_PI/180.0; rangeAngle*=M_PI/180.0;
-        let mut start_rad = start_angle * std::f64::consts::PI / 180.0;
-        let mut range_rad = sweep_angle * std::f64::consts::PI / 180.0;
-
-        // C++: if (rangeAngle<=0.0) { if (rangeAngle==0.0) return; startAngle+=rangeAngle; rangeAngle=-rangeAngle; }
-        if range_rad <= 0.0 {
-            if range_rad == 0.0 {
-                if is_recording { self.record_depth -= 1; }
-                return;
-            }
-            start_rad += range_rad;
-            range_rad = -range_rad;
-        }
-
-        // C++: if (rangeAngle>=2*M_PI) { PaintEllipse(...); return; }
-        if range_rad >= 2.0 * std::f64::consts::PI {
-            self.PaintEllipse(cx, cy, rx, ry, color, canvas_color);
-            if is_recording { self.record_depth -= 1; }
-            return;
-        }
-
-        // C++ clip checks using bounding box: x → cx-rx, x+w → cx+rx, y → cy-ry, y+h → cy+ry
-        if (cx - rx) * self.state.scale_x + self.state.offset_x >= self.state.clip.x2 {
-            if is_recording { self.record_depth -= 1; }
-            return;
-        }
-        if (cx + rx) * self.state.scale_x + self.state.offset_x <= self.state.clip.x1 {
-            if is_recording { self.record_depth -= 1; }
-            return;
-        }
-        if (cy - ry) * self.state.scale_y + self.state.offset_y >= self.state.clip.y2 {
-            if is_recording { self.record_depth -= 1; }
-            return;
-        }
-        if (cy + ry) * self.state.scale_y + self.state.offset_y <= self.state.clip.y1 {
-            if is_recording { self.record_depth -= 1; }
-            return;
-        }
-
-        // C++: if (w<=0.0 || h<=0.0) return;  →  rx/ry already represent half-dims
+        }) else { return; };
         if rx <= 0.0 || ry <= 0.0 {
-            if is_recording { self.record_depth -= 1; }
             return;
         }
-
-        // C++ UserSpaceLeaveGuard — not needed in Rust
-
-        // C++: f=CircleQuality*sqrt(rx*ScaleX+ry*ScaleY);
+        if sweep_angle == 0.0 {
+            return;
+        }
+        // Normalize negative sweep.
+        if sweep_angle < 0.0 {
+            return self.PaintEllipseSector(
+                cx,
+                cy,
+                rx,
+                ry,
+                start_angle + sweep_angle,
+                -sweep_angle,
+                color,
+                canvas_color,
+            );
+        }
+        // Convert degrees to radians.
+        let start_rad = start_angle * std::f64::consts::PI / 180.0;
+        let sweep_rad = sweep_angle * std::f64::consts::PI / 180.0;
+        // Full circle or more — delegate to paint_ellipse.
+        if sweep_rad >= 2.0 * std::f64::consts::PI {
+            return self.PaintEllipse(cx, cy, rx, ry, color, canvas_color);
+        }
+        // Match C++ PaintEllipseSector: keep f as float through arc scaling,
+        // use round-to-nearest, minimum 3 arc segments, center vertex last.
         let mut f = CIRCLE_QUALITY * (rx * self.state.scale_x + ry * self.state.scale_y).sqrt();
         if f > 256.0 {
             f = 256.0;
         }
-        // C++: f=f*rangeAngle/(2*M_PI);
-        f = f * range_rad / (2.0 * std::f64::consts::PI);
-        // C++: if (f<=3.0) n=3; else if (f>=256.0) n=256; else n=(int)(f+0.5);
-        let n: usize = if f <= 3.0 {
+        f = f * sweep_rad / (2.0 * std::f64::consts::PI);
+        let arc_segments = if f <= 3.0 {
             3
         } else if f >= 256.0 {
             256
         } else {
             (f + 0.5) as usize
         };
-        // C++: f=rangeAngle/n;
-        let step = range_rad / n as f64;
-        // C++: for (i=0; i<=n; i++) { xy[i*2]=cos(startAngle+f*i)*rx+x; xy[i*2+1]=sin(startAngle+f*i)*ry+y; }
-        let mut verts = Vec::with_capacity(n + 2);
-        for i in 0..=n {
+        let step = sweep_rad / arc_segments as f64;
+        let mut verts = Vec::with_capacity(arc_segments + 2);
+        for i in 0..=arc_segments {
             let angle = start_rad + step * i as f64;
-            verts.push((angle.cos() * rx + cx, angle.sin() * ry + cy));
+            verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
         }
-        // C++: xy[(n+1)*2]=x; xy[(n+1)*2+1]=y;  (center vertex)
         verts.push((cx, cy));
-        // C++: PaintPolygon(xy,n+2,texture,canvasColor);
         self.PaintPolygon(&verts, color, canvas_color);
-        if is_recording { self.record_depth -= 1; }
     }
 
     /// Fill a rectangle with a linear gradient between two colors.
@@ -3714,137 +3679,67 @@ impl<'a> emPainter<'a> {
             stroke: stroke.clone(),
             canvas_color,
         }) else { return; };
-
-        // C++ line 1734: startAngle*=M_PI/180.0; rangeAngle*=M_PI/180.0;
-        // (Rust API already receives radians — no conversion needed.)
-
-        // C++ line 1736: if (rangeAngle==0.0) return;
-        if range_angle == 0.0 { return; }
-
-        // C++ line 1737-1741: absRangeAngle=fabs(rangeAngle); if >=2*PI => PaintEllipseOutline
-        let abs_range_angle = range_angle.abs();
-        if abs_range_angle >= 2.0 * std::f64::consts::PI {
+        if rx <= 0.0 || ry <= 0.0 || stroke.width <= 0.0 {
+            return;
+        }
+        if range_angle == 0.0 {
+            return;
+        }
+        let abs_range = range_angle.abs();
+        if abs_range >= 2.0 * std::f64::consts::PI {
             self.PaintEllipseOutline(cx, cy, rx, ry, stroke, canvas_color);
             return;
         }
-
-        // C++ line 1743: if (thickness<=0.0) return;
-        let thickness = stroke.width;
-        if thickness <= 0.0 { return; }
-
-        // C++ line 1744-1745: if (w<0.0) w=0.0; if (h<0.0) h=0.0;
-        let rx = rx.max(0.0);
-        let ry = ry.max(0.0);
-        let w = 2.0 * rx;
-        let h = 2.0 * ry;
-
-        // C++ line 1746: r=CalculateLinePointMinMaxRadius(thickness,stroke,strokeStart,strokeEnd);
-        let r = Self::CalculateLinePointMinMaxRadius(
-            thickness, stroke, &stroke.start_end, &stroke.finish_end,
-        );
-
-        // C++ lines 1747-1750: clip checks
-        // Map cx,cy,rx,ry back to x,y for clip: x = cx - rx, y = cy - ry
-        let x = cx - rx;
-        let y = cy - ry;
-        if (x - r) * self.state.scale_x + self.state.offset_x >= self.state.clip.x2 { return; }
-        if (x + w + r) * self.state.scale_x + self.state.offset_x <= self.state.clip.x1 { return; }
-        if (y - r) * self.state.scale_y + self.state.offset_y >= self.state.clip.y2 { return; }
-        if (y + h + r) * self.state.scale_y + self.state.offset_y <= self.state.clip.y1 { return; }
-
-        // C++ line 1752: UserSpaceLeaveGuard (no-op in Rust)
-
-        // C++ lines 1754-1758: rx=w*0.5; ry=h*0.5; cx=x+rx; cy=y+ry; t2=thickness*0.5;
-        // (Already have cx, cy, rx, ry from params; t2 computed below.)
-        let t2 = thickness * 0.5;
-
-        // C++ line 1759: f=CircleQuality*sqrt((rx+t2)*ScaleX+(ry+t2)*ScaleY);
-        let mut f = CIRCLE_QUALITY * ((rx + t2) * self.state.scale_x + (ry + t2) * self.state.scale_y).sqrt();
-
-        // C++ line 1760: if (f>256.0) f=256.0;
+        // C++ includes half-thickness in quality (emPainter.cpp:1759)
+        let t2 = stroke.width * 0.5;
+        let mut f = CIRCLE_QUALITY
+            * ((rx + t2) * self.state.scale_x + (ry + t2) * self.state.scale_y).sqrt();
         if f > 256.0 { f = 256.0; }
-
-        // C++ line 1761: f=f*absRangeAngle/(2*M_PI);
-        f = f * abs_range_angle / (2.0 * std::f64::consts::PI);
-
-        // C++ lines 1762-1764: clamp n to [3,256]
-        let n: usize = if f <= 3.0 { 3 } else if f >= 256.0 { 256 } else { (f + 0.5) as usize };
-
-        // C++ line 1765: f=rangeAngle/n;
-        let f = range_angle / n as f64;
-
-        // C++ line 1766: n++;
+        f = f * abs_range / (2.0 * std::f64::consts::PI);
+        let n = if f <= 3.0 { 3 } else if f >= 256.0 { 256 } else { (f + 0.5) as usize };
+        let step = range_angle / n as f64;
         let vn = n + 1;
-
-        // C++ lines 1767-1770: generate vertices
-        let mut xy: Vec<(f64, f64)> = Vec::with_capacity(vn);
+        let mut verts = Vec::with_capacity(vn);
         for i in 0..vn {
-            xy.push((
-                (start_angle + f * i as f64).cos() * rx + cx,
-                (start_angle + f * i as f64).sin() * ry + cy,
-            ));
+            let angle = start_angle + step * i as f64;
+            verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
         }
 
-        // C++ lines 1772-1802: compute normals for arrows
-        let mut nx1: f64 = 1.0;
-        let mut ny1: f64 = 0.0;
-        let mut nx2: f64 = 1.0;
-        let mut ny2: f64 = 0.0;
-        let mut with_arrows = false;
-
-        // C++ line 1775: if (strokeStart.IsDecorated())
-        if stroke.start_end.IsDecorated() {
-            with_arrows = true;
-            // C++ lines 1777-1778
-            nx1 = -(start_angle.sin());
-            ny1 = start_angle.cos();
-            // C++ line 1779: if (rangeAngle<0.0) { nx1=-nx1; ny1=-ny1; }
-            if range_angle < 0.0 { nx1 = -nx1; ny1 = -ny1; }
-            // C++ lines 1780-1787
-            let tnx = nx1 * rx;
-            let tny = ny1 * ry;
-            let ll = tnx * tnx + tny * tny;
-            if ll > 1e-280 {
-                let l = ll.sqrt();
-                nx1 = tnx / l;
-                ny1 = tny / l;
-            }
-        }
-
-        // C++ line 1789: if (strokeEnd.IsDecorated())
-        if stroke.finish_end.IsDecorated() {
-            with_arrows = true;
-            // C++ lines 1791-1792
-            nx2 = (start_angle + range_angle).sin();
-            ny2 = -((start_angle + range_angle).cos());
-            // C++ line 1793: if (rangeAngle<0.0) { nx2=-nx2; ny2=-ny2; }
-            if range_angle < 0.0 { nx2 = -nx2; ny2 = -ny2; }
-            // C++ lines 1794-1801
-            let tnx = nx2 * rx;
-            let tny = ny2 * ry;
-            let ll = tnx * tnx + tny * tny;
-            if ll > 1e-280 {
-                let l = ll.sqrt();
-                nx2 = tnx / l;
-                ny2 = tny / l;
-            }
-        }
-
-        // C++ line 1804: if (w<thickness || h<thickness) canvasColor=0;
-        let canvas_color = if w < thickness || h < thickness {
+        // C++ line 1804: if (w < thickness || h < thickness) canvasColor = 0;
+        let canvas_color = if 2.0 * rx < stroke.width || 2.0 * ry < stroke.width {
             emColor::TRANSPARENT
         } else {
             canvas_color
         };
 
-        // C++ lines 1806-1815
+        // C++ computes exact ellipse tangent directions for arrow rendering
+        // (emPainter.cpp:1775-1801) instead of deriving them from polyline vertices.
+        let with_arrows = stroke.start_end.IsDecorated() || stroke.finish_end.IsDecorated();
         if with_arrows {
-            self.PaintPolylineWithArrows(
-                &xy, stroke, false, canvas_color,
-                Some(((nx1, ny1), (nx2, ny2))),
-            );
+            let compute_normal = |angle: f64, forward: bool| -> (f64, f64) {
+                let (mut nx, mut ny) = if forward {
+                    (-angle.sin(), angle.cos())
+                } else {
+                    (angle.sin(), -angle.cos())
+                };
+                if range_angle < 0.0 { nx = -nx; ny = -ny; }
+                let tnx = nx * rx;
+                let tny = ny * ry;
+                let ll = tnx * tnx + tny * tny;
+                if ll > 1e-280 {
+                    let l = ll.sqrt();
+                    (tnx / l, tny / l)
+                } else {
+                    (nx, ny)
+                }
+            };
+
+            let n1 = compute_normal(start_angle, true);
+            let n2 = compute_normal(start_angle + range_angle, false);
+
+            self.PaintPolylineWithArrows(&verts, stroke, false, canvas_color, Some((n1, n2)));
         } else {
-            self.PaintPolylineWithoutArrows(&xy, stroke, false, canvas_color);
+            self.PaintPolylineWithoutArrows(&verts, stroke, false, canvas_color);
         }
     }
 
@@ -4247,9 +4142,9 @@ impl<'a> emPainter<'a> {
         y2 = y2 * self.state.scale_y + self.state.offset_y;
 
         if y1 > y2 {
-            let t = y1; y1 = y2; y2 = t;
-            let t = x1; x1 = x2; x2 = t;
-            let tc = color1; color1 = color2; color2 = tc;
+            std::mem::swap(&mut x1, &mut x2);
+            std::mem::swap(&mut y1, &mut y2);
+            std::mem::swap(&mut color1, &mut color2);
         }
 
         let dx = x2 - x1;
@@ -4258,100 +4153,62 @@ impl<'a> emPainter<'a> {
         let gx = if dy >= 0.0001 { dx / dy } else { 0.0 };
         let gy = if adx >= 0.0001 { dy / dx } else { 0.0 };
 
-        if y1 < self.state.clip.y1 {
-            if y2 <= self.state.clip.y1 { return; }
-            x1 += (self.state.clip.y1 - y1) * gx;
-            y1 = self.state.clip.y1;
-        }
-        if y2 > self.state.clip.y2 {
-            if y1 >= self.state.clip.y2 { return; }
-            x2 += (self.state.clip.y2 - y2) * gx;
-            y2 = self.state.clip.y2;
-        }
+        let cx1f = self.state.clip.x1;
+        let cy1f = self.state.clip.y1;
+        let cx2f = self.state.clip.x2;
+        let cy2f = self.state.clip.y2;
 
-        let mut sx: i32;
-        let mut cx1: f64;
-        let mut cx2: f64;
+        if y1 < cy1f { if y2 <= cy1f { return; } x1 += (cy1f - y1) * gx; y1 = cy1f; }
+        if y2 > cy2f { if y1 >= cy2f { return; } x2 += (cy2f - y2) * gx; y2 = cy2f; }
+
+        let mut cx1; let mut cx2; let mut sx: i32;
         if dx >= 0.0 {
-            if x1 < self.state.clip.x1 {
-                if x2 <= self.state.clip.x1 { return; }
-                y1 += (self.state.clip.x1 - x1) * gy;
-                x1 = self.state.clip.x1;
-            }
-            if x2 > self.state.clip.x2 {
-                if x1 >= self.state.clip.x2 { return; }
-                y2 += (self.state.clip.x2 - x2) * gy;
-                x2 = self.state.clip.x2;
-            }
-            sx = x1 as i32;
-            cx1 = x1;
-            cx2 = x2;
+            if x1 < cx1f { if x2 <= cx1f { return; } y1 += (cx1f - x1) * gy; x1 = cx1f; }
+            if x2 > cx2f { if x1 >= cx2f { return; } y2 += (cx2f - x2) * gy; x2 = cx2f; }
+            sx = x1 as i32; cx1 = x1; cx2 = x2;
         } else {
-            if x2 < self.state.clip.x1 {
-                if x1 <= self.state.clip.x1 { return; }
-                y2 += (self.state.clip.x1 - x2) * gy;
-                x2 = self.state.clip.x1;
-            }
-            if x1 > self.state.clip.x2 {
-                if x2 >= self.state.clip.x2 { return; }
-                y1 += (self.state.clip.x2 - x1) * gy;
-                x1 = self.state.clip.x2;
-            }
-            sx = x1.ceil() as i32 - 1;
-            cx1 = x2;
-            cx2 = x1;
+            if x2 < cx1f { if x1 <= cx1f { return; } y2 += (cx1f - x2) * gy; x2 = cx1f; }
+            if x1 > cx2f { if x2 >= cx2f { return; } y1 += (cx2f - x1) * gy; x1 = cx2f; }
+            sx = x1.ceil() as i32 - 1; cx1 = x2; cx2 = x1;
         }
         let mut sy = y1 as i32;
-        let mut cy1 = y1;
-        let mut cy2 = y2;
-        if adx > dy {
-            cy1 = cy1.floor();
-            cy2 = cy2.ceil();
-        } else {
-            cx1 = cx1.floor();
-            cx2 = cx2.ceil();
-        }
+        let mut cy1 = y1; let mut cy2 = y2;
+        if adx > dy { cy1 = cy1.floor(); cy2 = cy2.ceil(); }
+        else { cx1 = cx1.floor(); cx2 = cx2.ceil(); }
 
         if color1.IsTotallyTransparent() || color2.IsTotallyTransparent() { return; }
 
         let ac1 = color1.GetAlpha() as f64 * (1.0 / 255.0);
         let ac2 = color2.GetAlpha() as f64 * (1.0 / 255.0);
-
+        let tw = self.target_width as i32;
+        let th = self.target_height as i32;
         let h1 = [color1.GetRed(), color1.GetGreen(), color1.GetBlue()];
         let h2 = [color2.GetRed(), color2.GetGreen(), color2.GetBlue()];
 
-        let tw = self.target_width as i32;
-        let th = self.target_height as i32;
-
         loop {
-            let mut px1 = sx as f64;
-            let mut py1 = sy as f64;
-            let mut px2 = px1 + 1.0;
-            let mut py2 = py1 + 1.0;
-            if px1 < cx1 { px1 = cx1; }
-            if py1 < cy1 { py1 = cy1; }
-            if px2 > cx2 { px2 = cx2; }
-            if py2 > cy2 { py2 = cy2; }
-            let mut qx1 = x1;
-            let mut qy1 = y1;
-            let mut qx2 = x2;
-            let mut qy2 = y2;
+            let mut px1 = sx as f64; let mut py1 = sy as f64;
+            let mut px2 = px1 + 1.0; let mut py2 = py1 + 1.0;
+            if px1 < cx1 { px1 = cx1; } if py1 < cy1 { py1 = cy1; }
+            if px2 > cx2 { px2 = cx2; } if py2 > cy2 { py2 = cy2; }
+
+            let mut qx1 = x1; let mut qy1 = y1; let mut qx2 = x2; let mut qy2 = y2;
             if qy1 < py1 { qx1 += (py1 - qy1) * gx; qy1 = py1; }
             if qy2 > py2 { qx2 += (py2 - qy2) * gx; qy2 = py2; }
-            let mut a2: f64;
+            let a2;
             if dx >= 0.0 {
-                if qx1 < px1 { qy1 += (px1 - qx1) * gy; qx1 = px1; }
-                if qx2 > px2 { qy2 += (px2 - qx2) * gy; qx2 = px2; }
+                if qx1 < px1 { qy1 += (px1 - qx1) * gy; } // qx1 = px1 implicit
+                if qx2 > px2 { qy2 += (px2 - qx2) * gy; } // qx2 = px2 implicit
                 a2 = py2 - qy2;
             } else {
                 if qx2 < px1 { qy2 += (px1 - qx2) * gy; qx2 = px1; }
                 if qx1 > px2 { qy1 += (px2 - qx1) * gy; qx1 = px2; }
                 a2 = qy1 - py1;
             }
-            a2 = a2 * (px2 - px1) + (qy2 - qy1) * ((qx1 + qx2) * 0.5 - px1);
+            let a2 = a2 * (px2 - px1) + (qy2 - qy1) * ((qx1 + qx2) * 0.5 - px1);
             let a1 = (py2 - py1) * (px2 - px1) - a2;
             let a1 = a1 * ac1;
             let a2 = a2 * ac2;
+
             if a1 >= 0.001 && a2 >= 0.001 {
                 let t = 255.0 / ((1.0 - a1) * (1.0 - a2));
                 let alpha1 = (a1 * a2 * (1.0 - a2) * t) as i32;
@@ -4362,32 +4219,26 @@ impl<'a> emPainter<'a> {
                     let bg = self.read_pixel(proof, sx as u32, sy as u32);
                     let out = self.GetImage(proof).SetPixel(sx as u32, sy as u32);
                     for ch in 0..3 {
-                        if alpha3 > 0 {
-                            let bg_ch = bg[ch] as i32;
-                            let bg_term = (bg_ch * alpha3 + 127) / 255;
-                            let c1_term = blend_hash_lookup(h1[ch], alpha1 as u8) as i32;
-                            let c2_term = blend_hash_lookup(h2[ch], alpha2 as u8) as i32;
-                            out[ch] = (bg_term + c1_term + c2_term).clamp(0, 255) as u8;
-                        } else {
-                            let c1_term = blend_hash_lookup(h1[ch], alpha1 as u8) as i32;
-                            let c2_term = blend_hash_lookup(h2[ch], alpha2 as u8) as i32;
-                            out[ch] = (c1_term + c2_term).clamp(0, 255) as u8;
-                        }
+                        let bg_term = if alpha3 > 0 {
+                            blend_hash_lookup(bg[ch], alpha3 as u8) as i32
+                        } else { 0 };
+                        let c1_term = blend_hash_lookup(h1[ch], alpha1 as u8) as i32;
+                        let c2_term = blend_hash_lookup(h2[ch], alpha2 as u8) as i32;
+                        out[ch] = (bg_term + c1_term + c2_term).clamp(0, 255) as u8;
                     }
                 }
             }
+
             if dx >= 0.0 {
-                if ((sy + 1) as f64 - y1) * dx > ((sx + 1) as f64 - x1) * dy {
+                if (sy as f64 + 1.0 - y1) * dx > (sx as f64 + 1.0 - x1) * dy {
                     sx += 1;
                     if (sx as f64) < cx2 { continue; }
                     break;
                 }
-            } else {
-                if ((sy + 1) as f64 - y1) * dx < (sx as f64 - x1) * dy {
-                    sx -= 1;
-                    if sx as f64 + 1.0 > cx1 { continue; }
-                    break;
-                }
+            } else if (sy as f64 + 1.0 - y1) * dx < (sx as f64 - x1) * dy {
+                sx -= 1;
+                if sx as f64 + 1.0 > cx1 { continue; }
+                break;
             }
             sy += 1;
             if sy as f64 >= cy2 { break; }
