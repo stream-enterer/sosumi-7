@@ -228,6 +228,7 @@ pub struct emRadioButton {
     group: Rc<RefCell<RadioGroup>>,
     index_cell: Rc<Cell<usize>>,
     pressed: bool,
+    box_pressed: bool,
     /// Cached enabled state from the last paint call. Gates input handling.
     enabled: bool,
     last_w: f64,
@@ -242,18 +243,19 @@ impl emRadioButton {
         _index: usize,
     ) -> Self {
         let index_cell = group.borrow_mut().register();
-        let mut border = emBorder::new(OuterBorderType::InstrumentMoreRound)
+        // C++ emCheckButton: OBT_MARGIN, label left-aligned, label not in border
+        let mut border = emBorder::new(OuterBorderType::Margin)
             .with_caption(caption)
             .with_label_in_border(false)
             .with_how_to(true);
-        // C++ emButton constructor: SetLabelAlignment(EM_ALIGN_CENTER)
-        border.SetLabelAlignment(crate::emPainter::TextAlignment::Center);
+        border.SetLabelAlignment(crate::emPainter::TextAlignment::Left);
         Self {
             border,
             look,
             group,
             index_cell,
             pressed: false,
+            box_pressed: false,
             enabled: true,
             last_w: 0.0,
             last_h: 0.0,
@@ -302,122 +304,118 @@ impl emRadioButton {
         self.border.how_to_text = self.GetHowTo(enabled, true);
         self.border
             .paint_border(painter, w, h, &self.look, false, true, pixel_scale);
+        let canvas_color = painter.GetCanvasColor();
 
-        // C++ DoButton non-boxed path: GetContentRoundRect, clamp r.
-        let (cr, r) = self.border.GetContentRoundRect(w, h, &self.look);
-        let r = r.max(cr.w.min(cr.h) * self.border.border_scaling * 0.223);
+        // C++ DoButton ShownBoxed+ShownRadioed path — emButton.cpp:233-341
+        let cr = self.border.GetContentRect(w, h, &self.look);
+        let x = cr.x;
+        let y = cr.y;
+        let cw = cr.w;
+        let ch = cr.h;
 
-        // Face inset: d = (14/264) * r (C++ line 348).
-        let d = (14.0 / 264.0) * r;
-        let fx = cr.x + d;
-        let fy = cr.y + d;
-        let fw = cr.w - 2.0 * d;
-        let fh = cr.h - 2.0 * d;
-        let fr = r - d;
+        let has_label = self.border.HasLabel();
+        let (mut bx, mut by, mut bw, mut bh, mut lx, mut ly, mut lw, mut lh);
+        if has_label {
+            lw = 1.0;
+            lh = self.border.GetBestLabelTallness().max(0.2);
+            bw = lh;
+            let mut d = bw * 0.1;
+            let f = (cw / (bw + d + lw)).min(ch / lh);
+            bw *= f;
+            d *= f;
+            lw = cw - bw - d;
+            lh = bw;
+            lx = x + cw - lw;
+            ly = y + (ch - lh) * 0.5;
+        } else {
+            bw = cw.min(ch);
+            lx = x;
+            ly = y;
+            lw = 1e-100;
+            lh = 1e-100;
+        }
+        bh = bw;
+        bx = x;
+        by = y + (ch - bh) * 0.5;
 
-        // C++ emButton.cpp:361: always ButtonBgColor. Pressed visual from overlay.
-        let face_color = self.look.button_bg_color;
-        painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, face_color, painter.GetCanvasColor());
-        painter.SetCanvasColor(face_color);
+        // Image area inset (C++ line 262)
+        let d = bw * 0.13;
+        bx += d;
+        by += d;
+        bw -= 2.0 * d;
+        bh -= 2.0 * d;
 
-        // emLabel inside face with padding (C++ lines 370-391).
-        let d_min = fw.min(fh) * 0.1;
-        let dx = (r * 0.7).max(d_min);
-        let dy = (r * 0.4).max(d_min);
-        let mut lx = fx + dx;
-        let mut ly = fy + dy;
-        let mut lw = fw - 2.0 * dx;
-        let mut lh = fh - 2.0 * dy;
+        // Face inset (C++ line 268)
+        let d = bw * 30.0 / 380.0;
+        let mut fx = bx + d;
+        let fy = by + d;
+        let fw = bw - 2.0 * d;
+        let fh = bh - 2.0 * d;
+        let fr = fw * 0.5; // ShownRadioed → fr=fw*0.5 (C++ line 273)
+
+        let r = ch * 0.2;
+
+        // C++ lines 290-291: label color
+        let mut color = self.look.fg_color;
+        if !enabled { color = color.GetTransparented(75.0); }
 
         let checked = self.IsSelected();
-        // C++ line 377-382: Pressed -> 0.98, ShownChecked -> 0.983.
-        // Pressed takes priority.
-        if self.pressed || checked {
-            let s = if self.pressed { 0.98 } else { 0.983 };
-            lx += (1.0 - s) * 0.5 * lw;
-            lw *= s;
-            ly += (1.0 - s) * 0.5 * lh;
-            lh *= s;
-        }
-        let label_color = if enabled {
-            self.look.button_fg_color
-        } else {
-            self.look.button_fg_color.GetTransparented(75.0)
-        };
-        self.border.paint_label_colored(
-            painter,
-            Rect::new(lx, ly, lw, lh),
-            &self.look,
-            label_color,
-            true,
-        );
 
-        // emButton overlay image (C++ lines 393-421).
-        // Priority: Pressed -> ButtonPressed, ShownChecked -> ButtonChecked, else -> emButton.
-        with_toolkit_images(|img| {
-            if self.pressed {
-                // Pressed: ButtonPressed overlay (C++ lines 393-401).
-                painter.PaintBorderImage(
-                    cr.x,
-                    cr.y,
-                    cr.w,
-                    cr.h,
-                    360.0 / 264.0 * r,
-                    374.0 / 264.0 * r,
-                    r,
-                    r,
-                    &img.button_pressed,
-                    360,
-                    374,
-                    264,
-                    264,
-                    255,
-                    emColor::TRANSPARENT,
-                    BORDER_EDGES_ONLY,
-                );
-            } else if checked {
-                // ShownChecked: ButtonChecked overlay (C++ lines 402-409).
-                painter.PaintBorderImage(
-                    cr.x,
-                    cr.y,
-                    cr.w,
-                    cr.h,
-                    340.0 / 264.0 * r,
-                    374.0 / 264.0 * r,
-                    r,
-                    r,
-                    &img.button_checked,
-                    340,
-                    374,
-                    264,
-                    264,
-                    255,
-                    emColor::TRANSPARENT,
-                    BORDER_EDGES_ONLY,
-                );
-            } else {
-                // Normal: emButton overlay (C++ lines 411-420).
-                let extra = (658.0 - 648.0) / 264.0 * r;
-                painter.PaintBorderImage(
-                    cr.x,
-                    cr.y,
-                    cr.w + extra,
-                    cr.h + extra,
-                    278.0 / 264.0 * r,
-                    278.0 / 264.0 * r,
-                    278.0 / 264.0 * r,
-                    278.0 / 264.0 * r,
-                    &img.button,
-                    278,
-                    278,
-                    278,
-                    278,
-                    255,
-                    emColor::TRANSPARENT,
-                    BORDER_EDGES_ONLY,
-                );
+        // C++ lines 293-308: label with press nudge
+        if has_label {
+            if self.pressed && !self.box_pressed {
+                bx += lw * 0.003;
+                fx += lw * 0.003;
+                lx += lw * 0.003;
+                ly += lh * 0.007;
+                lw *= 0.986;
+                lh *= 0.986;
             }
+            self.border.paint_label_colored(
+                painter, Rect::new(lx, ly, lw, lh), &self.look, color, true,
+            );
+        }
+
+        // C++ lines 310-312: face
+        let face_color = self.look.input_bg_color;
+        painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, face_color, canvas_color);
+        let canvas_color = face_color;
+
+        // C++ line 314: PaintBoxSymbol — ShownRadioed+ShownChecked → PaintEllipse
+        if checked {
+            let d = fw * 0.25;
+            painter.PaintEllipse(
+                fx + d, fy + d, fw - 2.0 * d, fh - 2.0 * d,
+                self.look.input_fg_color, canvas_color,
+            );
+        }
+
+        // C++ line 316: disabled overlay
+        if !enabled {
+            painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, emColor::rgba(0x88, 0x88, 0x88, 0xE0), emColor::TRANSPARENT);
+        }
+
+        // C++ lines 318-331: PaintImage (radio box image overlay)
+        with_toolkit_images(|img| {
+            let box_img = if self.box_pressed {
+                &img.radio_box_pressed
+            } else {
+                &img.radio_box
+            };
+            painter.paint_image_full(bx, by, bw, bh, box_img, 255, emColor::TRANSPARENT);
         });
+
+        // C++ lines 333-340: Pressed && !BoxPressed → GroupInnerBorder overlay
+        if self.pressed && !self.box_pressed {
+            with_toolkit_images(|img| {
+                painter.PaintBorderImage(
+                    x, y, cw, ch, r, r, r, r,
+                    &img.group_inner_border,
+                    225, 225, 225, 225,
+                    255, emColor::TRANSPARENT, BORDER_EDGES_ONLY,
+                );
+            });
+        }
     }
 
     /// Rounded-rect hit test matching C++ `emButton::CheckMouse` non-boxed path.

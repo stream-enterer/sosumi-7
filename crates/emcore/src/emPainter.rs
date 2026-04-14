@@ -1028,23 +1028,24 @@ impl<'a> emPainter<'a> {
     }
 
     /// Fill an ellipse with a solid color using AA polygon approximation.
+    /// C++ signature: `PaintEllipse(x, y, w, h, color, canvasColor)` — bounding box.
     pub fn PaintEllipse(
         &mut self,
-        cx: f64,
-        cy: f64,
-        rx: f64,
-        ry: f64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
         color: emColor,
         canvas_color: emColor,
     ) {
-        if rx <= 0.0 || ry <= 0.0 {
+        if w <= 0.0 || h <= 0.0 {
             return;
         }
         let is_recording = self.try_record(DrawOp::PaintEllipse {
-            cx,
-            cy,
-            rx,
-            ry,
+            x,
+            y,
+            w,
+            h,
             color,
             canvas_color,
         }).is_none();
@@ -1054,6 +1055,10 @@ impl<'a> emPainter<'a> {
             }
             self.record_depth += 1;
         }
+        let cx = x + w * 0.5;
+        let cy = y + h * 0.5;
+        let rx = w * 0.5;
+        let ry = h * 0.5;
         let verts = self.ellipse_polygon(cx, cy, rx, ry);
         self.PaintPolygon(&verts, color, canvas_color);
         if is_recording { self.record_depth -= 1; }
@@ -1086,7 +1091,7 @@ impl<'a> emPainter<'a> {
             | super::emTexture::emTexture::ImageColoredGradient { .. } => emColor::TRANSPARENT,
         };
         let is_recording = self.try_record(DrawOp::PaintEllipse {
-            cx, cy, rx, ry,
+            x: cx - rx, y: cy - ry, w: rx * 2.0, h: ry * 2.0,
             color: repr_color,
             canvas_color,
         }).is_none();
@@ -1108,25 +1113,29 @@ impl<'a> emPainter<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn PaintEllipseSector(
         &mut self,
-        cx: f64,
-        cy: f64,
-        rx: f64,
-        ry: f64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
         start_angle: f64,
         sweep_angle: f64,
         color: emColor,
         canvas_color: emColor,
     ) {
         let Some(_proof) = self.try_record(DrawOp::PaintEllipseSector {
-            cx,
-            cy,
-            rx,
-            ry,
+            x,
+            y,
+            w,
+            h,
             start_angle,
             sweep_angle,
             color,
             canvas_color,
         }) else { return; };
+        let cx = x + w * 0.5;
+        let cy = y + h * 0.5;
+        let rx = w * 0.5;
+        let ry = h * 0.5;
         if rx <= 0.0 || ry <= 0.0 {
             return;
         }
@@ -1136,10 +1145,7 @@ impl<'a> emPainter<'a> {
         // Normalize negative sweep.
         if sweep_angle < 0.0 {
             return self.PaintEllipseSector(
-                cx,
-                cy,
-                rx,
-                ry,
+                x, y, w, h,
                 start_angle + sweep_angle,
                 -sweep_angle,
                 color,
@@ -1151,7 +1157,7 @@ impl<'a> emPainter<'a> {
         let sweep_rad = sweep_angle * std::f64::consts::PI / 180.0;
         // Full circle or more — delegate to paint_ellipse.
         if sweep_rad >= 2.0 * std::f64::consts::PI {
-            return self.PaintEllipse(cx, cy, rx, ry, color, canvas_color);
+            return self.PaintEllipse(cx - rx, cy - ry, rx * 2.0, ry * 2.0, color, canvas_color);
         }
         // Match C++ PaintEllipseSector: keep f as float through arc scaling,
         // use round-to-nearest, minimum 3 arc segments, center vertex last.
@@ -3682,25 +3688,32 @@ impl<'a> emPainter<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn PaintEllipseArc(
         &mut self,
-        cx: f64,
-        cy: f64,
-        rx: f64,
-        ry: f64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
         start_angle: f64,
         range_angle: f64,
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
         let Some(_proof) = self.try_record(DrawOp::PaintEllipseArc {
-            cx,
-            cy,
-            rx,
-            ry,
+            x,
+            y,
+            w,
+            h,
             start_angle,
             range_angle,
             stroke: stroke.clone(),
             canvas_color,
         }) else { return; };
+        let cx = x + w * 0.5;
+        let cy = y + h * 0.5;
+        let rx = w * 0.5;
+        let ry = h * 0.5;
+        // C++ line 1735: convert degrees to radians (matching C++ API)
+        let start_angle = start_angle * std::f64::consts::PI / 180.0;
+        let range_angle = range_angle * std::f64::consts::PI / 180.0;
         if rx <= 0.0 || ry <= 0.0 || stroke.width <= 0.0 {
             return;
         }
@@ -3709,7 +3722,7 @@ impl<'a> emPainter<'a> {
         }
         let abs_range = range_angle.abs();
         if abs_range >= 2.0 * std::f64::consts::PI {
-            self.PaintEllipseOutline(cx, cy, rx, ry, stroke, canvas_color);
+            self.PaintEllipseOutline(x, y, w, h, stroke, canvas_color);
             return;
         }
         // C++ includes half-thickness in quality (emPainter.cpp:1759)
@@ -3770,26 +3783,30 @@ impl<'a> emPainter<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn PaintEllipseSectorOutline(
         &mut self,
-        cx: f64,
-        cy: f64,
-        rx: f64,
-        ry: f64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
         start_angle: f64,
         sweep_angle: f64,
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
         let Some(_proof) = self.try_record(DrawOp::PaintEllipseSectorOutline {
-            cx,
-            cy,
-            rx,
-            ry,
+            x,
+            y,
+            w,
+            h,
             start_angle,
             sweep_angle,
             stroke: stroke.clone(),
             canvas_color,
         }) else { return; };
 
+        let cx = x + w * 0.5;
+        let cy = y + h * 0.5;
+        let rx = w * 0.5;
+        let ry = h * 0.5;
         let thickness = stroke.width;
 
         // C++ emPainter.cpp:2030-2041
@@ -3801,7 +3818,7 @@ impl<'a> emPainter<'a> {
             range_rad = -range_rad;
         }
         if range_rad >= 2.0 * std::f64::consts::PI {
-            self.PaintEllipseOutline(cx, cy, rx, ry, stroke, canvas_color);
+            self.PaintEllipseOutline(x, y, w, h, stroke, canvas_color);
             return;
         }
         if thickness <= 0.0 { return; }
@@ -4074,31 +4091,29 @@ impl<'a> emPainter<'a> {
     /// Matches C++ `PaintEllipseOutline` (emPainter.cpp:1901-1994).
     pub fn PaintEllipseOutline(
         &mut self,
-        cx: f64,
-        cy: f64,
-        rx: f64,
-        ry: f64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
         stroke: &emStroke,
         canvas_color: emColor,
     ) {
         let Some(_proof) = self.try_record(DrawOp::PaintEllipseOutline {
-            cx,
-            cy,
-            rx,
-            ry,
+            x,
+            y,
+            w,
+            h,
             stroke: stroke.clone(),
             canvas_color,
         }) else { return; };
 
-        // C++ PaintEllipseOutline(x,y,w,h,thickness,stroke,canvasColor)
-        // Rust API: cx,cy = center; rx,ry = shape radii (= w/2, h/2).
-        // C++ thickness = stroke.width.
+        let cx = x + w * 0.5;
+        let cy = y + h * 0.5;
         let thickness = stroke.width;
         if thickness <= 0.0 { return; }
 
-        // C++: if (w<0.0) w=0.0; if (h<0.0) h=0.0;
-        let w = (2.0 * rx).max(0.0);
-        let h = (2.0 * ry).max(0.0);
+        let w = w.max(0.0);
+        let h = h.max(0.0);
 
         let t2 = thickness * 0.5;
 
@@ -7761,7 +7776,7 @@ mod tests {
         p.PaintRect(15.0, 15.0, 30.0, 30.0, green, canvas);
 
         // Ellipse
-        p.PaintEllipse(48.0, 16.0, 12.0, 12.0, blue, canvas);
+        p.PaintEllipse(36.0, 4.0, 24.0, 24.0, blue, canvas);
 
         // Text
         p.PaintText(2.0, 50.0, "Hi", 10.0, 1.0, white, canvas);

@@ -65,10 +65,10 @@ pub enum DrawOp {
         canvas_color: emColor,
     },
     PaintEllipse {
-        cx: f64,
-        cy: f64,
-        rx: f64,
-        ry: f64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
         color: emColor,
         canvas_color: emColor,
     },
@@ -198,40 +198,40 @@ pub enum DrawOp {
 
     // Ellipse sector / arc / outlines
     PaintEllipseSector {
-        cx: f64,
-        cy: f64,
-        rx: f64,
-        ry: f64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
         start_angle: f64,
         sweep_angle: f64,
         color: emColor,
         canvas_color: emColor,
     },
     PaintEllipseArc {
-        cx: f64,
-        cy: f64,
-        rx: f64,
-        ry: f64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
         start_angle: f64,
         range_angle: f64,
         stroke: emStroke,
         canvas_color: emColor,
     },
     PaintEllipseSectorOutline {
-        cx: f64,
-        cy: f64,
-        rx: f64,
-        ry: f64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
         start_angle: f64,
         sweep_angle: f64,
         stroke: emStroke,
         canvas_color: emColor,
     },
     PaintEllipseOutline {
-        cx: f64,
-        cy: f64,
-        rx: f64,
-        ry: f64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
         stroke: emStroke,
         canvas_color: emColor,
     },
@@ -501,13 +501,13 @@ impl DrawList {
                 } => painter.PaintRoundRectOutline(*x, *y, *w, *h, *rx, *ry, stroke, *canvas_color),
 
                 DrawOp::PaintEllipse {
-                    cx,
-                    cy,
-                    rx,
-                    ry,
+                    x,
+                    y,
+                    w,
+                    h,
                     color,
                     canvas_color,
-                } => painter.PaintEllipse(*cx, *cy, *rx, *ry, *color, *canvas_color),
+                } => painter.PaintEllipse(*x, *y, *w, *h, *color, *canvas_color),
 
                 DrawOp::PaintPolygon {
                     vertices,
@@ -705,66 +705,29 @@ impl DrawList {
                 ),
 
                 DrawOp::PaintEllipseSector {
-                    cx,
-                    cy,
-                    rx,
-                    ry,
-                    start_angle,
-                    sweep_angle,
-                    color,
-                    canvas_color,
+                    x, y, w, h,
+                    start_angle, sweep_angle, color, canvas_color,
                 } => painter.PaintEllipseSector(
-                    *cx,
-                    *cy,
-                    *rx,
-                    *ry,
-                    *start_angle,
-                    *sweep_angle,
-                    *color,
-                    *canvas_color,
+                    *x, *y, *w, *h, *start_angle, *sweep_angle, *color, *canvas_color,
                 ),
 
                 DrawOp::PaintEllipseArc {
-                    cx,
-                    cy,
-                    rx,
-                    ry,
-                    start_angle,
-                    range_angle,
-                    stroke,
-                    canvas_color,
+                    x, y, w, h,
+                    start_angle, range_angle, stroke, canvas_color,
                 } => painter.PaintEllipseArc(
-                    *cx, *cy, *rx, *ry, *start_angle, *range_angle, stroke, *canvas_color,
+                    *x, *y, *w, *h, *start_angle, *range_angle, stroke, *canvas_color,
                 ),
 
                 DrawOp::PaintEllipseSectorOutline {
-                    cx,
-                    cy,
-                    rx,
-                    ry,
-                    start_angle,
-                    sweep_angle,
-                    stroke,
-                    canvas_color,
+                    x, y, w, h,
+                    start_angle, sweep_angle, stroke, canvas_color,
                 } => painter.PaintEllipseSectorOutline(
-                    *cx,
-                    *cy,
-                    *rx,
-                    *ry,
-                    *start_angle,
-                    *sweep_angle,
-                    stroke,
-                    *canvas_color,
+                    *x, *y, *w, *h, *start_angle, *sweep_angle, stroke, *canvas_color,
                 ),
 
                 DrawOp::PaintEllipseOutline {
-                    cx,
-                    cy,
-                    rx,
-                    ry,
-                    stroke,
-                    canvas_color,
-                } => painter.PaintEllipseOutline(*cx, *cy, *rx, *ry, stroke, *canvas_color),
+                    x, y, w, h, stroke, canvas_color,
+                } => painter.PaintEllipseOutline(*x, *y, *w, *h, stroke, *canvas_color),
 
                 DrawOp::PaintLinearGradient {
                     x,
@@ -988,7 +951,7 @@ mod tests {
         {
             let mut p = emPainter::new(&mut img_a);
             p.SetCanvasColor(emColor::WHITE);
-            p.PaintEllipse(32.0, 32.0, 20.0, 15.0, emColor::RED, emColor::WHITE);
+            p.PaintEllipse(12.0, 17.0, 40.0, 30.0, emColor::RED, emColor::WHITE);
         }
 
         // Record + replay
@@ -997,7 +960,7 @@ mod tests {
             let mut ops = Vec::new();
             let mut p = emPainter::new_recording(64, 64, &mut ops);
             p.SetCanvasColor(emColor::WHITE);
-            p.PaintEllipse(32.0, 32.0, 20.0, 15.0, emColor::RED, emColor::WHITE);
+            p.PaintEllipse(12.0, 17.0, 40.0, 30.0, emColor::RED, emColor::WHITE);
             *draw_list.ops_mut() = ops;
         }
         let mut img_b = emImage::new(64, 64, 4);

@@ -106,53 +106,85 @@ impl emCheckBox {
         self.last_w = w;
         self.last_h = h;
         self.enabled = enabled;
-        // Paint outer border (Margin = transparent spacing only).
         self.border.how_to_text = self.GetHowTo(enabled, true);
         self.border
             .paint_border(painter, w, h, &self.look, false, true, pixel_scale);
+        let canvas_color = painter.GetCanvasColor();
 
-        // C++ DoButton ShownBoxed: GetContentRect, then compute box + label geometry.
+        // C++ DoButton ShownBoxed path — emButton.cpp:233-341
         let cr = self.border.GetContentRect(w, h, &self.look);
-        let (bx0, by0, bw0, mut lx, mut ly, mut lw, mut lh) =
-            self.box_label_geometry(&cr);
+        let x = cr.x;
+        let y = cr.y;
+        let cw = cr.w;
+        let ch = cr.h;
 
-        // Inset for image area: d = bw * 0.13 (C++ line 262).
-        let d = bw0 * 0.13;
-        let mut bx = bx0 + d;
-        let by = by0 + d;
-        let bw = bw0 - 2.0 * d;
-        let bh = bw;
+        let has_label = self.border.HasLabel();
+        let (mut bx, mut by, mut bw, mut bh, mut lx, mut ly, mut lw, mut lh);
+        if has_label {
+            lw = 1.0;
+            lh = self.border.GetBestLabelTallness().max(0.2);
+            bw = lh;
+            let mut d = bw * 0.1;
+            let f = (cw / (bw + d + lw)).min(ch / lh);
+            bw *= f;
+            d *= f;
+            lw = cw - bw - d;
+            lh = bw;
+            lx = x + cw - lw;
+            ly = y + (ch - lh) * 0.5;
+        } else {
+            bw = cw.min(ch);
+            lx = x;
+            ly = y;
+            lw = 1e-100;
+            lh = 1e-100;
+        }
+        bh = bw;
+        bx = x;
+        by = y + (ch - bh) * 0.5;
 
-        // Face inset: d = bw * 30/380 (C++ line 268).
-        let d2 = bw * 30.0 / 380.0;
-        let mut fx = bx + d2;
-        let fy = by + d2;
-        let fw = bw - 2.0 * d2;
-        let fh = bh - 2.0 * d2;
-        let fr = bw * 50.0 / 380.0;
+        // Image area inset (C++ line 262)
+        let d = bw * 0.13;
+        bx += d;
+        by += d;
+        bw -= 2.0 * d;
+        bh -= 2.0 * d;
 
-        // C++ lines 294-300: Pressed && !BoxPressed nudges box/label.
-        if self.pressed && !self.box_pressed {
-            bx += lw * 0.003;
-            fx += lw * 0.003;
-            lx += lw * 0.003;
-            ly += lh * 0.007;
-            lw *= 0.986;
-            lh *= 0.986;
+        // Face inset (C++ line 268)
+        let d = bw * 30.0 / 380.0;
+        let mut fx = bx + d;
+        let fy = by + d;
+        let fw = bw - 2.0 * d;
+        let fh = bh - 2.0 * d;
+        let fr = bw * 50.0 / 380.0; // Not radioed → bw*50/380
+
+        let r = ch * 0.2;
+
+        // C++ lines 290-291: label color
+        let mut color = self.look.fg_color;
+        if !enabled { color = color.GetTransparented(75.0); }
+
+        // C++ lines 293-308: label with press nudge
+        if has_label {
+            if self.pressed && !self.box_pressed {
+                bx += lw * 0.003;
+                fx += lw * 0.003;
+                lx += lw * 0.003;
+                ly += lh * 0.007;
+                lw *= 0.986;
+                lh *= 0.986;
+            }
+            self.border.paint_label_colored(
+                painter, Rect::new(lx, ly, lw, lh), &self.look, color, true,
+            );
         }
 
-        // Paint label to the right of the box.
-        if self.border.HasLabel() {
-            self.border
-                .paint_label(painter, Rect::new(lx, ly, lw, lh), &self.look, enabled);
-        }
-
-        // Paint face (InputBgColor).
+        // C++ lines 310-312: face
         let face_color = self.look.input_bg_color;
-        painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, face_color, painter.GetCanvasColor());
-        painter.SetCanvasColor(face_color);
+        painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, face_color, canvas_color);
+        let canvas_color = face_color;
 
-        // Paint check symbol if checked (C++ PaintBoxSymbol, emButton.cpp:160-184).
+        // C++ line 314: PaintBoxSymbol (emButton.cpp:160-184) — checkbox checkmark
         if self.checked {
             let check_color = self.look.input_fg_color;
             let verts = [
@@ -165,11 +197,15 @@ impl emCheckBox {
             stroke.join = LineJoin::Round;
             stroke.start_end = emStrokeEnd::new(StrokeEndType::Cap);
             stroke.finish_end = emStrokeEnd::new(StrokeEndType::Cap);
-            painter.PaintPolyline(&verts, &stroke, false, face_color);
+            painter.PaintPolyline(&verts, &stroke, false, canvas_color);
         }
 
-        // Paint checkbox image overlay (C++ lines 318-331).
-        // BoxPressed → CheckBoxPressed image, else → emCheckBox image.
+        // C++ line 316: disabled overlay
+        if !enabled {
+            painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, emColor::rgba(0x88, 0x88, 0x88, 0xE0), emColor::TRANSPARENT);
+        }
+
+        // C++ lines 318-331: PaintImage (checkbox image overlay)
         with_toolkit_images(|img| {
             let box_img = if self.box_pressed {
                 &img.check_box_pressed
@@ -179,36 +215,16 @@ impl emCheckBox {
             painter.paint_image_full(bx, by, bw, bh, box_img, 255, emColor::TRANSPARENT);
         });
 
-        // C++ lines 333-340: Pressed && !BoxPressed → GroupInnerBorder overlay.
+        // C++ lines 333-340: Pressed && !BoxPressed → GroupInnerBorder overlay
         if self.pressed && !self.box_pressed {
-            // Outer hit-test radius: r = h * 0.2 (C++ line 276).
-            let r = cr.h * 0.2;
             with_toolkit_images(|img| {
                 painter.PaintBorderImage(
-                    cr.x,
-                    cr.y,
-                    cr.w,
-                    cr.h,
-                    r,
-                    r,
-                    r,
-                    r,
+                    x, y, cw, ch, r, r, r, r,
                     &img.group_inner_border,
-                    225,
-                    225,
-                    225,
-                    225,
-                    255,
-                    emColor::TRANSPARENT,
-                    BORDER_EDGES_ONLY,
+                    225, 225, 225, 225,
+                    255, emColor::TRANSPARENT, BORDER_EDGES_ONLY,
                 );
             });
-        }
-
-        // C++ DoButton: disabled gray overlay for boxed path.
-        // PaintRoundRect(fx, fy, fw, fh, fr, fr, 0x888888E0).
-        if !enabled {
-            painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, emColor::rgba(0x88, 0x88, 0x88, 0xE0), emColor::TRANSPARENT);
         }
     }
 

@@ -101,11 +101,11 @@ fn serialize_op(seq: usize, depth: u32, op: &DrawOp, state: &RecordedState) -> S
             let hf = hex_fields(&[("x", *x), ("y", *y), ("w", *w), ("h", *h), ("rx", *rx), ("ry", *ry)]);
             format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRoundRect","x":{x},"y":{y},"w":{w},"h":{h},"rx":{rx},"ry":{ry},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
-        DrawOp::PaintEllipse { cx, cy, rx, ry, color, canvas_color } => {
+        DrawOp::PaintEllipse { x, y, w, h, color, canvas_color } => {
             let color = color_hex(*color);
             let canvas_color = color_hex(*canvas_color);
-            let hf = hex_fields(&[("cx", *cx), ("cy", *cy), ("rx", *rx), ("ry", *ry)]);
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipse","cx":{cx},"cy":{cy},"rx":{rx},"ry":{ry},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
+            let hf = hex_fields(&[("x", *x), ("y", *y), ("w", *w), ("h", *h)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipse","x":{x},"y":{y},"w":{w},"h":{h},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
         DrawOp::PaintPolygon { vertices, color, canvas_color } => {
             let verts = vertices_json(vertices);
@@ -148,7 +148,8 @@ fn serialize_op(seq: usize, depth: u32, op: &DrawOp, state: &RecordedState) -> S
             let color2 = color_hex(*color2);
             let canvas_color = color_hex(*canvas_color);
             let extension = format!("{extension:?}");
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintImageColored","x":{x},"y":{y},"w":{w},"h":{h},"img_w":{img_w},"img_h":{img_h},"img_ch":{img_ch},"src_x":{src_x},"src_y":{src_y},"src_w":{src_w},"src_h":{src_h},"color1":"{color1}","color2":"{color2}","canvas_color":"{canvas_color}","extension":"{extension}",{sf}}}"#)
+            // C++ PaintImageColored dispatches to PaintRect with texture — logged as PaintRect
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRect","x":{x},"y":{y},"w":{w},"h":{h},"img_w":{img_w},"img_h":{img_h},"img_ch":{img_ch},"src_x":{src_x},"src_y":{src_y},"src_w":{src_w},"src_h":{src_h},"color1":"{color1}","color2":"{color2}","canvas_color":"{canvas_color}","extension":"{extension}",{sf}}}"#)
         }
         DrawOp::PaintBorderImage {
             x, y, w, h, l, t, r, b, image_ptr, src_l, src_t, src_r, src_b,
@@ -229,12 +230,12 @@ fn serialize_op(seq: usize, depth: u32, op: &DrawOp, state: &RecordedState) -> S
             format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintRoundRectOutline","x":{x},"y":{y},"w":{w},"h":{h},"rx":{rx},"ry":{ry},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
 
-        DrawOp::PaintEllipseOutline { cx, cy, rx, ry, stroke, canvas_color } => {
+        DrawOp::PaintEllipseOutline { x, y, w, h, stroke, canvas_color } => {
             let color = color_hex(stroke.color);
             let thickness = stroke.width;
             let canvas_color = color_hex(*canvas_color);
-            let hf = hex_fields(&[("cx", *cx), ("cy", *cy), ("rx", *rx), ("ry", *ry), ("thickness", thickness)]);
-            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipseOutline","cx":{cx},"cy":{cy},"rx":{rx},"ry":{ry},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
+            let hf = hex_fields(&[("x", *x), ("y", *y), ("w", *w), ("h", *h), ("thickness", thickness)]);
+            format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipseOutline","x":{x},"y":{y},"w":{w},"h":{h},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
 
         // C++ PaintLine takes stroke params; Rust splits into PaintLine (bare) + PaintLineStroked.
@@ -247,36 +248,24 @@ fn serialize_op(seq: usize, depth: u32, op: &DrawOp, state: &RecordedState) -> S
             format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintLine","x1":{x0},"y1":{y0},"x2":{x1},"y2":{y1},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
 
-        DrawOp::PaintEllipseSector { cx, cy, rx, ry, start_angle, sweep_angle, color, canvas_color } => {
+        DrawOp::PaintEllipseSector { x, y, w, h, start_angle, sweep_angle, color, canvas_color } => {
             let color = color_hex(*color);
             let canvas_color = color_hex(*canvas_color);
-            let x = cx - rx;
-            let y = cy - ry;
-            let w = rx * 2.0;
-            let h = ry * 2.0;
-            let hf = hex_fields(&[("x", x), ("y", y), ("w", w), ("h", h)]);
+            let hf = hex_fields(&[("x", *x), ("y", *y), ("w", *w), ("h", *h)]);
             format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipseSector","x":{x},"y":{y},"w":{w},"h":{h},"start_angle":{start_angle},"range_angle":{sweep_angle},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
-        DrawOp::PaintEllipseSectorOutline { cx, cy, rx, ry, start_angle, sweep_angle, stroke, canvas_color } => {
+        DrawOp::PaintEllipseSectorOutline { x, y, w, h, start_angle, sweep_angle, stroke, canvas_color } => {
             let color = color_hex(stroke.color);
             let thickness = stroke.width;
             let canvas_color = color_hex(*canvas_color);
-            let x = cx - rx;
-            let y = cy - ry;
-            let w = rx * 2.0;
-            let h = ry * 2.0;
-            let hf = hex_fields(&[("x", x), ("y", y), ("w", w), ("h", h), ("thickness", thickness)]);
+            let hf = hex_fields(&[("x", *x), ("y", *y), ("w", *w), ("h", *h), ("thickness", thickness)]);
             format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipseSectorOutline","x":{x},"y":{y},"w":{w},"h":{h},"start_angle":{start_angle},"range_angle":{sweep_angle},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
-        DrawOp::PaintEllipseArc { cx, cy, rx, ry, start_angle, range_angle, stroke, canvas_color } => {
+        DrawOp::PaintEllipseArc { x, y, w, h, start_angle, range_angle, stroke, canvas_color } => {
             let color = color_hex(stroke.color);
             let thickness = stroke.width;
             let canvas_color = color_hex(*canvas_color);
-            let x = cx - rx;
-            let y = cy - ry;
-            let w = rx * 2.0;
-            let h = ry * 2.0;
-            let hf = hex_fields(&[("x", x), ("y", y), ("w", w), ("h", h), ("thickness", thickness)]);
+            let hf = hex_fields(&[("x", *x), ("y", *y), ("w", *w), ("h", *h), ("thickness", thickness)]);
             format!(r#"{{"seq":{seq},"depth":{depth},"op":"PaintEllipseArc","x":{x},"y":{y},"w":{w},"h":{h},"start_angle":{start_angle},"range_angle":{range_angle},"thickness":{thickness},"color":"{color}","canvas_color":"{canvas_color}",{hf},{sf}}}"#)
         }
 

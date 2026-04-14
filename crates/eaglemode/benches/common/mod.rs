@@ -234,29 +234,21 @@ impl PanelBehavior for TestPanel {
             emColor::TRANSPARENT,
         );
 
-        painter.PaintEllipse(0.055, 0.805, 0.005, 0.005, emColor::WHITE, emColor::TRANSPARENT);
-        painter.PaintEllipse(0.07, 0.805, 0.01, 0.005, emColor::WHITE, emColor::TRANSPARENT);
-        painter.PaintEllipse(
-            0.0925,
-            0.805,
-            0.0025,
-            0.005,
-            emColor::WHITE,
-            emColor::TRANSPARENT,
-        );
+        painter.PaintEllipse(0.05, 0.80, 0.01, 0.01, emColor::WHITE, emColor::TRANSPARENT);
+        painter.PaintEllipse(0.06, 0.80, 0.02, 0.01, emColor::WHITE, emColor::TRANSPARENT);
+        painter.PaintEllipse(0.09, 0.80, 0.005, 0.01, emColor::WHITE, emColor::TRANSPARENT);
 
-        let deg = PI / 180.0;
         painter.PaintEllipseSector(
-            0.105, 0.805, 0.005, 0.005, 45.0, 305.0, emColor::WHITE, emColor::TRANSPARENT,
+            0.10, 0.80, 0.01, 0.01, 45.0, 305.0, emColor::WHITE, emColor::TRANSPARENT,
         );
         painter.PaintEllipseSector(
-            0.12, 0.805, 0.01, 0.005, -350.0, 395.0, emColor::WHITE, emColor::TRANSPARENT,
+            0.11, 0.80, 0.02, 0.01, -350.0, 395.0, emColor::WHITE, emColor::TRANSPARENT,
         );
         painter.PaintEllipseSector(
-            0.1325, 0.805, 0.0025, 0.005, 245.0, 50.0, emColor::WHITE, emColor::TRANSPARENT,
+            0.13, 0.80, 0.005, 0.01, 245.0, 50.0, emColor::WHITE, emColor::TRANSPARENT,
         );
         painter.PaintEllipseSector(
-            0.145, 0.805, 0.005, 0.005, 195.0, 50.0, emColor::WHITE, emColor::TRANSPARENT,
+            0.14, 0.80, 0.01, 0.01, 195.0, 50.0, emColor::WHITE, emColor::TRANSPARENT,
         );
 
         painter.PaintRectOutline(
@@ -294,18 +286,12 @@ impl PanelBehavior for TestPanel {
         painter.PaintRoundRect(0.15, 0.84, 0.01, 0.01, 0.0, 0.0, emColor::WHITE, emColor::TRANSPARENT);
 
         painter.PaintEllipseOutline(
-            0.055,
-            0.865,
-            0.005,
-            0.005,
+            0.05, 0.86, 0.01, 0.01,
             &emStroke::new(emColor::WHITE, 0.003),
             emColor::TRANSPARENT,
         );
         painter.PaintEllipseOutline(
-            0.075,
-            0.865,
-            0.01,
-            0.005,
+            0.065, 0.86, 0.02, 0.01,
             &emStroke::new(emColor::WHITE, 0.001),
             emColor::TRANSPARENT,
         );
@@ -313,45 +299,29 @@ impl PanelBehavior for TestPanel {
         dot_s.join = LineJoin::Round;
         dot_s.cap = LineCap::Round;
         dot_s.dash_pattern = vec![0.0001, 0.0005];
-        painter.PaintEllipseOutline(0.0925, 0.865, 0.0025, 0.005, &dot_s, emColor::TRANSPARENT);
+        painter.PaintEllipseOutline(0.09, 0.86, 0.005, 0.01, &dot_s, emColor::TRANSPARENT);
 
         painter.PaintEllipseArc(
-            0.105,
-            0.865,
-            0.005,
-            0.005,
-            90.0 * deg,
-            225.0 * deg,
+            0.10, 0.86, 0.01, 0.01,
+            90.0, 225.0,
             &emStroke::new(emColor::WHITE, 0.001),
             emColor::TRANSPARENT,
         );
         painter.PaintEllipseSectorOutline(
-            0.12,
-            0.865,
-            0.01,
-            0.005,
-            45.0,
-            -365.0,
+            0.11, 0.86, 0.02, 0.01,
+            45.0, -365.0,
             &emStroke::new(emColor::WHITE, 0.0001),
             emColor::TRANSPARENT,
         );
         painter.PaintEllipseArc(
-            0.1325,
-            0.865,
-            0.0025,
-            0.005,
-            245.0 * deg,
-            295.0 * deg,
+            0.13, 0.86, 0.005, 0.01,
+            245.0, 295.0,
             &emStroke::new(emColor::WHITE, 0.001),
             emColor::TRANSPARENT,
         );
         painter.PaintEllipseArc(
-            0.145,
-            0.865,
-            0.005,
-            0.005,
-            195.0 * deg,
-            245.0 * deg,
+            0.14, 0.86, 0.01, 0.01,
+            195.0, 245.0,
             &emStroke::new(emColor::WHITE, 0.001),
             emColor::TRANSPARENT,
         );
@@ -361,12 +331,8 @@ impl PanelBehavior for TestPanel {
         rs.start_end = emStrokeEnd::new(StrokeEndType::Cap);
         rs.finish_end = emStrokeEnd::new(StrokeEndType::LineArrow);
         painter.PaintEllipseArc(
-            0.155,
-            0.865,
-            0.005,
-            0.005,
-            0.0,
-            -145.0 * deg,
+            0.15, 0.86, 0.01, 0.01,
+            0.0, -145.0,
             &rs,
             emColor::TRANSPARENT,
         );

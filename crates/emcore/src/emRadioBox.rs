@@ -162,10 +162,10 @@ impl emRadioBox {
             let dot_w = fw - 2.0 * dot_d;
             let dot_h = fh - 2.0 * dot_d;
             painter.PaintEllipse(
-                fx + dot_d + dot_w * 0.5,
-                fy + dot_d + dot_h * 0.5,
-                dot_w * 0.5,
-                dot_h * 0.5,
+                fx + dot_d,
+                fy + dot_d,
+                dot_w,
+                dot_h,
                 self.look.input_fg_color,
                 face_color,
             );

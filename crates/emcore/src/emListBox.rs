@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::emColor::emColor;
-use crate::emPanel::Rect;
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emRasterLayout::emRasterLayout;
@@ -157,61 +156,45 @@ impl DefaultItemPanelBehavior {
 
 impl PanelBehavior for DefaultItemPanelBehavior {
     fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
-        let s = w.min(h);
+        // C++ emListBox::DefaultItemPanel::Paint — emListBox.cpp:554-608
+        let canvas_color = painter.GetCanvasColor();
 
-        // Select color set based on ReadOnly vs editable (C++ emListBox.cpp:554-608)
-        let (bg, fg, hl) = if self.selection_mode == SelectionMode::ReadOnly {
-            (
-                self.look.output_bg_color,
-                self.look.output_fg_color,
-                self.look.output_hl_color,
-            )
+        let (mut bg_col, mut fg_col, mut hl_col) = if self.selection_mode != SelectionMode::ReadOnly {
+            (self.look.input_bg_color, self.look.input_fg_color, self.look.input_hl_color)
         } else {
-            (
-                self.look.input_bg_color,
-                self.look.input_fg_color,
-                self.look.input_hl_color,
-            )
+            (self.look.output_bg_color, self.look.output_fg_color, self.look.output_hl_color)
         };
-        let (bg, fg, hl) = if !self.enabled {
+        if !self.enabled {
             let base = self.look.bg_color;
-            (
-                bg.GetBlended(base, 80.0),
-                fg.GetBlended(base, 80.0),
-                hl.GetBlended(base, 80.0),
-            )
-        } else {
-            (bg, fg, hl)
-        };
-
-        let mut item_canvas = bg;
-
-        if self.selected {
-            let rdx = s * 0.015;
-            let rdy = s * 0.015;
-            let r = s * 0.15;
-            painter.PaintRoundRect(rdx, rdy, w - 2.0 * rdx, h - 2.0 * rdy, r, r, hl, painter.GetCanvasColor());
-            item_canvas = hl;
+            bg_col = bg_col.GetBlended(base, 80.0);
+            fg_col = fg_col.GetBlended(base, 80.0);
+            hl_col = hl_col.GetBlended(base, 80.0);
         }
 
-        let dx = s * 0.15;
-        let dy = s * 0.03;
-        let text_color = if self.selected { bg } else { fg };
+        let x = 0.0;
+        let y = 0.0;
+        let cw = w;
+        let ch = h;
+        let mut canvas_color = canvas_color;
+
+        if self.selected {
+            let dx = cw.min(ch) * 0.015;
+            let dy = cw.min(ch) * 0.015;
+            let r = cw.min(ch) * 0.15;
+            painter.PaintRoundRect(x + dx, y + dy, cw - 2.0 * dx, ch - 2.0 * dy, r, r, hl_col, canvas_color);
+            canvas_color = hl_col;
+        }
+
+        let dx = cw.min(ch) * 0.15;
+        let dy = cw.min(ch) * 0.03;
         painter.PaintTextBoxed(
-            dx,
-            dy,
-            (w - 2.0 * dx).max(0.0),
-            (h - 2.0 * dy).max(0.0),
-            &self.text,
-            h,
-            text_color,
-            item_canvas,
+            x + dx, y + dy, cw - 2.0 * dx, ch - 2.0 * dy,
+            &self.text, h,
+            if self.selected { bg_col } else { fg_col },
+            canvas_color,
+            crate::emPainter::TextAlignment::Left, crate::emPainter::VAlign::Center,
             crate::emPainter::TextAlignment::Left,
-            crate::emPainter::VAlign::Center,
-            crate::emPainter::TextAlignment::Left,
-            0.5,
-            true,
-            0.0,
+            0.5, true, 0.0,
         );
     }
 
@@ -1038,156 +1021,8 @@ impl emListBox {
         self.border.how_to_text = self.GetHowTo(true, true);
         self.border
             .paint_border(painter, w, h, &self.look, false, true, pixel_scale);
-
-        // When expanded with child panels, items are painted by their own
-        // panel behaviors — skip inline painting (border only).
-        if self.expanded {
-            self.border.paint_inner_overlay(painter, w, h, &self.look);
-            return;
-        }
-
-        // C++ emListBox inherits from emRasterGroup and has no PaintContent
-        // override — items are only visible through child panels when the
-        // panel is auto-expanded.  When the panel pixel area is below the
-        // default auto-expansion threshold (150 px²), items would never be
-        // created in C++, so skip inline painting to match.
-        //
-        // pixel_scale = viewed_area / (w * h), so pixel_area = pixel_scale * w * h.
-        //
-        // DIVERGED: C++ emListBox::PaintContent — no C++ equivalent; inline
-        // painting is Rust-only. This guard reproduces the C++ effect where
-        // tiny (non-expanded) listboxes show only the border frame.
-        let pixel_area = pixel_scale * w * h;
-        if pixel_area < 150.0 {
-            self.border.paint_inner_overlay(painter, w, h, &self.look);
-            return;
-        }
-
-        let Rect {
-            x: cx,
-            y: cy,
-            w: cw,
-            h: ch,
-        } = self.border.GetContentRectUnobscured(w, h, &self.look);
-
-        // Store visible height for scroll_to_index
-        self.visible_height = ch;
-
-        painter.push_state();
-        painter.SetClipping(cx, cy, cw, ch);
-
-        // Determine colors based on selection mode and enabled state (C++ lines 562-577)
-        let (bg, fg, hl) = if self.selection_mode == SelectionMode::ReadOnly {
-            (
-                self.look.output_bg_color,
-                self.look.output_fg_color,
-                self.look.output_hl_color,
-            )
-        } else {
-            (
-                self.look.input_bg_color,
-                self.look.input_fg_color,
-                self.look.input_hl_color,
-            )
-        };
-        let (bg, fg, hl) = if !self.enabled {
-            let base = self.look.bg_color;
-            (
-                bg.GetBlended(base, 80.0),
-                fg.GetBlended(base, 80.0),
-                hl.GetBlended(base, 80.0),
-            )
-        } else {
-            (bg, fg, hl)
-        };
-
-        // C++ emListBox inherits from emRasterGroup (PrefChildTallness=0.2).
-        // Compute grid dimensions matching emRasterLayout::auto_grid_clamped.
-        let n = self.items.len();
-        let pref_ct = 0.2_f64; // emRasterGroup default
-        let (cols, rows) = if n == 0 || cw <= 0.0 || ch <= 0.0 {
-            (1usize, n.max(1))
-        } else {
-            let mut rows_best = 1usize;
-            let mut err_best = 0.0_f64;
-            let mut r = 1usize;
-            loop {
-                let c = n.div_ceil(r);
-                let ct = ch * c as f64 / (cw * r as f64);
-                let err = (pref_ct / ct).ln().abs();
-                if r == 1 || err < err_best {
-                    rows_best = r;
-                    err_best = err;
-                }
-                if c == 1 {
-                    break;
-                }
-                r = (n + c - 2) / (c - 1);
-            }
-            (n.div_ceil(rows_best), rows_best)
-        };
-        let cell_w = cw / cols as f64;
-        let cell_h = ch / rows as f64;
-
-        for (i, item) in self.items.iter().enumerate() {
-            let col = i % cols;
-            let row = i / cols;
-            let ix = cx + col as f64 * cell_w;
-            let iy = cy + row as f64 * cell_h - self.scroll_y;
-            if iy + cell_h < cy || iy > cy + ch {
-                continue;
-            }
-
-            let item_w = cell_w;
-            let item_h = cell_h;
-            let s = item_w.min(item_h);
-
-            // C++ DefaultItemPanel::Paint: canvasColor starts as parent canvas
-            // (InputField bg). After painting selection highlight, canvasColor
-            // changes to hlColor for selected items.
-            let mut item_canvas = bg;
-
-            if item.selected {
-                let rdx = s * 0.015;
-                let rdy = s * 0.015;
-                let r = s * 0.15;
-                painter.PaintRoundRect(
-                    ix + rdx,
-                    iy + rdy,
-                    item_w - 2.0 * rdx,
-                    item_h - 2.0 * rdy,
-                    r,
-                    r,
-                    hl,
-                    painter.GetCanvasColor(),
-                );
-                item_canvas = hl;
-            }
-
-            let dx = s * 0.15;
-            let dy = s * 0.03;
-            let text_color = if item.selected { bg } else { fg };
-            painter.PaintTextBoxed(
-                ix + dx,
-                iy + dy,
-                (item_w - 2.0 * dx).max(0.0),
-                (item_h - 2.0 * dy).max(0.0),
-                &item.text,
-                item_h,
-                text_color,
-                item_canvas,
-                crate::emPainter::TextAlignment::Left,
-                crate::emPainter::VAlign::Center,
-                crate::emPainter::TextAlignment::Left,
-                0.5,
-                true,
-                0.0,
-            );
-        }
-
-        painter.pop_state();
-
-        // C++ paints content, THEN overlays the IO field border image.
+        // C++ emListBox has no PaintContent — items are rendered only via
+        // child panels when auto-expanded. Border + inner overlay only.
         self.border.paint_inner_overlay(painter, w, h, &self.look);
     }
 

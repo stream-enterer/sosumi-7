@@ -401,59 +401,35 @@ impl emColorField {
         self.border.how_to_text = self.GetHowTo(true, true);
         self.border
             .paint_border(painter, w, h, &self.look, false, true, pixel_scale);
-
-        // C++ PaintContent: GetContentRoundRect, then inset by d.
-        let (cr, _r) = self.border.GetContentRoundRect(w, h, &self.look);
-        let d = cr.w.min(cr.h) * 0.1;
-
-        let rx = cr.x + d;
-        let ry = cr.y + d;
-        let rw = (cr.w - 2.0 * d).max(0.0);
-        let rh = (cr.h - 2.0 * d).max(0.0);
-
-        // C++ emColorField.cpp:380-393: paint "transparent" text underlay when alpha < 255.
-        // C++ PaintContent receives canvasColor from the border framework (the IO
-        // field background). When the color is opaque the canvas propagates to
-        // PaintRect so the painter can optimise edge blending. When the color is
-        // NOT opaque, canvasColor is reset to 0 after painting the "transparent"
-        // text (see C++ line 393).
         let mut canvas_color = painter.GetCanvasColor();
+
+        // C++ PaintContent — emColorField.cpp:371-404
+        let (cr, _r) = self.border.GetContentRoundRect(w, h, &self.look);
+        let x = cr.x;
+        let y = cr.y;
+        let cw = cr.w;
+        let ch = cr.h;
+        let d = cw.min(ch) * 0.1;
+
         if !self.color.IsOpaque() {
-            let text_color = if self.editable {
-                self.look.input_fg_color
-            } else {
-                self.look.output_fg_color
-            };
             painter.PaintTextBoxed(
-                rx, ry, rw, rh,
+                x + d, y + d, cw - 2.0 * d, ch - 2.0 * d,
                 "transparent",
-                cr.h,
-                text_color,
+                ch,
+                if self.editable { self.look.input_fg_color } else { self.look.output_fg_color },
                 canvas_color,
+                TextAlignment::Center, VAlign::Center,
                 TextAlignment::Center,
-                VAlign::Center,
-                TextAlignment::Center,
-                0.5,
-                true,
-                0.0,
+                0.5, true, 0.0,
             );
-            canvas_color = emColor::rgba(0, 0, 0, 0);
+            canvas_color = emColor::TRANSPARENT;
+        }
+        painter.PaintRect(x + d, y + d, cw - 2.0 * d, ch - 2.0 * d, self.color, canvas_color);
+        {
+            let stroke = crate::emStroke::emStroke::new(self.look.input_fg_color, d * 0.08);
+            painter.PaintRectOutline(x + d, y + d, cw - 2.0 * d, ch - 2.0 * d, &stroke, emColor::TRANSPARENT);
         }
 
-        // Paint color rect.
-        painter.PaintRect(rx, ry, rw, rh, self.color, canvas_color);
-
-        // Paint rect outline (C++ PaintRectOutline, emColorField.cpp:400-403).
-        let thickness = d * 0.08;
-        if thickness > 0.0 {
-            let stroke = crate::emStroke::emStroke::new(
-                self.look.input_fg_color,
-                thickness,
-            );
-            painter.PaintRectOutline(rx, ry, rw, rh, &stroke, emColor::TRANSPARENT);
-        }
-
-        // C++ paints content, THEN overlays the IO field border image.
         self.border.paint_inner_overlay(painter, w, h, &self.look);
     }
 

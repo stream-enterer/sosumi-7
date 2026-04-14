@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use crate::emColor::emColor;
-use crate::emPanel::Rect;
 use crate::emCursor::emCursor;
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
@@ -296,7 +295,6 @@ impl emScalarField {
         self.last_w = w;
         self.last_h = h;
         self.enabled = enabled;
-        // C++ emScalarField::GetHowTo() builds the text dynamically.
         {
             let mut text = String::from(HOWTO_PREFACE);
             if !enabled {
@@ -311,34 +309,46 @@ impl emScalarField {
         }
         self.border
             .paint_border(painter, w, h, &self.look, false, enabled, pixel_scale);
-        let canvas_color = painter.GetCanvasColor();
+        let mut canvas_color = painter.GetCanvasColor();
 
-        let (content, radius) = self.border.GetContentRoundRect(w, h, &self.look);
-        let Rect { x, y, w: cw, h: ch } = content;
-        let r = radius;
-        let v_range = self.max - self.min;
+        // C++ DoScalarField(SCALAR_FIELD_FUNC_PAINT) — line-by-line from emScalarField.cpp:318-473
+        let (content, r) = self.border.GetContentRoundRect(w, h, &self.look);
+        let x = content.x;
+        let y = content.y;
+        let cw = content.w;
+        let ch = content.h;
 
-        // C++ DoScalarField selects colors by InnerBorderType, not editable flag.
-        // IBT_INPUT_FIELD → input colors, IBT_OUTPUT_FIELD → output colors,
-        // else (IBT_CUSTOM_RECT etc.) → look bg/fg colors.
-        let (mut bg_col, mut fg_col) = match self.border.inner {
-            InnerBorderType::InputField => (self.look.input_bg_color, self.look.input_fg_color),
-            InnerBorderType::OutputField => (self.look.output_bg_color, self.look.output_fg_color),
-            _ => (self.look.bg_color, self.look.fg_color),
-        };
-
-        // C++ emScalarField.cpp:413-416: dim colors when disabled.
-        if !enabled {
-            bg_col = bg_col.GetBlended(self.look.bg_color, 80.0);
-            fg_col = fg_col.GetBlended(self.look.bg_color, 80.0);
+        let v_range: f64 = self.max - self.min;
+        let all_ivals = &self.scale_mark_intervals;
+        let mut ival_off = 0;
+        let mut ival_cnt = all_ivals.len();
+        if !self.marks_never_hidden {
+            while ival_cnt > 1 && all_ivals[ival_off] as f64 > v_range {
+                ival_off += 1;
+                ival_cnt -= 1;
+            }
         }
+        let ivals = &all_ivals[ival_off..ival_off + ival_cnt];
+        let mut ival_sum: u64 = 0;
+        for iv in &ivals[..ival_cnt] { ival_sum += iv; }
 
-        // C++ DoScalarField layout matching emScalarField.cpp
+        // C++ lines 345-352
+        let mtw0 = 1.0_f64;
+        let mth0 = self.text_box_tallness;
+        let mah0 = mtw0.min(mth0) * 0.5;
+        let d_inv = 1.0 / (mth0 + mah0);
+        let mtw = mtw0 * d_inv;
+        let mth = mth0 * d_inv;
+        let mah = mah0 * d_inv;
+        let mw = mtw * 1.5;
+
+        // C++ lines 353-356
         let rx = x + r * 0.5;
         let ry = y + r * 0.5;
         let rw = cw - r;
         let rh = ch - r;
 
+        // C++ lines 358-363
         let s = rh.min(rw);
         let d_base = s * 0.04;
         let mut ax = rx + d_base;
@@ -346,78 +356,51 @@ impl emScalarField {
         let mut aw = rw - 2.0 * d_base;
         let mut ah = rh - 2.0 * d_base;
 
+        // C++ lines 365-381
         let mut e = s * 0.3 * 0.5;
-
-        // Scale mark layout calculations.
-        // C++ interval culling: skip leading intervals > vRange when !marks_never_hidden.
-        let ivals = &self.scale_mark_intervals;
-        let mut ival_start = 0;
-        let mut ival_cnt = ivals.len();
-        if !self.marks_never_hidden {
-            while ival_cnt > 1 && ivals[ival_start] as f64 > v_range {
-                ival_start += 1;
-                ival_cnt -= 1;
-            }
-        }
-        let ivals = &self.scale_mark_intervals[ival_start..ival_start + ival_cnt];
-        let ival_sum: u64 = ivals.iter().sum();
-
-        let mtw0 = 1.0_f64;
-        let mth0 = self.text_box_tallness;
-        let mah0 = mtw0.min(mth0) * 0.5;
-        let norm = 1.0 / (mth0 + mah0);
-        let mtw = mtw0 * norm;
-        let mth = mth0 * norm;
-        let mah = mtw0.min(mth0) * 0.5 * norm;
-        let mw = mtw * 1.5;
-
         let mut d = e - d_base;
-        if d < 0.0 {
-            d = 0.0;
-        }
+        if d < 0.0 { d = 0.0; }
         if ival_cnt > 0 && v_range > 0.0 {
-            let mut th_mark = ah;
-            let f_mark = th_mark * ivals[0] as f64 / ival_sum as f64;
-            let tw_mark = f_mark * mw * v_range / ivals[0] as f64;
-            let mut f2 = f_mark * mtw;
-            if tw_mark + f2 > aw {
-                f2 *= aw / (tw_mark + f2);
-            }
+            let mut th = ah;
+            let f = th * ivals[0] as f64 / ival_sum as f64;
+            let tw = f * mw * v_range / ivals[0] as f64;
+            let mut f2 = f * mtw;
+            if tw + f2 > aw { f2 *= aw / (tw + f2); }
             f2 *= 0.5;
-            if d < f2 {
-                d = f2;
-            }
-            let f_max = aw * 0.2;
-            if d > f_max {
-                d = f_max;
-            }
-            if tw_mark > aw - 2.0 * d {
-                th_mark *= (aw - 2.0 * d) / tw_mark;
-            }
-            ay += ah - th_mark;
-            ah = th_mark;
+            if d < f2 { d = f2; }
+            let f_lim = aw * 0.2;
+            if d > f_lim { d = f_lim; }
+            if tw > aw - 2.0 * d { th *= (aw - 2.0 * d) / tw; }
+            ay += ah - th;
+            ah = th;
         }
         ax += d;
         aw -= 2.0 * d;
 
-        // Side bars — C++: col = bgCol.GetBlended(fgCol, 25)
-        let side_col = bg_col.GetBlended(fg_col, 25.0);
-        if ax > rx {
-            painter.PaintRect(rx, ry, ax - rx, rh, side_col, canvas_color);
-        }
-        if ax + aw < rx + rw {
-            painter.PaintRect(ax + aw, ry, rx + rw - ax - aw, rh, side_col, canvas_color);
+        // C++ lines 400-416: color selection by InnerBorderType
+        let (mut bg_col, mut fg_col) = match self.border.inner {
+            InnerBorderType::InputField => (self.look.input_bg_color, self.look.input_fg_color),
+            InnerBorderType::OutputField => (self.look.output_bg_color, self.look.output_fg_color),
+            _ => (self.look.bg_color, self.look.fg_color),
+        };
+        if !enabled {
+            bg_col = bg_col.GetBlended(self.look.bg_color, 80.0);
+            fg_col = fg_col.GetBlended(self.look.bg_color, 80.0);
         }
 
-        // Value arrow polygon (5-point downward arrow)
+        // C++ lines 418-421: side bars
+        let col = bg_col.GetBlended(fg_col, 25.0);
+        painter.PaintRect(rx, ry, ax - rx, rh, col, canvas_color);
+        painter.PaintRect(ax + aw, ry, rx + rw - ax - aw, rh, col, canvas_color);
+        canvas_color = emColor::TRANSPARENT;
+
+        // C++ lines 423-436: value arrow (5-point polygon)
         let tx = if v_range > 0.0 {
-            ax + aw * ((self.value - self.min) / v_range)
+            ax + aw * (self.value - self.min) / v_range
         } else {
             ax + aw * 0.5
         };
-        if e > ay + ah - ry {
-            e = ay + ah - ry;
-        }
+        if e > ay + ah - ry { e = ay + ah - ry; }
         let arrow = [
             (tx - e, ry),
             (tx + e, ry),
@@ -425,81 +408,52 @@ impl emScalarField {
             (tx, ay + ah),
             (tx - e, ay + ah - e),
         ];
-        painter.PaintPolygon(&arrow, fg_col, emColor::TRANSPARENT);
+        painter.PaintPolygon(&arrow, fg_col, canvas_color);
+        canvas_color = emColor::TRANSPARENT;
 
-        // Scale marks with text labels and small arrows.
-        // C++ emScalarField.cpp lines 438-473.
+        // C++ lines 438-473: scale marks
         if ival_cnt > 0 && v_range > 0.0 {
             let f = aw / v_range;
-            let mark_col = bg_col.GetBlended(fg_col, 66.0);
-            let (scale_x, _) = painter.scaling();
-            let mut mark_ty = ay;
+            let col = bg_col.GetBlended(fg_col, 66.0);
+            let mut ty = ay;
             for &ival in ivals.iter() {
                 let th = ah / ival_sum as f64 * ival as f64;
                 let tw = mtw * th;
-
-                // C++ visibility gate: skip tier if mark text < 1px wide on screen.
-                if tw * scale_x <= 1.0 {
-                    mark_ty += th;
-                    continue;
+                if tw * painter.GetScaleX() > 1.0 {
+                    let h4 = mth * th;
+                    let h5 = mah * th;
+                    let mut x3 = painter.GetUserClipX1() - tw * 0.5;
+                    let mut w3 = painter.GetUserClipX2() + tw * 0.5 - x3;
+                    if x3 < ax { x3 = ax; }
+                    if w3 > ax + aw - x3 { w3 = ax + aw - x3; }
+                    let k1 = (((x3 - ax) / f + self.min - 0.01) / ival as f64).ceil() as i64;
+                    let k2 = (((x3 + w3 - ax) / f + self.min + 0.01) / ival as f64).floor() as i64;
+                    let mut k = k1;
+                    while k <= k2 {
+                        let v = k as f64 * ival as f64;
+                        let mark_tx = (v - self.min) * f + ax;
+                        let label = (self.text_of_value_fn)(v as i64, ival);
+                        painter.PaintTextBoxed(
+                            mark_tx - tw * 0.5, ty, tw, h4,
+                            &label, h4,
+                            col, canvas_color,
+                            TextAlignment::Center, VAlign::Center,
+                            TextAlignment::Center,
+                            0.5, true, 0.0,
+                        );
+                        let tri = [
+                            (mark_tx - h5 * 0.5, ty + h4),
+                            (mark_tx + h5 * 0.5, ty + h4),
+                            (mark_tx, ty + h4 + h5),
+                        ];
+                        painter.PaintPolygon(&tri, col, canvas_color);
+                        k += 1;
+                    }
                 }
-
-                let h4 = mth * th;
-                let h5 = mah * th;
-
-                // C++ clip-region culling: only iterate marks within visible area.
-                let interval = ival as f64;
-                let mut x3 = painter.GetUserClipX1() - tw * 0.5;
-                let mut w3 = painter.GetUserClipX2() + tw * 0.5 - x3;
-                if x3 < ax {
-                    x3 = ax;
-                }
-                if w3 > ax + aw - x3 {
-                    w3 = ax + aw - x3;
-                }
-                let k1 = ((x3 - ax) / f + self.min - 0.01) / interval;
-                let k2 = ((x3 + w3 - ax) / f + self.min + 0.01) / interval;
-                let mut k = k1.ceil() as i64;
-                let k_end = k2.floor() as i64;
-                while k <= k_end {
-                    let v = k as f64 * interval;
-                    let mark_tx = (v - self.min) * f + ax;
-
-                    // Text label
-                    let label = (self.text_of_value_fn)(v as i64, ival);
-                    // C++ PaintTextBoxed defaults: minWidthScale=0.5, formatted=true.
-                    painter.PaintTextBoxed(
-                        mark_tx - tw * 0.5,
-                        mark_ty,
-                        tw,
-                        h4,
-                        &label,
-                        h4,
-                        mark_col,
-                        emColor::TRANSPARENT,
-                        TextAlignment::Center,
-                        VAlign::Center,
-                        TextAlignment::Center,
-                        0.5,
-                        true,
-                        0.0,
-                    );
-
-                    // Small downward arrow below label
-                    let mini_arrow = [
-                        (mark_tx - h5 * 0.5, mark_ty + h4),
-                        (mark_tx + h5 * 0.5, mark_ty + h4),
-                        (mark_tx, mark_ty + h4 + h5),
-                    ];
-                    painter.PaintPolygon(&mini_arrow, mark_col, emColor::TRANSPARENT);
-
-                    k += 1;
-                }
-                mark_ty += th;
+                ty += th;
             }
         }
 
-        // C++ paints content, THEN overlays the IO field border image.
         self.border.paint_inner_overlay(painter, w, h, &self.look);
     }
 
@@ -603,13 +557,33 @@ impl emScalarField {
         if self.last_w <= 0.0 || self.last_h <= 0.0 {
             return (false, self.min);
         }
-        // Mouse coordinates are in panel-local space (0..1 for x, 0..tallness
-        // for y). Compute layout in the same coordinate system.
         let tallness = self.last_h / self.last_w;
-        let (content, radius) = self.border.GetContentRoundRect(1.0, tallness, &self.look);
-        let Rect { x, y, w: cw, h: ch } = content;
-        let r = radius;
-        let v_range = self.max - self.min;
+        let (content, r) = self.border.GetContentRoundRect(1.0, tallness, &self.look);
+        let x = content.x;
+        let y = content.y;
+        let cw = content.w;
+        let ch = content.h;
+
+        let v_range: f64 = self.max - self.min;
+        let all_ivals = &self.scale_mark_intervals;
+        let mut ival_off = 0;
+        let mut ival_cnt = all_ivals.len();
+        if !self.marks_never_hidden {
+            while ival_cnt > 1 && all_ivals[ival_off] as f64 > v_range {
+                ival_off += 1;
+                ival_cnt -= 1;
+            }
+        }
+        let ivals = &all_ivals[ival_off..ival_off + ival_cnt];
+        let mut ival_sum: u64 = 0;
+        for iv in &ivals[..ival_cnt] { ival_sum += iv; }
+
+        let mtw0 = 1.0_f64;
+        let mth0 = self.text_box_tallness;
+        let mah0 = mtw0.min(mth0) * 0.5;
+        let d_inv = 1.0 / (mth0 + mah0);
+        let mtw = mtw0 * d_inv;
+        let mw = mtw * 1.5;
 
         let rx = x + r * 0.5;
         let rw = cw - r;
@@ -621,53 +595,35 @@ impl emScalarField {
         let mut aw = rw - 2.0 * d_base;
         let ah = rh - 2.0 * d_base;
 
-        let ivals = &self.scale_mark_intervals;
-        let ival_cnt = ivals.len();
-        let ival_sum: u64 = ivals.iter().sum();
-
-        let mtw0 = 1.0_f64;
-        let mth0 = self.text_box_tallness;
-        let norm = 1.0 / (mth0 + mtw0.min(mth0) * 0.5);
-        let mtw = mtw0 * norm;
-        let mw = mtw * 1.5;
-
         let mut d = s * 0.3 * 0.5 - d_base;
-        if d < 0.0 {
-            d = 0.0;
-        }
+        if d < 0.0 { d = 0.0; }
         if ival_cnt > 0 && v_range > 0.0 {
-            let th_mark = ah;
-            let f_mark = th_mark * ivals[0] as f64 / ival_sum as f64;
-            let tw_mark = f_mark * mw * v_range / ivals[0] as f64;
-            let mut f2 = f_mark * mtw;
-            if tw_mark + f2 > aw {
-                f2 *= aw / (tw_mark + f2);
-            }
+            let th = ah;
+            let f = th * ivals[0] as f64 / ival_sum as f64;
+            let tw = f * mw * v_range / ivals[0] as f64;
+            let mut f2 = f * mtw;
+            if tw + f2 > aw { f2 *= aw / (tw + f2); }
             f2 *= 0.5;
-            if d < f2 {
-                d = f2;
-            }
-            let f_max = aw * 0.2;
-            if d > f_max {
-                d = f_max;
-            }
+            if d < f2 { d = f2; }
+            let f_lim = aw * 0.2;
+            if d > f_lim { d = f_lim; }
         }
         ax += d;
         aw -= 2.0 * d;
 
-        // C++ hit test: round-rect distance check (emScalarField.cpp:386-388).
-        // dx = emMax(emMax(x-mx, mx-x-w) + r, 0.0)
+        // C++ hit test (lines 386-388)
         let dx = ((x - mx).max(mx - x - cw) + r).max(0.0);
         let dy = ((y - my).max(my - y - ch) + r).max(0.0);
         let hit = dx * dx + dy * dy <= r * r;
 
-        // Convert x position to value (always, matching C++).
-        let val = if v_range <= 0.0 || aw <= 0.0 {
-            self.min
-        } else {
-            let frac = ((mx - ax) / aw).clamp(0.0, 1.0);
-            (self.min + frac * v_range).clamp(self.min, self.max)
-        };
+        // C++ value computation (lines 389-396)
+        let mut val = (mx - ax) / aw;
+        val = val * v_range + self.min;
+        if val < self.min { val = self.min; }
+        if val > self.max { val = self.max; }
+        val = (val + 0.5).floor();
+        if val < self.min { val = self.min; }
+        if val > self.max { val = self.max; }
         (hit, val)
     }
 

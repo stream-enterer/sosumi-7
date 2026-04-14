@@ -450,16 +450,8 @@ impl PanelBehavior for CanvasPanel {
     }
 
     fn Paint(&mut self, p: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
-        p.paint_linear_gradient(
-            0.0,
-            0.0,
-            w,
-            h,
-            emColor::rgba(80, 80, 160, 255),
-            emColor::rgba(160, 160, 80, 255),
-            false,
-            emColor::TRANSPARENT,
-        );
+        let canvas_color = p.GetCanvasColor();
+        p.PaintRect(0.0, 0.0, w, h, self.fill_color, canvas_color);
 
         let scaled: Vec<(f64, f64)> = self
             .vertices
@@ -642,16 +634,16 @@ impl TestPanel {
             emColor::TRANSPARENT,
         );
 
-        // Ellipses (center + radius)
-        p.PaintEllipse(0.055, 0.805, 0.005, 0.005, emColor::WHITE, bg);
-        p.PaintEllipse(0.07, 0.805, 0.01, 0.005, emColor::WHITE, bg);
-        p.PaintEllipse(0.0925, 0.805, 0.0025, 0.005, emColor::WHITE, bg);
+        // Ellipses (x,y,w,h bounding box — matches C++)
+        p.PaintEllipse(0.05, 0.80, 0.01, 0.01, emColor::WHITE, bg);
+        p.PaintEllipse(0.06, 0.80, 0.02, 0.01, emColor::WHITE, bg);
+        p.PaintEllipse(0.09, 0.80, 0.005, 0.01, emColor::WHITE, bg);
 
-        // Ellipse sectors
-        p.PaintEllipseSector(0.105, 0.805, 0.005, 0.005, 45.0, 350.0, emColor::WHITE, bg);
-        p.PaintEllipseSector(0.12, 0.805, 0.01, 0.005, 45.0, -350.0, emColor::WHITE, bg);
-        p.PaintEllipseSector(0.1325, 0.805, 0.0025, 0.005, 245.0, 50.0, emColor::WHITE, bg);
-        p.PaintEllipseSector(0.145, 0.805, 0.005, 0.005, 245.0, -50.0, emColor::WHITE, bg);
+        // Ellipse sectors (x,y,w,h bounding box)
+        p.PaintEllipseSector(0.10, 0.80, 0.01, 0.01, 45.0, 350.0, emColor::WHITE, bg);
+        p.PaintEllipseSector(0.11, 0.80, 0.02, 0.01, 45.0, -350.0, emColor::WHITE, bg);
+        p.PaintEllipseSector(0.13, 0.80, 0.005, 0.01, 245.0, 50.0, emColor::WHITE, bg);
+        p.PaintEllipseSector(0.14, 0.80, 0.01, 0.01, 245.0, -50.0, emColor::WHITE, bg);
 
         // Rect outlines
         p.PaintRectOutline(
@@ -692,20 +684,14 @@ impl TestPanel {
         p.PaintRoundRect(0.13, 0.84, 0.01, 0.01, 0.001, 0.011, emColor::WHITE, bg);
         p.PaintRoundRect(0.15, 0.84, 0.01, 0.01, 0.0, 0.0, emColor::WHITE, bg);
 
-        // Ellipse outlines
+        // Ellipse outlines (x,y,w,h bounding box)
         p.PaintEllipseOutline(
-            0.055,
-            0.865,
-            0.005,
-            0.005,
+            0.05, 0.86, 0.01, 0.01,
             &emStroke::new(emColor::WHITE, 0.003),
             bg,
         );
         p.PaintEllipseOutline(
-            0.075,
-            0.865,
-            0.01,
-            0.005,
+            0.065, 0.86, 0.02, 0.01,
             &emStroke::new(emColor::WHITE, 0.001),
             bg,
         );
@@ -714,45 +700,29 @@ impl TestPanel {
             rd_s.cap = LineCap::Round;
             rd_s.join = LineJoin::Round;
             rd_s.dash_type = DashType::Dotted;
-            p.PaintEllipseOutline(0.0925, 0.865, 0.0025, 0.005, &rd_s, bg);
+            p.PaintEllipseOutline(0.09, 0.86, 0.005, 0.01, &rd_s, bg);
         }
         p.PaintEllipseArc(
-            0.105,
-            0.865,
-            0.005,
-            0.005,
-            90.0_f64.to_radians(),
-            225.0_f64.to_radians(),
+            0.10, 0.86, 0.01, 0.01,
+            90.0, 225.0,
             &emStroke::new(emColor::WHITE, 0.001),
             bg,
         );
         p.PaintEllipseSectorOutline(
-            0.12,
-            0.865,
-            0.01,
-            0.005,
-            45.0,
-            -320.0,
+            0.11, 0.86, 0.02, 0.01,
+            45.0, -320.0,
             &emStroke::new(emColor::WHITE, 0.0001),
             bg,
         );
         p.PaintEllipseArc(
-            0.1325,
-            0.865,
-            0.0025,
-            0.005,
-            245.0_f64.to_radians(),
-            50.0_f64.to_radians(),
+            0.13, 0.86, 0.005, 0.01,
+            245.0, 50.0,
             &emStroke::new(emColor::WHITE, 0.001),
             bg,
         );
         p.PaintEllipseArc(
-            0.145,
-            0.865,
-            0.005,
-            0.005,
-            245.0_f64.to_radians(),
-            (-50.0_f64).to_radians(),
+            0.14, 0.86, 0.01, 0.01,
+            245.0, -50.0,
             &emStroke::new(emColor::WHITE, 0.001),
             bg,
         );
@@ -763,12 +733,8 @@ impl TestPanel {
             rounded_s.start_end = emStrokeEnd::new(StrokeEndType::Cap);
             rounded_s.finish_end = emStrokeEnd::new(StrokeEndType::LineArrow);
             p.PaintEllipseArc(
-                0.155,
-                0.865,
-                0.005,
-                0.005,
-                0.0_f64.to_radians(),
-                (-145.0_f64).to_radians(),
+                0.15, 0.86, 0.01, 0.01,
+                0.0, -145.0,
                 &rounded_s,
                 bg,
             );
