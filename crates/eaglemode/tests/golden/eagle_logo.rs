@@ -65,9 +65,6 @@ fn eagle_logo() {
         dump_draw_ops("eagle_logo", &ops);
     }
 
-    // ch_tol=2: Rust paint_linear_gradient uses GetBlended (16-bit fixed-point)
-    // while C++ PaintRect+emLinearGradientTexture uses per-scanline integer
-    // interpolation, producing ±1–2 LSB differences across the gradient.
-    compare_images("eagle_logo", img.GetMap(), &expected, ew, eh, 2, 0.0)
+    compare_images("eagle_logo", img.GetMap(), &expected, ew, eh, 0, 0.0)
         .expect("eagle_logo golden mismatch");
 }
