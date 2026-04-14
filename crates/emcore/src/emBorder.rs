@@ -1209,61 +1209,36 @@ How to move or set the focus:\n\
     pub fn GetContentRectUnobscured(&self, w: f64, h: f64, look: &emLook) -> Rect {
         match self.inner {
             InnerBorderType::InputField | InnerBorderType::OutputField => {
-                // C++ emBorder.cpp lines 1121-1128: compute from the round-rect
-                // boundary (after outer+label+minSpace, BEFORE inner border
-                // inset) using the bumped inner radius.
+                // C++ lines 1121-1128: uses pre-inner rnd values with d=220/216*rndR.
+                // Recompute pre-inner geometry matching do_border_geometry.
                 let (ox, oy, ow, oh) = self.outer_insets(w, h);
-                let mut rnd_x = ox;
-                let mut rnd_y = oy;
-                let mut rnd_w = (w - ow).max(0.0);
-                let mut rnd_h = (h - oh).max(0.0);
-                let s = rnd_w.min(rnd_h) * self.border_scaling;
+                let mut rx = ox;
+                let mut rw = (w - ow).max(0.0);
+                let rh = (h - oh).max(0.0);
+                let s = rw.min(rh) * self.border_scaling;
                 let ms = s * self.min_space_factor();
-                let mut rnd_r = self.outer_radius(w, h);
-
                 if self.has_how_to {
                     let hts = s * self.how_to_space_factor();
-                    if hts > ms {
-                        rnd_x += hts - ms;
-                        rnd_w -= hts - ms;
-                    }
+                    if hts > ms { rx += hts - ms; rw -= hts - ms; }
                 }
-
-                let label_h = if self.label_in_border && self.HasLabel() {
+                let ls = if self.label_in_border && self.HasLabel() {
                     s * self.label_space_factor()
+                } else { 0.0 };
+                let (ry, rh2) = if ls > 0.0 {
+                    rx += ms; rw -= 2.0 * ms;
+                    (oy + ls, rh - ls - ms)
                 } else {
-                    0.0
+                    rx += ms; rw -= 2.0 * ms;
+                    (oy + ms, rh - 2.0 * ms)
                 };
-
-                if label_h > 0.0 {
-                    rnd_x += ms;
-                    rnd_w -= 2.0 * ms;
-                    rnd_y += label_h;
-                    rnd_h -= label_h + ms;
-                    rnd_r -= ms;
-                } else {
-                    rnd_x += ms;
-                    rnd_y += ms;
-                    rnd_w -= 2.0 * ms;
-                    rnd_h -= 2.0 * ms;
-                    rnd_r -= ms;
-                }
-                if rnd_r < 0.0 {
-                    rnd_r = 0.0;
-                }
-
-                // Bump rndR for IO field, then apply d = 220/216 * rndR.
-                let r = rnd_w.min(rnd_h) * self.border_scaling * 0.094;
-                if rnd_r < r {
-                    rnd_r = r;
-                }
-                let d = (220.0 / 216.0) * rnd_r;
-
+                let mut rr = (self.outer_radius(w, h) - ms).max(0.0);
+                let r = rw.min(rh2) * self.border_scaling * 0.094;
+                if rr < r { rr = r; }
+                let d = (220.0 / 216.0) * rr;
                 Rect {
-                    x: rnd_x + d,
-                    y: rnd_y + d,
-                    w: (rnd_w - 2.0 * d).max(0.0),
-                    h: (rnd_h - 2.0 * d).max(0.0),
+                    x: rx + d, y: ry + d,
+                    w: (rw - 2.0 * d).max(0.0),
+                    h: (rh2 - 2.0 * d).max(0.0),
                 }
             }
             _ => self.GetContentRect(w, h, look),
