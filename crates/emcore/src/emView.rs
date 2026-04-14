@@ -1264,9 +1264,9 @@ impl emView {
         let children: Vec<PanelId> = tree.children(id).collect();
         for child in children {
             let lr = tree.GetRec(child).map(|p| p.layout_rect).unwrap_or_default();
-            // C++ emPanel scales ALL layout coords by parent ViewedWidth
-            // (not ViewedHeight), because layout coordinates are all in
-            // parent-width units.
+            // C++ emPanel.cpp:562-565: x uses ViewedWidth, y uses
+            // ViewedWidth/CurrentPixelTallness. CurrentPixelTallness is always
+            // 1.0 for the golden tests (square pixels), so vw/pt = vw.
             let child_abs = Rect::new(
                 abs.x + lr.x * abs.w,
                 abs.y + lr.y * abs.w,
