@@ -4285,10 +4285,7 @@ impl<'a> emPainter<'a> {
     }
 
     /// Draw an ellipse outline. emStroke is centered on the shape boundary.
-    ///
-    /// Matches C++ `PaintEllipseOutline`: for solid strokes, builds
-    /// outer + inner ellipse polygons with adaptive segment counts and a
-    /// bridge for NonZero winding hole. For dashed, routes through polyline.
+    /// Matches C++ `PaintEllipseOutline` (emPainter.cpp:1901-1994).
     pub fn PaintEllipseOutline(
         &mut self,
         cx: f64,
@@ -4306,42 +4303,74 @@ impl<'a> emPainter<'a> {
             stroke: stroke.clone(),
             canvas_color,
         }) else { return; };
-        if rx <= 0.0 || ry <= 0.0 || stroke.width <= 0.0 {
-            return;
-        }
-        let sw = stroke.width;
-        let t2 = sw * 0.5;
-        // Outer radii expanded by t2 (stroke centered on boundary).
+
+        let thickness = stroke.width;
+        if thickness <= 0.0 { return; }
+        let rx = rx.max(0.0);
+        let ry = ry.max(0.0);
+        let t2 = thickness * 0.5;
+
+        // C++ computes outer radii: rx = w/2+t2, ry = h/2+t2.
+        // In our (cx,cy,rx,ry) API, rx/ry are shape radii (= w/2, h/2).
         let orx = rx + t2;
         let ory = ry + t2;
 
+        // C++ computes segment count from OUTER radii.
+        let n = adaptive_circle_segments(orx, ory, self.state.scale_x, self.state.scale_y);
+        let step = 2.0 * std::f64::consts::PI / n as f64;
+
         if stroke.is_dashed() {
-            // Dashed: use centerline radii for the polyline.
-            let verts = self.ellipse_polygon(cx, cy, rx, ry);
-            self.PaintPolylineWithoutArrows(&verts, stroke, true, canvas_color);
+            // Centerline vertices (rx, ry) but using outer-derived segment count n.
+            let mut verts = Vec::with_capacity(n);
+            for i in 0..n {
+                let angle = step * i as f64;
+                verts.push((angle.cos() * rx + cx, angle.sin() * ry + cy));
+            }
+            let canvas_color = if 2.0 * rx < thickness || 2.0 * ry < thickness {
+                emColor::TRANSPARENT
+            } else {
+                canvas_color
+            };
+            self.PaintPolylineWithoutArrows(&verts, stroke, false, canvas_color);
             return;
         }
 
-        // Inner radii contracted by t2 from shape boundary.
-        let irx = orx - sw;
-        let iry = ory - sw;
+        // Solid: outer vertices using outer radii.
+        let mut verts = Vec::with_capacity(n);
+        for i in 0..n {
+            let angle = step * i as f64;
+            verts.push((angle.cos() * orx + cx, angle.sin() * ory + cy));
+        }
+
+        // Inner radii.
+        let irx = orx - thickness;
+        let iry = ory - thickness;
         if irx <= 0.0 || iry <= 0.0 {
-            self.PaintEllipse(cx, cy, orx, ory, stroke.color, canvas_color);
+            // Degenerate inner — fill outer as solid polygon.
+            self.PaintPolygon(&verts, stroke.color, canvas_color);
             return;
         }
 
-        // Build outer polygon with adaptive segment count.
-        let mut outer = self.ellipse_polygon(cx, cy, orx, ory);
+        // Bridge from outer end to outer start.
+        verts.push(verts[0]);
 
-        // Build inner polygon (may have different segment count).
-        let inner = self.ellipse_polygon(cx, cy, irx, iry);
+        // Inner ring with potentially different segment count.
+        let m = adaptive_circle_segments(irx, iry, self.state.scale_x, self.state.scale_y);
+        let inner_step = 2.0 * std::f64::consts::PI / m as f64;
 
-        // Bridge + reversed inner for NonZero winding hole.
-        // C++ vertex order: outer[0..n-1], outer[0], inner[0], inner[m-1..1], inner[0]
-        outer.push(outer[0]);
-        outer.push(inner[0]);
-        outer.extend(inner.iter().rev());
-        self.PaintPolygon(&outer, stroke.color, canvas_color);
+        let final_count = n + m + 2;
+        verts.resize(final_count, (0.0, 0.0));
+
+        // C++ inner vertices in reverse order: xy[n+m+1-i] for i=0..m-1.
+        for i in 0..m {
+            let angle = inner_step * i as f64;
+            verts[n + m + 1 - i] = (angle.cos() * irx + cx, angle.sin() * iry + cy);
+        }
+
+        // Inner start repeated.
+        verts[n + 1] = verts[n + m + 1];
+
+        self.PaintPolygon(&verts, stroke.color, canvas_color);
     }
 
     /// Correct blending artifacts along a shared edge between two adjacent polygons.
