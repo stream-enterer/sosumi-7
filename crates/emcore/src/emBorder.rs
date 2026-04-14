@@ -741,16 +741,6 @@ impl emBorder {
     }
 
     /// Corner radius for inner border types.
-    fn inner_radius(&self, iw: f64, ih: f64) -> f64 {
-        let s = iw.min(ih) * self.border_scaling;
-        match self.inner {
-            InnerBorderType::Group => s * 0.0188,
-            InnerBorderType::InputField | InnerBorderType::OutputField => s * 0.094,
-            InnerBorderType::CustomRect => s * 0.0125,
-            InnerBorderType::None => 0.0,
-        }
-    }
-
     /// The label-space factor, which differs by border type.
     /// Eagle Mode: Group uses 0.05, all others use 0.17.
     fn label_space_factor(&self) -> f64 {
@@ -1976,42 +1966,31 @@ How to move or set the focus:\n\
             return;
         }
 
-        // Recompute inner rect geometry (same as in paint_border).
-        let (ox, oy, ow, oh) = self.outer_insets(w, h);
-        let rnd_x = ox;
-        let rnd_w = (w - ow).max(0.0);
-        let rnd_h = (h - oh).max(0.0);
-
-        let s = rnd_w.min(rnd_h) * self.border_scaling;
+        // Use do_border_geometry pre-inner values matching C++ DoBorder lines 1091-1118.
+        // We need rndX/rndY/rndW/rndH (before inner inset) and rndR (after clamping).
+        // do_border_geometry returns post-inner values, so recompute pre-inner here
+        // matching C++ exactly.
+        let (ox2, oy2, ow2, oh2) = self.outer_insets(w, h);
+        let mut rx = ox2;
+        let mut rw = (w - ow2).max(0.0);
+        let rh = (h - oh2).max(0.0);
+        let s = rw.min(rh) * self.border_scaling;
         let ms = s * self.min_space_factor();
-        let mut rnd_x2 = rnd_x;
-        let mut rnd_w2 = rnd_w;
         if self.has_how_to {
             let hts = s * self.how_to_space_factor();
-            if hts > ms {
-                rnd_x2 += hts - ms;
-                rnd_w2 -= hts - ms;
-            }
+            if hts > ms { rx += hts - ms; rw -= hts - ms; }
         }
-
         let ls = if self.label_in_border && self.HasLabel() {
-            self.label_space(rnd_w2, rnd_h)
+            s * self.label_space_factor()
+        } else { 0.0 };
+        let (inner_x, inner_y, inner_w, inner_h) = if ls > 0.0 {
+            (rx + ms, oy2 + ls, (rw - 2.0*ms).max(0.0), rh - ls - ms)
         } else {
-            0.0
-        };
-
-        let inner_x = rnd_x2 + ms;
-        let inner_w = (rnd_w2 - 2.0 * ms).max(0.0);
-        let (inner_y, inner_h) = if ls > 0.0 {
-            (oy + ls, (h - oy * 2.0 - ls - ms).max(0.0))
-        } else {
-            (oy + ms, (h - oy * 2.0 - 2.0 * ms).max(0.0))
+            (rx + ms, oy2 + ms, (rw - 2.0*ms).max(0.0), rh - 2.0*ms)
         };
         let mut inner_r = (self.outer_radius(w, h) - ms).max(0.0);
-        let type_r = self.inner_radius(inner_w, inner_h);
-        if inner_r < type_r {
-            inner_r = type_r;
-        }
+        let r = inner_w.min(inner_h) * self.border_scaling * 0.094;
+        if inner_r < r { inner_r = r; }
 
         with_toolkit_images(|img| {
             painter.PaintBorderImage(
