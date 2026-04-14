@@ -126,6 +126,7 @@ pub(crate) fn blend_scanline(
     count: usize,
     coverages: Option<&[i32]>,
     mode: &BlendMode,
+    allow_simd: bool,
 ) {
     match mode {
         BlendMode::CanvasBlend {
@@ -133,7 +134,7 @@ pub(crate) fn blend_scanline(
             painter_alpha,
         } => blend_scanline_canvas(dest, buf, count, coverages, *canvas, *painter_alpha),
         BlendMode::SourceOver { painter_alpha } => {
-            blend_scanline_source_over(dest, buf, count, coverages, *painter_alpha)
+            blend_scanline_source_over(dest, buf, count, coverages, *painter_alpha, allow_simd)
         }
     }
 }
@@ -193,10 +194,12 @@ fn blend_scanline_source_over(
     count: usize,
     coverages: Option<&[i32]>,
     painter_alpha: u8,
+    allow_simd: bool,
 ) {
     // AVX2 fast path: full coverage, painter_alpha=255, 4-channel buffer.
     #[cfg(target_arch = "x86_64")]
-    if coverages.is_none()
+    if allow_simd
+        && coverages.is_none()
         && painter_alpha == 255
         && buf.ch == 4
         && is_x86_feature_detected!("avx2")
@@ -266,6 +269,7 @@ pub(crate) fn blend_scanline_premul(
     count: usize,
     coverages: Option<&[i32]>,
     mode: &BlendMode,
+    allow_simd: bool,
 ) {
     match mode {
         BlendMode::CanvasBlend {
@@ -273,7 +277,7 @@ pub(crate) fn blend_scanline_premul(
             painter_alpha,
         } => blend_scanline_premul_canvas(dest, buf, count, coverages, *canvas, *painter_alpha),
         BlendMode::SourceOver { painter_alpha } => {
-            blend_scanline_premul_source_over(dest, buf, count, coverages, *painter_alpha)
+            blend_scanline_premul_source_over(dest, buf, count, coverages, *painter_alpha, allow_simd)
         }
     }
 }
@@ -354,10 +358,12 @@ fn blend_scanline_premul_source_over(
     count: usize,
     coverages: Option<&[i32]>,
     painter_alpha: u8,
+    allow_simd: bool,
 ) {
     // AVX2 fast path: full coverage, painter_alpha=255, 4-channel buffer.
     #[cfg(target_arch = "x86_64")]
-    if coverages.is_none()
+    if allow_simd
+        && coverages.is_none()
         && painter_alpha == 255
         && buf.ch == 4
         && is_x86_feature_detected!("avx2")

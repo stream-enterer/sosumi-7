@@ -288,6 +288,9 @@ pub struct emPainter<'a> {
     /// depth+1. Only used for diagnostic dumps (DUMP_DRAW_OPS=1).
     /// Production recording keeps this false for correct replay.
     record_subops: bool,
+    /// Matches C++ `CoreConfig->AllowSIMD`. When false, SIMD fast paths
+    /// (AVX2) are disabled even if the CPU supports them.
+    pub(crate) allow_simd: bool,
 }
 
 /// The 9 target rectangles computed by PaintBorderImage's boundary logic.
@@ -344,6 +347,7 @@ impl<'a> emPainter<'a> {
             state_stack: Vec::new(),
             record_depth: 0,
             record_subops: false,
+            allow_simd: true,
         }
     }
 
@@ -375,6 +379,7 @@ impl<'a> emPainter<'a> {
             state_stack: Vec::new(),
             record_depth: 0,
             record_subops: false,
+            allow_simd: true,
         }
     }
 
@@ -1206,6 +1211,7 @@ impl<'a> emPainter<'a> {
             horizontal,
             canvas_color,
         }) else { return; };
+        let allow_simd = self.allow_simd;
         let saved_canvas = self.state.canvas_color;
         self.state.canvas_color = canvas_color;
         let px = self.to_pixel_x(x);
@@ -1252,7 +1258,7 @@ impl<'a> emPainter<'a> {
                 let dest_offset = (row as usize * tw + col as usize) * 4;
                 let data = self.GetImage(proof).GetWritableMap();
                 let dest = &mut data[dest_offset..];
-                blend_scanline(dest, &ibuf, batch, None, &mode);
+                blend_scanline(dest, &ibuf, batch, None, &mode, allow_simd);
                 col += batch as i32;
             }
         }
@@ -2239,6 +2245,7 @@ impl<'a> emPainter<'a> {
         ibuf: &mut InterpolationBuffer, max_batch: usize,
         coverages: &mut [i32], tw_stride: usize,
     ) {
+        let allow_simd = self.allow_simd;
         let mut col = ix;
         let end = ix + iw;
         while col < end {
@@ -2257,8 +2264,8 @@ impl<'a> emPainter<'a> {
             let dest_offset = (iy as usize * tw_stride + col as usize) * 4;
             let data = self.GetImage(proof).GetWritableMap();
             let dest = &mut data[dest_offset..];
-            if all_full { blend_scanline(dest, ibuf, batch, None, mode); }
-            else { blend_scanline(dest, ibuf, batch, Some(&coverages[..batch]), mode); }
+            if all_full { blend_scanline(dest, ibuf, batch, None, mode, allow_simd); }
+            else { blend_scanline(dest, ibuf, batch, Some(&coverages[..batch]), mode, allow_simd); }
             col += batch as i32;
         }
     }
@@ -2321,6 +2328,7 @@ impl<'a> emPainter<'a> {
         ibuf: &mut InterpolationBuffer, max_batch: usize,
         coverages: &mut [i32], tw_stride: usize,
     ) {
+        let allow_simd = self.allow_simd;
         let end = ix + iw;
         let mut carry = emPainterInterpolation::AreaSampleCarryState::new();
         let mut col = ix;
@@ -2339,8 +2347,8 @@ impl<'a> emPainter<'a> {
             let dest_offset = (iy as usize * tw_stride + col as usize) * 4;
             let data = self.GetImage(proof).GetWritableMap();
             let dest = &mut data[dest_offset..];
-            if all_full { blend_scanline_premul(dest, ibuf, batch, None, mode); }
-            else { blend_scanline_premul(dest, ibuf, batch, Some(&coverages[..batch]), mode); }
+            if all_full { blend_scanline_premul(dest, ibuf, batch, None, mode, allow_simd); }
+            else { blend_scanline_premul(dest, ibuf, batch, Some(&coverages[..batch]), mode, allow_simd); }
             col += batch as i32;
         }
     }
@@ -2403,6 +2411,7 @@ impl<'a> emPainter<'a> {
         ibuf: &mut InterpolationBuffer, max_batch: usize,
         coverages: &mut [i32], tw_stride: usize,
     ) {
+        let allow_simd = self.allow_simd;
         let end = ix + iw;
         let mut col = ix;
         while col < end {
@@ -2420,8 +2429,8 @@ impl<'a> emPainter<'a> {
             let dest_offset = (iy as usize * tw_stride + col as usize) * 4;
             let data = self.GetImage(proof).GetWritableMap();
             let dest = &mut data[dest_offset..];
-            if all_full { blend_scanline_premul(dest, ibuf, batch, None, mode); }
-            else { blend_scanline_premul(dest, ibuf, batch, Some(&coverages[..batch]), mode); }
+            if all_full { blend_scanline_premul(dest, ibuf, batch, None, mode, allow_simd); }
+            else { blend_scanline_premul(dest, ibuf, batch, Some(&coverages[..batch]), mode, allow_simd); }
             col += batch as i32;
         }
     }
