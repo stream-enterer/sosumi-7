@@ -770,121 +770,32 @@ fn kani_emViewAnimator_emSwipingViewAnimator_inner_mut() {
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_new() {
-    let mut p_spring_constant: f64 = kani::any::<f64>();
-    kani::assume(p_spring_constant.is_finite());
-    let _result = emcore::emViewAnimator::emMagneticViewAnimator::new(p_spring_constant);
-}
-
-#[cfg(kani)]
-#[kani::proof]
-fn kani_emViewAnimator_emMagneticViewAnimator_set_snap_target() {
-    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
-    let mut p_x: f64 = kani::any::<f64>();
-    let mut p_y: f64 = kani::any::<f64>();
-    kani::assume(p_x.is_finite());
-    kani::assume(p_y.is_finite());
-    let _result = self_val.set_snap_target(p_x, p_y);
-}
-
-#[cfg(kani)]
-#[kani::proof]
-fn kani_emViewAnimator_emMagneticViewAnimator_SetSpringConstant() {
-    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
-    let mut p_k: f64 = kani::any::<f64>();
-    kani::assume(p_k.is_finite());
-    let _result = self_val.SetSpringConstant(p_k);
-}
-
-#[cfg(kani)]
-#[kani::proof]
-fn kani_emViewAnimator_emMagneticViewAnimator_set_damping() {
-    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
-    let mut p_d: f64 = kani::any::<f64>();
-    kani::assume(p_d.is_finite());
-    let _result = self_val.set_damping(p_d);
-}
-
-#[cfg(kani)]
-#[kani::proof]
-fn kani_emViewAnimator_emMagneticViewAnimator_GetVelocity() {
-    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
-    let _result = self_val.GetVelocity();
-    assert!(_result.0.is_finite(), "non-finite result.0");
-    assert!(_result.1.is_finite(), "non-finite result.1");
-}
-
-#[cfg(kani)]
-#[kani::proof]
-fn kani_emViewAnimator_emMagneticViewAnimator_GetAbsVelocity() {
-    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
-    let _result = self_val.GetAbsVelocity();
-    // Layer 2: finite output from finite inputs
-    assert!(_result.is_finite(), "non-finite result");
+    let _result = emcore::emViewAnimator::emMagneticViewAnimator::new();
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_set_radius_factor() {
-    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
-    let mut p_f: f64 = kani::any::<f64>();
+    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new();
+    let p_f: f64 = kani::any::<f64>();
     kani::assume(p_f.is_finite());
-    let _result = self_val.set_radius_factor(p_f);
+    self_val.set_radius_factor(p_f);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_set_speed_factor() {
-    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
-    let mut p_f: f64 = kani::any::<f64>();
+    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new();
+    let p_f: f64 = kani::any::<f64>();
     kani::assume(p_f.is_finite());
-    let _result = self_val.set_speed_factor(p_f);
+    self_val.set_speed_factor(p_f);
 }
 
 #[cfg(kani)]
 #[kani::proof]
 fn kani_emViewAnimator_emMagneticViewAnimator_is_magnetism_active() {
-    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
+    let self_val = emcore::emViewAnimator::emMagneticViewAnimator::new();
     let _result = self_val.is_magnetism_active();
-}
-
-#[cfg(kani)]
-#[kani::proof]
-fn kani_emViewAnimator_emMagneticViewAnimator_update_magnetism() {
-    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
-    let mut p_abs_dist: f64 = kani::any::<f64>();
-    let mut p_dx: f64 = kani::any::<f64>();
-    let mut p_dy: f64 = kani::any::<f64>();
-    let mut p_dz: f64 = kani::any::<f64>();
-    let mut p_view_w: f64 = kani::any::<f64>();
-    let mut p_view_h: f64 = kani::any::<f64>();
-    kani::assume(p_abs_dist.is_finite());
-    kani::assume(p_dx.is_finite());
-    kani::assume(p_dy.is_finite());
-    kani::assume(p_dz.is_finite());
-    kani::assume(p_view_w.is_finite());
-    kani::assume(p_view_h.is_finite());
-    let _result = self_val.update_magnetism(p_abs_dist, p_dx, p_dy, p_dz, p_view_w, p_view_h);
-}
-
-#[cfg(kani)]
-#[kani::proof]
-fn kani_emViewAnimator_emMagneticViewAnimator_hill_rolling_physics() {
-    let mut self_val = emcore::emViewAnimator::emMagneticViewAnimator::new(kani::any());
-    let mut p_dt: f64 = kani::any::<f64>();
-    let mut p_abs_dist: f64 = kani::any::<f64>();
-    let mut p_dx: f64 = kani::any::<f64>();
-    let mut p_dy: f64 = kani::any::<f64>();
-    let mut p_dz: f64 = kani::any::<f64>();
-    let mut p_view_w: f64 = kani::any::<f64>();
-    let mut p_view_h: f64 = kani::any::<f64>();
-    kani::assume(p_dt.is_finite());
-    kani::assume(p_abs_dist.is_finite());
-    kani::assume(p_dx.is_finite());
-    kani::assume(p_dy.is_finite());
-    kani::assume(p_dz.is_finite());
-    kani::assume(p_view_w.is_finite());
-    kani::assume(p_view_h.is_finite());
-    let _result = self_val.hill_rolling_physics(p_dt, p_abs_dist, p_dx, p_dy, p_dz, p_view_w, p_view_h);
 }
 
 #[cfg(kani)]

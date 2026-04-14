@@ -364,60 +364,51 @@ fn animator_visiting_zoom() {
 
 // ─── Magnetic trajectory tests ──────────────────────────────────
 
-/// Run the magnetic animator for `steps` frames, recording velocity trajectory.
-/// Sets up a panel tree with a focusable target panel to exercise magnetism.
+/// Run the magnetic animator for `steps` frames, recording 3D velocity trajectory.
+/// Matches C++ gen_animator_magnetic_approach: AnimViewSetup (root at 0,0,1,0.75,
+/// zoom factor 100), Activate, 60 frames of CycleAnimation, Deactivate.
 fn run_magnetic_trajectory(steps: usize) -> Vec<TrajectoryStep> {
     let mut tree = PanelTree::new();
     let root = tree.create_root("root");
     tree.Layout(root, 0.0, 0.0, 1.0, 0.75);
     tree.set_focusable(root, true);
 
-    // Add a focusable target panel offset from center
-    let target = tree.create_child(root, "target");
-    tree.Layout(target, 0.3, 0.2, 0.4, 0.4);
-    tree.set_focusable(target, true);
-
     let mut view = emView::new(root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
     view.Update(&mut tree);
 
-    let mut mag = emMagneticViewAnimator::new(100.0);
-    mag.set_radius_factor(1.0);
-    mag.set_speed_factor(1.0);
+    // C++ AnimViewSetup: Zoom(400, 300, 100.0)
+    view.Zoom(100.0, 400.0, 300.0);
+    view.Update(&mut tree);
+
+    let mut anim = emMagneticViewAnimator::new();
+    // C++ Activate() with no prior active animator → friction=1E10
+    anim.Activate(None);
 
     let dt = 1.0 / 60.0;
     let mut trajectory = Vec::with_capacity(steps);
 
     for _ in 0..steps {
-        // Calculate distance to nearest focusable panel
-        let (dx, dy, dz, abs_dist) =
-            emMagneticViewAnimator::calculate_distance(&view, &tree);
-
-        // Update magnetism activation
-        let (vw, vh) = view.viewport_size();
-        mag.update_magnetism(abs_dist, dx, dy, dz, vw, vh);
-
-        // Run hill-rolling physics
-        mag.hill_rolling_physics(dt, abs_dist, dx, dy, dz, vw, vh);
-
-        let (vel_x, vel_y) = mag.GetVelocity();
+        anim.animate(&mut view, &mut tree, dt);
+        let (vel_x, vel_y, vel_z) = anim.inner().GetVelocity();
         trajectory.push(TrajectoryStep {
             vel_x,
             vel_y,
-            vel_z: 0.0,
+            vel_z,
         });
     }
+
+    anim.Deactivate();
 
     trajectory
 }
 
 #[test]
-#[ignore = "golden file not yet generated — run `make -C tests/golden/gen run` with magnetic animator support"]
 fn animator_magnetic_approach() {
     require_golden!();
     let golden = load_trajectory_golden("animator_magnetic_approach");
     let actual = run_magnetic_trajectory(60);
 
-    compare_trajectory("animator_magnetic_approach", &actual, &golden, 1e-2)
+    compare_trajectory("animator_magnetic_approach", &actual, &golden, 1e-6)
         .unwrap_or_else(|e| panic!("animator_magnetic_approach: {e}"));
 }

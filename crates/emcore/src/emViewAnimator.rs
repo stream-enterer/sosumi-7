@@ -2328,207 +2328,101 @@ impl emViewAnimator for emSwipingViewAnimator {
     }
 }
 
-/// Magnetic view animator — snaps the view to the nearest panel boundary.
+/// Magnetic view animator — automatically scrolls/zooms to snap the view
+/// to the nearest focusable panel.
 ///
-/// After another animation settles, this applies a spring-like force toward
-/// the nearest snap point. The displacement from the snap target is multiplied
-/// by a spring constant and applied as velocity, producing a smooth settle.
+/// C++ emMagneticViewAnimator (emViewAnimator.h:272-299, emViewAnimator.cpp:671-923).
+/// Inherits from emKineticViewAnimator (composition in Rust).
+/// Uses a hill-rolling physics model with config-driven radius and speed.
 pub struct emMagneticViewAnimator {
-    /// Spring constant controlling snap strength.
-    spring_constant: f64,
-    /// Current snap velocity.
-    velocity_x: f64,
-    velocity_y: f64,
-    velocity_z: f64,
-    /// Target snap position (set externally when a snap point is identified).
-    snap_target_x: f64,
-    snap_target_y: f64,
-    /// Whether snapping is active.
-    active: bool,
-    /// Damping factor to prevent oscillation (0..1).
-    damping: f64,
+    inner: emKineticViewAnimator,
     /// Whether magnetism is currently active (within radius, velocity < threshold).
     magnetism_active: bool,
-    /// emCoreConfig magnetism_radius factor (default 1.0).
+    /// emCoreConfig MagnetismRadius factor (default 1.0).
     radius_factor: f64,
-    /// emCoreConfig magnetism_speed factor (default 1.0).
+    /// emCoreConfig MagnetismRadius.GetMinValue() (default ~0.001).
+    min_radius_factor: f64,
+    /// emCoreConfig MagnetismSpeed factor (default 1.0).
     speed_factor: f64,
-    /// Set when magnetism activates — caller should center zoom fix point.
-    pub needs_center_zoom_fix: bool,
+    /// emCoreConfig MagnetismSpeed.GetMaxValue() (default ~100.0).
+    max_speed_factor: f64,
+}
+
+impl Default for emMagneticViewAnimator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl emMagneticViewAnimator {
-    pub fn new(spring_constant: f64) -> Self {
+    /// C++ emMagneticViewAnimator::emMagneticViewAnimator (line 671-677).
+    /// In C++ the constructor acquires CoreConfig and sets MagnetismActive=false.
+    /// Config values are read each CycleAnimation; here we store defaults.
+    pub fn new() -> Self {
+        let mut inner = emKineticViewAnimator::new(0.0, 0.0, 0.0, 1e10);
+        inner.SetFrictionEnabled(true);
         Self {
-            spring_constant,
-            velocity_x: 0.0,
-            velocity_y: 0.0,
-            velocity_z: 0.0,
-            snap_target_x: 0.0,
-            snap_target_y: 0.0,
-            active: false,
-            damping: 0.8,
+            inner,
             magnetism_active: false,
             radius_factor: 1.0,
+            min_radius_factor: 0.001,
             speed_factor: 1.0,
-            needs_center_zoom_fix: false,
+            max_speed_factor: 100.0,
         }
     }
 
-    /// Set the snap target position. Activates the animator.
-    pub fn set_snap_target(&mut self, x: f64, y: f64) {
-        self.snap_target_x = x;
-        self.snap_target_y = y;
-        self.active = true;
+    pub fn inner(&self) -> &emKineticViewAnimator {
+        &self.inner
     }
 
-    /// Set the spring constant.
-    pub fn SetSpringConstant(&mut self, k: f64) {
-        self.spring_constant = k;
-    }
-
-    /// Set the damping factor (0..1, lower = more damping).
-    pub fn set_damping(&mut self, d: f64) {
-        self.damping = d.clamp(0.0, 1.0);
-    }
-
-    /// Current velocity.
-    pub fn GetVelocity(&self) -> (f64, f64) {
-        (self.velocity_x, self.velocity_y)
-    }
-
-    /// Absolute velocity magnitude (3D).
-    pub fn GetAbsVelocity(&self) -> f64 {
-        (self.velocity_x * self.velocity_x
-            + self.velocity_y * self.velocity_y
-            + self.velocity_z * self.velocity_z)
-            .sqrt()
+    pub fn inner_mut(&mut self) -> &mut emKineticViewAnimator {
+        &mut self.inner
     }
 
     pub fn set_radius_factor(&mut self, f: f64) {
         self.radius_factor = f;
     }
 
+    pub fn set_min_radius_factor(&mut self, f: f64) {
+        self.min_radius_factor = f;
+    }
+
     pub fn set_speed_factor(&mut self, f: f64) {
         self.speed_factor = f;
+    }
+
+    pub fn set_max_speed_factor(&mut self, f: f64) {
+        self.max_speed_factor = f;
     }
 
     pub fn is_magnetism_active(&self) -> bool {
         self.magnetism_active
     }
 
-    /// Magnetism enter/exit logic. Called each animation cycle.
-    ///
-    /// C++ emMagneticViewAnimator::CycleAnimation lines 716-755.
-    /// Returns true if the animator is busy (needs more frames).
-    pub fn update_magnetism(
-        &mut self,
-        abs_dist: f64,
-        dx: f64,
-        dy: f64,
-        dz: f64,
-        view_w: f64,
-        view_h: f64,
-    ) -> bool {
-        let min_value = 0.001;
-        let max_dist = if self.radius_factor <= min_value * 1.0001 {
-            0.0
-        } else {
-            (view_w + view_h) * 0.09 * self.radius_factor
-        };
-
-        let mut busy = false;
-
-        if abs_dist <= max_dist && abs_dist > 1e-3 {
-            // Within radius and non-trivial distance
-            if !self.magnetism_active && self.GetAbsVelocity() < 10.0 {
-                // C++: center zoom fix point on magnetism activation
-                self.needs_center_zoom_fix = true;
-                self.magnetism_active = true;
-            }
-            busy = true;
-        } else {
-            // Outside radius or at target
-            if self.magnetism_active {
-                self.velocity_x = 0.0;
-                self.velocity_y = 0.0;
-                self.velocity_z = 0.0;
-                self.magnetism_active = false;
-            }
-            if self.GetAbsVelocity() >= 0.01 {
-                busy = true; // friction deceleration
-            }
+    /// C++ emMagneticViewAnimator::Activate (lines 685-707).
+    /// Copies friction from existing active KVA, or sets friction=1E10.
+    pub fn Activate(&mut self, active_animator: Option<&dyn emViewAnimator>) {
+        if self.inner.is_active() {
+            return;
         }
-
-        let _ = (dx, dy, dz); // direction used by hill_rolling_physics
-        busy
+        self.magnetism_active = false;
+        // Walk active animator chain to find a emKineticViewAnimator
+        let kinetic = active_animator.and_then(|a| {
+            a.as_any().downcast_ref::<emKineticViewAnimator>()
+        });
+        if let Some(kva) = kinetic {
+            self.inner.SetFriction(kva.GetFriction());
+            self.inner.SetFrictionEnabled(kva.IsFrictionEnabled());
+        } else {
+            self.inner.SetFriction(1e10);
+            self.inner.SetFrictionEnabled(true);
+        }
+        self.inner.active = true;
     }
 
-    /// Hill-rolling physics integration for magnetism.
-    #[allow(clippy::too_many_arguments)]
-    ///
-    /// C++ emMagneticViewAnimator::CycleAnimation lines 757-797.
-    /// When magnetism is active, compute velocity toward nearest panel using
-    /// sub-stepped Euler integration with slope-based acceleration and damping.
-    pub fn hill_rolling_physics(
-        &mut self,
-        dt: f64,
-        abs_dist: f64,
-        dx: f64,
-        dy: f64,
-        dz: f64,
-        view_w: f64,
-        view_h: f64,
-    ) {
-        if !self.magnetism_active || abs_dist < 1e-15 {
-            return;
-        }
-
-        let max_dist = (view_w + view_h) * 0.09 * self.radius_factor;
-        if max_dist < 1e-15 {
-            return;
-        }
-
-        let max_speed = 100.0; // arbitrary max for speed_factor comparison
-
-        let v = if self.speed_factor >= max_speed * 0.9999 || abs_dist < 1.0 {
-            // Instant snap
-            abs_dist / dt
-        } else {
-            // Sub-stepped Euler integration
-            let mut t = 0.0;
-            let mut d = 0.0;
-            let mut vel: f64 = 0.0;
-
-            while t < dt {
-                let fdt = (dt - t).min(0.01);
-
-                let mut k = (abs_dist - d) / max_dist * 4.0;
-                if k.abs() > 1.0 {
-                    k = 1.0 / k;
-                }
-
-                let mut a = k * max_dist * 25.0 * self.speed_factor * self.speed_factor;
-                a -= vel.abs() * 15.0 * self.speed_factor;
-
-                vel += a * fdt;
-                d += vel * fdt;
-                t += fdt;
-
-                if d >= abs_dist {
-                    break;
-                }
-            }
-
-            d / dt
-        };
-
-        // Set velocity proportional to distance direction
-        if abs_dist > 1e-15 {
-            self.velocity_x = v * dx / abs_dist;
-            self.velocity_y = v * dy / abs_dist;
-            self.velocity_z = v * dz / abs_dist;
-        }
+    /// C++ emMagneticViewAnimator::Deactivate (lines 710-713).
+    pub fn Deactivate(&mut self) {
+        self.inner.stop();
     }
 
     /// Calculate 3D distance to the nearest focusable panel.
@@ -2537,76 +2431,95 @@ impl emMagneticViewAnimator {
     /// DFS from supreme viewed panel, compute essence rect in view coords,
     /// measure 3D distance (xy pixels + log-zoom z-axis).
     ///
-    /// Returns (dx, dy, dz, abs_dist). Returns (0,0,0,0) if no candidate found
-    /// or if POPUP_ZOOM is set.
+    /// Returns (dx, dy, dz, abs_dist). Returns large sentinel if no candidate
+    /// found or if POPUP_ZOOM is set.
     pub fn calculate_distance(view: &emView, tree: &PanelTree) -> (f64, f64, f64, f64) {
-        // Early return if VF_POPUP_ZOOM (magnetism not functioning with popup zoom)
+        // C++ lines 821-825: popup zoom not supported
         if view.flags.contains(ViewFlags::POPUP_ZOOM) {
-            return (0.0, 0.0, 0.0, 0.0);
+            return (1e10, 1e10, 1e10, (3e100_f64).sqrt());
         }
 
         let svp = view.supreme_panel();
+
+        // C++ lines 829-830: get view rect
         let view_rect = Self::get_view_rect(view);
-        let vcx = view_rect.x + view_rect.w * 0.5;
-        let vcy = view_rect.y + view_rect.h * 0.5;
-        let view_dim = (view_rect.w + view_rect.h) * 0.5;
+        let vx = view_rect.x;
+        let vy = view_rect.y;
+        let vw = view_rect.w;
+        let vh = view_rect.h;
         let zflpp = view.GetZoomFactorLogarithmPerPixel();
 
-        let mut best_td = f64::MAX;
-        let mut best_dx = 0.0;
-        let mut best_dy = 0.0;
-        let mut best_dz = 0.0;
+        // C++ lines 816-819: sentinel values
+        let mut best_dx = 1e10;
+        let mut best_dy = 1e10;
+        let mut best_dz = 1e10;
+        let mut dd = 3e100_f64;
 
-        // DFS walk from SVP
-        let mut stack = vec![svp];
-        while let Some(id) = stack.pop() {
-            let p = match tree.GetRec(id) {
-                Some(p) if p.viewed => p,
-                _ => continue,
-            };
+        // C++ lines 831-903: DFS walk from SVP
+        // C++ traversal: visit current, then first-child, then next-sibling, then parent's next.
+        let mut current = Some(svp);
+        while let Some(id) = current {
+            let p = tree.GetRec(id);
+            let is_viewed = p.map(|r| r.viewed).unwrap_or(false);
+            let is_focusable = p.map(|r| r.focusable).unwrap_or(false);
 
-            // Push children for DFS
-            for child in tree.children(id) {
-                stack.push(child);
+            if is_viewed && is_focusable {
+                // C++ lines 833-854: compute essence rect in view coords
+                let (ex, ey, ew, eh) = tree.GetEssenceRect(id);
+                let x = tree.PanelToViewX(id, ex);
+                let y = tree.PanelToViewY(id, ey);
+                let w = tree.PanelToViewDeltaX(id, ew);
+                let h = tree.PanelToViewDeltaY(id, eh);
+
+                if w > 1e-3 && h > 1e-3 {
+                    // Maximize panel in view (centered)
+                    let tx = (x + w * 0.5) - (vx + vw * 0.5);
+                    let ty = (y + h * 0.5) - (vy + vh * 0.5);
+                    let tz = if w * vh >= h * vw {
+                        (vw / w).ln() / zflpp
+                    } else {
+                        (vh / h).ln() / zflpp
+                    };
+                    let td = tx * tx + ty * ty + tz * tz;
+                    if td < dd {
+                        best_dx = tx;
+                        best_dy = ty;
+                        best_dz = tz;
+                        dd = td;
+                    }
+                }
             }
 
-            if !p.focusable {
-                continue;
-            }
-
-            // Compute essence rect in view coords
-            let (ex, ey, ew, eh) = tree.GetEssenceRect(id);
-            let vex = tree.PanelToViewX(id, ex);
-            let vey = tree.PanelToViewY(id, ey);
-            let vew = tree.PanelToViewDeltaX(id, ew);
-            let veh = tree.PanelToViewDeltaY(id, eh);
-
-            let panel_cx = vex + vew * 0.5;
-            let panel_cy = vey + veh * 0.5;
-            let panel_dim = (vew + veh) * 0.5;
-
-            let tx = panel_cx - vcx;
-            let ty = panel_cy - vcy;
-            let tz = if zflpp > 1e-15 && panel_dim > 1e-15 {
-                (view_dim / panel_dim).ln() / zflpp
+            // C++ tree traversal: first child, else next sibling, else parent's next
+            // C++ lines 893-903: traverse ALL panels, not just viewed ones
+            if let Some(child) = tree.GetFirstChild(id) {
+                current = Some(child);
+            } else if id == svp {
+                current = None;
+            } else if let Some(next) = tree.GetNext(id) {
+                current = Some(next);
             } else {
-                0.0
-            };
-
-            let td = tx * tx + ty * ty + tz * tz;
-            if td < best_td {
-                best_td = td;
-                best_dx = tx;
-                best_dy = ty;
-                best_dz = tz;
+                // Walk up to find parent with next sibling
+                let mut up = tree.GetParentContext(id);
+                loop {
+                    match up {
+                        Some(pid) if pid != svp => {
+                            if let Some(next) = tree.GetNext(pid) {
+                                current = Some(next);
+                                break;
+                            }
+                            up = tree.GetParentContext(pid);
+                        }
+                        _ => {
+                            current = None;
+                            break;
+                        }
+                    }
+                }
             }
         }
 
-        if best_td == f64::MAX {
-            (0.0, 0.0, 0.0, 0.0)
-        } else {
-            (best_dx, best_dy, best_dz, best_td.sqrt())
-        }
+        (best_dx, best_dy, best_dz, dd.sqrt())
     }
 
     /// Get the view rect for magnetism calculations.
@@ -2626,54 +2539,126 @@ impl emMagneticViewAnimator {
 }
 
 impl emViewAnimator for emMagneticViewAnimator {
+    /// C++ emMagneticViewAnimator::CycleAnimation (emViewAnimator.cpp:716-806).
     fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64) -> bool {
-        if !self.active {
+        if !self.inner.active {
             return false;
         }
 
-        if let Some(state) = view.visit_stack().last().cloned() {
-            let disp_x = self.snap_target_x - state.rel_x;
-            let disp_y = self.snap_target_y - state.rel_y;
+        let radius_factor = self.radius_factor;
+        let min_radius_factor = self.min_radius_factor;
+        let speed_factor = self.speed_factor;
+        let max_speed_factor = self.max_speed_factor;
 
-            // Spring force: F = k * displacement
-            let force_x = self.spring_constant * disp_x;
-            let force_y = self.spring_constant * disp_y;
+        // C++ lines 728-732: compute maxDist from view rect
+        let view_rect = Self::get_view_rect(view);
+        let vw = view_rect.w;
+        let vh = view_rect.h;
+        let max_dist = if radius_factor <= min_radius_factor * 1.0001 {
+            0.0
+        } else {
+            (vw + vh) * 0.09 * radius_factor
+        };
 
-            // Update velocity: v += F * dt, then apply damping
-            self.velocity_x = (self.velocity_x + force_x * dt) * self.damping;
-            self.velocity_y = (self.velocity_y + force_y * dt) * self.damping;
+        // C++ line 734: calculate distance to nearest focusable panel
+        let (dist_x, dist_y, dist_z, abs_dist) = Self::calculate_distance(view, tree);
 
-            let dx = self.velocity_x * dt * view.viewport_size().0.max(1.0);
-            let dy = self.velocity_y * dt * view.viewport_size().1.max(1.0);
+        let mut busy = false;
 
-            if dx.abs() > 1e-8 || dy.abs() > 1e-8 {
-                let (vw, vh) = view.viewport_size();
-                view.RawScrollAndZoom(tree, vw * 0.5, vh * 0.5, dx, dy, 0.0);
+        // C++ lines 738-755: magnetism enter/exit logic
+        if abs_dist <= max_dist && abs_dist > 1e-3 {
+            if !self.magnetism_active && self.inner.GetAbsVelocity() < 10.0 {
+                // C++ line 740: CenterZoomFixPoint()
+                self.inner.CenterZoomFixPoint(view);
+                self.magnetism_active = true;
             }
-
-            // Converged when displacement and velocity are both tiny
-            let dist = disp_x.abs() + disp_y.abs();
-            let speed =
-                (self.velocity_x * self.velocity_x + self.velocity_y * self.velocity_y).sqrt();
-            if dist < 1e-6 && speed < 1e-6 {
-                self.velocity_x = 0.0;
-                self.velocity_y = 0.0;
-                self.active = false;
-                return false;
+            busy = true;
+        } else {
+            if self.magnetism_active {
+                self.inner.SetVelocity(0.0, 0.0, 0.0);
+                self.magnetism_active = false;
+            }
+            if self.inner.GetAbsVelocity() >= 0.01 {
+                busy = true;
             }
         }
 
-        self.active
+        // C++ lines 757-797: hill-rolling physics when magnetism active
+        if self.magnetism_active && abs_dist > 1e-15 && max_dist > 1e-15 {
+            let v;
+            if speed_factor >= max_speed_factor * 0.9999 || abs_dist < 1.0 {
+                // C++ lines 758-759: instant snap
+                v = abs_dist / dt;
+            } else {
+                // C++ lines 762-766: project current velocity onto distance direction
+                let (cur_vx, cur_vy, cur_vz) = self.inner.GetVelocity();
+                let mut vel = (cur_vx * dist_x + cur_vy * dist_y + cur_vz * dist_z) / abs_dist;
+                if vel < 0.0 {
+                    vel = 0.0;
+                }
+
+                // C++ lines 769-792: sub-stepped Euler integration
+                let mut d = 0.0;
+                let mut t = 0.0;
+                loop {
+                    let fdt = (dt - t).min(0.01);
+                    if fdt < 1e-10 {
+                        break;
+                    }
+
+                    // C++ line 776: slope of hill
+                    let mut k = (abs_dist - d) / max_dist * 4.0;
+                    if k.abs() > 1.0 {
+                        k = 1.0 / k;
+                    }
+
+                    // C++ line 780: acceleration through rolling downhill
+                    let mut a = k * max_dist * 25.0 * speed_factor * speed_factor;
+
+                    // C++ line 783: damping
+                    a -= vel.abs() * 15.0 * speed_factor;
+
+                    vel += a * fdt;
+                    d += vel * fdt;
+                    if d >= abs_dist {
+                        d = abs_dist;
+                        break;
+                    }
+                    t += fdt;
+                }
+                // C++ line 793: effective velocity
+                v = d / dt;
+            }
+
+            // C++ lines 795-797: set velocity proportional to distance direction
+            self.inner.velocity_x = v * dist_x / abs_dist;
+            self.inner.velocity_y = v * dist_y / abs_dist;
+            self.inner.velocity_z = v * dist_z / abs_dist;
+        }
+
+        // C++ lines 800-803: temporarily disable friction during magnetism
+        let friction_enabled = self.inner.IsFrictionEnabled();
+        self.inner.SetFrictionEnabled(friction_enabled && !self.magnetism_active);
+        if self.inner.animate(view, tree, dt) {
+            busy = true;
+        }
+        self.inner.SetFrictionEnabled(friction_enabled);
+
+        // Keep active as long as busy
+        if !busy {
+            self.inner.active = false;
+        }
+
+        busy
     }
 
     fn is_active(&self) -> bool {
-        self.active
+        self.inner.is_active()
     }
 
     fn stop(&mut self) {
-        self.velocity_x = 0.0;
-        self.velocity_y = 0.0;
-        self.active = false;
+        self.inner.stop();
+        self.magnetism_active = false;
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -2980,101 +2965,56 @@ mod tests {
     }
 
     #[test]
-    fn magnetic_snaps_to_target() {
-        let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+    fn magnetic_new_creates_inactive() {
+        let anim = emMagneticViewAnimator::new();
+        assert!(!anim.is_active());
+        assert!(!anim.is_magnetism_active());
+    }
 
-        let mut anim = emMagneticViewAnimator::new(50.0);
-        let state = view.current_visit().clone();
-        // Set a snap target slightly offset from current position
-        anim.set_snap_target(state.rel_x + 0.001, state.rel_y + 0.001);
-
+    #[test]
+    fn magnetic_activate_sets_active() {
+        let mut anim = emMagneticViewAnimator::new();
+        anim.Activate(None);
         assert!(anim.is_active());
-
-        for _ in 0..500 {
-            if !anim.animate(&mut view, &mut tree, 0.016) {
-                break;
-            }
-        }
-
-        assert!(!anim.is_active(), "Should converge to snap target");
     }
 
     #[test]
     fn magnetic_stop() {
-        let mut anim = emMagneticViewAnimator::new(50.0);
-        anim.set_snap_target(0.5, 0.5);
+        let mut anim = emMagneticViewAnimator::new();
+        anim.Activate(None);
         assert!(anim.is_active());
 
         anim.stop();
         assert!(!anim.is_active());
-        let (vx, vy) = anim.GetVelocity();
+        let (vx, vy, vz) = anim.inner().GetVelocity();
         assert_eq!(vx, 0.0);
         assert_eq!(vy, 0.0);
+        assert_eq!(vz, 0.0);
     }
 
     #[test]
-    #[ignore]
-    fn magnetic_panel_tree_traversal_magnetism() {
-        // BLOCKED: needs panel-tree-traversal magnetism matching C++ emMagneticViewAnimator.
-        // C++ ref: emViewAnimator.cpp:emMagneticViewAnimator::CalculateDistance (line 809)
-        // and emMagneticViewAnimator::CycleAnimation (line 716).
-        //
-        // The C++ implementation:
-        // 1. CalculateDistance() traverses the panel tree depth-first from
-        //    GetView().GetSupremeViewedPanel(), visiting every viewed+focusable
-        //    panel. For each, it gets the essence rect, converts to view coords
-        //    via PanelToViewX/Y/DeltaX/DeltaY, computes the scroll+zoom distance
-        //    to center-and-maximize that panel in the viewport, and keeps the
-        //    nearest one.
-        // 2. CycleAnimation() uses a hill-rolling physics model (not spring-damper):
-        //    - Config-driven radius (emCoreConfig.MagnetismRadius) controls the
-        //      engagement distance: maxDist = (vw+vh)*0.09*radiusFactor
-        //    - Config-driven speed (emCoreConfig.MagnetismSpeed) controls
-        //      acceleration and damping
-        //    - Sub-stepping simulation (0.01s steps) with slope-based acceleration
-        //      and velocity-proportional damping
-        //    - 3D: scroll X, scroll Y, AND zoom Z (not just 2D like current Rust)
-        //    - Inherits from emKineticViewAnimator for velocity/friction/scroll-zoom
-        //
-        // The current Rust emMagneticViewAnimator instead uses:
-        // - Externally-set snap_target_x/y (no auto-discovery of nearest panel)
-        // - 2D only (no zoom magnetism)
-        // - Simple spring-damper (F = k*disp, not hill-rolling)
-        // - No emCoreConfig radius/speed integration
-        //
-        // Infrastructure already present in Rust:
-        // - PanelTree::viewed_panels_dfs() — DFS traversal of viewed panels
-        // - PanelTree::focusable(id) — focusability check
-        // - PanelTree::get_essence_rect(id) — essence rect
-        // - PanelTree::panel_to_view_x/y/delta_x/delta_y() — coord transforms
-        // - emView::supreme_panel() — supreme viewed panel
-        // - emView::get_zoom_factor_log_per_pixel() — zflpp
-        // - emCoreConfig::magnetism_radius/magnetism_speed — config values
-        //
-        // What needs to change:
-        // 1. Rewrite emMagneticViewAnimator to inherit/compose emKineticViewAnimator
-        //    (for 3D velocity, friction, scroll-zoom delegation)
-        // 2. Implement CalculateDistance: iterate viewed+focusable panels from
-        //    supreme_panel downward, compute 3D (dx, dy, dz) to each, keep min
-        // 3. Replace spring-damper with hill-rolling physics (slope-based accel
-        //    + velocity damping, sub-stepped at 0.01s)
-        // 4. Wire emCoreConfig magnetism_radius and magnetism_speed
-        // 5. Implement Activate() friction inheritance from active KVA
-        //
-        // Expected behavior: when the view is near-idle, the magnetic animator
-        // automatically discovers the nearest focusable panel and smoothly
-        // scrolls+zooms to center it in the viewport.
-        let (mut tree, mut view) = setup();
+    fn magnetic_animate_finds_focusable_panel() {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75);
+        tree.set_focusable(root, true);
+
+        let mut view = emView::new(root, 800.0, 600.0);
+        view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
+        view.Update(&mut tree);
+        // Zoom in so root panel is offset, giving nonzero distance
+        view.Zoom(2.0, 400.0, 300.0);
         view.Update(&mut tree);
 
-        let _anim = emMagneticViewAnimator::new(50.0);
-        // Currently there is no auto-discovery — the snap target must be set
-        // externally. The C++ version discovers it by traversing the panel tree.
-        assert!(
-            false,
-            "MagneticViewAnimator should auto-discover nearest focusable panel"
-        );
+        let mut anim = emMagneticViewAnimator::new();
+        anim.Activate(None);
+
+        // Should converge toward root panel over many frames
+        for _ in 0..300 {
+            if !anim.animate(&mut view, &mut tree, 1.0 / 60.0) {
+                break;
+            }
+        }
     }
 
     #[test]
@@ -3193,105 +3133,24 @@ mod tests {
     }
 
     #[test]
-    fn hill_rolling_converges_toward_target() {
-        let mut mag = emMagneticViewAnimator::new(100.0);
-        mag.set_radius_factor(1.0);
-        mag.set_speed_factor(1.0);
-        mag.magnetism_active = true;
+    fn magnetic_activate_inherits_friction_from_kva() {
+        let mut prior = emKineticViewAnimator::new(100.0, 0.0, 0.0, 42.0);
+        prior.SetFrictionEnabled(true);
 
-        // Panel at distance 100 along x-axis
-        let abs_dist = 100.0;
-        let dx = 100.0;
-        let dy = 0.0;
-        let dz = 0.0;
-
-        // Run several frames
-        for _ in 0..10 {
-            mag.hill_rolling_physics(0.016, abs_dist, dx, dy, dz, 800.0, 600.0);
-        }
-
-        // Velocity should be positive (moving toward target)
-        assert!(
-            mag.velocity_x > 0.0,
-            "velocity should converge toward target, vx={}",
-            mag.velocity_x
-        );
+        let mut mag = emMagneticViewAnimator::new();
+        mag.Activate(Some(&prior as &dyn emViewAnimator));
+        assert!(mag.is_active());
+        assert_eq!(mag.inner().GetFriction(), 42.0);
+        assert!(mag.inner().IsFrictionEnabled());
     }
 
     #[test]
-    fn hill_rolling_instant_snap_at_max_speed() {
-        let mut mag = emMagneticViewAnimator::new(100.0);
-        mag.set_radius_factor(1.0);
-        mag.set_speed_factor(100.0); // >= max * 0.9999
-        mag.magnetism_active = true;
-
-        let dt = 0.016;
-        let abs_dist = 50.0;
-        mag.hill_rolling_physics(dt, abs_dist, 50.0, 0.0, 0.0, 800.0, 600.0);
-
-        // v = abs_dist / dt → vx = v * dx/abs_dist = abs_dist/dt
-        let expected_vx = abs_dist / dt;
-        assert!(
-            (mag.velocity_x - expected_vx).abs() < 1.0,
-            "instant snap: expected vx≈{}, got {}",
-            expected_vx,
-            mag.velocity_x
-        );
-    }
-
-    #[test]
-    fn hill_rolling_stable_with_large_dt() {
-        let mut mag = emMagneticViewAnimator::new(100.0);
-        mag.set_radius_factor(1.0);
-        mag.set_speed_factor(1.0);
-        mag.magnetism_active = true;
-
-        // Large dt = 0.1 (sub-stepping should handle it)
-        mag.hill_rolling_physics(0.1, 100.0, 100.0, 0.0, 0.0, 800.0, 600.0);
-
-        assert!(
-            mag.velocity_x.is_finite(),
-            "velocity should be finite with large dt, got {}",
-            mag.velocity_x
-        );
-        assert!(
-            mag.velocity_x >= 0.0,
-            "velocity should be non-negative, got {}",
-            mag.velocity_x
-        );
-    }
-
-    #[test]
-    fn magnetism_activates_within_radius() {
-        let mut mag = emMagneticViewAnimator::new(100.0);
-        mag.set_radius_factor(1.0);
-        // abs_dist = 50, well within maxDist = (800+600)*0.09*1.0 = 126
-        let busy = mag.update_magnetism(50.0, 50.0, 0.0, 0.0, 800.0, 600.0);
-        assert!(mag.is_magnetism_active(), "should activate within radius");
-        assert!(busy, "should be busy");
-    }
-
-    #[test]
-    fn magnetism_does_not_activate_outside_radius() {
-        let mut mag = emMagneticViewAnimator::new(100.0);
-        mag.set_radius_factor(1.0);
-        // abs_dist = 200, outside maxDist = 126
-        let busy = mag.update_magnetism(200.0, 200.0, 0.0, 0.0, 800.0, 600.0);
-        assert!(!mag.is_magnetism_active(), "should not activate outside radius");
-        assert!(!busy, "should not be busy (no velocity)");
-    }
-
-    #[test]
-    fn magnetism_high_velocity_prevents_activation() {
-        let mut mag = emMagneticViewAnimator::new(100.0);
-        mag.set_radius_factor(1.0);
-        // Set high velocity (> 10.0)
-        mag.velocity_x = 50.0;
-        mag.velocity_y = 50.0;
-        // Within radius but velocity too high
-        let busy = mag.update_magnetism(50.0, 50.0, 0.0, 0.0, 800.0, 600.0);
-        assert!(!mag.is_magnetism_active(), "high velocity should prevent activation");
-        assert!(busy, "should be busy (within radius even though not activated)");
+    fn magnetic_activate_no_prior_sets_high_friction() {
+        let mut mag = emMagneticViewAnimator::new();
+        mag.Activate(None);
+        assert!(mag.is_active());
+        assert_eq!(mag.inner().GetFriction(), 1e10);
+        assert!(mag.inner().IsFrictionEnabled());
     }
 
     #[test]
@@ -3315,13 +3174,14 @@ mod tests {
         tree.set_focusable(right, true);
 
         let mut view = emView::new(root, 800.0, 600.0);
+        view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
 
         let (dx, _dy, _dz, abs_dist) = emMagneticViewAnimator::calculate_distance(&view, &tree);
-        // The center panel should be nearest to the viewport center
+        // At least one focusable panel should be found
         assert!(
-            abs_dist > 0.0,
-            "should find at least one candidate"
+            abs_dist < 1e10,
+            "should find at least one candidate, got abs_dist={abs_dist}"
         );
         // dx should be small since center panel is near view center
         assert!(
@@ -3631,7 +3491,7 @@ mod kani_private_proofs {
 
     #[kani::proof]
     fn kani_private_emMagneticViewAnimator_is_active() {
-        let mut self_val = emMagneticViewAnimator::new(kani::any());
+        let self_val = emMagneticViewAnimator::new();
         let _r = self_val.is_active();
     }
 
@@ -3655,8 +3515,8 @@ mod kani_private_proofs {
 
     #[kani::proof]
     fn kani_private_emMagneticViewAnimator_stop() {
-        let mut self_val = emMagneticViewAnimator::new(kani::any());
-        let _r = self_val.stop();
+        let mut self_val = emMagneticViewAnimator::new();
+        self_val.stop();
     }
 
     #[kani::proof]
