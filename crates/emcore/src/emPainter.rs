@@ -3977,13 +3977,17 @@ impl<'a> emPainter<'a> {
             verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
         }
 
+        // C++ line 1804: if (w < thickness || h < thickness) canvasColor = 0;
+        let canvas_color = if 2.0 * rx < stroke.width || 2.0 * ry < stroke.width {
+            emColor::TRANSPARENT
+        } else {
+            canvas_color
+        };
+
         // C++ computes exact ellipse tangent directions for arrow rendering
         // (emPainter.cpp:1775-1801) instead of deriving them from polyline vertices.
         let with_arrows = stroke.start_end.IsDecorated() || stroke.finish_end.IsDecorated();
         if with_arrows {
-            let saved_canvas = self.state.canvas_color;
-            self.state.canvas_color = canvas_color;
-
             let compute_normal = |angle: f64, forward: bool| -> (f64, f64) {
                 let (mut nx, mut ny) = if forward {
                     (-angle.sin(), angle.cos())
@@ -4006,16 +4010,14 @@ impl<'a> emPainter<'a> {
             let n2 = compute_normal(start_angle + range_angle, false);
 
             self.PaintPolylineWithArrows(&verts, stroke, false, canvas_color, Some((n1, n2)));
-
-            self.state.canvas_color = saved_canvas;
         } else {
-            self.PaintSolidPolyline(&verts, stroke, false, canvas_color);
+            self.PaintPolylineWithoutArrows(&verts, stroke, false, canvas_color);
         }
     }
 
-    /// Draw an ellipse sector outline. Routes through polyline if dashed.
+    /// Outline an ellipse sector. Angles in **degrees** (start + sweep).
+    /// Matches C++ `PaintEllipseSectorOutline` (emPainter.cpp:1997-2077).
     #[allow(clippy::too_many_arguments)]
-    /// Outline an ellipse sector. Angles in **degrees** (start + sweep), matching C++.
     pub fn PaintEllipseSectorOutline(
         &mut self,
         cx: f64,
@@ -4037,31 +4039,51 @@ impl<'a> emPainter<'a> {
             stroke: stroke.clone(),
             canvas_color,
         }) else { return; };
-        if rx <= 0.0 || ry <= 0.0 || stroke.width <= 0.0 {
+
+        let thickness = stroke.width;
+
+        // C++ converts degrees to radians, normalizes negative range.
+        let mut start_rad = start_angle * std::f64::consts::PI / 180.0;
+        let mut range_rad = sweep_angle * std::f64::consts::PI / 180.0;
+        if range_rad <= 0.0 {
+            if range_rad == 0.0 { return; }
+            start_rad += range_rad;
+            range_rad = -range_rad;
+        }
+        if range_rad >= 2.0 * std::f64::consts::PI {
+            self.PaintEllipseOutline(cx, cy, rx, ry, stroke, canvas_color);
             return;
         }
-        if sweep_angle.abs() < 1e-10 {
-            return;
-        }
-        // Convert degrees to radians.
-        let start_rad = start_angle * std::f64::consts::PI / 180.0;
-        let sweep_rad = sweep_angle * std::f64::consts::PI / 180.0;
-        let segments = adaptive_circle_segments(rx, ry, self.state.scale_x, self.state.scale_y);
-        let arc_segs = ((segments as f64 * sweep_rad.abs() / (2.0 * std::f64::consts::PI)).ceil()
-            as usize)
-            .max(2);
-        let mut verts = Vec::with_capacity(arc_segs + 2);
+        if thickness <= 0.0 { return; }
+        let rx = rx.max(0.0);
+        let ry = ry.max(0.0);
+
+        // C++ computes n from outer radii (rx+t2, ry+t2), scaled by sweep.
+        let t2 = thickness * 0.5;
+        let mut f = CIRCLE_QUALITY
+            * ((rx + t2) * self.state.scale_x + (ry + t2) * self.state.scale_y).sqrt();
+        if f > 256.0 { f = 256.0; }
+        f = f * range_rad / (2.0 * std::f64::consts::PI);
+        let n: usize = if f <= 3.0 { 3 } else if f >= 256.0 { 256 } else { (f + 0.5) as usize };
+        let step = range_rad / n as f64;
+
+        // Center + n+1 arc points = n+2 total vertices.
+        let mut verts = Vec::with_capacity(n + 2);
         verts.push((cx, cy));
-        for i in 0..=arc_segs {
-            let t = i as f64 / arc_segs as f64;
-            let angle = start_rad + t * sweep_rad;
-            verts.push((cx + rx * angle.cos(), cy + ry * angle.sin()));
+        for i in 0..=n {
+            let angle = start_rad + step * i as f64;
+            verts.push((angle.cos() * rx + cx, angle.sin() * ry + cy));
         }
-        if stroke.is_dashed() {
-            self.PaintPolylineWithoutArrows(&verts, stroke, true, canvas_color);
+
+        // C++ line 2072: canvasColor=0 for thin sectors.
+        let canvas_color = if 2.0 * rx < thickness || 2.0 * ry < thickness {
+            emColor::TRANSPARENT
         } else {
-            self.PaintPolygonOutline(&verts, stroke.color, stroke.width, canvas_color);
-        }
+            canvas_color
+        };
+
+        // C++ always uses PaintPolylineWithoutArrows (handles solid+dashed).
+        self.PaintPolylineWithoutArrows(&verts, stroke, false, canvas_color);
     }
 
     /// Draw a rectangle outline. emStroke is centered on the shape boundary.
