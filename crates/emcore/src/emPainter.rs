@@ -3393,82 +3393,15 @@ impl<'a> emPainter<'a> {
         canvas_color: emColor,
         which_sub_rects: u16,
     ) {
-        if alpha == 0 || w <= 0.0 || h <= 0.0 {
-            return;
-        }
-        let is_recording = self.try_record(DrawOp::PaintBorderImage {
+        // C++ inline overload: forwards to PaintBorderImage(x,y,w,h,l,t,r,b,img,
+        //   0,0,img.GetWidth(),img.GetHeight(),srcL,srcT,srcR,srcB,alpha,canvasColor,whichSubRects)
+        self.PaintBorderImageSrcRect(
             x, y, w, h, l, t, r, b,
-            image_ptr: image as *const emImage,
+            image,
+            0, 0, image.GetWidth() as i32, image.GetHeight() as i32,
             src_l, src_t, src_r, src_b,
             alpha, canvas_color, which_sub_rects,
-        }).is_none();
-        if is_recording {
-            if !self.record_subops { return; }
-            self.record_depth += 1;
-        }
-
-        // Literal port of C++ emPainter::PaintBorderImage (emPainter.cpp:2221-2338).
-        // 9 inline PaintImage calls with coordinate computation matching C++ exactly.
-        let iw = image.GetWidth() as i32;
-        let ih = image.GetHeight() as i32;
-        let ext = super::emTexture::ImageExtension::Clamp;
-
-        // C++ lines 2243-2248: RoundX/RoundY pixel-snap when canvas not opaque.
-        let mut l = l;
-        let mut t = t;
-        let mut r = r;
-        let mut b = b;
-        if !canvas_color.IsOpaque() {
-            let f = self.RoundX(x + l) - x;
-            if f > 0.0 && f < w - r { l = f; }
-            let f = x + w - self.RoundX(x + w - r);
-            if f > 0.0 && f < w - l { r = f; }
-            let f = self.RoundY(y + t) - y;
-            if f > 0.0 && f < h - b { t = f; }
-            let f = y + h - self.RoundY(y + h - b);
-            if f > 0.0 && f < h - t { b = f; }
-        }
-
-        // C++ bit layout: 8=UL 5=U 2=UR / 7=L 4=C 1=R / 6=LL 3=B 0=LR
-        let wsr = which_sub_rects;
-        // UL
-        if wsr & (1 << 8) != 0 {
-            self.PaintImageSrcRect(x, y, l, t, image, 0, 0, src_l, src_t, alpha, canvas_color, ext);
-        }
-        // U
-        if wsr & (1 << 5) != 0 {
-            self.PaintImageSrcRect(x+l, y, w-l-r, t, image, src_l, 0, iw-src_l-src_r, src_t, alpha, canvas_color, ext);
-        }
-        // UR
-        if wsr & (1 << 2) != 0 {
-            self.PaintImageSrcRect(x+w-r, y, r, t, image, iw-src_r, 0, src_r, src_t, alpha, canvas_color, ext);
-        }
-        // L
-        if wsr & (1 << 7) != 0 {
-            self.PaintImageSrcRect(x, y+t, l, h-t-b, image, 0, src_t, src_l, ih-src_t-src_b, alpha, canvas_color, ext);
-        }
-        // C
-        if wsr & (1 << 4) != 0 {
-            self.PaintImageSrcRect(x+l, y+t, w-l-r, h-t-b, image, src_l, src_t, iw-src_l-src_r, ih-src_t-src_b, alpha, canvas_color, ext);
-        }
-        // R
-        if wsr & (1 << 1) != 0 {
-            self.PaintImageSrcRect(x+w-r, y+t, r, h-t-b, image, iw-src_r, src_t, src_r, ih-src_t-src_b, alpha, canvas_color, ext);
-        }
-        // LL
-        if wsr & (1 << 6) != 0 {
-            self.PaintImageSrcRect(x, y+h-b, l, b, image, 0, ih-src_b, src_l, src_b, alpha, canvas_color, ext);
-        }
-        // B
-        if wsr & (1 << 3) != 0 {
-            self.PaintImageSrcRect(x+l, y+h-b, w-l-r, b, image, src_l, ih-src_b, iw-src_l-src_r, src_b, alpha, canvas_color, ext);
-        }
-        // LR
-        if wsr & (1 << 0) != 0 {
-            self.PaintImageSrcRect(x+w-r, y+h-b, r, b, image, iw-src_r, ih-src_b, src_r, src_b, alpha, canvas_color, ext);
-        }
-
-        if is_recording { self.record_depth -= 1; }
+        );
     }
 
     /// Draw a 9-slice border image from a sub-rectangle of the source image.
@@ -3485,10 +3418,10 @@ impl<'a> emPainter<'a> {
         y: f64,
         w: f64,
         h: f64,
-        l: f64,
-        t: f64,
-        r: f64,
-        b: f64,
+        mut l: f64,
+        mut t: f64,
+        mut r: f64,
+        mut b: f64,
         image: &emImage,
         src_x: i32,
         src_y: i32,
@@ -3502,23 +3435,21 @@ impl<'a> emPainter<'a> {
         canvas_color: emColor,
         which_sub_rects: u16,
     ) {
-        if alpha == 0 || w <= 0.0 || h <= 0.0 {
-            return;
-        }
-        let Some(_proof) = self.try_record(DrawOp::PaintBorderImage {
+        // C2: line-by-line port of C++ emPainter::PaintBorderImage (emPainter.cpp:2221-2338).
+        let is_recording = self.try_record(DrawOp::PaintBorderImage {
             x, y, w, h, l, t, r, b,
             image_ptr: image as *const emImage,
             src_l, src_t, src_r, src_b,
             alpha, canvas_color, which_sub_rects,
-        }) else { return; };
+        }).is_none();
+        if is_recording {
+            if !self.record_subops { return; }
+            self.record_depth += 1;
+        }
 
-        // Literal port of C++ PaintBorderImage overload with srcX/Y/W/H.
-        let ext = super::emTexture::ImageExtension::Clamp;
+        // C++ UserSpaceLeaveGuard — no-op in single-threaded Rust.
 
-        let mut l = l;
-        let mut t = t;
-        let mut r = r;
-        let mut b = b;
+        // C++ lines 2258-2263: RoundX/RoundY pixel-snap when canvas not opaque.
         if !canvas_color.IsOpaque() {
             let f = self.RoundX(x + l) - x;
             if f > 0.0 && f < w - r { l = f; }
@@ -3530,25 +3461,84 @@ impl<'a> emPainter<'a> {
             if f > 0.0 && f < h - t { b = f; }
         }
 
-        let wsr = which_sub_rects;
-        let sx = src_x;
-        let sy = src_y;
-        let sw = src_w;
-        let sh = src_h;
-        let sl = src_l;
-        let st = src_t;
-        let sr = src_r;
-        let sb = src_b;
+        let ext = super::emTexture::ImageExtension::Clamp; // C++ emTexture::EXTEND_EDGE
 
-        if wsr & (1<<8) != 0 { self.PaintImageSrcRect(x,y,l,t, image, sx,sy,sl,st, alpha,canvas_color,ext); }
-        if wsr & (1<<5) != 0 { self.PaintImageSrcRect(x+l,y,w-l-r,t, image, sx+sl,sy,sw-sl-sr,st, alpha,canvas_color,ext); }
-        if wsr & (1<<2) != 0 { self.PaintImageSrcRect(x+w-r,y,r,t, image, sx+sw-sr,sy,sr,st, alpha,canvas_color,ext); }
-        if wsr & (1<<7) != 0 { self.PaintImageSrcRect(x,y+t,l,h-t-b, image, sx,sy+st,sl,sh-st-sb, alpha,canvas_color,ext); }
-        if wsr & (1<<4) != 0 { self.PaintImageSrcRect(x+l,y+t,w-l-r,h-t-b, image, sx+sl,sy+st,sw-sl-sr,sh-st-sb, alpha,canvas_color,ext); }
-        if wsr & (1<<1) != 0 { self.PaintImageSrcRect(x+w-r,y+t,r,h-t-b, image, sx+sw-sr,sy+st,sr,sh-st-sb, alpha,canvas_color,ext); }
-        if wsr & (1<<6) != 0 { self.PaintImageSrcRect(x,y+h-b,l,b, image, sx,sy+sh-sb,sl,sb, alpha,canvas_color,ext); }
-        if wsr & (1<<3) != 0 { self.PaintImageSrcRect(x+l,y+h-b,w-l-r,b, image, sx+sl,sy+sh-sb,sw-sl-sr,sb, alpha,canvas_color,ext); }
-        if wsr & (1<<0) != 0 { self.PaintImageSrcRect(x+w-r,y+h-b,r,b, image, sx+sw-sr,sy+sh-sb,sr,sb, alpha,canvas_color,ext); }
+        // C++ lines 2265-2336: 9-slice PaintImage calls.
+        // Bit layout: 8=TL  5=T  2=TR / 7=L  4=C  1=R / 6=BL  3=B  0=BR
+        if which_sub_rects & (1 << 8) != 0 {
+            self.PaintImageSrcRect(
+                x, y, l, t,
+                image,
+                src_x, src_y, src_l, src_t,
+                alpha, canvas_color, ext,
+            );
+        }
+        if which_sub_rects & (1 << 5) != 0 {
+            self.PaintImageSrcRect(
+                x + l, y, w - l - r, t,
+                image,
+                src_x + src_l, src_y, src_w - src_l - src_r, src_t,
+                alpha, canvas_color, ext,
+            );
+        }
+        if which_sub_rects & (1 << 2) != 0 {
+            self.PaintImageSrcRect(
+                x + w - r, y, r, t,
+                image,
+                src_x + src_w - src_r, src_y, src_r, src_t,
+                alpha, canvas_color, ext,
+            );
+        }
+        if which_sub_rects & (1 << 7) != 0 {
+            self.PaintImageSrcRect(
+                x, y + t, l, h - t - b,
+                image,
+                src_x, src_y + src_t, src_l, src_h - src_t - src_b,
+                alpha, canvas_color, ext,
+            );
+        }
+        if which_sub_rects & (1 << 4) != 0 {
+            self.PaintImageSrcRect(
+                x + l, y + t, w - l - r, h - t - b,
+                image,
+                src_x + src_l, src_y + src_t, src_w - src_l - src_r, src_h - src_t - src_b,
+                alpha, canvas_color, ext,
+            );
+        }
+        if which_sub_rects & (1 << 1) != 0 {
+            self.PaintImageSrcRect(
+                x + w - r, y + t, r, h - t - b,
+                image,
+                src_x + src_w - src_r, src_y + src_t, src_r, src_h - src_t - src_b,
+                alpha, canvas_color, ext,
+            );
+        }
+        if which_sub_rects & (1 << 6) != 0 {
+            self.PaintImageSrcRect(
+                x, y + h - b, l, b,
+                image,
+                src_x, src_y + src_h - src_b, src_l, src_b,
+                alpha, canvas_color, ext,
+            );
+        }
+        if which_sub_rects & (1 << 3) != 0 {
+            self.PaintImageSrcRect(
+                x + l, y + h - b, w - l - r, b,
+                image,
+                src_x + src_l, src_y + src_h - src_b, src_w - src_l - src_r, src_b,
+                alpha, canvas_color, ext,
+            );
+        }
+        if which_sub_rects & (1 << 0) != 0 {
+            self.PaintImageSrcRect(
+                x + w - r, y + h - b, r, b,
+                image,
+                src_x + src_w - src_r, src_y + src_h - src_b, src_r, src_b,
+                alpha, canvas_color, ext,
+            );
+        }
+
+        if is_recording { self.record_depth -= 1; }
     }
 
     /// 9-slice border image with two-color tinting.
@@ -3578,15 +3568,23 @@ impl<'a> emPainter<'a> {
         canvas_color: emColor,
         which_sub_rects: i32,
     ) {
-        let Some(_proof) = self.try_record(DrawOp::PaintBorderImageColored {
+        // C2: line-by-line port of C++ emPainter::PaintBorderImageColored (emPainter.cpp:2341-2461).
+        let is_recording = self.try_record(DrawOp::PaintBorderImageColored {
             x, y, w, h, l, t, r, b,
             image_ptr: image as *const emImage,
             src_l, src_t, src_r, src_b,
             color1, color2, canvas_color,
             which_sub_rects: which_sub_rects as u16,
             alpha: 255,
-        }) else { return; };
+        }).is_none();
+        if is_recording {
+            if !self.record_subops { return; }
+            self.record_depth += 1;
+        }
 
+        // C++ UserSpaceLeaveGuard — no-op in single-threaded Rust.
+
+        // C++ lines 2381-2386: RoundX/RoundY pixel-snap when canvas not opaque.
         if !canvas_color.IsOpaque() {
             let f = self.RoundX(x + l) - x;
             if f > 0.0 && f < w - r { l = f; }
@@ -3598,60 +3596,84 @@ impl<'a> emPainter<'a> {
             if f > 0.0 && f < h - t { b = f; }
         }
 
-        let sx = src_x as u32;
-        let sy = src_y as u32;
-        let sw = src_w;
-        let sh = src_h;
-        let sl = src_l;
-        let st = src_t;
-        let sr = src_r;
-        let sb = src_b;
+        let ext = ImageExtension::Clamp; // C++ emTexture::EXTEND_EDGE
 
+        // C++ lines 2388-2459: 9-slice PaintImageColored calls.
+        // Bit layout: 8=TL  5=T  2=TR / 7=L  4=C  1=R / 6=BL  3=B  0=BR
         if which_sub_rects & (1 << 8) != 0 {
-            self.PaintImageColored(x, y, l, t, image,
-                sx, sy, sl as u32, st as u32,
-                color1, color2, canvas_color, ImageExtension::Clamp);
+            self.PaintImageColored(
+                x, y, l, t,
+                image,
+                src_x as u32, src_y as u32, src_l as u32, src_t as u32,
+                color1, color2, canvas_color, ext,
+            );
         }
         if which_sub_rects & (1 << 5) != 0 {
-            self.PaintImageColored(x + l, y, w - l - r, t, image,
-                sx + sl as u32, sy, (sw - sl - sr) as u32, st as u32,
-                color1, color2, canvas_color, ImageExtension::Clamp);
+            self.PaintImageColored(
+                x + l, y, w - l - r, t,
+                image,
+                (src_x + src_l) as u32, src_y as u32, (src_w - src_l - src_r) as u32, src_t as u32,
+                color1, color2, canvas_color, ext,
+            );
         }
         if which_sub_rects & (1 << 2) != 0 {
-            self.PaintImageColored(x + w - r, y, r, t, image,
-                sx + (sw - sr) as u32, sy, sr as u32, st as u32,
-                color1, color2, canvas_color, ImageExtension::Clamp);
+            self.PaintImageColored(
+                x + w - r, y, r, t,
+                image,
+                (src_x + src_w - src_r) as u32, src_y as u32, src_r as u32, src_t as u32,
+                color1, color2, canvas_color, ext,
+            );
         }
         if which_sub_rects & (1 << 7) != 0 {
-            self.PaintImageColored(x, y + t, l, h - t - b, image,
-                sx, sy + st as u32, sl as u32, (sh - st - sb) as u32,
-                color1, color2, canvas_color, ImageExtension::Clamp);
+            self.PaintImageColored(
+                x, y + t, l, h - t - b,
+                image,
+                src_x as u32, (src_y + src_t) as u32, src_l as u32, (src_h - src_t - src_b) as u32,
+                color1, color2, canvas_color, ext,
+            );
         }
         if which_sub_rects & (1 << 4) != 0 {
-            self.PaintImageColored(x + l, y + t, w - l - r, h - t - b, image,
-                sx + sl as u32, sy + st as u32, (sw - sl - sr) as u32, (sh - st - sb) as u32,
-                color1, color2, canvas_color, ImageExtension::Clamp);
+            self.PaintImageColored(
+                x + l, y + t, w - l - r, h - t - b,
+                image,
+                (src_x + src_l) as u32, (src_y + src_t) as u32, (src_w - src_l - src_r) as u32, (src_h - src_t - src_b) as u32,
+                color1, color2, canvas_color, ext,
+            );
         }
         if which_sub_rects & (1 << 1) != 0 {
-            self.PaintImageColored(x + w - r, y + t, r, h - t - b, image,
-                sx + (sw - sr) as u32, sy + st as u32, sr as u32, (sh - st - sb) as u32,
-                color1, color2, canvas_color, ImageExtension::Clamp);
+            self.PaintImageColored(
+                x + w - r, y + t, r, h - t - b,
+                image,
+                (src_x + src_w - src_r) as u32, (src_y + src_t) as u32, src_r as u32, (src_h - src_t - src_b) as u32,
+                color1, color2, canvas_color, ext,
+            );
         }
         if which_sub_rects & (1 << 6) != 0 {
-            self.PaintImageColored(x, y + h - b, l, b, image,
-                sx, sy + (sh - sb) as u32, sl as u32, sb as u32,
-                color1, color2, canvas_color, ImageExtension::Clamp);
+            self.PaintImageColored(
+                x, y + h - b, l, b,
+                image,
+                src_x as u32, (src_y + src_h - src_b) as u32, src_l as u32, src_b as u32,
+                color1, color2, canvas_color, ext,
+            );
         }
         if which_sub_rects & (1 << 3) != 0 {
-            self.PaintImageColored(x + l, y + h - b, w - l - r, b, image,
-                sx + sl as u32, sy + (sh - sb) as u32, (sw - sl - sr) as u32, sb as u32,
-                color1, color2, canvas_color, ImageExtension::Clamp);
+            self.PaintImageColored(
+                x + l, y + h - b, w - l - r, b,
+                image,
+                (src_x + src_l) as u32, (src_y + src_h - src_b) as u32, (src_w - src_l - src_r) as u32, src_b as u32,
+                color1, color2, canvas_color, ext,
+            );
         }
         if which_sub_rects & (1 << 0) != 0 {
-            self.PaintImageColored(x + w - r, y + h - b, r, b, image,
-                sx + (sw - sr) as u32, sy + (sh - sb) as u32, sr as u32, sb as u32,
-                color1, color2, canvas_color, ImageExtension::Clamp);
+            self.PaintImageColored(
+                x + w - r, y + h - b, r, b,
+                image,
+                (src_x + src_w - src_r) as u32, (src_y + src_h - src_b) as u32, src_r as u32, src_b as u32,
+                color1, color2, canvas_color, ext,
+            );
         }
+
+        if is_recording { self.record_depth -= 1; }
     }
 
     // --- Ellipse/sector outline utilities ---
