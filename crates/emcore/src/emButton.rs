@@ -188,7 +188,7 @@ impl emButton {
         let fy = cr.y + d;
         let fw = cr.w - 2.0 * d;
         let fh = cr.h - 2.0 * d;
-        let fr = (r - d).max(0.0);
+        let fr = r - d;
         painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, face_color, painter.GetCanvasColor());
         painter.SetCanvasColor(face_color);
 
@@ -211,8 +211,7 @@ impl emButton {
         let label_color = if enabled {
             self.look.button_fg_color
         } else {
-            let c = self.look.button_fg_color;
-            c.SetAlpha((c.GetAlpha() as f64 * 0.25 + 0.5) as u8)
+            self.look.button_fg_color.GetTransparented(75.0)
         };
         self.border.paint_label_colored(
             painter,
@@ -302,7 +301,7 @@ impl emButton {
         // Face inset: d = (14/264) * r (C++ emButton.cpp:348)
         let d = (14.0 / 264.0) * r;
         let face = Rect::new(cr.x + d, cr.y + d, cr.w - 2.0 * d, cr.h - 2.0 * d);
-        let fr = (r - d).max(0.0);
+        let fr = r - d;
         // RUST_ONLY: widget_utils.rs -- C++ inlines this formula per widget
         let dx = ((face.x - mx).max(mx - face.x - face.w) + fr).max(0.0);
         let dy = ((face.y - my).max(my - face.y - face.h) + fr).max(0.0);
