@@ -1597,7 +1597,7 @@ How to move or set the focus:\n\
         match self.outer {
             OuterBorderType::None => {}
             OuterBorderType::Filled => {
-                painter.PaintRect(0.0, 0.0, w, h, look.bg_color, emColor::TRANSPARENT);
+                painter.PaintRect(0.0, 0.0, w, h, look.bg_color, painter.GetCanvasColor());
                 // C++ DoBorder: canvasColor=color after fill.
                 if !look.bg_color.IsTotallyTransparent() {
                     painter.SetCanvasColor(look.bg_color);
@@ -1607,7 +1607,7 @@ How to move or set the focus:\n\
             OuterBorderType::MarginFilled => {
                 // C++ DoBorder: Clear fills the ENTIRE panel, not the inset rect.
                 if !look.bg_color.IsTotallyTransparent() {
-                    painter.PaintRect(0.0, 0.0, w, h, look.bg_color, emColor::TRANSPARENT);
+                    painter.PaintRect(0.0, 0.0, w, h, look.bg_color, painter.GetCanvasColor());
                     painter.SetCanvasColor(look.bg_color);
                 }
             }
@@ -1821,7 +1821,7 @@ How to move or set the focus:\n\
                 let color = look.bg_color;
                 let canvas = painter.GetCanvasColor();
                 if !color.IsTotallyTransparent() {
-                    painter.PaintRect(0.0, 0.0, w, h, color, emColor::TRANSPARENT);
+                    painter.PaintRect(0.0, 0.0, w, h, color, painter.GetCanvasColor());
                     painter.SetCanvasColor(color);
                 }
                 let r = d; // C++ ratio 159.0/159.0 = 1.0
