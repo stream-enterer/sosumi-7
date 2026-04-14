@@ -2811,16 +2811,6 @@ impl<'a> emPainter<'a> {
             return;
         }
 
-        let gw = emFontCache::CHAR_WIDTH as f64;
-        let gh = emFontCache::CHAR_HEIGHT as f64;
-        let show_height = (rcw * gh / gw).min(char_height);
-        let y_offset = (char_height - show_height) * 0.5;
-
-        let saved_canvas = self.state.canvas_color;
-        if canvas_color.IsOpaque() {
-            self.state.canvas_color = canvas_color;
-        }
-
         let font_atlas = emFontCache::atlas();
 
         let mut cx = x;
@@ -2828,17 +2818,20 @@ impl<'a> emPainter<'a> {
             if cx >= clip_x2 {
                 break;
             }
-            if cx + char_width <= clip_x1 {
-                cx += char_width;
+            let x1 = cx;
+            cx += char_width;
+            if cx <= clip_x1 {
                 continue;
             }
 
-            // C++ PaintText renders ALL characters including space — no skip guard.
+            // C++ PaintText: per-character show_height from font cache glyph dims.
             let (src_x, src_y, src_w, src_h) = emFontCache::GetChar(ch);
-            // C++ emPainter.cpp:2125 passes EXTEND_ZERO explicitly for font glyphs.
+            let mut show_height = rcw * src_h as f64 / src_w as f64;
+            if show_height > char_height { show_height = char_height; }
+
             self.PaintImageColored(
-                cx,
-                y + y_offset,
+                x1,
+                y + (char_height - show_height) * 0.5,
                 char_width,
                 show_height,
                 font_atlas,
@@ -2851,10 +2844,8 @@ impl<'a> emPainter<'a> {
                 canvas_color,
                 ImageExtension::Zero,
             );
-            cx += char_width;
         }
 
-        self.state.canvas_color = saved_canvas;
         if is_recording { self.record_depth -= 1; }
     }
 
