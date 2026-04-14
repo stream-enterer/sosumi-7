@@ -1056,110 +1056,51 @@ How to move or set the focus:\n\
     ///
     /// C++ equivalent: `emBorder::GetSubstanceRect`
     /// (via `DoBorder(BORDER_FUNC_SUBSTANCE_ROUND_RECT)`).
+    /// Literal port of C++ DoBorder(BORDER_FUNC_SUBSTANCE_ROUND_RECT).
     pub fn GetSubstanceRect(&self, w: f64, h: f64) -> (Rect, f64) {
-        let s = self.base_unit(w, h);
+        let s = w.min(h) * self.border_scaling;
         match self.outer {
-            OuterBorderType::None | OuterBorderType::Filled => (
-                Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    w,
-                    h,
-                },
-                0.0,
-            ),
+            OuterBorderType::None | OuterBorderType::Filled => {
+                (Rect { x: 0.0, y: 0.0, w, h }, 0.0)
+            }
             OuterBorderType::Margin | OuterBorderType::MarginFilled => {
                 let d = s * 0.04;
-                (
-                    Rect {
-                        x: d,
-                        y: d,
-                        w: (w - 2.0 * d).max(0.0),
-                        h: (h - 2.0 * d).max(0.0),
-                    },
-                    0.0,
-                )
+                (Rect { x: d, y: d, w: w - 2.0*d, h: h - 2.0*d }, 0.0)
             }
             OuterBorderType::Rect => {
-                // Substance rect at the stroke center line.
                 let d = s * 0.023;
-                (
-                    Rect {
-                        x: d,
-                        y: d,
-                        w: (w - 2.0 * d).max(0.0),
-                        h: (h - 2.0 * d).max(0.0),
-                    },
-                    0.0,
-                )
+                (Rect { x: d, y: d, w: w - 2.0*d, h: h - 2.0*d }, 0.0)
             }
             OuterBorderType::RoundRect => {
-                let d = s * 0.023; // substance rect inset
-                let f = s * 0.22; // outer radius
-                (
-                    Rect {
-                        x: d,
-                        y: d,
-                        w: (w - 2.0 * d).max(0.0),
-                        h: (h - 2.0 * d).max(0.0),
-                    },
-                    (f - d).max(0.0),
-                )
+                let d = s * 0.023;
+                let f = s * 0.22;
+                (Rect { x: d, y: d, w: w - 2.0*d, h: h - 2.0*d }, f)
             }
             OuterBorderType::Group => {
                 let d = s * 0.0104;
                 let rnd_r = s * 0.0188;
-                let r = rnd_r * 280.0 / 209.0;
+                let r = rnd_r * (280.0 / 209.0);
                 let e = r - rnd_r;
-                (
-                    Rect {
-                        x: (d - e).max(0.0),
-                        y: (d - e).max(0.0),
-                        w: (w - 2.0 * d + 2.0 * e).max(0.0),
-                        h: (h - 2.0 * d + 2.0 * e).max(0.0),
-                    },
-                    r,
-                )
+                (Rect { x: d - e, y: d - e, w: w - 2.0*d + 2.0*e, h: h - 2.0*d + 2.0*e }, r)
             }
             OuterBorderType::Instrument => {
                 let d = s * 0.052;
                 let rnd_r = s * 0.094;
-                let r = rnd_r * 280.0 / 209.0;
+                let r = rnd_r * (280.0 / 209.0);
                 let e = r - rnd_r;
-                (
-                    Rect {
-                        x: (d - e).max(0.0),
-                        y: (d - e).max(0.0),
-                        w: (w - 2.0 * d + 2.0 * e).max(0.0),
-                        h: (h - 2.0 * d + 2.0 * e).max(0.0),
-                    },
-                    r,
-                )
+                (Rect { x: d - e, y: d - e, w: w - 2.0*d + 2.0*e, h: h - 2.0*d + 2.0*e }, r)
             }
             OuterBorderType::InstrumentMoreRound => {
                 let d = s * 0.052;
                 let rnd_r = s * 0.223;
-                let r = rnd_r * 336.0 / 293.4;
+                // C++ line 825: 336/293.4 (integer division on 336).
+                let r = rnd_r * (336.0 / 293.4);
                 let e = r - rnd_r;
-                (
-                    Rect {
-                        x: (d - e).max(0.0),
-                        y: (d - e).max(0.0),
-                        w: (w - 2.0 * d + 2.0 * e).max(0.0),
-                        h: (h - 2.0 * d + 2.0 * e).max(0.0),
-                    },
-                    r,
-                )
+                (Rect { x: d - e, y: d - e, w: w - 2.0*d + 2.0*e, h: h - 2.0*d + 2.0*e }, r)
             }
-            OuterBorderType::PopupRoot => (
-                Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    w,
-                    h,
-                },
-                0.0,
-            ),
+            OuterBorderType::PopupRoot => {
+                (Rect { x: 0.0, y: 0.0, w, h }, 0.0)
+            }
         }
     }
 
