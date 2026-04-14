@@ -77,6 +77,14 @@ pub(crate) fn fast_div255(x: u32) -> u8 {
     ((v + (v >> 8)) >> 8) as u8
 }
 
+/// Matches C++ AVX2 `_mm256_mulhrs_epi16(value << 3, opacity)`.
+/// Equivalent to `(value * opacity * 8 + 0x4000) >> 15`.
+/// Used for premultiplied source scaling in PaintScanlineInt AVX2.
+#[inline(always)]
+pub(crate) fn mulhrs_scale(value: u8, opacity: i32) -> u8 {
+    ((value as i32 * 8 * opacity + 0x4000) >> 15) as u8
+}
+
 // DIVERGED: Get — renamed to GetPacked because Rust has no implicit u32 conversion operator
 // DIVERGED: Set (all overloads) — not ported (emColor is Copy; use constructors rgba/rgb/SetAlpha instead of mutation)
 

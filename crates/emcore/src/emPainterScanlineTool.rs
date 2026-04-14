@@ -302,14 +302,16 @@ fn blend_scanline_premul_canvas(
             (cov * painter_alpha as i32 + 127) / 255
         };
 
+        // Scale premul source by opacity using AVX2 mulhrs formula.
+        use super::emColor::mulhrs_scale;
         let pm = if o_eff >= 0x1000 {
             src
         } else if o_eff > 0 {
             [
-                ((src[0] as i32 * o_eff + 0x800) >> 12) as u8,
-                ((src[1] as i32 * o_eff + 0x800) >> 12) as u8,
-                ((src[2] as i32 * o_eff + 0x800) >> 12) as u8,
-                ((src[3] as i32 * o_eff + 0x800) >> 12) as u8,
+                mulhrs_scale(src[0], o_eff),
+                mulhrs_scale(src[1], o_eff),
+                mulhrs_scale(src[2], o_eff),
+                mulhrs_scale(src[3], o_eff),
             ]
         } else {
             continue;
@@ -321,16 +323,7 @@ fn blend_scanline_premul_canvas(
         }
 
         let off = i * 4;
-        // Canvas-blend: C++ does packed u32 arithmetic with wrapping.
-        // pix = hR[sr] + hG[sg] + hB[sb]          (source contribution, shifted)
-        // pix -= hcR[a] + hcG[a] + hcB[a]          (canvas contribution, shifted)
-        // *p += pix                                  (wrapping add to dest pixel)
-        //
-        // On little-endian with OPFI_8888_0BGR layout [R:0, G:8, B:16, 0:24],
-        // the packed u32 is: R | (G << 8) | (B << 16).
-        // Carries between channels propagate via wrapping, matching C++ exactly.
-        //
-        // C++ reference: emPainter_ScTlPSInt.cpp lines 369-371 (HAVE_CVC path).
+        // Canvas-blend: packed arithmetic matching C++ AVX2 PaintScanlineInt.
         let pix_r = pm[0] as u32;
         let pix_g = pm[1] as u32;
         let pix_b = pm[2] as u32;
@@ -390,12 +383,15 @@ fn blend_scanline_premul_source_over(
         let pm = if o_eff >= 0x1000 {
             src
         } else if o_eff > 0 {
-            [
-                ((src[0] as i32 * o_eff + 0x800) >> 12) as u8,
-                ((src[1] as i32 * o_eff + 0x800) >> 12) as u8,
-                ((src[2] as i32 * o_eff + 0x800) >> 12) as u8,
-                ((src[3] as i32 * o_eff + 0x800) >> 12) as u8,
-            ]
+            {
+                use super::emColor::mulhrs_scale;
+                [
+                    mulhrs_scale(src[0], o_eff),
+                    mulhrs_scale(src[1], o_eff),
+                    mulhrs_scale(src[2], o_eff),
+                    mulhrs_scale(src[3], o_eff),
+                ]
+            }
         } else {
             continue;
         };
