@@ -38,6 +38,7 @@ struct LabelLayout {
     icon_rect: Option<Rect>,
     caption_rect: Option<Rect>,
     description_rect: Option<Rect>,
+    #[allow(dead_code)]
     total_height: f64,
 }
 
@@ -302,65 +303,89 @@ impl emBorder {
     ///
     /// C++ equivalent: `emBorder::GetAuxRect`
     /// (via `DoBorder(BORDER_FUNC_AUX_RECT)`).
+    /// Literal port of C++ DoBorder(BORDER_FUNC_AUX_RECT).
     pub fn GetAuxRect(&self, w: f64, h: f64) -> Option<Rect> {
         self.aux_panel_name.as_ref()?;
 
+        // Recompute outer border geometry matching do_border_geometry.
         let (ox, oy, ow, oh) = self.outer_insets(w, h);
-        let rnd_x = ox;
+        let mut rnd_x = ox;
         let rnd_y = oy;
-        let rnd_w = (w - ow).max(0.0);
+        let mut rnd_w = (w - ow).max(0.0);
         let rnd_h = (h - oh).max(0.0);
+        let rnd_r = self.outer_radius(w, h);
 
-        if self.label_in_border && self.HasLabel() {
-            // emLabel path: aux is placed at the right of the label text area.
-            let label_area_w = rnd_w;
-            let lch = self.label_content_height(label_area_w, rnd_h);
-            let layout = self.label_layout(rnd_x, rnd_y, label_area_w, lch);
-            let th = layout.total_height;
-            if th <= 0.0 {
+        let s = rnd_w.min(rnd_h) * self.border_scaling;
+        let ms = s * self.min_space_factor();
+
+        if self.has_how_to {
+            let hts = s * self.how_to_space_factor();
+            if hts > ms { rnd_x += hts - ms; rnd_w -= hts - ms; }
+        }
+
+        let label_space = if self.label_in_border && self.HasLabel() {
+            s * self.label_space_factor()
+        } else {
+            0.0
+        };
+
+        if label_space > 0.0 {
+            // C++ lines 938-970: label path with aux.
+            let d = label_space * 0.1;
+            let ty = rnd_y + d;
+            let mut th = label_space - 2.0 * d;
+            let mut e = d.max(ms);
+            if e < rnd_r {
+                let f = d * 0.77;
+                let r = rnd_r - f;
+                let g = r - d + f;
+                let f2 = rnd_r - (r * r - g * g).sqrt();
+                if e < f2 { e = f2; }
+            }
+            let tx = rnd_x + e;
+            let tw = rnd_w - 2.0 * e;
+
+            // C++ lines 952-969: aux rect within label area.
+            let _aux_d = th * 0.2;
+            let mut aux_e = th / self.aux_tallness;
+            let f = _aux_d + aux_e + th / self.GetBestLabelTallness().max(1e-100) * 0.5;
+            if tw < f {
+                let scale = tw / f;
+                // aux_d *= scale; (used only for label layout, not for rect output)
+                aux_e *= scale;
+                let old_th = th;
+                th *= scale;
+                let _ty_adj = ty + (old_th - th) * 0.5;
+                // C++ returns (tx+tw-e, ty, e, th) after scaling
                 return Some(Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    w: 1e-100,
-                    h: 1e-100,
+                    x: tx + tw - aux_e,
+                    y: ty + (label_space - 2.0 * d - th) * 0.5 + d,
+                    w: aux_e,
+                    h: th,
                 });
             }
-            // Aux gap and width per C++ DoBorder logic.
-            let gap = th * 0.2;
-            let aux_w = th / self.aux_tallness;
-            let label_tallness = th / label_area_w.max(1e-100);
-            let needed = gap + aux_w + th / label_tallness.max(1e-100) * 0.5;
-            let final_aux_w = if label_area_w < needed {
-                // Scale down proportionally.
-                let scale = label_area_w / needed.max(1e-100);
-                aux_w * scale
-            } else {
-                aux_w
-            };
             Some(Rect {
-                x: rnd_x + label_area_w - final_aux_w,
-                y: rnd_y,
-                w: final_aux_w,
+                x: tx + tw - aux_e,
+                y: ty,
+                w: aux_e,
                 h: th,
             })
         } else {
-            // No label path: aux is 10% of the smaller dimension.
-            let s = rnd_w.min(rnd_h);
-            let mut aux_w = s * 0.1;
-            let mut aux_h = aux_w * self.aux_tallness;
-            // Space available for aux (vertically).
-            let avail_h = rnd_h;
-            if aux_h > avail_h {
-                aux_h = avail_h.max(1e-100);
-                aux_w = aux_h / self.aux_tallness.max(1e-100);
+            // C++ lines 1004-1020: no-label aux path.
+            let s2 = rnd_w.min(rnd_h);
+            let mut tw = s2 * 0.1;
+            let mut th = tw * self.aux_tallness;
+            let d = s2 * 0.01;
+            let e = rnd_h - 2.0 * rnd_r.max(d);
+            if th > e {
+                th = e.max(1e-100);
+                tw = th / self.aux_tallness;
             }
-            // Margin from right edge.
-            let d = s * 0.015;
             Some(Rect {
-                x: rnd_x + rnd_w - aux_w - d,
-                y: rnd_y + (rnd_h - aux_h) * 0.5,
-                w: aux_w,
-                h: aux_h,
+                x: rnd_x + rnd_w - tw - d,
+                y: rnd_y + (rnd_h - th) * 0.5,
+                w: tw,
+                h: th,
             })
         }
     }
