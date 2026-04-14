@@ -4142,9 +4142,9 @@ impl<'a> emPainter<'a> {
         y2 = y2 * self.state.scale_y + self.state.offset_y;
 
         if y1 > y2 {
-            std::mem::swap(&mut x1, &mut x2);
-            std::mem::swap(&mut y1, &mut y2);
-            std::mem::swap(&mut color1, &mut color2);
+            let t = y1; y1 = y2; y2 = t;
+            let t = x1; x1 = x2; x2 = t;
+            let tc = color1; color1 = color2; color2 = tc;
         }
 
         let dx = x2 - x1;
@@ -4153,62 +4153,100 @@ impl<'a> emPainter<'a> {
         let gx = if dy >= 0.0001 { dx / dy } else { 0.0 };
         let gy = if adx >= 0.0001 { dy / dx } else { 0.0 };
 
-        let cx1f = self.state.clip.x1;
-        let cy1f = self.state.clip.y1;
-        let cx2f = self.state.clip.x2;
-        let cy2f = self.state.clip.y2;
+        if y1 < self.state.clip.y1 {
+            if y2 <= self.state.clip.y1 { return; }
+            x1 += (self.state.clip.y1 - y1) * gx;
+            y1 = self.state.clip.y1;
+        }
+        if y2 > self.state.clip.y2 {
+            if y1 >= self.state.clip.y2 { return; }
+            x2 += (self.state.clip.y2 - y2) * gx;
+            y2 = self.state.clip.y2;
+        }
 
-        if y1 < cy1f { if y2 <= cy1f { return; } x1 += (cy1f - y1) * gx; y1 = cy1f; }
-        if y2 > cy2f { if y1 >= cy2f { return; } x2 += (cy2f - y2) * gx; y2 = cy2f; }
-
-        let mut cx1; let mut cx2; let mut sx: i32;
+        let mut sx: i32;
+        let mut cx1: f64;
+        let mut cx2: f64;
         if dx >= 0.0 {
-            if x1 < cx1f { if x2 <= cx1f { return; } y1 += (cx1f - x1) * gy; x1 = cx1f; }
-            if x2 > cx2f { if x1 >= cx2f { return; } y2 += (cx2f - x2) * gy; x2 = cx2f; }
-            sx = x1 as i32; cx1 = x1; cx2 = x2;
+            if x1 < self.state.clip.x1 {
+                if x2 <= self.state.clip.x1 { return; }
+                y1 += (self.state.clip.x1 - x1) * gy;
+                x1 = self.state.clip.x1;
+            }
+            if x2 > self.state.clip.x2 {
+                if x1 >= self.state.clip.x2 { return; }
+                y2 += (self.state.clip.x2 - x2) * gy;
+                x2 = self.state.clip.x2;
+            }
+            sx = x1 as i32;
+            cx1 = x1;
+            cx2 = x2;
         } else {
-            if x2 < cx1f { if x1 <= cx1f { return; } y2 += (cx1f - x2) * gy; x2 = cx1f; }
-            if x1 > cx2f { if x2 >= cx2f { return; } y1 += (cx2f - x1) * gy; x1 = cx2f; }
-            sx = x1.ceil() as i32 - 1; cx1 = x2; cx2 = x1;
+            if x2 < self.state.clip.x1 {
+                if x1 <= self.state.clip.x1 { return; }
+                y2 += (self.state.clip.x1 - x2) * gy;
+                x2 = self.state.clip.x1;
+            }
+            if x1 > self.state.clip.x2 {
+                if x2 >= self.state.clip.x2 { return; }
+                y1 += (self.state.clip.x2 - x1) * gy;
+                x1 = self.state.clip.x2;
+            }
+            sx = x1.ceil() as i32 - 1;
+            cx1 = x2;
+            cx2 = x1;
         }
         let mut sy = y1 as i32;
-        let mut cy1 = y1; let mut cy2 = y2;
-        if adx > dy { cy1 = cy1.floor(); cy2 = cy2.ceil(); }
-        else { cx1 = cx1.floor(); cx2 = cx2.ceil(); }
+        let mut cy1 = y1;
+        let mut cy2 = y2;
+        if adx > dy {
+            cy1 = cy1.floor();
+            cy2 = cy2.ceil();
+        } else {
+            cx1 = cx1.floor();
+            cx2 = cx2.ceil();
+        }
 
         if color1.IsTotallyTransparent() || color2.IsTotallyTransparent() { return; }
 
         let ac1 = color1.GetAlpha() as f64 * (1.0 / 255.0);
         let ac2 = color2.GetAlpha() as f64 * (1.0 / 255.0);
-        let tw = self.target_width as i32;
-        let th = self.target_height as i32;
+
         let h1 = [color1.GetRed(), color1.GetGreen(), color1.GetBlue()];
         let h2 = [color2.GetRed(), color2.GetGreen(), color2.GetBlue()];
 
-        loop {
-            let mut px1 = sx as f64; let mut py1 = sy as f64;
-            let mut px2 = px1 + 1.0; let mut py2 = py1 + 1.0;
-            if px1 < cx1 { px1 = cx1; } if py1 < cy1 { py1 = cy1; }
-            if px2 > cx2 { px2 = cx2; } if py2 > cy2 { py2 = cy2; }
+        let tw = self.target_width as i32;
+        let th = self.target_height as i32;
 
-            let mut qx1 = x1; let mut qy1 = y1; let mut qx2 = x2; let mut qy2 = y2;
+        loop {
+            let mut px1 = sx as f64;
+            let mut py1 = sy as f64;
+            let mut px2 = px1 + 1.0;
+            let mut py2 = py1 + 1.0;
+            if px1 < cx1 { px1 = cx1; }
+            if py1 < cy1 { py1 = cy1; }
+            if px2 > cx2 { px2 = cx2; }
+            if py2 > cy2 { py2 = cy2; }
+            let mut qx1 = x1;
+            let mut qy1 = y1;
+            let mut qx2 = x2;
+            let mut qy2 = y2;
             if qy1 < py1 { qx1 += (py1 - qy1) * gx; qy1 = py1; }
             if qy2 > py2 { qx2 += (py2 - qy2) * gx; qy2 = py2; }
-            let a2;
+            let mut a2: f64;
             if dx >= 0.0 {
-                if qx1 < px1 { qy1 += (px1 - qx1) * gy; } // qx1 = px1 implicit
-                if qx2 > px2 { qy2 += (px2 - qx2) * gy; } // qx2 = px2 implicit
+                if qx1 < px1 { qy1 += (px1 - qx1) * gy; qx1 = px1; }
+                if qx2 > px2 { qy2 += (px2 - qx2) * gy; qx2 = px2; }
                 a2 = py2 - qy2;
             } else {
                 if qx2 < px1 { qy2 += (px1 - qx2) * gy; qx2 = px1; }
                 if qx1 > px2 { qy1 += (px2 - qx1) * gy; qx1 = px2; }
                 a2 = qy1 - py1;
             }
-            let a2 = a2 * (px2 - px1) + (qy2 - qy1) * ((qx1 + qx2) * 0.5 - px1);
+            a2 = a2 * (px2 - px1) + (qy2 - qy1) * ((qx1 + qx2) * 0.5 - px1);
             let a1 = (py2 - py1) * (px2 - px1) - a2;
             let a1 = a1 * ac1;
             let a2 = a2 * ac2;
-
             if a1 >= 0.001 && a2 >= 0.001 {
                 let t = 255.0 / ((1.0 - a1) * (1.0 - a2));
                 let alpha1 = (a1 * a2 * (1.0 - a2) * t) as i32;
@@ -4219,26 +4257,32 @@ impl<'a> emPainter<'a> {
                     let bg = self.read_pixel(proof, sx as u32, sy as u32);
                     let out = self.GetImage(proof).SetPixel(sx as u32, sy as u32);
                     for ch in 0..3 {
-                        let bg_term = if alpha3 > 0 {
-                            blend_hash_lookup(bg[ch], alpha3 as u8) as i32
-                        } else { 0 };
-                        let c1_term = blend_hash_lookup(h1[ch], alpha1 as u8) as i32;
-                        let c2_term = blend_hash_lookup(h2[ch], alpha2 as u8) as i32;
-                        out[ch] = (bg_term + c1_term + c2_term).clamp(0, 255) as u8;
+                        if alpha3 > 0 {
+                            let bg_ch = bg[ch] as i32;
+                            let bg_term = (bg_ch * alpha3 + 127) / 255;
+                            let c1_term = blend_hash_lookup(h1[ch], alpha1 as u8) as i32;
+                            let c2_term = blend_hash_lookup(h2[ch], alpha2 as u8) as i32;
+                            out[ch] = (bg_term + c1_term + c2_term).clamp(0, 255) as u8;
+                        } else {
+                            let c1_term = blend_hash_lookup(h1[ch], alpha1 as u8) as i32;
+                            let c2_term = blend_hash_lookup(h2[ch], alpha2 as u8) as i32;
+                            out[ch] = (c1_term + c2_term).clamp(0, 255) as u8;
+                        }
                     }
                 }
             }
-
             if dx >= 0.0 {
-                if (sy as f64 + 1.0 - y1) * dx > (sx as f64 + 1.0 - x1) * dy {
+                if ((sy + 1) as f64 - y1) * dx > ((sx + 1) as f64 - x1) * dy {
                     sx += 1;
                     if (sx as f64) < cx2 { continue; }
                     break;
                 }
-            } else if (sy as f64 + 1.0 - y1) * dx < (sx as f64 - x1) * dy {
-                sx -= 1;
-                if sx as f64 + 1.0 > cx1 { continue; }
-                break;
+            } else {
+                if ((sy + 1) as f64 - y1) * dx < (sx as f64 - x1) * dy {
+                    sx -= 1;
+                    if sx as f64 + 1.0 > cx1 { continue; }
+                    break;
+                }
             }
             sy += 1;
             if sy as f64 >= cy2 { break; }
