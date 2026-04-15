@@ -207,6 +207,14 @@ impl PanelBehavior for emSubViewPanel {
             return;
         }
 
+        // Drive sub-tree lifecycle (C++ does this via emViewPort::RequestUpdate).
+        // run_panel_cycles executes Cycle() for panels in the sub-tree's cycle_list
+        // (e.g. emMainControlPanel button handling).
+        self.sub_tree.run_panel_cycles();
+        // HandleNotice delivers LAYOUT_CHANGED etc. so LayoutChildren runs and
+        // children (eagle, cosmos, buttons) are actually created.
+        self.sub_tree.HandleNotice(state.is_focused(), state.pixel_tallness);
+
         // Update the sub-view's viewing state so panel coordinates are current.
         self.sub_view.Update(&mut self.sub_tree);
 
