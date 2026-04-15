@@ -3,6 +3,7 @@ use std::rc::Rc;
 use emcore::emFpPlugin::{emFpPlugin, PanelParentArg};
 use emcore::emPanel::PanelBehavior;
 
+use crate::emFileLinkModel::emFileLinkModel;
 use crate::emFileLinkPanel::emFileLinkPanel;
 
 /// Entry point for the file link panel plugin.
@@ -11,7 +12,7 @@ use crate::emFileLinkPanel::emFileLinkPanel;
 pub fn emFileLinkFpPluginFunc(
     parent: &PanelParentArg,
     _name: &str,
-    _path: &str,
+    path: &str,
     plugin: &emFpPlugin,
     error_buf: &mut String,
 ) -> Option<Box<dyn PanelBehavior>> {
@@ -19,10 +20,13 @@ pub fn emFileLinkFpPluginFunc(
         *error_buf = "emFileLinkFpPlugin: No properties allowed.".to_string();
         return None;
     }
-    // Border depends on parent panel type — for now default to true
-    // (correct determination requires checking parent's PanelBehavior type)
-    Some(Box::new(emFileLinkPanel::new(
+    // C++: new emFileLinkPanel(parent, name,
+    //        emFileLinkModel::Acquire(parent.GetRootContext(), path))
+    let model = emFileLinkModel::Acquire(parent.root_context(), path, false);
+    let mut panel = emFileLinkPanel::new(
         Rc::clone(parent.root_context()),
         true,
-    )))
+    );
+    panel.set_link_model(model);
+    Some(Box::new(panel))
 }

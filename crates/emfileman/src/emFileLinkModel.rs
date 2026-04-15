@@ -225,6 +225,14 @@ impl emFileLinkModel {
         self.rec_model.GetMap().have_dir_entry
     }
 
+    /// Load the model synchronously if not yet loaded.
+    /// Returns true if the model is now in Loaded state.
+    pub fn ensure_loaded(&mut self) -> bool {
+        if matches!(self.rec_model.GetFileState(), FileState::Waiting) {
+            self.rec_model.TryLoad();
+        }
+        matches!(self.rec_model.GetFileState(), FileState::Loaded)
+    }
 }
 
 #[cfg(test)]

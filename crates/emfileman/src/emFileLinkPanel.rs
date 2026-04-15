@@ -119,6 +119,9 @@ impl emFileLinkPanel {
                 let entry = emDirEntry::from_path(&self.full_path);
                 let panel = emDirEntryPanel::new(Rc::clone(&self.ctx), entry);
                 let child_id = ctx.create_child_with("", Box::new(panel));
+                // Register for cycling so content panel is created
+                // (C++ uses AutoExpand; Rust uses Cycle).
+                ctx.tree.Cycle(child_id);
                 self.child_panel = Some(child_id);
             } else {
                 let fppl = emcore::emFpPlugin::emFpPluginList::Acquire(&self.ctx);

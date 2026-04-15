@@ -262,7 +262,10 @@ impl emDirPanel {
                         Rc::clone(&self.ctx),
                         entry.clone(),
                     );
-                    ctx.create_child_with(entry.GetName(), Box::new(panel));
+                    let id = ctx.create_child_with(entry.GetName(), Box::new(panel));
+                    // Register for cycling so content panel is created
+                    // (C++ uses AutoExpand; Rust uses Cycle).
+                    ctx.tree.Cycle(id);
                 }
 
                 self.child_count = visible_count;
@@ -285,13 +288,19 @@ impl PanelBehavior for emDirPanel {
     fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
         let mut changed = false;
 
+        if self.dir_model.is_none() {
+            self.dir_model = Some(emDirModel::Acquire(&self.ctx, &self.path));
+            self.loading_done = false;
+            self.loading_error = None;
+            self.child_count = 0;
+            self.content_complete = false;
+            changed = true;
+        }
+
         // Detect config changes (sort/filter) and force child re-creation
         let cfg_gen = self.config.borrow().GetChangeSignal();
         if cfg_gen != self.last_config_gen {
             self.last_config_gen = cfg_gen;
-            // C++ calls InvalidatePainting() + UpdateChildren() + InvalidateChildrenLayout().
-            // Rust resets child_count to force update_children to recreate all children,
-            // which implicitly covers painting and layout invalidation.
             self.child_count = 0;
             changed = true;
         }

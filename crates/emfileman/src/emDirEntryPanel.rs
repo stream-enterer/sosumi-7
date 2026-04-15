@@ -188,6 +188,9 @@ impl emDirEntryPanel {
                 0,
             );
             let child_id = ctx.create_child_with(CONTENT_NAME, behavior);
+            // Register for cycling so the content panel's model loads
+            // (C++ panels are emEngines that self-wake; Rust needs Cycle).
+            ctx.tree.Cycle(child_id);
             self.content_panel = Some(child_id);
         }
     }
@@ -366,8 +369,22 @@ impl PanelBehavior for emDirEntryPanel {
         }
     }
 
-    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+    fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
         self.update_bg_color();
+        // C++ creates content/alt panels via AutoExpand, triggered by
+        // view condition. Rust has no auto-expand; notice() sets
+        // last_viewed but only on VIEW_CHANGED (not in init flags).
+        // Pull current viewed state from tree on first cycle.
+        let state = ctx.tree.build_panel_state(ctx.id, false, 1.0);
+        if state.viewed != self.last_viewed || state.viewed_rect.w > self.last_viewed_width {
+            self.last_viewed = state.viewed;
+            self.last_viewed_width = state.viewed_rect.w;
+            self.last_in_active_path = state.in_active_path;
+            self.content_dirty = true;
+            self.alt_dirty = true;
+        }
+        self.update_content_panel(ctx);
+        self.update_alt_panel(ctx);
         false
     }
 

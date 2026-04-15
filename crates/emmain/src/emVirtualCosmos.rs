@@ -625,6 +625,8 @@ impl PanelBehavior for emVirtualCosmosItemPanel {
             );
             // C++ uses name "" for the content panel (matches identity path).
             let child_id = ctx.create_child_with("", behavior);
+            // Register for cycling so the content panel loads its model.
+            ctx.tree.Cycle(child_id);
             self.content_panel = Some(child_id);
         }
 
