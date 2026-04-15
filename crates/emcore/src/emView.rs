@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Instant;
 
 use bitflags::bitflags;
@@ -205,6 +207,12 @@ pub struct emView {
     cursor_invalid: bool,
     /// Whether the control panel needs to be refreshed.
     control_panel_invalid: bool,
+    /// Signal fired when the active control panel changes (C++ ControlPanelSignal).
+    control_panel_signal: Option<super::emSignal::SignalId>,
+    /// Signal fired when the view title changes (C++ TitleSignal).
+    title_signal: Option<super::emSignal::SignalId>,
+    /// Scheduler reference for firing signals.
+    scheduler: Option<Rc<RefCell<super::emScheduler::EngineScheduler>>>,
     /// Whether the current activation is adherent (indirect, via a descendant).
     activation_adherent: bool,
     /// Set by scroll/zoom/navigate operations that change the viewport and need
@@ -279,6 +287,9 @@ impl emView {
             title_invalid: false,
             cursor_invalid: false,
             control_panel_invalid: false,
+            control_panel_signal: None,
+            title_signal: None,
+            scheduler: None,
             activation_adherent: false,
             viewport_changed: false,
             needs_animator_abort: false,
@@ -939,6 +950,11 @@ impl emView {
         }
         self.activation_adherent = adherent;
         self.control_panel_invalid = true;
+        if let Some(sig) = self.control_panel_signal {
+            if let Some(sched) = &self.scheduler {
+                sched.borrow_mut().fire(sig);
+            }
+        }
         tree.mark_notices_pending();
     }
 
@@ -1800,6 +1816,11 @@ impl emView {
         let in_active_path = tree.GetRec(panel).map(|p| p.in_active_path).unwrap_or(false);
         if in_active_path {
             self.control_panel_invalid = true;
+            if let Some(sig) = self.control_panel_signal {
+                if let Some(sched) = &self.scheduler {
+                    sched.borrow_mut().fire(sig);
+                }
+            }
         }
     }
 
@@ -1836,6 +1857,43 @@ impl emView {
     /// Clear the control-panel-invalid flag.
     pub fn clear_control_panel_invalid(&mut self) {
         self.control_panel_invalid = false;
+    }
+
+    pub fn set_control_panel_signal(&mut self, signal: super::emSignal::SignalId) {
+        self.control_panel_signal = Some(signal);
+    }
+
+    pub fn GetControlPanelSignal(&self) -> Option<super::emSignal::SignalId> {
+        self.control_panel_signal
+    }
+
+    pub fn set_title_signal(&mut self, signal: super::emSignal::SignalId) {
+        self.title_signal = Some(signal);
+    }
+
+    pub fn GetTitleSignal(&self) -> Option<super::emSignal::SignalId> {
+        self.title_signal
+    }
+
+    pub fn set_scheduler(&mut self, scheduler: Rc<RefCell<super::emScheduler::EngineScheduler>>) {
+        self.scheduler = Some(scheduler);
+    }
+
+    /// Visit a panel by identity string, matching C++ emView::Visit(identity, ...).
+    /// Uses find_panel_by_identity to resolve the identity to a PanelId, then calls Visit.
+    pub fn VisitByIdentity(
+        &mut self,
+        tree: &mut PanelTree,
+        identity: &str,
+        rel_x: f64,
+        rel_y: f64,
+        rel_a: f64,
+    ) {
+        if let Some(panel_id) = tree.find_panel_by_identity(identity) {
+            self.Visit(panel_id, rel_x, rel_y, rel_a);
+        } else {
+            log::warn!("VisitByIdentity: panel not found for identity '{identity}'");
+        }
     }
 
     /// Check whether any dirty rectangles have been accumulated.
@@ -3796,6 +3854,52 @@ mod tests {
         assert!(view.IsSoftKeyboardShown());
         view.ShowSoftKeyboard(false);
         assert!(!view.IsSoftKeyboardShown());
+    }
+
+    #[test]
+    fn test_signal_fields_and_visit_by_identity() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        use crate::emScheduler::EngineScheduler;
+
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.get_mut(root).unwrap().focusable = true;
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0);
+        let child = tree.create_child(root, "child");
+        tree.get_mut(child).unwrap().focusable = true;
+        tree.Layout(child, 0.0, 0.0, 0.5, 1.0);
+
+        let mut view = emView::new(root, 800.0, 600.0);
+
+        // Signal getters return None before being set.
+        assert!(view.GetControlPanelSignal().is_none());
+        assert!(view.GetTitleSignal().is_none());
+
+        // Wire up scheduler and signals.
+        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        let cp_sig = sched.borrow_mut().create_signal();
+        let title_sig = sched.borrow_mut().create_signal();
+        view.set_scheduler(sched.clone());
+        view.set_control_panel_signal(cp_sig);
+        view.set_title_signal(title_sig);
+
+        assert_eq!(view.GetControlPanelSignal(), Some(cp_sig));
+        assert_eq!(view.GetTitleSignal(), Some(title_sig));
+
+        // set_active_panel fires ControlPanelSignal.
+        view.Update(&mut tree);
+        view.set_active_panel(&mut tree, child, false);
+        assert!(sched.borrow().is_pending(cp_sig));
+
+        // VisitByIdentity resolves identity -> panel and visits.
+        view.VisitByIdentity(&mut tree, "root:child", 0.5, 0.5, 1.0);
+        // Non-existent identity logs a warning but doesn't panic.
+        view.VisitByIdentity(&mut tree, "no_such_panel", 0.0, 0.0, 1.0);
+
+        // Clean up signals so EngineScheduler's debug_assert on drop is satisfied.
+        sched.borrow_mut().remove_signal(cp_sig);
+        sched.borrow_mut().remove_signal(title_sig);
     }
 }
 
