@@ -14,7 +14,7 @@ use emMain::emMainControlPanel::emMainControlPanel;
 #[test]
 fn control_panel_layout_children() {
     let ctx = emContext::NewRoot();
-    let mut panel = emMainControlPanel::new(Rc::clone(&ctx));
+    let mut panel = emMainControlPanel::new(Rc::clone(&ctx), None);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root("ctrl_root");
@@ -27,32 +27,29 @@ fn control_panel_layout_children() {
         panel.LayoutChildren(&mut pctx);
     }
 
-    // Top-level has 2 children: "general" and "bookmarks"
-    // (matching C++ lMain with child 0 = general panel, child 1 = bookmarks).
+    // Top-level has 1 child: "lMain" (wrapping general + bookmarks).
     let children: Vec<_> = tree.children(root).collect();
     assert_eq!(
         children.len(),
-        2,
-        "Expected 2 top-level children (general + bookmarks), got {}",
+        1,
+        "Expected 1 top-level child (lMain), got {}",
         children.len()
     );
 
-    // Both children should have non-zero layout rects.
-    for (i, &child_id) in children.iter().enumerate() {
-        let rect = tree
-            .layout_rect(child_id)
-            .unwrap_or_else(|| panic!("child {i} has no layout rect"));
-        assert!(
-            rect.w > 0.0 && rect.h > 0.0,
-            "child {i}: expected non-zero rect, got {rect:?}"
-        );
-    }
+    // The child should have a non-zero layout rect.
+    let rect = tree
+        .layout_rect(children[0])
+        .expect("lMain has no layout rect");
+    assert!(
+        rect.w > 0.0 && rect.h > 0.0,
+        "lMain: expected non-zero rect, got {rect:?}"
+    );
 }
 
 #[test]
 fn control_panel_child_names() {
     let ctx = emContext::NewRoot();
-    let mut panel = emMainControlPanel::new(Rc::clone(&ctx));
+    let mut panel = emMainControlPanel::new(Rc::clone(&ctx), None);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root("ctrl_root");
@@ -69,7 +66,6 @@ fn control_panel_child_names() {
         .map(|&id| tree.name(id).unwrap())
         .collect();
 
-    // C++ top-level children: "general" (lMain) and content control panel.
-    // Rust: "general" and "bookmarks".
-    assert_eq!(names, vec!["general", "bookmarks"]);
+    // C++ top-level child 0: lMain (contains general + bookmarks).
+    assert_eq!(names, vec!["lMain"]);
 }

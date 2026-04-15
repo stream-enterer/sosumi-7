@@ -159,14 +159,19 @@ pub struct emMainControlPanel {
     layout_main: emLinearLayout,
     click_flags: Rc<ClickFlags>,
     // Panel IDs for child widgets (used for layout weight assignment).
-    general_panel: Option<PanelId>,
-    bookmarks_panel: Option<PanelId>,
+    lmain_panel: Option<PanelId>,
+    _content_control_panel: Option<PanelId>,
+    /// PanelId of the content sub-view, used for wiring content control panel.
+    _content_view_id: Option<PanelId>,
     children_created: bool,
 }
 
 impl emMainControlPanel {
     /// Port of C++ `emMainControlPanel` constructor.
-    pub fn new(ctx: Rc<emContext>) -> Self {
+    ///
+    /// `content_view_id` is the PanelId of the content sub-view panel, used
+    /// for wiring the content control panel (C++ contentControlPanel).
+    pub fn new(ctx: Rc<emContext>, content_view_id: Option<PanelId>) -> Self {
         let config = emMainConfig::Acquire(&ctx);
 
         // C++ emMainControlPanel constructor:
@@ -181,7 +186,7 @@ impl emMainControlPanel {
         //   SetChildWeight(0, 11.37)
         //   SetChildWeight(1, 21.32)
         //   SetInnerSpace(0.0098, 0.0098)
-        let mut layout_main = emLinearLayout {
+        let layout_main = emLinearLayout {
             orientation: Orientation::Adaptive {
                 tallness_threshold: 1.0,
             },
@@ -193,9 +198,6 @@ impl emMainControlPanel {
             min_cell_count: 2,
             ..emLinearLayout::horizontal()
         };
-        // Default weight for cells is 1.0; we'll set per-child weights after
-        // children are created.
-        let _ = &mut layout_main;
 
         Self {
             ctx,
@@ -204,53 +206,36 @@ impl emMainControlPanel {
             look: emLook::default(),
             layout_main,
             click_flags: Rc::new(ClickFlags::default()),
-            general_panel: None,
-            bookmarks_panel: None,
+            lmain_panel: None,
+            _content_control_panel: None,
+            _content_view_id: content_view_id,
             children_created: false,
         }
     }
 
     /// Create the full child widget tree matching C++ constructor.
+    ///
+    /// C++ top-level layout has 2 children:
+    ///   child 0: lMain (weight 11.37) — contains general + bookmarks
+    ///   child 1: contentControlPanel (weight 21.32) — placeholder for now
     fn create_children(&mut self, ctx: &mut PanelCtx) {
         let look = Rc::new(self.look.clone());
         let flags = Rc::clone(&self.click_flags);
 
-        // ── lMain: general panel (child 0 of top-level layout) ───────────
-        // C++ lMain = new emLinearLayout(this, "general")
-        // Contains lAbtCfgCmd (child 0, weight 4.71) and bookmarks (child 1, weight 6.5)
-        let general = Box::new(GeneralPanel::new(
+        // ── lMain: wraps general + bookmarks (child 0 of top-level) ──────
+        let lmain = Box::new(LMainPanel::new(
             Rc::clone(&self.ctx),
             Rc::clone(&look),
             Rc::clone(&flags),
         ));
-        let general_id = ctx.create_child_with("general", general);
-        self.general_panel = Some(general_id);
+        let lmain_id = ctx.create_child_with("lMain", lmain);
+        self.lmain_panel = Some(lmain_id);
 
-        // ── bookmarks panel (child 1 of lMain, but we place it as child 1 of top-level) ─
-        // DIVERGED: C++ places bookmarks inside lMain alongside general.
-        // Rust places it as top-level child 1 alongside general. The layout
-        // weights are adjusted to produce the same visual proportions:
         // C++ top-level: child 0 (lMain weight 11.37) child 1 (contentControlPanel weight 21.32)
-        // C++ lMain: child 0 (lAbtCfgCmd weight 4.71) child 1 (bookmarks weight 6.5)
-        let bookmarks = Box::new(emBookmarksPanel::new(Rc::clone(&self.ctx)));
-        let bm_id = ctx.create_child_with("bookmarks", bookmarks);
-        self.bookmarks_panel = Some(bm_id);
-
-        // Set child weights on the top-level layout to match C++ proportions.
-        // C++ top-level has 2 children: lMain (11.37) and contentControlPanel (21.32).
-        // Our top-level has 2 children: general (11.37) and bookmarks (21.32).
-        // DIVERGED: contentControlPanel is not yet ported; bookmarks takes its slot.
         self.layout_main.set_child_constraint(
-            general_id,
+            lmain_id,
             ChildConstraint {
                 weight: 11.37,
-                ..Default::default()
-            },
-        );
-        self.layout_main.set_child_constraint(
-            bm_id,
-            ChildConstraint {
-                weight: 21.32,
                 ..Default::default()
             },
         );
@@ -274,6 +259,25 @@ impl PanelBehavior for emMainControlPanel {
             state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.border
             .paint_border(painter, w, h, &self.look, false, state.enabled, pixel_scale);
+    }
+
+    fn Input(
+        &mut self,
+        event: &emInputEvent,
+        _state: &PanelState,
+        input_state: &emInputState,
+    ) -> bool {
+        use emcore::emInput::InputKey;
+        // Escape no-modifier: toggle control view (C++ emMainWindow.cpp:230-237).
+        if event.key == InputKey::Escape
+            && !input_state.GetShift()
+            && !input_state.GetCtrl()
+            && !input_state.GetAlt()
+        {
+            log::info!("ToggleControlView");
+            return true;
+        }
+        false
     }
 
     fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
@@ -343,6 +347,91 @@ impl PanelBehavior for emMainControlPanel {
 
     fn auto_expand(&self) -> bool {
         true
+    }
+
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+}
+
+// ── LMainPanel ──────────────────────────────────────────────────────────────
+// C++ lMain: linear layout containing general (lAbtCfgCmd, weight 4.71) and
+// bookmarks (weight 6.5).
+
+struct LMainPanel {
+    ctx: Rc<emContext>,
+    look: Rc<emLook>,
+    layout: emLinearLayout,
+    click_flags: Rc<ClickFlags>,
+    general_panel: Option<PanelId>,
+    bookmarks_panel: Option<PanelId>,
+    children_created: bool,
+}
+
+impl LMainPanel {
+    fn new(ctx: Rc<emContext>, look: Rc<emLook>, click_flags: Rc<ClickFlags>) -> Self {
+        Self {
+            ctx,
+            look,
+            layout: emLinearLayout {
+                orientation: Orientation::Adaptive {
+                    tallness_threshold: 1.0,
+                },
+                spacing: Spacing {
+                    inner_h: 0.07,
+                    inner_v: 0.07,
+                    ..Spacing::default()
+                },
+                ..emLinearLayout::horizontal()
+            },
+            click_flags,
+            general_panel: None,
+            bookmarks_panel: None,
+            children_created: false,
+        }
+    }
+
+    fn create_children(&mut self, ctx: &mut PanelCtx) {
+        // Child 0: general (lAbtCfgCmd) — weight 4.71
+        let general = Box::new(GeneralPanel::new(
+            Rc::clone(&self.ctx),
+            Rc::clone(&self.look),
+            Rc::clone(&self.click_flags),
+        ));
+        let general_id = ctx.create_child_with("general", general);
+        self.general_panel = Some(general_id);
+
+        // Child 1: bookmarks — weight 6.5
+        let bookmarks = Box::new(emBookmarksPanel::new(Rc::clone(&self.ctx)));
+        let bm_id = ctx.create_child_with("bookmarks", bookmarks);
+        self.bookmarks_panel = Some(bm_id);
+
+        // C++ lMain: SetChildWeight(0, 4.71) SetChildWeight(1, 6.5)
+        self.layout.set_child_constraint(
+            general_id,
+            ChildConstraint {
+                weight: 4.71,
+                ..Default::default()
+            },
+        );
+        self.layout.set_child_constraint(
+            bm_id,
+            ChildConstraint {
+                weight: 6.5,
+                ..Default::default()
+            },
+        );
+
+        self.children_created = true;
+    }
+}
+
+impl PanelBehavior for LMainPanel {
+    fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        if !self.children_created {
+            self.create_children(ctx);
+        }
+        let cc = ctx.GetCanvasColor();
+        ctx.set_all_children_canvas_color(cc);
+        self.layout.do_layout_skip(ctx, None, None);
     }
 
     fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
@@ -764,7 +853,7 @@ mod tests {
     #[test]
     fn test_control_panel_new() {
         let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emMainControlPanel::new(Rc::clone(&ctx));
+        let panel = emMainControlPanel::new(Rc::clone(&ctx), None);
         assert_eq!(
             panel.get_title(),
             Some("emMainControl".to_string())
@@ -774,14 +863,14 @@ mod tests {
     #[test]
     fn test_control_panel_opaque() {
         let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emMainControlPanel::new(Rc::clone(&ctx));
+        let panel = emMainControlPanel::new(Rc::clone(&ctx), None);
         assert!(panel.IsOpaque());
     }
 
     #[test]
     fn test_control_panel_behavior() {
         let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emMainControlPanel::new(Rc::clone(&ctx));
+        let panel = emMainControlPanel::new(Rc::clone(&ctx), None);
         let _: Box<dyn PanelBehavior> = Box::new(panel);
     }
 
@@ -816,7 +905,7 @@ mod tests {
     fn test_title_matches_cpp() {
         // C++ GetTitle returns "emMainControl"
         let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emMainControlPanel::new(ctx);
+        let panel = emMainControlPanel::new(ctx, None);
         assert_eq!(panel.get_title(), Some("emMainControl".to_string()));
     }
 }
