@@ -20,6 +20,7 @@ use emcore::emInputState::emInputState;
 use emcore::emPanelTree::PanelId;
 use emcore::emSignal::SignalId;
 use emcore::emWindow::{WindowFlags, ZuiWindow};
+use emcore::emWindowStateSaver::emWindowStateSaver;
 
 use emcore::emSubViewPanel::emSubViewPanel;
 
@@ -689,6 +690,8 @@ pub fn create_main_window(
 
     let close_signal = app.scheduler.borrow_mut().create_signal();
     let flags_signal = app.scheduler.borrow_mut().create_signal();
+    let focus_signal = app.scheduler.borrow_mut().create_signal();
+    let geometry_signal = app.scheduler.borrow_mut().create_signal();
     mw._close_signal = Some(close_signal);
 
     // Create the window
@@ -699,6 +702,8 @@ pub fn create_main_window(
         flags,
         close_signal,
         flags_signal,
+        focus_signal,
+        geometry_signal,
     );
     let window_id = window.winit_window.id();
     app.windows.insert(window_id, window);
@@ -757,6 +762,50 @@ pub fn create_main_window(
         .register_engine(Priority::Low, Box::new(bridge));
     app.scheduler.borrow_mut().connect(cp_signal, bridge_id);
 
+    // Register emWindowStateSaver engine — persists window geometry.
+    // Port of C++ emWindowStateSaver construction in emMainWindow constructor.
+    {
+        let state_path = emcore::emInstallInfo::emGetInstallPath(
+            emcore::emInstallInfo::InstallDirType::UserConfig,
+            "emMain",
+            Some("WinState.rec"),
+        )
+        .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/eaglemode-winstate.rec"));
+        let change_signal = app.scheduler.borrow_mut().create_signal();
+        let saver = emWindowStateSaver::new(
+            window_id,
+            state_path,
+            flags_signal,
+            focus_signal,
+            geometry_signal,
+            false, // allowRestoreFullscreen
+            change_signal,
+        );
+
+        // Restore geometry before registering (C++ does this in the constructor).
+        // Destructure app to allow simultaneous mutable window + immutable
+        // screen borrows (disjoint field borrowing).
+        let App {
+            ref screen,
+            ref mut windows,
+            ..
+        } = *app;
+        let screen = screen.as_ref().expect("Screen not initialized");
+        if let Some(win) = windows.get_mut(&window_id) {
+            saver.Restore(win, screen);
+        }
+
+        let saver_id = app
+            .scheduler
+            .borrow_mut()
+            .register_engine(Priority::Low, Box::new(saver));
+        app.scheduler.borrow_mut().connect(flags_signal, saver_id);
+        app.scheduler.borrow_mut().connect(focus_signal, saver_id);
+        app.scheduler
+            .borrow_mut()
+            .connect(geometry_signal, saver_id);
+    }
+
     mw.autoplay_view_model = Some(crate::emAutoplay::emAutoplayViewModel::new());
 
     mw
@@ -803,6 +852,8 @@ pub fn create_control_window(
     let flags = WindowFlags::AUTO_DELETE;
     let close_signal = app.scheduler.borrow_mut().create_signal();
     let flags_signal = app.scheduler.borrow_mut().create_signal();
+    let focus_signal = app.scheduler.borrow_mut().create_signal();
+    let geometry_signal = app.scheduler.borrow_mut().create_signal();
 
     let window = ZuiWindow::create(
         event_loop,
@@ -811,6 +862,8 @@ pub fn create_control_window(
         flags,
         close_signal,
         flags_signal,
+        focus_signal,
+        geometry_signal,
     );
     let window_id = window.winit_window.id();
     app.windows.insert(window_id, window);

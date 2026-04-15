@@ -234,9 +234,15 @@ impl ApplicationHandler for App {
                 if let Some(win) = self.windows.get_mut(&window_id) {
                     let gpu = self.gpu.as_ref().unwrap();
                     win.resize(gpu, &mut self.tree, size.width, size.height);
+                    win.set_geometry_changed();
                     // Don't request_redraw here — about_to_wait will detect the
                     // layout change from the new tallness and issue a single
                     // repaint after layout is settled.
+                }
+            }
+            WindowEvent::Moved(_) => {
+                if let Some(win) = self.windows.get_mut(&window_id) {
+                    win.set_geometry_changed();
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -248,6 +254,7 @@ impl ApplicationHandler for App {
             WindowEvent::Focused(focused) => {
                 if let Some(win) = self.windows.get_mut(&window_id) {
                     win.view_mut().SetFocused(&mut self.tree, focused);
+                    win.set_focus_changed();
                     win.invalidate();
                     win.request_redraw();
                 }
@@ -304,20 +311,28 @@ impl ApplicationHandler for App {
             action(self, event_loop);
         }
 
-        // Fire flags_signal for any windows whose flags changed this frame.
-        let flags_signals: Vec<_> = self
+        // Fire signals for any windows whose state changed this frame.
+        let changed_signals: Vec<_> = self
             .windows
             .values_mut()
-            .filter_map(|win| {
+            .flat_map(|win| {
+                let mut sigs = Vec::new();
                 if win.flags_changed() {
                     win.clear_flags_changed();
-                    Some(win.flags_signal)
-                } else {
-                    None
+                    sigs.push(win.flags_signal);
                 }
+                if win.focus_changed() {
+                    win.clear_focus_changed();
+                    sigs.push(win.focus_signal);
+                }
+                if win.geometry_changed() {
+                    win.clear_geometry_changed();
+                    sigs.push(win.geometry_signal);
+                }
+                sigs
             })
             .collect();
-        for sig in flags_signals {
+        for sig in changed_signals {
             self.scheduler.borrow_mut().fire(sig);
         }
 

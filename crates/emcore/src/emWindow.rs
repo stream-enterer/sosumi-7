@@ -45,6 +45,8 @@ pub struct ZuiWindow {
     pub flags: WindowFlags,
     pub close_signal: SignalId,
     pub flags_signal: SignalId,
+    pub focus_signal: SignalId,
+    pub geometry_signal: SignalId,
     root_panel: PanelId,
     vif_chain: Vec<Box<dyn emViewInputFilter>>,
     cheat_vif: emCheatVIF,
@@ -55,12 +57,15 @@ pub struct ZuiWindow {
     screensaver_inhibit_count: u32,
     screensaver_cookie: Option<u32>,
     flags_changed: bool,
+    focus_changed: bool,
+    geometry_changed: bool,
     wm_res_name: String,
     render_pool: emRenderThreadPool,
 }
 
 impl ZuiWindow {
     /// Create a new window with a wgpu surface and rendering pipeline.
+    #[allow(clippy::too_many_arguments)]
     pub fn create(
         event_loop: &winit::event_loop::ActiveEventLoop,
         gpu: &GpuContext,
@@ -68,6 +73,8 @@ impl ZuiWindow {
         flags: WindowFlags,
         close_signal: SignalId,
         flags_signal: SignalId,
+        focus_signal: SignalId,
+        geometry_signal: SignalId,
     ) -> Self {
         let mut attrs = winit::window::WindowAttributes::default().with_title("eaglemode-rs");
 
@@ -144,6 +151,8 @@ impl ZuiWindow {
             flags,
             close_signal,
             flags_signal,
+            focus_signal,
+            geometry_signal,
             root_panel,
             vif_chain,
             cheat_vif: emCheatVIF::new(),
@@ -154,6 +163,8 @@ impl ZuiWindow {
             screensaver_inhibit_count: 0,
             screensaver_cookie: None,
             flags_changed: false,
+            focus_changed: false,
+            geometry_changed: false,
             wm_res_name: String::from("eaglemode-rs"),
             render_pool: emRenderThreadPool::new(
                 crate::emCoreConfig::emCoreConfig::default().max_render_threads,
@@ -725,6 +736,52 @@ impl ZuiWindow {
     /// Reset the flags-changed latch.
     pub fn clear_flags_changed(&mut self) {
         self.flags_changed = false;
+    }
+
+    /// Signal ID for focus changes.
+    ///
+    /// Matches C++ emWindow::GetFocusSignal. Fired from
+    /// `about_to_wait` when `focus_changed` is set.
+    pub fn GetFocusSignal(&self) -> SignalId {
+        self.focus_signal
+    }
+
+    /// Whether focus changed since the last call to `clear_focus_changed`.
+    pub fn focus_changed(&self) -> bool {
+        self.focus_changed
+    }
+
+    /// Reset the focus-changed latch.
+    pub fn clear_focus_changed(&mut self) {
+        self.focus_changed = false;
+    }
+
+    /// Mark focus as changed (called from the event loop on Focused event).
+    pub fn set_focus_changed(&mut self) {
+        self.focus_changed = true;
+    }
+
+    /// Signal ID for geometry changes.
+    ///
+    /// Matches C++ emWindow::GetGeometrySignal. Fired from
+    /// `about_to_wait` when `geometry_changed` is set.
+    pub fn GetGeometrySignal(&self) -> SignalId {
+        self.geometry_signal
+    }
+
+    /// Whether geometry changed since the last call to `clear_geometry_changed`.
+    pub fn geometry_changed(&self) -> bool {
+        self.geometry_changed
+    }
+
+    /// Reset the geometry-changed latch.
+    pub fn clear_geometry_changed(&mut self) {
+        self.geometry_changed = false;
+    }
+
+    /// Mark geometry as changed (called from the event loop on Resized/Moved).
+    pub fn set_geometry_changed(&mut self) {
+        self.geometry_changed = true;
     }
 
     /// Window manager resource name (WM_CLASS instance on X11).

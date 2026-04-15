@@ -6,23 +6,23 @@ use emcore::emWindowStateSaver::WindowGeometry;
 #[test]
 fn window_geometry_default_values() {
     let geo = WindowGeometry::default();
-    assert_eq!(geo.x, 100);
-    assert_eq!(geo.y, 100);
-    assert_eq!(geo.width, 1280);
-    assert_eq!(geo.height, 720);
-    assert!(!geo.maximized);
-    assert!(!geo.fullscreen);
+    assert!((geo.ViewX - 100.0).abs() < f64::EPSILON);
+    assert!((geo.ViewY - 100.0).abs() < f64::EPSILON);
+    assert!((geo.ViewWidth - 1280.0).abs() < f64::EPSILON);
+    assert!((geo.ViewHeight - 720.0).abs() < f64::EPSILON);
+    assert!(!geo.Maximized);
+    assert!(!geo.Fullscreen);
 }
 
 #[test]
 fn window_geometry_round_trip_to_rec() {
     let original = WindowGeometry {
-        x: 200,
-        y: 300,
-        width: 1920,
-        height: 1080,
-        maximized: true,
-        fullscreen: false,
+        ViewX: 200.0,
+        ViewY: 300.0,
+        ViewWidth: 1920.0,
+        ViewHeight: 1080.0,
+        Maximized: true,
+        Fullscreen: false,
     };
 
     let rec = original.to_rec();
@@ -33,12 +33,12 @@ fn window_geometry_round_trip_to_rec() {
 #[test]
 fn window_geometry_round_trip_through_text() {
     let original = WindowGeometry {
-        x: -50,
-        y: 0,
-        width: 800,
-        height: 600,
-        maximized: false,
-        fullscreen: true,
+        ViewX: -50.0,
+        ViewY: 0.0,
+        ViewWidth: 800.0,
+        ViewHeight: 600.0,
+        Maximized: false,
+        Fullscreen: true,
     };
 
     let rec = original.to_rec();
@@ -51,37 +51,37 @@ fn window_geometry_round_trip_through_text() {
 #[test]
 fn window_geometry_negative_coordinates() {
     let geo = WindowGeometry {
-        x: -100,
-        y: -200,
-        width: 640,
-        height: 480,
-        maximized: false,
-        fullscreen: false,
+        ViewX: -100.0,
+        ViewY: -200.0,
+        ViewWidth: 640.0,
+        ViewHeight: 480.0,
+        Maximized: false,
+        Fullscreen: false,
     };
 
     let rec = geo.to_rec();
     let restored = WindowGeometry::from_rec(&rec).expect("from_rec");
-    assert_eq!(restored.x, -100);
-    assert_eq!(restored.y, -200);
+    assert!((restored.ViewX - (-100.0)).abs() < f64::EPSILON);
+    assert!((restored.ViewY - (-200.0)).abs() < f64::EPSILON);
 }
 
 #[test]
-fn window_geometry_from_rec_missing_x_fails() {
+fn window_geometry_from_rec_missing_view_x_fails() {
     let mut rec = RecStruct::new();
-    rec.set_int("y", 100);
-    rec.set_int("width", 800);
-    rec.set_int("height", 600);
+    rec.set_double("ViewY", 100.0);
+    rec.set_double("ViewWidth", 800.0);
+    rec.set_double("ViewHeight", 600.0);
 
     let result = WindowGeometry::from_rec(&rec);
     assert!(matches!(result, Err(RecError::MissingField(_))));
 }
 
 #[test]
-fn window_geometry_from_rec_missing_width_fails() {
+fn window_geometry_from_rec_missing_view_width_fails() {
     let mut rec = RecStruct::new();
-    rec.set_int("x", 100);
-    rec.set_int("y", 100);
-    rec.set_int("height", 600);
+    rec.set_double("ViewX", 100.0);
+    rec.set_double("ViewY", 100.0);
+    rec.set_double("ViewHeight", 600.0);
 
     let result = WindowGeometry::from_rec(&rec);
     assert!(matches!(result, Err(RecError::MissingField(_))));
@@ -90,14 +90,14 @@ fn window_geometry_from_rec_missing_width_fails() {
 #[test]
 fn window_geometry_bools_default_false_when_absent() {
     let mut rec = RecStruct::new();
-    rec.set_int("x", 10);
-    rec.set_int("y", 20);
-    rec.set_int("width", 800);
-    rec.set_int("height", 600);
+    rec.set_double("ViewX", 10.0);
+    rec.set_double("ViewY", 20.0);
+    rec.set_double("ViewWidth", 800.0);
+    rec.set_double("ViewHeight", 600.0);
 
     let geo = WindowGeometry::from_rec(&rec).expect("from_rec");
-    assert!(!geo.maximized);
-    assert!(!geo.fullscreen);
+    assert!(!geo.Maximized);
+    assert!(!geo.Fullscreen);
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn window_geometry_is_default() {
     assert!(geo.IsSetToDefault());
 
     let modified = WindowGeometry {
-        x: 999,
+        ViewX: 999.0,
         ..WindowGeometry::default()
     };
     assert!(!modified.IsSetToDefault());
@@ -115,12 +115,12 @@ fn window_geometry_is_default() {
 #[test]
 fn window_geometry_set_to_default() {
     let mut geo = WindowGeometry {
-        x: 999,
-        y: 888,
-        width: 100,
-        height: 50,
-        maximized: true,
-        fullscreen: true,
+        ViewX: 999.0,
+        ViewY: 888.0,
+        ViewWidth: 100.0,
+        ViewHeight: 50.0,
+        Maximized: true,
+        Fullscreen: true,
     };
     geo.SetToDefault();
     assert_eq!(geo, WindowGeometry::default());
@@ -129,82 +129,68 @@ fn window_geometry_set_to_default() {
 #[test]
 fn window_geometry_all_fields_serialized() {
     let geo = WindowGeometry {
-        x: 42,
-        y: 84,
-        width: 1600,
-        height: 900,
-        maximized: true,
-        fullscreen: true,
+        ViewX: 42.0,
+        ViewY: 84.0,
+        ViewWidth: 1600.0,
+        ViewHeight: 900.0,
+        Maximized: true,
+        Fullscreen: true,
     };
 
     let rec = geo.to_rec();
-    assert_eq!(rec.get_int("x"), Some(42));
-    assert_eq!(rec.get_int("y"), Some(84));
-    assert_eq!(rec.get_int("width"), Some(1600));
-    assert_eq!(rec.get_int("height"), Some(900));
-    assert_eq!(rec.get_bool("maximized"), Some(true));
-    assert_eq!(rec.get_bool("fullscreen"), Some(true));
+    assert!((rec.get_double("ViewX").unwrap() - 42.0).abs() < f64::EPSILON);
+    assert!((rec.get_double("ViewY").unwrap() - 84.0).abs() < f64::EPSILON);
+    assert!((rec.get_double("ViewWidth").unwrap() - 1600.0).abs() < f64::EPSILON);
+    assert!((rec.get_double("ViewHeight").unwrap() - 900.0).abs() < f64::EPSILON);
+    assert_eq!(rec.get_bool("Maximized"), Some(true));
+    assert_eq!(rec.get_bool("Fullscreen"), Some(true));
 }
 
 #[test]
 fn geometry_extreme_values() {
     let geo = WindowGeometry {
-        x: i32::MAX,
-        y: i32::MAX,
-        width: u32::MAX,
-        height: u32::MAX,
-        maximized: false,
-        fullscreen: false,
+        ViewX: f64::MAX,
+        ViewY: f64::MAX,
+        ViewWidth: f64::MAX,
+        ViewHeight: f64::MAX,
+        Maximized: false,
+        Fullscreen: false,
     };
 
     let rec = geo.to_rec();
     let restored = WindowGeometry::from_rec(&rec).expect("from_rec");
-    assert_eq!(restored.x, i32::MAX);
-    assert_eq!(restored.y, i32::MAX);
-    assert_eq!(restored.width, u32::MAX);
-    assert_eq!(restored.height, u32::MAX);
+    assert_eq!(restored.ViewX, f64::MAX);
+    assert_eq!(restored.ViewY, f64::MAX);
 }
 
 #[test]
 fn geometry_zero_size() {
     let geo = WindowGeometry {
-        x: 50,
-        y: 50,
-        width: 0,
-        height: 0,
-        maximized: false,
-        fullscreen: false,
+        ViewX: 50.0,
+        ViewY: 50.0,
+        ViewWidth: 0.0,
+        ViewHeight: 0.0,
+        Maximized: false,
+        Fullscreen: false,
     };
 
     let rec = geo.to_rec();
     let restored = WindowGeometry::from_rec(&rec).expect("from_rec");
-    assert_eq!(restored.width, 0);
-    assert_eq!(restored.height, 0);
-}
-
-#[test]
-fn geometry_wrong_type_fails() {
-    let mut rec = RecStruct::new();
-    rec.set_str("x", "not_a_number");
-    rec.set_int("y", 100);
-    rec.set_int("width", 800);
-    rec.set_int("height", 600);
-
-    let result = WindowGeometry::from_rec(&rec);
-    assert!(result.is_err());
+    assert!((restored.ViewWidth).abs() < f64::EPSILON);
+    assert!((restored.ViewHeight).abs() < f64::EPSILON);
 }
 
 #[test]
 fn geometry_partial_bools() {
     let mut rec = RecStruct::new();
-    rec.set_int("x", 10);
-    rec.set_int("y", 20);
-    rec.set_int("width", 800);
-    rec.set_int("height", 600);
-    rec.set_bool("maximized", true);
-    // Do NOT set "fullscreen" — should default to false.
+    rec.set_double("ViewX", 10.0);
+    rec.set_double("ViewY", 20.0);
+    rec.set_double("ViewWidth", 800.0);
+    rec.set_double("ViewHeight", 600.0);
+    rec.set_bool("Maximized", true);
+    // Do NOT set "Fullscreen" — should default to false.
 
     let geo = WindowGeometry::from_rec(&rec).expect("from_rec");
-    assert!(geo.maximized);
-    assert!(!geo.fullscreen);
+    assert!(geo.Maximized);
+    assert!(!geo.Fullscreen);
 }

@@ -1,31 +1,37 @@
 use std::path::PathBuf;
 
-use crate::emRec::RecStruct;
+use winit::window::WindowId;
+
 use crate::emConfigModel::emConfigModel;
-use crate::emRec::RecError;
+use crate::emEngine::{emEngine, EngineCtx};
+use crate::emRec::{RecError, RecStruct};
 use crate::emRecRecord::Record;
 use crate::emSignal::SignalId;
+use crate::emWindow::WindowFlags;
 
-/// Persisted window geometry.
+/// Persisted window state matching C++ emWindowStateSaver::ModelClass fields.
+///
+/// Uses f64 for coordinates (ViewX/ViewY/ViewWidth/ViewHeight) to match the
+/// C++ emDoubleRec members.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WindowGeometry {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
-    pub maximized: bool,
-    pub fullscreen: bool,
+    pub ViewX: f64,
+    pub ViewY: f64,
+    pub ViewWidth: f64,
+    pub ViewHeight: f64,
+    pub Maximized: bool,
+    pub Fullscreen: bool,
 }
 
 impl Default for WindowGeometry {
     fn default() -> Self {
         Self {
-            x: 100,
-            y: 100,
-            width: 1280,
-            height: 720,
-            maximized: false,
-            fullscreen: false,
+            ViewX: 100.0,
+            ViewY: 100.0,
+            ViewWidth: 1280.0,
+            ViewHeight: 720.0,
+            Maximized: false,
+            Fullscreen: false,
         }
     }
 }
@@ -33,31 +39,31 @@ impl Default for WindowGeometry {
 impl Record for WindowGeometry {
     fn from_rec(rec: &RecStruct) -> Result<Self, RecError> {
         Ok(Self {
-            x: rec
-                .get_int("x")
-                .ok_or_else(|| RecError::MissingField("x".into()))?,
-            y: rec
-                .get_int("y")
-                .ok_or_else(|| RecError::MissingField("y".into()))?,
-            width: rec
-                .get_int("width")
-                .ok_or_else(|| RecError::MissingField("width".into()))? as u32,
-            height: rec
-                .get_int("height")
-                .ok_or_else(|| RecError::MissingField("height".into()))? as u32,
-            maximized: rec.get_bool("maximized").unwrap_or(false),
-            fullscreen: rec.get_bool("fullscreen").unwrap_or(false),
+            ViewX: rec
+                .get_double("ViewX")
+                .ok_or_else(|| RecError::MissingField("ViewX".into()))?,
+            ViewY: rec
+                .get_double("ViewY")
+                .ok_or_else(|| RecError::MissingField("ViewY".into()))?,
+            ViewWidth: rec
+                .get_double("ViewWidth")
+                .ok_or_else(|| RecError::MissingField("ViewWidth".into()))?,
+            ViewHeight: rec
+                .get_double("ViewHeight")
+                .ok_or_else(|| RecError::MissingField("ViewHeight".into()))?,
+            Maximized: rec.get_bool("Maximized").unwrap_or(false),
+            Fullscreen: rec.get_bool("Fullscreen").unwrap_or(false),
         })
     }
 
     fn to_rec(&self) -> RecStruct {
         let mut s = RecStruct::new();
-        s.set_int("x", self.x);
-        s.set_int("y", self.y);
-        s.set_int("width", self.width as i32);
-        s.set_int("height", self.height as i32);
-        s.set_bool("maximized", self.maximized);
-        s.set_bool("fullscreen", self.fullscreen);
+        s.set_double("ViewX", self.ViewX);
+        s.set_double("ViewY", self.ViewY);
+        s.set_double("ViewWidth", self.ViewWidth);
+        s.set_double("ViewHeight", self.ViewHeight);
+        s.set_bool("Maximized", self.Maximized);
+        s.set_bool("Fullscreen", self.Fullscreen);
         s
     }
 
@@ -70,107 +76,203 @@ impl Record for WindowGeometry {
     }
 }
 
-/// Saves and restores window geometry via a emConfigModel.
+/// Saves and restores window geometry via an emConfigModel.
+///
+/// Port of C++ emWindowStateSaver (emWindowStateSaver.h/cpp). An engine
+/// that listens to window flags, geometry, and focus signals. When the
+/// window is focused and state changes, it saves geometry to an emRec
+/// config file. On construction it restores saved geometry.
 pub struct emWindowStateSaver {
     model: emConfigModel<WindowGeometry>,
+    window_id: WindowId,
+    flags_signal: SignalId,
+    focus_signal: SignalId,
+    geometry_signal: SignalId,
+    AllowRestoreFullscreen: bool,
     /// Cached normal-mode geometry, preserved when maximized/fullscreen.
     /// Matches C++ OwnNormalX/Y/W/H.
-    normal_x: i32,
-    normal_y: i32,
-    normal_w: u32,
-    normal_h: u32,
+    OwnNormalX: f64,
+    OwnNormalY: f64,
+    OwnNormalW: f64,
+    OwnNormalH: f64,
 }
 
 impl emWindowStateSaver {
-    pub fn new(path: PathBuf, signal_id: SignalId) -> Self {
-        let defaults = WindowGeometry::default();
-        Self {
-            normal_x: defaults.x,
-            normal_y: defaults.y,
-            normal_w: defaults.width,
-            normal_h: defaults.height,
-            model: emConfigModel::new(defaults, path, signal_id),
-        }
-    }
-
-    /// Save the current window position/size.
+    /// Create a new window state saver.
     ///
-    /// When maximized or fullscreen, the last normal-mode geometry is
-    /// preserved (matching C++ emWindowStateSaver::Save behavior).
-    pub fn Save(&mut self, window: &super::emWindow::ZuiWindow) {
-        use crate::emWindow::WindowFlags;
+    /// Port of C++ emWindowStateSaver constructor. Loads or creates the
+    /// config file at `file_path`, then restores geometry to the window.
+    ///
+    /// Arguments:
+    /// - `window_id`: The window whose state is saved/restored.
+    /// - `file_path`: Path to the emRec config file.
+    /// - `flags_signal`: Window's flags signal (GetWindowFlagsSignal).
+    /// - `focus_signal`: Window's focus signal (GetFocusSignal).
+    /// - `geometry_signal`: Window's geometry signal (GetGeometrySignal).
+    /// - `allow_restore_fullscreen`: Whether to restore fullscreen mode.
+    /// - `change_signal`: Signal ID for the config model's change tracking.
+    pub fn new(
+        window_id: WindowId,
+        file_path: PathBuf,
+        flags_signal: SignalId,
+        focus_signal: SignalId,
+        geometry_signal: SignalId,
+        allow_restore_fullscreen: bool,
+        change_signal: SignalId,
+    ) -> Self {
+        let defaults = WindowGeometry::default();
+        let mut model = emConfigModel::new(defaults, file_path, change_signal)
+            .with_format_name("emWindowState");
 
-        let pos = window.winit_window.outer_position().unwrap_or_default();
-        let size = window.winit_window.inner_size();
-        let maximized = window.flags.contains(WindowFlags::MAXIMIZED);
-        let fullscreen = window.flags.contains(WindowFlags::FULLSCREEN);
-
-        // Only update normal geometry when NOT maximized/fullscreen.
-        if !maximized && !fullscreen {
-            self.normal_x = pos.x;
-            self.normal_y = pos.y;
-            self.normal_w = size.width;
-            self.normal_h = size.height;
+        // Load or install config (C++ PostConstruct + LoadOrInstall).
+        if let Err(e) = model.TryLoadOrInstall() {
+            log::warn!("emWindowStateSaver: failed to load config: {e}");
         }
 
-        self.model.Set(WindowGeometry {
-            x: self.normal_x,
-            y: self.normal_y,
-            width: self.normal_w,
-            height: self.normal_h,
-            maximized,
-            fullscreen,
-        });
-    }
-
-    /// Get the stored geometry for restoring.
-    pub fn Restore(&self) -> &WindowGeometry {
-        self.model.GetRec()
-    }
-
-    pub fn Cycle(&mut self, window: &super::emWindow::ZuiWindow, focused: bool) {
-        use crate::emWindow::WindowFlags;
-
-        let pos = window.winit_window.outer_position().unwrap_or_default();
-        let size = window.winit_window.inner_size();
-        let maximized = window.flags.contains(WindowFlags::MAXIMIZED);
-        let fullscreen = window.flags.contains(WindowFlags::FULLSCREEN);
-
-        let current = WindowGeometry {
-            x: if !maximized && !fullscreen {
-                pos.x
-            } else {
-                self.normal_x
-            },
-            y: if !maximized && !fullscreen {
-                pos.y
-            } else {
-                self.normal_y
-            },
-            width: if !maximized && !fullscreen {
-                size.width
-            } else {
-                self.normal_w
-            },
-            height: if !maximized && !fullscreen {
-                size.height
-            } else {
-                self.normal_h
-            },
-            maximized,
-            fullscreen,
-        };
-
-        if focused && current != *self.model.GetRec() {
-            self.Save(window);
+        let rec = model.GetRec();
+        Self {
+            OwnNormalX: rec.ViewX,
+            OwnNormalY: rec.ViewY,
+            OwnNormalW: rec.ViewWidth,
+            OwnNormalH: rec.ViewHeight,
+            model,
+            window_id,
+            flags_signal,
+            focus_signal,
+            geometry_signal,
+            AllowRestoreFullscreen: allow_restore_fullscreen,
         }
     }
 
+    /// Restore saved geometry to the window.
+    ///
+    /// Port of C++ emWindowStateSaver::Restore. Validates saved geometry
+    /// against monitor bounds, then applies position, size, and window flags.
+    pub fn Restore(&self, window: &mut crate::emWindow::ZuiWindow, screen: &crate::emScreen::emScreen) {
+        let rec = self.model.GetRec();
+
+        let x = rec.ViewX;
+        let y = rec.ViewY;
+        let mut w = rec.ViewWidth;
+        let mut h = rec.ViewHeight;
+        let maximized = rec.Maximized;
+        let fullscreen = self.AllowRestoreFullscreen && rec.Fullscreen;
+
+        let size_valid = w >= 32.0 && h >= 32.0;
+        let mut pos_valid = false;
+
+        if size_valid {
+            // Determine monitor for maximized/fullscreen placement.
+            let monitor = if maximized || fullscreen {
+                screen
+                    .GetMonitorIndexOfRect(x as i32, y as i32, w as u32, h as u32)
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let (mx, my, mw, mh) = screen.GetMonitorRect(monitor);
+            let (bl, bt, br, bb) = window.GetBorderSizes();
+            let bl = bl as f64;
+            let bt = bt as f64;
+            let br = br as f64;
+            let bb = bb as f64;
+
+            if w > mw - bl - br {
+                w = mw - bl - br;
+            }
+            if h > mh - bt - bb {
+                h = mh - bt - bb;
+            }
+
+            if w >= 32.0 && h >= 32.0 {
+                // Check that at least 95% of the window is visible on the monitor.
+                let cw = (x + w).min(mx + mw) - x.max(mx);
+                let ch = (y + h).min(my + mh) - y.max(my);
+                let area = cw.max(0.0) * ch.max(0.0);
+                pos_valid = area >= w * h * 0.95;
+            }
+        }
+
+        // Apply position for maximized/fullscreen (C++ emWindowStateSaver.cpp:135).
+        if pos_valid && (maximized || fullscreen) {
+            window.SetViewPos(x, y);
+        }
+
+        // Apply size if valid.
+        if size_valid && w >= 32.0 && h >= 32.0 {
+            window.SetViewSize(w, h);
+        }
+
+        // Apply window flags.
+        let mut flags = window.flags;
+        if maximized {
+            flags |= WindowFlags::MAXIMIZED;
+        } else {
+            flags -= WindowFlags::MAXIMIZED;
+        }
+        if fullscreen {
+            flags |= WindowFlags::FULLSCREEN;
+        } else {
+            flags -= WindowFlags::FULLSCREEN;
+        }
+        window.SetWindowFlags(flags);
+    }
+
+    /// Get the stored geometry record.
     pub fn model(&self) -> &emConfigModel<WindowGeometry> {
         &self.model
     }
 }
 
+/// Port of C++ emWindowStateSaver::Cycle.
+///
+/// Wakes on flags, geometry, or focus signals. If the window is focused,
+/// saves current geometry.
+impl emEngine for emWindowStateSaver {
+    fn Cycle(&mut self, ctx: &mut EngineCtx<'_>) -> bool {
+        let signaled = ctx.IsSignaled(self.flags_signal)
+            || ctx.IsSignaled(self.focus_signal)
+            || ctx.IsSignaled(self.geometry_signal);
+
+        if signaled {
+            if let Some(window) = ctx.windows.get(&self.window_id) {
+                if window.view().IsFocused() {
+                    // Need mutable self for Save, but we only need an immutable
+                    // window reference. Clone the relevant data to avoid borrow conflict.
+                    let flags = window.flags;
+                    let pos = window.winit_window.outer_position().unwrap_or_default();
+                    let size = window.winit_window.inner_size();
+
+                    if !flags.contains(WindowFlags::MAXIMIZED)
+                        && !flags.contains(WindowFlags::FULLSCREEN)
+                    {
+                        self.OwnNormalX = pos.x as f64;
+                        self.OwnNormalY = pos.y as f64;
+                        self.OwnNormalW = size.width as f64;
+                        self.OwnNormalH = size.height as f64;
+                    }
+
+                    let geo = WindowGeometry {
+                        ViewX: self.OwnNormalX,
+                        ViewY: self.OwnNormalY,
+                        ViewWidth: self.OwnNormalW,
+                        ViewHeight: self.OwnNormalH,
+                        Maximized: flags.contains(WindowFlags::MAXIMIZED),
+                        Fullscreen: flags.contains(WindowFlags::FULLSCREEN),
+                    };
+                    self.model.Set(geo);
+
+                    if let Err(e) = self.model.Save() {
+                        log::warn!("emWindowStateSaver: failed to save config: {e}");
+                    }
+                }
+            }
+        }
+
+        false
+    }
+}
 
 #[cfg(kani)]
 mod kani_private_proofs {
@@ -178,13 +280,27 @@ mod kani_private_proofs {
 
     #[kani::proof]
     fn kani_private_WindowGeometry_IsSetToDefault() {
-        let mut self_val = WindowGeometry { x: kani::any::<i32>(), y: kani::any::<i32>(), width: kani::any::<u32>(), height: kani::any::<u32>(), maximized: kani::any::<bool>(), fullscreen: kani::any::<bool>() };
+        let mut self_val = WindowGeometry {
+            ViewX: kani::any::<f64>(),
+            ViewY: kani::any::<f64>(),
+            ViewWidth: kani::any::<f64>(),
+            ViewHeight: kani::any::<f64>(),
+            Maximized: kani::any::<bool>(),
+            Fullscreen: kani::any::<bool>(),
+        };
         let _r = self_val.IsSetToDefault();
     }
 
     #[kani::proof]
     fn kani_private_WindowGeometry_SetToDefault() {
-        let mut self_val = WindowGeometry { x: kani::any::<i32>(), y: kani::any::<i32>(), width: kani::any::<u32>(), height: kani::any::<u32>(), maximized: kani::any::<bool>(), fullscreen: kani::any::<bool>() };
+        let mut self_val = WindowGeometry {
+            ViewX: kani::any::<f64>(),
+            ViewY: kani::any::<f64>(),
+            ViewWidth: kani::any::<f64>(),
+            ViewHeight: kani::any::<f64>(),
+            Maximized: kani::any::<bool>(),
+            Fullscreen: kani::any::<bool>(),
+        };
         let _r = self_val.SetToDefault();
     }
 }

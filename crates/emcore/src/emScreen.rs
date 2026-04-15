@@ -133,6 +133,28 @@ impl emScreen {
         super::emWindowPlatform::system_beep();
     }
 
+    /// Return the bounding rect (x, y, w, h) of monitor `index`.
+    ///
+    /// Matches C++ emScreen::GetMonitorRect. Falls back to primary monitor
+    /// bounds (or virtual_bounds) if the index is out of range.
+    pub fn GetMonitorRect(&self, index: usize) -> (f64, f64, f64, f64) {
+        let m = self.monitors.get(index).or_else(|| self.primary());
+        match m {
+            Some(info) => (
+                info.position.0 as f64,
+                info.position.1 as f64,
+                info.size.0 as f64,
+                info.size.1 as f64,
+            ),
+            None => (
+                self.virtual_bounds.0 as f64,
+                self.virtual_bounds.1 as f64,
+                self.virtual_bounds.2 as f64,
+                self.virtual_bounds.3 as f64,
+            ),
+        }
+    }
+
     /// Find the monitor with maximum overlap area with the given rect.
     pub fn GetMonitorIndexOfRect(&self, x: i32, y: i32, w: u32, h: u32) -> Option<usize> {
         let rx1 = x as i64;

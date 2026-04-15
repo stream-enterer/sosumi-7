@@ -204,6 +204,8 @@ fn main() {
 
         let close_sig = app.scheduler.borrow_mut().create_signal();
         let flags_sig = app.scheduler.borrow_mut().create_signal();
+        let focus_sig = app.scheduler.borrow_mut().create_signal();
+        let geometry_sig = app.scheduler.borrow_mut().create_signal();
         let win = eaglemode_rs::emCore::emWindow::ZuiWindow::create(
             event_loop,
             app.gpu(),
@@ -211,6 +213,8 @@ fn main() {
             WindowFlags::AUTO_DELETE,
             close_sig,
             flags_sig,
+            focus_sig,
+            geometry_sig,
         );
         let wid = win.winit_window.id();
         app.windows.insert(wid, win);
