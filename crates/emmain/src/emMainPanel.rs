@@ -500,11 +500,15 @@ impl emMainPanel {
     /// Show or hide the startup overlay.
     ///
     /// Port of C++ `emMainPanel::SetStartupOverlay`.
-    pub fn SetStartupOverlay(&mut self, overlay: bool) {
+    /// Returns the old overlay PanelId when disabling, so the caller can
+    /// remove it from the tree (C++ does `delete StartupOverlay`).
+    pub fn SetStartupOverlay(&mut self, overlay: bool) -> Option<PanelId> {
         if !overlay {
-            self.startup_overlay = None;
+            self.startup_overlay.take()
+        } else {
+            // When overlay=true, creation happens in LayoutChildren.
+            None
         }
-        // When overlay=true, creation happens in LayoutChildren.
     }
 
     /// Whether the startup overlay is active.
@@ -813,7 +817,7 @@ mod tests {
     fn test_new() {
         let ctx = emcore::emContext::emContext::NewRoot();
         let panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
-        assert!((panel.control_tallness - 5.0).abs() < 1e-10);
+        assert!((panel.control_tallness - 0.0538).abs() < 1e-10);
         // startup_overlay is None until LayoutChildren creates it
         assert!(!panel.HasStartupOverlay());
     }

@@ -51,7 +51,7 @@ impl Default for emMainWindowConfig {
             visit_rel_y: 0.0,
             visit_rel_a: 0.0,
             visit_adherent: false,
-            control_tallness: 5.0,
+            control_tallness: 0.0538,
         }
     }
 }
@@ -415,7 +415,7 @@ pub(crate) struct StartupEngine {
     state: u8,
     context: Rc<emContext>,
     main_panel_id: PanelId,
-    window_id: winit::window::WindowId,
+    _window_id: winit::window::WindowId,
     visit_valid: bool,
     visit_identity: String,
     visit_rel_x: f64,
@@ -424,6 +424,8 @@ pub(crate) struct StartupEngine {
     visit_adherent: bool,
     visit_subject: String,
     clock: std::time::Instant,
+    /// Cached content sub-view panel ID (set in state 6).
+    content_svp_id: Option<PanelId>,
 }
 
 impl StartupEngine {
@@ -444,7 +446,7 @@ impl StartupEngine {
             state: 0,
             context,
             main_panel_id,
-            window_id,
+            _window_id: window_id,
             visit_valid,
             visit_identity,
             visit_rel_x: config.visit_rel_x,
@@ -453,6 +455,7 @@ impl StartupEngine {
             visit_adherent: config.visit_adherent,
             visit_subject: String::new(),
             clock: std::time::Instant::now(),
+            content_svp_id: None,
         }
     }
 }
@@ -506,7 +509,6 @@ impl emEngine for StartupEngine {
                         mp.GetContentViewPanelId()
                     })
                     .flatten();
-
                 if let Some(ctrl_id) = ctrl_view_id {
                     let ctrl_ctx = Rc::clone(&self.context);
                     ctx.tree.with_behavior_as::<emSubViewPanel, _>(ctrl_id, |svp| {
@@ -518,7 +520,9 @@ impl emEngine for StartupEngine {
                             Box::new(emMainControlPanel::new(ctrl_ctx, content_view_id)),
                         );
                         // C++ control tallness matches the parent's control_tallness
-                        sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 5.0);
+                        // C++ control panel fills the control view; tallness matches
+                        // ControlTallness (0.0538) set on emMainPanel.
+                        sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 0.0538);
                     });
                 }
 
@@ -535,6 +539,7 @@ impl emEngine for StartupEngine {
                     .flatten();
 
                 if let Some(content_id) = content_view_id {
+                    self.content_svp_id = Some(content_id);
                     let content_ctx = Rc::clone(&self.context);
                     ctx.tree.with_behavior_as::<emSubViewPanel, _>(content_id, |svp| {
                         let sub_tree = svp.sub_tree_mut();
@@ -552,16 +557,19 @@ impl emEngine for StartupEngine {
                 self.state += 1;
                 !ctx.IsTimeSliceAtEnd()
             }
-            // State 7: Create visiting animator, zoom to ":" fullsized
+            // State 7: Create visiting animator on content sub-view, zoom to ":"
             // (C++ emMainWindow.cpp:423-432).
+            // C++: VisitingVA=new emVisitingViewAnimator(ContentView)
             7 => {
-                if let Some(win) = ctx.windows.get_mut(&self.window_id) {
+                if let Some(svp_id) = self.content_svp_id {
                     use emcore::emViewAnimator::emVisitingViewAnimator;
                     let mut animator =
                         emVisitingViewAnimator::new(0.0, 0.0, 0.0, 1.0);
                     animator.SetAnimated(false);
                     animator.SetGoalFullsized(":", false, false, "");
-                    win.active_animator = Some(Box::new(animator));
+                    ctx.tree.with_behavior_as::<emSubViewPanel, _>(svp_id, |svp| {
+                        svp.active_animator = Some(Box::new(animator));
+                    });
                 }
                 self.clock = std::time::Instant::now();
                 self.state += 1;
@@ -570,11 +578,10 @@ impl emEngine for StartupEngine {
             // State 8: Wait up to 2s or until animator inactive
             // (C++ emMainWindow.cpp:433-438).
             8 => {
-                let still_active = ctx
-                    .windows
-                    .get(&self.window_id)
-                    .and_then(|w| w.active_animator.as_ref())
-                    .map(|a| a.is_active())
+                let still_active = self.content_svp_id
+                    .and_then(|id| ctx.tree.with_behavior_as::<emSubViewPanel, _>(id, |svp| {
+                        svp.active_animator.as_ref().map(|a| a.is_active()).unwrap_or(false)
+                    }))
                     .unwrap_or(false);
                 if self.clock.elapsed().as_millis() < 2000 && still_active {
                     return true;
@@ -582,27 +589,29 @@ impl emEngine for StartupEngine {
                 self.state += 1;
                 true
             }
-            // State 9: Stop current animator; set visit goal if valid
+            // State 9: Deactivate animator; set visit goal if valid
             // (C++ emMainWindow.cpp:439-454).
             9 => {
-                if let Some(win) = ctx.windows.get_mut(&self.window_id) {
-                    if let Some(ref mut anim) = win.active_animator {
-                        anim.stop();
-                    }
-                    if self.visit_valid {
-                        use emcore::emViewAnimator::emVisitingViewAnimator;
-                        let mut animator =
-                            emVisitingViewAnimator::new(0.0, 0.0, 0.0, 1.0);
-                        animator.set_goal_rel(
-                            &self.visit_identity,
-                            self.visit_rel_x,
-                            self.visit_rel_y,
-                            self.visit_rel_a,
-                            self.visit_adherent,
-                            &self.visit_subject,
-                        );
-                        win.active_animator = Some(Box::new(animator));
-                    }
+                if let Some(svp_id) = self.content_svp_id {
+                    ctx.tree.with_behavior_as::<emSubViewPanel, _>(svp_id, |svp| {
+                        if let Some(ref mut anim) = svp.active_animator {
+                            anim.stop();
+                        }
+                        if self.visit_valid {
+                            use emcore::emViewAnimator::emVisitingViewAnimator;
+                            let mut animator =
+                                emVisitingViewAnimator::new(0.0, 0.0, 0.0, 1.0);
+                            animator.set_goal_rel(
+                                &self.visit_identity,
+                                self.visit_rel_x,
+                                self.visit_rel_y,
+                                self.visit_rel_a,
+                                self.visit_adherent,
+                                &self.visit_subject,
+                            );
+                            svp.active_animator = Some(Box::new(animator));
+                        }
+                    });
                 }
                 self.clock = std::time::Instant::now();
                 self.state += 1;
@@ -611,24 +620,32 @@ impl emEngine for StartupEngine {
             // State 10: Wait up to 2s, then clean up overlay and animator
             // (C++ emMainWindow.cpp:455-465).
             10 => {
-                let still_active = ctx
-                    .windows
-                    .get(&self.window_id)
-                    .and_then(|w| w.active_animator.as_ref())
-                    .map(|a| a.is_active())
+                let still_active = self.content_svp_id
+                    .and_then(|id| ctx.tree.with_behavior_as::<emSubViewPanel, _>(id, |svp| {
+                        svp.active_animator.as_ref().map(|a| a.is_active()).unwrap_or(false)
+                    }))
                     .unwrap_or(false);
                 if self.clock.elapsed().as_millis() < 2000 && still_active {
                     return true;
                 }
-                // Clean up animator and zoom out.
-                if let Some(win) = ctx.windows.get_mut(&self.window_id) {
-                    win.active_animator = None;
-                    win.view_mut().RawZoomOut(ctx.tree);
-                }
-                ctx.tree
-                    .with_behavior_as::<emMainPanel, _>(self.main_panel_id, |mp| {
-                        mp.SetStartupOverlay(false);
+                // Clean up animator and zoom out on content sub-view.
+                // C++: VisitingVA.Reset(); ContentView.RawZoomOut();
+                if let Some(svp_id) = self.content_svp_id {
+                    ctx.tree.with_behavior_as::<emSubViewPanel, _>(svp_id, |svp| {
+                        svp.active_animator = None;
+                        let (view, tree) = svp.view_and_tree_mut();
+                        view.RawZoomOut(tree);
                     });
+                }
+                let overlay_id = ctx.tree
+                    .with_behavior_as::<emMainPanel, _>(self.main_panel_id, |mp| {
+                        mp.SetStartupOverlay(false)
+                    })
+                    .flatten();
+                // C++ does `delete StartupOverlay` — remove from tree.
+                if let Some(id) = overlay_id {
+                    ctx.tree.remove(id);
+                }
                 self.clock = std::time::Instant::now();
                 self.state += 1;
                 true
@@ -639,17 +656,18 @@ impl emEngine for StartupEngine {
                 if self.clock.elapsed().as_millis() < 100 {
                     return true;
                 }
-                // Final visit using VisitByIdentity (C++ ContentView.Visit()).
+                // Final visit on content sub-view (C++ ContentView.Visit()).
                 if self.visit_valid
-                    && let Some(win) = ctx.windows.get_mut(&self.window_id)
+                    && let Some(svp_id) = self.content_svp_id
                 {
-                    win.view_mut().VisitByIdentity(
-                        ctx.tree,
-                        &self.visit_identity,
-                        self.visit_rel_x,
-                        self.visit_rel_y,
-                        self.visit_rel_a,
-                    );
+                    ctx.tree.with_behavior_as::<emSubViewPanel, _>(svp_id, |svp| {
+                        svp.visit_by_identity(
+                            &self.visit_identity,
+                            self.visit_rel_x,
+                            self.visit_rel_y,
+                            self.visit_rel_a,
+                        );
+                    });
                 }
                 // Store startup_engine_id = None in main window to indicate startup is done.
                 with_main_window(|mw| {
@@ -980,7 +998,7 @@ mod tests {
         assert!(!config.fullscreen);
         assert!(config.visit.is_none());
         assert!(config.geometry.is_none());
-        assert!((config.control_tallness - 5.0).abs() < 1e-10);
+        assert!((config.control_tallness - 0.0538).abs() < 1e-10);
     }
 
     #[test]

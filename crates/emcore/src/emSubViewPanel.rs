@@ -2,6 +2,7 @@ use crate::emCursor::emCursor;
 use crate::emInput::emInputEvent;
 use crate::emInputState::emInputState;
 use crate::emPainter::emPainter;
+use crate::emViewAnimator::emViewAnimator;
 
 use super::emPanel::{NoticeFlags, PanelBehavior, PanelState, ParentInvalidation};
 use super::emPanelTree::{PanelId, PanelTree};
@@ -23,6 +24,9 @@ pub struct emSubViewPanel {
     viewed_y: f64,
     viewed_width: f64,
     viewed_height: f64,
+    /// C++ emView has ActiveAnimator — an animator that drives zoom/scroll
+    /// within this sub-view. Ticked during Paint alongside sub-tree lifecycle.
+    pub active_animator: Option<Box<dyn emViewAnimator>>,
 }
 
 impl Default for emSubViewPanel {
@@ -38,7 +42,8 @@ impl emSubViewPanel {
     /// [`sub_tree_mut`], and [`sub_view_mut`] to populate the sub-view.
     pub fn new() -> Self {
         let mut sub_tree = PanelTree::new();
-        let root = sub_tree.create_root("sub_root");
+        // C++ view root has an empty name; identity ":" decodes to [""].
+        let root = sub_tree.create_root("");
         sub_tree.Layout(root, 0.0, 0.0, 1.0, 1.0);
 
         let sub_view = emView::new(root, 1.0, 1.0);
@@ -50,6 +55,7 @@ impl emSubViewPanel {
             viewed_y: 0.0,
             viewed_width: 1.0,
             viewed_height: 1.0,
+            active_animator: None,
         }
     }
 
@@ -78,6 +84,12 @@ impl emSubViewPanel {
     /// Get a mutable reference to the sub-view.
     pub fn sub_view_mut(&mut self) -> &mut emView {
         &mut self.sub_view
+    }
+
+    /// Borrow sub_view and sub_tree mutably at the same time.
+    /// Needed when a method on the view requires a mutable tree reference.
+    pub fn view_and_tree_mut(&mut self) -> (&mut emView, &mut PanelTree) {
+        (&mut self.sub_view, &mut self.sub_tree)
     }
 
     /// Visit a panel in the sub-view by identity string.
@@ -223,13 +235,35 @@ impl PanelBehavior for emSubViewPanel {
             return;
         }
 
-        // Drive sub-tree lifecycle (C++ does this via emViewPort::RequestUpdate).
-        // run_panel_cycles executes Cycle() for panels in the sub-tree's cycle_list
-        // (e.g. emMainControlPanel button handling).
+        // Drive sub-tree lifecycle. C++ panels participate in a global
+        // scheduler that calls HandleNotice continuously. Rust sub-trees are
+        // driven here. We interleave animator ticks, view updates, and notice
+        // delivery to allow the seek mechanism to expand panels layer by layer
+        // within a single frame (C++ does this across scheduler cycles).
         self.sub_tree.run_panel_cycles();
-        // HandleNotice delivers LAYOUT_CHANGED etc. so LayoutChildren runs and
-        // children (eagle, cosmos, buttons) are actually created.
         self.sub_tree.HandleNotice(state.is_focused(), state.pixel_tallness);
+        self.sub_view.Update(&mut self.sub_tree);
+
+        // Run animator + expand loop: animator seeks deeper, view updates
+        // reveal new panels, HandleNotice triggers their LayoutChildren.
+        for _ in 0..50 {
+            let anim_active = if let Some(mut anim) = self.active_animator.take() {
+                let cont = anim.animate(&mut self.sub_view, &mut self.sub_tree, 0.016);
+                if cont {
+                    self.active_animator = Some(anim);
+                }
+                cont
+            } else {
+                false
+            };
+
+            self.sub_view.Update(&mut self.sub_tree);
+            let had_notices = self.sub_tree.HandleNotice(state.is_focused(), state.pixel_tallness);
+
+            if !anim_active && !had_notices {
+                break;
+            }
+        }
 
         // Update the sub-view's viewing state so panel coordinates are current.
         self.sub_view.Update(&mut self.sub_tree);
