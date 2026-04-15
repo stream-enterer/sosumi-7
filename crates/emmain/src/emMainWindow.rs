@@ -33,6 +33,10 @@ pub struct emMainWindowConfig {
     pub geometry: Option<String>, // "WxH+X+Y"
     pub fullscreen: bool,
     pub visit: Option<String>,
+    pub visit_rel_x: f64,
+    pub visit_rel_y: f64,
+    pub visit_rel_a: f64,
+    pub visit_adherent: bool,
     pub control_tallness: f64,
 }
 
@@ -42,6 +46,10 @@ impl Default for emMainWindowConfig {
             geometry: None,
             fullscreen: false,
             visit: None,
+            visit_rel_x: 0.0,
+            visit_rel_y: 0.0,
+            visit_rel_a: 0.0,
+            visit_adherent: false,
             control_tallness: 5.0,
         }
     }
@@ -57,6 +65,8 @@ pub struct emMainWindow {
     pub(crate) main_panel_id: Option<PanelId>,
     pub(crate) _control_panel_id: Option<PanelId>,
     pub(crate) _content_panel_id: Option<PanelId>,
+    /// Window ID of the detached control window created by `CreateControlWindow`.
+    pub(crate) control_window_id: Option<winit::window::WindowId>,
     pub(crate) startup_engine_id: Option<EngineId>,
     pub to_close: bool,
     pub(crate) _close_signal: Option<SignalId>,
@@ -80,6 +90,7 @@ impl emMainWindow {
             main_panel_id: None,
             _control_panel_id: None,
             _content_panel_id: None,
+            control_window_id: None,
             startup_engine_id: None,
             to_close: false,
             _close_signal: None,
@@ -154,11 +165,46 @@ impl emMainWindow {
 
     /// Port of C++ `emMainWindow::Duplicate` (emMainWindow.cpp:98-129).
     ///
-    /// DIVERGED: Duplicate — C++ creates a new OS window visiting the same
-    /// content panel location.  Rust uses a single ZuiWindow architecture and
-    /// does not support multi-window.  This is a no-op with a log message.
-    pub fn Duplicate(&self) {
-        log::info!("emMainWindow::Duplicate — multi-window not supported in Rust port");
+    /// Extracts the current visited panel identity, relative position, and
+    /// adherence from the content view, then queues a deferred action to
+    /// create a new window visiting the same location.
+    pub fn Duplicate(&self, app: &mut App) {
+        // Extract visit info from the current window's view (C++ emMainWindow.cpp:112-117).
+        let (visit_identity, rel_x, rel_y, rel_a, adherent) =
+            if let Some(win) = self.window_id.and_then(|id| app.windows.get(&id)) {
+                let view = win.view();
+                let visit = view.current_visit();
+                let identity = app.tree.GetIdentity(visit.panel);
+                let adherent = view.IsActivationAdherent();
+                (Some(identity), visit.rel_x, visit.rel_y, visit.rel_a, adherent)
+            } else {
+                (None, 0.0, 0.0, 0.0, false)
+            };
+
+        let config = emMainWindowConfig {
+            visit: visit_identity,
+            fullscreen: false,
+            ..Default::default()
+        };
+
+        // Store visit params for the StartupEngine to use.
+        let dup_rel_x = rel_x;
+        let dup_rel_y = rel_y;
+        let dup_rel_a = rel_a;
+        let dup_adherent = adherent;
+
+        // Queue deferred window creation (needs &ActiveEventLoop).
+        app.pending_actions.push(Box::new(move |app, event_loop| {
+            let mut dup_config = config;
+            // Encode full visit params into the config's visit_rel fields.
+            dup_config.visit_rel_x = dup_rel_x;
+            dup_config.visit_rel_y = dup_rel_y;
+            dup_config.visit_rel_a = dup_rel_a;
+            dup_config.visit_adherent = dup_adherent;
+            let mw = create_main_window(app, event_loop, dup_config);
+            set_main_window(mw);
+            log::info!("emMainWindow::Duplicate — created new window");
+        }));
     }
 
     /// Port of C++ `emMainWindow::Input` (emMainWindow.cpp:193-263).
@@ -184,7 +230,7 @@ impl emMainWindow {
                     && !input_state.GetCtrl()
                     && !input_state.GetAlt() =>
             {
-                self.Duplicate();
+                self.Duplicate(app);
                 true
             }
             // Alt+F4: Close (C++ emMainWindow.cpp:209-212)
@@ -368,13 +414,13 @@ impl StartupEngine {
         context: Rc<emContext>,
         main_panel_id: PanelId,
         window_id: winit::window::WindowId,
-        visit: Option<String>,
+        config: &emMainWindowConfig,
     ) -> Self {
         // DIVERGED: C++ parses visit string into identity/relX/relY/relA fields
         // at construction time (emMainWindow.cpp:338-361).  Rust stores the raw
         // visit string as identity; bookmark-based visit is filled in at state 4.
-        let (visit_valid, visit_identity) = match visit {
-            Some(v) if !v.is_empty() => (true, v),
+        let (visit_valid, visit_identity) = match config.visit {
+            Some(ref v) if !v.is_empty() => (true, v.clone()),
             _ => (false, String::new()),
         };
         Self {
@@ -384,10 +430,10 @@ impl StartupEngine {
             window_id,
             visit_valid,
             visit_identity,
-            visit_rel_x: 0.0,
-            visit_rel_y: 0.0,
-            visit_rel_a: 0.0,
-            visit_adherent: false,
+            visit_rel_x: config.visit_rel_x,
+            visit_rel_y: config.visit_rel_y,
+            visit_rel_a: config.visit_rel_a,
+            visit_adherent: config.visit_adherent,
             visit_subject: String::new(),
             clock: std::time::Instant::now(),
         }
@@ -663,7 +709,7 @@ pub fn create_main_window(
 
     // Register StartupEngine with the scheduler.
     let startup_engine =
-        StartupEngine::new(Rc::clone(&app.context), root_id, window_id, mw.config.visit.clone());
+        StartupEngine::new(Rc::clone(&app.context), root_id, window_id, &mw.config);
     let engine_id = app
         .scheduler
         .borrow_mut()
@@ -719,18 +765,38 @@ pub fn create_main_window(
 /// Create a detached control window.
 ///
 /// Port of C++ `emMainWindow::CreateControlWindow` (emMainWindow.cpp:309-327).
-/// Creates a second OS window with `WF_AUTO_DELETE`, hosting an
-/// `emMainControlPanel`.
+/// If a control window already exists and is still alive, raises it.
+/// Otherwise creates a new OS window with `WF_AUTO_DELETE`, hosting an
+/// `emMainControlPanel` linked to the content sub-view.
 ///
 /// Triggered by the `"ccw"` cheat code in `DoCustomCheat`.
-///
-/// Note: Full wiring (raise existing window, link to content view) requires
-/// Phase 3's startup engine integration. This establishes the API shape.
 pub fn create_control_window(
     app: &mut App,
     event_loop: &ActiveEventLoop,
 ) -> Option<winit::window::WindowId> {
-    let ctrl_panel = emMainControlPanel::new(Rc::clone(&app.context), None);
+    // C++ emMainWindow.cpp:311-313: If ControlWindow exists, raise it.
+    let existing_id = with_main_window(|mw| mw.control_window_id).flatten();
+    if let Some(cw_id) = existing_id {
+        if let Some(win) = app.windows.get(&cw_id) {
+            win.winit_window.focus_window();
+            return Some(cw_id);
+        }
+        // Window was closed/removed — clear stale ID.
+        with_main_window(|mw| {
+            mw.control_window_id = None;
+        });
+    }
+
+    // C++ emMainWindow.cpp:315-326: Create new control window if MainPanel exists.
+    let main_panel_id = with_main_window(|mw| mw.main_panel_id).flatten()?;
+
+    // Get the content sub-view panel ID from emMainPanel.
+    let content_view_id = app
+        .tree
+        .with_behavior_as::<emMainPanel, _>(main_panel_id, |mp| mp.GetContentViewPanelId())
+        .flatten();
+
+    let ctrl_panel = emMainControlPanel::new(Rc::clone(&app.context), content_view_id);
     let root_id = app.tree.create_root("ctrl_window_root");
     app.tree.set_behavior(root_id, Box::new(ctrl_panel));
 
@@ -748,6 +814,12 @@ pub fn create_control_window(
     );
     let window_id = window.winit_window.id();
     app.windows.insert(window_id, window);
+
+    // Store the control window ID for raise-if-existing logic.
+    with_main_window(|mw| {
+        mw.control_window_id = Some(window_id);
+    });
+
     Some(window_id)
 }
 

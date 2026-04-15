@@ -78,6 +78,9 @@ pub type SetupFn = Box<dyn FnOnce(&mut App, &ActiveEventLoop)>;
 
 /// The main application handler integrating winit, wgpu, the panel tree, and
 /// the scheduler.
+/// Deferred action requiring `&ActiveEventLoop` (window creation, etc.).
+pub type DeferredAction = Box<dyn FnOnce(&mut App, &ActiveEventLoop)>;
+
 pub struct App {
     pub gpu: Option<GpuContext>,
     pub screen: Option<emScreen>,
@@ -86,6 +89,10 @@ pub struct App {
     pub tree: PanelTree,
     pub windows: HashMap<WindowId, ZuiWindow>,
     pub input_state: emInputState,
+    /// Deferred actions queued by input handlers that need `&ActiveEventLoop`
+    /// (e.g., window creation for Duplicate/CreateControlWindow).
+    /// Drained each frame in `about_to_wait`.
+    pub pending_actions: Vec<DeferredAction>,
     setup_fn: Option<SetupFn>,
     initialized: bool,
     last_frame_time: Instant,
@@ -103,6 +110,7 @@ impl App {
             tree: PanelTree::new(),
             windows: HashMap::new(),
             input_state: emInputState::new(),
+            pending_actions: Vec::new(),
             setup_fn: Some(setup),
             initialized: false,
             last_frame_time: Instant::now(),
@@ -289,7 +297,13 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Process deferred actions (window creation from Duplicate/ccw, etc.).
+        let actions: Vec<DeferredAction> = self.pending_actions.drain(..).collect();
+        for action in actions {
+            action(self, event_loop);
+        }
+
         // Fire flags_signal for any windows whose flags changed this frame.
         let flags_signals: Vec<_> = self
             .windows
