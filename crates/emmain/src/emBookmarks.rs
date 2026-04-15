@@ -280,6 +280,11 @@ impl emBookmarkEntryUnion {
 
 // ── emBookmarksRec ────────────────────────────────────────────────────────────
 
+// DIVERGED: C++ emBookmarksRec also has InsertNewBookmark, InsertNewGroup,
+// CopyToClipboard, TryInsertFromClipboard, BookmarkNameFromPanelTitle.
+// These editing-UI methods are not ported — the Rust implementation is
+// read-only for now.
+
 /// Root record: array of bookmark entries (C++ emBookmarksRec).
 #[derive(Debug, Clone, PartialEq)]
 pub struct emBookmarksRec {
@@ -334,7 +339,12 @@ impl Default for emBookmarksRec {
 
 impl Record for emBookmarksRec {
     fn from_rec(rec: &RecStruct) -> Result<Self, RecError> {
-        let entries = if let Some(arr) = rec.get_array("entries") {
+        // Support both C++ format (top-level array stored as "_array") and
+        // legacy Rust format (struct with "entries" field).
+        let arr = rec
+            .get_array("_array")
+            .or_else(|| rec.get_array("entries"));
+        let entries = if let Some(arr) = arr {
             arr.iter()
                 .filter_map(|v| emBookmarkEntryUnion::from_rec_value(v).ok())
                 .collect()
@@ -345,13 +355,14 @@ impl Record for emBookmarksRec {
     }
 
     fn to_rec(&self) -> RecStruct {
+        // Write in C++ compatible format: top-level array of union entries.
         let mut s = RecStruct::new();
         let items: Vec<RecValue> = self
             .entries
             .iter()
             .map(|e| e.to_rec_value())
             .collect();
-        s.SetValue("entries", RecValue::Array(items));
+        s.SetValue("_array", RecValue::Array(items));
         s
     }
 
@@ -466,7 +477,8 @@ impl emBookmarksModel {
                     });
 
             let mut model =
-                emConfigModel::new(emBookmarksRec::default(), path, SignalId::null());
+                emConfigModel::new(emBookmarksRec::default(), path, SignalId::null())
+                    .with_format_name("emBookmarks");
 
             if let Err(e) = model.TryLoadOrInstall() {
                 log::warn!("emBookmarksModel: failed to load or install: {e}");
@@ -480,6 +492,28 @@ impl emBookmarksModel {
 
     pub fn GetFormatName(&self) -> &str {
         "emBookmarks"
+    }
+
+    /// Port of C++ `emBookmarksModel::GetDefaultIconDir`.
+    pub fn GetDefaultIconDir() -> std::path::PathBuf {
+        emGetInstallPath(InstallDirType::Res, "icons", None)
+            .unwrap_or_else(|_| std::path::PathBuf::from("/usr/share/eaglemode/res/icons"))
+    }
+
+    /// Port of C++ `emBookmarksModel::GetNormalizedIconFileName`.
+    pub fn GetNormalizedIconFileName(icon_file: &str) -> String {
+        if icon_file.is_empty() {
+            return String::new();
+        }
+        let icon_dir = Self::GetDefaultIconDir();
+        let icon_dir_str = icon_dir.to_string_lossy();
+        if icon_file.len() > icon_dir_str.len() + 1 {
+            let sep = icon_file.as_bytes().get(icon_dir_str.len());
+            if sep == Some(&b'/') && icon_file.starts_with(icon_dir_str.as_ref()) {
+                return icon_file[icon_dir_str.len() + 1..].to_string();
+            }
+        }
+        icon_file.to_string()
     }
 
     pub fn GetChangeSignal(&self) -> SignalId {
@@ -498,6 +532,10 @@ impl emBookmarksModel {
         self.config_model.IsUnsaved()
     }
 }
+
+// DIVERGED: C++ emBookmarkEntryAuxPanel and emBookmarksAuxPanel are editing
+// panels (cut/copy/paste/new bookmark/new group, color editing, location
+// setting, hotkey editing). Not ported — the Rust implementation is read-only.
 
 // ── emBookmarkButton ──────────────────────────────────────────────────────────
 
@@ -1017,5 +1055,119 @@ mod tests {
         let ctx = emcore::emContext::emContext::NewRoot();
         let panel = emBookmarksPanel::new(Rc::clone(&ctx));
         let _: Box<dyn PanelBehavior> = Box::new(panel);
+    }
+
+    #[test]
+    fn test_parse_cpp_format() {
+        // Verify we can parse the C++ emBookmarks file format (top-level
+        // array of union entries).
+        use emcore::emRec::parse_rec;
+        let text = r#"#%rec:emBookmarks%#
+
+Bookmark: {
+    Name = "Help"
+    Description = "This brings you to the documentation area."
+    Icon = "help.tga"
+    Hotkey = "F1"
+    LocationIdentity = ":"
+    LocationRelX = -0.36326
+    LocationRelY = -0.37791
+    LocationRelA = 0.00621
+}
+
+Bookmark: {
+    Name = "Home"
+    Icon = "home.tga"
+    Hotkey = "F6"
+    LocationIdentity = "::FS::::home::a0"
+    VisitAtProgramStart = yes
+}
+
+Group: {
+    Name = "Games"
+    BgColor = { 81 94 132 255 }
+    FgColor = { 239 240 244 255 }
+    Bookmarks = {
+        Bookmark: {
+            Name = "Chess"
+            Icon = "silchess.tga"
+            LocationIdentity = "::Chess1:"
+        }
+    }
+}
+"#;
+        let rec = parse_rec(text).expect("should parse C++ bookmarks format");
+        let bookmarks = emBookmarksRec::from_rec(&rec).expect("should deserialize");
+        assert_eq!(bookmarks.entries.len(), 3);
+
+        // First entry: Bookmark "Help"
+        if let emBookmarkEntryUnion::Bookmark(bm) = &bookmarks.entries[0] {
+            assert_eq!(bm.entry.Name, "Help");
+            assert_eq!(bm.Hotkey, "F1");
+            assert_eq!(bm.LocationIdentity, ":");
+            assert!((bm.LocationRelX - (-0.36326)).abs() < 1e-10);
+            assert!((bm.LocationRelA - 0.00621).abs() < 1e-10);
+        } else {
+            panic!("expected Bookmark");
+        }
+
+        // Second: Bookmark "Home" with VisitAtProgramStart
+        if let emBookmarkEntryUnion::Bookmark(bm) = &bookmarks.entries[1] {
+            assert_eq!(bm.entry.Name, "Home");
+            assert!(bm.VisitAtProgramStart);
+        } else {
+            panic!("expected Bookmark");
+        }
+
+        // Third: Group "Games" with nested bookmark
+        if let emBookmarkEntryUnion::Group(grp) = &bookmarks.entries[2] {
+            assert_eq!(grp.entry.Name, "Games");
+            assert_eq!(grp.Bookmarks.len(), 1);
+            if let emBookmarkEntryUnion::Bookmark(inner) = &grp.Bookmarks[0] {
+                assert_eq!(inner.entry.Name, "Chess");
+            } else {
+                panic!("expected nested Bookmark");
+            }
+        } else {
+            panic!("expected Group");
+        }
+
+        // SearchStartLocation should find "Home"
+        let start = bookmarks.SearchStartLocation();
+        assert!(start.is_some());
+        assert_eq!(start.unwrap().entry.Name, "Home");
+
+        // SearchBookmarkByHotkey
+        let found = bookmarks.SearchBookmarkByHotkey("F1");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().entry.Name, "Help");
+    }
+
+    #[test]
+    fn test_round_trip_cpp_format() {
+        // Verify that to_rec + write_rec + parse_rec + from_rec round-trips.
+        use emcore::emRec::{parse_rec, write_rec_with_format};
+        let mut bm = emBookmarkRec::default();
+        bm.entry.Name = "Test".to_string();
+        bm.Hotkey = "F5".to_string();
+        bm.LocationIdentity = "::test:".to_string();
+
+        let root = emBookmarksRec {
+            entries: vec![emBookmarkEntryUnion::Bookmark(bm)],
+        };
+
+        let rec = root.to_rec();
+        let text = write_rec_with_format(&rec, "emBookmarks");
+        assert!(text.starts_with("#%rec:emBookmarks%#"));
+
+        let parsed = parse_rec(&text).expect("should re-parse");
+        let loaded = emBookmarksRec::from_rec(&parsed).expect("should deserialize");
+        assert_eq!(loaded.entries.len(), 1);
+        if let emBookmarkEntryUnion::Bookmark(bm) = &loaded.entries[0] {
+            assert_eq!(bm.entry.Name, "Test");
+            assert_eq!(bm.Hotkey, "F5");
+        } else {
+            panic!("expected Bookmark");
+        }
     }
 }

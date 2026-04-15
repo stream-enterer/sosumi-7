@@ -466,26 +466,51 @@ impl Parser {
     }
 
     fn parse_top_level(&mut self) -> Result<RecStruct, RecError> {
-        let mut fields = Vec::new();
-        loop {
-            match self.peek() {
-                Token::Eof => break,
-                Token::Ident(_) => {
-                    let name = self.expect_ident()?.to_ascii_lowercase();
-                    self.expect_delim('=')?;
-                    let val = self.parse_value()?;
-                    fields.push((name, val));
-                }
-                _ => {
-                    let line = self.peek_line();
-                    return Err(RecError::Parse {
-                        line,
-                        message: format!("expected field name, got {:?}", self.peek()),
-                    });
+        // Detect whether the top level is a struct (Ident '=' ...) or a
+        // top-level array of union values (Ident ':' ...).  C++ emArrayRec
+        // configs (e.g. emBookmarks) use the union-array form.
+        let is_array = matches!(
+            (self.tokens.get(self.pos), self.tokens.get(self.pos + 1)),
+            (Some((Token::Ident(_), _)), Some((Token::Delim(':'), _)))
+        );
+
+        if is_array {
+            let mut elements = Vec::new();
+            loop {
+                match self.peek() {
+                    Token::Eof => break,
+                    _ => {
+                        let val = self.parse_value()?;
+                        elements.push(val);
+                    }
                 }
             }
+            // Store as a synthetic "_array" field so callers can detect
+            // a top-level array config.
+            let fields = vec![("_array".to_string(), RecValue::Array(elements))];
+            Ok(RecStruct { fields })
+        } else {
+            let mut fields = Vec::new();
+            loop {
+                match self.peek() {
+                    Token::Eof => break,
+                    Token::Ident(_) => {
+                        let name = self.expect_ident()?.to_ascii_lowercase();
+                        self.expect_delim('=')?;
+                        let val = self.parse_value()?;
+                        fields.push((name, val));
+                    }
+                    _ => {
+                        let line = self.peek_line();
+                        return Err(RecError::Parse {
+                            line,
+                            message: format!("expected field name, got {:?}", self.peek()),
+                        });
+                    }
+                }
+            }
+            Ok(RecStruct { fields })
         }
-        Ok(RecStruct { fields })
     }
 
     fn parse_braced(&mut self) -> Result<RecValue, RecError> {
@@ -697,8 +722,23 @@ pub fn parse_rec_with_format(input: &str, format_name: &str) -> Result<RecStruct
 }
 
 /// Serialize a `RecStruct` to emRec text (no format header).
+///
+/// If the struct has a single `_array` field (top-level array config), the
+/// array elements are written directly as bare values (union entries).
 pub fn write_rec(rec: &RecStruct) -> String {
     let mut out = String::new();
+
+    // Detect top-level array (synthetic `_array` field from parse_top_level).
+    if rec.fields.len() == 1 && rec.fields[0].0 == "_array" {
+        if let RecValue::Array(items) = &rec.fields[0].1 {
+            for item in items {
+                write_value(&mut out, item, 0);
+                out.push_str("\n\n");
+            }
+            return out;
+        }
+    }
+
     for (name, val) in rec.fields() {
         out.push_str(name);
         out.push_str(" = ");

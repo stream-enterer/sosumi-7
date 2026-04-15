@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::emRec::{parse_rec, write_rec, RecError};
+use crate::emRec::{parse_rec, write_rec, write_rec_with_format, RecError};
 use crate::emSignal::SignalId;
 
 use crate::emRecRecord::Record;
@@ -15,6 +15,8 @@ pub struct emConfigModel<T: Record> {
     path: PathBuf,
     change_signal: SignalId,
     dirty: bool,
+    /// Optional format name for `#%rec:FormatName%#` header.
+    format_name: Option<String>,
 }
 
 impl<T: Record> emConfigModel<T> {
@@ -24,7 +26,14 @@ impl<T: Record> emConfigModel<T> {
             path,
             change_signal: signal_id,
             dirty: false,
+            format_name: None,
         }
+    }
+
+    /// Set the format name for the `#%rec:FormatName%#` header in saved files.
+    pub fn with_format_name(mut self, name: &str) -> Self {
+        self.format_name = Some(name.to_string());
+        self
     }
 
     pub fn GetRec(&self) -> &T {
@@ -77,7 +86,11 @@ impl<T: Record> emConfigModel<T> {
     /// Save the configuration to disk as emRec.
     pub fn Save(&mut self) -> Result<(), RecError> {
         let rec = self.value.to_rec();
-        let contents = write_rec(&rec);
+        let contents = if let Some(ref fmt) = self.format_name {
+            write_rec_with_format(&rec, fmt)
+        } else {
+            write_rec(&rec)
+        };
 
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).map_err(RecError::Io)?;
