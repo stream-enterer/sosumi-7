@@ -1,11 +1,21 @@
 /// Self-contained scheduler parity tests.
 /// These verify Rust scheduler behavior directly (no golden files).
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use emcore::emEngine::{emEngine, EngineCtx, Priority};
+use emcore::emPanelTree::PanelTree;
 use emcore::emScheduler::EngineScheduler;
 use emcore::emSignal::SignalId;
+use emcore::emWindow::ZuiWindow;
+use winit::window::WindowId;
+
+fn slice(sched: &mut EngineScheduler) {
+    let mut tree = PanelTree::new();
+    let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+    sched.DoTimeSlice(&mut tree, &mut windows);
+}
 
 // ─── Helper: engine that records Cycle calls ────────────────────
 
@@ -37,7 +47,7 @@ fn signal_fire_check() {
     assert!(sched.is_pending(sig));
 
     // Time slice consumes pending signals
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(!sched.is_pending(sig));
 
     sched.remove_signal(sig);
@@ -59,7 +69,7 @@ fn signal_multi() {
     assert!(!sched.is_pending(sig1));
     assert!(sched.is_pending(sig2));
 
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(!sched.is_pending(sig0));
     assert!(!sched.is_pending(sig1));
     assert!(!sched.is_pending(sig2));
@@ -94,7 +104,7 @@ fn signal_abort() {
     assert!(!sched.is_pending(sig));
 
     // emEngine should NOT be cycled
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(log.borrow().is_empty());
 
     sched.remove_engine(eng);
@@ -124,12 +134,12 @@ fn timer_oneshot() {
     sched.start_timer(timer, 0, false);
     assert!(sched.is_timer_running(timer));
 
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert_eq!(log.borrow().len(), 1, "One-shot should fire exactly once");
 
     // After firing, one-shot stops running
     log.borrow_mut().clear();
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(log.borrow().is_empty(), "One-shot should not repeat");
 
     sched.remove_engine(eng);
@@ -162,7 +172,7 @@ fn timer_periodic() {
     // Subsequent slices execute faster than 1ms refire, so add a small sleep.
     for _ in 0..5 {
         std::thread::sleep(std::time::Duration::from_millis(2));
-        sched.DoTimeSlice();
+        slice(&mut sched);
     }
 
     let count = log.borrow().len();
@@ -200,7 +210,7 @@ fn timer_cancel() {
     sched.cancel_timer(timer, false);
     assert!(!sched.is_timer_running(timer));
 
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(log.borrow().is_empty(), "Cancelled timer should not fire");
 
     sched.remove_timer(timer);
@@ -218,11 +228,11 @@ fn timer_cancel_abort() {
 
     // Start and immediately fire
     sched.start_timer(timer, 0, false);
-    sched.DoTimeSlice(); // timer fires signal
+    slice(&mut sched); // timer fires signal
 
     // Signal may be pending; cancel with abort_signal=true
     sched.start_timer(timer, 0, false);
-    sched.DoTimeSlice(); // fires
+    slice(&mut sched); // fires
     sched.cancel_timer(timer, true);
     // After abort, signal should not be pending
     assert!(!sched.is_pending(sig));
@@ -251,7 +261,7 @@ fn engine_basic() {
 
     // Fire signal → engine should Cycle
     sched.fire(sig);
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert_eq!(*log.borrow(), vec!["basic"]);
 
     sched.remove_engine(eng);
@@ -293,7 +303,7 @@ fn engine_priority() {
     sched.wake_up(vl);
     sched.wake_up(med);
     sched.wake_up(vh);
-    sched.DoTimeSlice();
+    slice(&mut sched);
 
     assert_eq!(*log.borrow(), vec!["very_high", "medium", "very_low"]);
 
@@ -320,15 +330,15 @@ fn engine_wake_sleep() {
 
     // Wake → should Cycle
     sched.wake_up(eng);
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert_eq!(log.borrow().len(), 1);
 
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert_eq!(log.borrow().len(), 2);
 
     // Sleep → should stop cycling
     sched.sleep(eng);
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert_eq!(log.borrow().len(), 2, "Sleeping engine should not cycle");
 
     sched.remove_engine(eng);
@@ -387,7 +397,7 @@ fn engine_multi_signal() {
 
     // Fire only A
     sched.fire(sig_a);
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(*a_seen.borrow());
     assert!(!*b_seen.borrow());
     assert!(!*c_seen.borrow());
@@ -398,7 +408,7 @@ fn engine_multi_signal() {
     // Fire B and C
     sched.fire(sig_b);
     sched.fire(sig_c);
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(!*a_seen.borrow());
     assert!(*b_seen.borrow());
     assert!(*c_seen.borrow());

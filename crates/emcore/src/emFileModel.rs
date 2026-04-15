@@ -881,7 +881,15 @@ mod tests {
         }));
 
         ps_model.RequestAccess(agent, &mut sched);
-        sched.DoTimeSlice();
+        {
+            use std::collections::HashMap;
+            use crate::emPanelTree::PanelTree;
+            use crate::emWindow::ZuiWindow;
+            use winit::window::WindowId;
+            let mut tree = PanelTree::new();
+            let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+            sched.DoTimeSlice(&mut tree, &mut windows);
+        }
 
         assert!(ps_model.HasAccess(agent));
         assert_eq!(*model.borrow().GetFileState(), FileState::Loaded);

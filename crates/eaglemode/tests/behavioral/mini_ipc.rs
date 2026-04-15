@@ -86,12 +86,22 @@ fn decode_empty_buffer_returns_none() {
 #[cfg(target_os = "linux")]
 mod linux {
     use std::cell::RefCell;
+    use std::collections::HashMap;
     use std::rc::Rc;
 
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use emcore::emMiniIpc::{emMiniIpcClient, emMiniIpcServer};
+    use emcore::emPanelTree::PanelTree;
     use emcore::emScheduler::EngineScheduler;
+    use emcore::emWindow::ZuiWindow;
+    use winit::window::WindowId;
+
+    fn slice(sched: &mut EngineScheduler) {
+        let mut tree = PanelTree::new();
+        let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+        sched.DoTimeSlice(&mut tree, &mut windows);
+    }
 
     static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -134,7 +144,7 @@ mod linux {
         // First fire the timer signal manually to trigger the engine
         let dummy_sig = sched.create_signal();
         sched.fire(dummy_sig);
-        sched.DoTimeSlice();
+        slice(&mut sched);
         sched.remove_signal(dummy_sig);
 
         // The timer fires after 200ms, but we can trigger it by running time slices.
@@ -142,7 +152,7 @@ mod linux {
         // the timer to fire. Let's just do time slices until we GetRec the message.
         let start = std::time::Instant::now();
         while received.borrow().is_empty() {
-            sched.DoTimeSlice();
+            slice(&mut sched);
             if start.elapsed() > std::time::Duration::from_secs(2) {
                 panic!("timed out waiting for message");
             }
@@ -202,7 +212,7 @@ mod linux {
 
         let start = std::time::Instant::now();
         while received.borrow().len() < 3 {
-            sched.DoTimeSlice();
+            slice(&mut sched);
             if start.elapsed() > std::time::Duration::from_secs(2) {
                 break;
             }

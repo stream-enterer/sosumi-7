@@ -1,8 +1,18 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
+use emcore::emPanelTree::PanelTree;
 use emcore::emPriSchedAgent::PriSchedModel;
 use emcore::emScheduler::EngineScheduler;
+use emcore::emWindow::ZuiWindow;
+use winit::window::WindowId;
+
+fn slice(sched: &mut EngineScheduler) {
+    let mut tree = PanelTree::new();
+    let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+    sched.DoTimeSlice(&mut tree, &mut windows);
+}
 
 #[test]
 fn highest_priority_gets_access_first() {
@@ -24,7 +34,7 @@ fn highest_priority_gets_access_first() {
     model.RequestAccess(agent_b, &mut sched);
     model.RequestAccess(agent_c, &mut sched);
 
-    sched.DoTimeSlice();
+    slice(&mut sched);
 
     // Agent C (GetPriority 10) should GetRec access
     assert!(!*got_a.borrow());
@@ -34,7 +44,7 @@ fn highest_priority_gets_access_first() {
 
     // Release C, B should GetRec access next
     model.ReleaseAccess(agent_c, &mut sched);
-    sched.DoTimeSlice();
+    slice(&mut sched);
 
     assert!(!*got_a.borrow());
     assert!(*got_b.borrow());
@@ -42,7 +52,7 @@ fn highest_priority_gets_access_first() {
 
     // Release B, A should GetRec access
     model.ReleaseAccess(agent_b, &mut sched);
-    sched.DoTimeSlice();
+    slice(&mut sched);
 
     assert!(*got_a.borrow());
     assert!(model.HasAccess(agent_a));
@@ -61,7 +71,7 @@ fn request_while_active_requeues() {
     let agent = model.add_agent(1.0, Box::new(move || *c.borrow_mut() += 1));
 
     model.RequestAccess(agent, &mut sched);
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert_eq!(*count.borrow(), 1);
     assert!(model.HasAccess(agent));
 
@@ -70,7 +80,7 @@ fn request_while_active_requeues() {
     assert!(!model.HasAccess(agent));
     assert!(model.IsWaitingForAccess(agent));
 
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert_eq!(*count.borrow(), 2);
     assert!(model.HasAccess(agent));
 
@@ -108,18 +118,18 @@ fn no_grant_when_active_exists() {
 
     // A gets access
     model.RequestAccess(agent_a, &mut sched);
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(model.HasAccess(agent_a));
 
     // B requests but A is still active — B should not GetRec access
     model.RequestAccess(agent_b, &mut sched);
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(!*got_b.borrow());
     assert!(!model.HasAccess(agent_b));
     assert!(model.IsWaitingForAccess(agent_b));
 
     model.ReleaseAccess(agent_a, &mut sched);
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(*got_b.borrow());
     assert!(model.HasAccess(agent_b));
 
@@ -145,7 +155,7 @@ fn set_access_priority_changes_grant_order() {
 
     model.RequestAccess(agent_a, &mut sched);
     model.RequestAccess(agent_b, &mut sched);
-    sched.DoTimeSlice();
+    slice(&mut sched);
 
     // A should win now despite originally being lower
     assert!(*got_a.borrow());
@@ -169,7 +179,7 @@ fn is_waiting_tracks_state() {
     model.RequestAccess(agent, &mut sched);
     assert!(model.IsWaitingForAccess(agent));
 
-    sched.DoTimeSlice();
+    slice(&mut sched);
     // After grant, no longer waiting
     assert!(!model.IsWaitingForAccess(agent));
     assert!(model.HasAccess(agent));

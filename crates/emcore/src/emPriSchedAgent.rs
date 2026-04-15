@@ -178,6 +178,16 @@ impl PriSchedModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use super::super::emPanelTree::PanelTree;
+    use super::super::emWindow::ZuiWindow;
+    use winit::window::WindowId;
+
+    fn slice(sched: &mut EngineScheduler) {
+        let mut tree = PanelTree::new();
+        let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+        sched.DoTimeSlice(&mut tree, &mut windows);
+    }
 
     #[test]
     fn highest_priority_gets_access() {
@@ -195,7 +205,7 @@ mod tests {
         model.RequestAccess(agent_a, &mut sched);
         model.RequestAccess(agent_b, &mut sched);
 
-        sched.DoTimeSlice();
+        slice(&mut sched);
 
         // Agent B has higher priority, should get access first.
         assert!(!*got_a.borrow());
@@ -205,7 +215,7 @@ mod tests {
 
         // Release B, then A should get access on next cycle.
         model.ReleaseAccess(agent_b, &mut sched);
-        sched.DoTimeSlice();
+        slice(&mut sched);
 
         assert!(*got_a.borrow());
         assert!(model.HasAccess(agent_a));
@@ -224,7 +234,7 @@ mod tests {
         let agent = model.add_agent(1.0, Box::new(move || *c.borrow_mut() += 1));
 
         model.RequestAccess(agent, &mut sched);
-        sched.DoTimeSlice();
+        slice(&mut sched);
         assert_eq!(*count.borrow(), 1);
         assert!(model.HasAccess(agent));
 
@@ -233,7 +243,7 @@ mod tests {
         assert!(!model.HasAccess(agent));
         assert!(model.IsWaitingForAccess(agent));
 
-        sched.DoTimeSlice();
+        slice(&mut sched);
         assert_eq!(*count.borrow(), 2);
         assert!(model.HasAccess(agent));
 

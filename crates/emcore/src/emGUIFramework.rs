@@ -308,7 +308,7 @@ impl ApplicationHandler for App {
         }
 
         // Run one scheduler time slice
-        self.scheduler.borrow_mut().DoTimeSlice();
+        self.scheduler.borrow_mut().DoTimeSlice(&mut self.tree, &mut self.windows);
 
         // Run per-frame panel cycles
         self.tree.run_panel_cycles();

@@ -1,9 +1,19 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use emcore::emEngine::{emEngine, EngineCtx, Priority};
+use emcore::emPanelTree::PanelTree;
 use emcore::emScheduler::EngineScheduler;
 use emcore::emSignal::SignalId;
+use emcore::emWindow::ZuiWindow;
+use winit::window::WindowId;
+
+fn slice(sched: &mut EngineScheduler) {
+    let mut tree = PanelTree::new();
+    let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+    sched.DoTimeSlice(&mut tree, &mut windows);
+}
 
 struct RecordingEngine {
     label: &'static str,
@@ -51,7 +61,7 @@ fn engines_execute_in_priority_order() {
     sched.wake_up(low);
     sched.wake_up(med);
     sched.wake_up(high);
-    sched.DoTimeSlice();
+    slice(&mut sched);
 
     let executed = log.borrow();
     assert_eq!(*executed, vec!["very_high", "medium", "very_low"]);
@@ -82,7 +92,7 @@ fn signal_chaining_within_time_slice() {
 
     // Fire signal before time slice — the signal phase wakes emEngine B
     sched.fire(sig);
-    sched.DoTimeSlice();
+    slice(&mut sched);
 
     let executed = log.borrow();
     assert_eq!(*executed, vec!["B"]);
@@ -109,7 +119,7 @@ fn timer_fires_signal() {
     // Create a timer and start it with 0ms interval (fires immediately)
     let timer = sched.create_timer(sig);
     sched.start_timer(timer, 0, false);
-    sched.DoTimeSlice();
+    slice(&mut sched);
 
     let executed = log.borrow();
     assert_eq!(*executed, vec!["timer_target"]);
@@ -132,7 +142,7 @@ fn remove_engine_cleans_up() {
     );
     sched.wake_up(eng);
     sched.remove_engine(eng);
-    sched.DoTimeSlice();
+    slice(&mut sched);
 
     assert!(log.borrow().is_empty());
 }
@@ -176,7 +186,7 @@ fn instant_signal_chaining_via_engine() {
     );
     sched.wake_up(eng_a);
 
-    sched.DoTimeSlice();
+    slice(&mut sched);
 
     let executed = log.borrow();
     assert_eq!(*executed, vec!["A_fires", "B_runs"]);
@@ -221,7 +231,7 @@ fn is_signaled_distinguishes_signals() {
 
     // Fire only signal A
     sched.fire(sig_a);
-    sched.DoTimeSlice();
+    slice(&mut sched);
     assert!(*a_fired.borrow(), "Signal A should have been detected");
     assert!(!*b_fired.borrow(), "Signal B should NOT have been detected");
     sched.remove_engine(eng);

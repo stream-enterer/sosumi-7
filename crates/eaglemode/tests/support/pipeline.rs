@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::collections::HashMap;
+
 use emcore::emInput::{emInputEvent, InputKey, InputVariant};
 use emcore::emInputState::emInputState;
 use emcore::emPanel::PanelBehavior;
@@ -10,6 +12,8 @@ use emcore::emView::emView;
 
 use emcore::emViewInputFilter::{emDefaultTouchVIF, emKeyboardZoomScrollVIF, emMouseZoomScrollVIF, emViewInputFilter};
 use emcore::emScheduler::EngineScheduler;
+use emcore::emWindow::ZuiWindow;
+use winit::window::WindowId;
 
 /// Test harness that dispatches Input through the FULL coordinate transform
 /// pipeline (VIF chain, hit test, view_to_panel_x/y transform), matching
@@ -70,7 +74,8 @@ impl PipelineTestHarness {
 
     /// Run one frame: scheduler time slice, deliver notices, update viewing.
     pub fn tick(&mut self) {
-        self.scheduler.DoTimeSlice();
+        let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+        self.scheduler.DoTimeSlice(&mut self.tree, &mut windows);
         self.tree
             .HandleNotice(self.view.IsFocused(), self.view.GetCurrentPixelTallness());
         self.view.Update(&mut self.tree);

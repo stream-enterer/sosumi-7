@@ -3,6 +3,7 @@
 pub mod pipeline;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use emcore::emInput::{emInputEvent, InputKey, InputVariant};
@@ -17,6 +18,8 @@ use emcore::emView::emView;
 
 use emcore::emViewInputFilter::{emDefaultTouchVIF, emKeyboardZoomScrollVIF, emMouseZoomScrollVIF, emViewInputFilter};
 use emcore::emScheduler::EngineScheduler;
+use emcore::emWindow::ZuiWindow;
+use winit::window::WindowId;
 
 /// Headless test harness that wires together PanelTree, EngineScheduler, and emView
 /// without needing wgpu/winit.
@@ -69,7 +72,8 @@ impl TestHarness {
 
     /// Run one frame: scheduler time slice → deliver notices → update viewing.
     pub fn tick(&mut self) {
-        self.scheduler.DoTimeSlice();
+        let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+        self.scheduler.DoTimeSlice(&mut self.tree, &mut windows);
         self.tree
             .HandleNotice(self.view.IsFocused(), self.view.GetCurrentPixelTallness());
         self.view.Update(&mut self.tree);

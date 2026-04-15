@@ -1,10 +1,14 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use slotmap::SlotMap;
+use winit::window::WindowId;
 
 use super::emEngine::{emEngine, EngineCtx, EngineCtxInner, EngineData, EngineId, Priority};
+use super::emPanelTree::PanelTree;
 use super::emSignal::{SignalConnection, SignalData, SignalId};
 use super::emTimer::{TimerCentral, TimerId};
+use super::emWindow::ZuiWindow;
 
 const TIME_SLICE_DURATION: Duration = Duration::from_millis(50);
 
@@ -262,7 +266,11 @@ impl EngineScheduler {
     /// 4. Run engines from highest to lowest priority
     /// 5. After each engine, process any signals it fired (instant chaining)
     /// 6. Priority re-ascent: higher-priority engines woken mid-slice run in the same slice
-    pub fn DoTimeSlice(&mut self) {
+    pub fn DoTimeSlice(
+        &mut self,
+        tree: &mut PanelTree,
+        windows: &mut HashMap<WindowId, ZuiWindow>,
+    ) {
         self.inner.time_slice_counter += 1;
         self.inner.deadline = Instant::now() + TIME_SLICE_DURATION;
         let next_parity = self.inner.time_slice ^ 1;
@@ -343,6 +351,8 @@ impl EngineScheduler {
                 let mut ctx = EngineCtx {
                     engine_id,
                     scheduler: &mut self.inner,
+                    tree,
+                    windows,
                 };
                 behavior.Cycle(&mut ctx)
             };
@@ -383,10 +393,17 @@ impl EngineScheduler {
     ///
     /// Port of C++ `emStandardScheduler::Run`.
     pub fn run(&mut self) {
+        let mut tree = PanelTree::new();
+        let mut windows = HashMap::new();
         self.terminated = false;
         while !self.terminated {
-            self.DoTimeSlice();
+            self.DoTimeSlice(&mut tree, &mut windows);
         }
+    }
+
+    /// Check if any engines are currently awake (queued in any wake list).
+    pub fn has_awake_engines(&self) -> bool {
+        self.inner.wake_queues.iter().any(|q| !q.is_empty())
     }
 
     /// Signal the scheduler to stop after the current time slice.
@@ -448,6 +465,12 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    fn slice(sched: &mut EngineScheduler) {
+        let mut tree = PanelTree::new();
+        let mut windows = HashMap::new();
+        sched.DoTimeSlice(&mut tree, &mut windows);
+    }
+
     struct CountingEngine {
         count: Rc<RefCell<u32>>,
     }
@@ -483,10 +506,10 @@ mod tests {
             }),
         );
         sched.wake_up(id);
-        sched.DoTimeSlice();
+        slice(&mut sched);
         assert_eq!(*count.borrow(), 1);
         // emEngine returned false, should not run again
-        sched.DoTimeSlice();
+        slice(&mut sched);
         assert_eq!(*count.borrow(), 1);
         sched.remove_engine(id);
     }
@@ -503,12 +526,12 @@ mod tests {
             }),
         );
         sched.wake_up(id);
-        sched.DoTimeSlice();
-        sched.DoTimeSlice();
-        sched.DoTimeSlice();
+        slice(&mut sched);
+        slice(&mut sched);
+        slice(&mut sched);
         assert_eq!(*count.borrow(), 3);
         // Should be asleep now
-        sched.DoTimeSlice();
+        slice(&mut sched);
         assert_eq!(*count.borrow(), 3);
         sched.remove_engine(id);
     }
@@ -526,11 +549,11 @@ mod tests {
         );
         sched.connect(sig, eng);
         // emEngine is sleeping, nothing should run
-        sched.DoTimeSlice();
+        slice(&mut sched);
         assert_eq!(*count.borrow(), 0);
         // Fire signal and run
         sched.fire(sig);
-        sched.DoTimeSlice();
+        slice(&mut sched);
         assert_eq!(*count.borrow(), 1);
         sched.remove_engine(eng);
     }
@@ -549,7 +572,7 @@ mod tests {
         sched.connect(sig, eng);
         sched.fire(sig);
         sched.abort(sig);
-        sched.DoTimeSlice();
+        slice(&mut sched);
         assert_eq!(*count.borrow(), 0);
         sched.remove_engine(eng);
     }
@@ -586,7 +609,7 @@ mod tests {
         );
         sched.wake_up(low);
         sched.wake_up(high);
-        sched.DoTimeSlice();
+        slice(&mut sched);
         let executed = order.borrow();
         assert_eq!(executed[0], "high");
         assert_eq!(executed[1], "low");
@@ -632,7 +655,7 @@ mod tests {
 
         // Fire only signal A
         sched.fire(sig_a);
-        sched.DoTimeSlice();
+        slice(&mut sched);
         assert!(*a_fired.borrow());
         assert!(!*b_fired.borrow());
         sched.remove_engine(eng);
@@ -699,7 +722,7 @@ mod tests {
         sched.set_engine_priority(eng_a, Priority::VeryHigh);
         sched.wake_up(eng_a);
         sched.wake_up(eng_b);
-        sched.DoTimeSlice();
+        slice(&mut sched);
 
         let executed = order.borrow();
         assert_eq!(executed[0], "A");
@@ -756,7 +779,7 @@ mod tests {
         );
         sched.wake_up(_eng_a);
 
-        sched.DoTimeSlice();
+        slice(&mut sched);
 
         let executed = log.borrow();
         assert_eq!(*executed, vec!["A", "B"]);
@@ -812,7 +835,7 @@ mod tests {
         );
         sched.wake_up(eng_low);
 
-        sched.DoTimeSlice();
+        slice(&mut sched);
 
         // Both run in the same slice: low fires, then high re-ascends and runs
         let executed = log.borrow();
