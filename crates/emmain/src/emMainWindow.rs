@@ -849,9 +849,55 @@ pub fn do_custom_cheat(cheat: &str, app: &mut App, event_loop: &ActiveEventLoop)
 /// DIVERGED: RecreateContentPanels — C++ iterates all windows on the screen,
 /// finds emMainWindow instances, and recreates each one's content panel while
 /// preserving the visited location.  Rust has a single-window architecture with
-/// thread-local storage; this logs the request but does not yet recreate panels.
-fn RecreateContentPanels(_app: &mut App) {
-    log::info!("emMainWindow::RecreateContentPanels — not yet implemented in Rust port");
+/// thread-local storage, so we operate on the single main window instead.
+fn RecreateContentPanels(app: &mut App) {
+    let main_panel_id = match with_main_window(|mw| mw.main_panel_id).flatten() {
+        Some(id) => id,
+        None => return,
+    };
+
+    let content_view_id = match app
+        .tree
+        .with_behavior_as::<emMainPanel, _>(main_panel_id, |mp| mp.GetContentViewPanelId())
+        .flatten()
+    {
+        Some(id) => id,
+        None => return,
+    };
+
+    let ctx = Rc::clone(&app.context);
+
+    app.tree
+        .with_behavior_as::<emSubViewPanel, _>(content_view_id, |svp| {
+            // Save current visit state (C++ emMainWindow.cpp:297-301).
+            let visit = svp.GetSubView().current_visit();
+            let identity = svp.sub_tree().GetIdentity(visit.panel);
+            let rel_x = visit.rel_x;
+            let rel_y = visit.rel_y;
+            let rel_a = visit.rel_a;
+
+            // Delete old content panel(s) — remove all children of sub-tree root
+            // (C++ emMainWindow.cpp:302).
+            let sub_root = svp.sub_root();
+            let children: Vec<PanelId> = svp.sub_tree().children(sub_root).collect();
+            for child in children {
+                svp.sub_tree_mut().remove(child);
+            }
+
+            // Create new content panel (C++ emMainWindow.cpp:303).
+            let sub_tree = svp.sub_tree_mut();
+            let child_id = sub_tree.create_child(sub_root, "");
+            sub_tree.set_behavior(
+                child_id,
+                Box::new(emMainContentPanel::new(ctx)),
+            );
+            sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 1.0);
+
+            // Restore visit (C++ emMainWindow.cpp:304).
+            svp.visit_by_identity(&identity, rel_x, rel_y, rel_a);
+        });
+
+    log::info!("emMainWindow::RecreateContentPanels — content panels recreated");
 }
 
 #[cfg(test)]

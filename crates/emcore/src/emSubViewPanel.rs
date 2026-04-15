@@ -80,6 +80,22 @@ impl emSubViewPanel {
         &mut self.sub_view
     }
 
+    /// Visit a panel in the sub-view by identity string.
+    ///
+    /// This method borrows `sub_view` and `sub_tree` simultaneously, which
+    /// requires access to `self` rather than separate `sub_view_mut()` and
+    /// `sub_tree_mut()` calls (which would conflict on `&mut self`).
+    pub fn visit_by_identity(
+        &mut self,
+        identity: &str,
+        rel_x: f64,
+        rel_y: f64,
+        rel_a: f64,
+    ) {
+        self.sub_view
+            .VisitByIdentity(&mut self.sub_tree, identity, rel_x, rel_y, rel_a);
+    }
+
     /// Set the view flags on the sub-view.
     pub fn set_sub_view_flags(&mut self, flags: ViewFlags) {
         self.sub_view.flags = flags;
