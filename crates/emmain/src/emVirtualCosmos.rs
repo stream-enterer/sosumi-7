@@ -10,7 +10,7 @@ use emcore::emInstallInfo::emGetConfigDirOverloadable;
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
 use emcore::emPanelCtx::PanelCtx;
-use emcore::emPanelTree::PanelId;
+use emcore::emPanelTree::{AutoplayHandlingFlags, PanelId};
 use emcore::emRec::{RecError, RecStruct, RecValue};
 use emcore::emRecRecord::Record;
 use emcore::emRecRecTypes::emColorRec;
@@ -552,8 +552,11 @@ impl PanelBehavior for emVirtualCosmosItemPanel {
     }
 
     fn IsOpaque(&self) -> bool {
-        // Only opaque if border and background cover everything and are opaque.
-        false
+        let Some(rec) = &self.item_rec else {
+            return false;
+        };
+        rec.BackgroundColor.IsOpaque()
+            && (rec.BorderColor.IsOpaque() || rec.BorderScaling <= 1e-200)
     }
 
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
@@ -696,6 +699,8 @@ impl PanelBehavior for emVirtualCosmosPanel {
             let seed: u32 = 0x7f3a_19c0;
             let bg = crate::emStarFieldPanel::emStarFieldPanel::new(50, seed);
             let child_id = ctx.create_child_with("_StarField", Box::new(bg));
+            ctx.tree.set_focusable(child_id, false);
+            ctx.tree.SetAutoplayHandling(child_id, AutoplayHandlingFlags::CUTOFF);
             self.background_panel = Some(child_id);
         }
 
