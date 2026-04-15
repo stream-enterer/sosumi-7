@@ -1,7 +1,7 @@
 # Startup C++ Match Rewrite Design
 
 **Date:** 2026-04-15
-**Status:** Draft
+**Status:** Approved
 **Supersedes:** `2026-04-15-startup-architecture-rewrite-design.md` (failed implementation)
 
 ## Goal
@@ -66,7 +66,10 @@ The audit confirmed these Rust components are correctly ported and don't need ch
 
 ## Design
 
-Eleven changes. All applied simultaneously (big bang).
+Twenty-one changes, organized in two tiers:
+
+**Tier 1 (core startup + control panel — big bang):** Sections 1-11
+**Tier 2 (remaining C++ parity — incremental after Tier 1 verified):** Sections 12-21
 
 ### 1. Sub-tree Notice Delivery and Panel Cycling (CRITICAL)
 
@@ -467,58 +470,197 @@ This eliminates the DIVERGED comment in StartupEngine state 11 and matches C++ e
 - `advance_creation_stage()` and related tests
 - `DoubleClickSlider()` as ToggleControlView mechanism
 
-## Out of Scope
+### 12. Duplicate() (F4) — Multi-Window Support
 
-These C++ features exist but are not needed for cosmos to work. Explicitly deferred:
+C++ emMainWindow::Duplicate() (emMainWindow.cpp:98-129): Creates a new OS window with the same visited panel location, position (relX, relY, relA), adherence, title, and control edges color.
 
-- **Duplicate() (F4):** Window duplication. Already stubbed with log message.
-- **CreateControlWindow():** Detached control window popup ("ccw" cheat).
-- **DoCustomCheat():** Debug cheat codes ("rcp", "ccw").
-- **RecreateContentPanels():** Content panel recreation across all windows.
-- **WindowStateSaver:** Persistent window geometry save/restore.
-- **emStarFieldPanel TicTacToe easter egg:** Nested at depth > 50.
-- **Copy-to-user for cosmos items:** `.emVcItem` copy to user config dir.
-- **ReloadFiles() (F5):** Signal-based file reload. Already stubbed.
-- **emAutoplayControlPanel full UI:** Uses placeholder ControlButton widgets instead of full emToolkit. Functional but simplified.
-- **Screensaver inhibition during autoplay:** Flags present but no D-Bus/X11 calls.
+**Current Rust:** Stub with log message "multi-window not supported." The Rust `App` already supports multiple windows via `windows: HashMap<WindowId, ZuiWindow>`.
+
+**Implementation:**
+1. Extract current visited panel identity, position, adherence from content view
+2. Call `create_main_window()` with those parameters (it already takes optional visit params)
+3. Insert new window into `app.windows`
+
+This is straightforward since the multi-window infrastructure exists. Each new window gets its own StartupEngine that navigates to the extracted location.
+
+**Files:** `crates/emmain/src/emMainWindow.rs`
+
+### 13. CreateControlWindow() — Detached Control Popup
+
+C++ emMainWindow.cpp:309-327: Creates a separate window with `VF_POPUP_ZOOM | VF_ROOT_SAME_TALLNESS` hosting an `emMainControlPanel`. Raises existing window if already open.
+
+**Current Rust:** Partial implementation exists (emMainWindow.rs:599-630). Creates window and panel but missing raise logic and full signal wiring.
+
+**Implementation:**
+1. Track `control_window_id: Option<WindowId>` on emMainWindow
+2. If exists and still open → raise (winit `request_user_attention` or `focus_window`)
+3. If not → create new ZuiWindow with popup flags, create emMainControlPanel as root panel, connect to content view's ControlPanelSignal
+
+**Files:** `crates/emmain/src/emMainWindow.rs`
+
+### 14. DoCustomCheat() — Debug Cheat Codes
+
+C++ emMainWindow.cpp:266-277: Handles "rcp" (RecreateContentPanels) and "ccw" (CreateControlWindow).
+
+**Current Rust:** Dispatch exists (emMainWindow.rs:639-651), calls the right methods. Just needs those methods to be fully implemented (Sections 15 and 13).
+
+**Files:** `crates/emmain/src/emMainWindow.rs`
+
+### 15. RecreateContentPanels()
+
+C++ emMainWindow.cpp:280-306: Static method iterating all windows. For each: saves visited state → deletes old ContentPanel → creates new emMainContentPanel → restores view via Visit().
+
+**Implementation:**
+1. Iterate `app.windows` to find all emMainWindow instances
+2. For each: extract visited panel identity + position from content sub-view
+3. Delete old content panel from content sub-tree
+4. Create new emMainContentPanel in content sub-tree
+5. Restore view via `VisitByIdentity()` (Section 11)
+
+**Files:** `crates/emmain/src/emMainWindow.rs`
+
+### 16. WindowStateSaver — Geometry Persistence
+
+C++ emWindowStateSaver (emWindowStateSaver.h): Engine that saves/restores window position, size, maximization, and fullscreen state to a `.rec` config file.
+
+**Current Rust:** No equivalent exists.
+
+**Implementation:**
+1. Create `WindowStateSaver` as an engine (registered with scheduler)
+2. On startup: load geometry from config file, apply to window
+3. On geometry change signals (resize, move, maximize): save to config file
+4. Config format: use existing emRec serialization or simple JSON
+
+**Files:** New `crates/emcore/src/emWindowStateSaver.rs`
+
+### 17. emStarFieldPanel TicTacToe Easter Egg
+
+C++ emStarFieldPanel.cpp:63-66, 248-413: When `Depth > 50 && GetRandom() % 11213 == 0`, creates a TicTacToePanel child at (0.48, 0.48, 0.04, 0.04) with full game logic including minimax AI.
+
+**Implementation:**
+1. Create `TicTacToePanel` implementing PanelBehavior (~150 lines)
+2. 3x3 game board with X/O rendering
+3. Minimax AI for computer player (C++ DeepCheckState: lines 355-401)
+4. Input handling for mouse clicks
+5. Add creation check in emStarFieldPanel::LayoutChildren
+
+**Files:** `crates/emmain/src/emStarFieldPanel.rs` (inline or new file)
+
+### 18. Copy-to-User for Cosmos Items
+
+C++ emVirtualCosmos.cpp TryPrepareItemFile: If `CopyToUser == true`, copies the item's content file from install dir to user config dir (`~/.eaglemode/emMain/VcItems/`), allowing user customization.
+
+**Current Rust:** Logs warning and uses original path instead.
+
+**Implementation:**
+1. In emVirtualCosmosModel::Reload, check `CopyToUser` flag
+2. If true: `std::fs::copy()` from origDir to userDir (create dirs as needed)
+3. Use user copy path for subsequent file panel creation
+4. Handle errors gracefully (fall back to original)
+
+**Files:** `crates/emmain/src/emVirtualCosmos.rs`
+
+### 19. ReloadFiles() (F5) — File Model Update Signal
+
+C++ emMainWindow.cpp:138-141: `Signal(emFileModel::AcquireUpdateSignalModel(GetRootContext())->Sig)` — fires global signal that all file models listen to for reload.
+
+**Current Rust:** Stub with log message.
+
+**Implementation:**
+1. Create a global "file update signal" SignalId on the scheduler
+2. All file models (emFileModel instances) connect to this signal
+3. ReloadFiles() fires the signal
+4. File models check `IsSignaled()` in their Cycle and re-read from disk
+
+**Files:** `crates/emmain/src/emMainWindow.rs`, `crates/emcore/src/emFileModel.rs`
+
+### 20. emAutoplayControlPanel Full UI
+
+C++ emAutoplay.cpp:1157-1334: Full widget tree with AutoplayButton (toggle + progress bar), Previous/Next buttons, "Continue Last Autoplay", Duration scalar field (500ms-120s), Recursive/Loop checkboxes.
+
+**Current Rust:** Stub with placeholder ControlButton widgets. DurationValueToMS/DurationMSToValue helpers exist.
+
+**Implementation:**
+1. Replace placeholder ControlButtons with real emButton/emCheckButton (already ported in emcore)
+2. Add emScalarField for duration (if not ported: implement slider widget)
+3. Add progress bar overlay on autoplay toggle button
+4. Wire all controls to emAutoplayViewModel via signals or ClickFlags pattern
+5. Match C++ layout weights and style
+
+**Dependency:** emScalarField widget. If not ported, create a minimal slider panel.
+
+**Files:** `crates/emmain/src/emAutoplayControlPanel.rs`
+
+### 21. Screensaver Inhibition
+
+C++ emX11Screen.cpp:711-765: Uses `XResetScreenSaver()` + `xscreensaver-command -deactivate` on a 59-second timer when inhibited. Ref-counted inhibit/allow.
+
+**Current Rust:** D-Bus `org.freedesktop.ScreenSaver.Inhibit()` exists in emWindowPlatform.rs but missing periodic re-inhibition timer and fallback to xscreensaver-command.
+
+**Implementation:**
+1. Add 59-second periodic timer (using existing timer system) when inhibited
+2. On timer tick: re-call Inhibit or reset screensaver
+3. Add fallback: shell out to `xscreensaver-command -deactivate` for non-D-Bus systems
+4. Track ref count across windows (inhibit_count on App or per-window)
+
+**Files:** `crates/emcore/src/emWindowPlatform.rs`
 
 ## Blast Radius
 
 | File | Change | Complexity |
 |------|--------|------------|
-| `emSubViewPanel.rs` | Add HandleNotice + run_panel_cycles to sub-tree in Paint | Medium — core fix |
-| `emMainPanel.rs` | Delete creation_stage, simplify LayoutChildren, add sub-view ID getters | Low — deletion |
-| `emMainWindow.rs` | Rewrite StartupEngine states 5-6, add ToggleControlView, extend MainWindowEngine for title | High — multi-concern |
-| `emMainControlPanel.rs` | Restructure layout (bookmarks inside lMain, add contentControlPanel slot), add Escape handling | High — layout rework |
-| `emWindow.rs` | Remove control_tree/control_view/control_strip_height, simplify render/resize | Medium — deletion |
-| `emGUIFramework.rs` | Delete ZuiWindow control panel lifecycle from about_to_wait | Low — deletion |
-| `emView.rs` | Add real SignalIds (ControlPanelSignal, TitleSignal), optional scheduler ref, fire signals on active panel change | Medium |
-| `emMainWindow.rs` (or new file) | ControlPanelBridge engine — signal-driven ContentControlPanel lifecycle | Medium — new engine |
+| `emSubViewPanel.rs` | Add HandleNotice + run_panel_cycles to sub-tree in Paint | Medium |
+| `emMainPanel.rs` | Delete creation_stage, simplify LayoutChildren, add sub-view ID getters | Low |
+| `emMainWindow.rs` | Rewrite StartupEngine, ToggleControlView, MainWindowEngine title, Duplicate, CreateControlWindow, RecreateContentPanels, DoCustomCheat | High |
+| `emMainControlPanel.rs` | Restructure layout, add contentControlPanel slot, Escape handling | High |
+| `emWindow.rs` | Remove control system, simplify render/resize | Medium |
+| `emGUIFramework.rs` | Delete ZuiWindow control panel lifecycle | Low |
+| `emView.rs` | Add SignalIds, scheduler ref, VisitByIdentity | Medium |
+| `emMainWindow.rs` (new engine) | ControlPanelBridge engine | Medium |
+| `emWindowStateSaver.rs` (new) | Geometry persistence engine | Medium |
+| `emStarFieldPanel.rs` | TicTacToe easter egg panel | Small |
+| `emVirtualCosmos.rs` | Copy-to-user for cosmos items | Small |
+| `emAutoplayControlPanel.rs` | Full UI with real widgets | Medium-Large |
+| `emWindowPlatform.rs` | Screensaver timer + fallback | Small |
+| `emFileModel.rs` | ReloadFiles signal infrastructure | Medium |
 
 ## Testing Strategy
 
 - Golden tests: 239 pass, 4 fail baseline — no new failures
 - Full suite: no new failures
 - `cargo clippy -- -D warnings` clean
-- Manual verification:
-  - App launches, eagle image with gradient visible
-  - Startup overlay appears and covers eagle
-  - Zoom animation plays (zoom to ":", wait, zoom to start location)
-  - After overlay clears: cosmos visible (black starfield + colored stars)
-  - Cosmos items visible (Home, Root, Stocks1 with borders and titles)
-  - Zooming into items shows content (Stocks data, file listings)
-  - Control panel visible when control view focused (bookmarks, buttons)
-  - Escape toggles between control and content views
-  - F11 toggles fullscreen
-  - Per-panel context controls appear when different content panels are focused
-  - Input blocked during startup animation
-  - Window title shows "Eagle Mode - " + current panel title after startup
-  - Buttons work: Close (Alt+F4), Fullscreen (F11)
-  - Autoplay works (F12 variants)
-  - Bookmark hotkeys navigate (if configured)
+
+### Tier 1 Manual Verification (Sections 1-11)
+- App launches, eagle image with gradient visible
+- Startup overlay appears and covers eagle
+- Zoom animation plays (zoom to ":", wait, zoom to start location)
+- After overlay clears: cosmos visible (black starfield + colored stars)
+- Cosmos items visible (Home, Root, Stocks1 with borders and titles)
+- Zooming into items shows content (Stocks data, file listings)
+- Control panel visible when control view focused (bookmarks, buttons)
+- Escape toggles between control and content views
+- F11 toggles fullscreen
+- Per-panel context controls appear when different content panels are focused
+- Input blocked during startup animation
+- Window title shows "Eagle Mode - " + current panel title after startup
+- Buttons work: Close (Alt+F4), Fullscreen (F11)
+- Autoplay works (F12 variants)
+- Bookmark hotkeys navigate to locations
+
+### Tier 2 Manual Verification (Sections 12-21)
+- F4 creates duplicate window at same location
+- Detached control window opens via "ccw" cheat, raises if already open
+- "rcp" cheat recreates content panels preserving view state
+- Window position/size persists across sessions
+- TicTacToe easter egg appears deep in starfield (depth > 50)
+- Cosmos items with CopyToUser=true create user-local copies
+- F5 triggers file reload across all file models
+- Autoplay control panel has full UI: toggle button with progress, prev/next, duration slider, recursive/loop checkboxes
+- Screensaver inhibited during autoplay, re-inhibited every 59s
 
 ## Success Criteria
 
+### Tier 1 (Core)
 1. Runtime rendering matches C++ Eagle Mode startup visual sequence
 2. Eagle image visible (gradient + 14 polygons)
 3. Cosmos visible after zoom (starfield + items with content loading)
@@ -529,5 +671,19 @@ These C++ features exist but are not needed for cosmos to work. Explicitly defer
 8. ToggleControlView works with Escape
 9. emMainControlPanel layout matches C++ (lMain with bookmarks, contentControlPanel slot)
 10. Dynamic window title: "Eagle Mode - " + content title
-11. All existing tests pass (golden + full suite)
-12. No new clippy warnings
+
+### Tier 2 (Full C++ Parity)
+11. Duplicate() creates working second window
+12. CreateControlWindow() opens/raises detached control popup
+13. DoCustomCheat() handles "rcp" and "ccw"
+14. RecreateContentPanels() preserves view state
+15. WindowStateSaver persists geometry across sessions
+16. TicTacToe easter egg with minimax AI
+17. Copy-to-user for cosmos items with CopyToUser flag
+18. ReloadFiles() fires global file model update signal
+19. emAutoplayControlPanel has full widget tree (no placeholders)
+20. Screensaver inhibition with timer and xscreensaver fallback
+
+### Both Tiers
+21. All existing tests pass (golden + full suite)
+22. No new clippy warnings
