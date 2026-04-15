@@ -43,13 +43,6 @@ fn main() {
               event_loop: &winit::event_loop::ActiveEventLoop| {
             let mw = emMain::emMainWindow::create_main_window(app, event_loop, config);
             emMain::emMainWindow::set_main_window(mw);
-
-            // Register per-frame callback to drive startup engine and main window cycle.
-            app.set_frame_callback(Box::new(|app| {
-                emMain::emMainWindow::with_main_window(|mw| {
-                    mw.cycle_startup(app);
-                });
-            }));
         },
     );
 

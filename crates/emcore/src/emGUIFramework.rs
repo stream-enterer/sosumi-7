@@ -76,9 +76,6 @@ impl GpuContext {
 /// User-provided setup callback, called once during `resumed()`.
 pub type SetupFn = Box<dyn FnOnce(&mut App, &ActiveEventLoop)>;
 
-/// User-provided per-frame callback, called every frame after the scheduler runs.
-pub type FrameFn = Box<dyn FnMut(&mut App)>;
-
 /// The main application handler integrating winit, wgpu, the panel tree, and
 /// the scheduler.
 pub struct App {
@@ -90,7 +87,6 @@ pub struct App {
     pub windows: HashMap<WindowId, ZuiWindow>,
     pub input_state: emInputState,
     setup_fn: Option<SetupFn>,
-    frame_fn: Option<FrameFn>,
     initialized: bool,
     last_frame_time: Instant,
 }
@@ -108,7 +104,6 @@ impl App {
             windows: HashMap::new(),
             input_state: emInputState::new(),
             setup_fn: Some(setup),
-            frame_fn: None,
             initialized: false,
             last_frame_time: Instant::now(),
         }
@@ -124,11 +119,6 @@ impl App {
         // after Surface is already destroyed crashes in the Vulkan driver.
         // https://github.com/gfx-rs/wgpu/issues/5781
         std::process::exit(0);
-    }
-
-    /// Set a per-frame callback, called every frame after the scheduler runs.
-    pub fn set_frame_callback(&mut self, f: FrameFn) {
-        self.frame_fn = Some(f);
     }
 
     /// Get the GPU context (panics if not yet initialized).
@@ -319,12 +309,6 @@ impl ApplicationHandler for App {
 
         // Run one scheduler time slice
         self.scheduler.borrow_mut().DoTimeSlice();
-
-        // Run per-frame application callback (startup engine, etc.)
-        if let Some(mut f) = self.frame_fn.take() {
-            f(self);
-            self.frame_fn = Some(f);
-        }
 
         // Run per-frame panel cycles
         self.tree.run_panel_cycles();
