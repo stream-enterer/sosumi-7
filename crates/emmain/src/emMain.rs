@@ -5,22 +5,53 @@ use emcore::emMiniIpc::emMiniIpcClient;
 /// Compute the IPC server name for single-instance coordination.
 ///
 /// Port of C++ `emMain::CalcServerName`.
-/// Derives a unique name from the hostname and DISPLAY environment variable.
+/// Parses the DISPLAY env var (`[host]:display[.screen]`), normalises the host
+/// (empty/"localhost"/"127.0.0.1"/current-hostname all collapse to ""), and
+/// defaults missing parts to "0".  Output: `eaglemode_on_<host>:<display>.<screen>`.
 pub fn CalcServerName() -> String {
-    let display = std::env::var("DISPLAY").unwrap_or_else(|_| ":0".to_string());
-    let hostname = get_hostname();
-    format!(
-        "eaglemode_on_{}_{}",
-        hostname,
-        display.replace([':', '.'], "_")
-    )
+    let display_env = std::env::var("DISPLAY").unwrap_or_default();
+    let p = display_env.as_str();
+
+    let (h, d, s) = if let Some(colon_pos) = p.rfind(':') {
+        let h_raw = &p[..colon_pos];
+        let rest = &p[colon_pos + 1..];
+        let (d_raw, s_raw) = if let Some(dot_pos) = rest.rfind('.') {
+            (&rest[..dot_pos], &rest[dot_pos + 1..])
+        } else {
+            (rest, "")
+        };
+        (h_raw, d_raw, s_raw)
+    } else {
+        (p, "", "")
+    };
+
+    // Normalise host: collapse local aliases to ""
+    let local = get_hostname();
+    let h = if h == "localhost" || h == "127.0.0.1" || h == local.as_str() {
+        ""
+    } else {
+        h
+    };
+
+    let d = if d.is_empty() { "0" } else { d };
+    let s = if s.is_empty() { "0" } else { s };
+
+    format!("eaglemode_on_{h}:{d}.{s}")
 }
 
-/// Read the system hostname via /etc/hostname, falling back to "localhost".
+/// Return the system hostname via `gethostname(2)`, falling back to "localhost".
 fn get_hostname() -> String {
-    std::fs::read_to_string("/etc/hostname")
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| "localhost".to_string())
+    // SAFETY: gethostname fills a stack buffer; we check the return code.
+    let mut buf = [0u8; 512];
+    let rc = unsafe {
+        libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len())
+    };
+    if rc != 0 {
+        return "localhost".to_string();
+    }
+    // Find NUL terminator
+    let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    String::from_utf8_lossy(&buf[..len]).into_owned()
 }
 
 /// Try to send a command to an already-running instance via IPC.
@@ -92,11 +123,24 @@ mod tests {
     #[test]
     fn test_calc_server_name() {
         let name = CalcServerName();
+        // Format: eaglemode_on_<host>:<display>.<screen>
         assert!(name.starts_with("eaglemode_on_"));
-        // Should contain no colons or dots (they're replaced)
         let suffix = &name["eaglemode_on_".len()..];
-        assert!(!suffix.contains(':'));
-        assert!(!suffix.contains('.'));
+        // Must contain exactly one colon and at least one dot
+        assert_eq!(suffix.matches(':').count(), 1);
+        assert!(suffix.contains('.'));
+    }
+
+    #[test]
+    fn test_calc_server_name_display_parsing() {
+        // Verify that DISPLAY=:0 (no host, no screen) produces :0.0
+        // We can't easily set env vars in parallel tests, but we can test
+        // the logic indirectly: the name must have the <host>:<disp>.<screen> structure.
+        let name = CalcServerName();
+        let after_prefix = &name["eaglemode_on_".len()..];
+        let colon_pos = after_prefix.find(':').expect("must have colon");
+        let after_colon = &after_prefix[colon_pos + 1..];
+        assert!(after_colon.contains('.'), "must have dot after colon");
     }
 
     #[test]

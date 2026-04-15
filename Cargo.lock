@@ -825,6 +825,7 @@ name = "emmain"
 version = "0.1.0"
 dependencies = [
  "emcore",
+ "libc",
  "log",
  "slotmap",
  "winit",
