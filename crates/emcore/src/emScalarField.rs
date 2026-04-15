@@ -142,6 +142,11 @@ impl emScalarField {
         self.border.caption = caption.to_string();
     }
 
+    /// Set the border description text. Matches C++ `emScalarField::SetDescription`.
+    pub fn SetDescription(&mut self, desc: &str) {
+        self.border.description = desc.to_string();
+    }
+
     pub(crate) fn border_mut(&mut self) -> &mut emBorder {
         &mut self.border
     }

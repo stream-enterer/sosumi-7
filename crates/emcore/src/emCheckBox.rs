@@ -54,6 +54,11 @@ impl emCheckBox {
         }
     }
 
+    /// Set the border description text. Matches C++ `emCheckBox::SetDescription`.
+    pub fn SetDescription(&mut self, desc: &str) {
+        self.border.description = desc.to_string();
+    }
+
     pub fn IsChecked(&self) -> bool {
         self.checked
     }

@@ -26,7 +26,7 @@ use emcore::emPanelCtx::PanelCtx;
 use emcore::emPanelTree::PanelId;
 use emcore::emTiling::{ChildConstraint, Orientation, Spacing};
 
-use crate::emAutoplayControlPanel::emAutoplayControlPanel;
+use crate::emAutoplayControlPanel::{emAutoplayControlPanel, AutoplayFlags};
 use crate::emBookmarks::emBookmarksPanel;
 use crate::emMainConfig::emMainConfig;
 
@@ -44,41 +44,6 @@ struct ClickFlags {
     reload: Cell<bool>,
     close: Cell<bool>,
     quit: Cell<bool>,
-}
-
-// ── ControlButton ────────────────────────────────────────────────────────────
-
-/// Simple labeled button stub.
-///
-/// DIVERGED: C++ uses `emButton` / `emCheckButton` widgets from emToolkit.
-/// Rust uses this placeholder in places where the full toolkit button is not
-/// yet wired (e.g. emAutoplayControlPanel).
-pub(crate) struct ControlButton {
-    pub(crate) label: String,
-}
-
-impl PanelBehavior for ControlButton {
-    fn get_title(&self) -> Option<String> {
-        Some(self.label.clone())
-    }
-
-    fn IsOpaque(&self) -> bool {
-        true
-    }
-
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
-        // Button background: emLook::GetButtonBgColor (C++ default 0x596790FF).
-        let bg = emColor::from_packed(0x596790FF);
-        // Button foreground: emLook::GetButtonFgColor (C++ default 0xF2F2F7FF).
-        let fg = emColor::from_packed(0xF2F2F7FF);
-        let canvas = emColor::TRANSPARENT;
-
-        painter.PaintRect(0.0, 0.0, w, h, bg, canvas);
-
-        let font_h = (h * 0.45).max(0.01);
-        let text_y = h * 0.5 - font_h * 0.5;
-        painter.PaintText(w * 0.05, text_y, &self.label, font_h, 1.0, fg, canvas);
-    }
 }
 
 // ── ButtonPanel ──────────────────────────────────────────────────────────────
@@ -158,6 +123,7 @@ pub struct emMainControlPanel {
     /// C++ SetChildWeight(0, 11.37) SetChildWeight(1, 21.32).
     layout_main: emLinearLayout,
     click_flags: Rc<ClickFlags>,
+    autoplay_flags: Rc<AutoplayFlags>,
     // Panel IDs for child widgets (used for layout weight assignment).
     lmain_panel: Option<PanelId>,
     _content_control_panel: Option<PanelId>,
@@ -206,6 +172,7 @@ impl emMainControlPanel {
             look: emLook::default(),
             layout_main,
             click_flags: Rc::new(ClickFlags::default()),
+            autoplay_flags: Rc::new(AutoplayFlags::default()),
             lmain_panel: None,
             _content_control_panel: None,
             _content_view_id: content_view_id,
@@ -227,6 +194,7 @@ impl emMainControlPanel {
             Rc::clone(&self.ctx),
             Rc::clone(&look),
             Rc::clone(&flags),
+            Rc::clone(&self.autoplay_flags),
         ));
         let lmain_id = ctx.create_child_with("lMain", lmain);
         self.lmain_panel = Some(lmain_id);
@@ -311,8 +279,11 @@ impl PanelBehavior for emMainControlPanel {
         }
 
         if flags.reload.take() {
+            // DIVERGED: C++ calls MainWin.ReloadFiles() directly via signal.
+            // Rust sets a flag on emMainWindow, polled by MainWindowEngine which
+            // has EngineCtx access to fire the file_update_signal.
             crate::emMainWindow::with_main_window(|mw| {
-                mw.ReloadFiles();
+                mw.to_reload = true;
             });
         }
 
@@ -361,13 +332,19 @@ struct LMainPanel {
     look: Rc<emLook>,
     layout: emLinearLayout,
     click_flags: Rc<ClickFlags>,
+    autoplay_flags: Rc<AutoplayFlags>,
     general_panel: Option<PanelId>,
     bookmarks_panel: Option<PanelId>,
     children_created: bool,
 }
 
 impl LMainPanel {
-    fn new(ctx: Rc<emContext>, look: Rc<emLook>, click_flags: Rc<ClickFlags>) -> Self {
+    fn new(
+        ctx: Rc<emContext>,
+        look: Rc<emLook>,
+        click_flags: Rc<ClickFlags>,
+        autoplay_flags: Rc<AutoplayFlags>,
+    ) -> Self {
         Self {
             ctx,
             look,
@@ -383,6 +360,7 @@ impl LMainPanel {
                 ..emLinearLayout::horizontal()
             },
             click_flags,
+            autoplay_flags,
             general_panel: None,
             bookmarks_panel: None,
             children_created: false,
@@ -395,6 +373,7 @@ impl LMainPanel {
             Rc::clone(&self.ctx),
             Rc::clone(&self.look),
             Rc::clone(&self.click_flags),
+            Rc::clone(&self.autoplay_flags),
         ));
         let general_id = ctx.create_child_with("general", general);
         self.general_panel = Some(general_id);
@@ -447,13 +426,19 @@ struct GeneralPanel {
     look: Rc<emLook>,
     layout: emLinearLayout,
     click_flags: Rc<ClickFlags>,
+    autoplay_flags: Rc<AutoplayFlags>,
     about_cfg_panel: Option<PanelId>,
     commands_panel: Option<PanelId>,
     children_created: bool,
 }
 
 impl GeneralPanel {
-    fn new(ctx: Rc<emContext>, look: Rc<emLook>, click_flags: Rc<ClickFlags>) -> Self {
+    fn new(
+        ctx: Rc<emContext>,
+        look: Rc<emLook>,
+        click_flags: Rc<ClickFlags>,
+        autoplay_flags: Rc<AutoplayFlags>,
+    ) -> Self {
         Self {
             ctx,
             look,
@@ -469,6 +454,7 @@ impl GeneralPanel {
                 ..emLinearLayout::horizontal()
             },
             click_flags,
+            autoplay_flags,
             about_cfg_panel: None,
             commands_panel: None,
             children_created: false,
@@ -485,6 +471,7 @@ impl GeneralPanel {
         let commands = Box::new(CommandsPanel::new(
             Rc::clone(&self.look),
             Rc::clone(&self.click_flags),
+            Rc::clone(&self.autoplay_flags),
         ));
         let commands_id = ctx.create_child_with("commands", commands);
         self.commands_panel = Some(commands_id);
@@ -661,11 +648,16 @@ struct CommandsPanel {
     border: emBorder,
     layout: emLinearLayout,
     click_flags: Rc<ClickFlags>,
+    autoplay_flags: Rc<AutoplayFlags>,
     children_created: bool,
 }
 
 impl CommandsPanel {
-    fn new(look: Rc<emLook>, click_flags: Rc<ClickFlags>) -> Self {
+    fn new(
+        look: Rc<emLook>,
+        click_flags: Rc<ClickFlags>,
+        autoplay_flags: Rc<AutoplayFlags>,
+    ) -> Self {
         Self {
             look,
             border: emBorder::new(OuterBorderType::Group)
@@ -676,6 +668,7 @@ impl CommandsPanel {
             // support tallness preferences in the same way.
             layout: emLinearLayout::vertical(),
             click_flags,
+            autoplay_flags,
             children_created: false,
         }
     }
@@ -728,7 +721,10 @@ impl CommandsPanel {
         );
 
         // ── Autoplay control panel ──
-        let autoplay = Box::new(emAutoplayControlPanel::new());
+        let autoplay = Box::new(emAutoplayControlPanel::new(
+            Rc::clone(&look),
+            Rc::clone(&self.autoplay_flags),
+        ));
         let autoplay_id = ctx.create_child_with("autoplay", autoplay);
 
         // ── Close / Quit (lCloseQuit) ──
@@ -872,15 +868,6 @@ mod tests {
         let ctx = emcore::emContext::emContext::NewRoot();
         let panel = emMainControlPanel::new(Rc::clone(&ctx), None);
         let _: Box<dyn PanelBehavior> = Box::new(panel);
-    }
-
-    #[test]
-    fn test_control_button() {
-        let btn = ControlButton {
-            label: "Test".to_string(),
-        };
-        assert_eq!(btn.get_title(), Some("Test".to_string()));
-        assert!(btn.IsOpaque());
     }
 
     #[test]

@@ -70,6 +70,7 @@ pub struct emMainWindow {
     pub(crate) control_window_id: Option<winit::window::WindowId>,
     pub(crate) startup_engine_id: Option<EngineId>,
     pub to_close: bool,
+    pub to_reload: bool,
     pub(crate) _close_signal: Option<SignalId>,
     pub(crate) _visit_identity: Option<String>,
     pub(crate) _visit_rel_x: f64,
@@ -94,6 +95,7 @@ impl emMainWindow {
             control_window_id: None,
             startup_engine_id: None,
             to_close: false,
+            to_reload: false,
             _close_signal: None,
             _visit_identity: None,
             _visit_rel_x: 0.0,
@@ -117,8 +119,11 @@ impl emMainWindow {
     }
 
     /// Port of C++ `emMainWindow::ReloadFiles`.
-    pub fn ReloadFiles(&self) {
-        log::info!("emMainWindow::ReloadFiles");
+    /// Fires the global file-update signal so all listening file models reload.
+    pub fn ReloadFiles(&self, app: &App) {
+        app.scheduler
+            .borrow_mut()
+            .fire(app.file_update_signal);
     }
 
     /// Port of C++ `emMainWindow::ToggleControlView` (emMainWindow.cpp:144-158).
@@ -258,7 +263,7 @@ impl emMainWindow {
                     && !input_state.GetCtrl()
                     && !input_state.GetAlt() =>
             {
-                self.ReloadFiles();
+                self.ReloadFiles(app);
                 true
             }
             // F11 no modifier: Toggle fullscreen (C++ emMainWindow.cpp:225-228)
@@ -343,6 +348,7 @@ where
 pub(crate) struct MainWindowEngine {
     close_signal: SignalId,
     title_signal: Option<SignalId>,
+    file_update_signal: SignalId,
     window_id: Option<winit::window::WindowId>,
     startup_done: bool,
 }
@@ -377,6 +383,16 @@ impl emEngine for MainWindowEngine {
             if done {
                 self.startup_done = true;
             }
+        }
+
+        // Poll reload flag set by emMainControlPanel::Cycle and fire the
+        // file_update_signal (C++ emMainWindow::ReloadFiles).
+        let to_reload = with_main_window(|mw| mw.to_reload).unwrap_or(false);
+        if to_reload {
+            with_main_window(|mw| {
+                mw.to_reload = false;
+            });
+            ctx.fire(self.file_update_signal);
         }
 
         // Self-delete if to_close (C++ emMainWindow.cpp:184-187).
@@ -731,6 +747,7 @@ pub fn create_main_window(
     let mw_engine = MainWindowEngine {
         close_signal,
         title_signal: Some(title_signal),
+        file_update_signal: app.file_update_signal,
         window_id: Some(window_id),
         startup_done: false,
     };

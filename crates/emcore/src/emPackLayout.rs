@@ -54,7 +54,8 @@ impl emPackLayout {
         self.child_constraints.clear();
     }
 
-    pub(crate) fn do_layout_skip(
+    /// Public for cross-crate layout usage by emmain widget panels.
+    pub fn do_layout_skip(
         &mut self,
         ctx: &mut PanelCtx,
         skip: Option<PanelId>,

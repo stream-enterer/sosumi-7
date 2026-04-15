@@ -13,6 +13,7 @@ use crate::emInput::{InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emPanelTree::PanelTree;
 use crate::emScheduler::EngineScheduler;
+use crate::emSignal::SignalId;
 
 use crate::emScreen::emScreen;
 use super::emWindow::{WindowFlags, ZuiWindow};
@@ -93,6 +94,9 @@ pub struct App {
     /// (e.g., window creation for Duplicate/CreateControlWindow).
     /// Drained each frame in `about_to_wait`.
     pub pending_actions: Vec<DeferredAction>,
+    /// Global file-update signal. Port of C++ `emFileModel::AcquireUpdateSignalModel`.
+    /// When fired, all file models that listen to it will reload from disk.
+    pub file_update_signal: SignalId,
     setup_fn: Option<SetupFn>,
     initialized: bool,
     last_frame_time: Instant,
@@ -101,6 +105,7 @@ pub struct App {
 impl App {
     pub fn new(setup: SetupFn) -> Self {
         let scheduler = Rc::new(RefCell::new(EngineScheduler::new()));
+        let file_update_signal = scheduler.borrow_mut().create_signal();
         let context = emContext::NewRootWithScheduler(Rc::clone(&scheduler));
         Self {
             gpu: None,
@@ -111,6 +116,7 @@ impl App {
             windows: HashMap::new(),
             input_state: emInputState::new(),
             pending_actions: Vec::new(),
+            file_update_signal,
             setup_fn: Some(setup),
             initialized: false,
             last_frame_time: Instant::now(),

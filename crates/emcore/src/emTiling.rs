@@ -252,7 +252,8 @@ pub(crate) fn get_constraint<'a>(
 /// Replicates `emBorder::LayoutChildren()` base-call behavior: finds the aux
 /// panel by name, positions it using `border.get_aux_rect()`, and returns its
 /// PanelId so the layout algorithm can exclude it from normal layout.
-pub(crate) fn position_aux_panel(
+/// Public for cross-crate layout usage by emmain widget panels.
+pub fn position_aux_panel(
     ctx: &mut crate::emPanelCtx::PanelCtx,
     border: &crate::emBorder::emBorder,
 ) -> Option<PanelId> {
