@@ -581,9 +581,6 @@ impl PanelBehavior for emVirtualCosmosItemPanel {
 
 // ── emVirtualCosmosPanel ──────────────────────────────────────────────────────
 
-/// Panel name prefix for item sub-panels.
-const ITEM_PANEL_PREFIX: &str = "item:";
-
 /// The container panel that renders the starfield background and all cosmos
 /// item panels from the `emVirtualCosmosModel`.
 ///
@@ -647,7 +644,7 @@ impl PanelBehavior for emVirtualCosmosPanel {
             // for the cosmos background — depth=50 matches C++ usage).
             let seed: u32 = 0x7f3a_19c0;
             let bg = crate::emStarFieldPanel::emStarFieldPanel::new(50, seed);
-            let child_id = ctx.create_child_with("background", Box::new(bg));
+            let child_id = ctx.create_child_with("_StarField", Box::new(bg));
             self.background_panel = Some(child_id);
         }
 
@@ -696,7 +693,7 @@ impl PanelBehavior for emVirtualCosmosPanel {
         let mut new_item_panels: Vec<(String, PanelId)> = Vec::new();
 
         for rec in &desired {
-            let child_name = format!("{}{}", ITEM_PANEL_PREFIX, rec.Name);
+            let child_name = rec.Name.clone();
 
             let child_id = if let Some(&existing_id) = existing.get(&rec.Name) {
                 // Update existing panel's item record.
