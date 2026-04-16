@@ -314,7 +314,7 @@ impl PanelBehavior for emMainControlPanel {
         true
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {}
 }
 
 // ── LMainPanel ──────────────────────────────────────────────────────────────
@@ -407,7 +407,7 @@ impl PanelBehavior for LMainPanel {
         self.layout.do_layout_skip(ctx, None, None);
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {}
 }
 
 // ── GeneralPanel ─────────────────────────────────────────────────────────────
@@ -500,7 +500,7 @@ impl PanelBehavior for GeneralPanel {
         self.layout.do_layout_skip(ctx, None, None);
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {}
 }
 
 // ── AboutCfgPanel ────────────────────────────────────────────────────────────
@@ -570,7 +570,7 @@ impl PanelBehavior for AboutCfgPanel {
         self.layout.do_layout_skip(ctx, None, None);
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {}
 }
 
 // ── AboutPanel ───────────────────────────────────────────────────────────────
@@ -606,7 +606,7 @@ impl PanelBehavior for AboutPanel {
         painter.PaintText(w * 0.05, text_y, about_text, font_h, 1.0, fg, canvas);
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {}
 }
 
 // ── CoreConfigPlaceholder ────────────────────────────────────────────────────
@@ -638,7 +638,7 @@ impl PanelBehavior for CoreConfigPlaceholder {
         );
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {}
 }
 
 // ── CommandsPanel ────────────────────────────────────────────────────────────
@@ -823,7 +823,7 @@ impl PanelBehavior for CommandsPanel {
         true
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {}
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

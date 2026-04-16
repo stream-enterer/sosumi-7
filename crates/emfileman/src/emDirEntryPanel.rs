@@ -349,7 +349,7 @@ impl emDirEntryPanel {
 }
 
 impl PanelBehavior for emDirEntryPanel {
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.intersects(
             NoticeFlags::VIEW_CHANGED
                 | NoticeFlags::SOUGHT_NAME_CHANGED

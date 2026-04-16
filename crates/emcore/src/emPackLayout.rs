@@ -175,7 +175,7 @@ impl PanelBehavior for emPackLayout {
         self.do_layout(ctx);
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {}
 }
 
 #[derive(Copy, Clone, Debug)]

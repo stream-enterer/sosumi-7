@@ -14,6 +14,7 @@ use emcore::emInput::{emInputEvent, InputKey};
 use emcore::emInputState::emInputState;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
+use emcore::emPanelCtx::PanelCtx;
 use emcore::emViewRenderer::SoftwareCompositor;
 
 use emcore::emListBox::{emListBox, SelectionMode};
@@ -44,7 +45,7 @@ impl PanelBehavior for SharedListBoxPanel {
         self.inner.borrow_mut().Input(event, state, input_state)
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
             self.inner
                 .borrow_mut()

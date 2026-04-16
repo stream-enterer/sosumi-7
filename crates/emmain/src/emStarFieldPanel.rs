@@ -275,7 +275,7 @@ impl PanelBehavior for emStarFieldPanel {
         }
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, _flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         // Cache viewport width so LayoutChildren can decide on children.
         self.noticed_viewed_w = state.viewed_rect.w;
     }

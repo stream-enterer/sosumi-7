@@ -404,7 +404,7 @@ impl PanelBehavior for emFilePanel {
         self.cycle_inner()
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.contains(NoticeFlags::MEMORY_LIMIT_CHANGED) {
             self.cached_memory_limit = state.memory_limit;
         }
@@ -653,12 +653,21 @@ mod tests {
         assert!(!changed);
     }
 
+    // Helper for tests: build a (tree, id) to construct a PanelCtx.
+    fn make_notice_ctx() -> (crate::emPanelTree::PanelTree, crate::emPanelTree::PanelId) {
+        let mut tree = crate::emPanelTree::PanelTree::new();
+        let root = tree.create_root("test");
+        (tree, root)
+    }
+
     #[test]
     fn notice_updates_cached_memory_limit() {
         let (mut panel, _model) = make_panel_with_model();
         let mut state = PanelState::default_for_test();
         state.memory_limit = 2048;
-        panel.notice(NoticeFlags::MEMORY_LIMIT_CHANGED, &state);
+        let (mut tree, id) = make_notice_ctx();
+        let mut ctx = crate::emPanelCtx::PanelCtx::new(&mut tree, id);
+        panel.notice(NoticeFlags::MEMORY_LIMIT_CHANGED, &state, &mut ctx);
         assert_eq!(panel.cached_memory_limit, 2048);
     }
 
@@ -667,7 +676,9 @@ mod tests {
         let (mut panel, _model) = make_panel_with_model();
         let mut state = PanelState::default_for_test();
         state.priority = 0.75;
-        panel.notice(NoticeFlags::UPDATE_PRIORITY_CHANGED, &state);
+        let (mut tree, id) = make_notice_ctx();
+        let mut ctx = crate::emPanelCtx::PanelCtx::new(&mut tree, id);
+        panel.notice(NoticeFlags::UPDATE_PRIORITY_CHANGED, &state, &mut ctx);
         assert!((panel.cached_priority - 0.75).abs() < f64::EPSILON);
     }
 
@@ -676,7 +687,9 @@ mod tests {
         let (mut panel, _model) = make_panel_with_model();
         let mut state = PanelState::default_for_test();
         state.in_active_path = true;
-        panel.notice(NoticeFlags::ACTIVE_CHANGED, &state);
+        let (mut tree, id) = make_notice_ctx();
+        let mut ctx = crate::emPanelCtx::PanelCtx::new(&mut tree, id);
+        panel.notice(NoticeFlags::ACTIVE_CHANGED, &state, &mut ctx);
         assert!(panel.cached_in_active_path);
     }
 

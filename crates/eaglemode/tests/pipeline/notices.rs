@@ -34,7 +34,7 @@ impl PropagatingBehavior {
 }
 
 impl PanelBehavior for PropagatingBehavior {
-    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {
         self.accumulated.borrow_mut().insert(flags);
     }
 
@@ -64,7 +64,7 @@ impl NamedRecordingBehavior {
 }
 
 impl PanelBehavior for NamedRecordingBehavior {
-    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {
         self.log
             .borrow_mut()
             .push(format!("{}:notice:{:?}", self.name, flags));
@@ -94,7 +94,7 @@ impl LabeledNoticeBehavior {
 }
 
 impl PanelBehavior for LabeledNoticeBehavior {
-    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {
         self.accumulated.borrow_mut().insert(flags);
         if flags.contains(NoticeFlags::ACTIVE_CHANGED) {
             self.log

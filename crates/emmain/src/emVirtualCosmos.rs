@@ -653,7 +653,7 @@ impl PanelBehavior for emVirtualCosmosItemPanel {
         }
     }
 
-    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::VIEW_CHANGED | NoticeFlags::LAYOUT_CHANGED) {
             self.update_needed = true;
         }
@@ -824,7 +824,7 @@ impl PanelBehavior for emVirtualCosmosPanel {
         false
     }
 
-    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {
         // C++ Notice(NF_VIEWING_CHANGED) calls UpdateChildren. We defer
         // to Cycle since notice() has no PanelCtx.
         if flags.intersects(NoticeFlags::VIEW_CHANGED) {

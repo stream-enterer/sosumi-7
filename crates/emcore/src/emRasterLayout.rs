@@ -342,7 +342,7 @@ impl PanelBehavior for emRasterLayout {
         self.do_layout(ctx);
     }
 
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {}
 }
 
 #[cfg(test)]

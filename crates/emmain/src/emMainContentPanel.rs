@@ -1140,7 +1140,7 @@ impl PanelBehavior for emMainContentPanel {
         Some("virtual_cosmos.tga".to_string())
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::LAYOUT_CHANGED | NoticeFlags::VIEW_CHANGED) {
             self.update_coordinates(state.height);
         }

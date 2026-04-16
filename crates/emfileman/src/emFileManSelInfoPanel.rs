@@ -651,7 +651,7 @@ impl PanelBehavior for emFileManSelInfoPanel {
         self.work_on_details()
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.contains(NoticeFlags::LAYOUT_CHANGED) {
             self.set_rectangles(state.height);
         }

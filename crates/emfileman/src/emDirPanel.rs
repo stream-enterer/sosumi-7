@@ -380,7 +380,7 @@ impl PanelBehavior for emDirPanel {
         false
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.contains(NoticeFlags::VIEW_CHANGED)
             || flags.contains(NoticeFlags::SOUGHT_NAME_CHANGED)
         {

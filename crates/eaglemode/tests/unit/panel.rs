@@ -29,7 +29,7 @@ impl PanelBehavior for TestBehavior {
         self.paint_count += 1;
     }
 
-    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {
         self.last_notice = flags;
     }
 

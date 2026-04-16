@@ -224,7 +224,7 @@ impl PanelBehavior for TextFieldPanel {
     fn IsOpaque(&self) -> bool {
         false
     }
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
             self.widget.on_focus_changed(state.in_focused_path());
         }

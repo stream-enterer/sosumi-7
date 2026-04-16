@@ -184,7 +184,7 @@ impl PanelBehavior for emFileLinkPanel {
         self.child_panel = None;
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::VIEW_CHANGED) {
             self.last_viewed = state.viewed;
             self.needs_update = true;

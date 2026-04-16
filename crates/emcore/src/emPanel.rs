@@ -253,7 +253,13 @@ pub trait PanelBehavior: AsAny {
     fn AutoShrink(&mut self, _ctx: &mut PanelCtx) {}
 
     /// Receive a notice about state changes.
-    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState) {}
+    ///
+    /// Port of C++ `emPanel::Notice(NoticeFlags flags)`. In C++ the method
+    /// runs on `*this` with implicit tree access (can create/delete
+    /// children, queue more notices, navigate the view). In Rust the same
+    /// access is exposed via `ctx: &mut PanelCtx`. Implementations that
+    /// don't need tree access can accept `_ctx` and ignore it.
+    fn notice(&mut self, _flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {}
 
     /// Whether the panel wants to auto-expand to fill available space.
     fn auto_expand(&self) -> bool {

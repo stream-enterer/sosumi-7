@@ -13,6 +13,7 @@ use emcore::emInputState::emInputState;
 use emcore::emLook::emLook;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
+use emcore::emPanelCtx::PanelCtx;
 use emcore::emTextField::emTextField;
 use emcore::emViewRenderer::SoftwareCompositor;
 
@@ -45,7 +46,7 @@ impl PanelBehavior for SharedTextFieldPanel {
         self.inner.borrow_mut().Input(event, state, input_state)
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
             self.inner
                 .borrow_mut()

@@ -681,7 +681,7 @@ impl PanelBehavior for emBookmarksPanel {
         }
     }
 
-    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.contains(NoticeFlags::LAYOUT_CHANGED) {
             // Force LayoutChildren to re-run.
         }

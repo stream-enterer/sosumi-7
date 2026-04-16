@@ -5,6 +5,7 @@ use crate::emPainter::emPainter;
 use crate::emViewAnimator::emViewAnimator;
 
 use super::emPanel::{NoticeFlags, PanelBehavior, PanelState, ParentInvalidation};
+use super::emPanelCtx::PanelCtx;
 use super::emPanelTree::{PanelId, PanelTree};
 use super::emView::{emView, ViewFlags};
 
@@ -211,7 +212,7 @@ impl PanelBehavior for emSubViewPanel {
         false
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         // C++ NF_FOCUS_CHANGED → SetViewFocused(IsFocused())
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
             self.sub_view

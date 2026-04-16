@@ -89,7 +89,7 @@ impl PanelBehavior for TextFieldPanel {
             .Paint(painter, w, h, state.enabled, pixel_scale);
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
             self.text_field.on_focus_changed(state.in_focused_path());
         }
@@ -142,7 +142,7 @@ impl PanelBehavior for ListBoxPanel {
         self.list_box.Input(event, _state, _input_state)
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
             self.list_box.on_focus_changed(state.in_active_path);
         }

@@ -1195,7 +1195,15 @@ impl PanelTree {
                 self.panels[id].pending_notices = NoticeFlags::empty();
                 if let Some(mut behavior) = self.take_behavior(id) {
                     let state = self.build_panel_state(id, window_focused, pixel_tallness);
-                    behavior.notice(flags, &state);
+                    {
+                        let mut ctx = PanelCtx::new(self, id);
+                        behavior.notice(flags, &state, &mut ctx);
+                    }
+                    // Notice() is allowed to delete the panel (C++
+                    // emPanel.cpp:1421 comment).
+                    if !self.panels.contains_key(id) {
+                        continue;
+                    }
                     if flags.intersects(NoticeFlags::LAYOUT_CHANGED | NoticeFlags::CHILDREN_CHANGED)
                         && self.GetFirstChild(id).is_some()
                     {

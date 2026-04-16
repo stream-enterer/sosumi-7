@@ -174,7 +174,7 @@ impl RecordingBehavior {
 }
 
 impl PanelBehavior for RecordingBehavior {
-    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {
         self.log.borrow_mut().push(format!("notice:{flags:?}"));
     }
 
@@ -214,7 +214,7 @@ impl NoticeBehavior {
 }
 
 impl PanelBehavior for NoticeBehavior {
-    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {
         self.accumulated.borrow_mut().insert(flags);
     }
 }
@@ -258,7 +258,7 @@ impl MutatingBehavior {
 }
 
 impl PanelBehavior for MutatingBehavior {
-    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState) {
+    fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, _ctx: &mut PanelCtx) {
         if let Some(ref mut f) = self.on_notice {
             f(flags);
         }
