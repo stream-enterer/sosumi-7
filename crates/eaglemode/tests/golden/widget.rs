@@ -598,11 +598,11 @@ impl PanelBehavior for ColorFieldExpandedBehavior {
         true
     }
 
+    fn AutoExpand(&mut self, ctx: &mut PanelCtx) {
+        self.color_field.create_expansion_children(ctx);
+    }
+
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
-        // Create expansion children on first layout call (triggered by auto-expand).
-        if ctx.children().is_empty() {
-            self.color_field.create_expansion_children(ctx);
-        }
         let rect = ctx.layout_rect();
         self.color_field.LayoutChildren(ctx, rect.w, rect.h);
     }
@@ -672,11 +672,11 @@ impl PanelBehavior for ListBoxExpandedBehavior {
         true
     }
 
+    fn AutoExpand(&mut self, ctx: &mut PanelCtx) {
+        self.list_box.create_item_children(ctx);
+    }
+
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
-        // Create item child panels on first layout call.
-        if ctx.children().is_empty() {
-            self.list_box.create_item_children(ctx);
-        }
         let rect = ctx.layout_rect();
         self.list_box.layout_item_children(ctx, rect.w, rect.h);
     }

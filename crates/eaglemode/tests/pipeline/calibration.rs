@@ -161,70 +161,44 @@ impl PanelBehavior for ColorFieldBehavior {
         emCursor::Normal
     }
 
+    fn AutoExpand(&mut self, ctx: &mut PanelCtx) {
+        self.color_field.create_expansion_children(ctx);
+    }
+
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
-        // This is what the production code SHOULD do but doesn't, because
-        // no ColorFieldPanel exists. The LayoutChildren method only positions
-        // children -- it does NOT create them.
         let rect = ctx.layout_rect();
         self.color_field.LayoutChildren(ctx, rect.w, rect.h);
     }
 }
 
-/// **Calibration test for known bug:**
-/// emColorField expanded state is missing RGB sliders -- auto-expansion doesn't
-/// create the expected child emScalarField panels.
+/// emColorField auto-expansion creates the expected child panels via AutoExpand().
 ///
-/// When the panel tree's auto-expansion mechanism fires for a emColorField
-/// panel, it calls `behavior.LayoutChildren()`. The emColorField's
-/// `LayoutChildren` method positions existing children but never calls
-/// `create_expansion_children` to actually CREATE the emScalarField/emTextField
-/// child panels. As a GetResult, the expanded emColorField has zero children
-/// instead of the expected 8 (R, G, B, A, H, S, V, Name -- inside a
-/// emRasterLayout container).
-///
-/// Expected: after expansion, the emColorField panel should have at least 1
-/// child (the emRasterLayout container "emColorField::InnerStuff"), which
-/// itself should contain >= 3 children (at minimum R, G, B sliders).
-///
-/// Actual: the panel has 0 children because create_expansion_children is
-/// never called.
+/// When the panel tree fires auto-expansion for an emColorField panel, it calls
+/// `behavior.AutoExpand()` which calls `create_expansion_children`. This creates
+/// an emRasterLayout container ("emColorField::InnerStuff") with emScalarField
+/// sliders for R, G, B, A, H, S, V and an emTextField for the color name/hex.
 #[test]
 fn colorfield_expansion_creates_child_sliders() {
     let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
 
-    // Create a emColorField panel with behavior.
     let look = emLook::new();
     let behavior = ColorFieldBehavior::new(look);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
-    // Tick for initial layout.
     h.tick();
-
-    // Trigger auto-expansion. expand_to sets the zoom and runs 10 ticks,
-    // which triggers update_auto_expansion -> behavior.LayoutChildren().
-    // At zoom 16x, the panel's viewed area is enormous (>> 150 threshold).
     h.expand_to(16.0);
 
-    // The panel should be auto-expanded at this zoom level.
     assert!(
         h.is_expanded(panel_id),
         "ColorField panel should be auto-expanded at 16x zoom"
     );
 
-    // BUG: after auto-expansion, LayoutChildren was called but
-    // create_expansion_children was NOT called, so no child panels exist.
-    //
-    // Count children: the expanded emColorField should have at least 1 child
-    // (the emRasterLayout "emColorField::InnerStuff" container), which itself
-    // should contain the R/G/B/A/H/S/V emScalarField children + Name emTextField.
     let child_count = h.tree.child_count(panel_id);
-
     assert!(
         child_count >= 1,
-        "Expanded emColorField should have child panels (emRasterLayout container \
-         with emScalarField sliders), but found {child_count} children. \
-         Bug: create_expansion_children() is never called during auto-expansion."
+        "Expanded emColorField should have 1 child (emRasterLayout container), \
+         but found {child_count} children."
     );
 }
 

@@ -649,14 +649,9 @@ impl emColorField {
     /// Positions the emRasterLayout child in the right half of the content rect,
     /// inset by `d = min(w,h) * 0.05`.
     ///
-    /// When the panel is auto-expanded but has no children yet, this method
-    /// creates them via `create_expansion_children`, matching the pattern
-    /// used by other widgets (e.g. `emCoreConfigPanel`).
+    /// Children are created by `create_expansion_children` which must be called
+    /// from `AutoExpand()` on the PanelBehavior wrapper, not here.
     pub fn LayoutChildren(&mut self, ctx: &mut PanelCtx, w: f64, h: f64) {
-        if ctx.tree.IsAutoExpanded(ctx.id) && ctx.child_count() == 0 {
-            self.create_expansion_children(ctx);
-        }
-
         let children = ctx.children();
         if children.is_empty() || !self.expanded {
             for &child in &children {

@@ -205,10 +205,7 @@ pub(crate) struct PanelData {
     // Layout-invalidation (C++ `ChildrenLayoutInvalid`).
     // Set by HandleNotice when NF_LAYOUT_CHANGED | NF_CHILD_LIST_CHANGED
     // is delivered and FirstChild exists; cleared after LayoutChildren runs.
-    // DIVERGED: C++ has ChildrenLayoutInvalid as a per-panel flag set by HandleNotice
-    // to defer LayoutChildren() to a second pass. Rust collapses both passes into one
-    // HandleNotice iteration; this field is not needed.
-    // pub(crate) children_layout_invalid: bool,
+    pub(crate) children_layout_invalid: bool,
 
     // Notice ring linkage (C++ emPanel::NoticeNode.Prev/Next).
     // Panels with queued notices form a doubly-linked circular ring
@@ -255,7 +252,7 @@ impl PanelData {
             clip_y: 0.0,
             clip_w: 0.0,
             clip_h: 0.0,
-            // children_layout_invalid: false,
+            children_layout_invalid: false,
             notice_prev_in_ring: None,
             notice_next_in_ring: None,
         }
@@ -293,6 +290,11 @@ pub struct PanelTree {
     /// links at the tail; `HandleNotice` drains from the head.
     pub(crate) notice_ring_head_next: Option<PanelId>,
     pub(crate) notice_ring_head_prev: Option<PanelId>,
+    /// Current pixel tallness (height/width ratio of a single pixel).
+    /// Mirrors `emView::CurrentPixelTallness`. Stored here so
+    /// `Layout()` can compute viewed coordinates without a view reference
+    /// (port of C++ `emPanel::Layout` which accesses `View.CurrentPixelTallness`).
+    pub(crate) current_pixel_tallness: f64,
 }
 
 impl PanelTree {
@@ -308,7 +310,14 @@ impl PanelTree {
             seek_pos_child_name: String::new(),
             notice_ring_head_next: None,
             notice_ring_head_prev: None,
+            current_pixel_tallness: 1.0,
         }
+    }
+
+    /// Update the stored pixel tallness. Called by emView at the start of
+    /// each Update so Layout() uses the correct current value.
+    pub fn set_pixel_tallness(&mut self, pt: f64) {
+        self.current_pixel_tallness = pt.max(1e-100);
     }
 
     /// Link `id` into the notice ring at the tail.
@@ -1072,7 +1081,158 @@ impl PanelTree {
         }
     }
 
+    /// Port of C++ `emPanel::UpdateChildrenViewing()` (emPanel.cpp:1454–1520).
+    ///
+    /// Propagates the viewing state of `id` down to all its direct children,
+    /// computing each child's `viewed_x/y/width/height` and clip rect from the
+    /// parent's coordinates, then queuing `VIEW_CHANGED` on any child whose
+    /// viewed state changes. Recurses into viewed children.
+    ///
+    /// Called from `Layout()` when a panel's layout changes and the parent is
+    /// viewed, and from `SetRootViewing()` when the root's view coords change.
+    pub(crate) fn update_children_viewing(&mut self, id: PanelId) {
+        let (viewed, pvx, pvy, pvw, pcx1, pcy1, pcx2, pcy2, pt) = {
+            let Some(p) = self.panels.get(id) else {
+                return;
+            };
+            (
+                p.viewed,
+                p.viewed_x,
+                p.viewed_y,
+                p.viewed_width,
+                p.clip_x,
+                p.clip_y,
+                p.clip_x + p.clip_w,
+                p.clip_y + p.clip_h,
+                self.current_pixel_tallness,
+            )
+        };
+
+        let children: Vec<PanelId> = self.children(id).collect();
+
+        if !viewed {
+            // C++ emPanel.cpp:1461–1473: if parent not viewed, clear InViewedPath
+            // on any child that was in the viewed path.
+            for child_id in children {
+                let (was_ivp, has_children) = {
+                    let Some(cp) = self.panels.get(child_id) else {
+                        continue;
+                    };
+                    (cp.in_viewed_path, cp.first_child.is_some())
+                };
+                if was_ivp {
+                    if let Some(cp) = self.panels.get_mut(child_id) {
+                        cp.viewed = false;
+                        cp.in_viewed_path = false;
+                    }
+                    self.panels[child_id].pending_notices.insert(
+                        NoticeFlags::VIEW_CHANGED
+                            | NoticeFlags::UPDATE_PRIORITY_CHANGED
+                            | NoticeFlags::MEMORY_LIMIT_CHANGED,
+                    );
+                    self.has_pending_notices = true;
+                    self.add_to_notice_list(child_id);
+                    if has_children {
+                        self.update_children_viewing(child_id);
+                    }
+                }
+            }
+        } else {
+            // C++ emPanel.cpp:1476–1515: parent is viewed; compute each child's coords.
+            for child_id in children {
+                let (lx, ly, lw, lh, was_ivp, has_children) = {
+                    let Some(cp) = self.panels.get(child_id) else {
+                        continue;
+                    };
+                    let lr = cp.layout_rect;
+                    (
+                        lr.x,
+                        lr.y,
+                        lr.w,
+                        lr.h,
+                        cp.in_viewed_path,
+                        cp.first_child.is_some(),
+                    )
+                };
+
+                let cx = pvx + lx * pvw;
+                let cy = pvy + ly * (pvw / pt);
+                let cw = lw * pvw;
+                let ch = lh * (pvw / pt);
+
+                let mut cx1 = cx;
+                let mut cx2 = cx + cw;
+                let mut cy1 = cy;
+                let mut cy2 = cy + ch;
+                if cx1 < pcx1 {
+                    cx1 = pcx1;
+                }
+                if cx2 > pcx2 {
+                    cx2 = pcx2;
+                }
+                if cy1 < pcy1 {
+                    cy1 = pcy1;
+                }
+                if cy2 > pcy2 {
+                    cy2 = pcy2;
+                }
+
+                if let Some(cp) = self.panels.get_mut(child_id) {
+                    cp.viewed_x = cx;
+                    cp.viewed_y = cy;
+                    cp.viewed_width = cw;
+                    cp.viewed_height = ch;
+                    cp.clip_x = cx1;
+                    cp.clip_y = cy1;
+                    cp.clip_w = (cx2 - cx1).max(0.0);
+                    cp.clip_h = (cy2 - cy1).max(0.0);
+                }
+
+                if cx1 < cx2 && cy1 < cy2 {
+                    // Child is within clip — viewed.
+                    if let Some(cp) = self.panels.get_mut(child_id) {
+                        cp.viewed = true;
+                        cp.in_viewed_path = true;
+                    }
+                    self.panels[child_id].pending_notices.insert(
+                        NoticeFlags::VIEW_CHANGED
+                            | NoticeFlags::UPDATE_PRIORITY_CHANGED
+                            | NoticeFlags::MEMORY_LIMIT_CHANGED,
+                    );
+                    self.has_pending_notices = true;
+                    self.add_to_notice_list(child_id);
+                    if has_children {
+                        self.update_children_viewing(child_id);
+                    }
+                } else if was_ivp {
+                    // Child was in viewed path but is now outside clip.
+                    if let Some(cp) = self.panels.get_mut(child_id) {
+                        cp.viewed = false;
+                        cp.in_viewed_path = false;
+                    }
+                    self.panels[child_id].pending_notices.insert(
+                        NoticeFlags::VIEW_CHANGED
+                            | NoticeFlags::UPDATE_PRIORITY_CHANGED
+                            | NoticeFlags::MEMORY_LIMIT_CHANGED,
+                    );
+                    self.has_pending_notices = true;
+                    self.add_to_notice_list(child_id);
+                    if has_children {
+                        self.update_children_viewing(child_id);
+                    }
+                }
+            }
+        }
+    }
+
     /// Set the layout rectangle for a panel.
+    ///
+    /// Port of C++ `emPanel::Layout(x,y,w,h,canvasColor)` (emPanel.cpp:490–640).
+    ///
+    /// Sets the panel's layout rect. If the parent is already viewed, eagerly
+    /// computes this panel's viewport coordinates and queues `VIEW_CHANGED` so
+    /// AE can fire in the same notice-ring drain — matching C++ which does this
+    /// inside `emPanel::Layout` via direct `View` access.
     ///
     /// Width and height are clamped to a minimum of `1e-100` to prevent
     /// division-by-zero when computing tallness.
@@ -1088,17 +1248,119 @@ impl PanelTree {
                 return;
             }
             panel.layout_rect = rect;
-            panel.pending_notices.insert(
-                NoticeFlags::LAYOUT_CHANGED
-                    | NoticeFlags::VISIBILITY
-                    | NoticeFlags::UPDATE_PRIORITY_CHANGED
-                    | NoticeFlags::MEMORY_LIMIT_CHANGED,
-            );
+            // C++ emPanel::Layout always queues NF_LAYOUT_CHANGED (emPanel.cpp:521).
+            // NF_VIEWING_CHANGED (= Rust VISIBILITY) is only queued in the "Parent->Viewed" branch.
+            panel.pending_notices.insert(NoticeFlags::LAYOUT_CHANGED);
             self.has_pending_notices = true;
         } else {
             return;
         }
         self.add_to_notice_list(id);
+
+        // Port of C++ emPanel::Layout "else if (Parent->Viewed)" branch
+        // (emPanel.cpp:557–610): eagerly compute viewing coords from parent.
+        // Without this, Rust's lazy view.Update() wouldn't set viewed_width
+        // until the next frame, making AE fire one tick late.
+        let parent_id = match self.panels.get(id).and_then(|p| p.parent) {
+            Some(pid) => pid,
+            None => return, // root panel: view manages its own coords
+        };
+        let (parent_viewed, pvx, pvy, pvw, pcx1, pcy1, pcx2, pcy2) = {
+            let Some(pp) = self.panels.get(parent_id) else {
+                return;
+            };
+            if !pp.viewed {
+                return; // parent not viewed; no eager computation
+            }
+            (
+                pp.viewed,
+                pp.viewed_x,
+                pp.viewed_y,
+                pp.viewed_width,
+                pp.clip_x,
+                pp.clip_y,
+                pp.clip_x + pp.clip_w,
+                pp.clip_y + pp.clip_h,
+            )
+        };
+        let _ = parent_viewed; // confirmed true above
+
+        let pt = self.current_pixel_tallness;
+        let cx = pvx + x * pvw;
+        let cy = pvy + y * (pvw / pt);
+        let cw = w.max(1e-100) * pvw;
+        let ch = h.max(1e-100) * (pvw / pt);
+
+        // Clip rect (C++ ClipX1/X2/Y1/Y2 convention).
+        let mut cx1 = cx;
+        let mut cx2 = cx + cw;
+        let mut cy1 = cy;
+        let mut cy2 = cy + ch;
+        if cx1 < pcx1 {
+            cx1 = pcx1;
+        }
+        if cx2 > pcx2 {
+            cx2 = pcx2;
+        }
+        if cy1 < pcy1 {
+            cy1 = pcy1;
+        }
+        if cy2 > pcy2 {
+            cy2 = pcy2;
+        }
+
+        if let Some(p) = self.panels.get_mut(id) {
+            p.viewed_x = cx;
+            p.viewed_y = cy;
+            p.viewed_width = cw;
+            p.viewed_height = ch;
+            p.clip_x = cx1;
+            p.clip_y = cy1;
+            p.clip_w = (cx2 - cx1).max(0.0);
+            p.clip_h = (cy2 - cy1).max(0.0);
+        }
+
+        if cx1 < cx2 && cy1 < cy2 {
+            // Panel is within the clip region — it's viewed.
+            if let Some(p) = self.panels.get_mut(id) {
+                p.viewed = true;
+                p.in_viewed_path = true;
+            }
+            // Queue NF_VIEWING_CHANGED | NF_UPDATE_PRIORITY_CHANGED | NF_MEMORY_LIMIT_CHANGED
+            // (C++ emPanel.cpp:583–590). VISIBILITY = C++ NF_VIEWING_CHANGED.
+            self.panels[id].pending_notices.insert(
+                NoticeFlags::VISIBILITY
+                    | NoticeFlags::UPDATE_PRIORITY_CHANGED
+                    | NoticeFlags::MEMORY_LIMIT_CHANGED,
+            );
+            self.has_pending_notices = true;
+            self.add_to_notice_list(id);
+            // Propagate to children (C++ emPanel.cpp:591: UpdateChildrenViewing()).
+            self.update_children_viewing(id);
+        } else {
+            // Panel is outside clip. Clear viewed state if it was in viewed path.
+            let was_in_viewed_path = self
+                .panels
+                .get(id)
+                .map(|p| p.in_viewed_path)
+                .unwrap_or(false);
+            if was_in_viewed_path {
+                if let Some(p) = self.panels.get_mut(id) {
+                    p.viewed = false;
+                    p.in_viewed_path = false;
+                }
+                // C++ queues NF_VIEWING_CHANGED when becoming non-viewed (emPanel.cpp:598).
+                // VISIBILITY = C++ NF_VIEWING_CHANGED.
+                self.panels[id].pending_notices.insert(
+                    NoticeFlags::VISIBILITY
+                        | NoticeFlags::UPDATE_PRIORITY_CHANGED
+                        | NoticeFlags::MEMORY_LIMIT_CHANGED,
+                );
+                self.has_pending_notices = true;
+                self.add_to_notice_list(id);
+                self.update_children_viewing(id);
+            }
+        }
     }
 
     /// Set the canvas color for a panel.
@@ -1307,33 +1569,26 @@ impl PanelTree {
     /// Deliver pending notices to all panels via the notice ring.
     ///
     /// Port of C++ `emView::Update` inner loop + `emPanel::HandleNotice`
-    /// (emPanel.cpp:1387–1451). Iterates the doubly-linked notice ring,
-    /// draining each panel in turn:
-    ///   1. Pop head from the ring (unlink)
-    ///   2. Take `pending_notices`, clear on the panel
-    ///   3. Call `behavior.notice(flags, &state, ctx)`
-    ///      (may create/delete children, re-queue more notices)
-    ///   4. If `flags & (LAYOUT_CHANGED|CHILDREN_CHANGED)` and the panel
-    ///      has children, call `LayoutChildren(ctx)` (matches C++
-    ///      emPanel.cpp:1447-1450 guard).
+    /// (emPanel.cpp:1387–1451). Drains the doubly-linked notice ring; for
+    /// each panel calls `handle_notice_one` which mirrors the C++ two-phase
+    /// logic exactly.
     ///
-    /// Returns true if any panel was processed (visual state may have
-    /// changed).
+    /// Returns true if any panel was processed (visual state may have changed).
     pub fn HandleNotice(&mut self, window_focused: bool, pixel_tallness: f64) -> bool {
         if !self.has_pending_notices && self.notice_ring_head_next.is_none() {
             return false;
         }
-        // Safety net: some writers set `pending_notices` without calling
-        // `add_to_notice_list`. Scan once to enroll any orphans in the ring.
-        // Normal path: no-op after the first call since new writes should
-        // go through queue_notice or an explicit add_to_notice_list.
+        // Safety net: enroll any panels that set pending_notices through paths
+        // that didn't call add_to_notice_list (legacy callers, external writes).
         if self.has_pending_notices {
             let ids: Vec<PanelId> = self.panels.keys().collect();
             for id in ids {
                 let Some(p) = self.panels.get(id) else {
                     continue;
                 };
-                if !p.pending_notices.is_empty()
+                if (!p.pending_notices.is_empty()
+                    || p.ae_decision_invalid
+                    || p.children_layout_invalid)
                     && p.notice_prev_in_ring.is_none()
                     && p.notice_next_in_ring.is_none()
                     && self.notice_ring_head_next != Some(id)
@@ -1343,59 +1598,222 @@ impl PanelTree {
             }
         }
         let mut delivered = false;
-        // Drain the ring. Each iteration may add new panels at the tail
-        // (via notice() → queue_notice → add_to_notice_list); they'll be
-        // processed in FIFO order as we continue draining.
+        // Drain the ring (port of C++ emView::Update do-while loop,
+        // emView.cpp:1303-1314). New panels appended during processing are
+        // picked up in FIFO order.
         while let Some(id) = self.notice_ring_head_next {
-            self.remove_from_notice_list(id);
-
-            let Some(panel) = self.panels.get_mut(id) else {
-                // Panel was removed between queue and drain.
-                continue;
-            };
-            let flags = panel.pending_notices;
-            if flags.is_empty() {
-                continue;
-            }
-            panel.pending_notices = NoticeFlags::empty();
-            delivered = true;
-
-            let Some(mut behavior) = self.take_behavior(id) else {
-                // No behavior — treat as C++ base emPanel::Notice() no-op.
-                // Clear pending_notices so the safety-net scan doesn't
-                // re-enqueue this panel on every subsequent HandleNotice call.
-                if let Some(p) = self.panels.get_mut(id) {
-                    p.pending_notices = NoticeFlags::empty();
-                }
-                continue;
-            };
-
-            // Fire notice().
-            let state = self.build_panel_state(id, window_focused, pixel_tallness);
-            {
-                let mut ctx = PanelCtx::new(self, id);
-                behavior.notice(flags, &state, &mut ctx);
-            }
-            // Notice() is allowed to delete the panel (C++
-            // emPanel.cpp:1421 comment: "Notice() is allowed to do a 'delete this'").
             if !self.panels.contains_key(id) {
+                self.remove_from_notice_list(id);
                 continue;
             }
-
-            // LayoutChildren delivery (C++ emPanel.cpp:1447-1450).
-            if flags.intersects(NoticeFlags::LAYOUT_CHANGED | NoticeFlags::CHILDREN_CHANGED)
-                && self.GetFirstChild(id).is_some()
-            {
-                let mut ctx = PanelCtx::new(self, id);
-                behavior.LayoutChildren(&mut ctx);
-            }
-
-            if self.panels.contains_key(id) {
-                self.put_behavior(id, behavior);
-            }
+            // C++ unlinks BEFORE calling HandleNotice (emView.cpp:1307-1310).
+            self.remove_from_notice_list(id);
+            delivered = true;
+            self.handle_notice_one(id, window_focused, pixel_tallness);
         }
         self.has_pending_notices = false;
         delivered
+    }
+
+    /// Per-panel notice processing. Port of C++ `emPanel::HandleNotice`
+    /// (emPanel.cpp:1387–1451) exactly.
+    ///
+    /// Three phases (matching C++ structure):
+    ///   Phase 1 — AEInvalid shrink (lines 1391-1397)
+    ///   Phase 2 — Notice delivery (lines 1400-1421); sets ChildrenLayoutInvalid
+    ///             and/or AEDecisionInvalid, re-adds to ring if either is set,
+    ///             then delivers Notice() and returns (so the panel re-enters
+    ///             HandleNotice for the AE/layout phase)
+    ///   Phase 3 — AE decision + AutoExpand/AutoShrink (lines 1424-1445)
+    ///   Phase 4 — LayoutChildren if ChildrenLayoutInvalid (lines 1447-1450)
+    fn handle_notice_one(&mut self, id: PanelId, window_focused: bool, pixel_tallness: f64) {
+        // ── Phase 1: AEInvalid shrink (C++ emPanel.cpp:1391–1397) ──────
+        // ae_invalid is set when the panel is in a "zoom-out" path that
+        // forces the AE threshold to be re-evaluated.
+        let (ae_invalid, ae_expanded) = self
+            .panels
+            .get(id)
+            .map(|p| (p.ae_invalid, p.ae_expanded))
+            .unwrap_or((false, false));
+        if ae_invalid {
+            if let Some(p) = self.panels.get_mut(id) {
+                p.ae_invalid = false;
+                if ae_expanded {
+                    p.ae_expanded = false;
+                    p.ae_decision_invalid = true;
+                }
+            }
+            if ae_expanded {
+                if let Some(mut behavior) = self.take_behavior(id) {
+                    let mut ctx = PanelCtx::new(self, id);
+                    behavior.AutoShrink(&mut ctx);
+                    if self.panels.contains_key(id) {
+                        self.put_behavior(id, behavior);
+                    }
+                }
+            }
+        }
+
+        // ── Phase 2: Notice delivery (C++ emPanel.cpp:1400–1421) ───────
+        let flags = self
+            .panels
+            .get(id)
+            .map(|p| p.pending_notices)
+            .unwrap_or_else(NoticeFlags::empty);
+        if !flags.is_empty() {
+            // Derive AEDecisionInvalid and ChildrenLayoutInvalid from flags
+            // (C++ emPanel.cpp:1402-1415).
+            let (
+                ae_decision_invalid,
+                ae_expanded,
+                ae_threshold_type,
+                ae_threshold_value,
+                children_layout_invalid,
+            ) = {
+                let Some(p) = self.panels.get(id) else {
+                    return;
+                };
+                (
+                    p.ae_decision_invalid,
+                    p.ae_expanded,
+                    p.ae_threshold_type,
+                    p.ae_threshold_value,
+                    p.children_layout_invalid,
+                )
+            };
+            let mut new_ae_di = ae_decision_invalid;
+            let mut new_cli = children_layout_invalid;
+            // C++ checks NF_VIEWING_CHANGED|NF_SOUGHT_NAME_CHANGED (emPanel.cpp:1402).
+            // NF_VIEWING_CHANGED = Rust VISIBILITY. VIEW_CHANGED is Rust-internal (INIT + children).
+            if flags.intersects(
+                NoticeFlags::SOUGHT_NAME_CHANGED
+                    | NoticeFlags::VIEW_CHANGED
+                    | NoticeFlags::VISIBILITY,
+            ) {
+                let should_expand = self.is_seek_target(id)
+                    || self.GetViewCondition(id, ae_threshold_type) >= ae_threshold_value;
+                if should_expand != ae_expanded {
+                    new_ae_di = true;
+                }
+            }
+            if flags.intersects(NoticeFlags::LAYOUT_CHANGED | NoticeFlags::CHILDREN_CHANGED)
+                && self.GetFirstChild(id).is_some()
+            {
+                new_cli = true;
+            }
+            if let Some(p) = self.panels.get_mut(id) {
+                p.ae_decision_invalid = new_ae_di;
+                p.children_layout_invalid = new_cli;
+                p.pending_notices = NoticeFlags::empty();
+            }
+            // Re-add to ring if still work to do (C++ emPanel.cpp:1416-1418).
+            if new_ae_di || new_cli {
+                self.add_to_notice_list(id);
+            }
+
+            // Deliver notice (C++ emPanel.cpp:1419-1421).
+            // No-behavior: treat as base Notice() no-op (C++ base is virtual no-op).
+            if let Some(mut behavior) = self.take_behavior(id) {
+                let state = self.build_panel_state(id, window_focused, pixel_tallness);
+                let mut ctx = PanelCtx::new(self, id);
+                behavior.notice(flags, &state, &mut ctx);
+                // "Notice() is allowed to do a 'delete this'" — C++ emPanel.cpp:1421.
+                if self.panels.contains_key(id) {
+                    self.put_behavior(id, behavior);
+                }
+            }
+            // C++ does `return` here (line 1421). The ring re-add above ensures
+            // the AE/layout phase runs on the next HandleNotice drain iteration.
+            return;
+        }
+
+        // ── Phase 3: AE decision (C++ emPanel.cpp:1424–1445) ───────────
+        let (ae_decision_invalid, ae_expanded, ae_threshold_type, ae_threshold_value) = {
+            let Some(p) = self.panels.get(id) else {
+                return;
+            };
+            (
+                p.ae_decision_invalid,
+                p.ae_expanded,
+                p.ae_threshold_type,
+                p.ae_threshold_value,
+            )
+        };
+        if ae_decision_invalid {
+            if let Some(p) = self.panels.get_mut(id) {
+                p.ae_decision_invalid = false;
+            }
+            let should_expand = self.is_seek_target(id)
+                || self.GetViewCondition(id, ae_threshold_type) >= ae_threshold_value;
+            if should_expand && !ae_expanded {
+                // C++ emPanel.cpp:1430-1435: AEExpanded=1; AECalling=1; AutoExpand(); AECalling=0
+                if let Some(p) = self.panels.get_mut(id) {
+                    p.ae_expanded = true;
+                    p.ae_calling = true;
+                }
+                if let Some(mut behavior) = self.take_behavior(id) {
+                    let mut ctx = PanelCtx::new(self, id);
+                    behavior.AutoExpand(&mut ctx);
+                    if self.panels.contains_key(id) {
+                        self.put_behavior(id, behavior);
+                    }
+                }
+                if let Some(p) = self.panels.get_mut(id) {
+                    p.ae_calling = false;
+                }
+                // C++ emPanel.cpp:1435: if (PendingNoticeFlags) return;
+                if self
+                    .panels
+                    .get(id)
+                    .map(|p| !p.pending_notices.is_empty())
+                    .unwrap_or(false)
+                {
+                    return;
+                }
+            } else if !should_expand && ae_expanded {
+                // C++ emPanel.cpp:1439-1443: AEExpanded=0; AutoShrink()
+                if let Some(p) = self.panels.get_mut(id) {
+                    p.ae_expanded = false;
+                }
+                if let Some(mut behavior) = self.take_behavior(id) {
+                    let mut ctx = PanelCtx::new(self, id);
+                    behavior.AutoShrink(&mut ctx);
+                    if self.panels.contains_key(id) {
+                        self.put_behavior(id, behavior);
+                    }
+                }
+                // C++ emPanel.cpp:1443: if (PendingNoticeFlags) return;
+                if self
+                    .panels
+                    .get(id)
+                    .map(|p| !p.pending_notices.is_empty())
+                    .unwrap_or(false)
+                {
+                    return;
+                }
+            }
+        }
+
+        // ── Phase 4: LayoutChildren (C++ emPanel.cpp:1447–1450) ────────
+        let children_layout_invalid = self
+            .panels
+            .get(id)
+            .map(|p| p.children_layout_invalid)
+            .unwrap_or(false);
+        if children_layout_invalid {
+            if self.GetFirstChild(id).is_some() {
+                if let Some(mut behavior) = self.take_behavior(id) {
+                    let mut ctx = PanelCtx::new(self, id);
+                    behavior.LayoutChildren(&mut ctx);
+                    if self.panels.contains_key(id) {
+                        self.put_behavior(id, behavior);
+                    }
+                }
+            }
+            if let Some(p) = self.panels.get_mut(id) {
+                p.children_layout_invalid = false;
+            }
+        }
     }
 
     /// Walk from `id` to root, returning ancestor chain (id first, root last).
@@ -1574,7 +1992,10 @@ impl PanelTree {
             panel.ae_threshold_value = threshold_value;
             panel.ae_threshold_type = threshold_type;
             panel.ae_decision_invalid = true;
+            // C++ emPanel::SetAutoExpansionThreshold: AddToNoticeList
+            self.has_pending_notices = true;
         }
+        self.add_to_notice_list(id);
     }
 
     /// Return the auto-expansion threshold value.

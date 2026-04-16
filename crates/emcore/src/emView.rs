@@ -11,7 +11,6 @@ use crate::emColor::emColor;
 use crate::emCursor::emCursor;
 use crate::emPainter::{emPainter, TextAlignment, VAlign};
 use crate::emPanel::Rect;
-use crate::emPanelCtx::PanelCtx;
 use crate::emRec::{write_rec_with_format, RecStruct, RecValue};
 
 bitflags! {
@@ -402,7 +401,7 @@ impl emView {
             tree.seek_pos_child_name = child_name.to_string();
 
             // Notify new panel that sought name is set. Queue
-            // ae_decision_invalid so the next update_auto_expansion
+            // ae_decision_invalid so the next HandleNotice AE phase
             // checks if this panel should now expand (C++ AutoExpand
             // triggers when View.SeekPosPanel==this).
             if let Some(new_id) = self.seek_pos_panel {
@@ -465,6 +464,106 @@ impl emView {
     }
 
     // --- Navigation primitives ---
+
+    /// Immediate direct-set visit (no animation, no new back-stack entry).
+    /// Port of C++ `emView::RawVisit(panel, relX, relY, relA)` (emView.cpp:1526-1540).
+    ///
+    /// If `rel_a <= 0.0`, CalcVisitFullsizedCoords is called to get proper coords
+    /// (matching C++ `if (relA<=0.0) CalcVisitFullsizedCoords(..., relA<-0.9)`).
+    /// DIVERGED: C++ RawVisit converts to absolute pixel coords and calls RawVisitAbs
+    /// which sets SVP.ViewedX/Y/Width directly. Rust defers absolute-coord computation
+    /// to update_viewing(); here we just update the visit_stack top in place.
+    pub fn RawVisit(
+        &mut self,
+        tree: &PanelTree,
+        panel: PanelId,
+        rel_x: f64,
+        rel_y: f64,
+        rel_a: f64,
+    ) {
+        let (rx, ry, ra) = if rel_a <= 0.0 {
+            // C++ emView.cpp:1534: if (relA<=0.0) CalcVisitFullsizedCoords(panel,&relX,&relY,&relA,relA<-0.9)
+            self.CalcVisitFullsizedCoords(tree, panel, rel_a < -0.9)
+        } else {
+            (rel_x, rel_y, rel_a)
+        };
+        if let Some(state) = self.visit_stack.last_mut() {
+            state.panel = panel;
+            state.rel_x = rx;
+            state.rel_y = ry;
+            state.rel_a = ra;
+        }
+        self.active = Some(panel);
+        self.viewport_changed = true;
+        self.viewing_dirty = true;
+    }
+
+    /// Port of C++ `emView::RawVisitFullsized(panel, utilizeView)` (emView.cpp:558-560):
+    ///   `RawVisit(panel, 0.0, 0.0, utilizeView ? -1.0 : 0.0)`
+    pub fn RawVisitFullsized(&mut self, tree: &PanelTree, panel: PanelId, utilize_view: bool) {
+        self.RawVisit(tree, panel, 0.0, 0.0, if utilize_view { -1.0 } else { 0.0 });
+    }
+
+    /// Port of C++ `emView::GetVisitedPanel(pRelX, pRelY, pRelA)` (emView.cpp:468-489).
+    ///
+    /// Walks from ActivePanel toward root to find the deepest panel that is
+    /// `in_viewed_path` and `viewed`. Returns `(panel, rel_x, rel_y, rel_a)`.
+    /// C++ convention: relX/Y are offsets of the viewport center from the panel
+    /// center (in panel-space units). rel_a = (HomeW*HomeH)/(ViewedW*ViewedH).
+    pub fn GetVisitedPanel(&self, tree: &PanelTree) -> Option<(PanelId, f64, f64, f64)> {
+        // Walk from active toward root until we find an in_viewed_path + viewed panel.
+        let p = {
+            let mut candidate = self.active;
+            let result;
+            loop {
+                match candidate {
+                    Some(id) => {
+                        if let Some(panel) = tree.GetRec(id) {
+                            if panel.in_viewed_path {
+                                if panel.viewed {
+                                    result = Some(id);
+                                    break;
+                                }
+                                candidate = panel.parent;
+                            } else {
+                                // Not in viewed path; fall back to SVP
+                                result = self.svp;
+                                break;
+                            }
+                        } else {
+                            result = self.svp;
+                            break;
+                        }
+                    }
+                    None => {
+                        result = self.svp;
+                        break;
+                    }
+                }
+            }
+            result
+        };
+
+        if let Some(id) = p {
+            if let Some(panel) = tree.GetRec(id) {
+                let hw = self.viewport_width;
+                let hh = self.viewport_height;
+                let hp = self.home_pixel_tallness;
+                // C++ emView.cpp:479-481:
+                //   relX = (HomeX + HomeWidth*0.5 - ViewedX) / ViewedWidth - 0.5
+                //   relY = (HomeY + HomeHeight*0.5 - ViewedY) / ViewedHeight - 0.5
+                //   relA = (HomeWidth*HomeHeight) / (ViewedWidth*ViewedHeight)
+                // Rust: HomeX=0, HomeY=0; ViewedHeight = ViewedWidth * GetHeight / HomePixelTallness
+                let vw = panel.viewed_width.max(1e-100);
+                let vh = (vw * tree.get_height(id) / hp).max(1e-100);
+                let rel_x = (hw * 0.5 - panel.viewed_x) / vw - 0.5;
+                let rel_y = (hh * 0.5 - panel.viewed_y) / vh - 0.5;
+                let rel_a = (hw * hh) / (vw * vh);
+                return Some((id, rel_x, rel_y, rel_a));
+            }
+        }
+        None
+    }
 
     pub fn Visit(&mut self, panel: PanelId, rel_x: f64, rel_y: f64, rel_a: f64) {
         self.visit_stack.push(VisitState {
@@ -1062,6 +1161,9 @@ impl emView {
 
     /// Compute absolute viewport coordinates for all panels. Called once per frame.
     pub fn Update(&mut self, tree: &mut PanelTree) {
+        // Sync pixel tallness to tree so Layout() can use it eagerly
+        // (port of C++ emPanel::Layout accessing View.CurrentPixelTallness).
+        tree.set_pixel_tallness(self.GetCurrentPixelTallness());
         tree.clear_viewing_flags();
 
         let root = match tree.GetRootPanel() {
@@ -1263,8 +1365,8 @@ impl emView {
         // SVP jitter prevention
         self.svp_update_count += 1;
 
-        // Auto-expansion dispatch
-        self.update_auto_expansion(tree);
+        // Auto-expansion is now handled per-panel in PanelTree::handle_notice_one
+        // (ported from C++ emPanel::HandleNotice AEDecisionInvalid phase).
 
         // Drain panel-to-view navigation requests
         for target in tree.drain_navigation_requests() {
@@ -1322,137 +1424,6 @@ impl emView {
                 lr.h * abs.w,
             );
             self.compute_viewed_recursive(tree, child, child_abs, viewport);
-        }
-    }
-
-    /// Check auto-expansion thresholds for all panels and trigger
-    /// expansion or shrinking as needed. Called at the end of
-    /// `update_viewing()` after all viewed coordinates are computed.
-    fn update_auto_expansion(&self, tree: &mut PanelTree) {
-        let panel_ids = tree.all_ids();
-        let seek_pos = self.seek_pos_panel;
-
-        // First pass: mark panels whose AE decision might have changed.
-        // C++ emPanel::HandleNotice does this on NF_VIEWING_CHANGED /
-        // NF_SOUGHT_NAME_CHANGED:
-        //   if (SeekPos==this || GetViewCondition()>=threshold) {
-        //     if (!AEExpanded) AEDecisionInvalid=1;
-        //   } else {
-        //     if (AEExpanded) AEDecisionInvalid=1;
-        //   }
-        for &id in &panel_ids {
-            let (threshold_value, threshold_type, currently_expanded) = {
-                let Some(panel) = tree.GetRec(id) else {
-                    continue;
-                };
-                (
-                    panel.ae_threshold_value,
-                    panel.ae_threshold_type,
-                    panel.ae_expanded,
-                )
-            };
-            let is_seek_target = seek_pos == Some(id);
-            let vc = tree.GetViewCondition(id, threshold_type);
-            let would_expand = is_seek_target || vc >= threshold_value;
-            if would_expand != currently_expanded {
-                if let Some(p) = tree.get_mut(id) {
-                    p.ae_decision_invalid = true;
-                }
-            }
-        }
-
-        // Second pass: process panels with ae_decision_invalid set.
-        for id in panel_ids {
-            let (threshold_value, threshold_type, currently_expanded, decision_invalid) = {
-                let Some(panel) = tree.GetRec(id) else {
-                    continue;
-                };
-                (
-                    panel.ae_threshold_value,
-                    panel.ae_threshold_type,
-                    panel.ae_expanded,
-                    panel.ae_decision_invalid,
-                )
-            };
-
-            // Only re-evaluate if decision_invalid is set (C++ AE only
-            // runs via HandleNotice when AEDecisionInvalid is set).
-            if !decision_invalid {
-                continue;
-            }
-
-            let is_seek_target = seek_pos == Some(id);
-            let vc = tree.GetViewCondition(id, threshold_type);
-            let should_expand = is_seek_target || vc >= threshold_value;
-
-            if should_expand && !currently_expanded {
-                // Skip panels with no behavior (e.g., sub-tree root
-                // before behavior is set). ae_decision_invalid stays
-                // true so we retry when behavior is installed.
-                if !tree.has_behavior(id) {
-                    continue;
-                }
-                // C++ HandleNotice: AEExpanded=1; AECalling=1; AutoExpand();
-                // AECalling=0
-                if let Some(panel) = tree.get_mut(id) {
-                    panel.ae_expanded = true;
-                    panel.ae_decision_invalid = false;
-                    panel.ae_invalid = false;
-                    panel.ae_calling = true;
-                }
-                if let Some(mut behavior) = tree.take_behavior(id) {
-                    let mut ctx = PanelCtx::new(tree, id);
-                    behavior.AutoExpand(&mut ctx);
-                    if tree.contains(id) {
-                        tree.put_behavior(id, behavior);
-                    }
-                }
-                if let Some(panel) = tree.get_mut(id) {
-                    panel.ae_calling = false;
-                }
-                // Also call LayoutChildren to position newly created children
-                // (and for widgets that still use the unified child-creation
-                // pattern with `IsAutoExpanded && child_count==0`).
-                if let Some(mut behavior) = tree.take_behavior(id) {
-                    let mut ctx = PanelCtx::new(tree, id);
-                    behavior.LayoutChildren(&mut ctx);
-                    if tree.contains(id) {
-                        tree.put_behavior(id, behavior);
-                    }
-                }
-                // Queue LAYOUT_CHANGED so deliver_notices repositions children
-                tree.queue_notice(id, super::emPanel::NoticeFlags::LAYOUT_CHANGED);
-            } else if !should_expand && currently_expanded {
-                // C++ HandleNotice: AEExpanded=0; AutoShrink()
-                // Default AutoShrink deletes children with created_by_ae=true
-                if let Some(mut behavior) = tree.take_behavior(id) {
-                    let mut ctx = PanelCtx::new(tree, id);
-                    behavior.AutoShrink(&mut ctx);
-                    if tree.contains(id) {
-                        tree.put_behavior(id, behavior);
-                    }
-                }
-                // Default C++ AutoShrink: delete AE-created children
-                let ae_children: Vec<PanelId> = tree
-                    .children(id)
-                    .filter(|&cid| tree.GetRec(cid).map(|p| p.created_by_ae).unwrap_or(false))
-                    .collect();
-                for cid in ae_children {
-                    tree.remove(cid);
-                }
-                if let Some(panel) = tree.get_mut(id) {
-                    panel.ae_expanded = false;
-                    panel.ae_decision_invalid = false;
-                    panel.ae_invalid = false;
-                }
-            } else if currently_expanded && decision_invalid {
-                // Re-evaluate: panel requested re-check
-                if let Some(panel) = tree.get_mut(id) {
-                    panel.ae_decision_invalid = false;
-                    panel.ae_invalid = false;
-                }
-                tree.queue_notice(id, super::emPanel::NoticeFlags::LAYOUT_CHANGED);
-            }
         }
     }
 

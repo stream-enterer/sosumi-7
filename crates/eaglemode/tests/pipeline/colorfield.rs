@@ -59,6 +59,10 @@ impl PanelBehavior for ColorFieldBehavior {
         emCursor::Normal
     }
 
+    fn AutoExpand(&mut self, ctx: &mut PanelCtx) {
+        self.color_field.create_expansion_children(ctx);
+    }
+
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
         let rect = ctx.layout_rect();
         self.color_field.LayoutChildren(ctx, rect.w, rect.h);

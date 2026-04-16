@@ -155,10 +155,12 @@ impl PanelBehavior for ListBoxPanel {
         true
     }
 
+    fn AutoExpand(&mut self, ctx: &mut PanelCtx) {
+        // Port of C++ emListBox::AutoExpand(): create item child panels.
+        self.list_box.create_item_children(ctx);
+    }
+
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
-        if ctx.children().is_empty() {
-            self.list_box.create_item_children(ctx);
-        }
         let rect = ctx.layout_rect();
         // C++ always calls layout in the panel's own coordinate space (w=1.0 normalized).
         // Pass tallness = h/w so GetContentRectUnobscured gets the same aspect ratio as C++.
