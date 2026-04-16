@@ -17,8 +17,6 @@ use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::emPanelCtx::PanelCtx;
 use emcore::emPanelTree::PanelId;
 use emcore::emResTga::load_tga;
-use emcore::emSubViewPanel::emSubViewPanel;
-use emcore::emView::ViewFlags;
 
 use crate::emMainConfig::emMainConfig;
 
@@ -321,7 +319,6 @@ pub struct emMainPanel {
 
     // State
     slider_pressed: bool,
-    children_created: bool,
     last_height: f64,
 
     // Mouse movement tracking for slider auto-hide (C++ emMainPanel::Input)
@@ -357,7 +354,6 @@ impl emMainPanel {
             control_edges_color: emColor::from_packed(0x515E84FF),
             control_edges_image,
             slider_pressed: false,
-            children_created: false,
             control_x: 0.0,
             control_y: 0.0,
             control_w: 0.0,
@@ -513,18 +509,19 @@ impl emMainPanel {
         }
     }
 
-    /// Show or hide the startup overlay.
+    /// Disable the startup overlay and return the old PanelId so the caller
+    /// can remove it from the tree (C++ does `delete StartupOverlay`).
     ///
-    /// Port of C++ `emMainPanel::SetStartupOverlay`.
-    /// Returns the old overlay PanelId when disabling, so the caller can
-    /// remove it from the tree (C++ does `delete StartupOverlay`).
-    pub fn SetStartupOverlay(&mut self, overlay: bool) -> Option<PanelId> {
-        if !overlay {
-            self.startup_overlay.take()
-        } else {
-            // When overlay=true, creation happens in LayoutChildren.
-            None
-        }
+    /// Port of C++ `emMainPanel::SetStartupOverlay(false)`.
+    pub fn ClearStartupOverlay(&mut self) -> Option<PanelId> {
+        self.startup_overlay.take()
+    }
+
+    /// Record the PanelId of the startup overlay created by the caller.
+    /// Port of C++ `emMainPanel::SetStartupOverlay(true)` which creates the
+    /// overlay directly on `this`. In Rust the creator has tree access.
+    pub(crate) fn set_startup_overlay(&mut self, id: PanelId) {
+        self.startup_overlay = Some(id);
     }
 
     /// Whether the startup overlay is active.
@@ -542,6 +539,27 @@ impl emMainPanel {
     /// Get the PanelId of the content sub-view panel.
     pub fn GetContentViewPanelId(&self) -> Option<PanelId> {
         self.content_view_panel
+    }
+
+    /// Record the PanelId of the control sub-view panel created by the caller.
+    /// Port of C++ `emMainPanel::emMainPanel` constructor line
+    /// `ControlViewPanel=new emSubViewPanel(this,"control view")`.
+    pub(crate) fn set_control_view_panel(&mut self, id: PanelId) {
+        self.control_view_panel = Some(id);
+    }
+
+    /// Record the PanelId of the content sub-view panel created by the caller.
+    /// Port of C++ `emMainPanel::emMainPanel` constructor line
+    /// `ContentViewPanel=new emSubViewPanel(this,"content view")`.
+    pub(crate) fn set_content_view_panel(&mut self, id: PanelId) {
+        self.content_view_panel = Some(id);
+    }
+
+    /// Record the PanelId of the slider panel created by the caller.
+    /// Port of C++ `emMainPanel::emMainPanel` constructor line
+    /// `Slider=new SliderPanel(*this,"slider")`.
+    pub(crate) fn set_slider_panel(&mut self, id: PanelId) {
+        self.slider_panel = Some(id);
     }
 
     /// Get the control edges color.
@@ -815,34 +833,6 @@ impl PanelBehavior for emMainPanel {
         self.unified_slider_pos = self.config.borrow().GetControlViewSize();
         self.update_coordinates(h);
 
-        if !self.children_created {
-            // Create control sub-view panel.
-            let mut ctrl_svp = emSubViewPanel::new();
-            ctrl_svp.set_sub_view_flags(
-                ViewFlags::POPUP_ZOOM
-                    | ViewFlags::ROOT_SAME_TALLNESS
-                    | ViewFlags::NO_ACTIVE_HIGHLIGHT,
-            );
-            let ctrl_id = ctx.create_child_with("control view", Box::new(ctrl_svp));
-            self.control_view_panel = Some(ctrl_id);
-
-            // Create content sub-view panel.
-            let mut content_svp = emSubViewPanel::new();
-            content_svp.set_sub_view_flags(ViewFlags::ROOT_SAME_TALLNESS);
-            let content_id = ctx.create_child_with("content view", Box::new(content_svp));
-            self.content_view_panel = Some(content_id);
-
-            // Create slider panel.
-            let slider_id = ctx.create_child_with("slider", Box::new(SliderPanel::new()));
-            self.slider_panel = Some(slider_id);
-
-            // Create startup overlay.
-            let overlay_id = ctx.create_child_with("startupOverlay", Box::new(StartupOverlayPanel));
-            self.startup_overlay = Some(overlay_id);
-
-            self.children_created = true;
-        }
-
         // Pass parent slider state to SliderPanel for conditional arrow rendering.
         if let Some(slider) = self.slider_panel {
             let sy = self.slider_y;
@@ -906,7 +896,8 @@ mod tests {
         let ctx = emcore::emContext::emContext::NewRoot();
         let panel = emMainPanel::new(Rc::clone(&ctx), 5.0);
         assert!((panel.control_tallness - 0.0538).abs() < 1e-10);
-        // startup_overlay is None until LayoutChildren creates it
+        // startup_overlay is None until the StartupEngine creates it and
+        // hands its id to set_startup_overlay (C++ SetStartupOverlay(true)).
         assert!(!panel.HasStartupOverlay());
     }
 

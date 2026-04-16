@@ -24,10 +24,13 @@ use emcore::emWindowStateSaver::emWindowStateSaver;
 
 use emcore::emSubViewPanel::emSubViewPanel;
 
+use emcore::emView::ViewFlags;
+
 use crate::emBookmarks::emBookmarksModel;
 use crate::emMainContentPanel::emMainContentPanel;
 use crate::emMainControlPanel::emMainControlPanel;
 use crate::emMainPanel::emMainPanel;
+use crate::emMainPanel::{SliderPanel, StartupOverlayPanel};
 
 /// Configuration for creating an emMainWindow.
 pub struct emMainWindowConfig {
@@ -455,10 +458,16 @@ impl emEngine for StartupEngine {
             }
             // State 3: Set startup overlay (C++ emMainWindow.cpp:376-390).
             // MainPanel is already created before the engine starts.
+            // C++ `MainPanel->SetStartupOverlay(true)` creates the overlay
+            // child directly on the main panel. In Rust the engine has tree
+            // access, so we create the child here and hand its id to emMainPanel.
             3 => {
+                let overlay_id = ctx.tree.create_child(self.main_panel_id, "startupOverlay");
+                ctx.tree
+                    .set_behavior(overlay_id, Box::new(StartupOverlayPanel));
                 ctx.tree
                     .with_behavior_as::<emMainPanel, _>(self.main_panel_id, |mp| {
-                        mp.SetStartupOverlay(true);
+                        mp.set_startup_overlay(overlay_id);
                     });
                 self.state += 1;
                 true
@@ -667,7 +676,7 @@ impl emEngine for StartupEngine {
                 let overlay_id = ctx
                     .tree
                     .with_behavior_as::<emMainPanel, _>(self.main_panel_id, |mp| {
-                        mp.SetStartupOverlay(false)
+                        mp.ClearStartupOverlay()
                     })
                     .flatten();
                 // C++ does `delete StartupOverlay` — remove from tree.
@@ -753,6 +762,32 @@ pub fn create_main_window(
     let root_id = app.tree.create_root("root");
     app.tree.set_behavior(root_id, Box::new(panel));
     mw.main_panel_id = Some(root_id);
+
+    // Port of C++ `emMainPanel::emMainPanel` constructor
+    // (emMainPanel.cpp:39-41): create control view, content view, and slider
+    // children immediately at construction time. C++ has these as emView
+    // members instantiated inline; in Rust the creator has tree access here.
+    let mut ctrl_svp = emSubViewPanel::new();
+    ctrl_svp.set_sub_view_flags(
+        ViewFlags::POPUP_ZOOM | ViewFlags::ROOT_SAME_TALLNESS | ViewFlags::NO_ACTIVE_HIGHLIGHT,
+    );
+    let ctrl_id = app.tree.create_child(root_id, "control view");
+    app.tree.set_behavior(ctrl_id, Box::new(ctrl_svp));
+
+    let mut content_svp = emSubViewPanel::new();
+    content_svp.set_sub_view_flags(ViewFlags::ROOT_SAME_TALLNESS);
+    let content_id = app.tree.create_child(root_id, "content view");
+    app.tree.set_behavior(content_id, Box::new(content_svp));
+
+    let slider_id = app.tree.create_child(root_id, "slider");
+    app.tree
+        .set_behavior(slider_id, Box::new(SliderPanel::new()));
+
+    app.tree.with_behavior_as::<emMainPanel, _>(root_id, |mp| {
+        mp.set_control_view_panel(ctrl_id);
+        mp.set_content_view_panel(content_id);
+        mp.set_slider_panel(slider_id);
+    });
 
     // Determine flags
     let mut flags = WindowFlags::AUTO_DELETE;
