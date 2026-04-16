@@ -2037,6 +2037,23 @@ impl emViewAnimator for emVisitingViewAnimator {
             }
         };
 
+        // C++ emViewAnimator.cpp:1233-1244: activate nearest existing panel.
+        // While animating, the goal panel may forward activation to a child.
+        {
+            let to_activate = if tree.focusable(nep.panel) {
+                Some(nep.panel)
+            } else {
+                tree.GetFocusableParent(nep.panel)
+            };
+            if let Some(act) = to_activate {
+                let already_in_path = tree.GetRec(act).map(|p| p.in_active_path).unwrap_or(false);
+                let is_focusable = tree.focusable(nep.panel);
+                if is_focusable || !already_in_path {
+                    view.set_active_panel(tree, act, self.adherent);
+                }
+            }
+        }
+
         if self.animated {
             if self.max_depth_seen < nep.depth as i32 {
                 if self.state == VisitingState::Seek {
@@ -2114,15 +2131,15 @@ impl emViewAnimator for emVisitingViewAnimator {
 
         if self.state == VisitingState::Seek {
             if nep.depth + 1 >= self.names.len() {
-                // All panels exist — visit the target
-                view.Visit(nep.panel, nep.target_x, nep.target_y, nep.target_a);
-                view.Update(tree);
+                // All panels exist — C++ uses RawVisit (modifies current visit
+                // entry, no stack growth). Visit() would push a new entry.
+                view.RawVisit(tree, nep.panel, nep.target_x, nep.target_y, nep.target_a);
                 self.state = VisitingState::GoalReached;
                 return false;
             } else if view.seek_pos_panel() != Some(nep.panel) {
                 view.SetSeekPos(tree, Some(nep.panel), &self.names[nep.depth + 1]);
-                view.VisitFullsized(tree, nep.panel);
-                view.Update(tree);
+                // C++ uses RawVisitFullsized (no stack growth). VisitFullsized would push.
+                view.RawVisitFullsized(tree, nep.panel, false);
                 self.time_slices_without_hope = 4;
             } else if view.IsHopeForSeeking(tree) {
                 self.time_slices_without_hope = 0;
