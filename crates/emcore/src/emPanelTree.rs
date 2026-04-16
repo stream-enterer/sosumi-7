@@ -201,6 +201,21 @@ pub(crate) struct PanelData {
     pub(crate) clip_y: f64,
     pub(crate) clip_w: f64,
     pub(crate) clip_h: f64,
+
+    // Layout-invalidation (C++ `ChildrenLayoutInvalid`).
+    // Set by HandleNotice when NF_LAYOUT_CHANGED | NF_CHILD_LIST_CHANGED
+    // is delivered and FirstChild exists; cleared after LayoutChildren runs.
+    // DIVERGED: C++ has ChildrenLayoutInvalid as a per-panel flag set by HandleNotice
+    // to defer LayoutChildren() to a second pass. Rust collapses both passes into one
+    // HandleNotice iteration; this field is not needed.
+    // pub(crate) children_layout_invalid: bool,
+
+    // Notice ring linkage (C++ emPanel::NoticeNode.Prev/Next).
+    // Panels with queued notices form a doubly-linked circular ring
+    // rooted on PanelTree.notice_ring_head_*. When neither prev nor next
+    // is set, the panel is NOT in the ring.
+    pub(crate) notice_prev_in_ring: Option<PanelId>,
+    pub(crate) notice_next_in_ring: Option<PanelId>,
 }
 
 impl PanelData {
@@ -240,6 +255,9 @@ impl PanelData {
             clip_y: 0.0,
             clip_w: 0.0,
             clip_h: 0.0,
+            // children_layout_invalid: false,
+            notice_prev_in_ring: None,
+            notice_next_in_ring: None,
         }
     }
 }
@@ -265,6 +283,16 @@ pub struct PanelTree {
     pub(crate) seek_pos_panel: Option<PanelId>,
     /// Mirror of `emView::seek_pos_child_name`.
     pub(crate) seek_pos_child_name: String,
+    /// Head of the notice-delivery ring.
+    ///
+    /// DIVERGED: C++ uses a `PanelRingNode* NoticeList` sentinel with raw
+    /// pointer linkage (emView.h:576, emPanel.h:823). Rust uses two
+    /// `Option<PanelId>` fields to point at the first and last queued
+    /// panels (arena indices replace raw pointers). Semantics: panels
+    /// with queued notices form a doubly-linked list; `add_to_notice_list`
+    /// links at the tail; `HandleNotice` drains from the head.
+    pub(crate) notice_ring_head_next: Option<PanelId>,
+    pub(crate) notice_ring_head_prev: Option<PanelId>,
 }
 
 impl PanelTree {
@@ -278,7 +306,73 @@ impl PanelTree {
             navigation_requests: Vec::new(),
             seek_pos_panel: None,
             seek_pos_child_name: String::new(),
+            notice_ring_head_next: None,
+            notice_ring_head_prev: None,
         }
+    }
+
+    /// Link `id` into the notice ring at the tail.
+    /// Port of C++ `emView::AddToNoticeList` (emView.cpp).
+    fn add_to_notice_list(&mut self, id: PanelId) {
+        // Already linked?
+        {
+            let p = &self.panels[id];
+            if p.notice_prev_in_ring.is_some() || p.notice_next_in_ring.is_some() {
+                return;
+            }
+            // Or currently the single head?
+            if self.notice_ring_head_next == Some(id) {
+                return;
+            }
+        }
+        match self.notice_ring_head_prev {
+            Some(old_tail) => {
+                // Link new node after old tail.
+                self.panels[old_tail].notice_next_in_ring = Some(id);
+                self.panels[id].notice_prev_in_ring = Some(old_tail);
+                self.panels[id].notice_next_in_ring = None;
+                self.notice_ring_head_prev = Some(id);
+            }
+            None => {
+                // Ring was empty.
+                self.panels[id].notice_prev_in_ring = None;
+                self.panels[id].notice_next_in_ring = None;
+                self.notice_ring_head_next = Some(id);
+                self.notice_ring_head_prev = Some(id);
+            }
+        }
+    }
+
+    /// Unlink `id` from the notice ring (no-op if not linked).
+    fn remove_from_notice_list(&mut self, id: PanelId) {
+        if !self.panels.contains_key(id) {
+            // Panel has been deleted; nothing to unlink.
+            // (Caller should have updated ring pointers before remove()
+            // anyway; this is defensive.)
+            return;
+        }
+        let (prev, next) = {
+            let p = &self.panels[id];
+            (p.notice_prev_in_ring, p.notice_next_in_ring)
+        };
+        // If not linked and not the sole head, nothing to do.
+        if prev.is_none()
+            && next.is_none()
+            && self.notice_ring_head_next != Some(id)
+            && self.notice_ring_head_prev != Some(id)
+        {
+            return;
+        }
+        match prev {
+            Some(p) => self.panels[p].notice_next_in_ring = next,
+            None => self.notice_ring_head_next = next,
+        }
+        match next {
+            Some(n) => self.panels[n].notice_prev_in_ring = prev,
+            None => self.notice_ring_head_prev = prev,
+        }
+        self.panels[id].notice_prev_in_ring = None;
+        self.panels[id].notice_next_in_ring = None;
     }
 
     /// Returns true if the given panel is the current view seek target.
@@ -335,6 +429,7 @@ impl PanelTree {
         // C++ fires all NF_* flags on new panels as initialization notices
         self.panels[id].pending_notices = Self::INIT_NOTICE_FLAGS;
         self.has_pending_notices = true;
+        self.add_to_notice_list(id);
         id
     }
 
@@ -367,9 +462,11 @@ impl PanelTree {
             .pending_notices
             .insert(NoticeFlags::CHILDREN_CHANGED);
         self.has_pending_notices = true;
+        self.add_to_notice_list(parent);
 
         // C++ fires all NF_* flags on new panels as initialization notices
         self.panels[id].pending_notices = Self::INIT_NOTICE_FLAGS;
+        self.add_to_notice_list(id);
 
         id
     }
@@ -378,6 +475,13 @@ impl PanelTree {
     pub fn remove(&mut self, id: PanelId) {
         // Collect all descendants first
         let descendants = self.collect_descendants(id);
+
+        // Unlink self and descendants from the notice ring BEFORE arena removal
+        // (C++ emPanel destructor unlinks NoticeNode).
+        self.remove_from_notice_list(id);
+        for &desc_id in &descendants {
+            self.remove_from_notice_list(desc_id);
+        }
 
         // Unlink from parent's child list
         if let Some(parent_id) = self.panels[id].parent {
@@ -400,6 +504,7 @@ impl PanelTree {
                 .pending_notices
                 .insert(NoticeFlags::CHILDREN_CHANGED);
             self.has_pending_notices = true;
+            self.add_to_notice_list(parent_id);
         }
 
         // Remove root reference if needed
@@ -454,6 +559,9 @@ impl PanelTree {
         if let Some(panel) = self.panels.get_mut(id) {
             panel.pending_notices.insert(flags);
             self.has_pending_notices = true;
+            // Link into the notice ring if not already linked
+            // (C++ emPanel.cpp:1417: `if (!NoticeNode.Next) View.AddToNoticeList(...)`)
+            self.add_to_notice_list(id);
         }
     }
 
@@ -506,12 +614,20 @@ impl PanelTree {
 
     /// Set whether the panel is visible.
     pub fn set_visible(&mut self, id: PanelId, visible: bool) {
-        if let Some(panel) = self.panels.get_mut(id) {
+        let changed = if let Some(panel) = self.panels.get_mut(id) {
             if panel.visible != visible {
                 panel.visible = visible;
                 panel.pending_notices.insert(NoticeFlags::VISIBILITY);
                 self.has_pending_notices = true;
+                true
+            } else {
+                false
             }
+        } else {
+            false
+        };
+        if changed {
+            self.add_to_notice_list(id);
         }
     }
 
@@ -671,11 +787,13 @@ impl PanelTree {
 
     /// After a sibling reorder, notify parent of child list change.
     fn notify_sibling_reorder(&mut self, id: PanelId) {
-        if let Some(parent) = self.panels[id].parent {
-            self.panels[parent]
+        let parent = self.panels[id].parent;
+        if let Some(parent_id) = parent {
+            self.panels[parent_id]
                 .pending_notices
                 .insert(NoticeFlags::CHILDREN_CHANGED);
             self.has_pending_notices = true;
+            self.add_to_notice_list(parent_id);
         }
     }
 
@@ -867,6 +985,7 @@ impl PanelTree {
             .pending_notices
             .insert(NoticeFlags::CHILDREN_CHANGED);
         self.has_pending_notices = true;
+        self.add_to_notice_list(parent);
     }
 
     // ── Title / Icon ─────────────────────────────────────────────────
@@ -949,6 +1068,7 @@ impl PanelTree {
                 panel.pending_notices.insert(NoticeFlags::LAYOUT_CHANGED);
                 self.has_pending_notices = true;
             }
+            self.add_to_notice_list(child);
         }
     }
 
@@ -975,7 +1095,10 @@ impl PanelTree {
                     | NoticeFlags::MEMORY_LIMIT_CHANGED,
             );
             self.has_pending_notices = true;
+        } else {
+            return;
         }
+        self.add_to_notice_list(id);
     }
 
     /// Set the canvas color for a panel.
@@ -984,7 +1107,10 @@ impl PanelTree {
             panel.canvas_color = color;
             panel.pending_notices.insert(NoticeFlags::CANVAS_CHANGED);
             self.has_pending_notices = true;
+        } else {
+            return;
         }
+        self.add_to_notice_list(id);
     }
 
     /// Set the enable switch for a panel and recompute enabled state for descendants.
@@ -1008,13 +1134,21 @@ impl PanelTree {
             .map(|p| p.enabled)
             .unwrap_or(true);
 
-        if let Some(panel) = self.panels.get_mut(id) {
+        let changed = if let Some(panel) = self.panels.get_mut(id) {
             let new_enabled = panel.enable_switch && parent_enabled;
             if panel.enabled != new_enabled {
                 panel.enabled = new_enabled;
                 panel.pending_notices.insert(NoticeFlags::ENABLE_CHANGED);
                 self.has_pending_notices = true;
+                true
+            } else {
+                false
             }
+        } else {
+            false
+        };
+        if changed {
+            self.add_to_notice_list(id);
         }
 
         // Recurse into children
@@ -1049,7 +1183,10 @@ impl PanelTree {
         if let Some(panel) = self.panels.get_mut(id) {
             panel.pending_notices.insert(Self::INIT_NOTICE_FLAGS);
             self.has_pending_notices = true;
+        } else {
+            return;
         }
+        self.add_to_notice_list(id);
     }
 
     /// Build a `PanelState` snapshot for the given panel.
@@ -1167,62 +1304,96 @@ impl PanelTree {
         std::mem::take(&mut self.navigation_requests)
     }
 
-    /// Deliver pending notices to all panels with behaviors.
-    /// Dispatch pending notices to panel behaviors. Returns `true` if any
-    /// notices were delivered (meaning visual state may have changed).
+    /// Deliver pending notices to all panels via the notice ring.
+    ///
+    /// Port of C++ `emView::Update` inner loop + `emPanel::HandleNotice`
+    /// (emPanel.cpp:1387–1451). Iterates the doubly-linked notice ring,
+    /// draining each panel in turn:
+    ///   1. Pop head from the ring (unlink)
+    ///   2. Take `pending_notices`, clear on the panel
+    ///   3. Call `behavior.notice(flags, &state, ctx)`
+    ///      (may create/delete children, re-queue more notices)
+    ///   4. If `flags & (LAYOUT_CHANGED|CHILDREN_CHANGED)` and the panel
+    ///      has children, call `LayoutChildren(ctx)` (matches C++
+    ///      emPanel.cpp:1447-1450 guard).
+    ///
+    /// Returns true if any panel was processed (visual state may have
+    /// changed).
     pub fn HandleNotice(&mut self, window_focused: bool, pixel_tallness: f64) -> bool {
-        if !self.has_pending_notices {
+        if !self.has_pending_notices && self.notice_ring_head_next.is_none() {
             return false;
         }
-        self.has_pending_notices = false;
-        let mut delivered = false;
-        // Loop until no new notices are generated. layout_children may call
-        // set_layout_rect on children, queuing LAYOUT_CHANGED notices that
-        // must be drained in the same frame to avoid redundant repaints.
-        loop {
-            let mut round_delivered = false;
+        // Safety net: some writers set `pending_notices` without calling
+        // `add_to_notice_list`. Scan once to enroll any orphans in the ring.
+        // Normal path: no-op after the first call since new writes should
+        // go through queue_notice or an explicit add_to_notice_list.
+        if self.has_pending_notices {
             let ids: Vec<PanelId> = self.panels.keys().collect();
             for id in ids {
-                // Panel may have been removed by a prior callback in this loop.
-                let Some(panel) = self.panels.get(id) else {
+                let Some(p) = self.panels.get(id) else {
                     continue;
                 };
-                let flags = panel.pending_notices;
-                if flags.is_empty() {
-                    continue;
+                if !p.pending_notices.is_empty()
+                    && p.notice_prev_in_ring.is_none()
+                    && p.notice_next_in_ring.is_none()
+                    && self.notice_ring_head_next != Some(id)
+                {
+                    self.add_to_notice_list(id);
                 }
-                round_delivered = true;
-                self.panels[id].pending_notices = NoticeFlags::empty();
-                if let Some(mut behavior) = self.take_behavior(id) {
-                    let state = self.build_panel_state(id, window_focused, pixel_tallness);
-                    {
-                        let mut ctx = PanelCtx::new(self, id);
-                        behavior.notice(flags, &state, &mut ctx);
-                    }
-                    // Notice() is allowed to delete the panel (C++
-                    // emPanel.cpp:1421 comment).
-                    if !self.panels.contains_key(id) {
-                        continue;
-                    }
-                    if flags.intersects(NoticeFlags::LAYOUT_CHANGED | NoticeFlags::CHILDREN_CHANGED)
-                        && self.GetFirstChild(id).is_some()
-                    {
-                        let mut ctx = PanelCtx::new(self, id);
-                        behavior.LayoutChildren(&mut ctx);
-                    }
-                    // Panel may have been removed by its own callback (e.g. delete_self).
-                    if self.panels.contains_key(id) {
-                        self.put_behavior(id, behavior);
-                    }
-                }
-            }
-            if round_delivered {
-                delivered = true;
-            } else {
-                break;
             }
         }
-        // All notices drained; clear the flag (may have been re-set during delivery).
+        let mut delivered = false;
+        // Drain the ring. Each iteration may add new panels at the tail
+        // (via notice() → queue_notice → add_to_notice_list); they'll be
+        // processed in FIFO order as we continue draining.
+        while let Some(id) = self.notice_ring_head_next {
+            self.remove_from_notice_list(id);
+
+            let Some(panel) = self.panels.get_mut(id) else {
+                // Panel was removed between queue and drain.
+                continue;
+            };
+            let flags = panel.pending_notices;
+            if flags.is_empty() {
+                continue;
+            }
+            panel.pending_notices = NoticeFlags::empty();
+            delivered = true;
+
+            let Some(mut behavior) = self.take_behavior(id) else {
+                // No behavior — treat as C++ base emPanel::Notice() no-op.
+                // Clear pending_notices so the safety-net scan doesn't
+                // re-enqueue this panel on every subsequent HandleNotice call.
+                if let Some(p) = self.panels.get_mut(id) {
+                    p.pending_notices = NoticeFlags::empty();
+                }
+                continue;
+            };
+
+            // Fire notice().
+            let state = self.build_panel_state(id, window_focused, pixel_tallness);
+            {
+                let mut ctx = PanelCtx::new(self, id);
+                behavior.notice(flags, &state, &mut ctx);
+            }
+            // Notice() is allowed to delete the panel (C++
+            // emPanel.cpp:1421 comment: "Notice() is allowed to do a 'delete this'").
+            if !self.panels.contains_key(id) {
+                continue;
+            }
+
+            // LayoutChildren delivery (C++ emPanel.cpp:1447-1450).
+            if flags.intersects(NoticeFlags::LAYOUT_CHANGED | NoticeFlags::CHILDREN_CHANGED)
+                && self.GetFirstChild(id).is_some()
+            {
+                let mut ctx = PanelCtx::new(self, id);
+                behavior.LayoutChildren(&mut ctx);
+            }
+
+            if self.panels.contains_key(id) {
+                self.put_behavior(id, behavior);
+            }
+        }
         self.has_pending_notices = false;
         delivered
     }
