@@ -231,24 +231,23 @@ impl<'a> Lexer<'a> {
             }
             Some(c) if c.is_ascii_digit() => self.read_number(line),
             Some(c @ '+') | Some(c @ '-') => {
-                // Only treat as number start if a digit follows
+                // Treat as number start if a digit follows; otherwise
+                // treat as a delimiter (matches C++ emRecReader::TryParseNext
+                // emRec.cpp:2449-2454, where lone +/- becomes ET_DELIMITER).
+                // Used by emAlignmentRec ("top-right", "bottom-left", etc.).
                 let rest = &self.input[self.pos + c.len_utf8()..];
                 if rest.starts_with(|d: char| d.is_ascii_digit()) {
                     self.read_number(line)
                 } else {
                     self.next_char();
-                    Err(RecError::Parse {
-                        line,
-                        message: format!("unexpected char '{c}'"),
-                    })
+                    Ok((Token::Delim(c), line))
                 }
             }
             Some(c) => {
+                // C++ treats any other unknown char as a delimiter
+                // (emRec.cpp:2476-2479). Match that behavior.
                 self.next_char();
-                Err(RecError::Parse {
-                    line,
-                    message: format!("unexpected char '{c}'"),
-                })
+                Ok((Token::Delim(c), line))
             }
         }
     }
@@ -429,6 +428,13 @@ impl Parser {
             .unwrap_or(&Token::Eof)
     }
 
+    fn peek_after_one(&self) -> &Token {
+        self.tokens
+            .get(self.pos + 1)
+            .map(|(t, _)| t)
+            .unwrap_or(&Token::Eof)
+    }
+
     fn peek_line(&self) -> usize {
         self.tokens.get(self.pos).map(|(_, l)| *l).unwrap_or(0)
     }
@@ -580,10 +586,27 @@ impl Parser {
                     let inner = self.parse_value()?;
                     Ok(RecValue::Union(s.to_ascii_lowercase(), Box::new(inner)))
                 } else {
-                    match s.to_ascii_lowercase().as_str() {
+                    // Concatenate consecutive `-ident` tokens into a single
+                    // hyphen-joined ident. C++ emAlignmentRec reads "bottom-left"
+                    // as two idents with a '-' delimiter between. We flatten
+                    // that back into one RecValue::Ident like "bottom-left".
+                    let mut combined = s.to_ascii_lowercase();
+                    while matches!(self.peek(), Token::Delim('-')) {
+                        // Look ahead: only consume '-' if followed by an ident.
+                        if let Token::Ident(_) = self.peek_after_one() {
+                            self.consume(); // consume '-'
+                            if let Token::Ident(next_s) = self.consume() {
+                                combined.push('-');
+                                combined.push_str(&next_s.to_ascii_lowercase());
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    match combined.as_str() {
                         "yes" | "true" | "y" => Ok(RecValue::Bool(true)),
                         "no" | "false" | "n" => Ok(RecValue::Bool(false)),
-                        _ => Ok(RecValue::Ident(s.to_ascii_lowercase())),
+                        _ => Ok(RecValue::Ident(combined)),
                     }
                 }
             }

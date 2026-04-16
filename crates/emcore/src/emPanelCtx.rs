@@ -19,6 +19,17 @@ impl<'a> PanelCtx<'a> {
         Self { tree, id }
     }
 
+    /// Returns true if this panel is the view's current seek target.
+    pub fn is_seek_target(&self) -> bool {
+        self.tree.is_seek_target(self.id)
+    }
+
+    /// Returns the child name being sought from this panel, or "" if not
+    /// a seek target. Port of C++ `emPanel::GetSoughtName()`.
+    pub fn seek_child_name(&self) -> &str {
+        self.tree.sought_name(self.id).unwrap_or("")
+    }
+
     /// Create a child panel under the current panel.
     pub fn create_child(&mut self, name: &str) -> PanelId {
         self.tree.create_child(self.id, name)

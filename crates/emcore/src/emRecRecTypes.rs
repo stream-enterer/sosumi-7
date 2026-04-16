@@ -105,19 +105,65 @@ impl emAlignmentRec {
         self.default_value
     }
 
-    /// Read from a `RecValue` (expected to be an `Ident`).
+    /// Read from a `RecValue` (expected to be an `Ident`). C++ emAlignmentRec
+    /// stores a bitmask combining TOP/BOTTOM/LEFT/RIGHT/CENTER. The Rust
+    /// `Alignment` enum is single-axis, so we accept hyphen-joined forms
+    /// like "bottom-left" and collapse to a single value by preferring the
+    /// axis that corresponds to Start/End. For symmetric combinations we
+    /// return Center.
     pub fn FromRecValue(val: &RecValue) -> Result<Alignment, RecError> {
         match val {
-            RecValue::Ident(s) => match s.as_str() {
-                "start" | "left" | "top" => Ok(Alignment::Start),
-                "center" => Ok(Alignment::Center),
-                "end" | "right" | "bottom" => Ok(Alignment::End),
-                "stretch" | "fill" => Ok(Alignment::Stretch),
-                _ => Err(RecError::InvalidValue {
+            RecValue::Ident(s) => {
+                // Parse individual tokens from hyphen-joined form.
+                let mut has_top = false;
+                let mut has_bottom = false;
+                let mut has_left = false;
+                let mut has_right = false;
+                let mut has_center = false;
+                let mut has_stretch = false;
+                for part in s.split('-') {
+                    match part {
+                        "top" => has_top = true,
+                        "bottom" => has_bottom = true,
+                        "left" => has_left = true,
+                        "right" => has_right = true,
+                        "center" => has_center = true,
+                        "stretch" | "fill" => has_stretch = true,
+                        "start" => has_left = true,
+                        "end" => has_right = true,
+                        "" => {}
+                        other => {
+                            return Err(RecError::InvalidValue {
+                                field: "alignment".into(),
+                                message: format!("unknown alignment part: {other}"),
+                            });
+                        }
+                    }
+                }
+                if has_stretch {
+                    return Ok(Alignment::Stretch);
+                }
+                // Prefer horizontal axis (left/right) for single-value enum.
+                if has_left {
+                    return Ok(Alignment::Start);
+                }
+                if has_right {
+                    return Ok(Alignment::End);
+                }
+                if has_top {
+                    return Ok(Alignment::Start);
+                }
+                if has_bottom {
+                    return Ok(Alignment::End);
+                }
+                if has_center {
+                    return Ok(Alignment::Center);
+                }
+                Err(RecError::InvalidValue {
                     field: "alignment".into(),
                     message: format!("unknown alignment: {s}"),
-                }),
-            },
+                })
+            }
             _ => Err(RecError::InvalidValue {
                 field: "alignment".into(),
                 message: "expected identifier".into(),

@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use emcore::emConfigModel::emConfigModel;
 use emcore::emContext::emContext;
+use emcore::emInstallInfo::{emGetInstallPath, InstallDirType};
 use emcore::emRec::{RecError, RecStruct};
 use emcore::emRecRecord::Record;
 use emcore::emSignal::SignalId;
@@ -159,10 +160,22 @@ impl emFileManConfig {
     pub fn Acquire(ctx: &Rc<emContext>) -> Rc<RefCell<Self>> {
         ctx.acquire::<Self>("", || {
             let signal_id = SignalId::null();
-            let path = std::path::PathBuf::from("");
-            Self {
-                config_model: emConfigModel::new(emFileManConfigData::default(), path, signal_id),
+            // C++ emFileManConfig uses emGetInstallPath(USER_CONFIG,
+            // "emFileMan", "config.rec") then TryLoadOrInstall.
+            let path =
+                emGetInstallPath(InstallDirType::UserConfig, "emFileMan", Some("config.rec"))
+                    .unwrap_or_default();
+            let mut config_model =
+                emConfigModel::new(emFileManConfigData::default(), path, signal_id)
+                    .with_format_name("emFileManConfig");
+            if let Err(e) = config_model.TryLoadOrInstall() {
+                log::warn!(
+                    "emFileManConfig::Acquire: TryLoadOrInstall({:?}) failed: {}",
+                    config_model.GetInstallPath(),
+                    e
+                );
             }
+            Self { config_model }
         })
     }
 
@@ -282,18 +295,11 @@ mod tests {
         assert!(Rc::ptr_eq(&c1, &c2));
     }
 
-    #[test]
-    fn config_model_getters_match_defaults() {
-        let ctx = emcore::emContext::emContext::NewRoot();
-        let cfg = emFileManConfig::Acquire(&ctx);
-        let cfg = cfg.borrow();
-        assert_eq!(cfg.GetSortCriterion(), SortCriterion::ByName);
-        assert_eq!(cfg.GetNameSortingStyle(), NameSortingStyle::PerLocale);
-        assert!(!cfg.GetSortDirectoriesFirst());
-        assert!(!cfg.GetShowHiddenFiles());
-        assert_eq!(cfg.GetThemeName(), "");
-        assert!(cfg.GetAutosave());
-    }
+    // Note: test `config_model_getters_match_defaults` was removed when
+    // `Acquire` started calling `TryLoadOrInstall` (matching C++). With disk
+    // load, getters reflect the user's on-disk config rather than struct
+    // defaults. Default-value assertions live in `default_values` (which
+    // tests the struct directly, without Acquire).
 
     #[test]
     fn config_model_setters_round_trip() {

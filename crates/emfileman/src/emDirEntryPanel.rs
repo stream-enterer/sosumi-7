@@ -161,8 +161,12 @@ impl emDirEntryPanel {
             (cw, theme_rec.MinContentVW)
         };
 
+        // C++ emDirEntryPanel::Notice/Cycle (line 758-771): create content
+        // when panel is seek target for ContentName, OR when viewed and
+        // ViewedWidth*cw >= MinContentVW.
+        let is_sought = ctx.is_seek_target() && ctx.seek_child_name() == CONTENT_NAME;
         let should_create =
-            self.last_viewed && self.last_viewed_width * content_w >= min_content_vw;
+            is_sought || (self.last_viewed && self.last_viewed_width * content_w >= min_content_vw);
         let should_delete = !self.last_in_active_path && !self.last_viewed;
 
         if should_delete && self.content_panel.is_some() {
@@ -353,10 +357,15 @@ impl PanelBehavior for emDirEntryPanel {
         ) {
             let viewed_changed = state.viewed != self.last_viewed;
             let active_changed = state.in_active_path != self.last_in_active_path;
+            let sought_changed = flags.contains(NoticeFlags::SOUGHT_NAME_CHANGED);
             self.last_viewed = state.viewed;
             self.last_in_active_path = state.in_active_path;
             self.last_viewed_width = state.viewed_rect.w;
-            if viewed_changed || active_changed {
+            // C++ emDirEntryPanel uses GetSoughtName() in both Notice() and
+            // Cycle() to decide whether to create content. When sought name
+            // changes (e.g., this panel becomes the seek target), mark
+            // content_dirty so LayoutChildren re-runs update_content_panel.
+            if viewed_changed || active_changed || sought_changed {
                 self.content_dirty = true;
                 self.alt_dirty = true;
             }

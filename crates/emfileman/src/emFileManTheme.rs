@@ -759,12 +759,28 @@ impl emFileManTheme {
             let theme_dir = GetThemesDirPath().unwrap_or_default();
             let path = theme_dir.join(format!("{}{}", name, THEME_FILE_ENDING));
             let data = emFileManThemeData::default();
-            let outer = ImageFileRec::new(data.OuterBorderImg.clone(), theme_dir.clone());
-            let file_inner = ImageFileRec::new(data.FileInnerBorderImg.clone(), theme_dir.clone());
-            let dir_inner = ImageFileRec::new(data.DirInnerBorderImg.clone(), theme_dir.clone());
-            let alt_inner = ImageFileRec::new(data.AltInnerBorderImg.clone(), theme_dir);
+            let mut config_model = emConfigModel::new(data, path, signal_id);
+            // C++ emFileManTheme constructor does `TryLoad` via
+            // emConfigModel::TryLoad. Rust equivalent: load from disk if
+            // the theme file exists. If it doesn't, keep defaults (which
+            // would otherwise leave Height=0 → NaN layout downstream).
+            if let Err(e) = config_model.TryLoad() {
+                log::warn!(
+                    "emFileManTheme::Acquire({:?}): TryLoad({:?}) failed: {}",
+                    name,
+                    config_model.GetInstallPath(),
+                    e
+                );
+            }
+            let loaded_data = config_model.GetRec();
+            let outer = ImageFileRec::new(loaded_data.OuterBorderImg.clone(), theme_dir.clone());
+            let file_inner =
+                ImageFileRec::new(loaded_data.FileInnerBorderImg.clone(), theme_dir.clone());
+            let dir_inner =
+                ImageFileRec::new(loaded_data.DirInnerBorderImg.clone(), theme_dir.clone());
+            let alt_inner = ImageFileRec::new(loaded_data.AltInnerBorderImg.clone(), theme_dir);
             Self {
-                config_model: emConfigModel::new(data, path, signal_id),
+                config_model,
                 outer_border_img: outer,
                 file_inner_border_img: file_inner,
                 dir_inner_border_img: dir_inner,

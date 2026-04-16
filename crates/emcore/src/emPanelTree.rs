@@ -259,6 +259,12 @@ pub struct PanelTree {
     /// Queue of panels that behaviors have requested the view navigate to.
     /// Drained by emView each frame.
     navigation_requests: Vec<PanelId>,
+    /// Mirror of `emView::seek_pos_panel`. Kept here so panel behaviors can
+    /// check seek state without needing a view reference. Port of C++
+    /// `emPanel::GetSoughtName()` access pattern.
+    pub(crate) seek_pos_panel: Option<PanelId>,
+    /// Mirror of `emView::seek_pos_child_name`.
+    pub(crate) seek_pos_child_name: String,
 }
 
 impl PanelTree {
@@ -270,6 +276,24 @@ impl PanelTree {
             has_pending_notices: false,
             cycle_list: Vec::new(),
             navigation_requests: Vec::new(),
+            seek_pos_panel: None,
+            seek_pos_child_name: String::new(),
+        }
+    }
+
+    /// Returns true if the given panel is the current view seek target.
+    /// Port of C++ `emPanel::GetSoughtName() != NULL` check.
+    pub fn is_seek_target(&self, id: PanelId) -> bool {
+        self.seek_pos_panel == Some(id)
+    }
+
+    /// Returns the sought child name if `id` is the seek target, else None.
+    /// Port of C++ `emPanel::GetSoughtName()`.
+    pub fn sought_name(&self, id: PanelId) -> Option<&str> {
+        if self.is_seek_target(id) {
+            Some(self.seek_pos_child_name.as_str())
+        } else {
+            None
         }
     }
 

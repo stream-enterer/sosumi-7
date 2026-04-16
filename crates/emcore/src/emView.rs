@@ -397,6 +397,9 @@ impl emView {
 
             self.seek_pos_panel = panel;
             self.seek_pos_child_name = child_name.to_string();
+            // Mirror to tree so panel behaviors can observe via ctx/tree.
+            tree.seek_pos_panel = panel;
+            tree.seek_pos_child_name = child_name.to_string();
 
             // Notify new panel that sought name is set. Queue
             // ae_decision_invalid so the next update_auto_expansion
@@ -410,6 +413,7 @@ impl emView {
             }
         } else if panel.is_some() && self.seek_pos_child_name != child_name {
             self.seek_pos_child_name = child_name.to_string();
+            tree.seek_pos_child_name = child_name.to_string();
             if let Some(id) = self.seek_pos_panel {
                 tree.queue_notice(id, super::emPanel::NoticeFlags::SOUGHT_NAME_CHANGED);
             }
