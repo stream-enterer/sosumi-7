@@ -341,6 +341,10 @@ impl PanelBehavior for emDirPanel {
                 }
                 emcore::emFileModel::FileState::Loaded => {
                     drop(dm);
+                    // Model was loaded previously (possibly by another
+                    // panel instance). Reflect in loading_done so
+                    // update_children creates entries.
+                    self.loading_done = true;
                     self.update_children(ctx);
                 }
                 _ => {}
@@ -383,7 +387,14 @@ impl PanelBehavior for emDirPanel {
 
     fn notice(&mut self, flags: NoticeFlags, state: &PanelState) {
         if flags.contains(NoticeFlags::VIEW_CHANGED) || flags.contains(NoticeFlags::SOUGHT_NAME_CHANGED) {
-            if state.viewed {
+            // C++ emDirPanel::Notice:
+            //   if (IsViewed() || GetSoughtName()) {
+            //     if (!GetFileModel()) SetFileModel(emDirModel::Acquire(...))
+            //   } else if (GetFileModel()) SetFileModel(NULL)
+            // We use in_active_path as proxy for "being viewed or sought"
+            // since PanelState doesn't expose sought_name.
+            let keep_model = state.viewed || state.in_active_path;
+            if keep_model {
                 if self.dir_model.is_none() {
                     self.dir_model = Some(emDirModel::Acquire(&self.ctx, &self.path));
                     self.loading_done = false;

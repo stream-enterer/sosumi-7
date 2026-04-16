@@ -254,7 +254,7 @@ static EAGLE_POLY_COLORS: [u32; 14] = [
 ///
 /// Port of C++ `emMainContentPanel` from `emMain/emMainContentPanel.cpp`.
 pub struct emMainContentPanel {
-    ctx: Rc<emContext>,
+    _ctx: Rc<emContext>,
     cosmos_panel: Option<PanelId>,
     eagle_scale_x: f64,
     eagle_scale_y: f64,
@@ -270,7 +270,7 @@ impl emMainContentPanel {
     /// Port of C++ `emMainContentPanel` constructor.
     pub fn new(ctx: Rc<emContext>) -> Self {
         Self {
-            ctx,
+            _ctx: ctx,
             cosmos_panel: None,
             eagle_scale_x: EAGLE_MAX_SCALE,
             eagle_scale_y: EAGLE_MAX_SCALE,
@@ -278,6 +278,14 @@ impl emMainContentPanel {
             eagle_shift_y: 0.5 - EAGLE_MAX_SCALE * EAGLE_CY,
             last_height: 1.0,
         }
+    }
+
+    /// Register the cosmos panel id after it's created externally.
+    /// C++ creates the cosmos in the constructor; Rust needs PanelCtx,
+    /// so creation happens at startup state 6 and this method records
+    /// the id on the content panel behavior.
+    pub fn set_cosmos_panel(&mut self, id: PanelId) {
+        self.cosmos_panel = Some(id);
     }
 
     /// Recompute eagle coordinate transform from the panel height.
@@ -343,28 +351,6 @@ impl PanelBehavior for emMainContentPanel {
         painter.paint_linear_gradient(0.0, 0.0, w, h, top_color, bot_color, false, canvas);
 
         self.paint_eagle(painter);
-    }
-
-    fn AutoExpand(&mut self, ctx: &mut PanelCtx) {
-        // C++ emMainContentPanel creates the cosmos panel in its
-        // constructor. Rust needs PanelCtx, so create it here in
-        // AutoExpand which runs when the panel becomes viewed.
-        if self.cosmos_panel.is_none() {
-            let cosmos = Box::new(
-                crate::emVirtualCosmos::emVirtualCosmosPanel::new(Rc::clone(&self.ctx)),
-            );
-            let id = ctx.create_child_with("", cosmos);
-            self.cosmos_panel = Some(id);
-        }
-    }
-
-    fn AutoShrink(&mut self, _ctx: &mut PanelCtx) {
-        // C++ emMainContentPanel doesn't override AutoShrink; the
-        // cosmos is a permanent child (created in constructor, not AE).
-        // But in Rust we create it in AutoExpand, so default
-        // AutoShrink (delete children with created_by_ae=true) will
-        // delete it. Clear our reference so AutoExpand recreates.
-        self.cosmos_panel = None;
     }
 
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {

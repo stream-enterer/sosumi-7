@@ -2016,7 +2016,6 @@ impl emViewAnimator for emVisitingViewAnimator {
         if !self.active {
             return false;
         }
-
         match self.state {
             VisitingState::NoGoal | VisitingState::GivenUp | VisitingState::GoalReached => {
                 return false;

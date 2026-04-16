@@ -246,6 +246,9 @@ impl PanelBehavior for emSubViewPanel {
 
         // Run animator + expand loop: animator seeks deeper, view updates
         // reveal new panels, HandleNotice triggers their LayoutChildren.
+        // Also run_panel_cycles in the loop so file models load while
+        // the animator seeks (C++ runs emEngine cycles continuously
+        // from its global scheduler).
         for _ in 0..50 {
             let anim_active = if let Some(mut anim) = self.active_animator.take() {
                 let cont = anim.animate(&mut self.sub_view, &mut self.sub_tree, 0.016);
@@ -259,8 +262,10 @@ impl PanelBehavior for emSubViewPanel {
 
             self.sub_view.Update(&mut self.sub_tree);
             let had_notices = self.sub_tree.HandleNotice(state.is_focused(), state.pixel_tallness);
+            self.sub_tree.run_panel_cycles();
+            let had_notices2 = self.sub_tree.HandleNotice(state.is_focused(), state.pixel_tallness);
 
-            if !anim_active && !had_notices {
+            if !anim_active && !had_notices && !had_notices2 {
                 break;
             }
         }

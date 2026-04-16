@@ -543,6 +543,7 @@ impl emEngine for StartupEngine {
                 if let Some(content_id) = content_view_id {
                     self.content_svp_id = Some(content_id);
                     let content_ctx = Rc::clone(&self.context);
+                    let content_ctx2 = Rc::clone(&self.context);
                     ctx.tree.with_behavior_as::<emSubViewPanel, _>(content_id, |svp| {
                         let sub_tree = svp.sub_tree_mut();
                         let sub_root = sub_tree.GetRootPanel().expect("sub-view has root");
@@ -553,11 +554,22 @@ impl emEngine for StartupEngine {
                             sub_root,
                             Box::new(emMainContentPanel::new(content_ctx)),
                         );
+                        // C++ emMainContentPanel constructor creates the
+                        // cosmos panel directly (not via AutoExpand). Do
+                        // the same here so the cosmos is permanent
+                        // (not marked created_by_ae) and won't be deleted
+                        // by AutoShrink.
+                        let cosmos_id = sub_tree.create_child(sub_root, "");
+                        sub_tree.set_behavior(
+                            cosmos_id,
+                            Box::new(crate::emVirtualCosmos::emVirtualCosmosPanel::new(content_ctx2)),
+                        );
+                        sub_tree.with_behavior_as::<emMainContentPanel, _>(sub_root, |mcp| {
+                            mcp.set_cosmos_panel(cosmos_id);
+                        });
                         // Re-fire init notices so the new behavior gets
                         // notice + LayoutChildren calls.
                         sub_tree.fire_init_notices(sub_root);
-                        // Register for cycling so cosmos is created.
-                        sub_tree.Cycle(sub_root);
                     });
                 }
 
@@ -670,13 +682,22 @@ impl emEngine for StartupEngine {
                 if self.visit_valid
                     && let Some(svp_id) = self.content_svp_id
                 {
+                    // C++ emMainWindow default case:
+                    //   ContentView.Visit(identity, relX, relY, relA, adherent, subject)
+                    // which creates an animated visit (new
+                    // VisitingViewAnimator with the goal).
+                    use emcore::emViewAnimator::emVisitingViewAnimator;
+                    let mut animator = emVisitingViewAnimator::new(0.0, 0.0, 0.0, 1.0);
+                    animator.set_goal_rel(
+                        &self.visit_identity,
+                        self.visit_rel_x,
+                        self.visit_rel_y,
+                        self.visit_rel_a,
+                        self.visit_adherent,
+                        &self.visit_subject,
+                    );
                     ctx.tree.with_behavior_as::<emSubViewPanel, _>(svp_id, |svp| {
-                        svp.visit_by_identity(
-                            &self.visit_identity,
-                            self.visit_rel_x,
-                            self.visit_rel_y,
-                            self.visit_rel_a,
-                        );
+                        svp.active_animator = Some(Box::new(animator));
                     });
                 }
                 // Store startup_engine_id = None in main window to indicate startup is done.

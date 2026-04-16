@@ -708,8 +708,12 @@ impl emView {
     }
 
     pub fn RawZoomOut(&mut self, tree: &mut PanelTree) {
+        // C++ emView::RawZoomOut:
+        //   RawVisit(RootPanel, 0.0, 0.0, relA, forceViewingUpdate);
+        // Always target the ROOT panel, not the current visit target.
         let rel_a = self.zoom_out_rel_a(tree);
         if let Some(state) = self.visit_stack.last_mut() {
+            state.panel = self.root;
             state.rel_x = 0.0;
             state.rel_y = 0.0;
             state.rel_a = rel_a;
@@ -1210,14 +1214,29 @@ impl emView {
         }
         dlog!("SVP = {:?}", self.svp);
 
-        // C++ sets InViewedPath=1 for ALL viewed panels, not just SVP
-        // ancestors (emPanel.cpp:1497). This affects get_memory_limit and
-        // get_update_priority which return 0 when in_viewed_path is false.
-        tree.for_each_mut(|_, p| {
-            if p.viewed {
-                p.in_viewed_path = true;
+        // C++ InViewedPath: true if panel is viewed OR any descendant is
+        // viewed. Propagate from viewed panels up to all ancestors
+        // (matches C++ emPanel behavior where InViewedPath is set on
+        // viewed panels AND their ancestors).
+        let viewed_ids: Vec<PanelId> = tree
+            .all_ids()
+            .into_iter()
+            .filter(|&id| tree.GetRec(id).map(|p| p.viewed).unwrap_or(false))
+            .collect();
+        for vid in viewed_ids {
+            let mut cur = Some(vid);
+            while let Some(id) = cur {
+                if let Some(p) = tree.get_mut(id) {
+                    if p.in_viewed_path {
+                        break; // Already marked; ancestors must be too.
+                    }
+                    p.in_viewed_path = true;
+                    cur = p.parent;
+                } else {
+                    break;
+                }
             }
-        });
+        }
 
         // Set in_active_path from root to active (walk parent chain without allocating)
         if let Some(active_id) = self.active {

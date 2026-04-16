@@ -831,6 +831,13 @@ impl PanelBehavior for emVirtualCosmosPanel {
         self.update_children(ctx);
     }
 
+    fn AutoShrink(&mut self, _ctx: &mut PanelCtx) {
+        // Default AutoShrink deletes children with created_by_ae=true.
+        // Clear our internal references so AutoExpand recreates.
+        self.background_panel = None;
+        self.item_panels.clear();
+    }
+
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
         // Layout background.
         if let Some(bg_id) = self.background_panel {

@@ -1884,12 +1884,6 @@ impl PanelTree {
         self.panels.keys().collect()
     }
 
-    /// Apply a closure to all panels mutably, without allocating an ID list.
-    pub(crate) fn for_each_mut(&mut self, mut f: impl FnMut(PanelId, &mut PanelData)) {
-        for (id, panel) in self.panels.iter_mut() {
-            f(id, panel);
-        }
-    }
 
     /// Return viewed panels in depth-first order (root → leaves), matching the
     /// order C++ `emPanel::Input` recursively dispatches input events.
