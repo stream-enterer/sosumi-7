@@ -321,9 +321,6 @@ impl emAutoplayViewAnimator {
         self.ClearGoal();
         self.State = AutoplayState::Unfinished;
         self.CurrentPanelIdentity = panel_identity.to_string();
-        // DIVERGED: C++ does not set CameFrom or OneMoreWakeUp here; Rust sets
-        // OneMoreWakeUp to drive the stub LowPriCycle without the engine scheduler.
-        self.OneMoreWakeUp = true;
     }
 
     /// Set goal to the previous item relative to the given panel identity.
@@ -335,8 +332,6 @@ impl emAutoplayViewAnimator {
         self.Backwards = true;
         self.SkipCurrent = true;
         self.CurrentPanelIdentity = panel_identity.to_string();
-        // DIVERGED: see SetGoalToItemAt note above.
-        self.OneMoreWakeUp = true;
     }
 
     /// Set goal to the next item relative to the given panel identity.
@@ -347,8 +342,6 @@ impl emAutoplayViewAnimator {
         self.State = AutoplayState::Unfinished;
         self.SkipCurrent = true;
         self.CurrentPanelIdentity = panel_identity.to_string();
-        // DIVERGED: see SetGoalToItemAt note above.
-        self.OneMoreWakeUp = true;
     }
 
     /// Skip backwards to the previous item in the current traversal.
@@ -364,9 +357,6 @@ impl emAutoplayViewAnimator {
             } else {
                 self.InvertDirection();
             }
-            // DIVERGED: C++ wakes up the engine scheduler; Rust sets OneMoreWakeUp
-            // to drive the stub LowPriCycle.
-            self.OneMoreWakeUp = true;
         }
     }
 
@@ -383,9 +373,6 @@ impl emAutoplayViewAnimator {
             } else {
                 self.InvertDirection();
             }
-            // DIVERGED: C++ wakes up the engine scheduler; Rust sets OneMoreWakeUp
-            // to drive the stub LowPriCycle.
-            self.OneMoreWakeUp = true;
         }
     }
 
@@ -1086,9 +1073,11 @@ mod tests {
 
     #[test]
     fn test_autoplay_config_round_trip() {
-        let mut config = emAutoplayConfigRec::default();
-        config.DurationMS = 3000;
-        config.Recursive = true;
+        let config = emAutoplayConfigRec {
+            DurationMS: 3000,
+            Recursive: true,
+            ..emAutoplayConfigRec::default()
+        };
         let rec = config.to_rec();
         let loaded = emAutoplayConfigRec::from_rec(&rec).unwrap();
         assert_eq!(loaded.DurationMS, 3000);
@@ -1097,10 +1086,17 @@ mod tests {
 
     #[test]
     fn test_autoplay_config_clamp_duration() {
+        // C++ emIntRec uses minValue=0 (emAutoplay.cpp:48 `DurationMS(this,"DurationMS",5000,0)`).
+        // A negative value is clamped to 0; 50 is valid and kept as-is.
         let mut rec = RecStruct::new();
-        rec.set_int("DurationMS", 50); // below min 100
+        rec.set_int("DurationMS", -10);
         let config = emAutoplayConfigRec::from_rec(&rec).unwrap();
-        assert_eq!(config.DurationMS, 100);
+        assert_eq!(config.DurationMS, 0);
+
+        let mut rec = RecStruct::new();
+        rec.set_int("DurationMS", 50);
+        let config = emAutoplayConfigRec::from_rec(&rec).unwrap();
+        assert_eq!(config.DurationMS, 50);
     }
 
     #[test]
@@ -1130,9 +1126,11 @@ mod tests {
 
     #[test]
     fn test_autoplay_config_set_to_default() {
-        let mut config = emAutoplayConfigRec::default();
-        config.DurationMS = 3000;
-        config.Recursive = true;
+        let mut config = emAutoplayConfigRec {
+            DurationMS: 3000,
+            Recursive: true,
+            ..emAutoplayConfigRec::default()
+        };
         assert!(!config.IsSetToDefault());
         config.SetToDefault();
         assert!(config.IsSetToDefault());
@@ -1154,10 +1152,14 @@ mod tests {
     #[test]
     fn test_view_model_clamp_duration() {
         let mut vm = emAutoplayViewModel::new();
-        vm.SetDurationMS(50); // below min
-        assert_eq!(vm.GetDurationMS(), 100);
-        vm.SetDurationMS(700_000); // above max
-        assert_eq!(vm.GetDurationMS(), 600_000);
+        // C++ SetDurationMS does not clamp; it stores the value verbatim
+        // (emAutoplay.cpp:856 `DurationMS=ms.max(0)` only floors negatives).
+        vm.SetDurationMS(50);
+        assert_eq!(vm.GetDurationMS(), 50);
+        vm.SetDurationMS(700_000);
+        assert_eq!(vm.GetDurationMS(), 700_000);
+        vm.SetDurationMS(-1);
+        assert_eq!(vm.GetDurationMS(), 0);
     }
 
     // ── Traversal helper tests ─────────────────────────────────────────
@@ -1593,14 +1595,16 @@ mod tests {
 
     #[test]
     fn test_set_goal_to_item_at() {
+        // C++ SetGoalToItemAt(panelIdentity): ClearGoal(); State=ST_UNFINISHED;
+        // CurrentPanelIdentity=panelIdentity. ClearGoal resets CameFrom to None
+        // and CurrentPanelState to NotVisited; OneMoreWakeUp stays false.
         let mut va = emAutoplayViewAnimator::new();
         va.SetGoalToItemAt("root:panel1");
         assert!(va.HasGoal());
         assert_eq!(va.State, AutoplayState::Unfinished);
         assert_eq!(va.CurrentPanelIdentity, "root:panel1");
-        assert_eq!(va.CameFrom, CameFromType::Parent);
+        assert_eq!(va.CameFrom, CameFromType::None);
         assert_eq!(va.CurrentPanelState, CurrentPanelState::NotVisited);
-        assert!(va.OneMoreWakeUp);
     }
 
     #[test]
@@ -1629,7 +1633,6 @@ mod tests {
         va.State = AutoplayState::Unfinished;
         va.SkipToNextItem();
         assert_eq!(va.SkipItemCount, 1);
-        assert!(va.OneMoreWakeUp);
     }
 
     #[test]
@@ -1638,18 +1641,18 @@ mod tests {
         // State is NoGoal — should be a no-op
         va.SkipToNextItem();
         assert_eq!(va.SkipItemCount, 0);
-        assert!(!va.OneMoreWakeUp);
     }
 
     #[test]
     fn test_skip_to_previous_item() {
+        // C++ SkipToPreviousItem: Backwards=false && SkipItemCount=0 → InvertDirection.
+        // InvertDirection flips Backwards; SkipItemCount is NOT incremented and
+        // SkipCurrent is NOT set here (those are side effects of other paths).
         let mut va = emAutoplayViewAnimator::new();
         va.State = AutoplayState::Unfinished;
         va.SkipToPreviousItem();
-        // Going backwards when not backwards: inverts direction
         assert!(va.Backwards);
-        assert!(va.SkipCurrent);
-        assert_eq!(va.SkipItemCount, 1);
+        assert_eq!(va.SkipItemCount, 0);
     }
 
     #[test]
