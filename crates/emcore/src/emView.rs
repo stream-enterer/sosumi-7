@@ -178,6 +178,7 @@ impl StressTest {
 
 /// The emView manages the viewport — which panels are visible and how they're
 /// navigated and rendered.
+#[allow(non_snake_case)] // F&N rule: field names mirror C++ emView.h:680-715.
 pub struct emView {
     root: PanelId,
     active: Option<PanelId>,
@@ -196,6 +197,7 @@ pub struct emView {
     seek_pos_child_name: String,
     /// Pixel tallness (height/width ratio of a single pixel).
     pixel_tallness: f64,
+    /// DIVERGED: retained until Phase 6; see HomePixelTallness for the C++-named twin.
     /// Pixel shape ratio (C++ HomePixelTallness). Always 1.0 for square pixels.
     home_pixel_tallness: f64,
     /// Dirty rectangles accumulated by invalidate_painting calls.
@@ -259,6 +261,79 @@ pub struct emView {
     /// Whether the soft keyboard is shown (touch platforms only).
     /// C++ emView::IsSoftKeyboardShown / ShowSoftKeyboard.
     soft_keyboard_shown: bool,
+
+    // === C++ Home/Current viewport split (emView.h:686-688) ===
+    /// C++ HomeX — left edge of the home (non-popup) viewport rect in
+    /// screen coords. Constant while popup active. 0 in non-popup Rust today.
+    pub HomeX: f64,
+    /// C++ HomeY — top edge of home viewport rect.
+    pub HomeY: f64,
+    /// C++ HomeWidth — width of home viewport rect.
+    pub HomeWidth: f64,
+    /// C++ HomeHeight — height of home viewport rect.
+    pub HomeHeight: f64,
+    /// DIVERGED: during Phases 1-5 Rust keeps both HomePixelTallness (C++ name) and home_pixel_tallness (Rust-invention); reads still go through home_pixel_tallness. home_pixel_tallness is removed in Phase 6.
+    /// C++ HomePixelTallness — pixel shape ratio of the home viewport
+    /// (hardware property; 1.0 for square pixels).
+    pub HomePixelTallness: f64,
+
+    /// C++ CurrentX — left edge of the *current* viewport rect. Equals
+    /// HomeX when no popup; set to popup-adjusted rect during popup zoom.
+    pub CurrentX: f64,
+    /// C++ CurrentY — top edge of current viewport rect.
+    pub CurrentY: f64,
+    /// C++ CurrentWidth — width of current viewport rect.
+    pub CurrentWidth: f64,
+    /// C++ CurrentHeight — height of current viewport rect.
+    pub CurrentHeight: f64,
+    /// C++ CurrentPixelTallness — pixel shape ratio of the current viewport.
+    pub CurrentPixelTallness: f64,
+
+    // === C++ invalidation / recursion flags (emView.h:699-703) ===
+    /// C++ SVPChoiceInvalid — next Update() must re-run RawVisitAbs to
+    /// recompute the Supreme Viewed Panel.
+    pub SVPChoiceInvalid: bool,
+    /// C++ SVPChoiceByOpacityInvalid — opacity of a panel between MinSVP
+    /// and MaxSVP has changed; Update() must walk that chain to see if
+    /// the SVP needs re-choice.
+    pub SVPChoiceByOpacityInvalid: bool,
+    /// C++ RestartInputRecursion — signals that the in-progress input
+    /// recursion (if any) should unwind and start over at the new SVP.
+    pub RestartInputRecursion: bool,
+    /// C++ SettingGeometry — reentrancy counter for SetGeometry. Nonzero
+    /// means we are inside SetGeometry; certain invalidations are
+    /// suppressed while it is nonzero.
+    pub SettingGeometry: i32,
+    /// C++ SVPUpdSlice — scheduler time-slice counter snapshot at the
+    /// last RawVisitAbs change block. Used by the fp-instability throttle
+    /// at emView.cpp:1734-1751.
+    pub SVPUpdSlice: u64,
+    /// C++ ZoomScrollInAction — set while a zoom/scroll gesture is in
+    /// progress; suppresses certain side effects that would fight the
+    /// gesture.
+    pub ZoomScrollInAction: bool,
+
+    // === C++ SVP bounds (emView.cpp:1696, 1725) ===
+    /// C++ MaxSVP — topmost (root-ward) panel allowed as the SVP at the
+    /// current zoom/rect. Set by RawVisitAbs.
+    pub MaxSVP: Option<PanelId>,
+    /// C++ MinSVP — deepest (leaf-ward) panel allowed as the SVP.
+    pub MinSVP: Option<PanelId>,
+
+    // === C++ last mouse position for CursorInvalid dispatch (emView.h:689) ===
+    /// C++ LastMouseX — last known mouse X in screen coords. Default is a
+    /// sentinel far outside any viewport so GetPanelAt returns None.
+    pub LastMouseX: f64,
+    /// C++ LastMouseY — last known mouse Y in screen coords.
+    pub LastMouseY: f64,
+
+    // === C++ signals missing from Rust (emView.h:680, 683, 684) ===
+    /// C++ ViewFlagsSignal — fired when VFlags changes.
+    pub view_flags_signal: Option<super::emSignal::SignalId>,
+    /// C++ FocusSignal — fired on focus gain/loss.
+    pub focus_signal: Option<super::emSignal::SignalId>,
+    /// C++ GeometrySignal — fired when Home/Current rect changes.
+    pub geometry_signal: Option<super::emSignal::SignalId>,
 }
 
 impl emView {
@@ -312,6 +387,37 @@ impl emView {
             force_viewing_update: true,
             stress_test: None,
             soft_keyboard_shown: false,
+
+            // Home rect defaults to the viewport rect passed to new().
+            HomeX: 0.0,
+            HomeY: 0.0,
+            HomeWidth: viewport_width,
+            HomeHeight: viewport_height,
+            HomePixelTallness: 1.0,
+
+            // Current rect starts equal to Home rect.
+            CurrentX: 0.0,
+            CurrentY: 0.0,
+            CurrentWidth: viewport_width,
+            CurrentHeight: viewport_height,
+            CurrentPixelTallness: 1.0,
+
+            SVPChoiceInvalid: false,
+            SVPChoiceByOpacityInvalid: false,
+            RestartInputRecursion: false,
+            SettingGeometry: 0,
+            SVPUpdSlice: 0,
+            ZoomScrollInAction: false,
+
+            MaxSVP: None,
+            MinSVP: None,
+
+            LastMouseX: -1.0e10,
+            LastMouseY: -1.0e10,
+
+            view_flags_signal: None,
+            focus_signal: None,
+            geometry_signal: None,
         }
     }
 
@@ -4103,6 +4209,50 @@ mod tests {
         // Clean up signals so EngineScheduler's debug_assert on drop is satisfied.
         sched.borrow_mut().remove_signal(cp_sig);
         sched.borrow_mut().remove_signal(title_sig);
+    }
+
+    #[test]
+    fn test_phase1_new_fields_default_initialized() {
+        let (tree, root, _, _) = setup_tree();
+        let v = emView::new(root, 640.0, 480.0);
+
+        // Home rect defaults to the viewport rect passed to new().
+        assert_eq!(v.HomeX, 0.0);
+        assert_eq!(v.HomeY, 0.0);
+        assert_eq!(v.HomeWidth, 640.0);
+        assert_eq!(v.HomeHeight, 480.0);
+        assert_eq!(v.HomePixelTallness, 1.0);
+
+        // Current rect starts identical to Home rect (no popup at construction).
+        assert_eq!(v.CurrentX, 0.0);
+        assert_eq!(v.CurrentY, 0.0);
+        assert_eq!(v.CurrentWidth, 640.0);
+        assert_eq!(v.CurrentHeight, 480.0);
+        assert_eq!(v.CurrentPixelTallness, 1.0);
+
+        // Invalidation / recursion flags all start false.
+        assert!(!v.SVPChoiceInvalid);
+        assert!(!v.SVPChoiceByOpacityInvalid);
+        assert!(!v.RestartInputRecursion);
+        assert_eq!(v.SettingGeometry, 0);
+        assert_eq!(v.SVPUpdSlice, 0u64);
+        assert!(!v.ZoomScrollInAction);
+
+        // MinSVP / MaxSVP default to None (the "no SVP computed yet" state).
+        assert!(v.MinSVP.is_none());
+        assert!(v.MaxSVP.is_none());
+
+        // LastMouse defaults to a sentinel far outside any viewport.
+        assert_eq!(v.LastMouseX, -1.0e10);
+        assert_eq!(v.LastMouseY, -1.0e10);
+
+        // Signal fields exist (may be None until a scheduler wires them).
+        let _: &Option<crate::emSignal::SignalId> = &v.view_flags_signal;
+        let _: &Option<crate::emSignal::SignalId> = &v.focus_signal;
+        let _: &Option<crate::emSignal::SignalId> = &v.geometry_signal;
+
+        // Suppress unused-variable warning for tree (kept alive for PanelId validity).
+        let _ = tree;
     }
 }
 
