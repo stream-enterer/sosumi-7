@@ -5441,7 +5441,7 @@ mod tests {
     /// must return false.
     #[test]
     fn test_phase5_eoi_engine_replaces_countdown() {
-        let (mut tree, root, _, _) = setup_tree();
+        let (_tree, root, _, _) = setup_tree();
         let mut v = emView::new(root, 640.0, 480.0);
         v.SignalEOIDelayed();
         assert!(v.eoi_delayed());
@@ -5455,7 +5455,7 @@ mod tests {
     /// Phase 5: UpdateEngineClass is present and WakeUp sets the awake flag.
     #[test]
     fn test_phase5_update_engine_wakeup() {
-        let (mut tree, root, _, _) = setup_tree();
+        let (_tree, root, _, _) = setup_tree();
         let mut v = emView::new(root, 640.0, 480.0);
         // UpdateEngine is created by new().
         assert!(v.UpdateEngine.is_some());
