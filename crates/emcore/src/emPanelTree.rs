@@ -2523,6 +2523,142 @@ impl PanelTree {
         }
     }
 
+    /// Port of C++ `emPanel::UpdateChildrenViewing` (emPanel.cpp:1454-1518).
+    ///
+    /// Propagates viewing state from a panel to its immediate children,
+    /// recursing into children whose state transitions. Fires
+    /// `VIEW_CHANGED | UPDATE_PRIORITY_CHANGED | MEMORY_LIMIT_CHANGED` on
+    /// every transition.
+    ///
+    /// Precondition: when called, `self.panels[id].in_viewed_path` and
+    /// `viewed` already reflect `id`'s own new state. The method then
+    /// updates each child based on whether `id` is Viewed.
+    pub(crate) fn UpdateChildrenViewing(&mut self, id: PanelId) {
+        let (id_viewed, id_in_path, pid_vx, pid_vy, pid_vw, pid_cx1, pid_cy1, pid_cx2, pid_cy2) = {
+            let p = match self.panels.get(id) {
+                Some(p) => p,
+                None => return,
+            };
+            (
+                p.viewed,
+                p.in_viewed_path,
+                p.viewed_x,
+                p.viewed_y,
+                p.viewed_width,
+                p.clip_x,
+                p.clip_y,
+                p.clip_x + p.clip_w,
+                p.clip_y + p.clip_h,
+            )
+        };
+
+        if !id_viewed {
+            debug_assert!(
+                !id_in_path,
+                "UpdateChildrenViewing called with !viewed && in_viewed_path (C++ emFatalError)"
+            );
+            let mut child_opt = self.GetFirstChild(id);
+            while let Some(c) = child_opt {
+                let next = self.GetNext(c);
+                let needs_recurse = match self.panels.get_mut(c) {
+                    Some(cp) if cp.in_viewed_path => {
+                        cp.viewed = false;
+                        cp.in_viewed_path = false;
+                        true
+                    }
+                    _ => false,
+                };
+                if needs_recurse {
+                    self.queue_notice(
+                        c,
+                        NoticeFlags::VIEW_CHANGED
+                            | NoticeFlags::UPDATE_PRIORITY_CHANGED
+                            | NoticeFlags::MEMORY_LIMIT_CHANGED,
+                    );
+                    if self.GetFirstChild(c).is_some() {
+                        self.UpdateChildrenViewing(c);
+                    }
+                }
+                child_opt = next;
+            }
+            return;
+        }
+
+        let pt = self.current_pixel_tallness;
+        let mut child_opt = self.GetFirstChild(id);
+        while let Some(c) = child_opt {
+            let next = self.GetNext(c);
+
+            let (cx, cy, cw, ch, clip_x, clip_y, clip_w, clip_h, became_viewed, was_in_path) = {
+                let cp = match self.panels.get_mut(c) {
+                    Some(cp) => cp,
+                    None => {
+                        child_opt = next;
+                        continue;
+                    }
+                };
+                let vx = pid_vx + cp.layout_rect.x * pid_vw;
+                let vw = cp.layout_rect.w * pid_vw;
+                let vy_scale = pid_vw / pt;
+                let vy = pid_vy + cp.layout_rect.y * vy_scale;
+                let vh = cp.layout_rect.h * vy_scale;
+                cp.viewed_x = vx;
+                cp.viewed_y = vy;
+                cp.viewed_width = vw;
+                cp.viewed_height = vh;
+
+                let mut x1 = vx;
+                let mut y1 = vy;
+                let mut x2 = vx + vw;
+                let mut y2 = vy + vh;
+                if x1 < pid_cx1 { x1 = pid_cx1; }
+                if x2 > pid_cx2 { x2 = pid_cx2; }
+                if y1 < pid_cy1 { y1 = pid_cy1; }
+                if y2 > pid_cy2 { y2 = pid_cy2; }
+                cp.clip_x = x1;
+                cp.clip_y = y1;
+                cp.clip_w = (x2 - x1).max(0.0);
+                cp.clip_h = (y2 - y1).max(0.0);
+
+                let non_empty = x1 < x2 && y1 < y2;
+                let was_in_path = cp.in_viewed_path;
+                if non_empty {
+                    cp.in_viewed_path = true;
+                    cp.viewed = true;
+                } else if was_in_path {
+                    cp.in_viewed_path = false;
+                    cp.viewed = false;
+                }
+                (vx, vy, vw, vh, x1, y1, x2 - x1, y2 - y1, non_empty, was_in_path)
+            };
+            let _ = (cx, cy, cw, ch, clip_x, clip_y, clip_w, clip_h);
+
+            if became_viewed {
+                self.queue_notice(
+                    c,
+                    NoticeFlags::VIEW_CHANGED
+                        | NoticeFlags::UPDATE_PRIORITY_CHANGED
+                        | NoticeFlags::MEMORY_LIMIT_CHANGED,
+                );
+                if self.GetFirstChild(c).is_some() {
+                    self.UpdateChildrenViewing(c);
+                }
+            } else if was_in_path {
+                self.queue_notice(
+                    c,
+                    NoticeFlags::VIEW_CHANGED
+                        | NoticeFlags::UPDATE_PRIORITY_CHANGED
+                        | NoticeFlags::MEMORY_LIMIT_CHANGED,
+                );
+                if self.GetFirstChild(c).is_some() {
+                    self.UpdateChildrenViewing(c);
+                }
+            }
+
+            child_opt = next;
+        }
+    }
+
     /// Get all panel IDs.
     pub fn all_ids(&self) -> Vec<PanelId> {
         self.panels.keys().collect()
