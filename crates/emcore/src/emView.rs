@@ -186,7 +186,7 @@ pub struct emView {
     pub flags: ViewFlags,
     viewport_width: f64,
     viewport_height: f64,
-    svp: Option<PanelId>,
+    supreme_viewed_panel: Option<PanelId>,
     background_color: emColor,
     svp_update_count: u32,
     window_focused: bool,
@@ -270,7 +270,7 @@ impl emView {
             flags: ViewFlags::empty(),
             viewport_width,
             viewport_height,
-            svp: None,
+            supreme_viewed_panel: None,
             background_color: emColor::rgba(0x80, 0x80, 0x80, 0xFF),
             svp_update_count: 0,
             window_focused: true,
@@ -330,7 +330,7 @@ impl emView {
     }
 
     pub fn GetSupremeViewedPanel(&self) -> Option<PanelId> {
-        self.svp
+        self.supreme_viewed_panel
     }
 
     pub fn IsFocused(&self) -> bool {
@@ -527,16 +527,16 @@ impl emView {
                                 candidate = panel.parent;
                             } else {
                                 // Not in viewed path; fall back to SVP
-                                result = self.svp;
+                                result = self.supreme_viewed_panel;
                                 break;
                             }
                         } else {
-                            result = self.svp;
+                            result = self.supreme_viewed_panel;
                             break;
                         }
                     }
                     None => {
-                        result = self.svp;
+                        result = self.supreme_viewed_panel;
                         break;
                     }
                 }
@@ -1078,7 +1078,7 @@ impl emView {
     /// whose clip rect contains the viewport center, stopping when children
     /// are too small (< 99% view width AND height, AND < 33% view area).
     pub fn SetActivePanelBestPossible(&mut self, tree: &mut PanelTree) {
-        let svp = match self.svp {
+        let svp = match self.supreme_viewed_panel {
             Some(id) => id,
             None => return,
         };
@@ -1305,20 +1305,20 @@ impl emView {
 
         // Find SVP: deepest ancestor of visited panel whose absolute area <= MAX_SVP_SIZE
         let ancestors = tree.ancestors(visited);
-        self.svp = None;
+        self.supreme_viewed_panel = None;
         for &id in &ancestors {
             if let Some(p) = tree.GetRec(id) {
                 let area = p.viewed_width * p.viewed_height;
                 if area <= MAX_SVP_SIZE {
-                    self.svp = Some(id);
+                    self.supreme_viewed_panel = Some(id);
                     break;
                 }
             }
         }
-        if self.svp.is_none() {
-            self.svp = Some(root);
+        if self.supreme_viewed_panel.is_none() {
+            self.supreme_viewed_panel = Some(root);
         }
-        dlog!("SVP = {:?}", self.svp);
+        dlog!("SVP = {:?}", self.supreme_viewed_panel);
 
         // C++ InViewedPath: true if panel is viewed OR any descendant is
         // viewed. Propagate from viewed panels up to all ancestors
@@ -1696,12 +1696,12 @@ impl emView {
     // --- Hit testing ---
 
     pub fn GetPanelAt(&self, tree: &PanelTree, x: f64, y: f64) -> Option<PanelId> {
-        let svp = self.svp?;
+        let svp = self.supreme_viewed_panel?;
         self.hit_test_recursive(tree, svp, x, y, false)
     }
 
     pub fn GetFocusablePanelAt(&self, tree: &PanelTree, x: f64, y: f64) -> Option<PanelId> {
-        let svp = self.svp?;
+        let svp = self.supreme_viewed_panel?;
         self.hit_test_recursive(tree, svp, x, y, true)
     }
 
@@ -2353,7 +2353,8 @@ impl emView {
     // --- Supreme panel ---
 
     pub fn supreme_panel(&self) -> PanelId {
-        self.svp.unwrap_or(self.current_visit().panel)
+        self.supreme_viewed_panel
+            .unwrap_or(self.current_visit().panel)
     }
 
     // --- Stress test ---
@@ -2404,7 +2405,7 @@ impl emView {
         // C++ lines 1060, 1145: EnterUserSpace/LeaveUserSpace — no-op (single-threaded)
 
         // C++ line 1062
-        let svp_id = match self.svp {
+        let svp_id = match self.supreme_viewed_panel {
             Some(id) => id,
             None => {
                 // C++ line 1063
