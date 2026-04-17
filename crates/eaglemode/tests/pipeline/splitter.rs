@@ -161,9 +161,11 @@ fn splitter_drag_vertical_1x_and_2x() {
     );
 
     // ── At 1x zoom ─────────────────────────────────────────────────
-    // Grip center at panel_y=0.5 maps to view_y=400 at 1x.
-    // Drag target ~30%: panel_y=0.3 maps to view_y=240.
-    h.drag(400.0, 400.0, 400.0, 240.0);
+    // At 1x zoom: 800x600 viewport, HomePixelTallness=1.0.
+    // zoom_out_rel_a = max(800/600, 600/800) = 1.333 → vw=600, vy=0.
+    // Grip center at panel_y=0.5: view_y = 0.5 * 600 / 1.0 + 0 = 300.
+    // Drag target ~30%: panel_y=0.3 → view_y = 0.3 * 600 / 1.0 = 180.
+    h.drag(400.0, 300.0, 400.0, 180.0);
 
     let pos_after_1x = sp_ref.borrow().GetPos();
 
@@ -185,10 +187,10 @@ fn splitter_drag_vertical_1x_and_2x() {
         "Vertical splitter position should remain 0.5 after zoom change"
     );
 
-    // At 2x: viewed_width=1600, viewed_y=-300.
-    // Grip center at panel_y=0.5: view_y = -300 + 0.5*1600 = 500.
-    // Target ~30%: view_y = -300 + 0.3*1600 = 180.
-    h.drag(400.0, 500.0, 400.0, 180.0);
+    // At 2x: vw=1200, vx=-200, vy=-300 (centered on 800x600).
+    // Grip center at panel_y=0.5: view_y = 0.5*1200/1.0 + (-300) = 300.
+    // Target ~30%: panel_y=0.3 → view_y = 0.3*1200/1.0 + (-300) = 60.
+    h.drag(400.0, 300.0, 400.0, 60.0);
 
     let pos_after_2x = sp_ref.borrow().GetPos();
 
@@ -601,22 +603,21 @@ fn splitter_vertical_drag_states() {
 
     assert!(!sp_ref.borrow().is_dragging());
 
-    // With layout_rect (0,0,1,1) and viewed_width=800, PaintContent receives
-    // w=800, h=800 (paint_h = vw * layout_h/layout_w = 800*1=800).
-    // So tallness = 800/800 = 1.0. Vertical grip: gs = 0.015*1.0 = 0.015,
-    // gy = 0.5*(1.0-0.015) = 0.4925. panel_y = vy/800 (pixel_tallness=1.0).
-    // Grip center at panel_y ≈ 0.5 → vy = 0.5*800 = 400.
+    // 800x600 viewport, HomePixelTallness=1.0, zoom-out: vw=600, vy=0.
+    // PaintContent receives w=1.0, h=1.0 (layout_rect tallness).
+    // Vertical grip: gs = 0.015, gy ≈ 0.4925. panel_y = vy/600 * 1.0.
+    // Grip center at panel_y ≈ 0.5 → view_y = 0.5 * 600 / 1.0 = 300.
 
     // Press at grip center.
-    let press = emInputEvent::press(InputKey::MouseLeft).with_mouse(400.0, 400.0);
+    let press = emInputEvent::press(InputKey::MouseLeft).with_mouse(400.0, 300.0);
     h.dispatch(&press);
     assert!(
         sp_ref.borrow().is_dragging(),
         "pressing on vertical grip should start drag"
     );
 
-    // Drag upward to ~30%: panel_y = 0.3 → vy = 0.3 * 800 = 240.
-    let move_ev = emInputEvent::mouse_move(InputKey::MouseLeft, 400.0, 240.0);
+    // Drag upward to ~30%: panel_y = 0.3 → view_y = 0.3 * 600 / 1.0 = 180.
+    let move_ev = emInputEvent::mouse_move(InputKey::MouseLeft, 400.0, 180.0);
     h.dispatch(&move_ev);
     let pos = sp_ref.borrow().GetPos();
     assert!(
@@ -625,7 +626,7 @@ fn splitter_vertical_drag_states() {
     );
 
     // Release.
-    let release = emInputEvent::release(InputKey::MouseLeft).with_mouse(400.0, 240.0);
+    let release = emInputEvent::release(InputKey::MouseLeft).with_mouse(400.0, 180.0);
     h.dispatch(&release);
     assert!(
         !sp_ref.borrow().is_dragging(),

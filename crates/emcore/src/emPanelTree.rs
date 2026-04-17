@@ -326,12 +326,6 @@ impl PanelTree {
         }
     }
 
-    /// Update the stored pixel tallness. Called by emView at the start of
-    /// each Update so Layout() uses the correct current value.
-    pub fn set_pixel_tallness(&mut self, pt: f64) {
-        self.current_pixel_tallness = pt.max(1e-100);
-    }
-
     pub fn get_pixel_tallness(&self) -> f64 {
         self.current_pixel_tallness
     }

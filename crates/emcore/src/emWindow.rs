@@ -191,7 +191,8 @@ impl ZuiWindow {
         self.compositor.resize(w, h);
         self.tile_cache.resize(w, h);
         self.viewport_buffer.setup(w, h, 4);
-        self.view.SetGeometry(tree, w as f64, h as f64);
+        self.view
+            .SetGeometry(tree, 0.0, 0.0, w as f64, h as f64, 1.0);
     }
 
     /// Update the render thread pool from emCoreConfig.

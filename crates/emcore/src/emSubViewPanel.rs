@@ -118,8 +118,14 @@ impl emSubViewPanel {
             self.viewed_y = state.viewed_rect.y;
             self.viewed_width = state.viewed_rect.w;
             self.viewed_height = state.viewed_rect.h;
-            self.sub_view
-                .SetGeometry(&mut self.sub_tree, self.viewed_width, self.viewed_height);
+            self.sub_view.SetGeometry(
+                &mut self.sub_tree,
+                0.0,
+                0.0,
+                self.viewed_width,
+                self.viewed_height,
+                1.0,
+            );
         } else {
             // Not viewed — give the sub-view a default geometry.
             // C++ uses (0, 0, 1, GetHeight(), 1.0).
@@ -128,7 +134,7 @@ impl emSubViewPanel {
             self.viewed_width = 1.0;
             self.viewed_height = state.height;
             self.sub_view
-                .SetGeometry(&mut self.sub_tree, 1.0, state.height);
+                .SetGeometry(&mut self.sub_tree, 0.0, 0.0, 1.0, state.height, 1.0);
         }
     }
 }

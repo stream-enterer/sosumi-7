@@ -281,8 +281,6 @@ pub struct emView {
     focused: Option<PanelId>,
     visit_stack: Vec<VisitState>,
     pub flags: ViewFlags,
-    viewport_width: f64,
-    viewport_height: f64,
     supreme_viewed_panel: Option<PanelId>,
     background_color: emColor,
     svp_update_count: u32,
@@ -291,11 +289,6 @@ pub struct emView {
     seek_pos_panel: Option<PanelId>,
     /// Child name being sought within `seek_pos_panel`.
     seek_pos_child_name: String,
-    /// Pixel tallness (height/width ratio of a single pixel).
-    pixel_tallness: f64,
-    /// DIVERGED: retained until Phase 6; see HomePixelTallness for the C++-named twin.
-    /// Pixel shape ratio (C++ HomePixelTallness). Always 1.0 for square pixels.
-    home_pixel_tallness: f64,
     /// Dirty rectangles accumulated by invalidate_painting calls.
     dirty_rects: Vec<Rect>,
     /// Whether the view title needs to be refreshed.
@@ -338,11 +331,6 @@ pub struct emView {
     pub max_popup_rect: Option<Rect>,
     /// Whether the view is currently in popped-up state (popup window active).
     pub popped_up: bool,
-    /// Cached visited panel ViewedWidth (screen pixels). Set by update_viewing().
-    /// Used by scroll() and done-distance for correct aspect-aware conversion.
-    visited_vw: f64,
-    /// Cached visited panel ViewedHeight (screen pixels). Set by update_viewing().
-    visited_vh: f64,
     /// C++ ZoomedOutBeforeSG: when true the next update_viewing() will
     /// compute the zoom-out relA so the root panel fits in the viewport.
     /// Initially true; cleared after the first viewing update.
@@ -363,7 +351,6 @@ pub struct emView {
     pub HomeWidth: f64,
     /// C++ HomeHeight — height of home viewport rect.
     pub HomeHeight: f64,
-    /// DIVERGED: during Phases 1-5 Rust keeps both HomePixelTallness (C++ name) and home_pixel_tallness (Rust-invention); reads still go through home_pixel_tallness. home_pixel_tallness is removed in Phase 6.
     /// C++ HomePixelTallness — pixel shape ratio of the home viewport
     /// (hardware property; 1.0 for square pixels).
     pub HomePixelTallness: f64,
@@ -450,26 +437,22 @@ impl emView {
             rel_y: 0.0,
             rel_a: 1.0,
         };
+        // C++ HomeViewPort == CurrentViewPort in non-popup state.
+        // Rc::clone shares the same allocation so Rc::ptr_eq returns true.
+        let home_vp = Rc::new(RefCell::new(super::emViewPort::emViewPort::new_dummy()));
+        let current_vp = Rc::clone(&home_vp);
         Self {
             root,
             active: Some(root),
             focused: None,
             visit_stack: vec![initial_visit],
             flags: ViewFlags::empty(),
-            viewport_width,
-            viewport_height,
             supreme_viewed_panel: None,
             background_color: emColor::rgba(0x80, 0x80, 0x80, 0xFF),
             svp_update_count: 0,
             window_focused: true,
             seek_pos_panel: None,
             seek_pos_child_name: String::new(),
-            pixel_tallness: if viewport_width > 0.0 {
-                viewport_height / viewport_width
-            } else {
-                1.0
-            },
-            home_pixel_tallness: 1.0,
             dirty_rects: Vec::new(),
             title_invalid: false,
             cursor_invalid: false,
@@ -487,8 +470,6 @@ impl emView {
             cursor: emCursor::Normal,
             max_popup_rect: None,
             popped_up: false,
-            visited_vw: viewport_width.max(1.0),
-            visited_vh: viewport_height.max(1.0),
             zoomed_out_before_sg: true,
             stress_test: None,
             soft_keyboard_shown: false,
@@ -525,8 +506,8 @@ impl emView {
             geometry_signal: None,
 
             PopupWindow: None,
-            HomeViewPort: Rc::new(RefCell::new(super::emViewPort::emViewPort::new_dummy())),
-            CurrentViewPort: Rc::new(RefCell::new(super::emViewPort::emViewPort::new_dummy())),
+            HomeViewPort: home_vp,
+            CurrentViewPort: current_vp,
             DummyViewPort: Rc::new(RefCell::new(super::emViewPort::emViewPort::new_dummy())),
         }
     }
@@ -808,18 +789,18 @@ impl emView {
 
         if let Some(id) = p {
             if let Some(panel) = tree.GetRec(id) {
-                let hw = self.viewport_width;
-                let hh = self.viewport_height;
-                let hp = self.home_pixel_tallness;
+                let hw = self.HomeWidth;
+                let hh = self.HomeHeight;
+                let hp = self.HomePixelTallness;
                 // C++ emView.cpp:479-481:
                 //   relX = (HomeX + HomeWidth*0.5 - ViewedX) / ViewedWidth - 0.5
                 //   relY = (HomeY + HomeHeight*0.5 - ViewedY) / ViewedHeight - 0.5
                 //   relA = (HomeWidth*HomeHeight) / (ViewedWidth*ViewedHeight)
-                // Rust: HomeX=0, HomeY=0; ViewedHeight = ViewedWidth * GetHeight / HomePixelTallness
+                // Rust: ViewedHeight = ViewedWidth * GetHeight / HomePixelTallness
                 let vw = panel.viewed_width.max(1e-100);
                 let vh = (vw * tree.get_height(id) / hp).max(1e-100);
-                let rel_x = (hw * 0.5 - panel.viewed_x) / vw - 0.5;
-                let rel_y = (hh * 0.5 - panel.viewed_y) / vh - 0.5;
+                let rel_x = (self.HomeX + hw * 0.5 - panel.viewed_x) / vw - 0.5;
+                let rel_y = (self.HomeY + hh * 0.5 - panel.viewed_y) / vh - 0.5;
                 let rel_a = (hw * hh) / (vw * vh);
                 return Some((id, rel_x, rel_y, rel_a));
             }
@@ -893,57 +874,103 @@ impl emView {
     // --- Viewport ---
 
     /// Port of C++ `emView::SetGeometry` (emView.cpp:1241-1278). Clamp dimensions,
-    /// preserve zoom state on resize. Matches C++ by capturing visited-panel state
-    /// before geometry changes, then calling RawZoomOut(true) or RawVisit(..., true).
-    pub fn SetGeometry(&mut self, tree: &mut PanelTree, width: f64, height: f64) {
+    /// preserve zoom state on resize. Signature extended to accept explicit
+    /// (x, y, width, height, pixel_tallness) matching C++ emView.cpp:1238.
+    ///
+    /// DIVERGED: C++ `SetGeometry(x,y,w,h,pt)` — Rust signature identical.
+    /// Internally writes both Home* and Current* (home = current when no popup).
+    pub fn SetGeometry(
+        &mut self,
+        tree: &mut PanelTree,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        pixel_tallness: f64,
+    ) {
         let width = width.max(MIN_DIMENSION);
         let height = height.max(MIN_DIMENSION);
+        let pixel_tallness = pixel_tallness.max(MIN_DIMENSION);
 
-        if (self.viewport_width - width).abs() < 1e-15
-            && (self.viewport_height - height).abs() < 1e-15
+        // C++ emView.cpp:1248-1254: early-out if nothing changed.
+        if self.CurrentX == x
+            && self.CurrentY == y
+            && self.CurrentWidth == width
+            && self.CurrentHeight == height
+            && self.CurrentPixelTallness == pixel_tallness
         {
             return;
         }
 
-        // C++ emView.cpp:1256: capture visited panel before Home/Current mutation.
-        let was_zoomed_out = self.IsZoomedOut(tree);
-        let visited_before = if !was_zoomed_out {
-            self.GetVisitedPanel(tree)
-        } else {
-            None
-        };
+        // C++ emView.cpp:1255-1256: capture zoom state before mutation.
+        self.zoomed_out_before_sg = self.IsZoomedOut(tree);
+        self.SettingGeometry += 1;
+        let visited_before = self.GetVisitedPanel(tree);
 
-        self.viewport_width = width;
-        self.viewport_height = height;
-        self.pixel_tallness = height / width;
-
-        // C++ SetGeometry: update Home and Current rects.
-        self.HomeWidth = width;
-        self.HomeHeight = height;
+        // Home fields track Current on the home viewport (no popup).
+        // Rc::ptr_eq detects popup state: during popup, HomeViewPort != CurrentViewPort.
+        let is_home = Rc::ptr_eq(&self.HomeViewPort, &self.CurrentViewPort);
+        if is_home {
+            self.HomeX = x;
+            self.HomeY = y;
+            self.HomeWidth = width;
+            self.HomeHeight = height;
+            self.HomePixelTallness = pixel_tallness;
+        }
+        self.CurrentX = x;
+        self.CurrentY = y;
         self.CurrentWidth = width;
         self.CurrentHeight = height;
+        self.CurrentPixelTallness = pixel_tallness;
+
+        // C++ Signal(GeometrySignal).
+        if let Some(sig) = self.geometry_signal {
+            if let Some(sched) = &self.scheduler {
+                sched.borrow_mut().fire(sig);
+            }
+        }
 
         // C++ SetGeometry parity: inline-update root panel layout when
         // VF_ROOT_SAME_TALLNESS is set (mirrors RootPanel->Layout(0,0,1,GetHomeTallness())).
         if self.flags.contains(ViewFlags::ROOT_SAME_TALLNESS) {
-            tree.Layout(self.root, 0.0, 0.0, 1.0, self.pixel_tallness);
+            tree.Layout(self.root, 0.0, 0.0, 1.0, self.GetHomeTallness());
         }
 
         // C++ emView.cpp:1272-1277: end of SetGeometry — zoom-out or re-visit.
-        if was_zoomed_out {
+        if self.zoomed_out_before_sg {
             self.RawZoomOut(tree, true);
         } else if let Some((panel, rx, ry, ra)) = visited_before {
             self.RawVisit(tree, panel, rx, ry, ra, true);
         }
+
+        self.SettingGeometry -= 1;
     }
 
+    /// C++ `emView::GetHomeTallness` (emView.h:874-876).
+    /// Returns the aspect ratio (tallness) of a unit-width panel filling the home viewport.
+    pub fn GetHomeTallness(&self) -> f64 {
+        self.HomeHeight / self.HomeWidth * self.HomePixelTallness
+    }
+
+    /// C++ `emViewPort::SetViewGeometry` pixel-tallness path (emView.h:763).
+    /// Adjusts only the pixel tallness of the current viewport.
+    pub fn SetViewPortTallness(&mut self, tree: &mut PanelTree, tallness: f64) {
+        self.SetGeometry(
+            tree,
+            self.CurrentX,
+            self.CurrentY,
+            self.CurrentWidth,
+            self.CurrentHeight,
+            tallness.max(MIN_DIMENSION),
+        );
+    }
+
+    /// Returns the current home viewport size (width, height).
+    ///
+    /// DIVERGED: replaces Rust-invention `viewport_width`/`viewport_height` fields
+    /// removed in Phase 6. Returns `(HomeWidth, HomeHeight)`.
     pub fn viewport_size(&self) -> (f64, f64) {
-        (self.viewport_width, self.viewport_height)
-    }
-
-    /// Cached visited panel dimensions (screen pixels), set by update_viewing().
-    pub fn visited_size(&self) -> (f64, f64) {
-        (self.visited_vw, self.visited_vh)
+        (self.HomeWidth, self.HomeHeight)
     }
 
     // --- Zoom & Scroll ---
@@ -1114,7 +1141,7 @@ impl emView {
 
     /// Zoom sensitivity for VIFs/animators.
     pub fn GetZoomFactorLogarithmPerPixel(&self) -> f64 {
-        1.33 / ((self.viewport_width + self.viewport_height) * 0.25).max(1.0)
+        1.33 / ((self.HomeWidth + self.HomeHeight) * 0.25).max(1.0)
     }
 
     // --- Zoom out ---
@@ -1142,7 +1169,7 @@ impl emView {
     ///   relA  = max(relA, relA2)
     fn zoom_out_rel_a(&self, tree: &PanelTree) -> f64 {
         let root_h = tree.get_height(self.root);
-        let hp = self.home_pixel_tallness;
+        let hp = self.HomePixelTallness;
         let hw = self.HomeWidth;
         let hh = self.HomeHeight;
         let a1 = hw * root_h / hp / hh;
@@ -1274,7 +1301,7 @@ impl emView {
         if new_flags.contains(ViewFlags::ROOT_SAME_TALLNESS)
             && !old.contains(ViewFlags::ROOT_SAME_TALLNESS)
         {
-            tree.Layout(self.root, 0.0, 0.0, 1.0, self.pixel_tallness);
+            tree.Layout(self.root, 0.0, 0.0, 1.0, self.GetHomeTallness());
             self.RawZoomOut(tree, false);
         }
     }
@@ -1349,8 +1376,8 @@ impl emView {
             None => return,
         };
 
-        let vw = self.viewport_width.max(1.0);
-        let vh = self.viewport_height.max(1.0);
+        let vw = self.HomeWidth.max(1.0);
+        let vh = self.HomeHeight.max(1.0);
         let cx = vw * 0.5;
         let cy = vh * 0.5;
         let min_w = vw * 0.99;
@@ -2091,10 +2118,6 @@ impl emView {
     /// DIVERGED: notice-drain delegates to PanelTree::HandleNotice (ring owned
     /// by PanelTree, per commit 75c7c68). Rest of shape is identical.
     pub fn Update(&mut self, tree: &mut PanelTree) {
-        // DIVERGED: force tree pixel_tallness to 1.0 for C++-golden parity.
-        // See Phase 2 comment; retained here pending Phase 6 pt fix.
-        tree.set_pixel_tallness(1.0);
-
         // C++ emView.cpp:1299-1301: popup close.
         // PHASE-4-TODO: check self.PopupWindow close signal and ZoomOut.
 
@@ -2568,7 +2591,7 @@ impl emView {
     /// Corresponds to `emPanel::GetViewedPixelTallness` (delegates to
     /// `emView.CurrentPixelTallness`).
     pub fn GetCurrentPixelTallness(&self) -> f64 {
-        self.pixel_tallness
+        self.CurrentPixelTallness
     }
 
     // --- Invalidation ---
@@ -3314,8 +3337,8 @@ impl emView {
         if vx1 < 0.0 {
             dx = -vx1; // shift content right
             need = true;
-        } else if vx2 > self.viewport_width {
-            dx = self.viewport_width - vx2; // shift content left
+        } else if vx2 > self.HomeWidth {
+            dx = self.HomeWidth - vx2; // shift content left
             need = true;
         }
 
@@ -3323,8 +3346,8 @@ impl emView {
         if vy1 < 0.0 {
             dy = -vy1;
             need = true;
-        } else if vy2 > self.viewport_height {
-            dy = self.viewport_height - vy2;
+        } else if vy2 > self.HomeHeight {
+            dy = self.HomeHeight - vy2;
             need = true;
         }
 
@@ -3536,7 +3559,7 @@ impl emView {
                 // C++ line 1063
                 painter.ClearWithCanvas(self.background_color, canvas_color);
                 if let Some(st) = &self.stress_test {
-                    st.paint_info(painter, self.viewport_width, self.viewport_height);
+                    st.paint_info(painter, self.HomeWidth, self.HomeHeight);
                 }
                 return;
             }
@@ -3701,7 +3724,7 @@ impl emView {
 
         // C++ line 1143
         if let Some(st) = &self.stress_test {
-            st.paint_info(painter, self.viewport_width, self.viewport_height);
+            st.paint_info(painter, self.HomeWidth, self.HomeHeight);
         }
     }
 
@@ -3715,18 +3738,15 @@ impl emView {
         layout: Rect,
     ) {
         if let Some(mut behavior) = tree.take_behavior(id) {
-            let mut state = tree.build_panel_state(id, self.window_focused, self.pixel_tallness);
-            state.priority = tree.GetUpdatePriority(
-                id,
-                self.viewport_width,
-                self.viewport_height,
-                self.window_focused,
-            );
+            let mut state =
+                tree.build_panel_state(id, self.window_focused, self.CurrentPixelTallness);
+            state.priority =
+                tree.GetUpdatePriority(id, self.HomeWidth, self.HomeHeight, self.window_focused);
             const DEFAULT_MEMORY_LIMIT: u64 = 2_048_000_000;
             state.memory_limit = tree.GetMemoryLimit(
                 id,
-                self.viewport_width,
-                self.viewport_height,
+                self.HomeWidth,
+                self.HomeHeight,
                 DEFAULT_MEMORY_LIMIT,
                 self.seek_pos_panel,
             );
@@ -3863,8 +3883,8 @@ impl emView {
                     arrow_distance,
                     color,
                     shadow_color,
-                    self.viewport_width,
-                    self.viewport_height,
+                    self.HomeWidth,
+                    self.HomeHeight,
                 );
             } else {
                 // Line: (x1, y1, x2, y2)
@@ -3880,8 +3900,8 @@ impl emView {
                     arrow_distance,
                     color,
                     shadow_color,
-                    self.viewport_width,
-                    self.viewport_height,
+                    self.HomeWidth,
+                    self.HomeHeight,
                 );
             }
         }
@@ -3944,18 +3964,15 @@ impl emView {
         painter.SetCanvasColor(canvas_color);
 
         if let Some(mut behavior) = tree.take_behavior(id) {
-            let mut state = tree.build_panel_state(id, self.window_focused, self.pixel_tallness);
-            state.priority = tree.GetUpdatePriority(
-                id,
-                self.viewport_width,
-                self.viewport_height,
-                self.window_focused,
-            );
+            let mut state =
+                tree.build_panel_state(id, self.window_focused, self.CurrentPixelTallness);
+            state.priority =
+                tree.GetUpdatePriority(id, self.HomeWidth, self.HomeHeight, self.window_focused);
             const DEFAULT_MEMORY_LIMIT: u64 = 2_048_000_000;
             state.memory_limit = tree.GetMemoryLimit(
                 id,
-                self.viewport_width,
-                self.viewport_height,
+                self.HomeWidth,
+                self.HomeHeight,
                 DEFAULT_MEMORY_LIMIT,
                 self.seek_pos_panel,
             );
@@ -3992,7 +4009,7 @@ impl emView {
             "home_rect",
             &format!(
                 "({:.3}, {:.3}, {:.3}, {:.3})",
-                0.0, 0.0, self.viewport_width, self.viewport_height
+                0.0, 0.0, self.HomeWidth, self.HomeHeight
             ),
         );
 
@@ -4599,13 +4616,15 @@ mod tests {
     #[test]
     fn test_pixel_tallness() {
         let (mut tree, root, _c1, _c2) = setup_tree();
+        // new() initialises CurrentPixelTallness to 1.0 (square pixels).
         let view = emView::new(root, 800.0, 600.0);
-        assert!((view.GetCurrentPixelTallness() - 0.75).abs() < 1e-6);
+        assert_eq!(view.GetCurrentPixelTallness(), 1.0);
 
         let mut view2 = emView::new(root, 1920.0, 1080.0);
-        assert!((view2.GetCurrentPixelTallness() - 1080.0 / 1920.0).abs() < 1e-6);
+        assert_eq!(view2.GetCurrentPixelTallness(), 1.0);
 
-        view2.SetGeometry(&mut tree, 100.0, 200.0);
+        // SetGeometry now takes explicit pixel_tallness.
+        view2.SetGeometry(&mut tree, 0.0, 0.0, 100.0, 200.0, 2.0);
         assert!((view2.GetCurrentPixelTallness() - 2.0).abs() < 1e-6);
     }
 
@@ -5494,6 +5513,21 @@ mod tests {
             v.UpdateEngine.as_ref().unwrap().awake,
             "AddToNoticeList should wake UpdateEngine"
         );
+    }
+
+    /// Phase 6: SetGeometry accepts explicit (x, y, width, height, pixel_tallness).
+    #[test]
+    fn test_phase6_set_geometry_accepts_pixel_tallness() {
+        let (mut tree, root, _, _) = setup_tree();
+        let mut v = emView::new(root, 640.0, 480.0);
+        v.SetGeometry(&mut tree, 100.0, 50.0, 800.0, 600.0, 1.25);
+        assert_eq!(v.HomeX, 100.0);
+        assert_eq!(v.HomeY, 50.0);
+        assert_eq!(v.HomeWidth, 800.0);
+        assert_eq!(v.HomeHeight, 600.0);
+        assert_eq!(v.HomePixelTallness, 1.25);
+        assert_eq!(v.CurrentX, 100.0); // Current tracks Home when no popup.
+        assert_eq!(v.CurrentPixelTallness, 1.25);
     }
 }
 
