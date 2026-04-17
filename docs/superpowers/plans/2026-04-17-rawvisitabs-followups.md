@@ -106,6 +106,10 @@ The band-aid leaves `self.pixel_tallness` (the emView field) and `tree.current_p
 
   Run the full suite. Any test that expected pt = h/w must now explicitly call `SetViewPortTallness`. If many tests break, extract a `make_view(w, h, pt)` helper rather than scattering calls.
 
+- [ ] **Step 4b: Audit `SetGeometry` → `tree.Layout(root, …)` intermediate state.**
+
+  The Task 4 implementer noted: `SetGeometry` currently calls `tree.Layout(root, 0, 0, 1, self.pixel_tallness)` using the auto-derived pt. With the band-aid, `Update` later forces `tree.current_pixel_tallness = 1.0`, so the root's layout_rect height was set using the auto-derived pt but all subsequent geometry walks use pt=1.0. Tests like `emView::tests::invariant_calc_visit_round_trip` pass through this inconsistency by accident. After Step 2 makes pt default to 1.0, this inconsistency disappears, but confirm by grepping for every `tree.Layout(root, …)` caller and verifying they pass a pt that matches `tree.current_pixel_tallness`. If not, add `debug_assert!` at `tree.Layout` entry that the passed height matches `layout.w * tree.current_pixel_tallness.recip()` or equivalent — whatever invariant the code actually depends on. Document the invariant in the `Layout` doc comment.
+
 - [ ] **Step 5: Add a debug assertion of the invariant.**
 
   In `Update`, after the `set_pixel_tallness` call, add:
