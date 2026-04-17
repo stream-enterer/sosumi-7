@@ -40,6 +40,7 @@ fn setup_anim_view() -> (PanelTree, emView) {
 }
 
 /// Collect velocity trajectory from emKineticViewAnimator.
+#[allow(clippy::too_many_arguments)]
 fn run_kinetic_velocity_trajectory(
     tree: &mut PanelTree,
     view: &mut emView,

@@ -1159,12 +1159,16 @@ mod model_tests {
         let ctx = emcore::emContext::emContext::NewRoot();
         let model = emFileManModel::Acquire(&ctx);
         let mut model = model.borrow_mut();
-        let mut root = CommandNode::default();
-        root.command_type = CommandType::Group;
-        let mut child = CommandNode::default();
-        child.cmd_path = "/cmds/test.sh".to_string();
-        child.command_type = CommandType::Command;
-        root.children.push(child);
+        let child = CommandNode {
+            cmd_path: "/cmds/test.sh".to_string(),
+            command_type: CommandType::Command,
+            ..CommandNode::default()
+        };
+        let root = CommandNode {
+            command_type: CommandType::Group,
+            children: vec![child],
+            ..CommandNode::default()
+        };
         model.set_command_root(root);
         assert!(model.GetCommand("/cmds/test.sh").is_some());
         assert!(model.GetCommand("/cmds/nonexistent.sh").is_none());
@@ -1193,13 +1197,17 @@ mod model_tests {
         let ctx = emcore::emContext::emContext::NewRoot();
         let model = emFileManModel::Acquire(&ctx);
         let mut model = model.borrow_mut();
-        let mut root = CommandNode::default();
-        root.command_type = CommandType::Group;
-        let mut child = CommandNode::default();
-        child.cmd_path = "/cmds/open.sh".to_string();
-        child.command_type = CommandType::Command;
-        child.hotkey = "Ctrl+O".to_string();
-        root.children.push(child);
+        let child = CommandNode {
+            cmd_path: "/cmds/open.sh".to_string(),
+            command_type: CommandType::Command,
+            hotkey: "Ctrl+O".to_string(),
+            ..CommandNode::default()
+        };
+        let root = CommandNode {
+            command_type: CommandType::Group,
+            children: vec![child],
+            ..CommandNode::default()
+        };
         model.set_command_root(root);
         assert!(model.SearchHotkeyCommand("Ctrl+O").is_some());
         assert!(model.SearchHotkeyCommand("Ctrl+X").is_none());

@@ -1904,15 +1904,13 @@ fn textfield_ctrl_a_then_type_replaces_all() {
 // The paste_source provides the text returned by on_clipboard_paste.
 // ---------------------------------------------------------------------------
 
-fn setup_clipboard_harness(
-    text: &str,
-    cursor_pos: usize,
-    paste_content: &str,
-) -> (
+type ClipboardHarness = (
     PipelineTestHarness,
     Rc<RefCell<emTextField>>,
     Rc<RefCell<Vec<String>>>,
-) {
+);
+
+fn setup_clipboard_harness(text: &str, cursor_pos: usize, paste_content: &str) -> ClipboardHarness {
     let (mut h, tf_ref) = setup_textfield_harness();
     tf_ref.borrow_mut().SetText(text);
     tf_ref.borrow_mut().SetCursorIndex(cursor_pos);

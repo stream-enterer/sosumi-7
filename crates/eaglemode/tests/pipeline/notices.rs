@@ -137,10 +137,7 @@ fn clear_flags(acc: &Rc<RefCell<NoticeFlags>>) {
 /// ```
 ///
 /// Returns (root, root_acc, branch_a, ba_acc, leaf_a, la_acc, branch_b, bb_acc, leaf_b, lb_acc).
-fn build_labeled_tree(
-    h: &mut TestHarness,
-    log: &Rc<RefCell<Vec<String>>>,
-) -> (
+type LabeledTree = (
     PanelId,
     Rc<RefCell<NoticeFlags>>,
     PanelId,
@@ -151,7 +148,9 @@ fn build_labeled_tree(
     Rc<RefCell<NoticeFlags>>,
     PanelId,
     Rc<RefCell<NoticeFlags>>,
-) {
+);
+
+fn build_labeled_tree(h: &mut TestHarness, log: &Rc<RefCell<Vec<String>>>) -> LabeledTree {
     let root = h.get_root_panel();
     let root_acc = Rc::new(RefCell::new(NoticeFlags::empty()));
     h.tree.set_behavior(

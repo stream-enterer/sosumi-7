@@ -890,10 +890,14 @@ mod tests {
 
     #[test]
     fn test_clear_start_location() {
-        let mut bm1 = emBookmarkRec::default();
-        bm1.VisitAtProgramStart = true;
-        let mut bm2 = emBookmarkRec::default();
-        bm2.VisitAtProgramStart = true;
+        let bm1 = emBookmarkRec {
+            VisitAtProgramStart: true,
+            ..emBookmarkRec::default()
+        };
+        let bm2 = emBookmarkRec {
+            VisitAtProgramStart: true,
+            ..emBookmarkRec::default()
+        };
 
         let mut root = emBookmarksRec {
             entries: vec![
@@ -913,12 +917,16 @@ mod tests {
 
     #[test]
     fn test_set_start_location() {
-        let mut bm1 = emBookmarkRec::default();
-        bm1.LocationIdentity = "::home:".to_string();
-        bm1.VisitAtProgramStart = true;
+        let bm1 = emBookmarkRec {
+            LocationIdentity: "::home:".to_string(),
+            VisitAtProgramStart: true,
+            ..emBookmarkRec::default()
+        };
 
-        let mut bm2 = emBookmarkRec::default();
-        bm2.LocationIdentity = "::work:".to_string();
+        let bm2 = emBookmarkRec {
+            LocationIdentity: "::work:".to_string(),
+            ..emBookmarkRec::default()
+        };
 
         let mut root = emBookmarksRec {
             entries: vec![
@@ -935,12 +943,16 @@ mod tests {
 
     #[test]
     fn test_search_bookmark_by_hotkey() {
-        let mut bm1 = emBookmarkRec::default();
-        bm1.Hotkey = "F1".to_string();
+        let mut bm1 = emBookmarkRec {
+            Hotkey: "F1".to_string(),
+            ..emBookmarkRec::default()
+        };
         bm1.entry.Name = "Bm1".to_string();
 
-        let mut bm2 = emBookmarkRec::default();
-        bm2.Hotkey = "F2".to_string();
+        let mut bm2 = emBookmarkRec {
+            Hotkey: "F2".to_string(),
+            ..emBookmarkRec::default()
+        };
         bm2.entry.Name = "Bm2".to_string();
 
         let root = emBookmarksRec {

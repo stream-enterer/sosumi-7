@@ -883,9 +883,11 @@ mod tests {
     fn test_item_panel_set_item_rec() {
         let ctx = emcore::emContext::emContext::NewRoot();
         let mut panel = emVirtualCosmosItemPanel::new(Rc::clone(&ctx));
-        let mut item = emVirtualCosmosItemRec::default();
-        item.Title = "Test".to_string();
-        item.PosX = 0.5;
+        let item = emVirtualCosmosItemRec {
+            Title: "Test".to_string(),
+            PosX: 0.5,
+            ..emVirtualCosmosItemRec::default()
+        };
         panel.SetItemRec(item);
         assert!(panel.item_rec.is_some());
         assert!(panel.update_needed);
@@ -895,9 +897,11 @@ mod tests {
     fn test_item_panel_calc_borders() {
         let ctx = emcore::emContext::emContext::NewRoot();
         let mut panel = emVirtualCosmosItemPanel::new(Rc::clone(&ctx));
-        let mut item = emVirtualCosmosItemRec::default();
-        item.ContentTallness = 1.0;
-        item.BorderScaling = 1.0;
+        let item = emVirtualCosmosItemRec {
+            ContentTallness: 1.0,
+            BorderScaling: 1.0,
+            ..emVirtualCosmosItemRec::default()
+        };
         panel.SetItemRec(item);
         let (l, t, r, b) = panel.CalcBorders();
         // b_frac = min(1.0, 1.0) * 1.0 = 1.0
@@ -947,12 +951,14 @@ mod tests {
 
     #[test]
     fn test_item_rec_round_trip() {
-        let mut item = emVirtualCosmosItemRec::default();
-        item.Title = "Home".to_string();
-        item.PosX = 0.5;
-        item.PosY = 0.3;
-        item.Width = 0.2;
-        item.FileName = "Home".to_string();
+        let item = emVirtualCosmosItemRec {
+            Title: "Home".to_string(),
+            PosX: 0.5,
+            PosY: 0.3,
+            Width: 0.2,
+            FileName: "Home".to_string(),
+            ..emVirtualCosmosItemRec::default()
+        };
         let rec = item.to_rec();
         let loaded = emVirtualCosmosItemRec::from_rec(&rec).unwrap();
         assert_eq!(loaded.Title, "Home");
@@ -976,15 +982,19 @@ mod tests {
 
     #[test]
     fn test_model_sorted_by_position() {
-        let mut item1 = emVirtualCosmosItemRec::default();
-        item1.PosX = 0.8;
-        item1.PosY = 0.5;
-        item1.Name = "B".to_string();
+        let item1 = emVirtualCosmosItemRec {
+            PosX: 0.8,
+            PosY: 0.5,
+            Name: "B".to_string(),
+            ..emVirtualCosmosItemRec::default()
+        };
 
-        let mut item2 = emVirtualCosmosItemRec::default();
-        item2.PosX = 0.2;
-        item2.PosY = 0.1;
-        item2.Name = "A".to_string();
+        let item2 = emVirtualCosmosItemRec {
+            PosX: 0.2,
+            PosY: 0.1,
+            Name: "A".to_string(),
+            ..emVirtualCosmosItemRec::default()
+        };
 
         let model = emVirtualCosmosModel::from_items(vec![
             LoadedItem {
@@ -1015,9 +1025,11 @@ mod tests {
 
     #[test]
     fn test_item_rec_color_round_trip() {
-        let mut item = emVirtualCosmosItemRec::default();
-        item.BackgroundColor = emColor::rgba(10, 20, 30, 200);
-        item.TitleColor = emColor::rgba(255, 0, 0, 255);
+        let item = emVirtualCosmosItemRec {
+            BackgroundColor: emColor::rgba(10, 20, 30, 200),
+            TitleColor: emColor::rgba(255, 0, 0, 255),
+            ..emVirtualCosmosItemRec::default()
+        };
         let rec = item.to_rec();
         let loaded = emVirtualCosmosItemRec::from_rec(&rec).unwrap();
         assert_eq!(loaded.BackgroundColor, item.BackgroundColor);
@@ -1034,9 +1046,11 @@ mod tests {
 
     #[test]
     fn test_try_prepare_item_file_no_copy() {
-        let mut item = emVirtualCosmosItemRec::default();
-        item.FileName = "foo.tga".to_string();
-        item.CopyToUser = false;
+        let mut item = emVirtualCosmosItemRec {
+            FileName: "foo.tga".to_string(),
+            CopyToUser: false,
+            ..emVirtualCosmosItemRec::default()
+        };
         item.TryPrepareItemFile("/orig", "/user");
         assert_eq!(item.ItemFilePath, "/orig/foo.tga");
     }
@@ -1053,9 +1067,11 @@ mod tests {
         let src_file = orig.join("hello.txt");
         std::fs::write(&src_file, b"hello").unwrap();
 
-        let mut item = emVirtualCosmosItemRec::default();
-        item.FileName = "hello.txt".to_string();
-        item.CopyToUser = true;
+        let mut item = emVirtualCosmosItemRec {
+            FileName: "hello.txt".to_string(),
+            CopyToUser: true,
+            ..emVirtualCosmosItemRec::default()
+        };
         item.TryPrepareItemFile(&orig.to_string_lossy(), &user.to_string_lossy());
 
         let expected = user.join("hello.txt");
@@ -1082,9 +1098,11 @@ mod tests {
         std::fs::create_dir_all(&orig).unwrap();
         // Do NOT create the source file — copy should fail and fall back.
 
-        let mut item = emVirtualCosmosItemRec::default();
-        item.FileName = "missing.txt".to_string();
-        item.CopyToUser = true;
+        let mut item = emVirtualCosmosItemRec {
+            FileName: "missing.txt".to_string(),
+            CopyToUser: true,
+            ..emVirtualCosmosItemRec::default()
+        };
         item.TryPrepareItemFile(&orig.to_string_lossy(), &user.to_string_lossy());
 
         // Should fall back to orig path.
@@ -1126,8 +1144,10 @@ mod tests {
     #[test]
     fn test_vcitem_struct_color_still_works() {
         // Ensure the struct-format colors (from to_rec) still parse
-        let mut item = emVirtualCosmosItemRec::default();
-        item.BackgroundColor = emColor::rgba(10, 20, 30, 255);
+        let item = emVirtualCosmosItemRec {
+            BackgroundColor: emColor::rgba(10, 20, 30, 255),
+            ..emVirtualCosmosItemRec::default()
+        };
         let rec = item.to_rec();
         let loaded = emVirtualCosmosItemRec::from_rec(&rec).unwrap();
         assert_eq!(loaded.BackgroundColor, item.BackgroundColor);

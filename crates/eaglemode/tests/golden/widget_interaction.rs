@@ -104,11 +104,7 @@ fn check_indices<'a>(
     )
 }
 
-fn check_option_usize<'a>(
-    field: &'a str,
-    actual: Option<usize>,
-    expected: usize,
-) -> (&'a str, bool, String) {
+fn check_option_usize(field: &str, actual: Option<usize>, expected: usize) -> (&str, bool, String) {
     (
         field,
         actual == Some(expected),
@@ -573,9 +569,9 @@ fn parse_splitter_layout_golden(data: &[u8]) -> Vec<[f64; 9]> {
     for s in 0..steps {
         let base = 4 + s * 72;
         let mut vals = [0.0f64; 9];
-        for i in 0..9 {
+        for (i, slot) in vals.iter_mut().enumerate() {
             let off = base + i * 8;
-            vals[i] = f64::from_le_bytes(data[off..off + 8].try_into().unwrap());
+            *slot = f64::from_le_bytes(data[off..off + 8].try_into().unwrap());
         }
         result.push(vals);
     }

@@ -258,13 +258,14 @@ mod tests {
 
     #[test]
     fn record_round_trip() {
-        let mut c = emFileManConfigData::default();
-        c.sort_criterion = SortCriterion::ByDate;
-        c.name_sorting_style = NameSortingStyle::CaseInsensitive;
-        c.sort_directories_first = true;
-        c.show_hidden_files = true;
-        c.theme_name = "Glass1".to_string();
-        c.autosave = false;
+        let c = emFileManConfigData {
+            sort_criterion: SortCriterion::ByDate,
+            name_sorting_style: NameSortingStyle::CaseInsensitive,
+            sort_directories_first: true,
+            show_hidden_files: true,
+            theme_name: "Glass1".to_string(),
+            autosave: false,
+        };
 
         let rec = c.to_rec();
         let c2 = emFileManConfigData::from_rec(&rec).unwrap();

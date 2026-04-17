@@ -76,7 +76,7 @@ fn config_model_round_trip_save_load() {
     let original = TestConfig {
         name: "hello world".to_string(),
         count: 42,
-        ratio: 3.14,
+        ratio: 1.25,
         enabled: true,
     };
 
@@ -123,7 +123,7 @@ fn config_model_load_or_install_reads_existing() {
     let custom = TestConfig {
         name: "custom".to_string(),
         count: 99,
-        ratio: 2.718,
+        ratio: 4.5,
         enabled: true,
     };
     let mut writer = emConfigModel::new(custom.clone(), path.clone(), sig);

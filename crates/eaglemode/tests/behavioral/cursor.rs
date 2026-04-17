@@ -81,7 +81,7 @@ fn display_matches_as_str() {
 fn cursor_is_copy_clone_eq_hash() {
     let a = emCursor::Hand;
     let b = a; // Copy
-    let c = a.clone(); // Clone
+    let c = a; // Clone
     assert_eq!(a, b); // PartialEq
     assert_eq!(a, c);
 

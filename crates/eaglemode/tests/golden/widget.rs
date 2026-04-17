@@ -17,7 +17,6 @@ use emcore::emButton::emButton;
 
 use emcore::emCheckBox::emCheckBox;
 
-use emcore::emColor::emColor;
 use emcore::emColorField::emColorField;
 
 use emcore::emErrorPanel::emErrorPanel;

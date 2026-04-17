@@ -247,12 +247,14 @@ fn setup_checkbutton_harness() -> (
     (h, cb_ref, panel_id)
 }
 
-fn setup_checkbutton_with_recorder() -> (
+type CheckButtonRecorder = (
     PipelineTestHarness,
     Rc<RefCell<emCheckButton>>,
     Rc<RefCell<Vec<bool>>>,
     emcore::emPanelTree::PanelId,
-) {
+);
+
+fn setup_checkbutton_with_recorder() -> CheckButtonRecorder {
     let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
     let look = emLook::new();

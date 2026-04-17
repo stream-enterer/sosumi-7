@@ -994,8 +994,10 @@ mod tests {
     #[test]
     fn read_from_widgets_not_expanded_is_noop() {
         let panel = make_panel();
-        let mut config = emStocksConfig::default();
-        config.api_key = "original".to_string();
+        let mut config = emStocksConfig {
+            api_key: "original".to_string(),
+            ..emStocksConfig::default()
+        };
         panel.ReadFromWidgets(&mut config);
         // Widgets absent — config unchanged
         assert_eq!(config.api_key, "original");

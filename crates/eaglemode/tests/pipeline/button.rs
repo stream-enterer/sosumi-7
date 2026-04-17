@@ -100,12 +100,14 @@ fn button_click_1x_and_2x() {
 ///
 /// The press-state log records `true` on press, `false` on release, so
 /// `[true, false]` means one full press-release Cycle.
-fn make_button_harness() -> (
+type ButtonHarness = (
     PipelineTestHarness,
     emcore::emPanelTree::PanelId,
     Rc<Cell<u32>>,
     Rc<std::cell::RefCell<Vec<bool>>>,
-) {
+);
+
+fn make_button_harness() -> ButtonHarness {
     let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
 

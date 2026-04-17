@@ -260,11 +260,12 @@ mod tests {
 
     #[test]
     fn record_round_trip() {
-        let mut m = emFileLinkData::default();
-        m.base_path_type = BasePathType::Res;
-        m.base_path_project = "emFileMan".to_string();
-        m.path = "themes".to_string();
-        m.have_dir_entry = true;
+        let m = emFileLinkData {
+            base_path_type: BasePathType::Res,
+            base_path_project: "emFileMan".to_string(),
+            path: "themes".to_string(),
+            have_dir_entry: true,
+        };
 
         let rec = m.to_rec();
         let m2 = emFileLinkData::from_rec(&rec).unwrap();

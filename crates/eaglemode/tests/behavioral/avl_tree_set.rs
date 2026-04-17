@@ -205,8 +205,6 @@ fn self_subtraction_clears() {
 
 #[test]
 fn cursor_traversal() {
-    use emcore::emAvlTreeSet::SetCursor;
-
     let mut s: emAvlTreeSet<i32> = emAvlTreeSet::new();
     s.Insert(10);
     s.Insert(20);
@@ -315,7 +313,7 @@ fn test_sub_difference() {
     let mut a = emAvlTreeSet::from_element(1);
     a.Insert(2);
     a.Insert(3);
-    let mut b = emAvlTreeSet::from_element(2);
+    let b = emAvlTreeSet::from_element(2);
     let c = &a - &b;
     assert_eq!(c.GetCount(), 2);
     assert!(c.Contains(&1));

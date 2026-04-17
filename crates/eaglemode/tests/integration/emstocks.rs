@@ -118,13 +118,15 @@ fn emstocks_price_data_round_trip() {
 
 #[test]
 fn emstocks_config_round_trip() {
-    let mut config = emStocksConfig::default();
-    config.api_script = "/usr/local/bin/fetch_prices.pl".to_string();
-    config.api_key = "test_key_123".to_string();
-    config.chart_period = ChartPeriod::Months3;
-    config.sorting = Sorting::ByDifference;
-    config.visible_countries = vec!["US".to_string(), "DE".to_string()];
-    config.owned_shares_first = true;
+    let config = emStocksConfig {
+        api_script: "/usr/local/bin/fetch_prices.pl".to_string(),
+        api_key: "test_key_123".to_string(),
+        chart_period: ChartPeriod::Months3,
+        sorting: Sorting::ByDifference,
+        visible_countries: vec!["US".to_string(), "DE".to_string()],
+        owned_shares_first: true,
+        ..emStocksConfig::default()
+    };
 
     let text = write_rec_with_format(&config.to_rec(), "emStocksConfig");
     let parsed = parse_rec_with_format(&text, "emStocksConfig").unwrap();

@@ -1135,9 +1135,11 @@ mod tests {
 
     #[test]
     fn stock_is_matching_search_text() {
-        let mut stock = StockRec::default();
-        stock.name = "Apple Inc.".to_string();
-        stock.symbol = "AAPL".to_string();
+        let stock = StockRec {
+            name: "Apple Inc.".to_string(),
+            symbol: "AAPL".to_string(),
+            ..StockRec::default()
+        };
         assert!(stock.IsMatchingSearchText("apple"));
         assert!(stock.IsMatchingSearchText("AAPL"));
         assert!(!stock.IsMatchingSearchText("GOOG"));
@@ -1145,10 +1147,12 @@ mod tests {
 
     #[test]
     fn stock_get_trade_value() {
-        let mut stock = StockRec::default();
-        stock.owning_shares = true;
-        stock.trade_price = "150.00".to_string();
-        stock.own_shares = "10".to_string();
+        let stock = StockRec {
+            owning_shares: true,
+            trade_price: "150.00".to_string(),
+            own_shares: "10".to_string(),
+            ..StockRec::default()
+        };
         assert_eq!(stock.GetTradeValue(), Some(1500.0));
     }
 
@@ -1182,12 +1186,14 @@ mod tests {
 
     #[test]
     fn stock_rec_record_round_trip() {
-        let mut rec = StockRec::default();
-        rec.id = "42".to_string();
-        rec.name = "Test Stock".to_string();
-        rec.symbol = "TST".to_string();
-        rec.interest = Interest::High;
-        rec.web_pages = vec!["https://example.com".to_string()];
+        let rec = StockRec {
+            id: "42".to_string(),
+            name: "Test Stock".to_string(),
+            symbol: "TST".to_string(),
+            interest: Interest::High,
+            web_pages: vec!["https://example.com".to_string()],
+            ..StockRec::default()
+        };
 
         let serialized = rec.to_rec();
         let deserialized = StockRec::from_rec(&serialized).unwrap();
@@ -1208,9 +1214,11 @@ mod tests {
     #[test]
     fn emstocks_rec_record_round_trip() {
         let mut rec = emStocksRec::default();
-        let mut stock = StockRec::default();
-        stock.id = "1".to_string();
-        stock.name = "Test".to_string();
+        let stock = StockRec {
+            id: "1".to_string(),
+            name: "Test".to_string(),
+            ..StockRec::default()
+        };
         rec.stocks.push(stock);
 
         let serialized = rec.to_rec();
@@ -1230,8 +1238,10 @@ mod tests {
         let mut rec = emStocksRec::default();
         assert_eq!(rec.InventStockId(), "1");
 
-        let mut stock = StockRec::default();
-        stock.id = "5".to_string();
+        let stock = StockRec {
+            id: "5".to_string(),
+            ..StockRec::default()
+        };
         rec.stocks.push(stock);
         assert_eq!(rec.InventStockId(), "6");
     }
@@ -1239,8 +1249,10 @@ mod tests {
     #[test]
     fn emstocks_rec_get_stock_index_by_id() {
         let mut rec = emStocksRec::default();
-        let mut stock = StockRec::default();
-        stock.id = "42".to_string();
+        let stock = StockRec {
+            id: "42".to_string(),
+            ..StockRec::default()
+        };
         rec.stocks.push(stock);
         assert_eq!(rec.GetStockIndexById("42"), Some(0));
         assert_eq!(rec.GetStockIndexById("99"), None);
@@ -1250,12 +1262,16 @@ mod tests {
     fn emstocks_rec_get_latest_prices_date() {
         let mut rec = emStocksRec::default();
 
-        let mut s1 = StockRec::default();
-        s1.last_price_date = "2024-03-14".to_string();
+        let s1 = StockRec {
+            last_price_date: "2024-03-14".to_string(),
+            ..StockRec::default()
+        };
         rec.stocks.push(s1);
 
-        let mut s2 = StockRec::default();
-        s2.last_price_date = "2024-03-16".to_string();
+        let s2 = StockRec {
+            last_price_date: "2024-03-16".to_string(),
+            ..StockRec::default()
+        };
         rec.stocks.push(s2);
 
         assert_eq!(rec.GetLatestPricesDate(), "2024-03-16");

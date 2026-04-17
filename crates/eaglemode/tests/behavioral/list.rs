@@ -185,8 +185,6 @@ fn make_non_shared() {
 
 #[test]
 fn cursor_basic() {
-    use emcore::emList::ListCursor;
-
     let mut l: emList<i32> = emList::new();
     l.InsertAtEnd_one(10);
     l.InsertAtEnd_one(20);
@@ -216,8 +214,6 @@ fn cursor_basic() {
 
 #[test]
 fn cursor_detach() {
-    use emcore::emList::ListCursor;
-
     let mut l: emList<i32> = emList::new();
     l.InsertAtEnd_one(1);
 

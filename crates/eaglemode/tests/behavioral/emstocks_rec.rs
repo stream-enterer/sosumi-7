@@ -42,17 +42,19 @@ fn emstocks_rec_file_round_trip() {
         vec!["https://example.com"]
     );
     assert_eq!(deserialized.stocks[1].id, "2");
-    assert_eq!(deserialized.stocks[1].owning_shares, true);
+    assert!(deserialized.stocks[1].owning_shares);
     assert_eq!(deserialized.stocks[1].interest, Interest::Low);
 }
 
 #[test]
 fn emstocks_config_round_trip() {
-    let mut config = emStocksConfig::default();
-    config.chart_period = ChartPeriod::Months3;
-    config.sorting = Sorting::ByDifference;
-    config.visible_countries = vec!["US".to_string(), "DE".to_string()];
-    config.min_visible_interest = Interest::Medium;
+    let config = emStocksConfig {
+        chart_period: ChartPeriod::Months3,
+        sorting: Sorting::ByDifference,
+        visible_countries: vec!["US".to_string(), "DE".to_string()],
+        min_visible_interest: Interest::Medium,
+        ..emStocksConfig::default()
+    };
 
     let rec_struct = config.to_rec();
     let deserialized = emStocksConfig::from_rec(&rec_struct).unwrap();

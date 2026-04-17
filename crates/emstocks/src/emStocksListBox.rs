@@ -1258,8 +1258,10 @@ mod tests {
             .push(make_stock("3", "Alpha Ltd", Interest::High));
 
         let mut lb = emStocksListBox::new();
-        let mut config = emStocksConfig::default();
-        config.search_text = "Alpha".to_string();
+        let config = emStocksConfig {
+            search_text: "Alpha".to_string(),
+            ..emStocksConfig::default()
+        };
         lb.UpdateItems(&rec, &config);
 
         // First find should find "Alpha Corp" (index 0)
@@ -1291,8 +1293,10 @@ mod tests {
             .push(make_stock("3", "Alpha Ltd", Interest::High));
 
         let mut lb = emStocksListBox::new();
-        let mut config = emStocksConfig::default();
-        config.search_text = "Alpha".to_string();
+        let config = emStocksConfig {
+            search_text: "Alpha".to_string(),
+            ..emStocksConfig::default()
+        };
         lb.UpdateItems(&rec, &config);
 
         // FindPrevious from default (start=0) should go backwards and find Alpha Ltd
@@ -1308,8 +1312,10 @@ mod tests {
         rec.stocks.push(make_stock("1", "Alpha", Interest::High));
 
         let mut lb = emStocksListBox::new();
-        let mut config = emStocksConfig::default();
-        config.search_text = "Nonexistent".to_string();
+        let config = emStocksConfig {
+            search_text: "Nonexistent".to_string(),
+            ..emStocksConfig::default()
+        };
         lb.UpdateItems(&rec, &config);
 
         assert!(lb.FindNext(&rec, &config).is_none());
@@ -1334,8 +1340,10 @@ mod tests {
             .push(make_stock("1", "Alpha Corp", Interest::High));
 
         let mut lb = emStocksListBox::new();
-        let mut config = emStocksConfig::default();
-        config.search_text = "Alpha".to_string();
+        let mut config = emStocksConfig {
+            search_text: "Alpha".to_string(),
+            ..emStocksConfig::default()
+        };
         lb.UpdateItems(&rec, &config);
 
         // The result depends on whether the clipboard is accessible in the

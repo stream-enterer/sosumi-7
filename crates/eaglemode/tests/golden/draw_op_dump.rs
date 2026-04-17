@@ -622,7 +622,7 @@ fn serialize_op(seq: usize, depth: u32, op: &DrawOp, state: &RecordedState) -> S
             thickness,
             canvas_color,
         } => {
-            let verts = vertices_json(vertices);
+            let _verts = vertices_json(vertices);
             let color = color_hex(*stroke_color);
             let canvas_color = color_hex(*canvas_color);
             let hf = hex_fields(&[("thickness", *thickness)]);

@@ -234,7 +234,7 @@ pub fn dump_diff_ppm(path: &str, actual: &[u8], expected: &[u8], w: u32, h: u32)
 
 /// Returns true if DUMP_GOLDEN=1 env var is set.
 pub fn dump_golden_enabled() -> bool {
-    std::env::var("DUMP_GOLDEN").map_or(false, |v| v == "1")
+    std::env::var("DUMP_GOLDEN").is_ok_and(|v| v == "1")
 }
 
 /// Dump actual, expected, and diff images for a test.
@@ -431,7 +431,7 @@ pub fn compare_behavioral(
         return Err(CompareError { message: msg });
     }
     let mut mismatches = 0;
-    for (i, ((a_active, a_path), e)) in actual.iter().zip(expected.iter()).enumerate() {
+    for ((a_active, a_path), e) in actual.iter().zip(expected.iter()) {
         if *a_active != e.is_active || *a_path != e.in_active_path {
             mismatches += 1;
         }

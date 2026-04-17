@@ -6,8 +6,10 @@ use std::rc::Rc;
 #[test]
 fn apply_replaces_target_look() {
     let mut target = emLook::new(); // default look
-    let mut custom = emLook::default();
-    custom.bg_color = emColor::RED;
+    let custom = emLook {
+        bg_color: emColor::RED,
+        ..emLook::default()
+    };
 
     custom.apply(&mut target, false);
     assert_eq!(target.bg_color, emColor::RED);
@@ -15,11 +17,13 @@ fn apply_replaces_target_look() {
 
 #[test]
 fn apply_preserves_all_fields() {
-    let mut custom = emLook::default();
-    custom.bg_color = emColor::rgba(0x11, 0x22, 0x33, 0xFF);
-    custom.fg_color = emColor::rgba(0xAA, 0xBB, 0xCC, 0xFF);
-    custom.button_bg_color = emColor::rgba(0x44, 0x55, 0x66, 0xFF);
-    custom.input_hl_color = emColor::rgba(0x77, 0x88, 0x99, 0xFF);
+    let custom = emLook {
+        bg_color: emColor::rgba(0x11, 0x22, 0x33, 0xFF),
+        fg_color: emColor::rgba(0xAA, 0xBB, 0xCC, 0xFF),
+        button_bg_color: emColor::rgba(0x44, 0x55, 0x66, 0xFF),
+        input_hl_color: emColor::rgba(0x77, 0x88, 0x99, 0xFF),
+        ..emLook::default()
+    };
 
     let mut target = emLook::new();
     custom.apply(&mut target, true);
@@ -31,8 +35,10 @@ fn apply_preserves_all_fields() {
 
 #[test]
 fn apply_all_updates_multiple_targets() {
-    let mut custom = emLook::default();
-    custom.bg_color = emColor::GREEN;
+    let custom = emLook {
+        bg_color: emColor::GREEN,
+        ..emLook::default()
+    };
 
     let mut t1 = emLook::new();
     let mut t2 = emLook::new();
@@ -50,8 +56,10 @@ fn look_is_cloneable() {
 
 #[test]
 fn apply_creates_independent_rc() {
-    let mut custom = emLook::default();
-    custom.bg_color = emColor::BLUE;
+    let custom = emLook {
+        bg_color: emColor::BLUE,
+        ..emLook::default()
+    };
 
     let mut target = emLook::new();
     let original_ptr = Rc::as_ptr(&target);

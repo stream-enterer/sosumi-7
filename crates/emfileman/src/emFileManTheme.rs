@@ -851,11 +851,13 @@ mod tests {
 
     #[test]
     fn record_round_trip_preserves_colors() {
-        let mut t = emFileManThemeData::default();
-        t.BackgroundColor = 0xAABBCCFF;
-        t.SourceSelectionColor = 0x11223344;
-        t.Height = 1.5;
-        t.DisplayName = "TestTheme".to_string();
+        let t = emFileManThemeData {
+            BackgroundColor: 0xAABBCCFF,
+            SourceSelectionColor: 0x11223344,
+            Height: 1.5,
+            DisplayName: "TestTheme".to_string(),
+            ..emFileManThemeData::default()
+        };
 
         let rec = t.to_rec();
         let t2 = emFileManThemeData::from_rec(&rec).unwrap();
@@ -887,10 +889,12 @@ mod tests {
 
     #[test]
     fn alignment_round_trip() {
-        let mut t = emFileManThemeData::default();
-        t.NameAlignment = Alignment::Start;
-        t.PathAlignment = Alignment::End;
-        t.InfoAlignment = Alignment::Stretch;
+        let t = emFileManThemeData {
+            NameAlignment: Alignment::Start,
+            PathAlignment: Alignment::End,
+            InfoAlignment: Alignment::Stretch,
+            ..emFileManThemeData::default()
+        };
 
         let rec = t.to_rec();
         let t2 = emFileManThemeData::from_rec(&rec).unwrap();
@@ -902,12 +906,14 @@ mod tests {
 
     #[test]
     fn image_border_round_trip() {
-        let mut t = emFileManThemeData::default();
-        t.OuterBorderImg = "border.png".to_string();
-        t.OuterBorderImgL = 10;
-        t.OuterBorderImgT = 20;
-        t.OuterBorderImgR = 30;
-        t.OuterBorderImgB = 40;
+        let t = emFileManThemeData {
+            OuterBorderImg: "border.png".to_string(),
+            OuterBorderImgL: 10,
+            OuterBorderImgT: 20,
+            OuterBorderImgR: 30,
+            OuterBorderImgB: 40,
+            ..emFileManThemeData::default()
+        };
 
         let rec = t.to_rec();
         let t2 = emFileManThemeData::from_rec(&rec).unwrap();
@@ -921,10 +927,12 @@ mod tests {
 
     #[test]
     fn all_colors_round_trip() {
-        let mut t = emFileManThemeData::default();
-        t.DirNameColor = 0xFF0000FF;
-        t.FileContentColor = 0x00FF00AA;
-        t.DirContentColor = 0x0000FFBB;
+        let t = emFileManThemeData {
+            DirNameColor: 0xFF0000FF,
+            FileContentColor: 0x00FF00AA,
+            DirContentColor: 0x0000FFBB,
+            ..emFileManThemeData::default()
+        };
 
         let rec = t.to_rec();
         let t2 = emFileManThemeData::from_rec(&rec).unwrap();
