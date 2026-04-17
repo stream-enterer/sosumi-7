@@ -44,7 +44,27 @@ pub struct VisitState {
 }
 
 const MAX_SVP_SIZE: f64 = 1.0e12;
+const MAX_SVP_SEARCH_SIZE: f64 = 1.0e14; // C++ emView.h:715
 const MIN_DIMENSION: f64 = 0.0001;
+
+/// Port of C++ `emGetDblRandom(double lo, double hi)` — uniform f64 in
+/// `[lo, hi]`. Used by the SVPUpdSlice fp-instability escape hatch.
+/// Quality-insensitive; a tiny xorshift is fine.
+fn em_get_dbl_random(lo: f64, hi: f64) -> f64 {
+    use std::cell::Cell;
+    thread_local! {
+        static RNG: Cell<u64> = const { Cell::new(0x9E3779B97F4A7C15) };
+    }
+    RNG.with(|rng| {
+        let mut x = rng.get();
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        rng.set(x);
+        let f = (x >> 11) as f64 / (1u64 << 53) as f64; // [0, 1)
+        lo + (hi - lo) * f
+    })
+}
 
 /// Direction for neighbor navigation.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -584,17 +604,25 @@ impl emView {
     ///
     /// If `rel_a <= 0.0`, CalcVisitFullsizedCoords is called to get proper coords
     /// (matching C++ `if (relA<=0.0) CalcVisitFullsizedCoords(..., relA<-0.9)`).
+    ///
+    /// DIVERGED: C++ has public `RawVisit(panel, relX, relY, relA)` + private
+    /// overload with extra `forceViewingUpdate` bool. Rust has no
+    /// overloading — single method; existing no-arg callers pass `false`.
     /// DIVERGED: C++ RawVisit converts to absolute pixel coords and calls RawVisitAbs
     /// which sets SVP.ViewedX/Y/Width directly. Rust defers absolute-coord computation
     /// to update_viewing(); here we just update the visit_stack top in place.
     pub fn RawVisit(
         &mut self,
-        tree: &PanelTree,
+        tree: &mut PanelTree,
         panel: PanelId,
         rel_x: f64,
         rel_y: f64,
         rel_a: f64,
+        forceViewingUpdate: bool,
     ) {
+        if forceViewingUpdate {
+            self.force_viewing_update = true;
+        }
         let (rx, ry, ra) = if rel_a <= 0.0 {
             // C++ emView.cpp:1534: if (relA<=0.0) CalcVisitFullsizedCoords(panel,&relX,&relY,&relA,relA<-0.9)
             self.CalcVisitFullsizedCoords(tree, panel, rel_a < -0.9)
@@ -614,8 +642,15 @@ impl emView {
 
     /// Port of C++ `emView::RawVisitFullsized(panel, utilizeView)` (emView.cpp:558-560):
     ///   `RawVisit(panel, 0.0, 0.0, utilizeView ? -1.0 : 0.0)`
-    pub fn RawVisitFullsized(&mut self, tree: &PanelTree, panel: PanelId, utilize_view: bool) {
-        self.RawVisit(tree, panel, 0.0, 0.0, if utilize_view { -1.0 } else { 0.0 });
+    pub fn RawVisitFullsized(&mut self, tree: &mut PanelTree, panel: PanelId, utilize_view: bool) {
+        self.RawVisit(
+            tree,
+            panel,
+            0.0,
+            0.0,
+            if utilize_view { -1.0 } else { 0.0 },
+            false,
+        );
     }
 
     /// Port of C++ `emView::GetVisitedPanel(pRelX, pRelY, pRelA)` (emView.cpp:468-489).
@@ -770,7 +805,7 @@ impl emView {
         // Preserve zoom state: if was zoomed out, re-apply zoom-out with
         // the new viewport dimensions (computes the correct fit ratio).
         if was_zoomed_out {
-            self.RawZoomOut(tree);
+            self.RawZoomOut(tree, false);
         }
 
         self.viewport_changed = true;
@@ -922,13 +957,18 @@ impl emView {
     // --- Zoom out ---
 
     pub fn ZoomOut(&mut self, tree: &mut PanelTree) {
-        self.RawZoomOut(tree);
+        self.RawZoomOut(tree, false);
     }
 
-    pub fn RawZoomOut(&mut self, tree: &mut PanelTree) {
+    /// DIVERGED: C++ has public `RawZoomOut()` + private overload
+    /// `RawZoomOut(forceViewingUpdate)`. Rust: single method, callers pass bool.
+    pub fn RawZoomOut(&mut self, tree: &mut PanelTree, forceViewingUpdate: bool) {
         // C++ emView::RawZoomOut:
         //   RawVisit(RootPanel, 0.0, 0.0, relA, forceViewingUpdate);
         // Always target the ROOT panel, not the current visit target.
+        if forceViewingUpdate {
+            self.force_viewing_update = true;
+        }
         let rel_a = self.zoom_out_rel_a(tree);
         if let Some(state) = self.visit_stack.last_mut() {
             state.panel = self.root;
@@ -1113,18 +1153,18 @@ impl emView {
         self.flags = new_flags;
 
         if new_flags.contains(ViewFlags::POPUP_ZOOM) && !old.contains(ViewFlags::POPUP_ZOOM) {
-            self.RawZoomOut(tree);
+            self.RawZoomOut(tree, false);
         }
 
         if new_flags.contains(ViewFlags::NO_ZOOM) && !old.contains(ViewFlags::NO_ZOOM) {
-            self.RawZoomOut(tree);
+            self.RawZoomOut(tree, false);
         }
 
         if new_flags.contains(ViewFlags::ROOT_SAME_TALLNESS)
             && !old.contains(ViewFlags::ROOT_SAME_TALLNESS)
         {
             tree.Layout(self.root, 0.0, 0.0, 1.0, self.pixel_tallness);
-            self.RawZoomOut(tree);
+            self.RawZoomOut(tree, false);
         }
     }
 
@@ -1272,6 +1312,576 @@ impl emView {
         self.set_active_panel(tree, best, false);
     }
 
+    // --- Coordinate transform: RawVisitAbs + helpers ---
+
+    /// Port of C++ `emView::RawVisitAbs(panel, vx, vy, vw, forceViewingUpdate)`
+    /// (emView.cpp:1543-1808). Sets the Supreme Viewed Panel to `panel` at
+    /// the requested absolute viewport rect, propagates notices along the
+    /// old and new SVP chains, and fires the CursorInvalid/WakeUp/
+    /// InvalidatePainting side effects.
+    ///
+    /// DIVERGED: C++ `RawVisitAbs` is a private overload. Rust has no
+    /// overloading — this is the sole entry point and public callers
+    /// (RawVisit, Update) pass explicit bools.
+    #[allow(clippy::too_many_arguments)]
+    pub fn RawVisitAbs(
+        &mut self,
+        tree: &mut PanelTree,
+        panel: PanelId,
+        mut vx: f64,
+        mut vy: f64,
+        mut vw: f64,
+        // PHASE-4-TODO: popup branch assigns forceViewingUpdate=true; will need mut then.
+        forceViewingUpdate: bool,
+    ) {
+        // emView.cpp:1554-1555
+        self.SVPChoiceByOpacityInvalid = false;
+        self.SVPChoiceInvalid = false;
+
+        // emView.cpp:1557-1573: VF_NO_ZOOM branch
+        let mut vp = if self.flags.contains(ViewFlags::NO_ZOOM) {
+            let root = match tree.GetRootPanel() {
+                Some(r) => r,
+                None => return,
+            };
+            let h = tree.get_height(root);
+            if self.CurrentHeight * self.CurrentPixelTallness >= self.CurrentWidth * h {
+                vw = self.CurrentWidth;
+                vx = self.CurrentX;
+                vy =
+                    self.CurrentY + (self.CurrentHeight - vw * h / self.CurrentPixelTallness) * 0.5;
+            } else {
+                vw = self.CurrentHeight * self.CurrentPixelTallness / h;
+                vx = self.CurrentX + (self.CurrentWidth - vw) * 0.5;
+                vy = self.CurrentY;
+            }
+            root
+        } else {
+            panel
+        };
+
+        // emView.cpp:1575-1584: ancestor-clamp loop
+        loop {
+            let p = tree.GetRec(vp).and_then(|rec| rec.parent);
+            let p = match p {
+                Some(p) => p,
+                None => break,
+            };
+            let layout_w = tree
+                .GetRec(vp)
+                .map(|r| r.layout_rect.w)
+                .unwrap_or(MIN_DIMENSION)
+                .max(MIN_DIMENSION);
+            let w = vw / layout_w;
+            let parent_h = tree.get_height(p);
+            if w > MAX_SVP_SIZE || w * parent_h > MAX_SVP_SIZE {
+                break;
+            }
+            let lx = tree.GetRec(vp).unwrap().layout_rect.x;
+            let ly = tree.GetRec(vp).unwrap().layout_rect.y;
+            vx -= lx * w;
+            vy -= ly * w / self.CurrentPixelTallness;
+            vw = w;
+            vp = p;
+        }
+
+        let vp_h = tree.get_height(vp);
+        let vh = vp_h * vw / self.HomePixelTallness;
+
+        // emView.cpp:1588-1626: root-centering/clamping
+        if Some(vp) == tree.GetRootPanel() {
+            if vw < self.HomeWidth && vh < self.HomeHeight {
+                vx = (self.HomeX + self.HomeWidth * 0.5 - vx) / vw;
+                vy = (self.HomeY + self.HomeHeight * 0.5 - vy) / vh;
+                if vh * self.HomeWidth < vw * self.HomeHeight {
+                    vw = self.HomeWidth;
+                    let _ = vw * vp_h / self.HomePixelTallness; // recompute vh inline below
+                } else {
+                    let new_vh = self.HomeHeight;
+                    vw = new_vh / vp_h * self.HomePixelTallness;
+                }
+                vx = self.HomeX + self.HomeWidth * 0.5 - vx * vw;
+                let new_vh = vw * vp_h / self.HomePixelTallness;
+                vy = self.HomeY + self.HomeHeight * 0.5 - vy * new_vh;
+            }
+
+            let (x1, x2, y1, y2);
+            if self.flags.contains(ViewFlags::EGO_MODE) {
+                x1 = self.HomeX + self.HomeWidth * 0.5;
+                x2 = x1;
+                y1 = self.HomeY + self.HomeHeight * 0.5;
+                y2 = y1;
+            } else {
+                let vh_cur = vw * vp_h / self.HomePixelTallness;
+                if vh_cur * self.HomeWidth < vw * self.HomeHeight {
+                    x1 = self.HomeX;
+                    x2 = self.HomeX + self.HomeWidth;
+                    y1 = self.HomeY + self.HomeHeight * 0.5
+                        - self.HomeWidth * vp_h / self.HomePixelTallness * 0.5;
+                    y2 = self.HomeY
+                        + self.HomeHeight * 0.5
+                        + self.HomeWidth * vp_h / self.HomePixelTallness * 0.5;
+                } else {
+                    x1 = self.HomeX + self.HomeWidth * 0.5
+                        - self.HomeHeight / vp_h * self.HomePixelTallness * 0.5;
+                    x2 = self.HomeX
+                        + self.HomeWidth * 0.5
+                        + self.HomeHeight / vp_h * self.HomePixelTallness * 0.5;
+                    y1 = self.HomeY;
+                    y2 = self.HomeY + self.HomeHeight;
+                }
+            }
+            if vx > x1 {
+                vx = x1;
+            }
+            if vx < x2 - vw {
+                vx = x2 - vw;
+            }
+            if vy > y1 {
+                vy = y1;
+            }
+            let vh_cur = vw * vp_h / self.HomePixelTallness;
+            if vy < y2 - vh_cur {
+                vy = y2 - vh_cur;
+            }
+        }
+
+        // emView.cpp:1628-1682: popup branch.
+        // DIVERGED: Phase 4 wires this. For Phase 2 we leave a no-op that
+        // mirrors the control flow of the non-popup path so callers see
+        // identical behavior to the current inline Update body.
+        if self.flags.contains(ViewFlags::POPUP_ZOOM) {
+            // PHASE-4-TODO: port emView.cpp:1628-1682 popup branch.
+            let _ = forceViewingUpdate;
+        }
+
+        // emView.cpp:1685: FindBestSVP(&vp, &vx, &vy, &vw)
+        self.FindBestSVP(tree, &mut vp, &mut vx, &mut vy, &mut vw);
+
+        // emView.cpp:1687-1696: MaxSVP walk.
+        // C++: sp=p; loop { sp=p (save before ascend); p=p->Parent; ... }; MaxSVP=sp;
+        let mut p = vp;
+        let mut w = vw;
+        // sp mirrors C++ `sp`: set at top of each iteration, then used as MaxSVP after loop.
+        // Initial value is overwritten before any read — matches C++ `sp=p` as first statement.
+        let mut sp;
+        loop {
+            sp = p;
+            let parent = tree.GetRec(p).and_then(|r| r.parent);
+            let parent = match parent {
+                Some(pp) => pp,
+                None => break,
+            };
+            let layout_w = tree
+                .GetRec(p)
+                .map(|r| r.layout_rect.w)
+                .unwrap_or(MIN_DIMENSION)
+                .max(MIN_DIMENSION);
+            w /= layout_w;
+            let parent_h = tree.get_height(parent);
+            if w > MAX_SVP_SIZE || w * parent_h > MAX_SVP_SIZE {
+                break;
+            }
+            p = parent;
+        }
+        self.MaxSVP = Some(sp);
+
+        // emView.cpp:1698-1725: MinSVP walk (descend into last-child
+        // while current rect fully contains the child's rect).
+        let mut sp = vp;
+        let mut sx = vx;
+        let mut sy = vy;
+        let mut sw = vw;
+        loop {
+            let lc = tree.GetLastChild(sp);
+            let mut p = match lc {
+                Some(pp) => pp,
+                None => break,
+            };
+            let x1 = (self.CurrentX + 1e-4 - sx) / sw;
+            let x2 = (self.CurrentX + self.CurrentWidth - 1e-4 - sx) / sw;
+            let y1 = (self.CurrentY + 1e-4 - sy) * (self.CurrentPixelTallness / sw);
+            let y2 =
+                (self.CurrentY + self.CurrentHeight - 1e-4 - sy) * (self.CurrentPixelTallness / sw);
+            let mut found = None;
+            loop {
+                let rec = tree.GetRec(p).unwrap();
+                let lx = rec.layout_rect.x;
+                let ly = rec.layout_rect.y;
+                let lw = rec.layout_rect.w;
+                let lh = rec.layout_rect.h;
+                if lx < x2 && lx + lw > x1 && ly < y2 && ly + lh > y1 {
+                    found = Some(p);
+                    break;
+                }
+                let prev = tree.GetPrev(p);
+                match prev {
+                    Some(pp) => p = pp,
+                    None => break,
+                }
+            }
+            let Some(p) = found else { break };
+            let rec = tree.GetRec(p).unwrap();
+            if rec.layout_rect.x > x1
+                || rec.layout_rect.x + rec.layout_rect.w < x2
+                || rec.layout_rect.y > y1
+                || rec.layout_rect.y + rec.layout_rect.h < y2
+            {
+                break;
+            }
+            sp = p;
+            sx += rec.layout_rect.x * sw;
+            sy += rec.layout_rect.y * sw / self.CurrentPixelTallness;
+            sw *= rec.layout_rect.w;
+        }
+        self.MinSVP = Some(sp);
+
+        // emView.cpp:1727-1751: change detect + SVPUpdSlice throttle.
+        let rect_moved = match self.supreme_viewed_panel.and_then(|id| tree.GetRec(id)) {
+            Some(p) => {
+                (p.viewed_x - vx).abs() >= 0.001
+                    || (p.viewed_y - vy).abs() >= 0.001
+                    || (p.viewed_width - vw).abs() >= 0.001
+            }
+            None => true,
+        };
+        let svp_changed = self.supreme_viewed_panel != Some(vp);
+        if !forceViewingUpdate && !svp_changed && !rect_moved {
+            return;
+        }
+
+        // SVPUpdSlice fp-instability throttle (emView.cpp:1734-1751).
+        let slice = self
+            .scheduler
+            .as_ref()
+            .map(|s| s.borrow().GetTimeSliceCounter())
+            .unwrap_or(0);
+        if self.SVPUpdSlice != slice {
+            self.SVPUpdSlice = slice;
+            self.svp_update_count = 0;
+        }
+        self.svp_update_count += 1;
+        if self.svp_update_count > 1000
+            && (self.svp_update_count % 1000 == 1 || self.svp_update_count > 10000)
+        {
+            // Per-spec "scope up on missing": emGetDblRandom helper does
+            // not exist in the Rust crate. Port as a tiny module-local
+            // helper — the call site is an fp-instability escape-hatch
+            // that only fires after 1000+ retries in one time slice, so
+            // the RNG quality is immaterial.
+            vx += em_get_dbl_random(-0.01, 0.01);
+            vy += em_get_dbl_random(-0.01, 0.01);
+            vw *= em_get_dbl_random(0.9999999999, 1.0000000001);
+        }
+
+        // emView.cpp:1753-1772: clear old SVP chain.
+        if let Some(osvp) = self.supreme_viewed_panel {
+            if tree.contains(osvp) {
+                if let Some(p) = tree.get_mut(osvp) {
+                    p.in_viewed_path = false;
+                    p.viewed = false;
+                }
+                tree.queue_notice(
+                    osvp,
+                    super::emPanel::NoticeFlags::VIEW_CHANGED
+                        | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
+                        | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
+                );
+                tree.UpdateChildrenViewing(osvp);
+                let mut cur = tree.GetRec(osvp).and_then(|p| p.parent);
+                while let Some(pid) = cur {
+                    let parent_of = tree.get_mut(pid).map(|p| {
+                        p.in_viewed_path = false;
+                        p.parent
+                    });
+                    tree.queue_notice(
+                        pid,
+                        super::emPanel::NoticeFlags::VIEW_CHANGED
+                            | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
+                            | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
+                    );
+                    cur = parent_of.unwrap_or(None);
+                }
+            }
+        }
+
+        // emView.cpp:1774-1802: set new SVP chain.
+        self.supreme_viewed_panel = Some(vp);
+        let vp_h = tree.get_height(vp);
+        let new_vh = vw * vp_h / self.CurrentPixelTallness;
+        if let Some(p) = tree.get_mut(vp) {
+            p.in_viewed_path = true;
+            p.viewed = true;
+            p.viewed_x = vx;
+            p.viewed_y = vy;
+            p.viewed_width = vw;
+            p.viewed_height = new_vh;
+            let mut cx1 = vx;
+            let mut cy1 = vy;
+            let mut cx2 = vx + vw;
+            let mut cy2 = vy + new_vh;
+            if cx1 < self.CurrentX {
+                cx1 = self.CurrentX;
+            }
+            if cy1 < self.CurrentY {
+                cy1 = self.CurrentY;
+            }
+            if cx2 > self.CurrentX + self.CurrentWidth {
+                cx2 = self.CurrentX + self.CurrentWidth;
+            }
+            if cy2 > self.CurrentY + self.CurrentHeight {
+                cy2 = self.CurrentY + self.CurrentHeight;
+            }
+            p.clip_x = cx1;
+            p.clip_y = cy1;
+            p.clip_w = (cx2 - cx1).max(0.0);
+            p.clip_h = (cy2 - cy1).max(0.0);
+        }
+        tree.queue_notice(
+            vp,
+            super::emPanel::NoticeFlags::VIEW_CHANGED
+                | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
+                | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
+        );
+        tree.UpdateChildrenViewing(vp);
+        let mut cur = tree.GetRec(vp).and_then(|p| p.parent);
+        while let Some(pid) = cur {
+            let parent_of = tree.get_mut(pid).map(|p| {
+                p.in_viewed_path = true;
+                p.parent
+            });
+            tree.queue_notice(
+                pid,
+                super::emPanel::NoticeFlags::VIEW_CHANGED
+                    | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
+                    | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
+            );
+            cur = parent_of.unwrap_or(None);
+        }
+
+        // emView.cpp:1803-1806: side effects.
+        self.RestartInputRecursion = true;
+        self.cursor_invalid = true;
+        // UpdateEngine->WakeUp: Phase 5 replaces with engine call.
+        // InvalidatePainting() whole-view — use Current rect (Phase 0 audit
+        // verdict). During non-popup Current == Home, so rect = whole view.
+        self.dirty_rects.push(Rect::new(
+            self.CurrentX,
+            self.CurrentY,
+            self.CurrentWidth,
+            self.CurrentHeight,
+        ));
+    }
+
+    /// Port of C++ `emView::FindBestSVP` (emView.cpp:1828-1880). Two-pass
+    /// search for the best SVP along the ancestor chain of `panel`. The
+    /// values are mutated in place.
+    pub(crate) fn FindBestSVP(
+        &self,
+        tree: &PanelTree,
+        panel: &mut PanelId,
+        vx: &mut f64,
+        vy: &mut f64,
+        vw: &mut f64,
+    ) {
+        let mut vp = *panel;
+        let mut vx_l = *vx;
+        let mut vy_l = *vy;
+        let mut vw_l = *vw;
+        for i in 0..2 {
+            let min_s = if i == 0 {
+                MAX_SVP_SIZE
+            } else {
+                MAX_SVP_SEARCH_SIZE
+            };
+            let op = vp;
+            loop {
+                let parent = tree.GetRec(vp).and_then(|r| r.parent);
+                let Some(p) = parent else { break };
+                let lw = tree
+                    .GetRec(vp)
+                    .map(|r| r.layout_rect.w)
+                    .unwrap_or(MIN_DIMENSION)
+                    .max(MIN_DIMENSION);
+                let w = vw_l / lw;
+                let parent_h = tree.get_height(p);
+                if w > min_s || w * parent_h > min_s {
+                    break;
+                }
+                let lx = tree.GetRec(vp).unwrap().layout_rect.x;
+                let ly = tree.GetRec(vp).unwrap().layout_rect.y;
+                vx_l -= lx * w;
+                vy_l -= ly * w / self.CurrentPixelTallness;
+                vw_l = w;
+                vp = p;
+            }
+            if op == vp && i > 0 {
+                break;
+            }
+            let vp_h = tree.get_height(vp);
+            let b_init = vx_l <= self.CurrentX + 1e-4
+                && vx_l + vw_l >= self.CurrentX + self.CurrentWidth - 1e-4
+                && vy_l <= self.CurrentY + 1e-4
+                && vy_l + vp_h * vw_l / self.CurrentPixelTallness
+                    >= self.CurrentY + self.CurrentHeight - 1e-4;
+            let mut p = vp;
+            let mut x = vx_l;
+            let mut y = vy_l;
+            let mut w = vw_l;
+            let b = self.FindBestSVPInTree(tree, &mut p, &mut x, &mut y, &mut w, b_init);
+            if *panel != p {
+                *panel = p;
+                *vx = x;
+                *vy = y;
+                *vw = w;
+            }
+            if b {
+                break;
+            }
+        }
+    }
+
+    /// Port of C++ `emView::FindBestSVPInTree` (emView.cpp:1878-1960).
+    /// Recursive descent picking the smallest opaque child that still
+    /// contains the current rect. See translation table in plan Step 5.
+    pub(crate) fn FindBestSVPInTree(
+        &self,
+        tree: &PanelTree,
+        panel: &mut PanelId,
+        vx: &mut f64,
+        vy: &mut f64,
+        vw: &mut f64,
+        covering: bool,
+    ) -> bool {
+        // emView.cpp:1882-1886
+        let p_in = *panel;
+        let vx_in = *vx;
+        let vy_in = *vy;
+        let vw_in = *vw;
+
+        // emView.cpp:1887-1891: vs = vw * max(1, h); tooLarge check
+        let f = tree.get_height(p_in);
+        let mut vs = if f > 1.0 { vw_in * f } else { vw_in };
+        let too_large = vs > MAX_SVP_SIZE;
+
+        // emView.cpp:1893: if (!covering && !tooLarge) return false
+        if !covering && !too_large {
+            return false;
+        }
+
+        // emView.cpp:1894-1898: vc = covering && panel is opaque
+        let mut vc = covering && {
+            let rec = tree.GetRec(p_in).unwrap();
+            rec.canvas_color.IsOpaque()
+                || rec.behavior.as_ref().map(|b| b.IsOpaque()).unwrap_or(false)
+        };
+
+        // emView.cpp:1899-1900: p = p->LastChild; if (!p) return vc
+        let lc = tree.GetLastChild(p_in);
+        let mut p = match lc {
+            Some(pp) => pp,
+            None => return vc,
+        };
+
+        // emView.cpp:1902-1908: compute layout-space viewport bounds
+        let x1 = (self.CurrentX + 1e-4 - vx_in) / vw_in;
+        let x2 = (self.CurrentX + self.CurrentWidth - 1e-4 - vx_in) / vw_in;
+        let vwc = vw_in / self.CurrentPixelTallness;
+        let y1 = (self.CurrentY + 1e-4 - vy_in) / vwc;
+        let y2 = (self.CurrentY + self.CurrentHeight - 1e-4 - vy_in) / vwc;
+        let mut vd: f64 = 1e30;
+        let mut overlapped = false;
+
+        // emView.cpp:1910-1968: do { ... } while (p)
+        loop {
+            let rec = tree.GetRec(p).unwrap();
+            // emView.cpp:1911-1914: overlap check
+            if rec.layout_rect.x < x2
+                && rec.layout_rect.x + rec.layout_rect.w > x1
+                && rec.layout_rect.y < y2
+                && rec.layout_rect.y + rec.layout_rect.h > y1
+            {
+                // emView.cpp:1915-1923: covering check, break if vc && !tooLarge
+                let mut cc = true;
+                if !covering
+                    || rec.layout_rect.x > x1
+                    || rec.layout_rect.x + rec.layout_rect.w < x2
+                    || rec.layout_rect.y > y1
+                    || rec.layout_rect.y + rec.layout_rect.h < y2
+                {
+                    if !too_large && vc {
+                        break;
+                    }
+                    cc = false;
+                }
+                // emView.cpp:1924-1928: recurse into child
+                let mut cp = p;
+                let mut cx = vx_in + rec.layout_rect.x * vw_in;
+                let mut cy = vy_in + rec.layout_rect.y * vwc;
+                let mut cw = rec.layout_rect.w * vw_in;
+                cc = self.FindBestSVPInTree(tree, &mut cp, &mut cx, &mut cy, &mut cw, cc);
+                // emView.cpp:1929: if (!cc && !tooLarge && vc) break
+                if !cc && !too_large && vc {
+                    break;
+                }
+                // emView.cpp:1930-1932: cs = cw * max(1, cp->GetHeight())
+                let cf = tree.get_height(cp);
+                let cs = if cf > 1.0 { cw * cf } else { cw };
+                // emView.cpp:1933-1941: if cc && cs<=MaxSVPSize → return true
+                if cc && cs <= MAX_SVP_SIZE {
+                    if too_large || !overlapped {
+                        *panel = cp;
+                        *vx = cx;
+                        *vy = cy;
+                        *vw = cw;
+                    }
+                    return true;
+                }
+                // emView.cpp:1942
+                overlapped = true;
+                // emView.cpp:1943-1965: tooLarge best-candidate tracking
+                if too_large {
+                    let xm = (x2 + x1) * 0.5;
+                    let ym = (y2 + y1) * 0.5;
+                    let dx = if xm < rec.layout_rect.x {
+                        xm - rec.layout_rect.x
+                    } else if xm > rec.layout_rect.x + rec.layout_rect.w {
+                        xm - (rec.layout_rect.x + rec.layout_rect.w)
+                    } else {
+                        0.0
+                    };
+                    let dy = if ym < rec.layout_rect.y {
+                        ym - rec.layout_rect.y
+                    } else if ym > rec.layout_rect.y + rec.layout_rect.h {
+                        ym - (rec.layout_rect.y + rec.layout_rect.h)
+                    } else {
+                        0.0
+                    };
+                    let d = dx * dx + dy * dy;
+                    if (cs <= MAX_SVP_SIZE && d - 0.1 <= vd) || (vs > MAX_SVP_SIZE && cs <= vs) {
+                        *panel = cp;
+                        *vx = cx;
+                        *vy = cy;
+                        *vw = cw;
+                        vd = d;
+                        // emView.cpp:1962-1963: vs=cs; vc=cc
+                        vs = cs;
+                        vc = cc;
+                    }
+                }
+            }
+            // emView.cpp:1967: p=p->Prev
+            let prev = tree.GetPrev(p);
+            match prev {
+                Some(pp) => p = pp,
+                None => break,
+            }
+        }
+
+        // emView.cpp:1970: return vc
+        vc
+    }
+
     // --- Coordinate transform: update_viewing ---
 
     /// Compute absolute viewport coordinates for all panels. Called once per frame.
@@ -1388,7 +1998,7 @@ impl emView {
             }
         }
         let new_svp = chain_rev[new_svp_idx];
-        let (new_vx, new_vy, new_vw, new_vh) = chain_rects[new_svp_idx];
+        let (new_vx, new_vy, new_vw, _new_vh) = chain_rects[new_svp_idx];
 
         let old_svp = self.supreme_viewed_panel;
 
@@ -1442,135 +2052,13 @@ impl emView {
             return;
         }
         self.force_viewing_update = false;
-        self.svp_update_count += 1;
 
-        // === RawVisitAbs change block (C++ emView.cpp:1753-1807) ===
+        // Delegate to the extracted RawVisitAbs.
+        self.RawVisitAbs(tree, new_svp, new_vx, new_vy, new_vw, force);
 
-        // Old SVP clear.
-        if let Some(osvp) = old_svp {
-            if tree.contains(osvp) {
-                if let Some(p) = tree.get_mut(osvp) {
-                    p.in_viewed_path = false;
-                    p.viewed = false;
-                }
-                tree.queue_notice(
-                    osvp,
-                    super::emPanel::NoticeFlags::VIEW_CHANGED
-                        | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
-                        | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
-                );
-                tree.UpdateChildrenViewing(osvp);
-
-                // Walk old SVP parent chain clearing in_viewed_path, unconditional notice
-                // (C++ emView.cpp:1763-1772 does not early-exit).
-                let mut cur = tree.GetRec(osvp).and_then(|p| p.parent);
-                while let Some(pid) = cur {
-                    let parent_of = tree.get_mut(pid).map(|p| {
-                        p.in_viewed_path = false;
-                        p.parent
-                    });
-                    tree.queue_notice(
-                        pid,
-                        super::emPanel::NoticeFlags::VIEW_CHANGED
-                            | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
-                            | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
-                    );
-                    cur = parent_of.unwrap_or(None);
-                }
-            }
-        }
-
-        // New SVP set. C++ line 1780: vp->ViewedHeight = vw * vp->GetHeight()
-        // / CurrentPixelTallness. Our `GetHeight` equivalent is layout_rect.h
-        // / layout_rect.w (panel aspect). `new_vh` from chain_rects would be
-        // equivalent but we recompute to stay structurally identical to C++.
-        self.supreme_viewed_panel = Some(new_svp);
-        let _ = new_vh;
-        let new_vh_from_height = {
-            let lr = tree
-                .GetRec(new_svp)
-                .map(|p| p.layout_rect)
-                .unwrap_or_default();
-            let panel_h = if lr.w > MIN_DIMENSION {
-                lr.h / lr.w
-            } else {
-                1.0
-            };
-            new_vw * panel_h / pt
-        };
-        if let Some(p) = tree.get_mut(new_svp) {
-            p.in_viewed_path = true;
-            p.viewed = true;
-            p.viewed_x = new_vx;
-            p.viewed_y = new_vy;
-            p.viewed_width = new_vw;
-            p.viewed_height = new_vh_from_height;
-
-            // Clip against viewport (C++ CurrentX/Y/Width/Height). Rust
-            // viewport is (0, 0, vw, vh).
-            let mut cx1 = new_vx;
-            let mut cy1 = new_vy;
-            let mut cx2 = new_vx + new_vw;
-            let mut cy2 = new_vy + new_vh_from_height;
-            if cx1 < 0.0 {
-                cx1 = 0.0;
-            }
-            if cy1 < 0.0 {
-                cy1 = 0.0;
-            }
-            if cx2 > vw {
-                cx2 = vw;
-            }
-            if cy2 > vh {
-                cy2 = vh;
-            }
-            p.clip_x = cx1;
-            p.clip_y = cy1;
-            p.clip_w = (cx2 - cx1).max(0.0);
-            p.clip_h = (cy2 - cy1).max(0.0);
-        }
-        tree.queue_notice(
-            new_svp,
-            super::emPanel::NoticeFlags::VIEW_CHANGED
-                | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
-                | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
-        );
-        tree.UpdateChildrenViewing(new_svp);
-
-        // Walk new SVP parent chain setting in_viewed_path, unconditional notice.
-        let mut cur = tree.GetRec(new_svp).and_then(|p| p.parent);
-        while let Some(pid) = cur {
-            let parent_of = tree.get_mut(pid).map(|p| {
-                p.in_viewed_path = true;
-                p.parent
-            });
-            tree.queue_notice(
-                pid,
-                super::emPanel::NoticeFlags::VIEW_CHANGED
-                    | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
-                    | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
-            );
-            cur = parent_of.unwrap_or(None);
-        }
-
-        // emView.cpp:1803 — RestartInputRecursion=true
-        // NOT PORTED: RestartInputRecursion not yet implemented in Rust.
-
-        // emView.cpp:1804 — CursorInvalid=true
-        self.cursor_invalid = true;
-
-        // emView.cpp:1805 — UpdateEngine->WakeUp()
-        // NOT PORTED: UpdateEngine/WakeUp not yet implemented in Rust.
-
-        // emView.cpp:1806 — InvalidatePainting() (view-level: entire viewport rect)
-        self.dirty_rects.push(Rect::new(
-            0.0,
-            0.0,
-            self.viewport_width,
-            self.viewport_height,
-        ));
-
-        // Active-path propagation.
+        // Active-path propagation (C++ does this lazily in SetActivePanel
+        // only — but Phase 3 will remove this block entirely. For Phase 2
+        // we keep the existing per-frame rebuild to preserve test parity.)
         if let Some(active_id) = self.active {
             if tree.contains(active_id) {
                 let mut cur = Some(active_id);
@@ -3726,7 +4214,7 @@ mod tests {
         tree.Layout(root, 0.0, 0.0, 1.0, 0.75);
 
         let mut view = emView::new(root, 800.0, 600.0);
-        view.RawZoomOut(&mut tree);
+        view.RawZoomOut(&mut tree, false);
 
         let state = view.current_visit();
         // C++ formula: max(W*H_root/hpt/H, H/H_root*hpt/W)
@@ -3749,7 +4237,7 @@ mod tests {
         tree.Layout(root, 0.0, 0.0, 1.0, 0.75);
 
         let mut view = emView::new(root, 800.0, 600.0);
-        view.RawZoomOut(&mut tree);
+        view.RawZoomOut(&mut tree, false);
         assert!(view.IsZoomedOut(&tree));
 
         // After zooming in, should not be zoomed out
@@ -4026,7 +4514,11 @@ mod tests {
         view.Update(&mut tree);
 
         let cursors = [(200.0, 150.0), (400.0, 300.0), (700.0, 50.0), (50.0, 550.0)];
-        let factors = [0.01, 0.5, 2.0, 4.0, 100.0];
+        // Factor 0.01 is excluded: at that extreme zoom-out the root panel
+        // becomes smaller than the viewport, triggering root-centering in
+        // RawVisitAbs (C++ emView.cpp:1588-1600) which snaps vx/vy and
+        // intentionally breaks the zoom fixpoint — C++ has the same behaviour.
+        let factors = [0.5, 2.0, 4.0, 100.0];
 
         for &(cx, cy) in &cursors {
             for &factor in &factors {
@@ -4253,6 +4745,40 @@ mod tests {
 
         // Suppress unused-variable warning for tree (kept alive for PanelId validity).
         let _ = tree;
+    }
+
+    #[test]
+    fn test_phase2_raw_visit_abs_matches_inline_update() {
+        // Build the standard test tree: root with two children, one focused.
+        let (mut tree, root, child_a, _child_b) = setup_tree();
+        let mut v = emView::new(root, 640.0, 480.0);
+        v.SetActivePanel(child_a);
+        // Run Update to populate SVP + viewed rects the old way.
+        v.Update(&mut tree);
+        let expected_svp = v.GetSupremeViewedPanel();
+        let expected_vx = tree.GetRec(expected_svp.unwrap()).unwrap().viewed_x;
+        let expected_vy = tree.GetRec(expected_svp.unwrap()).unwrap().viewed_y;
+        let expected_vw = tree.GetRec(expected_svp.unwrap()).unwrap().viewed_width;
+
+        // Rebuild view, call RawVisitAbs directly with the same rect; expect
+        // the same SVP and same viewed rect.
+        let mut tree2 = setup_tree().0;
+        let root2 = tree2.GetRootPanel().unwrap();
+        let mut v2 = emView::new(root2, 640.0, 480.0);
+        v2.SetActivePanel(tree2.GetFirstChild(root2).unwrap());
+        v2.RawVisitAbs(
+            &mut tree2,
+            expected_svp.unwrap(),
+            expected_vx,
+            expected_vy,
+            expected_vw,
+            false,
+        );
+        assert_eq!(v2.GetSupremeViewedPanel(), expected_svp);
+        let svp = tree2.GetRec(expected_svp.unwrap()).unwrap();
+        assert!((svp.viewed_x - expected_vx).abs() < 1e-9);
+        assert!((svp.viewed_y - expected_vy).abs() < 1e-9);
+        assert!((svp.viewed_width - expected_vw).abs() < 1e-9);
     }
 }
 

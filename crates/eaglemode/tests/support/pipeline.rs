@@ -124,7 +124,7 @@ impl PipelineTestHarness {
     pub fn set_zoom(&mut self, level: f64) {
         // Step 1: HardResetFileState to the 1x baseline (raw_zoom_out sets rel_a to
         // zoom_out_rel_a and calls update_viewing internally).
-        self.view.RawZoomOut(&mut self.tree);
+        self.view.RawZoomOut(&mut self.tree, false);
 
         // Step 2: apply the magnification factor. Zoom(factor) squares
         // internally (ra *= 1/factor^2), so passing `level` directly gives

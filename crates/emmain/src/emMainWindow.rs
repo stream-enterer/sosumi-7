@@ -670,7 +670,7 @@ impl emEngine for StartupEngine {
                         .with_behavior_as::<emSubViewPanel, _>(svp_id, |svp| {
                             svp.active_animator = None;
                             let (view, tree) = svp.view_and_tree_mut();
-                            view.RawZoomOut(tree);
+                            view.RawZoomOut(tree, false);
                         });
                 }
                 let overlay_id = ctx

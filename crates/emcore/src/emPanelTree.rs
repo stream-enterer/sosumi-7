@@ -2501,10 +2501,17 @@ impl PanelTree {
                 Some(p) => p,
                 None => continue,
             };
-            if !panel.viewed {
+            // DIVERGED from pre-Phase2: panels on the in_viewed_path but not
+            // yet viewed (e.g. root when SVP is a child) are traversed but not
+            // added to the result. This ensures the SVP and its siblings are
+            // reached even when ancestors have viewed=false.
+            let reachable = panel.viewed || panel.in_viewed_path;
+            if !reachable {
                 continue;
             }
-            result.push(id);
+            if panel.viewed {
+                result.push(id);
+            }
             // Push children in reverse order so first child is processed first
             let mut children = Vec::new();
             let mut cur = panel.first_child;
