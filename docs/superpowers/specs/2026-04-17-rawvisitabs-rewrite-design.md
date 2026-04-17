@@ -58,48 +58,75 @@ No callers in this commit. Callable but unused; verified by cargo build.
 
 ### Commit 2 — Port `RawVisitAbs` into `emView::Update`
 
-**State:** Ensure `supreme_viewed_panel: Option<PanelId>` (or existing `self.svp`)
-persists across frames. If `self.svp` is already persistent, reuse it; mark
-`DIVERGED:` if the name differs from C++ `SupremeViewedPanel`.
+**State:** `self.svp` is renamed to `self.supreme_viewed_panel` and already
+persists across `Update` calls as a field. The current code zeros it at the
+start of Update (emView.rs:1308) — the rewrite snapshots it as `old_svp`
+before any mutation, then assigns the new SVP at the end.
 
-**Update body flow:**
+**Critical ordering constraint** (not obvious from C++ alone): the existing
+Rust `Update` uses two mutation passes — `compute_viewed_recursive` fills the
+whole tree with `viewed_x/y/width/height`, then the SVP-finder at
+emView.rs:1309–1320 reads those fields to pick the SVP. The rewrite must
+find the new SVP and its viewed rect *without* mutating the whole tree first.
+Approach:
 
-1. Keep existing coord math (vx/vy/vw/vp via MaxSVP walk) — that produces the
-   inputs C++ `RawVisitAbs` receives.
-2. Change-detect: `forceViewingUpdate || svp_changed || viewed_rect_moved > 0.001`
-   (matches C++ emView.cpp:1727–1752).
-3. **No change** → early return; no traversal, no notices.
-4. **Change**:
-   - **Old SVP clear** (if prior SVP exists): `viewed = false`,
-     `in_viewed_path = false`, notice, `update_children_viewing(old_svp)`.
-     Walk parent chain clearing `in_viewed_path` with notice on each level
-     until reaching a panel already off the path.
+1. Keep the existing chain-walk math (emView.rs:1208–1298) that computes
+   `root_abs` and `visited_vw/vh` — this is read-only and produces the
+   equivalent of C++ `RawVisitAbs`'s (vx, vy, vw) arguments at the `visited`
+   panel level.
+2. Extend that read-only walk to also compute each ancestor's absolute viewed
+   rect into a local `Vec`. This is cheap (ancestor chain is depth-bounded).
+3. Pick the new SVP by walking the ancestor chain from `visited` upward,
+   selecting the deepest whose computed area ≤ `MAX_SVP_SIZE` (existing rule
+   at emView.rs:1309–1317). Capture its computed `(vx, vy, vw, vh)`.
+4. Change-detect: `force_viewing_update || old_svp != new_svp ||
+   |old_vx - new_vx| > 0.001 || …` (matches C++ emView.cpp:1727–1752).
+5. **No change** → early return; no traversal, no notices.
+6. **Change** (port emView.cpp:1753–1807 line-for-line):
+   - **Old SVP clear** (if `old_svp` present and still in tree):
+     `viewed = false`, `in_viewed_path = false`, queue
+     `VIEW_CHANGED | UPDATE_PRIORITY_CHANGED | MEMORY_LIMIT_CHANGED`,
+     call `PanelTree::UpdateChildrenViewing(old_svp)`.
+     Walk parent chain of `old_svp` clearing `in_viewed_path` with the same
+     notice on each level, stopping when a parent already has
+     `in_viewed_path == false` (equivalent to C++'s walk-until-already-cleared).
    - **New SVP set**: write `viewed = true`, `in_viewed_path = true`,
-     `viewed_x/y/width/height`, `clip_x1/y1/x2/y2`, notice,
-     `update_children_viewing(new_svp)`. Walk parent chain setting
-     `in_viewed_path = true` with notices.
-5. Update `self.svp = Some(new_svp)`.
+     `viewed_x/y/width/height`, `clip_x1/y1/x2/y2` (clipped to viewport),
+     queue the same notice, call `UpdateChildrenViewing(new_svp)`.
+     Walk parent chain of `new_svp` setting `in_viewed_path = true` with
+     notice, stopping when a parent already has `in_viewed_path == true`.
+7. `self.supreme_viewed_panel = Some(new_svp)`.
 
-**Preserve:** `zoomed_out_before_sg`, `in_active_path` propagation pass,
-`svp_update_count`, `drain_navigation_requests`.
+**Preserve:** `zoomed_out_before_sg`, `in_active_path` active-path propagation
+(emView.rs:1347–1363), `svp_update_count`, `drain_navigation_requests`.
 
 **Remove:**
-- `clear_viewing_flags` (unless grep shows other callers — then shrink to the
-  subset they need and comment the remaining coupling).
-- `compute_viewed_recursive`.
-- `PanelData.prev_viewed` field, its initialization, and its write in
-  `clear_viewing_flags`.
+- `clear_viewing_flags` at emView.rs:1167 call site, and the method in
+  emPanelTree.rs:2522. Grep confirmed no other callers.
+- `compute_viewed_recursive` (emView.rs:1377), only callers are Update and
+  itself.
+- `PanelData.prev_viewed` field (emPanelTree.rs:201), its init
+  (emPanelTree.rs:253), its write (emPanelTree.rs:2524), and its read at
+  emView.rs:1387.
+- The standalone `in_viewed_path` ancestor-propagation block at
+  emView.rs:1323–1345. Its function is subsumed by the explicit
+  walk-parents step inside the RawVisitAbs port.
 
-## Naming — Match C++ Exactly
+## Naming — Match C++
 
-- Field name: `SupremeViewedPanel` (C++ `emView::SupremeViewedPanel`). If a
-  pre-existing `self.svp` field is present, rename it.
-- Method name: `UpdateChildrenViewing`. Because Rust's panel arena stores
-  behaviors separately from `PanelData`, place this method on `PanelTree` —
-  no `DIVERGED:` comment; the name is preserved and `PanelTree` is already
-  the accepted overlay for `emPanel` container-side methods (e.g.
-  `HandleNotice`).
-- Every method/field touched in this rewrite keeps its C++ name.
+No semantic divergences. C++ names are preserved modulo the established Rust
+snake_case convention for struct fields (e.g. C++ `Viewed` → Rust `viewed`,
+C++ `ClipX1` → Rust `clip_x1`, already applied across `PanelData`).
+
+- Rename existing field `emView::svp: Option<PanelId>` →
+  `supreme_viewed_panel: Option<PanelId>` (snake_case of C++
+  `SupremeViewedPanel`). All internal references update; the public getter
+  `GetSupremeViewedPanel` is unchanged.
+- New method `PanelTree::UpdateChildrenViewing` — camelCase preserved because
+  `PanelTree` already hosts C++ `emPanel` container methods with C++ names
+  (`HandleNotice`, `BeFirst`, `BeLast`). No `DIVERGED:` comment.
+- Every method/field touched keeps its C++ name (snake_case where already
+  established).
 
 ## Verification
 
@@ -135,7 +162,17 @@ After each commit:
    Mitigation: golden notice tests catch most; runtime smoke catches the rest.
 3. **SIGSEGV may persist.** If so, it's a separate lifecycle bug in a sub-view
    panel's `notice()` handler, not in this rewrite. Flag as follow-up.
-4. **`clear_viewing_flags` other callers.** Grep before removal.
+4. **`clear_viewing_flags` other callers.** Grep confirmed only one caller
+   (emView.rs:1167). Safe to remove.
+5. **SVP area computation before tree mutation.** Risk: the ancestor-rect
+   `Vec` built in the read-only walk must agree with what
+   `UpdateChildrenViewing` subsequently writes. Mitigation: reuse the same
+   layout_rect scaling formula in both places; verify via the smoke test
+   that viewed rects pixel-match the pre-rewrite output on a static frame.
+6. **`queue_notice` invariant.** `queue_notice` (emPanelTree.rs:581) expects
+   the panel to be in the tree. Every call site in the RawVisitAbs port
+   must verify `tree.contains(id)` if the panel could have been removed
+   mid-update — for this rewrite, SVP is read fresh so it's live.
 
 ## Pre-flight
 
