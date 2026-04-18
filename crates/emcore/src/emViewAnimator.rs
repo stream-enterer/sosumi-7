@@ -836,6 +836,15 @@ impl emVisitingViewAnimator {
         }
     }
 
+    /// Start animating toward the current goal. Mirrors C++
+    /// `emVisitingViewAnimator::Activate` (emViewAnimator.cpp:1040), which in
+    /// C++ wakes the engine via the base class. In Rust the wrapper engine
+    /// `VisitingVAEngineClass` (see `emView.rs`) observes `is_active()` and
+    /// dispatches the cycle.
+    pub fn Activate(&mut self) {
+        self.active = true;
+    }
+
     /// Clear the goal and stop animation.
     pub fn ClearGoal(&mut self) {
         if self.state != VisitingState::NoGoal {
