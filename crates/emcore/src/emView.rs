@@ -835,10 +835,17 @@ impl emView {
     /// Port of C++ `emView::GetVisitedPanel(pRelX, pRelY, pRelA)` (emView.cpp:468-489).
     ///
     /// Walks from ActivePanel toward root to find the deepest panel that is
-    /// `in_viewed_path` and `viewed`. Returns `(panel, rel_x, rel_y, rel_a)`.
-    /// C++ convention: relX/Y are offsets of the viewport center from the panel
-    /// center (in panel-space units). rel_a = (HomeW*HomeH)/(ViewedW*ViewedH).
-    pub fn GetVisitedPanel(&self, tree: &PanelTree) -> Option<(PanelId, f64, f64, f64)> {
+    /// `in_viewed_path` and `viewed`. Falls back to SupremeViewedPanel.
+    /// Fills `rel_x`, `rel_y`, `rel_a` with viewport-relative coords on success,
+    /// or zeros on `None`. C++ convention: relX/Y are offsets of the viewport center
+    /// from the panel center (in panel-space units). rel_a = (HomeW*HomeH)/(ViewedW*ViewedH).
+    pub fn GetVisitedPanel(
+        &self,
+        tree: &PanelTree,
+        rel_x: &mut f64,
+        rel_y: &mut f64,
+        rel_a: &mut f64,
+    ) -> Option<PanelId> {
         // Walk from active toward root until we find an in_viewed_path + viewed panel.
         let p = {
             let mut candidate = self.active;
@@ -884,13 +891,26 @@ impl emView {
                 // Rust: ViewedHeight = ViewedWidth * GetHeight / HomePixelTallness
                 let vw = panel.viewed_width.max(1e-100);
                 let vh = (vw * tree.get_height(id) / hp).max(1e-100);
-                let rel_x = (self.HomeX + hw * 0.5 - panel.viewed_x) / vw - 0.5;
-                let rel_y = (self.HomeY + hh * 0.5 - panel.viewed_y) / vh - 0.5;
-                let rel_a = (hw * hh) / (vw * vh);
-                return Some((id, rel_x, rel_y, rel_a));
+                *rel_x = (self.HomeX + hw * 0.5 - panel.viewed_x) / vw - 0.5;
+                *rel_y = (self.HomeY + hh * 0.5 - panel.viewed_y) / vh - 0.5;
+                *rel_a = (hw * hh) / (vw * vh);
+                return Some(id);
             }
         }
+        *rel_x = 0.0;
+        *rel_y = 0.0;
+        *rel_a = 0.0;
         None
+    }
+
+    /// Idiomatic Rust companion: returns `(panel, rel_x, rel_y, rel_a)` as a tuple.
+    /// Delegates to `GetVisitedPanel`.
+    pub fn get_visited_panel_idiom(&self, tree: &PanelTree) -> Option<(PanelId, f64, f64, f64)> {
+        let mut rx = 0.0;
+        let mut ry = 0.0;
+        let mut ra = 0.0;
+        self.GetVisitedPanel(tree, &mut rx, &mut ry, &mut ra)
+            .map(|id| (id, rx, ry, ra))
     }
 
     pub fn Visit(&mut self, panel: PanelId, rel_x: f64, rel_y: f64, rel_a: f64) {
@@ -990,7 +1010,7 @@ impl emView {
         // C++ emView.cpp:1255-1256: capture zoom state before mutation.
         self.zoomed_out_before_sg = self.IsZoomedOut(tree);
         self.SettingGeometry += 1;
-        let visited_before = self.GetVisitedPanel(tree);
+        let visited_before = self.get_visited_panel_idiom(tree);
 
         // Home fields track Current on the home viewport (no popup).
         // Rc::ptr_eq detects popup state: during popup, HomeViewPort != CurrentViewPort.
@@ -1083,7 +1103,7 @@ impl emView {
         // VIEW-003: Signal abort for any active animator (C++ AbortActiveAnimator)
         self.needs_animator_abort = true;
         // C++ Zoom: GetVisitedPanel(&rx,&ry,&ra) then adjust rel coords.
-        if let Some((panel, mut rx, mut ry, mut ra)) = self.GetVisitedPanel(tree) {
+        if let Some((panel, mut rx, mut ry, mut ra)) = self.get_visited_panel_idiom(tree) {
             let pvw = tree
                 .GetRec(panel)
                 .map(|r| r.viewed_width)
@@ -1120,7 +1140,7 @@ impl emView {
         // VIEW-003: Signal abort for any active animator (C++ AbortActiveAnimator)
         self.needs_animator_abort = true;
         // C++ Scroll: GetVisitedPanel(&rx,&ry,&ra) then adjust rel coords.
-        if let Some((panel, mut rx, mut ry, ra)) = self.GetVisitedPanel(tree) {
+        if let Some((panel, mut rx, mut ry, ra)) = self.get_visited_panel_idiom(tree) {
             let pvw = tree
                 .GetRec(panel)
                 .map(|r| r.viewed_width)
@@ -1159,7 +1179,7 @@ impl emView {
         let hh = self.HomeHeight;
 
         // Get current visited panel and its rel coords.
-        let Some((panel, rx, ry, ra)) = self.GetVisitedPanel(tree) else {
+        let Some((panel, rx, ry, ra)) = self.get_visited_panel_idiom(tree) else {
             return [0.0, 0.0, 0.0];
         };
         let pvw = tree
@@ -2386,7 +2406,7 @@ impl emView {
 
             if self.SVPChoiceInvalid {
                 self.SVPChoiceInvalid = false;
-                if let Some((panel, _, _, _)) = self.GetVisitedPanel(tree) {
+                if let Some((panel, _, _, _)) = self.get_visited_panel_idiom(tree) {
                     let rec = tree.GetRec(panel).unwrap();
                     let (vx, vy, vw) = (rec.viewed_x, rec.viewed_y, rec.viewed_width);
                     self.RawVisitAbs(tree, panel, vx, vy, vw, false);
@@ -6138,6 +6158,32 @@ mod tests {
             !va.is_active(),
             "VisitingVA should start inactive (C++ ST_NO_GOAL)"
         );
+    }
+
+    #[test]
+    fn get_visited_panel_returns_svp_rel_coords() {
+        // W4 Task 2.1: GetVisitedPanel out-param form mirrors C++ emView.cpp:468-489.
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.get_mut(root).unwrap().focusable = true;
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        let mut view = emView::new(root, 800.0, 600.0);
+        view.Update(&mut tree);
+
+        let mut rx = 99.0_f64;
+        let mut ry = 99.0_f64;
+        let mut ra = 99.0_f64;
+        let panel = view.GetVisitedPanel(&tree, &mut rx, &mut ry, &mut ra);
+
+        // After Update the root is in the viewed path; GetVisitedPanel must return it.
+        assert_eq!(panel, Some(root));
+        // rel_x and rel_y are the viewport-center offset from the panel center in
+        // panel-space units (C++ convention). For a root filling the whole viewport
+        // after a fresh zoom-out, both must be finite (no sentinel 99.0 left).
+        assert!(rx.is_finite(), "rel_x must be set (was 99.0 sentinel)");
+        assert!(ry.is_finite(), "rel_y must be set (was 99.0 sentinel)");
+        // rel_a must be positive (HomeW*HomeH / ViewedW*ViewedH).
+        assert!(ra > 0.0, "rel_a must be positive");
     }
 }
 
