@@ -2277,7 +2277,20 @@ impl emView {
         // C++ emView.cpp:1299-1301: popup close —
         //   if (IsSignaled(PopupWindow->GetCloseSignal())) ZoomOut();
         // Check the popup placeholder's close signal via the scheduler's
-        // clock-based predicate (scoped for borrow correctness).
+        // clock-based predicate.
+        //
+        // BUG (tracked as "emView::Update scheduler re-entrant borrow"
+        // in docs/superpowers/notes/2026-04-18-emview-subsystem-closeout.md §8):
+        // the `sched.borrow()` call below panics re-entrantly when `Update`
+        // is reached via the engine chain (`DoTimeSlice` → `UpdateEngineClass::Cycle`
+        // → here) because the caller holds `sched.borrow_mut()` across the
+        // entire `DoTimeSlice`. The previous comment claimed this was "scoped
+        // for borrow correctness"; that is incorrect — scoping only helps
+        // when the outer borrow isn't live. Fix options: (a) add a scheduler
+        // parameter to `Update` so the caller can pass `&EngineCtx` instead
+        // of reaching back through the Rc; (b) cache the signaled state on
+        // the view during signal processing. Blocks the single-engine
+        // rewrite of `test_phase8_popup_close_signal_zooms_out`.
         let popup_closed = {
             if let (Some(popup), Some(sched), Some(eng_id)) = (
                 self.PopupWindow.as_ref(),
@@ -6101,6 +6114,43 @@ mod tests {
     /// close_signal and calls `ZoomOut`, and `SwapViewPorts` (via the
     /// popup-creation path) connects the close_signal to the update engine
     /// as a wake-up.
+    ///
+    /// TWO-ENGINE SHAPE IS LOAD-BEARING (W5a finding). The test (a)
+    /// verifies the real `WakeUpUpdateEngineClass` connection via
+    /// `get_signal_refs(close_sig, eng_id) >= 1`, then (b) drives the
+    /// zoom-out teardown via a dormant `NoopEngine` swap + direct
+    /// `v.Update()` call. The apparent harness hack exists because a
+    /// single-engine integrated drive loop is currently infeasible for
+    /// two reasons discovered during the W5a investigation:
+    ///
+    ///   1. `UpdateEngineClass::Cycle` dispatches through
+    ///      `ctx.windows.get(&self.window_id)`. A bare `emView`
+    ///      attached with `WindowId::dummy()` has no registered window,
+    ///      so the engine wakes, cycles once, and no-ops.
+    ///
+    ///   2. `emView::Update` (below, popup-close-signal check) does
+    ///      `sched.borrow()` to call `is_signaled_for_engine`. Callers
+    ///      — including `emGUIFramework::about_to_wait` in production —
+    ///      hold `sched.borrow_mut()` across `DoTimeSlice`, whose
+    ///      engine chain runs `UpdateEngineClass::Cycle` → `Update`.
+    ///      The `borrow()` re-entrantly panics. The `(scoped for
+    ///      borrow correctness)` comment at the call site is
+    ///      incorrect: scoping only helps when the outer borrow isn't
+    ///      live. This is a production defect tracked in the emView
+    ///      subsystem closeout doc §8 as **"emView::Update scheduler
+    ///      re-entrant borrow"**.
+    ///
+    /// When the §8 successor workstream lands (option set: (a) pass
+    /// scheduler context into `Update` via signature change, or (b)
+    /// cache signaled state on the view during the signal-processing
+    /// phase), this test should be rewritten to drive a single real
+    /// engine end-to-end: wrap the view in a real `emWindow` via
+    /// `emWindow::new_popup_pending` (winit/GPU-free — see the test at
+    /// `emWindow.rs::new_popup_pending_constructs_without_event_loop`),
+    /// register it in the `windows` HashMap at the same id given to
+    /// `attach_to_scheduler`, fire the real `close_signal` via the
+    /// consumer API, and drive `DoTimeSlice` in a bounded loop until
+    /// `PopupWindow.is_none()`.
     #[test]
     fn test_phase8_popup_close_signal_zooms_out() {
         let (mut tree, root, child_a, _) = setup_tree();
