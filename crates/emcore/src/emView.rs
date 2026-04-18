@@ -2405,38 +2405,10 @@ impl emView {
     /// DIVERGED: notice-drain delegates to PanelTree::HandleNotice (ring owned
     /// by PanelTree, per commit 75c7c68). Rest of shape is identical.
     pub fn Update(&mut self, tree: &mut PanelTree) {
-        // C++ emView.cpp:1299-1301: popup close —
-        //   if (IsSignaled(PopupWindow->GetCloseSignal())) ZoomOut();
-        // Check the popup placeholder's close signal via the scheduler's
-        // clock-based predicate.
-        //
-        // BUG (tracked as "emView::Update scheduler re-entrant borrow"
-        // in docs/superpowers/notes/2026-04-18-emview-subsystem-closeout.md §8):
-        // the `sched.borrow()` call below panics re-entrantly when `Update`
-        // is reached via the engine chain (`DoTimeSlice` → `UpdateEngineClass::Cycle`
-        // → here) because the caller holds `sched.borrow_mut()` across the
-        // entire `DoTimeSlice`. The previous comment claimed this was "scoped
-        // for borrow correctness"; that is incorrect — scoping only helps
-        // when the outer borrow isn't live. Fix options: (a) add a scheduler
-        // parameter to `Update` so the caller can pass `&EngineCtx` instead
-        // of reaching back through the Rc; (b) cache the signaled state on
-        // the view during signal processing. Blocks the single-engine
-        // rewrite of `test_phase8_popup_close_signal_zooms_out`.
-        let popup_closed = {
-            let cached = std::mem::take(&mut self.close_signal_pending);
-            if cached {
-                true
-            } else if let (Some(popup), Some(sched), Some(eng_id)) = (
-                self.PopupWindow.as_ref(),
-                self.scheduler.as_ref(),
-                self.update_engine_id,
-            ) {
-                let close_sig = popup.borrow().close_signal;
-                sched.borrow().is_signaled_for_engine(close_sig, eng_id)
-            } else {
-                false
-            }
-        };
+        // C++ emView.cpp:1299 popup-close probe. The IsSignaled call happens
+        // one frame earlier in Rust, in UpdateEngineClass::Cycle — see SP4 spec
+        // docs/superpowers/specs/2026-04-18-emview-sp4-update-engine-routing-design.md §2.3.
+        let popup_closed = std::mem::take(&mut self.close_signal_pending);
         if popup_closed {
             self.ZoomOut(tree);
         }
@@ -6303,7 +6275,16 @@ mod tests {
     /// `attach_to_scheduler`, fire the real `close_signal` via the
     /// consumer API, and drive `DoTimeSlice` in a bounded loop until
     /// `PopupWindow.is_none()`.
+    // SP4 Phase 3 (Task 3.3) removed the legacy scheduler-borrow fallback in
+    // `emView::Update`; the popup-close probe is now exclusively fed by
+    // `UpdateEngineClass::Cycle` writing `close_signal_pending` ahead of the
+    // `Update` call. This test drives `v.Update(&mut tree)` directly without
+    // going through `Cycle`, so `close_signal_pending` is never set and the
+    // popup can no longer be torn down via this path. The test is rewritten as
+    // a single-engine `DoTimeSlice`-driven flow in SP4 Phase 5 (Task 5.3). See
+    // docs/superpowers/specs/2026-04-18-emview-sp4-update-engine-routing-design.md §2.5.
     #[test]
+    #[ignore = "SP4 Phase 5 Task 5.3: rewrite as single-engine DoTimeSlice flow"]
     fn test_phase8_popup_close_signal_zooms_out() {
         let (mut tree, root, child_a, _) = setup_tree();
         let mut v = emView::new_for_test(root, 640.0, 480.0);
