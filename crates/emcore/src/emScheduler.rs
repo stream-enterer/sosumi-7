@@ -6,7 +6,7 @@ use winit::window::WindowId;
 
 use super::emEngine::{emEngine, EngineCtx, EngineCtxInner, EngineData, EngineId, Priority};
 use super::emPanelTree::PanelTree;
-use super::emSignal::{SignalConnection, SignalData, SignalId};
+use super::emSignal::{SignalData, SignalId};
 use super::emTimer::{TimerCentral, TimerId};
 use super::emWindow::emWindow;
 
@@ -111,8 +111,7 @@ impl EngineScheduler {
 
     /// Remove a signal entirely.
     pub fn remove_signal(&mut self, id: SignalId) {
-        self.abort(id);
-        self.inner.signals.remove(id);
+        self.inner.remove_signal_inner(id);
     }
 
     /// Connect a signal to an engine so that firing the signal wakes the engine.
@@ -121,37 +120,13 @@ impl EngineScheduler {
     /// increments the refcount. `disconnect` decrements it; the connection is
     /// only severed when refcount reaches zero.
     pub fn connect(&mut self, signal: SignalId, engine: EngineId) {
-        if let Some(sig) = self.inner.signals.get_mut(signal) {
-            // Check if connection already exists
-            for conn in &mut sig.connected_engines {
-                if conn.engine == engine {
-                    conn.ref_count += 1;
-                    return;
-                }
-            }
-            sig.connected_engines.push(SignalConnection {
-                engine,
-                ref_count: 1,
-            });
-        }
+        self.inner.connect_inner(signal, engine);
     }
 
     /// Disconnect an engine from a signal. Decrements the refcount;
     /// only removes the connection when refcount reaches zero.
     pub fn disconnect(&mut self, signal: SignalId, engine: EngineId) {
-        if let Some(sig) = self.inner.signals.get_mut(signal) {
-            let mut i = 0;
-            while i < sig.connected_engines.len() {
-                if sig.connected_engines[i].engine == engine {
-                    sig.connected_engines[i].ref_count -= 1;
-                    if sig.connected_engines[i].ref_count == 0 {
-                        sig.connected_engines.swap_remove(i);
-                    }
-                    return;
-                }
-                i += 1;
-            }
-        }
+        self.inner.disconnect_inner(signal, engine);
     }
 
     /// Get the number of connection references for a signal-engine pair.
