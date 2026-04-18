@@ -657,8 +657,21 @@ impl emWindow {
         // chain and panel broadcast below see an empty event.
         let mut event = event.clone();
         if let Some(mut anim) = self.active_animator.take() {
+            let was_active = anim.is_active();
             emViewAnimator::Input(anim.as_mut(), &mut event, state);
-            self.active_animator = Some(anim);
+            let deactivated = was_active && !anim.is_active();
+            if anim.is_active() {
+                self.active_animator = Some(anim);
+            }
+            // else: animator self-dropped.
+            if deactivated {
+                // C++ emViewAnimator.cpp:1060: clear seek-pos so the next notice
+                // cycle doesn't fire SOUGHT_NAME_CHANGED on a stale target.
+                self.view.SetSeekPos(tree, None, "");
+                // C++ emViewAnimator.cpp:1061: InvalidatePainting skipped —
+                // emView::InvalidatePainting requires a panel id not available here;
+                // the next full-view paint cycle will refresh the visiting overlay.
+            }
         }
 
         // Phase 5 (emview-rewrite-followups): route through emViewPort.
