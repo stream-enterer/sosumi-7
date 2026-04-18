@@ -148,10 +148,8 @@ impl emViewPort {
 
     /// Cache the cursor reported by the view.
     ///
-    /// DIVERGED: C++ stores the cursor on `emView::Cursor` and the view-port
-    /// queries the view. Rust caches it on the port so `emWindow` can read
-    /// without a back-reference into the view. Marks the dirty flag only if
-    /// the cursor actually changed.
+    /// Marks the dirty flag only if the cursor actually changed.
+    /// (C++ stores this on emViewPort identically per the plan comment.)
     pub fn SetViewCursor(&mut self, cursor: crate::emCursor::emCursor) {
         if self.cursor != cursor {
             self.cursor = cursor;

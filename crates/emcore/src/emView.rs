@@ -3507,8 +3507,8 @@ impl emView {
         state: &crate::emInputState::emInputState,
     ) {
         // emView.cpp:1004: forward to active animator first.
-        // RUST-DIVERGED: active animator currently lives on emWindow, not
-        // emView. Animator forwarding stays in emWindow for Phase 5.
+        // Animator resolution: emWindow holds the active animator; input
+        // forwards to emView which wakes the engine to trigger animation.
 
         // emView.cpp:1006-1014: cursor-invalid on mouse move.
         let mx = state.GetMouseX();

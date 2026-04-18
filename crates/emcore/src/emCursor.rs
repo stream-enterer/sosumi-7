@@ -58,11 +58,7 @@ impl emCursor {
         }
     }
 
-    /// Map to the corresponding winit cursor icon.
-    ///
-    /// DIVERGED: no C++ equivalent; C++ emCore uses its own cursor integers
-    /// translated by the platform backend (emX11/emWnds). Rust translates
-    /// directly to `winit::window::CursorIcon`.
+    /// Map the C++-style cursor enum to a winit 0.30 CursorIcon.
     pub fn to_winit_cursor(self) -> winit::window::CursorIcon {
         use winit::window::CursorIcon;
         match self {
