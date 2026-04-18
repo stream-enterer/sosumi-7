@@ -863,7 +863,8 @@ pub fn create_main_window(
     let cp_signal = app.scheduler.borrow_mut().create_signal();
     if let Some(rc) = app.windows.get(&window_id) {
         let mut win = rc.borrow_mut();
-        win.view_mut().set_scheduler(Rc::clone(&app.scheduler));
+        win.view_mut()
+            .attach_to_scheduler(Rc::clone(&app.scheduler), window_id);
         win.view_mut().set_control_panel_signal(cp_signal);
     }
     // We don't yet have the sub-view panel IDs (created during LayoutChildren),

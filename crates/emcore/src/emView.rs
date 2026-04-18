@@ -241,77 +241,68 @@ impl StressTest {
 
 /// Port of C++ `emView::UpdateEngineClass` (emView.h:626-633).
 ///
-/// A wake-up driver: `WakeUp()` marks it awake so the scheduler calls
-/// `Update()` on the next slice.  `Cycle()` is a no-op because the actual
-/// `Update` drain is driven directly from the window loop for now (backend
-/// gap); the struct exists so `WakeUp()` can be called idiomatically.
-///
-/// DIVERGED: backend-gap — C++ `Cycle()` calls `View.Update()` directly via
-/// the scheduler; Rust currently drives `Update` from the window loop.  The
-/// struct is present for field/call-site parity; full scheduler wiring is a
-/// Phase 6 / backend concern.
+/// Scheduler-driven engine: when awake, `Cycle()` drains the view's update
+/// loop. Holds the `WindowId` of the containing `emWindow` so it can locate
+/// both the view (via `ctx.windows`) and the panel tree (via `ctx.tree`).
 pub struct UpdateEngineClass {
-    /// True when the engine has been woken up and is waiting for the next
-    /// scheduler cycle.
-    pub awake: bool,
+    /// Identifier of the window whose view this engine updates.
+    pub window_id: winit::window::WindowId,
 }
 
 impl UpdateEngineClass {
-    /// Create a new `UpdateEngineClass`.  Mirrors C++ ctor setting HIGH_PRIORITY.
-    pub fn new() -> Self {
-        Self { awake: false }
-    }
-
-    /// Mark the engine awake.  Mirrors C++ `emEngine::WakeUp()`.
-    pub fn WakeUp(&mut self) {
-        self.awake = true;
-    }
-
-    /// Clear the awake flag (called after `Update()` runs).
-    pub fn clear(&mut self) {
-        self.awake = false;
+    /// Create a new `UpdateEngineClass` bound to `window_id`.
+    /// Mirrors C++ ctor which sets HIGH_PRIORITY.
+    pub fn new(window_id: winit::window::WindowId) -> Self {
+        Self { window_id }
     }
 }
 
-impl Default for UpdateEngineClass {
-    fn default() -> Self {
-        Self::new()
+impl super::emEngine::emEngine for UpdateEngineClass {
+    fn Cycle(&mut self, ctx: &mut super::emEngine::EngineCtx<'_>) -> bool {
+        // Mirrors C++ UpdateEngineClass::Cycle → View.Update().
+        if let Some(win_rc) = ctx.windows.get(&self.window_id) {
+            let win_rc = Rc::clone(win_rc);
+            win_rc.borrow_mut().view_mut().Update(ctx.tree);
+        }
+        false
     }
 }
 
 /// Port of C++ `emView::EOIEngineClass` (emView.h:636-645, emView.cpp:2528-2543).
 ///
-/// Owns the End-Of-Interaction countdown.  `SignalEOIDelayed` creates /
-/// resets this engine; `Cycle` ticks the countdown and fires the EOI signal
-/// when it reaches zero.
-///
-/// DIVERGED: backend-gap — C++ `Cycle()` runs via the scheduler and calls
-/// `Signal(View.EOISignal)`; Rust drives the countdown via `tick_eoi()` for
-/// now, which the window loop calls.  Full scheduler wiring is a Phase 6 /
-/// backend concern.
+/// Scheduler-driven engine that owns the End-Of-Interaction countdown.
+/// `SignalEOIDelayed` registers a fresh instance with the scheduler and
+/// wakes it each slice; `Cycle` decrements `CountDown` and fires
+/// `EOISignal` when it reaches zero.
 pub struct EOIEngineClass {
     /// Countdown in scheduler ticks.  Mirrors C++ `CountDown` field.
     pub CountDown: i32,
+    /// Signal to fire when the countdown reaches zero (C++ View.EOISignal).
+    pub eoi_signal: super::emSignal::SignalId,
 }
 
 impl EOIEngineClass {
-    /// Create and immediately arm the countdown.  Mirrors C++ ctor which sets
+    /// Create and arm the countdown. Caller is responsible for registering
+    /// with the scheduler and waking it. Mirrors C++ ctor which sets
     /// `CountDown=5` and calls `WakeUp()`.
-    pub fn new() -> Self {
-        Self { CountDown: 5 }
-    }
-
-    /// Tick the countdown.  Returns `true` when zero is reached and the EOI
-    /// signal should fire.  Mirrors C++ `EOIEngineClass::Cycle`.
-    pub fn Cycle(&mut self) -> bool {
-        self.CountDown -= 1;
-        self.CountDown <= 0
+    pub fn new(eoi_signal: super::emSignal::SignalId) -> Self {
+        Self {
+            CountDown: 5,
+            eoi_signal,
+        }
     }
 }
 
-impl Default for EOIEngineClass {
-    fn default() -> Self {
-        Self::new()
+impl super::emEngine::emEngine for EOIEngineClass {
+    fn Cycle(&mut self, ctx: &mut super::emEngine::EngineCtx<'_>) -> bool {
+        self.CountDown -= 1;
+        if self.CountDown <= 0 {
+            ctx.fire(self.eoi_signal);
+            false
+        } else {
+            // Stay awake so we cycle again next slice.
+            true
+        }
     }
 }
 
@@ -358,14 +349,18 @@ pub struct emView {
     /// instead of doing an instant jump. The window loop feeds this to the
     /// emVisitingViewAnimator. None means no pending animated visit.
     pending_animated_visit: Option<VisitState>,
-    /// C++ `EOIEngine` — drives the End-Of-Interaction countdown.
-    /// `None` when no EOI is pending.  Created by `SignalEOIDelayed`.
-    /// Mirrors C++ `emOwnPtr<EOIEngineClass> EOIEngine` (emView.h:709).
-    pub EOIEngine: Option<EOIEngineClass>,
-    /// C++ `UpdateEngine` — wake-up driver for the scheduler.
-    /// Always `Some` after construction.
-    /// Mirrors C++ `emOwnPtr<UpdateEngineClass> UpdateEngine` (emView.h:708).
-    pub UpdateEngine: Option<UpdateEngineClass>,
+    /// C++ `EOISignal` — fired by `EOIEngineClass::Cycle` when the countdown
+    /// reaches zero. Created when the view is attached to the scheduler.
+    /// Mirrors C++ `emSignal EOISignal` (emView.h).
+    pub EOISignal: Option<super::emSignal::SignalId>,
+    /// Scheduler handle for the registered `UpdateEngineClass`.
+    /// Set by `attach_to_scheduler`; used by all call sites that previously
+    /// called `UpdateEngine->WakeUp()` to wake the update engine.
+    pub update_engine_id: Option<super::emEngine::EngineId>,
+    /// Scheduler handle for the most recently registered `EOIEngineClass`.
+    /// `SignalEOIDelayed` removes any previous instance before registering
+    /// a fresh one; the engine self-parks after firing `EOISignal`.
+    pub eoi_engine_id: Option<super::emEngine::EngineId>,
     /// The view title. Updated from the active panel's title.
     pub title: String,
     /// Current mouse cursor for this view.
@@ -507,8 +502,9 @@ impl emView {
             viewport_changed: false,
             needs_animator_abort: false,
             pending_animated_visit: None,
-            EOIEngine: None,
-            UpdateEngine: Some(UpdateEngineClass::new()),
+            EOISignal: None,
+            update_engine_id: None,
+            eoi_engine_id: None,
             title: String::new(),
             cursor: emCursor::Normal,
             max_popup_rect: None,
@@ -1944,9 +1940,7 @@ impl emView {
         self.RestartInputRecursion = true;
         self.cursor_invalid = true;
         // C++ emView.cpp:1805: UpdateEngine->WakeUp().
-        if let Some(ref mut engine) = self.UpdateEngine {
-            engine.WakeUp();
-        }
+        self.WakeUpUpdateEngine();
         // InvalidatePainting() whole-view — use Current rect (Phase 0 audit
         // verdict). During non-popup Current == Home, so rect = whole view.
         self.dirty_rects.push(Rect::new(
@@ -2828,6 +2822,38 @@ impl emView {
         self.scheduler = Some(scheduler);
     }
 
+    /// Attach the view to a scheduler and register its `UpdateEngineClass`.
+    ///
+    /// Mirrors the C++ `emView` constructor, which creates and registers the
+    /// `UpdateEngine` (HIGH_PRIORITY) + `EOISignal`. After this call, engines
+    /// can be woken via `WakeUpUpdateEngine()` and `SignalEOIDelayed()`.
+    pub fn attach_to_scheduler(
+        &mut self,
+        scheduler: Rc<RefCell<super::emScheduler::EngineScheduler>>,
+        window_id: winit::window::WindowId,
+    ) {
+        let (engine_id, eoi_signal) = {
+            let mut sched = scheduler.borrow_mut();
+            let engine_id = sched.register_engine(
+                super::emEngine::Priority::High,
+                Box::new(UpdateEngineClass::new(window_id)),
+            );
+            let eoi_signal = sched.create_signal();
+            (engine_id, eoi_signal)
+        };
+        self.scheduler = Some(scheduler);
+        self.update_engine_id = Some(engine_id);
+        self.EOISignal = Some(eoi_signal);
+    }
+
+    /// Wake the scheduler-registered `UpdateEngineClass` so `Update()` runs
+    /// in the current time slice. Mirrors C++ `UpdateEngine->WakeUp()`.
+    pub fn WakeUpUpdateEngine(&self) {
+        if let (Some(id), Some(sched)) = (self.update_engine_id, &self.scheduler) {
+            sched.borrow_mut().wake_up(id);
+        }
+    }
+
     /// Visit a panel by identity string, matching C++ emView::Visit(identity, ...).
     /// Uses find_panel_by_identity to resolve the identity to a PanelId, then calls Visit.
     pub fn VisitByIdentity(
@@ -3058,32 +3084,26 @@ impl emView {
 
     /// Request a delayed End-Of-Interaction signal.
     ///
-    /// Creates an `EOIEngineClass` if one is not already active.
-    /// Matches C++ `emView::SignalEOIDelayed` (emView.cpp:940-943).
+    /// Registers a fresh `EOIEngineClass` with the scheduler and wakes it so
+    /// it cycles each slice until its countdown reaches zero, at which point
+    /// it fires `EOISignal`. Matches C++ `emView::SignalEOIDelayed`
+    /// (emView.cpp:940-943).
     pub fn SignalEOIDelayed(&mut self) {
-        if self.EOIEngine.is_none() {
-            self.EOIEngine = Some(EOIEngineClass::new());
+        let (Some(sched), Some(sig)) = (&self.scheduler, self.EOISignal) else {
+            return;
+        };
+        let mut sched = sched.borrow_mut();
+        // Replace any prior EOI engine — matches C++ where SignalEOIDelayed
+        // resets the countdown on a fresh EOIEngineClass.
+        if let Some(old) = self.eoi_engine_id.take() {
+            sched.remove_engine(old);
         }
-    }
-
-    /// Whether an EOI countdown is active.
-    pub fn eoi_delayed(&self) -> bool {
-        self.EOIEngine.is_some()
-    }
-
-    /// Tick the EOI countdown. Returns `true` when the countdown has reached
-    /// zero and the EOI should be signaled (caller should then act, e.g.
-    /// zoom out for popup views).
-    ///
-    /// DIVERGED: backend-gap — C++ fires EOI via `Signal(View.EOISignal)` from
-    /// the scheduler; Rust uses this poll-based helper from the window loop
-    /// until full scheduler integration lands.
-    pub fn tick_eoi(&mut self) -> bool {
-        let fired = self.EOIEngine.as_mut().map(|e| e.Cycle()).unwrap_or(false);
-        if fired {
-            self.EOIEngine = None;
-        }
-        fired
+        let eng_id = sched.register_engine(
+            super::emEngine::Priority::High,
+            Box::new(EOIEngineClass::new(sig)),
+        );
+        sched.wake_up(eng_id);
+        self.eoi_engine_id = Some(eng_id);
     }
 
     // --- InvalidateHighlight / AddToNoticeList / RecurseInput ---
@@ -3117,9 +3137,7 @@ impl emView {
     pub fn AddToNoticeList(&mut self, tree: &mut PanelTree, panel: PanelId) {
         tree.add_to_notice_list(panel);
         // C++ emView.cpp:1288: UpdateEngine->WakeUp().
-        if let Some(ref mut engine) = self.UpdateEngine {
-            engine.WakeUp();
-        }
+        self.WakeUpUpdateEngine();
     }
 
     /// Port of C++ `emView::RecurseInput` (public overload + private panel overload,
@@ -3533,9 +3551,7 @@ impl emView {
             self.LastMouseX = mx;
             self.LastMouseY = my;
             self.cursor_invalid = true;
-            if let Some(ref mut engine) = self.UpdateEngine {
-                engine.WakeUp();
-            }
+            self.WakeUpUpdateEngine();
         }
     }
 
@@ -4412,6 +4428,7 @@ fn paint_highlight_arrows_on_bow(
 mod tests {
     use super::*;
     use crate::emPanelTree::PanelTree;
+    use crate::emScheduler::EngineScheduler;
 
     fn setup_tree() -> (PanelTree, PanelId, PanelId, PanelId) {
         let mut tree = PanelTree::new();
@@ -5569,44 +5586,95 @@ mod tests {
 
     // --- Phase 5 gate tests ---
 
-    /// Gate test: EOIEngineClass replaces the old `eoi_countdown` field.
-    ///
-    /// Exercises `SignalEOIDelayed`, `eoi_delayed`, and `tick_eoi` against the
-    /// new `EOIEngineClass`-backed implementation.  The countdown in C++ is 5
-    /// ticks; after enough ticks the engine should be gone and `eoi_delayed`
-    /// must return false.
+    /// Phase 7: SignalEOIDelayed registers an EOIEngineClass with the
+    /// scheduler that fires EOISignal after its countdown reaches zero.
     #[test]
-    fn test_phase5_eoi_engine_replaces_countdown() {
-        let (_tree, root, _, _) = setup_tree();
-        let mut v = emView::new(root, 640.0, 480.0);
-        v.SignalEOIDelayed();
-        assert!(v.eoi_delayed());
-        // After enough scheduler ticks the engine fires and clears.
-        for _ in 0..10 {
-            v.tick_eoi();
+    fn test_phase7_eoi_engine_fires_via_scheduler() {
+        use crate::emEngine::{emEngine as EngineTrait, EngineCtx, Priority};
+
+        struct ListenEngine {
+            watched: crate::emSignal::SignalId,
+            fired: Rc<std::cell::Cell<bool>>,
         }
-        assert!(!v.eoi_delayed());
+        impl EngineTrait for ListenEngine {
+            fn Cycle(&mut self, ctx: &mut EngineCtx<'_>) -> bool {
+                if ctx.IsSignaled(self.watched) {
+                    self.fired.set(true);
+                }
+                true
+            }
+        }
+
+        let (mut tree, root, _, _) = setup_tree();
+        let mut v = emView::new(root, 640.0, 480.0);
+        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        v.attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
+        let eoi = v.EOISignal.expect("EOISignal installed by attach");
+
+        // Register a listener that records when EOISignal fires.
+        let fired = Rc::new(std::cell::Cell::new(false));
+        let listener_id = sched.borrow_mut().register_engine(
+            Priority::Low,
+            Box::new(ListenEngine {
+                watched: eoi,
+                fired: Rc::clone(&fired),
+            }),
+        );
+        sched.borrow_mut().connect(eoi, listener_id);
+
+        v.SignalEOIDelayed();
+        let mut windows = std::collections::HashMap::new();
+        for _ in 0..10 {
+            sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+            if fired.get() {
+                break;
+            }
+        }
+        assert!(
+            fired.get(),
+            "EOIEngineClass should fire EOISignal via the scheduler within 10 slices"
+        );
+
+        // Clean up scheduler state before drop asserts.
+        sched.borrow_mut().disconnect(eoi, listener_id);
+        sched.borrow_mut().remove_engine(listener_id);
+        if let Some(id) = v.update_engine_id.take() {
+            sched.borrow_mut().remove_engine(id);
+        }
+        if let Some(id) = v.eoi_engine_id.take() {
+            sched.borrow_mut().remove_engine(id);
+        }
+        sched.borrow_mut().remove_signal(eoi);
     }
 
-    /// Phase 5: UpdateEngineClass is present and WakeUp sets the awake flag.
+    /// Phase 7: attach_to_scheduler registers UpdateEngineClass and installs
+    /// EOISignal. WakeUpUpdateEngine wakes the registered engine.
     #[test]
-    fn test_phase5_update_engine_wakeup() {
+    fn test_phase7_update_engine_wakeup_via_scheduler() {
         let (_tree, root, _, _) = setup_tree();
         let mut v = emView::new(root, 640.0, 480.0);
-        // UpdateEngine is created by new().
-        assert!(v.UpdateEngine.is_some());
-        // WakeUp is callable and sets the awake flag.
-        v.UpdateEngine.as_mut().unwrap().WakeUp();
-        assert!(v.UpdateEngine.as_ref().unwrap().awake);
+        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        v.attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
+        assert!(v.update_engine_id.is_some());
+        assert!(v.EOISignal.is_some());
+        // WakeUpUpdateEngine queues the engine.
+        assert!(!sched.borrow().has_awake_engines());
+        v.WakeUpUpdateEngine();
+        assert!(sched.borrow().has_awake_engines());
+        // Clean up for Drop debug_asserts.
+        let eng_id = v.update_engine_id.take().unwrap();
+        sched.borrow_mut().remove_engine(eng_id);
+        if let Some(eoi) = v.EOISignal.take() {
+            sched.borrow_mut().remove_signal(eoi);
+        }
     }
 
-    /// Phase 5: InvalidateHighlight marks the view dirty.
+    /// Phase 7: InvalidateHighlight marks the view dirty.
     #[test]
-    fn test_phase5_invalidate_highlight_dirties_view() {
+    fn test_phase7_invalidate_highlight_dirties_view() {
         let (mut tree, root, _, _) = setup_tree();
         let mut v = emView::new(root, 640.0, 480.0);
         v.Update(&mut tree);
-        // Active panel is set by construction; view is in view.
         let before = v.dirty_rects.len();
         v.InvalidateHighlight();
         assert!(
@@ -5615,21 +5683,31 @@ mod tests {
         );
     }
 
-    /// Phase 5: AddToNoticeList delegates to the tree and wakes UpdateEngine.
+    /// Phase 7: AddToNoticeList delegates to the tree and wakes the scheduler-
+    /// registered `UpdateEngineClass`.
     #[test]
-    fn test_phase5_add_to_notice_list_wakes_update_engine() {
+    fn test_phase7_add_to_notice_list_wakes_update_engine() {
         let (mut tree, root, child1, _) = setup_tree();
         let mut v = emView::new(root, 640.0, 480.0);
+        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        v.attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
         v.Update(&mut tree);
-        // Clear the awake flag so we can detect the WakeUp call.
-        v.UpdateEngine.as_mut().unwrap().clear();
-        assert!(!v.UpdateEngine.as_ref().unwrap().awake);
+        let eng_id = v.update_engine_id.expect("update_engine_id installed");
+
+        // Put the engine to sleep so we can detect the wake-up.
+        sched.borrow_mut().sleep(eng_id);
+        assert!(!sched.borrow().has_awake_engines());
 
         v.AddToNoticeList(&mut tree, child1);
         assert!(
-            v.UpdateEngine.as_ref().unwrap().awake,
-            "AddToNoticeList should wake UpdateEngine"
+            sched.borrow().has_awake_engines(),
+            "AddToNoticeList should wake the update engine via the scheduler"
         );
+        // Drain the scheduler to satisfy its debug_assert on drop.
+        if let Some(eoi) = v.EOISignal.take() {
+            sched.borrow_mut().remove_signal(eoi);
+        }
+        sched.borrow_mut().remove_engine(eng_id);
     }
 
     /// Phase 6: SetGeometry accepts explicit (x, y, width, height, pixel_tallness).
