@@ -14,12 +14,12 @@ use emcore::emScheduler::EngineScheduler;
 use emcore::emViewInputFilter::{
     emDefaultTouchVIF, emKeyboardZoomScrollVIF, emMouseZoomScrollVIF, emViewInputFilter,
 };
-use emcore::emWindow::ZuiWindow;
+use emcore::emWindow::emWindow;
 use winit::window::WindowId;
 
 /// Test harness that dispatches Input through the FULL coordinate transform
 /// pipeline (VIF chain, hit test, view_to_panel_x/y transform), matching
-/// the production path in `ZuiWindow::dispatch_input`.
+/// the production path in `emWindow::dispatch_input`.
 ///
 /// Unlike `TestHarness` which passes view-space coordinates directly to
 /// `behavior.Input()`, this harness transforms mouse coordinates from view
@@ -76,7 +76,7 @@ impl PipelineTestHarness {
 
     /// Run one frame: scheduler time slice, deliver notices, update viewing.
     pub fn tick(&mut self) {
-        let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+        let mut windows: HashMap<WindowId, emWindow> = HashMap::new();
         self.scheduler.DoTimeSlice(&mut self.tree, &mut windows);
         self.tree
             .HandleNotice(self.view.IsFocused(), self.view.GetCurrentPixelTallness());
@@ -158,7 +158,7 @@ impl PipelineTestHarness {
     // ── Input dispatch (full pipeline) ───────────────────────────
 
     /// Dispatch an Input event through the full coordinate transform pipeline,
-    /// matching `ZuiWindow::dispatch_input`:
+    /// matching `emWindow::dispatch_input`:
     ///
     /// 1. VIF chain filter
     /// 2. Hit test and set active panel (for mouse press)

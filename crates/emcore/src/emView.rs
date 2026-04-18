@@ -6,6 +6,47 @@ use crate::dlog;
 use bitflags::bitflags;
 
 use super::emPanelTree::{PanelId, PanelTree};
+
+/// PHASE-6-TODO: replace with real popup window wiring.
+///
+/// Phase 4 deleted the popup-stub `emWindow` and renamed `ZuiWindow` →
+/// `emWindow` (the heavyweight windowed view). Heavyweight `emWindow`
+/// requires a `winit::ActiveEventLoop` + `GpuContext` to construct and
+/// cannot be built from inside `RawVisitAbs`. Phase 6 owns real popup
+/// creation; until then, `PopupWindow` holds this placeholder so the
+/// existing popup branch (and its acceptance test
+/// `test_phase4_popup_zoom_creates_popup_window`) continues to compile
+/// and run.
+///
+/// DIVERGED: rust-only helper. C++ `PopupWindow` is a full `emWindow *`.
+pub struct PopupPlaceholder {
+    pub background_color: crate::emColor::emColor,
+    pub current_view_port: Rc<RefCell<super::emViewPort::emViewPort>>,
+}
+
+impl PopupPlaceholder {
+    /// PHASE-6-TODO: replace with real `emWindow::create` once popup OS
+    /// windowing is wired (needs event_loop+gpu threaded into the view).
+    /// `flags` and `tag` will become meaningful then; Phase 4 drops them
+    /// to avoid dead-code warnings.
+    pub fn new_popup(_flags: super::emWindow::WindowFlags, _tag: &str) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(PopupPlaceholder {
+            background_color: crate::emColor::emColor::rgba(0x80, 0x80, 0x80, 0xFF),
+            current_view_port: Rc::new(RefCell::new(super::emViewPort::emViewPort::new_dummy())),
+        }))
+    }
+
+    pub fn SetBackgroundColor(&mut self, color: crate::emColor::emColor) {
+        self.background_color = color;
+    }
+
+    /// PHASE-6-TODO: forward to real OS window resize.
+    pub fn SetViewPosSize(&self, x: f64, y: f64, w: f64, h: f64) {
+        self.current_view_port
+            .borrow_mut()
+            .SetViewPosSize(x, y, w, h);
+    }
+}
 use crate::emClipRects::ClipRects;
 use crate::emColor::emColor;
 use crate::emCursor::emCursor;
@@ -416,7 +457,7 @@ pub struct emView {
     // === C++ popup infrastructure (emView.h:708-713) ===
     /// C++ PopupWindow — owned handle to the popup window created when
     /// zooming past the home-rect edges under VF_POPUP_ZOOM.
-    pub PopupWindow: Option<Rc<RefCell<super::emWindow::emWindow>>>,
+    pub PopupWindow: Option<Rc<RefCell<PopupPlaceholder>>>,
     /// C++ HomeViewPort — the view-port that connects the emView to its
     /// *home* window (the original non-popup window).
     pub HomeViewPort: Rc<RefCell<super::emViewPort::emViewPort>>,
@@ -1610,8 +1651,9 @@ impl emView {
                     // C++ (emView.cpp:1638): wasFocused=Focused;
                     let was_focused = self.window_focused;
                     // C++ (emView.cpp:1639-1643): PopupWindow=new emWindow(...)
-                    let popup = super::emWindow::emWindow::new_popup(
-                        self,
+                    // PHASE-6-TODO: replace with real `emWindow::create` once
+                    // popup OS windowing is wired.
+                    let popup = PopupPlaceholder::new_popup(
                         super::emWindow::WindowFlags::POPUP,
                         "emViewPopup",
                     );

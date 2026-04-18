@@ -891,11 +891,11 @@ mod tests {
         ps_model.RequestAccess(agent, &mut sched);
         {
             use crate::emPanelTree::PanelTree;
-            use crate::emWindow::ZuiWindow;
+            use crate::emWindow::emWindow;
             use std::collections::HashMap;
             use winit::window::WindowId;
             let mut tree = PanelTree::new();
-            let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+            let mut windows: HashMap<WindowId, emWindow> = HashMap::new();
             sched.DoTimeSlice(&mut tree, &mut windows);
         }
 

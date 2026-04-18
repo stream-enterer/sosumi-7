@@ -5,12 +5,12 @@ use std::rc::Rc;
 use emcore::emPanelTree::PanelTree;
 use emcore::emPriSchedAgent::PriSchedModel;
 use emcore::emScheduler::EngineScheduler;
-use emcore::emWindow::ZuiWindow;
+use emcore::emWindow::emWindow;
 use winit::window::WindowId;
 
 fn slice(sched: &mut EngineScheduler) {
     let mut tree = PanelTree::new();
-    let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+    let mut windows: HashMap<WindowId, emWindow> = HashMap::new();
     sched.DoTimeSlice(&mut tree, &mut windows);
 }
 

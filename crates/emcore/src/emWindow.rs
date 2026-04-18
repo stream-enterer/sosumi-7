@@ -34,7 +34,7 @@ bitflags! {
 
 /// An eaglemode-rs window: owns a winit window, wgpu surface, compositor, tile
 /// cache, and view.
-pub struct ZuiWindow {
+pub struct emWindow {
     pub winit_window: Arc<winit::window::Window>,
     surface: wgpu::Surface<'static>,
     surface_config: wgpu::SurfaceConfiguration,
@@ -66,7 +66,7 @@ pub struct ZuiWindow {
     render_pool: emRenderThreadPool,
 }
 
-impl ZuiWindow {
+impl emWindow {
     /// Create a new window with a wgpu surface and rendering pipeline.
     #[allow(clippy::too_many_arguments)]
     pub fn create(
@@ -83,6 +83,9 @@ impl ZuiWindow {
 
         if flags.contains(WindowFlags::UNDECORATED) {
             attrs = attrs.with_decorations(false);
+        }
+        if flags.contains(WindowFlags::POPUP) {
+            attrs = attrs.with_window_level(winit::window::WindowLevel::AlwaysOnTop);
         }
         if flags.contains(WindowFlags::MAXIMIZED) {
             attrs = attrs.with_maximized(true);
@@ -1399,81 +1402,5 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
-    }
-}
-
-// ============================================================================
-// ================================= emWindow =================================
-// ============================================================================
-
-/// Port of C++ `emWindow` (emWindow.h). Lightweight popup-window handle.
-///
-/// DIVERGED: the C++ `emWindow` is a heavyweight windowed view that owns an
-/// `emWindowPort` (a platform backend). Rust's primary windowing type is
-/// `ZuiWindow`. This `emWindow` is a minimal stub for Phase 4 popup
-/// infrastructure; it owns a `emViewPort` so that `SwapViewPorts` can
-/// exchange geometry between the home view and the popup view.
-///
-/// PHASE-5-TODO: wire up actual OS window creation; replace this stub with
-/// a type that delegates to `ZuiWindow` or `WinitWindowBackend`.
-use std::cell::RefCell;
-use std::rc::Rc;
-
-pub struct emWindow {
-    /// Flags the window was created with.
-    pub flags: WindowFlags,
-    /// Tag / debug name for the window (C++ `const char* tag` ctor arg).
-    pub tag: String,
-    /// Background color for the popup window.
-    pub background_color: crate::emColor::emColor,
-    /// The view port that corresponds to this window's "CurrentViewPort"
-    /// in C++ (an `emWindowPort` derivative). Used by `SwapViewPorts`.
-    ///
-    /// PHASE-5-TODO: replace with a real backend port once OS windowing is
-    /// wired (DIVERGED: backend gap).
-    pub current_view_port: Rc<RefCell<super::emViewPort::emViewPort>>,
-}
-
-impl emWindow {
-    /// Port of C++ `emWindow::emWindow(emView &, emWindow *, WF_POPUP, tag)`.
-    ///
-    /// Creates a minimal popup-window stub. No OS window is created here.
-    /// PHASE-5-TODO: create the actual OS window (DIVERGED: backend gap).
-    ///
-    /// C++ invocation site (emView.cpp:1637-1642):
-    /// ```cpp
-    /// PopupWindow = new emWindow(*this, 0, emWindow::WF_POPUP, "emViewPopup");
-    /// ```
-    pub fn new_popup(
-        _owner: &super::emView::emView,
-        flags: WindowFlags,
-        tag: &str,
-    ) -> Rc<RefCell<emWindow>> {
-        let port = Rc::new(RefCell::new(super::emViewPort::emViewPort::new_dummy()));
-        Rc::new(RefCell::new(emWindow {
-            flags,
-            tag: tag.to_string(),
-            background_color: crate::emColor::emColor::rgba(0x80, 0x80, 0x80, 0xFF),
-            current_view_port: port,
-        }))
-    }
-
-    /// Port of C++ `emWindow::SetBackgroundColor`.
-    pub fn SetBackgroundColor(&mut self, color: crate::emColor::emColor) {
-        self.background_color = color;
-    }
-
-    /// Port of C++ `emWindow::SetViewPosSize`.
-    ///
-    /// Updates the popup window's view port geometry. In C++ this eventually
-    /// triggers `emWindowPort::SetViewGeometry` which calls
-    /// `emViewPort::SetViewGeometry`. Phase 4 shortcuts directly to the
-    /// stored port geometry.
-    ///
-    /// PHASE-5-TODO: forward to OS window resize (DIVERGED: backend gap).
-    pub fn SetViewPosSize(&self, x: f64, y: f64, w: f64, h: f64) {
-        self.current_view_port
-            .borrow_mut()
-            .SetViewPosSize(x, y, w, h);
     }
 }

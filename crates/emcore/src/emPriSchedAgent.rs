@@ -178,14 +178,14 @@ impl PriSchedModel {
 #[cfg(test)]
 mod tests {
     use super::super::emPanelTree::PanelTree;
-    use super::super::emWindow::ZuiWindow;
+    use super::super::emWindow::emWindow;
     use super::*;
     use std::collections::HashMap;
     use winit::window::WindowId;
 
     fn slice(sched: &mut EngineScheduler) {
         let mut tree = PanelTree::new();
-        let mut windows: HashMap<WindowId, ZuiWindow> = HashMap::new();
+        let mut windows: HashMap<WindowId, emWindow> = HashMap::new();
         sched.DoTimeSlice(&mut tree, &mut windows);
     }
 

@@ -4,7 +4,7 @@ use slotmap::new_key_type;
 use winit::window::WindowId;
 
 use super::emPanelTree::PanelTree;
-use super::emWindow::ZuiWindow;
+use super::emWindow::emWindow;
 
 new_key_type! {
     /// Handle to an engine in the scheduler.
@@ -59,7 +59,7 @@ pub struct EngineCtx<'a> {
     pub(crate) engine_id: EngineId,
     pub(crate) scheduler: &'a mut EngineCtxInner,
     pub tree: &'a mut PanelTree,
-    pub windows: &'a mut HashMap<WindowId, ZuiWindow>,
+    pub windows: &'a mut HashMap<WindowId, emWindow>,
 }
 
 /// The scheduler fields accessible through EngineCtx.

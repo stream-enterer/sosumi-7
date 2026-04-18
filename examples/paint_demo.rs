@@ -353,7 +353,7 @@ fn main() {
         let flags_sig = app.scheduler.borrow_mut().create_signal();
         let focus_sig = app.scheduler.borrow_mut().create_signal();
         let geometry_sig = app.scheduler.borrow_mut().create_signal();
-        let win = eaglemode_rs::emCore::emWindow::ZuiWindow::create(
+        let win = eaglemode_rs::emCore::emWindow::emWindow::create(
             event_loop,
             app.gpu(),
             root,

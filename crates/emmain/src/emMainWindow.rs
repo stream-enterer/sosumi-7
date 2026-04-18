@@ -1,7 +1,7 @@
 // Port of C++ emMainWindow.
 //
 // DIVERGED: C++ emMainWindow creates an OS window + emMainPanel + detached
-// control window + StartupEngine.  Rust creates a single ZuiWindow with
+// control window + StartupEngine.  Rust creates a single emWindow with
 // emMainPanel as the root panel.  StartupEngine drives staged panel creation,
 // autoplay input is wired via emAutoplayViewModel, and the window is persisted
 // across frames via thread_local (set_main_window / with_main_window).
@@ -19,7 +19,7 @@ use emcore::emInputHotkey::Hotkey;
 use emcore::emInputState::emInputState;
 use emcore::emPanelTree::PanelId;
 use emcore::emSignal::SignalId;
-use emcore::emWindow::{WindowFlags, ZuiWindow};
+use emcore::emWindow::{WindowFlags, emWindow};
 use emcore::emWindowStateSaver::emWindowStateSaver;
 
 use emcore::emSubViewPanel::emSubViewPanel;
@@ -747,7 +747,7 @@ impl emEngine for ControlPanelBridge {
 }
 
 /// Create an emMainWindow: inserts the root emMainPanel into the panel tree,
-/// allocates signals, creates the ZuiWindow, and registers a StartupEngine.
+/// allocates signals, creates the emWindow, and registers a StartupEngine.
 ///
 /// Called from the setup callback inside the `App` event loop.
 pub fn create_main_window(
@@ -802,7 +802,7 @@ pub fn create_main_window(
     mw._close_signal = Some(close_signal);
 
     // Create the window
-    let window = ZuiWindow::create(
+    let window = emWindow::create(
         event_loop,
         app.gpu(),
         root_id,
@@ -967,7 +967,7 @@ pub fn create_control_window(
     let focus_signal = app.scheduler.borrow_mut().create_signal();
     let geometry_signal = app.scheduler.borrow_mut().create_signal();
 
-    let window = ZuiWindow::create(
+    let window = emWindow::create(
         event_loop,
         app.gpu(),
         root_id,

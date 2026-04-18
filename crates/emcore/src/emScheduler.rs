@@ -8,7 +8,7 @@ use super::emEngine::{emEngine, EngineCtx, EngineCtxInner, EngineData, EngineId,
 use super::emPanelTree::PanelTree;
 use super::emSignal::{SignalConnection, SignalData, SignalId};
 use super::emTimer::{TimerCentral, TimerId};
-use super::emWindow::ZuiWindow;
+use super::emWindow::emWindow;
 
 const TIME_SLICE_DURATION: Duration = Duration::from_millis(50);
 
@@ -266,11 +266,7 @@ impl EngineScheduler {
     /// 4. Run engines from highest to lowest priority
     /// 5. After each engine, process any signals it fired (instant chaining)
     /// 6. Priority re-ascent: higher-priority engines woken mid-slice run in the same slice
-    pub fn DoTimeSlice(
-        &mut self,
-        tree: &mut PanelTree,
-        windows: &mut HashMap<WindowId, ZuiWindow>,
-    ) {
+    pub fn DoTimeSlice(&mut self, tree: &mut PanelTree, windows: &mut HashMap<WindowId, emWindow>) {
         self.inner.time_slice_counter += 1;
         self.inner.deadline = Instant::now() + TIME_SLICE_DURATION;
         let next_parity = self.inner.time_slice ^ 1;

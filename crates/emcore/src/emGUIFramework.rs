@@ -15,7 +15,7 @@ use crate::emPanelTree::PanelTree;
 use crate::emScheduler::EngineScheduler;
 use crate::emSignal::SignalId;
 
-use super::emWindow::{WindowFlags, ZuiWindow};
+use super::emWindow::{emWindow, WindowFlags};
 use crate::emScreen::emScreen;
 
 /// Shared GPU resources created once and used by all windows.
@@ -88,7 +88,7 @@ pub struct App {
     pub scheduler: Rc<RefCell<EngineScheduler>>,
     pub context: Rc<emContext>,
     pub tree: PanelTree,
-    pub windows: HashMap<WindowId, ZuiWindow>,
+    pub windows: HashMap<WindowId, emWindow>,
     pub input_state: emInputState,
     /// Deferred actions queued by input handlers that need `&ActiveEventLoop`
     /// (e.g., window creation for Duplicate/CreateControlWindow).
@@ -148,7 +148,7 @@ impl App {
     /// Modifier keys are set/cleared on input_state to match C++ InputState
     /// persistence: press events set modifiers, release events clear them.
     fn dispatch_forward_events(
-        win: &mut ZuiWindow,
+        win: &mut emWindow,
         tree: &mut PanelTree,
         input_state: &mut emInputState,
     ) {
@@ -274,7 +274,7 @@ impl ApplicationHandler for App {
                 }
             }
             ref input_event => {
-                if let Some(mut input) = ZuiWindow::handle_input(input_event) {
+                if let Some(mut input) = emWindow::handle_input(input_event) {
                     // Update persistent input state
                     match input.variant {
                         InputVariant::Press => self.input_state.press(input.key),

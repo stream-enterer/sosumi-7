@@ -227,18 +227,15 @@ impl emScreen {
     /// Stub: create a window port for a new window.
     ///
     /// Matches C++ emScreen::CreateWindowPort (pure virtual, protected).
-    /// In eaglemode-rs the window port is created directly by `ZuiWindow::create`,
+    /// In eaglemode-rs the window port is created directly by `emWindow::create`,
     /// so this is a no-op placeholder for API parity.
     pub fn CreateWindowPort(&self) {
-        // No-op: window ports are created inline by ZuiWindow::create.
+        // No-op: window ports are created inline by emWindow::create.
     }
 
     pub fn LeaveFullscreenModes(
         &self,
-        windows: &mut std::collections::HashMap<
-            winit::window::WindowId,
-            super::emWindow::ZuiWindow,
-        >,
+        windows: &mut std::collections::HashMap<winit::window::WindowId, super::emWindow::emWindow>,
         except: Option<winit::window::WindowId>,
     ) {
         use crate::emWindow::WindowFlags;

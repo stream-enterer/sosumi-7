@@ -150,7 +150,7 @@ impl emWindowStateSaver {
     /// against monitor bounds, then applies position, size, and window flags.
     pub fn Restore(
         &self,
-        window: &mut crate::emWindow::ZuiWindow,
+        window: &mut crate::emWindow::emWindow,
         screen: &crate::emScreen::emScreen,
     ) {
         let rec = self.model.GetRec();
