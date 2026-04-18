@@ -440,11 +440,13 @@ impl ApplicationHandler for App {
 
         // Lazy-wire each view's pending_framework_actions handle so that
         // popup-creation paths in `emView::RawVisitAbs` can enqueue back into
-        // `App::pending_actions`. Idempotent — overwrites with the same Rc.
+        // `App::pending_actions`. Guarded by is_none() — one-shot init per view.
         for rc in self.windows.values() {
-            rc.borrow_mut()
-                .view_mut()
-                .set_pending_framework_actions(self.pending_actions.clone());
+            let mut win = rc.borrow_mut();
+            if win.view().pending_framework_actions.is_none() {
+                win.view_mut()
+                    .set_pending_framework_actions(self.pending_actions.clone());
+            }
         }
 
         // Process deferred actions (window creation from Duplicate/ccw,

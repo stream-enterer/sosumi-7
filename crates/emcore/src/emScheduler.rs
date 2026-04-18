@@ -63,6 +63,13 @@ impl EngineScheduler {
     }
 
     /// Fire a signal, marking it pending for the next signal phase.
+    ///
+    /// Defensive: a lookup miss is a silent no-op. This is relied on by
+    /// popup teardown in `emView::RawVisitAbs` — `close_signal` is removed
+    /// synchronously while the matching winit window is dropped one frame
+    /// later via the `App::pending_actions` drain. A late `CloseRequested`
+    /// arriving in that gap dispatches into `App::window_event`, which
+    /// calls `fire(close_signal)` on the already-removed key.
     pub fn fire(&mut self, id: SignalId) {
         if let Some(sig) = self.inner.signals.get_mut(id) {
             if !sig.pending {

@@ -323,7 +323,8 @@ pub struct emView {
     /// actions (popup surface materialization, popup-exit cleanup). Wired
     /// by `App::about_to_wait` each frame; `None` in unit-test contexts
     /// that construct `emView` outside of a running `App`.
-    pending_framework_actions: Option<Rc<RefCell<Vec<super::emGUIFramework::DeferredAction>>>>,
+    pub(crate) pending_framework_actions:
+        Option<Rc<RefCell<Vec<super::emGUIFramework::DeferredAction>>>>,
     /// The view title. Updated from the active panel's title.
     pub title: String,
     /// Current mouse cursor for this view.
@@ -1771,6 +1772,13 @@ impl emView {
                     .borrow()
                     .winit_window_if_materialized()
                     .map(|w| w.id());
+                // Race window: `close_signal` is removed above synchronously,
+                // but `App.windows.remove(&window_id)` is deferred to the next
+                // `about_to_wait` drain. If a winit event (e.g. CloseRequested
+                // from the WM) arrives in that gap, `App::window_event` will
+                // call `scheduler.fire(close_signal)` on the already-removed
+                // signal. This is safe: `emScheduler::fire` is defensive and
+                // treats a lookup miss as a no-op (see its docstring).
                 if let (Some(window_id), Some(fw_actions)) =
                     (materialized_id, self.pending_framework_actions.as_ref())
                 {
@@ -1778,7 +1786,6 @@ impl emView {
                         fw.windows.remove(&window_id);
                     }));
                 }
-                drop(popup);
                 // GeometrySignal fires twice on popup teardown (both intentional):
                 // once from SwapViewPorts(true) above (Rust-only: the Rust
                 // SwapViewPorts fires GeometrySignal at the end; C++ SwapViewPorts
@@ -2898,7 +2905,7 @@ impl emView {
     /// Wire the back-channel into `App::pending_actions` so that
     /// `RawVisitAbs`'s popup-entry branch can enqueue deferred popup-surface
     /// materialization. Called by `App::about_to_wait` each frame (idempotent).
-    pub fn set_pending_framework_actions(
+    pub(crate) fn set_pending_framework_actions(
         &mut self,
         actions: Rc<RefCell<Vec<super::emGUIFramework::DeferredAction>>>,
     ) {
