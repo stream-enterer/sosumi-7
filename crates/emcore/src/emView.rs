@@ -186,14 +186,10 @@ impl StressTest {
 /// forbids inner borrows while `DoTimeSlice` holds the outer borrow;
 /// deferral restores inline semantics within the same time slice
 /// without violating borrow rules.
-// SP4 Phase 1 staging: items below are constructed and dispatched in the
-// `sp4_phase1_sched_op_routing` test (see `mod tests` at end of file) but
-// have no non-test caller yet. Phase 2 migrates emView's scheduler-borrow
-// sites onto `queue_or_apply_sched_op`; Phase 3 wires the drain into
-// `UpdateEngineClass::Cycle`. The `#[cfg_attr(not(test), allow(dead_code))]`
-// suppresses the lib-compilation dead_code false positive without hiding
-// genuine dead code: removing the test restores the warning.
-#[cfg_attr(not(test), allow(dead_code))]
+// SP4 Phase 2: `SchedOp` and its dispatch methods are now driven by
+// Phase 2 call-site migrations inside `emView` (e.g. `SetGeometry`,
+// `SwapViewPorts`, popup setup/teardown). Phase 3 will wire the drain
+// into `UpdateEngineClass::Cycle`.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum SchedOp {
     Fire(super::emSignal::SignalId),
@@ -203,7 +199,6 @@ pub(crate) enum SchedOp {
     RemoveSignal(super::emSignal::SignalId),
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl SchedOp {
     /// Apply directly to an `&mut EngineScheduler`. Used on the
     /// non-engine path where `try_borrow_mut` succeeded.
@@ -218,6 +213,9 @@ impl SchedOp {
     }
 
     /// Apply via an `EngineCtx` (drain-time path, inside `Cycle`).
+    // SP4 Phase 2: wired into `UpdateEngineClass::Cycle` in Phase 3.
+    // Currently exercised only by the Phase 1 smoke test.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn apply_via_ctx(self, ctx: &mut super::emEngine::EngineCtx<'_>) {
         match self {
             SchedOp::Fire(s) => ctx.fire(s),
@@ -423,14 +421,14 @@ pub struct emView {
     /// DIVERGED: C++ emView is an emEngine (via emContext); Rust emView is
     /// not yet (tracked as SP7). UpdateEngine's clock substitutes for
     /// emView's own clock.
-    // SP4 Phase 1 staging: see comment above `SchedOp` enum for rationale.
+    // SP4 Phase 2: set by `UpdateEngineClass::Cycle` (Phase 3) and read by
+    // `Update` (Phase 3). Currently only exercised by the Phase 1 smoke test.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) close_signal_pending: bool,
     /// Queue of scheduler ops issued from inside Update's call tree when
     /// the scheduler is already borrow_mut'd. Drained by
     /// UpdateEngineClass::Cycle after Update returns. Invariant: only
     /// nonempty transiently, inside a `Cycle` invocation.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) pending_sched_ops: Vec<SchedOp>,
     /// The view title. Updated from the active panel's title.
     pub title: String,
