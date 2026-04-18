@@ -89,6 +89,12 @@ pub struct emWindow {
     geometry_changed: bool,
     wm_res_name: String,
     render_pool: emRenderThreadPool,
+    /// Test-only stored window id for headless test harnesses, where
+    /// `OsSurface::Pending` means no real winit window exists yet the
+    /// scheduler dispatch still needs a stable id to look up this
+    /// window in its `HashMap<WindowId, _>`.
+    #[cfg(any(test, feature = "test-support"))]
+    test_window_id: Option<winit::window::WindowId>,
 }
 
 /// Contract for methods on `emWindow` with respect to `OsSurface` state.
@@ -236,6 +242,8 @@ impl emWindow {
             render_pool: emRenderThreadPool::new(
                 crate::emCoreConfig::emCoreConfig::default().max_render_threads,
             ),
+            #[cfg(any(test, feature = "test-support"))]
+            test_window_id: None,
         }));
 
         // Wire the emViewPort back-reference (Phase 6 / Phase-5 absorbed work).
@@ -365,6 +373,8 @@ impl emWindow {
             render_pool: emRenderThreadPool::new(
                 crate::emCoreConfig::emCoreConfig::default().max_render_threads,
             ),
+            #[cfg(any(test, feature = "test-support"))]
+            test_window_id: None,
         }));
 
         // Wire the emViewPort back-reference, same as `create()`.
@@ -375,6 +385,106 @@ impl emWindow {
         }
 
         window
+    }
+
+    /// Construct a fully headless `emWindow` for integration tests that need
+    /// to drive the scheduler through `UpdateEngineClass::Cycle` end-to-end,
+    /// without a real winit window or wgpu surface. Registers the view's
+    /// engines (`UpdateEngineClass`, `VisitingVAEngineClass`) with the
+    /// scheduler and wakes the update engine (matching
+    /// `attach_to_scheduler` / C++ `emView` ctor parity).
+    ///
+    /// Returns `Rc<RefCell<Self>>` for the same reason as `create()` — the
+    /// emViewPort back-reference is wired immediately.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new_for_test(
+        window_id: winit::window::WindowId,
+        scheduler: &Rc<RefCell<crate::emScheduler::EngineScheduler>>,
+        root_panel: PanelId,
+        viewport_width: f64,
+        viewport_height: f64,
+    ) -> Rc<RefCell<Self>> {
+        let close_signal = scheduler.borrow_mut().create_signal();
+        let flags_signal = scheduler.borrow_mut().create_signal();
+        let focus_signal = scheduler.borrow_mut().create_signal();
+        let geometry_signal = scheduler.borrow_mut().create_signal();
+
+        let core_config = Rc::new(RefCell::new(emCoreConfig::default()));
+        let mut view = emView::new(root_panel, viewport_width, viewport_height, core_config);
+
+        let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
+            {
+                let mut mouse_vif = emMouseZoomScrollVIF::new();
+                let zflpp = view.GetZoomFactorLogarithmPerPixel();
+                mouse_vif.set_mouse_anim_params(1.0, 0.25, zflpp);
+                mouse_vif.set_wheel_anim_params(1.0, 0.25, zflpp);
+                Box::new(mouse_vif)
+            },
+            Box::new(emKeyboardZoomScrollVIF::new()),
+        ];
+
+        // Register engines and wake UpdateEngineClass — mirrors
+        // `emView::attach_to_scheduler`. Done before moving `view` into
+        // the RefCell so the test harness doesn't need a second
+        // borrow-mut dance.
+        view.attach_to_scheduler(scheduler.clone(), window_id);
+
+        let window = Rc::new(RefCell::new(Self {
+            os_surface: OsSurface::Pending(Box::new(PendingSurface {
+                flags: WindowFlags::empty(),
+                caption: String::from("emWindow::new_for_test"),
+                requested_pos_size: None,
+            })),
+            view,
+            flags: WindowFlags::empty(),
+            close_signal,
+            flags_signal,
+            focus_signal,
+            geometry_signal,
+            root_panel,
+            vif_chain,
+            cheat_vif: emCheatVIF::new(),
+            touch_vif: emDefaultTouchVIF::new(),
+            active_animator: None,
+            window_icon: None,
+            last_mouse_pos: (0.0, 0.0),
+            screensaver_inhibit_count: 0,
+            screensaver_cookie: None,
+            flags_changed: false,
+            focus_changed: false,
+            geometry_changed: false,
+            wm_res_name: String::from("eaglemode-rs"),
+            render_pool: emRenderThreadPool::new(
+                crate::emCoreConfig::emCoreConfig::default().max_render_threads,
+            ),
+            test_window_id: Some(window_id),
+        }));
+
+        // Wire emViewPort back-reference, same as `create()`.
+        {
+            let win_ref = window.borrow();
+            let vp = win_ref.view.CurrentViewPort.clone();
+            vp.borrow_mut().window = Some(Rc::downgrade(&window));
+        }
+
+        window
+    }
+
+    /// Test-only: return the `WindowId` this window registers under in the
+    /// scheduler's `windows: HashMap<WindowId, _>` dispatch table. In
+    /// production, the id comes from `winit_window().id()`; headless test
+    /// construction stores a caller-provided id on the `Pending` surface.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn id(&self) -> winit::window::WindowId {
+        if let Some(id) = self.test_window_id {
+            return id;
+        }
+        match &self.os_surface {
+            OsSurface::Materialized(m) => m.winit_window.id(),
+            OsSurface::Pending(_) => {
+                panic!("emWindow::id() called on Pending window without test_window_id")
+            }
+        }
     }
 
     // DIVERGED: Plan listed `materialized()`/`materialized_mut()` returning 6-tuple borrows; inlined as match in callers because the multi-borrow signature is awkward in Rust.
@@ -1734,6 +1844,33 @@ mod tests {
     use super::*;
     use crate::emPanelTree::PanelTree;
     use crate::emScheduler::EngineScheduler;
+
+    #[test]
+    fn new_for_test_constructs_without_event_loop() {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        let win_id = winit::window::WindowId::dummy();
+        let sched = std::rc::Rc::new(std::cell::RefCell::new(EngineScheduler::new()));
+        let win = emWindow::new_for_test(win_id, &sched, root, 640.0, 480.0);
+        assert_eq!(win.borrow().id(), win_id);
+        assert!(win.borrow().view().update_engine_id.is_some());
+
+        // Scheduler cleanup for Drop debug_asserts.
+        {
+            let mut w = win.borrow_mut();
+            let v = w.view_mut();
+            if let Some(id) = v.update_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.visiting_va_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(s) = v.EOISignal.take() {
+                sched.borrow_mut().remove_signal(s);
+            }
+        }
+    }
 
     #[test]
     fn new_popup_pending_constructs_without_event_loop() {

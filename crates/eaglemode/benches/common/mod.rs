@@ -768,7 +768,7 @@ pub fn setup_tree_and_view(vw: u32, vh: u32) -> (PanelTree, emView, PanelId) {
     let mut view = emView::new(root, vw as f64, vh as f64, core_config);
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     tree.HandleNotice(true, 1.0);
-    view.update(&mut tree);
+    view.Update(&mut tree);
 
     (tree, view, root)
 }
@@ -792,7 +792,7 @@ pub fn run_one_frame(
     tree.HandleNotice(true, 1.0);
 
     // 3. emView update
-    view.update(tree);
+    view.Update(tree);
 
     // 4. Paint
     viewport_buf.fill(emColor::BLACK);

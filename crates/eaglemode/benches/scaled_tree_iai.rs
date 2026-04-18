@@ -103,7 +103,7 @@ fn paint_200(state: FrameState) {
 fn update_10(state: (PanelTree, emView)) {
     let (mut tree, mut view) = state;
     tree.HandleNotice(true, 1.0);
-    view.update(&mut tree);
+    view.Update(&mut tree);
 }
 
 #[library_benchmark]
@@ -111,7 +111,7 @@ fn update_10(state: (PanelTree, emView)) {
 fn update_50(state: (PanelTree, emView)) {
     let (mut tree, mut view) = state;
     tree.HandleNotice(true, 1.0);
-    view.update(&mut tree);
+    view.Update(&mut tree);
 }
 
 #[library_benchmark]
@@ -119,7 +119,7 @@ fn update_50(state: (PanelTree, emView)) {
 fn update_200(state: (PanelTree, emView)) {
     let (mut tree, mut view) = state;
     tree.HandleNotice(true, 1.0);
-    view.update(&mut tree);
+    view.Update(&mut tree);
 }
 
 // ---------------------------------------------------------------------------

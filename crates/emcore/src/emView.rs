@@ -176,6 +176,54 @@ impl StressTest {
     }
 }
 
+/// Deferred scheduler operation, issued from inside `emView::Update`'s
+/// reachable call tree when the scheduler is already `borrow_mut`'d by
+/// the enclosing `DoTimeSlice`. Drained by `UpdateEngineClass::Cycle`
+/// immediately after `Update` returns.
+///
+/// IDIOM: C++ calls `Scheduler.X(...)` inline during Update because its
+/// scheduler has no aliasing restrictions. Rust's `RefCell<EngineScheduler>`
+/// forbids inner borrows while `DoTimeSlice` holds the outer borrow;
+/// deferral restores inline semantics within the same time slice
+/// without violating borrow rules.
+// SP4 Phase 2: `SchedOp` and its dispatch methods are now driven by
+// Phase 2 call-site migrations inside `emView` (e.g. `SetGeometry`,
+// `SwapViewPorts`, popup setup/teardown). Phase 3 will wire the drain
+// into `UpdateEngineClass::Cycle`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SchedOp {
+    Fire(super::emSignal::SignalId),
+    WakeUp(super::emEngine::EngineId),
+    Connect(super::emSignal::SignalId, super::emEngine::EngineId),
+    Disconnect(super::emSignal::SignalId, super::emEngine::EngineId),
+    RemoveSignal(super::emSignal::SignalId),
+}
+
+impl SchedOp {
+    /// Apply directly to an `&mut EngineScheduler`. Used on the
+    /// non-engine path where `try_borrow_mut` succeeded.
+    pub(crate) fn apply_to(self, sched: &mut super::emScheduler::EngineScheduler) {
+        match self {
+            SchedOp::Fire(s) => sched.fire(s),
+            SchedOp::WakeUp(e) => sched.wake_up(e),
+            SchedOp::Connect(s, e) => sched.connect(s, e),
+            SchedOp::Disconnect(s, e) => sched.disconnect(s, e),
+            SchedOp::RemoveSignal(s) => sched.remove_signal(s),
+        }
+    }
+
+    /// Apply via an `EngineCtx` (drain-time path, inside `Cycle`).
+    pub(crate) fn apply_via_ctx(self, ctx: &mut super::emEngine::EngineCtx<'_>) {
+        match self {
+            SchedOp::Fire(s) => ctx.fire(s),
+            SchedOp::WakeUp(e) => ctx.wake_up(e),
+            SchedOp::Connect(s, e) => ctx.connect(s, e),
+            SchedOp::Disconnect(s, e) => ctx.disconnect(s, e),
+            SchedOp::RemoveSignal(s) => ctx.remove_signal(s),
+        }
+    }
+}
+
 /// Port of C++ `emView::UpdateEngineClass` (emView.h:626-633).
 ///
 /// Scheduler-driven engine: when awake, `Cycle()` drains the view's update
@@ -196,10 +244,28 @@ impl UpdateEngineClass {
 
 impl super::emEngine::emEngine for UpdateEngineClass {
     fn Cycle(&mut self, ctx: &mut super::emEngine::EngineCtx<'_>) -> bool {
-        // Mirrors C++ UpdateEngineClass::Cycle → View.Update().
-        if let Some(win_rc) = ctx.windows.get(&self.window_id) {
-            let win_rc = Rc::clone(win_rc);
-            win_rc.borrow_mut().view_mut().Update(ctx.tree);
+        // C++ UpdateEngineClass::Cycle (emView.cpp:2521-2524).
+        let Some(win_rc) = ctx.windows.get(&self.window_id) else {
+            return false;
+        };
+        let win_rc = Rc::clone(win_rc);
+        let mut win = win_rc.borrow_mut();
+        let view = win.view_mut();
+
+        // SP4 Part A: pre-compute the popup-close probe here (C++ emView.cpp:1299;
+        // in C++ this is inside Update against emView's own engine clock, but
+        // Rust emView is not an emEngine so we use UpdateEngine's clock via ctx).
+        let popup_close_sig = view.PopupWindow.as_ref().map(|p| p.borrow().close_signal);
+        if let Some(close_sig) = popup_close_sig {
+            view.close_signal_pending = ctx.IsSignaled(close_sig);
+        }
+
+        view.Update(ctx.tree);
+
+        // SP4 Part B: drain deferred scheduler ops queued by Update's call tree.
+        let ops: Vec<SchedOp> = view.pending_sched_ops.drain(..).collect();
+        for op in ops {
+            op.apply_via_ctx(ctx);
         }
         false
     }
@@ -363,6 +429,19 @@ pub struct emView {
     /// that construct `emView` outside of a running `App`.
     pub(crate) pending_framework_actions:
         Option<Rc<RefCell<Vec<super::emGUIFramework::DeferredAction>>>>,
+    /// Set by `UpdateEngineClass::Cycle` from `ctx.IsSignaled(close_signal)`
+    /// before calling `Update`; read and cleared at the top of `Update`.
+    /// See C++ `emView::Update` popup-close probe at `emView.cpp:1299`.
+    ///
+    /// DIVERGED: C++ emView is an emEngine (via emContext); Rust emView is
+    /// not yet (tracked as SP7). UpdateEngine's clock substitutes for
+    /// emView's own clock.
+    pub(crate) close_signal_pending: bool,
+    /// Queue of scheduler ops issued from inside Update's call tree when
+    /// the scheduler is already borrow_mut'd. Drained by
+    /// UpdateEngineClass::Cycle after Update returns. Invariant: only
+    /// nonempty transiently, inside a `Cycle` invocation.
+    pub(crate) pending_sched_ops: Vec<SchedOp>,
     /// The view title. Updated from the active panel's title.
     pub title: String,
     /// Current mouse cursor for this view.
@@ -517,6 +596,8 @@ impl emView {
             eoi_engine_id: None,
             visiting_va_engine_id: None,
             pending_framework_actions: None,
+            close_signal_pending: false,
+            pending_sched_ops: Vec::new(),
             title: String::new(),
             cursor: emCursor::Normal,
             max_popup_rect: None,
@@ -564,6 +645,23 @@ impl emView {
                 super::emViewAnimator::emVisitingViewAnimator::new_for_view(),
             )),
             CoreConfig: core_config,
+        }
+    }
+
+    /// Apply a scheduler op: execute immediately if the scheduler is not
+    /// currently borrowed (the common, non-engine-path case), otherwise
+    /// enqueue for drain by `UpdateEngineClass::Cycle`.
+    ///
+    /// Used by every scheduler-write call site in `emView.rs` that is
+    /// reachable from `Update`. Non-Update call sites hit the inline-apply
+    /// arm and incur zero queue overhead.
+    pub(crate) fn queue_or_apply_sched_op(&mut self, op: SchedOp) {
+        let Some(sched_rc) = self.scheduler.as_ref() else {
+            return; // Unit-test bare view: no scheduler, all ops no-op.
+        };
+        match sched_rc.try_borrow_mut() {
+            Ok(mut sched) => op.apply_to(&mut sched),
+            Err(_) => self.pending_sched_ops.push(op),
         }
     }
 
@@ -1020,9 +1118,7 @@ impl emView {
 
         // C++ Signal(GeometrySignal).
         if let Some(sig) = self.geometry_signal {
-            if let Some(sched) = &self.scheduler {
-                sched.borrow_mut().fire(sig);
-            }
+            self.queue_or_apply_sched_op(SchedOp::Fire(sig));
         }
 
         // C++ SetGeometry parity: inline-update root panel layout when
@@ -1116,6 +1212,8 @@ impl emView {
             ra *= re_fac * re_fac;
             self.RawVisit(tree, panel, rx, ry, ra, true);
         }
+        // C++ emView.cpp:800.
+        self.SetActivePanelBestPossible(tree);
     }
 
     /// Port of C++ `emView::Scroll(deltaX, deltaY)` (emView.cpp:765-782).
@@ -1148,6 +1246,8 @@ impl emView {
             ry += dy / pvh;
             self.RawVisit(tree, panel, rx, ry, ra, true);
         }
+        // C++ emView.cpp:780.
+        self.SetActivePanelBestPossible(tree);
     }
 
     /// Port of C++ `emView::RawScrollAndZoom(fixX, fixY, dX, dY, dZ, panel, ...)`
@@ -1250,6 +1350,8 @@ impl emView {
 
     pub fn ZoomOut(&mut self, tree: &mut PanelTree) {
         self.RawZoomOut(tree, false);
+        // C++ emView.cpp:901.
+        self.SetActivePanelBestPossible(tree);
     }
 
     /// DIVERGED: C++ has public `RawZoomOut()` + private overload
@@ -1473,9 +1575,7 @@ impl emView {
         self.InvalidateHighlight(tree);
         self.control_panel_invalid = true;
         if let Some(sig) = self.control_panel_signal {
-            if let Some(sched) = &self.scheduler {
-                sched.borrow_mut().fire(sig);
-            }
+            self.queue_or_apply_sched_op(SchedOp::Fire(sig));
         }
         tree.mark_notices_pending();
     }
@@ -1753,10 +1853,8 @@ impl emView {
                     );
                     self.PopupWindow = Some(popup.clone());
                     // C++ (emView.cpp:1644): UpdateEngine->AddWakeUpSignal(PopupWindow->GetCloseSignal())
-                    if let (Some(sched), Some(eng_id)) =
-                        (self.scheduler.as_ref(), self.update_engine_id)
-                    {
-                        sched.borrow_mut().connect(close_sig, eng_id);
+                    if let Some(eng_id) = self.update_engine_id {
+                        self.queue_or_apply_sched_op(SchedOp::Connect(close_sig, eng_id));
                     }
                     // C++ (emView.cpp:1644): SwapViewPorts(true)
                     self.SwapViewPorts(true);
@@ -1841,13 +1939,10 @@ impl emView {
                     .PopupWindow
                     .take()
                     .expect("PopupWindow.is_some() checked above");
-                if let (Some(sched), Some(eng_id)) =
-                    (self.scheduler.as_ref(), self.update_engine_id)
-                {
+                if let Some(eng_id) = self.update_engine_id {
                     let close_sig = popup.borrow().close_signal;
-                    let mut s = sched.borrow_mut();
-                    s.disconnect(close_sig, eng_id);
-                    s.remove_signal(close_sig);
+                    self.queue_or_apply_sched_op(SchedOp::Disconnect(close_sig, eng_id));
+                    self.queue_or_apply_sched_op(SchedOp::RemoveSignal(close_sig));
                 }
                 let materialized_id = popup
                     .borrow()
@@ -1872,8 +1967,8 @@ impl emView {
                 // SwapViewPorts fires GeometrySignal at the end; C++ SwapViewPorts
                 // does not), and once explicitly here (mirroring C++
                 // emView.cpp:1680). Keep both; do not dedup.
-                if let (Some(sig), Some(sched)) = (self.geometry_signal, &self.scheduler) {
-                    sched.borrow_mut().fire(sig);
+                if let Some(sig) = self.geometry_signal {
+                    self.queue_or_apply_sched_op(SchedOp::Fire(sig));
                 }
                 forceViewingUpdate = true;
             }
@@ -1975,11 +2070,19 @@ impl emView {
         }
 
         // SVPUpdSlice fp-instability throttle (emView.cpp:1734-1751).
+        //
+        // SP4 Phase 5: Update now runs from inside UpdateEngineClass::Cycle
+        // while `EngineScheduler` is borrowed_mut via DoTimeSlice. A plain
+        // `self.scheduler.borrow()` here would reentrantly panic. Fall
+        // through try_borrow; on failure (scheduler in use), leave
+        // SVPUpdSlice unchanged — at worst the throttle's retry counter
+        // stays stable for one extra slice, which is harmless given the
+        // fallback only triggers after 1000+ retries in a single slice.
         let slice = self
             .scheduler
             .as_ref()
-            .map(|s| s.borrow().GetTimeSliceCounter())
-            .unwrap_or(0);
+            .and_then(|s| s.try_borrow().ok().map(|b| b.GetTimeSliceCounter()))
+            .unwrap_or(self.SVPUpdSlice);
         if self.SVPUpdSlice != slice {
             self.SVPUpdSlice = slice;
             self.SVPUpdCount = 0;
@@ -2316,35 +2419,10 @@ impl emView {
     /// DIVERGED: notice-drain delegates to PanelTree::HandleNotice (ring owned
     /// by PanelTree, per commit 75c7c68). Rest of shape is identical.
     pub fn Update(&mut self, tree: &mut PanelTree) {
-        // C++ emView.cpp:1299-1301: popup close —
-        //   if (IsSignaled(PopupWindow->GetCloseSignal())) ZoomOut();
-        // Check the popup placeholder's close signal via the scheduler's
-        // clock-based predicate.
-        //
-        // BUG (tracked as "emView::Update scheduler re-entrant borrow"
-        // in docs/superpowers/notes/2026-04-18-emview-subsystem-closeout.md §8):
-        // the `sched.borrow()` call below panics re-entrantly when `Update`
-        // is reached via the engine chain (`DoTimeSlice` → `UpdateEngineClass::Cycle`
-        // → here) because the caller holds `sched.borrow_mut()` across the
-        // entire `DoTimeSlice`. The previous comment claimed this was "scoped
-        // for borrow correctness"; that is incorrect — scoping only helps
-        // when the outer borrow isn't live. Fix options: (a) add a scheduler
-        // parameter to `Update` so the caller can pass `&EngineCtx` instead
-        // of reaching back through the Rc; (b) cache the signaled state on
-        // the view during signal processing. Blocks the single-engine
-        // rewrite of `test_phase8_popup_close_signal_zooms_out`.
-        let popup_closed = {
-            if let (Some(popup), Some(sched), Some(eng_id)) = (
-                self.PopupWindow.as_ref(),
-                self.scheduler.as_ref(),
-                self.update_engine_id,
-            ) {
-                let close_sig = popup.borrow().close_signal;
-                sched.borrow().is_signaled_for_engine(close_sig, eng_id)
-            } else {
-                false
-            }
-        };
+        // C++ emView.cpp:1299 popup-close probe. The IsSignaled call happens
+        // one frame earlier in Rust, in UpdateEngineClass::Cycle — see SP4 spec
+        // docs/superpowers/specs/2026-04-18-emview-sp4-update-engine-routing-design.md §2.3.
+        let popup_closed = std::mem::take(&mut self.close_signal_pending);
         if popup_closed {
             self.ZoomOut(tree);
         }
@@ -2964,9 +3042,7 @@ impl emView {
         if in_active_path {
             self.control_panel_invalid = true;
             if let Some(sig) = self.control_panel_signal {
-                if let Some(sched) = &self.scheduler {
-                    sched.borrow_mut().fire(sig);
-                }
+                self.queue_or_apply_sched_op(SchedOp::Fire(sig));
             }
         }
     }
@@ -3067,13 +3143,15 @@ impl emView {
         self.update_engine_id = Some(engine_id);
         self.EOISignal = Some(eoi_signal);
         self.visiting_va_engine_id = Some(visiting_va_engine_id);
+        // C++ emView::emView at emView.cpp:84: UpdateEngine->WakeUp().
+        self.WakeUpUpdateEngine();
     }
 
     /// Wake the scheduler-registered `UpdateEngineClass` so `Update()` runs
     /// in the current time slice. Mirrors C++ `UpdateEngine->WakeUp()`.
-    pub fn WakeUpUpdateEngine(&self) {
-        if let (Some(id), Some(sched)) = (self.update_engine_id, &self.scheduler) {
-            sched.borrow_mut().wake_up(id);
+    pub fn WakeUpUpdateEngine(&mut self) {
+        if let Some(id) = self.update_engine_id {
+            self.queue_or_apply_sched_op(SchedOp::WakeUp(id));
         }
     }
 
@@ -3258,8 +3336,8 @@ impl emView {
 
         // C++ emView.cpp:1995: Signal(GeometrySignal) — viewport swap changes
         // the current geometry, so wake listeners (e.g. emWindowStateSaver).
-        if let (Some(sig), Some(sched)) = (self.geometry_signal, &self.scheduler) {
-            sched.borrow_mut().fire(sig);
+        if let Some(sig) = self.geometry_signal {
+            self.queue_or_apply_sched_op(SchedOp::Fire(sig));
         }
     }
 
@@ -3835,28 +3913,6 @@ impl emView {
     // layer can provide the mapping.
 
     // --- Update loop ---
-
-    /// Per-frame update: drain the C++ Update loop, then reselect active panel.
-    ///
-    /// DIVERGED: the old Rust wrapper gated `Update` on `viewing_dirty`; Phase 3
-    /// removes that gate. `Update` now drains unconditionally (fast no-op when all
-    /// flags are clear). `mark_viewing_dirty` callers now set `SVPChoiceInvalid`
-    /// instead, which the drain loop picks up automatically.
-    pub fn update(&mut self, tree: &mut PanelTree) {
-        self.Update(tree);
-
-        // VIEW-003: After scroll/zoom or viewport change, reselect active panel
-        // (C++ calls SetActivePanelBestPossible after Scroll/Zoom)
-        let need_reselect = match self.active {
-            None => true,
-            Some(id) => {
-                !tree.contains(id) || !tree.GetRec(id).map(|p| p.focusable).unwrap_or(false)
-            }
-        };
-        if need_reselect || self.viewport_changed {
-            self.SetActivePanelBestPossible(tree);
-        }
-    }
 
     /// Mark the SVP choice as invalid, triggering Update to recompute viewed coords.
     ///
@@ -4684,6 +4740,83 @@ mod tests {
         (tree, root, child1, child2)
     }
 
+    /// SP4 Phase 1 smoke test: queue_or_apply_sched_op takes the
+    /// inline-apply arm when the scheduler isn't borrowed, and falls
+    /// back to pending_sched_ops when it is. Also exercises all SchedOp
+    /// variants (Fire / WakeUp / Connect / Disconnect / RemoveSignal)
+    /// and both apply_to / apply_via_ctx dispatch arms via Debug format.
+    #[test]
+    fn sp4_phase1_sched_op_routing() {
+        let (_tree, root, _c1, _c2) = setup_tree();
+        let mut view = emView::new_for_test(root, 800.0, 600.0);
+
+        // 1. No scheduler wired: op is silently dropped.
+        view.queue_or_apply_sched_op(SchedOp::Fire(
+            // Fabricate an invalid signal ID; fire() lookup-miss is a silent no-op.
+            slotmap::KeyData::from_ffi(0x0000_0001_0000_0001).into(),
+        ));
+        assert!(view.pending_sched_ops.is_empty());
+
+        // 2. Scheduler wired and not borrowed: inline-apply succeeds.
+        let scheduler = Rc::new(RefCell::new(EngineScheduler::new()));
+        let sig = scheduler.borrow_mut().create_signal();
+        view.set_scheduler(Rc::clone(&scheduler));
+        view.queue_or_apply_sched_op(SchedOp::Fire(sig));
+        assert!(view.pending_sched_ops.is_empty());
+        assert!(scheduler.borrow().is_pending(sig));
+
+        // 3. Scheduler currently borrow_mut'd: op is queued.
+        {
+            let _guard = scheduler.borrow_mut();
+            view.queue_or_apply_sched_op(SchedOp::Fire(sig));
+        }
+        assert_eq!(view.pending_sched_ops.len(), 1);
+
+        // Touch every variant + the close_signal_pending field so
+        // dead_code analysis sees full coverage ahead of Phase 2/3 wiring.
+        let eng_id: super::super::emEngine::EngineId =
+            slotmap::KeyData::from_ffi(0x0000_0001_0000_0002).into();
+        for op in [
+            SchedOp::Fire(sig),
+            SchedOp::WakeUp(eng_id),
+            SchedOp::Connect(sig, eng_id),
+            SchedOp::Disconnect(sig, eng_id),
+            SchedOp::RemoveSignal(sig),
+        ] {
+            // Debug formatting exercises every variant constructor.
+            let _ = format!("{op:?}");
+        }
+        view.close_signal_pending = true;
+        assert!(view.close_signal_pending);
+        view.close_signal_pending = false;
+
+        // Exercise apply_via_ctx through a one-shot engine registered
+        // specifically for this smoke test. Phase 2/3 will replace this
+        // with the real drain site in UpdateEngineClass::Cycle.
+        struct OneShot {
+            op: Option<SchedOp>,
+        }
+        impl super::super::emEngine::emEngine for OneShot {
+            fn Cycle(&mut self, ctx: &mut super::super::emEngine::EngineCtx<'_>) -> bool {
+                if let Some(op) = self.op.take() {
+                    op.apply_via_ctx(ctx);
+                }
+                false
+            }
+        }
+        let eid = scheduler.borrow_mut().register_engine(
+            super::super::emEngine::Priority::Medium,
+            Box::new(OneShot {
+                op: Some(SchedOp::Fire(sig)),
+            }),
+        );
+        scheduler.borrow_mut().wake_up(eid);
+        let mut tree2 = PanelTree::new();
+        let mut wins = std::collections::HashMap::new();
+        scheduler.borrow_mut().DoTimeSlice(&mut tree2, &mut wins);
+        scheduler.borrow_mut().remove_engine(eid);
+    }
+
     #[test]
     fn test_update_viewing_sets_coords() {
         let (mut tree, root, child1, child2) = setup_tree();
@@ -4744,17 +4877,21 @@ mod tests {
         let mut view = emView::new_for_test(root, 800.0, 600.0);
         view.Update(&mut tree);
 
-        // Zoom around center — should keep center stable
-        let (_, _, _, before_ra) = view
-            .get_visited_panel_idiom(&tree)
-            .expect("visited panel should exist before zoom");
+        // Read root's viewed_width pre/post; ra = HomeW*HomeH/(vw*vh).
+        // Zoom(factor=2) grows vw by 2 and vh by 2, so relA /= 4.
+        // NOTE: Post-SP4, Zoom calls SetActivePanelBestPossible (C++ parity),
+        // which can reassign the "visited panel" to a child. Measure ra from
+        // the root panel directly so the assertion tracks the geometry, not
+        // the active-panel selection.
+        let before_vw = tree.GetRec(root).unwrap().viewed_width;
+        let before_vh = tree.GetRec(root).unwrap().viewed_height;
+        let before_ra = (view.HomeWidth * view.HomeHeight) / (before_vw * before_vh);
         view.Zoom(&mut tree, 2.0, 400.0, 300.0);
-        let (_, _, _, after_ra) = view
-            .get_visited_panel_idiom(&tree)
-            .expect("visited panel should exist after zoom");
+        let after_vw = tree.GetRec(root).unwrap().viewed_width;
+        let after_vh = tree.GetRec(root).unwrap().viewed_height;
+        let after_ra = (view.HomeWidth * view.HomeHeight) / (after_vw * after_vh);
 
         // C++ Zoom(factor=2): reFac = 1/2, ra *= reFac^2 = 1/4.
-        // relA = HomeW*HomeH/(vw*vh); zooming in by 2 grows vw*vh by 4, so relA /= 4.
         assert!((after_ra - before_ra / 4.0).abs() < 0.01 * before_ra);
     }
 
@@ -5961,8 +6098,8 @@ mod tests {
         v.attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
         assert!(v.update_engine_id.is_some());
         assert!(v.EOISignal.is_some());
-        // WakeUpUpdateEngine queues the engine.
-        assert!(!sched.borrow().has_awake_engines());
+        // SP4: attach_to_scheduler wakes the update engine (C++ emView.cpp:84).
+        // The explicit WakeUpUpdateEngine() below verifies the re-wake API.
         v.WakeUpUpdateEngine();
         assert!(sched.borrow().has_awake_engines());
         // Clean up for Drop debug_asserts.
@@ -6095,127 +6232,201 @@ mod tests {
         assert_eq!(v.CurrentPixelTallness, 1.25);
     }
 
-    /// Phase 8 acceptance test — `emView::Update` drains the popup's
-    /// close_signal and calls `ZoomOut`, and `SwapViewPorts` (via the
-    /// popup-creation path) connects the close_signal to the update engine
-    /// as a wake-up.
+    /// SP4 Task 5.2: a signal fired from inside Update via
+    /// `queue_or_apply_sched_op` must still wake a receiver engine that is
+    /// connected to that signal and is at a lower priority than
+    /// `UpdateEngineClass` — all in the same `DoTimeSlice`. Guards against
+    /// "drain-too-late" bugs where queued Fire ops would be delivered past
+    /// the current slice.
     ///
-    /// TWO-ENGINE SHAPE IS LOAD-BEARING (W5a finding). The test (a)
-    /// verifies the real `WakeUpUpdateEngineClass` connection via
-    /// `get_signal_refs(close_sig, eng_id) >= 1`, then (b) drives the
-    /// zoom-out teardown via a dormant `NoopEngine` swap + direct
-    /// `v.Update()` call. The apparent harness hack exists because a
-    /// single-engine integrated drive loop is currently infeasible for
-    /// two reasons discovered during the W5a investigation:
-    ///
-    ///   1. `UpdateEngineClass::Cycle` dispatches through
-    ///      `ctx.windows.get(&self.window_id)`. A bare `emView`
-    ///      attached with `WindowId::dummy()` has no registered window,
-    ///      so the engine wakes, cycles once, and no-ops.
-    ///
-    ///   2. `emView::Update` (below, popup-close-signal check) does
-    ///      `sched.borrow()` to call `is_signaled_for_engine`. Callers
-    ///      — including `emGUIFramework::about_to_wait` in production —
-    ///      hold `sched.borrow_mut()` across `DoTimeSlice`, whose
-    ///      engine chain runs `UpdateEngineClass::Cycle` → `Update`.
-    ///      The `borrow()` re-entrantly panics. The `(scoped for
-    ///      borrow correctness)` comment at the call site is
-    ///      incorrect: scoping only helps when the outer borrow isn't
-    ///      live. This is a production defect tracked in the emView
-    ///      subsystem closeout doc §8 as **"emView::Update scheduler
-    ///      re-entrant borrow"**.
-    ///
-    /// When the §8 successor workstream lands (option set: (a) pass
-    /// scheduler context into `Update` via signature change, or (b)
-    /// cache signaled state on the view during the signal-processing
-    /// phase), this test should be rewritten to drive a single real
-    /// engine end-to-end: wrap the view in a real `emWindow` via
-    /// `emWindow::new_popup_pending` (winit/GPU-free — see the test at
-    /// `emWindow.rs::new_popup_pending_constructs_without_event_loop`),
-    /// register it in the `windows` HashMap at the same id given to
-    /// `attach_to_scheduler`, fire the real `close_signal` via the
-    /// consumer API, and drive `DoTimeSlice` in a bounded loop until
-    /// `PopupWindow.is_none()`.
+    /// Trigger path: create a popup via `RawVisit` under `POPUP_ZOOM`, wire
+    /// a Low-priority `Receiver` to the view's `geometry_signal`, fire the
+    /// popup's `close_signal`, then run one `DoTimeSlice`:
+    ///   - `UpdateEngineClass::Cycle` (High) pre-probes `close_signal` and
+    ///     sets `close_signal_pending`, then calls `Update`.
+    ///   - `Update` → `ZoomOut` → `RawVisitAbs` popup-teardown path
+    ///     enqueues `SchedOp::Fire(geometry_signal)` via
+    ///     `queue_or_apply_sched_op` (line 1970).
+    ///   - `UpdateEngineClass::Cycle` drains pending ops via `apply_via_ctx`,
+    ///     marking `geometry_signal` pending in the scheduler.
+    ///   - The same `DoTimeSlice` processes the pending signal, which wakes
+    ///     the Low-priority `Receiver` and cycles it before exiting.
     #[test]
-    fn test_phase8_popup_close_signal_zooms_out() {
-        let (mut tree, root, child_a, _) = setup_tree();
-        let mut v = emView::new_for_test(root, 640.0, 480.0);
-        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        v.attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
-
-        // Clear zoomed_out_before_sg, enable popup zoom, and create a popup.
-        v.Update(&mut tree);
-        v.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree);
-        v.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true);
-        assert!(
-            v.PopupWindow.is_some(),
-            "popup should be created by RawVisit under POPUP_ZOOM"
-        );
-
-        // SwapViewPorts (Step 2) should have allocated close_signal and
-        // connected it to the update engine.
-        let close_sig = v
-            .PopupWindow
-            .as_ref()
-            .map(|p| p.borrow().close_signal)
-            .expect("PopupWindow present when scheduler is attached");
-        let eng_id = v.update_engine_id.expect("update engine registered");
-        assert!(
-            sched.borrow().get_signal_refs(close_sig, eng_id) >= 1,
-            "close_signal must be connected to the update engine"
-        );
-
-        // Drive the signal phase so sig.clock advances past eng.clock, then
-        // call Update() directly. We swap `update_engine_id` for a dormant
-        // dummy engine before the slice so that (a) the real update engine
-        // (which RawVisit may have woken via WakeUpUpdateEngine) doesn't
-        // interfere with the Update drain test, and (b) the dummy's clock
-        // stays at its registration value while sig.clock advances. The
-        // wake-up connection against the real engine was verified above.
+    fn sp4_signal_fired_from_update_reaches_receiver_same_slice() {
         use crate::emEngine::{emEngine as EngineTrait, EngineCtx, Priority};
-        struct NoopEngine;
-        impl EngineTrait for NoopEngine {
+        use std::collections::HashMap;
+
+        let (mut tree, root, child_a, _) = setup_tree();
+        let win_id = winit::window::WindowId::dummy();
+        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        let win = crate::emWindow::emWindow::new_for_test(win_id, &sched, root, 640.0, 480.0);
+
+        // Receiver engine at Low priority (strictly below UpdateEngineClass
+        // at High priority). Same-slice wake must traverse all priorities
+        // below the engine that fired the signal.
+        struct Receiver {
+            cycled: Rc<RefCell<bool>>,
+        }
+        impl EngineTrait for Receiver {
             fn Cycle(&mut self, _ctx: &mut EngineCtx<'_>) -> bool {
+                *self.cycled.borrow_mut() = true;
                 false
             }
         }
-        sched.borrow_mut().disconnect(close_sig, eng_id);
-        let dummy_id = sched
-            .borrow_mut()
-            .register_engine(Priority::High, Box::new(NoopEngine));
-        v.update_engine_id = Some(dummy_id);
-        sched.borrow_mut().connect(close_sig, dummy_id);
-        // Immediately disconnect so DoTimeSlice doesn't wake the dummy
-        // either — we only need sig.clock to advance via process signals.
-        sched.borrow_mut().disconnect(close_sig, dummy_id);
-
-        sched.borrow_mut().fire(close_sig);
-        let mut windows = std::collections::HashMap::new();
-        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
-        // Now sig.clock > dummy.clock (dummy was never cycled this slice).
-        v.Update(&mut tree);
-
-        // Primary invariant: popup is torn down. This proves
-        // Update -> ZoomOut -> RawVisit -> popup teardown branch fired.
-        assert!(
-            v.PopupWindow.is_none(),
-            "popup should be torn down after ZoomOut"
+        let cycled = Rc::new(RefCell::new(false));
+        let recv_id = sched.borrow_mut().register_engine(
+            Priority::Low,
+            Box::new(Receiver {
+                cycled: Rc::clone(&cycled),
+            }),
         );
 
-        // Scheduler cleanup for Drop debug_asserts. `update_engine_id` now
-        // points at the dummy; the original engine is still registered.
-        if let Some(id) = v.update_engine_id.take() {
-            sched.borrow_mut().remove_engine(id);
+        // Prime Update once so the view is in a stable "after-first-Update"
+        // state (clears zoomed_out_before_sg, populates SVP).
+        {
+            let mut w = win.borrow_mut();
+            w.view_mut().Update(&mut tree);
         }
-        sched.borrow_mut().remove_engine(eng_id);
-        if let Some(eoi) = v.EOISignal.take() {
-            sched.borrow_mut().remove_signal(eoi);
+
+        // Put the view into POPUP_ZOOM and push a popup. RawVisit under
+        // POPUP_ZOOM creates a PopupWindow; its tear-down on ZoomOut is
+        // what fires geometry_signal from inside Update.
+        {
+            let mut w = win.borrow_mut();
+            let v = w.view_mut();
+            v.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree);
+            v.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true);
+            assert!(v.PopupWindow.is_some(), "popup created under POPUP_ZOOM");
         }
-        if let Some(id) = v.eoi_engine_id.take() {
-            sched.borrow_mut().remove_engine(id);
+
+        // Allocate a geometry_signal on the view and wire Receiver to it.
+        // The view's geometry_signal field is used by SwapViewPorts and
+        // the popup-teardown path inside RawVisitAbs.
+        let geom_sig = sched.borrow_mut().create_signal();
+        win.borrow_mut().view_mut().geometry_signal = Some(geom_sig);
+        sched.borrow_mut().connect(geom_sig, recv_id);
+
+        // Fire the popup's close_signal. DoTimeSlice below will observe it
+        // via UpdateEngineClass::Cycle's pre-probe of ctx.IsSignaled, then
+        // Update will run ZoomOut → RawVisitAbs teardown → queue a Fire of
+        // geometry_signal, drained at the end of Cycle.
+        let close_sig = win
+            .borrow()
+            .view()
+            .PopupWindow
+            .as_ref()
+            .unwrap()
+            .borrow()
+            .close_signal;
+        sched.borrow_mut().fire(close_sig);
+
+        let mut windows: HashMap<_, _> = HashMap::new();
+        windows.insert(win_id, Rc::clone(&win));
+        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+
+        assert!(
+            *cycled.borrow(),
+            "Receiver at Low priority must cycle in the same slice as the \
+             Update-issued Fire(geometry_signal)"
+        );
+
+        // Cleanup for scheduler Drop debug_asserts.
+        sched.borrow_mut().disconnect(geom_sig, recv_id);
+        sched.borrow_mut().remove_signal(geom_sig);
+        sched.borrow_mut().remove_engine(recv_id);
+        {
+            let mut w = win.borrow_mut();
+            let v = w.view_mut();
+            v.geometry_signal = None;
+            if let Some(id) = v.update_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.visiting_va_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.eoi_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(s) = v.EOISignal.take() {
+                sched.borrow_mut().remove_signal(s);
+            }
         }
-        if let Some(id) = v.visiting_va_engine_id.take() {
-            sched.borrow_mut().remove_engine(id);
+    }
+
+    /// SP4 Phase-8: popup's close_signal, when fired and processed through
+    /// the scheduler, wakes `UpdateEngineClass`, which invokes
+    /// `emView::Update`, which reads `close_signal_pending` and calls
+    /// `ZoomOut`. ZoomOut's popup teardown enqueues a Disconnect +
+    /// RemoveSignal + Fire(geometry_signal), drained at end of Cycle. The
+    /// entire sequence runs in one `DoTimeSlice`.
+    ///
+    /// Supersedes the previous two-engine harness (dormant-engine swap +
+    /// direct `v.Update()` call), which was a compromise against the
+    /// now-fixed (SP4 Phases 2–5) scheduler re-entrant borrow.
+    #[test]
+    fn test_phase8_popup_close_signal_zooms_out() {
+        use std::collections::HashMap;
+
+        let (mut tree, root, child_a, _) = setup_tree();
+        let win_id = winit::window::WindowId::dummy();
+        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        let win = crate::emWindow::emWindow::new_for_test(win_id, &sched, root, 640.0, 480.0);
+
+        // Prime Update (clear zoomed_out_before_sg), push a popup under
+        // POPUP_ZOOM. RawVisit wires close_signal to UpdateEngineClass via
+        // SwapViewPorts.
+        {
+            let mut w = win.borrow_mut();
+            let v = w.view_mut();
+            v.Update(&mut tree);
+            v.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree);
+            v.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true);
+            assert!(v.PopupWindow.is_some());
+        }
+
+        let close_sig = win
+            .borrow()
+            .view()
+            .PopupWindow
+            .as_ref()
+            .unwrap()
+            .borrow()
+            .close_signal;
+        sched.borrow_mut().fire(close_sig);
+
+        // One DoTimeSlice: signal processing advances sig.clock; Cycle
+        // observes ctx.IsSignaled(close_sig) = true, stores
+        // close_signal_pending, calls Update → ZoomOut → RawVisitAbs (popup
+        // teardown); drains queued Disconnect/RemoveSignal/Fire ops; exits.
+        let mut windows: HashMap<_, _> = HashMap::new();
+        windows.insert(win_id, Rc::clone(&win));
+        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+
+        assert!(
+            win.borrow().view().PopupWindow.is_none(),
+            "close_signal → ZoomOut must tear down PopupWindow in one time slice"
+        );
+        assert!(
+            !win.borrow().view().popped_up,
+            "popped_up must be false after ZoomOut"
+        );
+
+        // Cleanup for scheduler Drop debug_asserts.
+        {
+            let mut w = win.borrow_mut();
+            let v = w.view_mut();
+            if let Some(id) = v.update_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.visiting_va_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.eoi_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(s) = v.EOISignal.take() {
+                sched.borrow_mut().remove_signal(s);
+            }
         }
     }
 

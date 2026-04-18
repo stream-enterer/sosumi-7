@@ -119,6 +119,24 @@ impl EngineCtx<'_> {
         self.scheduler.wake_up_engine(id);
     }
 
+    /// Connect a signal to an engine so the engine wakes whenever the
+    /// signal is fired. Forwards to `EngineScheduler::connect`.
+    pub fn connect(&mut self, signal: super::emSignal::SignalId, engine: EngineId) {
+        self.scheduler.connect_inner(signal, engine);
+    }
+
+    /// Disconnect a signal→engine wake link. Forwards to
+    /// `EngineScheduler::disconnect`.
+    pub fn disconnect(&mut self, signal: super::emSignal::SignalId, engine: EngineId) {
+        self.scheduler.disconnect_inner(signal, engine);
+    }
+
+    /// Remove a signal from the scheduler. Forwards to
+    /// `EngineScheduler::remove_signal`.
+    pub fn remove_signal(&mut self, signal: super::emSignal::SignalId) {
+        self.scheduler.remove_signal_inner(signal);
+    }
+
     /// Get the current engine's ID.
     pub fn id(&self) -> EngineId {
         self.engine_id
@@ -126,6 +144,54 @@ impl EngineCtx<'_> {
 }
 
 impl EngineCtxInner {
+    /// Connect a signal to an engine (refcounted). Body of
+    /// `EngineScheduler::connect`; lives here so `EngineCtx` can forward
+    /// to it while holding `&mut EngineCtxInner`.
+    pub(crate) fn connect_inner(&mut self, signal: super::emSignal::SignalId, engine: EngineId) {
+        if let Some(sig) = self.signals.get_mut(signal) {
+            for conn in &mut sig.connected_engines {
+                if conn.engine == engine {
+                    conn.ref_count += 1;
+                    return;
+                }
+            }
+            sig.connected_engines
+                .push(super::emSignal::SignalConnection {
+                    engine,
+                    ref_count: 1,
+                });
+        }
+    }
+
+    /// Disconnect a signal↔engine pair (refcounted). Body of
+    /// `EngineScheduler::disconnect`.
+    pub(crate) fn disconnect_inner(&mut self, signal: super::emSignal::SignalId, engine: EngineId) {
+        if let Some(sig) = self.signals.get_mut(signal) {
+            let mut i = 0;
+            while i < sig.connected_engines.len() {
+                if sig.connected_engines[i].engine == engine {
+                    sig.connected_engines[i].ref_count -= 1;
+                    if sig.connected_engines[i].ref_count == 0 {
+                        sig.connected_engines.swap_remove(i);
+                    }
+                    return;
+                }
+                i += 1;
+            }
+        }
+    }
+
+    /// Remove a signal entirely (aborts pending state first). Body of
+    /// `EngineScheduler::remove_signal`.
+    pub(crate) fn remove_signal_inner(&mut self, id: super::emSignal::SignalId) {
+        if let Some(sig) = self.signals.get_mut(id) {
+            sig.pending = false;
+            sig.clock = 0;
+        }
+        self.pending_signals.retain(|&s| s != id);
+        self.signals.remove(id);
+    }
+
     /// Wake up an engine, moving it to the current time slice if needed.
     /// Matches C++ `WakeUpImp()` semantics, including priority re-ascent.
     pub(crate) fn wake_up_engine(&mut self, id: EngineId) {

@@ -590,8 +590,8 @@ impl ApplicationHandler for App {
                 win.request_redraw();
             }
 
-            // Update view (recompute viewing coords, auto-select active)
-            win.view_mut().update(tree);
+            // SP4: Update runs only via UpdateEngineClass::Cycle now
+            // (C++ single-caller model, emView.cpp:2523).
 
             // Collect invalidation from sub-view panels (C++ invalidation chain:
             // SubViewClass::InvalidateTitle, SubViewPortClass::InvalidateCursor,

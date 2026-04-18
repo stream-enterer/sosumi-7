@@ -60,7 +60,7 @@ fn bench_scaled_update(c: &mut Criterion) {
 
             b.iter(|| {
                 tree.HandleNotice(true, 1.0);
-                view.update(&mut tree);
+                view.Update(&mut tree);
             });
         });
     }
