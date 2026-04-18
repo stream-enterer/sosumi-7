@@ -256,6 +256,23 @@ Original plan expected `exit=124` from `timeout 20 cargo run --release ...`. Mos
 
 Numbered in rough priority / landing order. Items marked `[W#]` are cheap C++-mirror ports; items marked `[ARCH]` need a spec and may need a brainstorm.
 
+### 8.0 Sub-project decomposition (added 2026-04-18)
+
+Brainstorming on 2026-04-18 grouped the 14 residuals into six independently-schedulable sub-projects, each getting its own spec → plan → implementation cycle:
+
+| Sub-project | Items | State | Artifacts |
+|---|---|---|---|
+| **SP1 — W1+W2 cleanup bundle** | 1, 3, 4, 5, 6, 7, 8, 9 | Spec + plan written 2026-04-18; awaiting execution | `specs/2026-04-18-emview-w1-w2-cleanup-bundle-design.md`, `plans/2026-04-18-emview-w1-w2-cleanup-bundle.md` |
+| **SP2 — InvalidateHighlight scoping** | 2 | Not started; standalone scoping question | — |
+| **SP3 — CoreConfig ownership** | 10 | Not started; ARCH | — |
+| **SP4 — Scheduler re-entrant borrow → Phase-8 test** | 14 then 11 | Not started; 14 blocks 11 — one combined spec | — |
+| **SP5 — Per-view notice dispatch** | 12 | Blocked on multi-window roadmap decision | — |
+| **SP6 — W3 surface de-dup** | 13 | Optional; may skip entirely | — |
+
+**Suggested execution order:** SP1 → SP3 → SP4 → (SP5 if unblocked) → SP6 if wanted. SP2 slots anywhere or folds into SP1.
+
+### 8.1 Residual inventory
+
 1. **[W1] `emView::Input` animator forward** — ~~port `emView.cpp:1004`'s `ActiveAnimator->Input(event, state)`~~ **revised 2026-04-18**: observable behavior already matches C++ via the animator-owner callers; resolution is to promote the existing in-code comment at `emView.rs:3778` to a formal `DIVERGED:` block and drop the `PHASE-6-FOLLOWUP:` prefix. Closes one `PHASE-6-FOLLOWUP:` marker. (§5.1 item 3.) Covered by W1/W2 bundle Task 1 — see `docs/superpowers/plans/2026-04-18-emview-w1-w2-cleanup-bundle.md`.
 2. **[W1] `InvalidateHighlight` call-site audit** — the C++ equivalent is called from focus-state changes and similar; Rust has no production caller. (§5.1 item 3 residual, originally §4.8.)
 3. **[W1] Re-entrancy doc comments** on `PaintView`/`InvalidatePainting`; full audit deferred until real callers wire. (§5.1 item 1.)
