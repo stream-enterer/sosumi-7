@@ -44,11 +44,6 @@ bitflags! {
 ///
 /// Non-popup windows (the home window, duplicate/ccw children) enter
 /// `Materialized` directly at construction time.
-// W3 Task 2: fields populated by `new_popup_pending` but not yet read by
-// non-test code. Task 3 wires the `about_to_wait` drain which reads
-// `flags`, `caption`, and `requested_pos_size` to materialize the OS
-// surface. Narrow-scoped allow until that consumer lands.
-#[allow(dead_code)]
 pub(crate) struct PendingSurface {
     pub flags: WindowFlags,
     pub caption: String,
@@ -65,9 +60,6 @@ pub(crate) struct MaterializedSurface {
 }
 
 pub(crate) enum OsSurface {
-    // W3 Task 2: payload read only by tests until Task 3 lands the
-    // `about_to_wait` materialization drain.
-    #[allow(dead_code)]
     Pending(Box<PendingSurface>),
     Materialized(Box<MaterializedSurface>),
 }
