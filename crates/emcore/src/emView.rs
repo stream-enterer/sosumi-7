@@ -868,6 +868,32 @@ impl emView {
         self.VisitByIdentity(&identity, rel_x, rel_y, rel_a, adherent, &subject);
     }
 
+    /// Port of C++ `emView::Visit(identity, relX, relY, relA, adherent, subject)`
+    /// at emView.cpp:500-508. Three-line delegation to `VisitingVA`:
+    /// `SetAnimParamsByCoreConfig` → `SetGoalCoords` → `Activate`. The
+    /// animator engine (`VisitingVAEngineClass::Cycle`) observes `is_active()`
+    /// and drives the curve each scheduler tick.
+    ///
+    /// PHASE-W4-FOLLOWUP: C++ passes this view's `CoreConfig` to
+    /// `SetAnimParamsByCoreConfig`. Rust `emView` does not yet own a
+    /// `emCoreConfig`, so we hardcode the stock defaults
+    /// (`VisitSpeed=1.0`, `MaxVisitSpeed=10.0`) from emCoreConfig.cpp:53.
+    /// Full `CoreConfig` ownership is a future wave.
+    pub fn VisitByIdentity(
+        &mut self,
+        identity: &str,
+        rel_x: f64,
+        rel_y: f64,
+        rel_a: f64,
+        adherent: bool,
+        subject: &str,
+    ) {
+        let mut va = self.VisitingVA.borrow_mut();
+        va.SetAnimParamsByCoreConfig(1.0, 10.0);
+        va.SetGoalCoords(identity, rel_x, rel_y, rel_a, adherent, subject);
+        va.Activate();
+    }
+
     /// Port of C++ `emView::VisitFullsized(panel, adherent, utilizeView)` (emView.cpp:525-528).
     pub fn VisitFullsized(
         &mut self,
@@ -908,15 +934,15 @@ impl emView {
     pub fn VisitPanel(&mut self, tree: &PanelTree, panel: PanelId, adherent: bool) {
         let identity = tree.GetIdentity(panel);
         let subject = tree.get_title(panel);
-        self.VisitByIdentityShort(&identity, adherent, &subject);
+        self.VisitByIdentityBare(&identity, adherent, &subject);
     }
 
     /// DIVERGED: C++ overload `emView::Visit(identity, adherent, subject)` (emView.cpp:517-523)
-    /// — Rust cannot overload by arity; renamed `VisitByIdentityShort` to disambiguate from
-    /// the canonical 7-arg `VisitByIdentity` added in Task 3.1.
+    /// — Rust cannot overload by arity; renamed `VisitByIdentityBare` ("bare" = without
+    /// relX/relY/relA coords) to disambiguate from the 7-arg `VisitByIdentity`.
     ///
     /// Port of C++ `emView::Visit(identity, adherent, subject)` (emView.cpp:517-523).
-    pub fn VisitByIdentityShort(&mut self, identity: &str, adherent: bool, subject: &str) {
+    pub fn VisitByIdentityBare(&mut self, identity: &str, adherent: bool, subject: &str) {
         let mut va = self.VisitingVA.borrow_mut();
         // PHASE-W4-FOLLOWUP: CoreConfig defaults — see Task 3.1.
         va.SetAnimParamsByCoreConfig(1.0, 10.0);
@@ -2417,14 +2443,14 @@ impl emView {
 
     // --- Navigation ---
 
+    // Navigation methods (`Visit{Next,Prev,First,Last,Left,Right,Up,Down,In,Out,Neighbour}`)
+    // match C++ emView.cpp:564-762 exactly — no internal `NO_NAVIGATE`/
+    // `NO_USER_NAVIGATION` gate. User-navigation callers (input dispatch,
+    // keybindings, VIF cheats) gate on `NO_USER_NAVIGATION` before calling
+    // these methods; programmatic callers (animators, tests) do not gate.
+
     /// Port of C++ `emView::VisitNext()` (emView.cpp:564-578).
     pub fn VisitNext(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusableNext(active);
         if p.is_none() {
@@ -2445,12 +2471,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitPrev()` (emView.cpp:581-595).
     pub fn VisitPrev(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusablePrev(active);
         if p.is_none() {
@@ -2471,12 +2491,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitFirst()` (emView.cpp:598-608).
     pub fn VisitFirst(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusableParent(active);
         if let Some(parent) = p {
@@ -2488,12 +2502,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitLast()` (emView.cpp:611-621).
     pub fn VisitLast(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusableParent(active);
         if let Some(parent) = p {
@@ -2525,12 +2533,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitIn()` (emView.cpp:740-746).
     pub fn VisitIn(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         if let Some(p) = tree.GetFocusableFirstChild(active) {
             self.VisitPanel(tree, p, true);
@@ -2541,12 +2543,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitOut()` (emView.cpp:749-762).
     pub fn VisitOut(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         if let Some(p) = tree.GetFocusableParent(active) {
             self.VisitPanel(tree, p, true);
@@ -2563,12 +2559,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitNeighbour(direction)` (emView.cpp:648-737).
     pub fn VisitNeighbour(&mut self, tree: &mut PanelTree, direction: i32) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let direction = direction & 3;
         let Some(current0) = self.active else { return };
         let parent = tree
@@ -3071,32 +3061,6 @@ impl emView {
         }
     }
 
-    /// Port of C++ `emView::Visit(identity, relX, relY, relA, adherent, subject)`
-    /// at emView.cpp:500-508. Three-line delegation to `VisitingVA`:
-    /// `SetAnimParamsByCoreConfig` → `SetGoalWithCoords` → `Activate`. The
-    /// animator engine (`VisitingVAEngineClass::Cycle`) observes `is_active()`
-    /// and drives the curve each scheduler tick.
-    ///
-    /// PHASE-W4-FOLLOWUP: C++ passes this view's `CoreConfig` to
-    /// `SetAnimParamsByCoreConfig`. Rust `emView` does not yet own a
-    /// `emCoreConfig`, so we hardcode the stock defaults
-    /// (`VisitSpeed=1.0`, `MaxVisitSpeed=10.0`) from emCoreConfig.cpp:53.
-    /// Full `CoreConfig` ownership is a future wave.
-    pub fn VisitByIdentity(
-        &mut self,
-        identity: &str,
-        rel_x: f64,
-        rel_y: f64,
-        rel_a: f64,
-        adherent: bool,
-        subject: &str,
-    ) {
-        let mut va = self.VisitingVA.borrow_mut();
-        va.SetAnimParamsByCoreConfig(1.0, 10.0);
-        va.SetGoalWithCoords(identity, rel_x, rel_y, rel_a, adherent, subject);
-        va.Activate();
-    }
-
     /// Borrow the visiting view animator for inspection.
     /// Exposes `VisitingVA` to cross-crate callers (e.g. integration tests)
     /// without making the field itself `pub`. C++ field is private; this
@@ -3110,6 +3074,11 @@ impl emView {
     /// `VisitingVAEngineClass::Cycle` which requires a window registry; unit
     /// tests without a window use this to observe the post-convergence active
     /// panel after a `Visit*` call.
+    ///
+    /// Gated behind the `test-support` cargo feature so the symbol does not
+    /// leak into the non-test public API. Cross-crate test consumers must
+    /// enable `features = ["test-support"]` on their `emcore` dev-dependency.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn pump_visiting_va(&mut self, tree: &mut PanelTree) {
         use super::emViewAnimator::emViewAnimator as _;
         let va_rc = Rc::clone(&self.VisitingVA);
@@ -3775,26 +3744,26 @@ impl emView {
     /// method only runs the prologue that the downstream code (tile
     /// invalidation, cursor resolution) depends on.
     ///
-    /// PHASE-6-FOLLOWUP: migrate the VIF-chain + panel-broadcast dispatch
-    /// from `emWindow::dispatch_input` into this method; invoke
-    /// `RecurseInput` once its Rust port exists. The animator forward
-    /// (C++ emView.cpp:1004) is handled by the caller sites
-    /// (`emWindow::dispatch_input`, `emSubViewPanel::Behavior::Input`)
-    /// because the animator lives on those owners, not on `emView`.
+    /// Port of C++ `emView::Input` (emView.cpp:1004).
+    ///
+    /// DIVERGED: animator-forward location. C++ `emView::Input` begins with
+    /// `ActiveAnimator->Input(event, state)` at emView.cpp:1004, because
+    /// C++ `emView` owns the `ActiveAnimator` field. In the Rust port the
+    /// active animator instead lives on the input-dispatch *owner* —
+    /// `emWindow::active_animator` (see `emWindow::dispatch_input` at
+    /// emWindow.rs:840-862) and `emSubViewPanel::active_animator` (see
+    /// `emSubViewPanel::Behavior::Input`). Both callers forward the event
+    /// to their animator slot BEFORE invoking this method, so the
+    /// C++-equivalent invariant ("animator sees input first") is preserved.
+    /// This is a structural — not observable — divergence, retained because
+    /// giving `emView` its own animator field would duplicate the slot and
+    /// cascade ownership changes across the input dispatch chain.
     pub fn Input(
         &mut self,
         _tree: &mut PanelTree,
         _event: &crate::emInput::emInputEvent,
         state: &crate::emInputState::emInputState,
     ) {
-        // C++ emView.cpp:1004: forward input to ActiveAnimator first.
-        // Rust-arch note: the active animator lives on emWindow
-        // (see emWindow::dispatch_input) and on emSubViewPanel
-        // (see emSubViewPanel::Behavior::Input), not on emView — by the
-        // Phase 5/6 design decision. Those callers forward the event to
-        // their animator slot BEFORE invoking this method, so by the time
-        // Input runs here the event may already have been eaten.
-
         // emView.cpp:1006-1014: cursor-invalid on mouse move.
         let mx = state.GetMouseX();
         let my = state.GetMouseY();
@@ -5655,7 +5624,7 @@ mod tests {
     #[test]
     fn visit_panel_short_form_routes_through_animator() {
         // Short-form VisitPanel(tree, panel, adherent) delegates to VisitingVA
-        // via VisitByIdentityShort, matching C++ emView.cpp:511-523.
+        // via VisitByIdentityBare, matching C++ emView.cpp:511-523.
         let mut tree = PanelTree::new();
         let root = tree.create_root("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);

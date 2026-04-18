@@ -789,8 +789,8 @@ impl emVisitingViewAnimator {
     /// Port of C++ `emVisitingViewAnimator::SetGoal(identity, relX, relY, relA, adherent, subject)`
     /// at `emViewAnimator.cpp:1001-1007`.
     /// DIVERGED: C++ name is `SetGoal` (6-arg overload). Rust cannot overload by arity;
-    /// 3-arg variant keeps bare `SetGoal`, coords-carrying variant suffixed with `WithCoords`.
-    pub fn SetGoalWithCoords(
+    /// 3-arg variant keeps bare `SetGoal`, coords-carrying variant suffixed with `Coords`.
+    pub fn SetGoalCoords(
         &mut self,
         identity: &str,
         rel_x: f64,

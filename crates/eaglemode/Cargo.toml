@@ -13,6 +13,7 @@ emmain = { path = "../emmain" }
 winit = { workspace = true }
 
 [dev-dependencies]
+emcore = { workspace = true, features = ["test-support"] }
 emfileman = { path = "../emfileman" }
 emstocks = { path = "../emstocks" }
 rand = { workspace = true }

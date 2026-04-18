@@ -632,7 +632,7 @@ impl emEngine for StartupEngine {
                             if self.visit_valid {
                                 use emcore::emViewAnimator::emVisitingViewAnimator;
                                 let mut animator = emVisitingViewAnimator::new(0.0, 0.0, 0.0, 1.0);
-                                animator.SetGoalWithCoords(
+                                animator.SetGoalCoords(
                                     &self.visit_identity,
                                     self.visit_rel_x,
                                     self.visit_rel_y,
@@ -706,7 +706,7 @@ impl emEngine for StartupEngine {
                     // VisitingViewAnimator with the goal).
                     use emcore::emViewAnimator::emVisitingViewAnimator;
                     let mut animator = emVisitingViewAnimator::new(0.0, 0.0, 0.0, 1.0);
-                    animator.SetGoalWithCoords(
+                    animator.SetGoalCoords(
                         &self.visit_identity,
                         self.visit_rel_x,
                         self.visit_rel_y,
