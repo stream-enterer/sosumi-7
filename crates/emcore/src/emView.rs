@@ -17,8 +17,6 @@ use super::emPanelTree::{PanelId, PanelTree};
 /// existing popup branch (and its acceptance test
 /// `test_phase4_popup_zoom_creates_popup_window`) continues to compile
 /// and run.
-///
-/// DIVERGED: rust-only helper. C++ `PopupWindow` is a full `emWindow *`.
 pub struct PopupPlaceholder {
     pub background_color: crate::emColor::emColor,
     pub current_view_port: Rc<RefCell<super::emViewPort::emViewPort>>,
