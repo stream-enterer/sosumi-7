@@ -650,6 +650,17 @@ impl emWindow {
             self.last_mouse_pos = (event.mouse_x, event.mouse_y);
         }
 
+        // C++ emView.cpp:1004: forward input to ActiveAnimator first.
+        // Rust-arch note: the animator lives on emWindow (not emView) by the
+        // Phase 5/6 decision, so this forward happens in the caller. A
+        // `visiting` animator may eat the event here, in which case the VIF
+        // chain and panel broadcast below see an empty event.
+        let mut event = event.clone();
+        if let Some(mut anim) = self.active_animator.take() {
+            emViewAnimator::Input(anim.as_mut(), &mut event, state);
+            self.active_animator = Some(anim);
+        }
+
         // Phase 5 (emview-rewrite-followups): route through emViewPort.
         // This stamps the input clock and invokes emView::Input for the
         // C++ prologue bookkeeping (LastMouseX/Y, CursorInvalid). The
@@ -659,12 +670,12 @@ impl emWindow {
             let vp = self.view.CurrentViewPort.clone();
             let mut vp = vp.borrow_mut();
             vp.input_clock_ms = crate::emScheduler::emGetClockMS();
-            vp.InputToView(&mut self.view, tree, event, state);
+            vp.InputToView(&mut self.view, tree, &event, state);
         }
 
         // Run VIF chain
         for vif in &mut self.vif_chain {
-            if vif.filter(event, state, &mut self.view, tree) {
+            if vif.filter(&event, state, &mut self.view, tree) {
                 return;
             }
         }
@@ -685,7 +696,7 @@ impl emWindow {
         }
 
         // Run cheat VIF (never consumes events, but may produce actions)
-        self.cheat_vif.filter(event, state, &mut self.view, tree);
+        self.cheat_vif.filter(&event, state, &mut self.view, tree);
         for action in self.cheat_vif.drain_actions() {
             match action {
                 CheatAction::PanFunction
