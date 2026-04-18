@@ -135,7 +135,7 @@ fn input_without_update_returns_none() {
     tree.Layout(child, 0.0, 0.0, 1.0, 1.0, 1.0);
 
     // Create view but do NOT call update_viewing
-    let view = emcore::emView::emView::new(root, 800.0, 600.0);
+    let view = emcore::emView::emView::new_for_test(root, 800.0, 600.0);
 
     // Hit-test should return None since SVP is not computed
     // (SVP is set during update_viewing)

@@ -698,7 +698,10 @@ fn setup_tree_and_view(vw: u32, vh: u32) -> (PanelTree, emView, eaglemode_rs::em
     tree.Layout(root, 0.0, 0.0, 1.0, tallness);
     tree.set_focusable(root, true);
 
-    let mut view = emView::new(root, vw as f64, vh as f64);
+    let core_config = std::rc::Rc::new(std::cell::RefCell::new(
+        eaglemode_rs::emCore::emCoreConfig::emCoreConfig::default(),
+    ));
+    let mut view = emView::new(root, vw as f64, vh as f64, core_config);
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     tree.HandleNotice(true, 1.0);
     view.update(&mut tree);

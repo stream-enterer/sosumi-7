@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use bitflags::bitflags;
 
+use crate::emCoreConfig::emCoreConfig;
 use crate::emImage::emImage;
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
@@ -190,7 +191,8 @@ impl emWindow {
         let compositor = WgpuCompositor::new(&gpu.device, format, w, h);
         let tile_cache = TileCache::new(w, h, 256);
         let viewport_buffer = crate::emImage::emImage::new(w, h, 4);
-        let view = emView::new(root_panel, w as f64, h as f64);
+        let core_config = Rc::new(RefCell::new(emCoreConfig::default()));
+        let view = emView::new(root_panel, w as f64, h as f64, core_config);
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
             {
@@ -320,7 +322,8 @@ impl emWindow {
     ) -> Rc<RefCell<Self>> {
         // Placeholder geometry — real position/size lands via
         // `SetViewPosSize` before materialization.
-        let mut view = emView::new(root_panel, 1.0, 1.0);
+        let core_config = Rc::new(RefCell::new(emCoreConfig::default()));
+        let mut view = emView::new(root_panel, 1.0, 1.0, core_config);
         view.SetBackgroundColor(background_color);
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![

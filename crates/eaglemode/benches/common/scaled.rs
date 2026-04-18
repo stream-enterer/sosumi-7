@@ -77,7 +77,10 @@ pub fn build_scaled_tree(panel_count: usize) -> (PanelTree, emView, PanelId) {
         }
     }
 
-    let mut view = emView::new(root, DEFAULT_VW as f64, DEFAULT_VH as f64);
+    let core_config = std::rc::Rc::new(std::cell::RefCell::new(
+        emcore::emCoreConfig::emCoreConfig::default(),
+    ));
+    let mut view = emView::new(root, DEFAULT_VW as f64, DEFAULT_VH as f64, core_config);
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     tree.HandleNotice(true, 1.0);
     view.update(&mut tree);

@@ -738,14 +738,25 @@ impl emVisitingViewAnimator {
         }
     }
 
-    /// Configure animation parameters from a speed config value.
+    /// Configure animation parameters from the view's `emCoreConfig`.
     ///
-    /// Mirrors C++ `emVisitingViewAnimator::SetAnimParamsByCoreConfig`.
-    pub fn SetAnimParamsByCoreConfig(&mut self, speed_factor: f64, max_speed_factor: f64) {
-        self.animated = speed_factor < max_speed_factor * 0.99999;
-        self.acceleration = 35.0 * speed_factor;
-        self.max_absolute_speed = 35.0 * speed_factor;
+    /// Mirrors C++ `emVisitingViewAnimator::SetAnimParamsByCoreConfig`
+    /// (emViewAnimator.cpp:979-990): reads `VisitSpeed` and its max value
+    /// from `core_config`, sets `animated` based on the strict-less-than
+    /// predicate `f < fMax*0.99999`, and derives acceleration / speed
+    /// bounds as linear multiples of `f`.
+    pub fn SetAnimParamsByCoreConfig(&mut self, core_config: &crate::emCoreConfig::emCoreConfig) {
+        let f = core_config.visit_speed;
+        let f_max = core_config.VisitSpeed_GetMaxValue();
+        self.animated = f < f_max * 0.99999;
+        self.acceleration = 35.0 * f;
+        self.max_absolute_speed = 35.0 * f;
         self.max_cusp_speed = self.max_absolute_speed * 0.5;
+    }
+
+    /// Port of C++ `emVisitingViewAnimator::IsAnimated` (emViewAnimator.h:431-434).
+    pub fn IsAnimated(&self) -> bool {
+        self.animated
     }
 
     pub fn SetAnimated(&mut self, animated: bool) {
@@ -2783,7 +2794,7 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
-        let view = emView::new(root, 800.0, 600.0);
+        let view = emView::new_for_test(root, 800.0, 600.0);
         (tree, view)
     }
 
@@ -2920,18 +2931,27 @@ mod tests {
     }
 
     #[test]
-    fn visiting_set_anim_params() {
+    fn visiting_set_anim_params_from_core_config() {
+        use crate::emCoreConfig::emCoreConfig;
         let mut anim = emVisitingViewAnimator::new(0.0, 0.0, 1.0, 5.0);
 
-        // Below max: animated
-        anim.SetAnimParamsByCoreConfig(2.0, 10.0);
+        // Below max: animated. visit_speed=2.0, max=10.0.
+        let cfg = emCoreConfig {
+            visit_speed: 2.0,
+            ..Default::default()
+        };
+        anim.SetAnimParamsByCoreConfig(&cfg);
         assert!(anim.animated);
         assert!((anim.acceleration - 70.0).abs() < 0.01);
         assert!((anim.max_absolute_speed - 70.0).abs() < 0.01);
         assert!((anim.max_cusp_speed - 35.0).abs() < 0.01);
 
-        // At max: not animated (instant)
-        anim.SetAnimParamsByCoreConfig(10.0, 10.0);
+        // At max: not animated (instant). visit_speed == max == 10.0.
+        let cfg_max = emCoreConfig {
+            visit_speed: 10.0,
+            ..Default::default()
+        };
+        anim.SetAnimParamsByCoreConfig(&cfg_max);
         assert!(!anim.animated);
     }
 
@@ -3123,7 +3143,7 @@ mod tests {
         tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
         tree.set_focusable(root, true);
 
-        let mut view = emView::new(root, 800.0, 600.0);
+        let mut view = emView::new_for_test(root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
         // Zoom in so root panel is offset, giving nonzero distance
@@ -3297,7 +3317,7 @@ mod tests {
         tree.Layout(right, 0.7, 0.0, 0.3, 1.0, 1.0);
         tree.set_focusable(right, true);
 
-        let mut view = emView::new(root, 800.0, 600.0);
+        let mut view = emView::new_for_test(root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
 
@@ -3322,7 +3342,7 @@ mod tests {
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
         tree.set_focusable(root, true);
 
-        let mut view = emView::new(root, 800.0, 600.0);
+        let mut view = emView::new_for_test(root, 800.0, 600.0);
         view.Update(&mut tree);
 
         let (_dx, _dy, dz, abs_dist) = emMagneticViewAnimator::calculate_distance(&view, &tree);
@@ -3396,7 +3416,7 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
-        let mut view = emView::new(root, 800.0, 600.0);
+        let mut view = emView::new_for_test(root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
         view.Zoom(&mut tree, factor, 400.0, 300.0);
@@ -3496,7 +3516,7 @@ mod tests {
         tree.get_mut(child).unwrap().focusable = true;
         tree.Layout(child, 0.1, 0.1, 0.4, 0.5, 1.0);
 
-        let mut view = emView::new(root, 800.0, 600.0);
+        let mut view = emView::new_for_test(root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
         // Start zoomed in 4x, off-center

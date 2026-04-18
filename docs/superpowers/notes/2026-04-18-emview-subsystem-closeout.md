@@ -22,8 +22,8 @@ This document is the source of truth for residual work. It catalogues the state 
 | Golden | 237 passed / 6 failed (baseline parity — same 6 pre-existing failures across all waves) |
 | Smoke (`timeout 20 cargo run --release --bin eaglemode`) | exits 143 / 124 — program stays alive |
 | Scaffolds still in tree | **0** (both `PopupPlaceholder` and the visit-stack scaffolding are gone) |
-| Phase-follow-up markers | ~~1 `PHASE-6-FOLLOWUP`~~ **0** (closed by SP1) + 3 `PHASE-W4-FOLLOWUP` (CoreConfig defaults) + 2 `UPSTREAM-GAP` (intentional) |
-| Known Rust-port incompletenesses remaining | `CoreConfig` ownership on `emView` (SP3), `emView::Update` scheduler re-entrant borrow + Phase-8 test promotion (SP4), per-view notice dispatch (SP5, blocked on multi-window roadmap), W3 surface de-dup (SP6, optional). SP1 — animator-forward DIVERGED, re-entrancy docs, W4 polish items — closed 2026-04-18. SP2 — `InvalidateHighlight` call-site audit — closed 2026-04-18 (landed in SP1 as W1b; doc was stale). |
+| Phase-follow-up markers | ~~1 `PHASE-6-FOLLOWUP`~~ **0** (closed by SP1) + ~~3 `PHASE-W4-FOLLOWUP`~~ **0** (closed by SP3) + 2 `UPSTREAM-GAP` (intentional) |
+| Known Rust-port incompletenesses remaining | `emView::Update` scheduler re-entrant borrow + Phase-8 test promotion (SP4), per-view notice dispatch (SP5, blocked on multi-window roadmap), W3 surface de-dup (SP6, optional), `emContext` threading (SP7, ARCH). SP1 (animator-forward DIVERGED, re-entrancy docs, W4 polish), SP2 (`InvalidateHighlight` audit — landed in SP1 as W1b), and SP3 (CoreConfig ownership) closed 2026-04-18. |
 
 The subsystem is structurally aligned with C++ emCore on every path the original plan targeted. Remaining debt is enumerated in §8.
 
@@ -159,9 +159,9 @@ Four new, all forced by Rust's inability to overload by arity:
 
 Per CLAUDE.md, `DIVERGED:` is the prescribed marker for name mismatches; the W4 plan's "no new DIVERGED" clause was retroactively amended — CLAUDE.md takes precedence.
 
-### 4.6 `PHASE-W4-FOLLOWUP:` markers — 3, all CoreConfig defaults
+### 4.6 `PHASE-W4-FOLLOWUP:` markers — ~~3, all CoreConfig defaults~~ **0, closed by SP3**
 
-All three mark hardcoded `SetAnimParamsByCoreConfig(1.0, 10.0)` calls where C++ would pass `emView`'s `CoreConfig` by reference. Rust `emView` does not yet own a `CoreConfig` field. Locations (as of 2026-04-18 post-SP1 co-location move): `crates/emcore/src/emView.rs:877, 923, 947`.
+~~All three mark hardcoded `SetAnimParamsByCoreConfig(1.0, 10.0)` calls where C++ would pass `emView`'s `CoreConfig` by reference.~~ **Closed by SP3 on 2026-04-18** (`c6bb071`): `emView` now owns `CoreConfig: Rc<RefCell<emCoreConfig>>`; `SetAnimParamsByCoreConfig` realigned to `(&emCoreConfig)`; all three call sites pass `self.CoreConfig`.
 
 ---
 
@@ -205,7 +205,7 @@ All items in this section closed by SP1 on 2026-04-18.
 |---|---|---|
 | `PHASE-5-TODO:` | 0 | Closed by Phases 6/8 |
 | `PHASE-6-FOLLOWUP:` | ~~1~~ **0** | Closed by SP1 (2026-04-18) — promoted to `DIVERGED:` block at `emView.rs:~3778` |
-| `PHASE-W4-FOLLOWUP:` | 3 | CoreConfig defaults at `emView.rs:877, 923, 947` (post-SP1 co-location move) |
+| `PHASE-W4-FOLLOWUP:` | ~~3~~ **0** | Closed by SP3 on 2026-04-18 (`c6bb071`) — `emView` now owns `CoreConfig` |
 | `UPSTREAM-GAP:` | 2 | Intentional — `IsSoftKeyboardShown` / `ShowSoftKeyboard` in `emViewPort.rs`; no upstream backend overrides them |
 | `backend-gap:` | 0 | Phase 8 cleared the last one |
 | `KNOWN GAP` | 0 | W4 closed the `factor=1.0` marker |
@@ -264,7 +264,7 @@ Brainstorming on 2026-04-18 grouped the 14 residuals into six independently-sche
 |---|---|---|---|
 | **SP1 — W1+W2 cleanup bundle** | ~~1, 3, 4, 5, 6, 7, 8, 9~~ | **Complete 2026-04-18** (merged as `50d50cf`). | `specs/2026-04-18-emview-w1-w2-cleanup-bundle-design.md`, `plans/2026-04-18-emview-w1-w2-cleanup-bundle.md` |
 | **SP2 — InvalidateHighlight scoping** | ~~2~~ | **Complete 2026-04-18** — audit found all 5 C++ call sites already mirrored in Rust as part of SP1's W1b task; no additional work needed. | `plans/2026-04-18-emview-followups-wave1.md` Task 3 |
-| **SP3 — CoreConfig ownership** | 10 | Not started; ARCH | — |
+| **SP3 — CoreConfig ownership** | ~~10~~ | **Complete 2026-04-18** (merged as `c6bb071`). | `specs/2026-04-18-emview-sp3-coreconfig-ownership-design.md`, `plans/2026-04-18-emview-sp3-coreconfig-ownership.md` |
 | **SP4 — Scheduler re-entrant borrow → Phase-8 test** | 14 then 11 | Not started; 14 blocks 11 — one combined spec | — |
 | **SP5 — Per-view notice dispatch** | 12 | Blocked on multi-window roadmap decision | — |
 | **SP6 — W3 surface de-dup** | 13 | Optional; may skip entirely | — |
@@ -283,7 +283,7 @@ Brainstorming on 2026-04-18 grouped the 14 residuals into six independently-sche
 7. ~~**[W2] `pump_visiting_va` visibility fix**~~ **CLOSED 2026-04-18** (`509535d`). Resolution: option (a) — `#[cfg(any(test, feature = "test-support"))]` gate + `test-support` cargo feature on `emcore`; `eaglemode` enables it on its dev-dep. (§5.1 item 7.)
 8. ~~**[W2] Navigation method `NO_NAVIGATE` gate**~~ **CLOSED 2026-04-18** (`4d47097`). Resolution: removed the internal gate from all seven `Visit{Next,Prev,First,Last,In,Out,Neighbour}` methods; user-nav callers gate on `NO_USER_NAVIGATION`. Matches C++ `emView.cpp:564-762` exactly. (§5.1 item 8.)
 9. ~~**[W2] `DIVERGED:` suffix rename**~~ **CLOSED 2026-04-18** (`eea7269`). `VisitByIdentityShort` → `VisitByIdentityBare`; `SetGoalWithCoords` → `SetGoalCoords`. (§5.2 item 5.)
-10. **[ARCH] `CoreConfig` ownership on `emView`** — give `emView` a real `CoreConfig` field (C++ `emView.h` holds `emRef<emCoreConfig>`); replace the three hardcoded `SetAnimParamsByCoreConfig(1.0, 10.0)` calls with real config values. Closes all 3 `PHASE-W4-FOLLOWUP:` markers. (§4.6.)
+10. ~~**[ARCH] `CoreConfig` ownership on `emView`**~~ **CLOSED 2026-04-18** (`c6bb071`). `emView` gained `CoreConfig: Rc<RefCell<emCoreConfig>>`; `SetAnimParamsByCoreConfig` realigned to C++ `(&emCoreConfig)` signature, reading `visit_speed` + `VisitSpeed_GetMaxValue()`; all 3 `PHASE-W4-FOLLOWUP:` markers deleted; `emView::new_for_test` (test-support feature) absorbs test-side call sites; `emSubViewPanel::new` default-constructs a local config with `DIVERGED:` note pending SP7 (emContext threading). Also ports C++ `emVisitingViewAnimator::IsAnimated` accessor.
 11. **[W5a / DEFERRED] Phase-8 test promotion** — original intent: drive `close_signal` end-to-end through a single real engine. W5a investigation found this requires two production fixes, not a test-only change: (i) `UpdateEngineClass::Cycle` goes through `ctx.windows.get(&window_id)`, so bare-view tests can't receive the engine call; (ii) `emView::Update:~2288` does `sched.borrow()` while callers hold `sched.borrow_mut()` across `DoTimeSlice`, which panics re-entrantly. The single-engine rewrite is blocked on item 14 below. W5a landed a load-bearing doc comment at the test and a BUG block at the `Update` call site pointing at the successor workstream.
 12. **[W5b / DEFERRED] Per-view notice dispatch (emView.cpp:1312 parity)** — successor to the multi-window-pixel-tallness item. W5b landed the classification pass (`DIVERGED:` note expanded in `emPanelTree.rs`; `TODO(per-view-notice-dispatch)` added at the `pixel_tallness` site in `emGUIFramework.rs`). The architectural fix remains open: move `NoticeList` ownership from `PanelTree` to `emView`, dispatch `HandleNotice` from `emView::Update` once per view per frame using that view's own `CurrentPixelTallness`, and establish panel→view ownership in `PanelTree` (or partition notices by walking each view's subtree from its root panel). `run_panel_cycles` is a separate Rust-only construct (C++ panels self-register as engines via `emEngine` inheritance, which the Rust port does not mirror) and stays out of this workstream. Pre-condition before scheduling: confirm multi-window support is on the near-term roadmap; until then the current global dispatch is a tolerable single-window shortcut.
 13. **[ARCH] W3 surface-creation de-duplication** (optional) — extract `build_materialized_surface(gpu, winit_window) -> MaterializedSurface` to deduplicate ~50 lines between `materialize_popup_surface` and `emWindow::create()`. (§3.5 item 1.)

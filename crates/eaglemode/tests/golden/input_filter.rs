@@ -24,7 +24,7 @@ fn setup_vif_view() -> (PanelTree, emView) {
     let mut tree = PanelTree::new();
     let root = tree.create_root("root");
     tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
-    let mut view = emView::new(root, 800.0, 600.0);
+    let mut view = emView::new_for_test(root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
     view.Update(&mut tree);
     // C++ Zoom(400,300,100.0) -> ra *= 1/100^2 -> rel_a *= 100^2 = 10000

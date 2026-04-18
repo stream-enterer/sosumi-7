@@ -115,7 +115,10 @@ fn measure_at_zoom(zoom_factor: f64) -> (f64, f64, f64) {
     tree.Layout(root, 0.0, 0.0, 1.0, tallness);
     tree.set_focusable(root, true);
 
-    let mut view = emView::new(root, VW as f64, VH as f64);
+    let core_config = std::rc::Rc::new(std::cell::RefCell::new(
+        eaglemode_rs::emCore::emCoreConfig::emCoreConfig::default(),
+    ));
+    let mut view = emView::new(root, VW as f64, VH as f64, core_config);
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     tree.HandleNotice(true, 1.0);
     view.update(&mut tree);
@@ -197,7 +200,10 @@ fn measure_nested_at_zoom(panel_count: usize, zoom_factor: f64) -> (f64, f64, f6
         }
     }
 
-    let mut view = emView::new(root, VW as f64, VH as f64);
+    let core_config = std::rc::Rc::new(std::cell::RefCell::new(
+        eaglemode_rs::emCore::emCoreConfig::emCoreConfig::default(),
+    ));
+    let mut view = emView::new(root, VW as f64, VH as f64, core_config);
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     tree.HandleNotice(true, 1.0);
     view.update(&mut tree);

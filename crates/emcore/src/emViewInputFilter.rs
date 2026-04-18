@@ -2534,7 +2534,7 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
-        let view = emView::new(root, 800.0, 600.0);
+        let view = emView::new_for_test(root, 800.0, 600.0);
         (tree, view)
     }
 

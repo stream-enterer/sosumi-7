@@ -59,7 +59,7 @@ fn compositor_single_panel() {
         Box::new(ColorFillBehavior::new(emColor::rgba(255, 0, 0, 255))),
     );
 
-    let mut view = emView::new(root, 800.0, 600.0);
+    let mut view = emView::new_for_test(root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     settle(&mut tree, &mut view);
 
@@ -96,7 +96,7 @@ fn compositor_overlap() {
         Box::new(ColorFillBehavior::new(emColor::rgba(0, 0, 255, 255))),
     );
 
-    let mut view = emView::new(root, 800.0, 600.0);
+    let mut view = emView::new_for_test(root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     settle(&mut tree, &mut view);
 
@@ -129,7 +129,7 @@ fn compositor_nested() {
         Box::new(ColorFillBehavior::new(emColor::rgba(0, 255, 0, 255))),
     );
 
-    let mut view = emView::new(root, 800.0, 600.0);
+    let mut view = emView::new_for_test(root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     settle(&mut tree, &mut view);
 
@@ -164,7 +164,7 @@ fn compositor_canvas_color() {
         Box::new(ColorFillBehavior::new(emColor::rgba(255, 0, 0, 128))),
     );
 
-    let mut view = emView::new(root, 800.0, 600.0);
+    let mut view = emView::new_for_test(root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     settle(&mut tree, &mut view);
 
@@ -202,7 +202,7 @@ fn compositor_two_children() {
         Box::new(ColorFillBehavior::new(emColor::rgba(0, 0, 255, 255))),
     );
 
-    let mut view = emView::new(root, 800.0, 600.0);
+    let mut view = emView::new_for_test(root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     settle(&mut tree, &mut view);
 

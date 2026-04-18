@@ -132,7 +132,10 @@ fn build_tree(panel_count: usize) -> (PanelTree, emView) {
         }
     }
 
-    let mut view = emView::new(root, VW as f64, VH as f64);
+    let core_config = std::rc::Rc::new(std::cell::RefCell::new(
+        eaglemode_rs::emCore::emCoreConfig::emCoreConfig::default(),
+    ));
+    let mut view = emView::new(root, VW as f64, VH as f64, core_config);
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     tree.HandleNotice(true, 1.0);
     view.update(&mut tree);

@@ -232,6 +232,39 @@ impl emCoreConfig {
             model
         })
     }
+
+    /// Upper bound for `VisitSpeed`.
+    ///
+    /// DIVERGED: C++ exposes this via `VisitSpeed.GetMaxValue()` on an
+    /// `emRec`-typed field (`emDoubleRec VisitSpeed;` in emCoreConfig.h:51;
+    /// bound declared by `VisitSpeed(this,"VisitSpeed",1.0,0.1,10.0)` in
+    /// emCoreConfig.cpp:53). Rust flattens to a plain `f64` field + const
+    /// because the `emRec`-backed scalar-field infrastructure is not ported.
+    pub const VISIT_SPEED_MAX: f64 = 10.0;
+
+    /// C++ `emCoreConfig::VisitSpeed.GetMaxValue()`.
+    ///
+    /// DIVERGED: flattened from member-of-emRec-field to method-on-config,
+    /// see `VISIT_SPEED_MAX` docs.
+    pub fn VisitSpeed_GetMaxValue(&self) -> f64 {
+        Self::VISIT_SPEED_MAX
+    }
+}
+
+#[cfg(test)]
+mod sp3_tests {
+    use super::*;
+
+    #[test]
+    fn visit_speed_max_matches_cpp_schema() {
+        assert_eq!(emCoreConfig::VISIT_SPEED_MAX, 10.0);
+    }
+
+    #[test]
+    fn visit_speed_getmaxvalue_returns_const() {
+        let cfg = emCoreConfig::default();
+        assert_eq!(cfg.VisitSpeed_GetMaxValue(), emCoreConfig::VISIT_SPEED_MAX);
+    }
 }
 
 #[cfg(kani)]

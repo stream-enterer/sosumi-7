@@ -48,7 +48,15 @@ impl emSubViewPanel {
         // Last arg is pixel tallness; sub_view.CurrentPixelTallness starts at 1.0.
         sub_tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-        let sub_view = emView::new(root, 1.0, 1.0);
+        // DIVERGED: C++ emSubViewPanel shares the parent context's emCoreConfig
+        // singleton via the context chain (emView ctor: emCoreConfig::Acquire(
+        // GetRootContext())). Rust emSubViewPanel::new has no parent/context
+        // accessible, so it default-constructs a standalone config. Removed
+        // by SP7 when emContext is threaded through emView::new.
+        let core_config = std::rc::Rc::new(std::cell::RefCell::new(
+            crate::emCoreConfig::emCoreConfig::default(),
+        ));
+        let sub_view = emView::new(root, 1.0, 1.0, core_config);
 
         Self {
             sub_tree,

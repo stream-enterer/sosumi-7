@@ -2552,7 +2552,7 @@ fn testpanel_root() {
     // Very high threshold prevents auto-expansion (Match C++ gen)
     tree.SetAutoExpansionThreshold(root, 1e9, ViewConditionType::Area);
 
-    let mut view = emView::new(root, 1000.0, 1000.0);
+    let mut view = emView::new_for_test(root, 1000.0, 1000.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     // C++ golden gen doesn't focus the window — match unfocused state
     view.SetFocused(&mut tree, false);
@@ -2585,7 +2585,7 @@ fn testpanel_expanded() {
     // C++ default threshold: 900 (VCT_AREA). At 1000x1000, vc=1e6 > 900 → expands.
     tree.SetAutoExpansionThreshold(root, 900.0, ViewConditionType::Area);
 
-    let mut view = emView::new(root, 1000.0, 1000.0);
+    let mut view = emView::new_for_test(root, 1000.0, 1000.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     // C++ golden gen doesn't focus the window — match unfocused state
     view.SetFocused(&mut tree, false);

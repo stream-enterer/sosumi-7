@@ -94,7 +94,11 @@ fn main() {
 
     // ── Phase 3: emView creation ──
     let t0 = Instant::now();
-    let mut view = eaglemode_rs::emCore::emView::emView::new(root, vw as f64, vh as f64);
+    let core_config = std::rc::Rc::new(std::cell::RefCell::new(
+        eaglemode_rs::emCore::emCoreConfig::emCoreConfig::default(),
+    ));
+    let mut view =
+        eaglemode_rs::emCore::emView::emView::new(root, vw as f64, vh as f64, core_config);
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     let t_view = t0.elapsed();
 

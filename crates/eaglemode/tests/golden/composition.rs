@@ -1011,7 +1011,7 @@ fn composition_tktest_1x() {
     // C++ default auto-expansion threshold for TkTest
     tree.SetAutoExpansionThreshold(root, 900.0, ViewConditionType::Area);
 
-    let mut view = emView::new(root, 800.0, 600.0);
+    let mut view = emView::new_for_test(root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     // C++ golden gen doesn't focus the window
     view.SetFocused(&mut tree, false);
@@ -1058,7 +1058,7 @@ fn composition_tktest_2x() {
     // C++ default auto-expansion threshold for TkTest
     tree.SetAutoExpansionThreshold(root, 900.0, ViewConditionType::Area);
 
-    let mut view = emView::new(root, 800.0, 600.0);
+    let mut view = emView::new_for_test(root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     // C++ golden gen doesn't focus the window
     view.SetFocused(&mut tree, false);

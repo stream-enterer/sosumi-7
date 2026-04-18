@@ -20,7 +20,7 @@ fn input_routes_through_viewport() {
     tree.set_focusable(root, true);
     tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-    let mut view = emView::new(root, 800.0, 600.0);
+    let mut view = emView::new_for_test(root, 800.0, 600.0);
     view.Update(&mut tree);
 
     let event = emInputEvent::press(InputKey::MouseLeft).with_mouse(10.0, 10.0);
@@ -47,7 +47,7 @@ fn input_to_view_updates_last_mouse_position() {
     tree.set_focusable(root, true);
     tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-    let mut view = emView::new(root, 800.0, 600.0);
+    let mut view = emView::new_for_test(root, 800.0, 600.0);
     view.Update(&mut tree);
 
     let event = emInputEvent::mouse_move(InputKey::MouseLeft, 42.0, 84.0);
