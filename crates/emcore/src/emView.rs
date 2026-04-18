@@ -2411,7 +2411,10 @@ impl emView {
         // the view during signal processing. Blocks the single-engine
         // rewrite of `test_phase8_popup_close_signal_zooms_out`.
         let popup_closed = {
-            if let (Some(popup), Some(sched), Some(eng_id)) = (
+            let cached = std::mem::take(&mut self.close_signal_pending);
+            if cached {
+                true
+            } else if let (Some(popup), Some(sched), Some(eng_id)) = (
                 self.PopupWindow.as_ref(),
                 self.scheduler.as_ref(),
                 self.update_engine_id,
