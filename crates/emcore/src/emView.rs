@@ -3610,19 +3610,23 @@ impl emView {
     ///
     /// PHASE-6-FOLLOWUP: migrate the VIF-chain + panel-broadcast dispatch
     /// from `emWindow::dispatch_input` into this method; invoke
-    /// `RecurseInput` once its Rust port exists. Also forward to the active
-    /// animator first (C++ emView.cpp:1004) — the animator currently lives
-    /// on `emWindow`, not `emView`, so this routing cannot happen here yet.
+    /// `RecurseInput` once its Rust port exists. The animator forward
+    /// (C++ emView.cpp:1004) is handled by the caller sites
+    /// (`emWindow::dispatch_input`, `emSubViewPanel::Behavior::Input`)
+    /// because the animator lives on those owners, not on `emView`.
     pub fn Input(
         &mut self,
         _tree: &mut PanelTree,
         _event: &crate::emInput::emInputEvent,
         state: &crate::emInputState::emInputState,
     ) {
-        // PHASE-6-FOLLOWUP: forward to active animator first (C++ emView.cpp:1004)
-        // emView.cpp:1004: forward to active animator first.
-        // Animator resolution: emWindow holds the active animator; input
-        // forwards to emView which wakes the engine to trigger animation.
+        // C++ emView.cpp:1004: forward input to ActiveAnimator first.
+        // Rust-arch note: the active animator lives on emWindow
+        // (see emWindow::dispatch_input) and on emSubViewPanel
+        // (see emSubViewPanel::Behavior::Input), not on emView — by the
+        // Phase 5/6 design decision. Those callers forward the event to
+        // their animator slot BEFORE invoking this method, so by the time
+        // Input runs here the event may already have been eaten.
 
         // emView.cpp:1006-1014: cursor-invalid on mouse move.
         let mx = state.GetMouseX();

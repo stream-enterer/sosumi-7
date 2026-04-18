@@ -150,6 +150,21 @@ impl PanelBehavior for emSubViewPanel {
         state: &PanelState,
         input_state: &emInputState,
     ) -> bool {
+        // C++ emView.cpp:1004 via emSubViewPanel.cpp:77: forward input to
+        // the sub-view's ActiveAnimator first. Rust stores the sub-view's
+        // animator on emSubViewPanel (not on the sub-view's emView), so this
+        // forward happens here.
+        let mut event_local = event.clone();
+        if let Some(mut anim) = self.active_animator.take() {
+            crate::emViewAnimator::emViewAnimator::Input(
+                anim.as_mut(),
+                &mut event_local,
+                input_state,
+            );
+            self.active_animator = Some(anim);
+        }
+        let event = &event_local;
+
         // C++ emSubViewPanel::Input:
         //   if (IsFocusable() && (event.IsMouseEvent() || event.IsTouchEvent())) {
         //       Focus();
