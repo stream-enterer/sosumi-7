@@ -67,15 +67,6 @@ fn em_get_dbl_random(lo: f64, hi: f64) -> f64 {
     })
 }
 
-/// Direction for neighbor navigation.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Direction {
-    Right,
-    Down,
-    Left,
-    Up,
-}
-
 /// Frame rate measurement for the stress test overlay.
 ///
 /// Port of C++ `StressTestClass` (emEngine subclass). Maintains a 128-entry
@@ -2519,10 +2510,7 @@ impl emView {
 
     // --- Navigation ---
 
-    /// D-PANEL-01: Navigate to next focusable panel (C++ VisitNext parity).
-    ///
-    /// Tries next focusable sibling; if at end, ascends to focusable parent
-    /// and wraps to its first focusable child.
+    /// Port of C++ `emView::VisitNext()` (emView.cpp:564-578).
     pub fn VisitNext(&mut self, tree: &mut PanelTree) {
         if self
             .flags
@@ -2530,29 +2518,25 @@ impl emView {
         {
             return;
         }
-        let active = match self.active {
-            Some(id) => id,
-            None => return,
-        };
-
-        // Try next focusable sibling (no wrap)
-        if let Some(next) = tree.GetFocusableNext(active) {
-            self.animated_visit_panel(tree, next, false);
-            return;
-        }
-
-        // No next sibling: go to focusable parent's first focusable child
-        let parent = tree
-            .GetFocusableParent(active)
-            .unwrap_or_else(|| tree.GetRootPanel().unwrap_or(active));
-        if parent != active {
-            if let Some(first) = tree.GetFocusableFirstChild(parent) {
-                self.animated_visit_panel(tree, first, false);
+        let Some(active) = self.active else { return };
+        let mut p = tree.GetFocusableNext(active);
+        if p.is_none() {
+            let parent = tree
+                .GetFocusableParent(active)
+                .or_else(|| tree.GetRootPanel())
+                .unwrap_or(active);
+            if parent != active {
+                p = tree.GetFocusableFirstChild(parent);
+            } else {
+                p = Some(parent);
             }
+        }
+        if let Some(target) = p {
+            self.VisitPanel(tree, target, true);
         }
     }
 
-    /// D-PANEL-01: Navigate to previous focusable panel (C++ VisitPrev parity).
+    /// Port of C++ `emView::VisitPrev()` (emView.cpp:581-595).
     pub fn VisitPrev(&mut self, tree: &mut PanelTree) {
         if self
             .flags
@@ -2560,28 +2544,25 @@ impl emView {
         {
             return;
         }
-        let active = match self.active {
-            Some(id) => id,
-            None => return,
-        };
-
-        // Try previous focusable sibling (no wrap)
-        if let Some(prev) = tree.GetFocusablePrev(active) {
-            self.animated_visit_panel(tree, prev, false);
-            return;
-        }
-
-        // No previous sibling: go to focusable parent's last focusable child
-        let parent = tree
-            .GetFocusableParent(active)
-            .unwrap_or_else(|| tree.GetRootPanel().unwrap_or(active));
-        if parent != active {
-            if let Some(last) = tree.GetFocusableLastChild(parent) {
-                self.animated_visit_panel(tree, last, false);
+        let Some(active) = self.active else { return };
+        let mut p = tree.GetFocusablePrev(active);
+        if p.is_none() {
+            let parent = tree
+                .GetFocusableParent(active)
+                .or_else(|| tree.GetRootPanel())
+                .unwrap_or(active);
+            if parent != active {
+                p = tree.GetFocusableLastChild(parent);
+            } else {
+                p = Some(parent);
             }
+        }
+        if let Some(target) = p {
+            self.VisitPanel(tree, target, true);
         }
     }
 
+    /// Port of C++ `emView::VisitFirst()` (emView.cpp:598-608).
     pub fn VisitFirst(&mut self, tree: &mut PanelTree) {
         if self
             .flags
@@ -2589,22 +2570,16 @@ impl emView {
         {
             return;
         }
-        let active = match self.active {
-            Some(id) => id,
-            None => return,
-        };
-        let parent = match tree.GetParentContext(active) {
-            Some(p) => p,
-            None => return,
-        };
-        for child in tree.children(parent) {
-            if tree.GetRec(child).map(|p| p.focusable).unwrap_or(false) {
-                self.animated_visit_panel(tree, child, false);
-                return;
-            }
+        let Some(active) = self.active else { return };
+        let mut p = tree.GetFocusableParent(active);
+        if let Some(parent) = p {
+            p = tree.GetFocusableFirstChild(parent);
         }
+        let target = p.unwrap_or(active);
+        self.VisitPanel(tree, target, true);
     }
 
+    /// Port of C++ `emView::VisitLast()` (emView.cpp:611-621).
     pub fn VisitLast(&mut self, tree: &mut PanelTree) {
         if self
             .flags
@@ -2612,38 +2587,36 @@ impl emView {
         {
             return;
         }
-        let active = match self.active {
-            Some(id) => id,
-            None => return,
-        };
-        let parent = match tree.GetParentContext(active) {
-            Some(p) => p,
-            None => return,
-        };
-        for child in tree.children_rev(parent) {
-            if tree.GetRec(child).map(|p| p.focusable).unwrap_or(false) {
-                self.animated_visit_panel(tree, child, false);
-                return;
-            }
+        let Some(active) = self.active else { return };
+        let mut p = tree.GetFocusableParent(active);
+        if let Some(parent) = p {
+            p = tree.GetFocusableLastChild(parent);
         }
+        let target = p.unwrap_or(active);
+        self.VisitPanel(tree, target, true);
     }
 
+    /// Port of C++ `emView::VisitLeft()` (emView.cpp:624-627).
     pub fn VisitLeft(&mut self, tree: &mut PanelTree) {
-        self.visit_neighbour(tree, Direction::Left);
+        self.VisitNeighbour(tree, 2);
     }
 
+    /// Port of C++ `emView::VisitRight()` (emView.cpp:630-633).
     pub fn VisitRight(&mut self, tree: &mut PanelTree) {
-        self.visit_neighbour(tree, Direction::Right);
+        self.VisitNeighbour(tree, 0);
     }
 
+    /// Port of C++ `emView::VisitUp()` (emView.cpp:636-639).
     pub fn VisitUp(&mut self, tree: &mut PanelTree) {
-        self.visit_neighbour(tree, Direction::Up);
+        self.VisitNeighbour(tree, 3);
     }
 
+    /// Port of C++ `emView::VisitDown()` (emView.cpp:642-645).
     pub fn VisitDown(&mut self, tree: &mut PanelTree) {
-        self.visit_neighbour(tree, Direction::Down);
+        self.VisitNeighbour(tree, 1);
     }
 
+    /// Port of C++ `emView::VisitIn()` (emView.cpp:740-746).
     pub fn VisitIn(&mut self, tree: &mut PanelTree) {
         if self
             .flags
@@ -2651,21 +2624,15 @@ impl emView {
         {
             return;
         }
-        let active = match self.active {
-            Some(id) => id,
-            None => return,
-        };
-        // Find first focusable child
-        for child in tree.children(active) {
-            if tree.GetRec(child).map(|p| p.focusable).unwrap_or(false) {
-                self.animated_visit_panel(tree, child, false);
-                return;
-            }
+        let Some(active) = self.active else { return };
+        if let Some(p) = tree.GetFocusableFirstChild(active) {
+            self.VisitPanel(tree, p, true);
+        } else {
+            self.VisitFullsized(tree, active, true, false);
         }
-        // No focusable child — visit active fullsized (C++ emView.cpp:745: adherent=true)
-        self.VisitFullsized(tree, active, true, false);
     }
 
+    /// Port of C++ `emView::VisitOut()` (emView.cpp:749-762).
     pub fn VisitOut(&mut self, tree: &mut PanelTree) {
         if self
             .flags
@@ -2673,93 +2640,183 @@ impl emView {
         {
             return;
         }
-        let active = match self.active {
-            Some(id) => id,
-            None => return,
-        };
-        // Go to focusable parent — check parent itself first, then walk up
-        if let Some(parent) = tree.GetParentContext(active) {
-            if tree.GetRec(parent).map(|p| p.focusable).unwrap_or(false) {
-                self.animated_visit_panel(tree, parent, false);
-                return;
+        let Some(active) = self.active else { return };
+        if let Some(p) = tree.GetFocusableParent(active) {
+            self.VisitPanel(tree, p, true);
+        } else if let Some(root) = tree.GetRootPanel() {
+            let root_h = tree.get_height(root);
+            let mut rel_a = self.HomeWidth * root_h / self.HomePixelTallness / self.HomeHeight;
+            let rel_a2 = self.HomeHeight / root_h * self.HomePixelTallness / self.HomeWidth;
+            if rel_a < rel_a2 {
+                rel_a = rel_a2;
             }
-            if let Some(focusable) = tree.GetFocusableParent(parent) {
-                self.animated_visit_panel(tree, focusable, false);
-                return;
-            }
+            self.Visit(tree, root, 0.0, 0.0, rel_a, true);
         }
-        // At root — zoom out
-        self.ZoomOut(tree);
     }
 
-    fn visit_neighbour(&mut self, tree: &mut PanelTree, direction: Direction) {
+    /// Port of C++ `emView::VisitNeighbour(direction)` (emView.cpp:648-737).
+    pub fn VisitNeighbour(&mut self, tree: &mut PanelTree, direction: i32) {
         if self
             .flags
             .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
         {
             return;
         }
-        let active = match self.active {
-            Some(id) => id,
-            None => return,
-        };
-        let parent = match tree.GetParentContext(active) {
-            Some(p) => p,
-            None => return,
-        };
+        let direction = direction & 3;
+        let Some(current0) = self.active else { return };
+        let parent = tree
+            .GetFocusableParent(current0)
+            .or_else(|| tree.GetRootPanel())
+            .unwrap_or(current0);
 
-        let active_panel = match tree.GetRec(active) {
-            Some(p) => p,
-            None => return,
-        };
-        let ax = active_panel.viewed_x;
-        let ay = active_panel.viewed_y;
-        let aw = active_panel.viewed_width;
-        let ah = active_panel.viewed_height;
-        let acx = ax + aw * 0.5;
-        let acy = ay + ah * 0.5;
+        let mut current = current0;
 
-        let siblings: Vec<PanelId> = tree.children(parent).collect();
-        let mut best: Option<(PanelId, f64)> = None;
-
-        for &sib in &siblings {
-            if sib == active {
-                continue;
-            }
-            let sp = match tree.GetRec(sib) {
-                Some(p) if p.focusable && p.viewed => p,
-                _ => continue,
-            };
-            let scx = sp.viewed_x + sp.viewed_width * 0.5;
-            let scy = sp.viewed_y + sp.viewed_height * 0.5;
-
-            let (dx, dy) = (scx - acx, scy - acy);
-
-            // Rotate based on direction so "forward" is always +x
-            // C++: 0=Right identity, 1=Down (dy,-dx), 2=Left (-dx,-dy), 3=Up (-dy,dx)
-            let (rx, ry) = match direction {
-                Direction::Right => (dx, dy),
-                Direction::Down => (dy, -dx),
-                Direction::Left => (-dx, -dy),
-                Direction::Up => (-dy, dx),
-            };
-
-            if rx <= 1e-12 {
-                continue;
+        if parent != current0 {
+            // Compute current's rect in parent-local coords by composing
+            // through ancestor layout_rects from current up to (but not
+            // including) parent.
+            let (mut cx1, mut cy1) = (0.0_f64, 0.0_f64);
+            let (mut cx2, mut cy2) = (1.0_f64, tree.get_height(current0));
+            let mut walker = current0;
+            while walker != parent {
+                let lr = tree
+                    .layout_rect(walker)
+                    .expect("panel must have layout_rect while walking up to focusable parent");
+                let f = lr.w;
+                let fx = lr.x;
+                let fy = lr.y;
+                cx1 = cx1 * f + fx;
+                cy1 = cy1 * f + fy;
+                cx2 = cx2 * f + fx;
+                cy2 = cy2 * f + fy;
+                walker = tree
+                    .GetParentContext(walker)
+                    .expect("panel must have parent while walking up to focusable parent");
             }
 
-            let dist = (rx * rx + ry * ry).sqrt();
-            let penalty = if ry.abs() > rx * 0.707 { 10.0 } else { 1.0 };
-            let score = dist * penalty;
+            let mut best: Option<PanelId> = None;
+            let mut best_val = 0.0_f64;
+            let mut defdx = -1.0_f64;
 
-            if best.map(|(_, s)| score < s).unwrap_or(true) {
-                best = Some((sib, score));
+            let mut n_opt = tree.GetFocusableFirstChild(parent);
+            while let Some(n) = n_opt {
+                if n == current0 {
+                    defdx = -defdx;
+                    n_opt = tree.GetFocusableNext(n);
+                    continue;
+                }
+
+                let (mut nx1, mut ny1) = (0.0_f64, 0.0_f64);
+                let (mut nx2, mut ny2) = (1.0_f64, tree.get_height(n));
+                let mut w = n;
+                while w != parent {
+                    let lr = tree
+                        .layout_rect(w)
+                        .expect("panel must have layout_rect while walking sibling up to parent");
+                    let f = lr.w;
+                    let fx = lr.x;
+                    let fy = lr.y;
+                    nx1 = nx1 * f + fx;
+                    ny1 = ny1 * f + fy;
+                    nx2 = nx2 * f + fx;
+                    ny2 = ny2 * f + fy;
+                    w = tree
+                        .GetParentContext(w)
+                        .expect("panel must have parent while walking sibling up to parent");
+                }
+
+                let mut dx = 0.0_f64;
+                let mut dy = 0.0_f64;
+
+                let fx1 = nx1 - cx1;
+                let fy1 = ny1 - cy1;
+                let f1 = (fx1 * fx1 + fy1 * fy1).sqrt();
+                if f1 > 1e-30 {
+                    dx += fx1 / f1;
+                    dy += fy1 / f1;
+                }
+                let fx2 = nx2 - cx2;
+                let fy2 = ny1 - cy1;
+                let f2 = (fx2 * fx2 + fy2 * fy2).sqrt();
+                if f2 > 1e-30 {
+                    dx += fx2 / f2;
+                    dy += fy2 / f2;
+                }
+                let fx3 = nx1 - cx1;
+                let fy3 = ny2 - cy2;
+                let f3 = (fx3 * fx3 + fy3 * fy3).sqrt();
+                if f3 > 1e-30 {
+                    dx += fx3 / f3;
+                    dy += fy3 / f3;
+                }
+                let fx4 = nx2 - cx2;
+                let fy4 = ny2 - cy2;
+                let f4 = (fx4 * fx4 + fy4 * fy4).sqrt();
+                if f4 > 1e-30 {
+                    dx += fx4 / f4;
+                    dy += fy4 / f4;
+                }
+                let fnorm = (dx * dx + dy * dy).sqrt();
+                if fnorm > 1e-30 {
+                    dx /= fnorm;
+                    dy /= fnorm;
+                } else {
+                    dx = defdx;
+                    dy = 0.0;
+                }
+
+                let fx_c = (nx1 + nx2 - cx1 - cx2) * 0.5;
+                let fy_c = (ny1 + ny2 - cy1 - cy2) * 0.5;
+                let d = (fx_c * fx_c + fy_c * fy_c).sqrt();
+
+                let fx_e = if nx2 < cx1 {
+                    nx2 - cx1
+                } else if nx1 > cx2 {
+                    nx1 - cx2
+                } else {
+                    0.0
+                };
+                let fy_e = if ny2 < cy1 {
+                    ny2 - cy1
+                } else if ny1 > cy2 {
+                    ny1 - cy2
+                } else {
+                    0.0
+                };
+                let e = (fx_e * fx_e + fy_e * fy_e).sqrt();
+
+                if (direction & 1) != 0 {
+                    let f = dx;
+                    dx = dy;
+                    dy = -f;
+                }
+                if (direction & 2) != 0 {
+                    dx = -dx;
+                    dy = -dy;
+                }
+                if dx <= 1e-12 {
+                    n_opt = tree.GetFocusableNext(n);
+                    continue;
+                }
+
+                let mut val = (e * 10.0 + d) * (1.0 + 2.0 * dy * dy);
+                if dy.abs() > 0.707 {
+                    val *= 1000.0 * dy * dy * dy * dy;
+                }
+                if best.is_none() || val < best_val {
+                    best = Some(n);
+                    best_val = val;
+                }
+
+                n_opt = tree.GetFocusableNext(n);
+            }
+
+            if let Some(b) = best {
+                current = b;
             }
         }
 
-        if let Some((winner, _)) = best {
-            self.animated_visit_panel(tree, winner, false);
-        }
+        self.VisitPanel(tree, current, true);
     }
 
     // --- Hit testing ---
@@ -3139,6 +3196,26 @@ impl emView {
     /// provides read access equivalent to C++ friend/test-only inspection.
     pub fn visiting_va(&self) -> std::cell::Ref<'_, super::emViewAnimator::emVisitingViewAnimator> {
         self.VisitingVA.borrow()
+    }
+
+    /// Test-only: drive `VisitingVA::animate` directly until it deactivates
+    /// or the iteration limit is hit. Production path goes through
+    /// `VisitingVAEngineClass::Cycle` which requires a window registry; unit
+    /// tests without a window use this to observe the post-convergence active
+    /// panel after a `Visit*` call.
+    pub fn pump_visiting_va(&mut self, tree: &mut PanelTree) {
+        use super::emViewAnimator::emViewAnimator as _;
+        let va_rc = Rc::clone(&self.VisitingVA);
+        for _ in 0..1024 {
+            let mut va = va_rc.borrow_mut();
+            if !va.is_active() {
+                break;
+            }
+            let still = va.animate(self, tree, 0.1);
+            if !still {
+                break;
+            }
+        }
     }
 
     /// Check whether any dirty rectangles have been accumulated.
@@ -4809,9 +4886,11 @@ mod tests {
         view.set_active_panel(&mut tree, child1, false);
 
         view.VisitNext(&mut tree);
+        view.pump_visiting_va(&mut tree);
         assert_eq!(view.GetActivePanel(), Some(child2));
 
         view.VisitPrev(&mut tree);
+        view.pump_visiting_va(&mut tree);
         assert_eq!(view.GetActivePanel(), Some(child1));
     }
 
@@ -4827,9 +4906,11 @@ mod tests {
         view.set_active_panel(&mut tree, child1, false);
 
         view.VisitIn(&mut tree);
+        view.pump_visiting_va(&mut tree);
         assert_eq!(view.GetActivePanel(), Some(grandchild));
 
         view.VisitOut(&mut tree);
+        view.pump_visiting_va(&mut tree);
         assert_eq!(view.GetActivePanel(), Some(child1));
     }
 
@@ -4856,9 +4937,11 @@ mod tests {
 
         // child2 is to the right of child1
         view.VisitRight(&mut tree);
+        view.pump_visiting_va(&mut tree);
         assert_eq!(view.GetActivePanel(), Some(child2));
 
         view.VisitLeft(&mut tree);
+        view.pump_visiting_va(&mut tree);
         assert_eq!(view.GetActivePanel(), Some(child1));
     }
 

@@ -75,10 +75,16 @@ impl PipelineTestHarness {
     // ── Frame / tick ─────────────────────────────────────────────
 
     /// Run one frame: scheduler time slice, deliver notices, update viewing.
+    ///
+    /// Also drives `VisitingVA` to completion: the pipeline harness has no
+    /// window registry, so `VisitingVAEngineClass::Cycle` (which requires
+    /// `ctx.windows`) cannot advance the animator — the harness pumps it
+    /// directly to observe post-convergence active-panel state.
     pub fn tick(&mut self) {
         let mut windows: HashMap<WindowId, std::rc::Rc<std::cell::RefCell<emWindow>>> =
             HashMap::new();
         self.scheduler.DoTimeSlice(&mut self.tree, &mut windows);
+        self.view.pump_visiting_va(&mut self.tree);
         self.tree
             .HandleNotice(self.view.IsFocused(), self.view.GetCurrentPixelTallness());
         self.view.Update(&mut self.tree);

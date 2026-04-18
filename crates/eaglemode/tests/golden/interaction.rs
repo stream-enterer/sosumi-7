@@ -189,6 +189,7 @@ fn interaction_focus_tab_forward() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child1, true);
     view.VisitNext(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -214,6 +215,7 @@ fn interaction_focus_tab_backward() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child2, true);
     view.VisitPrev(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -252,6 +254,7 @@ fn interaction_focus_unfocusable_skip() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child1, true);
     view.VisitNext(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -290,6 +293,7 @@ fn interaction_focus_nested() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child1, true);
     view.VisitIn(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -328,6 +332,7 @@ fn interaction_focus_visit_out() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, gc, true);
     view.VisitOut(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -354,6 +359,7 @@ fn interaction_focus_tab_wrap() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child2, true);
     view.VisitNext(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -391,6 +397,7 @@ fn interaction_focus_visit_first() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child2, true);
     view.VisitFirst(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -429,6 +436,7 @@ fn interaction_focus_visit_last() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child1, true);
     view.VisitLast(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -467,6 +475,7 @@ fn interaction_focus_visit_left() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child3, true);
     view.VisitLeft(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -505,6 +514,7 @@ fn interaction_focus_visit_right() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child1, true);
     view.VisitRight(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -543,6 +553,7 @@ fn interaction_focus_visit_down() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child1, true);
     view.VisitDown(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -581,6 +592,7 @@ fn interaction_focus_visit_up() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child3, true);
     view.VisitUp(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -716,6 +728,7 @@ fn interaction_focus_tab_deep() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, gc1, true);
     view.VisitNext(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -755,6 +768,7 @@ fn interaction_focus_tab_ascend() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, gc2, true);
     view.VisitNext(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -781,6 +795,7 @@ fn interaction_focus_visit_out_to_root() {
     view.SetFocused(&mut tree, true);
     view.set_active_panel(&mut tree, child1, true);
     view.VisitOut(&mut tree);
+    view.pump_visiting_va(&mut tree);
 
     let actual = vec![
         panel_state(&tree, root),
