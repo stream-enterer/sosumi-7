@@ -136,10 +136,6 @@ impl emViewPort {
     /// Port of C++ `emViewPort::SetViewGeometry(x, y, w, h, pixelTallness)`.
     /// Updates the stored home geometry. Called by `SetViewPosSize` and the
     /// backend geometry callback.
-    ///
-    /// DIVERGED: the C++ signature takes `pixelTallness`, but the Rust port
-    /// routes pixel-tallness reads through `emView::HomePixelTallness`
-    /// (there is no per-port duplicate). The parameter is therefore omitted.
     pub fn SetViewGeometry(&mut self, x: f64, y: f64, w: f64, h: f64) {
         self.home_x = x;
         self.home_y = y;
