@@ -47,42 +47,65 @@ The `emView::update()` wrapper (`emView.rs:3845-3859`) goes away. Its two pieces
 
 Append `self.WakeUpUpdateEngine();` to the end of `attach_to_scheduler` (after `self.update_engine_id = Some(engine_id);` at `emView.rs:3067`). Matches C++ `emView::emView:84`. Ensures the first `DoTimeSlice` cycles `Update` at least once.
 
-### 2.3 Replace the scheduler-borrow with `EngineCtx::IsSignaled`
+### 2.3 Cache popup-close signal state in `UpdateEngineClass::Cycle`
 
-`Update` signature becomes:
+**C++ context.** C++ `emView` is itself an `emEngine` (via `class emView : public emContext` and `class emContext : public emEngine`, `emContext.h:44`). `emView::Update` at `emView.cpp:1299` calls `IsSignaled(close_signal)` against `emView`'s *own* engine clock — not `UpdateEngine`'s. The connection at `emView.cpp:1642` (`UpdateEngine->AddWakeUpSignal(close_signal)`) separately arranges for the engine to wake.
+
+**Rust forced divergence.** Rust's `emView` is not an `emEngine` (no `emContext` threading yet; tracked as SP7). Rust substitutes `is_signaled_for_engine(close_sig, update_engine_id)` — observationally equivalent as long as the update engine's clock tracks the view's notional "engine tick" — but this requires an `&EngineScheduler` borrow from inside `Update`, producing the re-entrant panic.
+
+**Resolution.** Move the signal probe *out* of `Update` and *into* `UpdateEngineClass::Cycle`, which already holds an `&mut EngineCtx` — no scheduler borrow needed. `Cycle` writes the result to a transient view field; `Update` reads and clears it. Update's signature does not change.
+
+Field added to `emView`:
 ```rust
-pub fn Update(&mut self, tree: &mut PanelTree, ctx: &mut super::emEngine::EngineCtx<'_>)
+/// Set by `UpdateEngineClass::Cycle` from `ctx.IsSignaled(close_signal)`
+/// before calling `Update`; read and cleared at the top of `Update`.
+/// Stands in for C++ `IsSignaled(PopupWindow->GetCloseSignal())` in
+/// `emView::Update` (emView.cpp:1299). DIVERGED: C++ emView inherits
+/// from emEngine (via emContext), so the IsSignaled call there is
+/// against emView's own clock. Rust emView is not an emEngine (SP7
+/// will revisit); the nearest correct clock is UpdateEngine's, and
+/// UpdateEngineClass::Cycle is the natural site to observe it.
+pub(crate) close_signal_pending: bool,
 ```
 
-Inside, the popup-close probe at `:2336-2347` changes from:
+`UpdateEngineClass::Cycle` body becomes:
 ```rust
-sched.borrow().is_signaled_for_engine(close_sig, eng_id)
-```
-to:
-```rust
-ctx.IsSignaled(close_sig)
+fn Cycle(&mut self, ctx: &mut super::emEngine::EngineCtx<'_>) -> bool {
+    if let Some(win_rc) = ctx.windows.get(&self.window_id) {
+        let win_rc = Rc::clone(win_rc);
+        let mut win = win_rc.borrow_mut();
+        let view = win.view_mut();
+        // Mirror C++ emView.cpp:1299 popup-close probe, using the
+        // UpdateEngine's clock as the observational stand-in for
+        // emView's own clock (Rust emView is not an emEngine; see
+        // close_signal_pending doc comment).
+        if let Some(popup) = view.PopupWindow.as_ref() {
+            let close_sig = popup.borrow().close_signal;
+            view.close_signal_pending = ctx.IsSignaled(close_sig);
+        }
+        view.Update(ctx.tree);
+    }
+    false
+}
 ```
 
-This is correct by construction: `UpdateEngineClass::Cycle` passes `ctx` whose `ctx.engine_id == self.update_engine_id`, and `EngineCtx::IsSignaled` compares `signal.clock > engines[ctx.engine_id].clock` — exactly what `is_signaled_for_engine(close_sig, update_engine_id)` computes today. No behavior change; the `self.scheduler` field is not touched from inside `Update`.
+`emView::Update` popup-close block at `:2336-2347` becomes:
+```rust
+let popup_closed = std::mem::take(&mut self.close_signal_pending);
+if popup_closed {
+    self.ZoomOut(tree);
+}
+```
 
-The `BUG` comment block at `emView.rs:2324-2335` and the `update_engine_id` field-read at `:2340` are deleted.
+The `BUG` comment block at `emView.rs:2324-2335` and the `update_engine_id` field-read at `:2340` are deleted. `self.scheduler` is no longer touched from inside `Update`.
 
 Rejected alternatives:
-- *Cache signal state on `emView`.* (Doc §8.1 item 14 option b.) Adds a new field with no C++ analogue. `EngineCtx::IsSignaled` is already the C++-faithful mechanism (`emEngine::IsSignaled` is C++ `emView.cpp`'s own API); using it is strictly less drift.
-- *Full cascade through ~25 test call sites.* (Doc §8.1 item 14 option a, unmodified.) Reaches every `view.Update(&mut tree)` test site. Unnecessary: all those tests are pinned to §2.5's test-helper refactor anyway; giving them an `EngineCtx` via a thin helper costs less than threading 25 call-site changes by hand.
+- *Add `ctx: &mut EngineCtx` to `Update` signature.* Cascades through 141 call sites across 20+ files. All would need `Option<&mut ctx>` plumbing or a stub-ctx test helper. The cached-field path is behaviorally identical with ~5 touched lines of production code.
+- *Keep the `self.scheduler.borrow()` path but scope the outer `borrow_mut()` so the slice releases the scheduler during `Cycle`.* Breaks `DoTimeSlice`'s invariants (it needs the borrow for the whole slice) and fights the C++ design rather than mirroring it.
 
-### 2.4 Collapse `view.update(tree)` test call sites
+### 2.4 Test call sites unchanged
 
-The ~25 tests at `emView.rs:4691…5223` currently call `view.Update(&mut tree)` (no wrapper, no scheduler). With the new signature they need an `EngineCtx`. Provide a test-only helper on `emView`:
-
-```rust
-#[cfg(any(test, feature = "test-support"))]
-pub fn pump_update_for_test(&mut self, tree: &mut PanelTree)
-```
-
-Which, when the view has a scheduler attached, wakes the update engine and runs one `DoTimeSlice` — exercising the engine path faithfully. When the view has no scheduler (a handful of tests construct bare views), it constructs a throwaway `EngineCtx` against an empty `EngineCtxInner` and calls `Update` directly. The helper is gated behind the existing `test-support` feature (already used for `pump_visiting_va`).
-
-All 25 call sites flip from `view.Update(&mut tree)` to `view.pump_update_for_test(&mut tree)`. Mechanical rename.
+With §2.3's cached-field approach, `Update`'s signature does not change. All 141 `.Update(&mut tree)` call sites across tests and production remain as-is. Tests that do not attach a scheduler will simply never observe `close_signal_pending == true` (no engine ever writes it), which is correct — those tests don't exercise popup close.
 
 ### 2.5 Phase-8 test promotion
 
@@ -102,7 +125,7 @@ The current inline test at `emView.rs` is replaced, not extended. Delete Half A 
 
 - Do not touch `VisitingVAEngineClass::Cycle` (same window-lookup pattern; not blocking anything in SP4).
 - Do not add non-`emEngine` wake paths.
-- Do not restructure `SetActivePanelBestPossible`'s call semantics beyond the audit in §2.1.
+- Do not restructure `SetActivePanelBestPossible`'s call semantics beyond the relocation into `Scroll`/`Zoom`/`ZoomOut` specified in §2.1.
 
 ---
 
@@ -112,15 +135,16 @@ The current inline test at `emView.rs` is replaced, not extended. Delete Half A 
 |---|---|---|
 | `emGUIFramework::about_to_wait:594` | 1 line | Delete direct `update()` call |
 | `emView::update` wrapper | 1 method | Delete after audit |
-| `emView::Update` signature | 1 method + 25 call sites | Add `ctx` param; call sites flip to `pump_update_for_test` helper |
+| `emView::Update` signature | unchanged | Cached-field approach — no cascade |
+| `emView::close_signal_pending` field | new | 1 line + doc |
+| `UpdateEngineClass::Cycle` | ~10 lines | Write `close_signal_pending` from `ctx.IsSignaled` before calling `Update` |
 | `attach_to_scheduler` | 1 line | Add `self.WakeUpUpdateEngine()` |
-| Popup-close probe | ~12 lines | Replace scheduler borrow with `ctx.IsSignaled` |
-| `pump_update_for_test` | new method | ~20 lines |
+| Popup-close probe in `Update` | ~12 lines → 4 lines | Replace scheduler borrow with `mem::take(&mut self.close_signal_pending)` |
 | `emWindow::new_for_test` | new test-only ctor | ~30 lines |
 | Phase-8 test rewrite | 1 test | ~50 lines net |
 | `SetActivePanelBestPossible` relocation into `Scroll`/`Zoom`/`ZoomOut` | 3 lines | Mechanical append per C++ `emView.cpp:780, 800, 901` |
 
-Expected total: ~150 lines changed, mostly mechanical. One `DIVERGED:` removal (the `BUG` comment at `:2324-2335`). No new `DIVERGED:` markers.
+Expected total: ~100 lines changed. One `BUG` comment removed (`:2324-2335`). One new `DIVERGED:` comment added (on `close_signal_pending` — documents the emEngine-inheritance substitution, replacing the current `BUG` marker).
 
 ---
 
@@ -129,8 +153,7 @@ Expected total: ~150 lines changed, mostly mechanical. One `DIVERGED:` removal (
 | Risk | Mitigation |
 |---|---|
 | Moving `SetActivePanelBestPossible` from post-`Update` to end-of-`Scroll`/`Zoom`/`ZoomOut` changes ordering (notice dispatch vs. active-panel reselection) in a way a test/golden depends on | C++ itself uses end-of-mutator ordering; any divergence exposed is Rust drift being closed. Phase 4 runs nextest + golden; investigate any new failure under that frame |
-| Tests that silently depend on `Update` running outside the scheduler (e.g., when the view is not attached) break | `pump_update_for_test` handles the no-scheduler case by constructing a throwaway `EngineCtx`. Phase 4 runs the full nextest + golden suite |
-| `pump_update_for_test`'s no-scheduler path diverges from the scheduler path | Both paths call `Update` with an `EngineCtx` whose `engine_id` matches the update engine. The no-scheduler path uses a stub `EngineCtxInner` where `ctx.IsSignaled` returns `false` — correct, because no signals can be pending without a scheduler |
+| Tests that relied on `emView::update()` wrapper's post-hoc `SetActivePanelBestPossible` fail once the wrapper is deleted | Mitigated by §2.1 relocation of that call into `Scroll`/`Zoom`/`ZoomOut`; any remaining failure means the test was exercising drift and should be rewritten to match C++ ordering |
 | Waking the engine at `attach_to_scheduler` changes observable frame-one behavior | C++ does this at ctor; any observable difference is a pre-existing divergence we're closing, not introducing |
 | Popup teardown path in production depends on engine not being woken | The W3 closeout verified popup teardown runs end-to-end through the engine (§3.6 R5); the wake is already expected |
 
