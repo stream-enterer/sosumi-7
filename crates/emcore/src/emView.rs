@@ -3135,6 +3135,8 @@ impl emView {
         self.update_engine_id = Some(engine_id);
         self.EOISignal = Some(eoi_signal);
         self.visiting_va_engine_id = Some(visiting_va_engine_id);
+        // C++ emView::emView at emView.cpp:84: UpdateEngine->WakeUp().
+        self.WakeUpUpdateEngine();
     }
 
     /// Wake the scheduler-registered `UpdateEngineClass` so `Update()` runs
@@ -6110,8 +6112,8 @@ mod tests {
         v.attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
         assert!(v.update_engine_id.is_some());
         assert!(v.EOISignal.is_some());
-        // WakeUpUpdateEngine queues the engine.
-        assert!(!sched.borrow().has_awake_engines());
+        // SP4: attach_to_scheduler wakes the update engine (C++ emView.cpp:84).
+        // The explicit WakeUpUpdateEngine() below verifies the re-wake API.
         v.WakeUpUpdateEngine();
         assert!(sched.borrow().has_awake_engines());
         // Clean up for Drop debug_asserts.
