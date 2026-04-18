@@ -2443,14 +2443,14 @@ impl emView {
 
     // --- Navigation ---
 
+    // Navigation methods (`Visit{Next,Prev,First,Last,Left,Right,Up,Down,In,Out,Neighbour}`)
+    // match C++ emView.cpp:564-762 exactly — no internal `NO_NAVIGATE`/
+    // `NO_USER_NAVIGATION` gate. User-navigation callers (input dispatch,
+    // keybindings, VIF cheats) gate on `NO_USER_NAVIGATION` before calling
+    // these methods; programmatic callers (animators, tests) do not gate.
+
     /// Port of C++ `emView::VisitNext()` (emView.cpp:564-578).
     pub fn VisitNext(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusableNext(active);
         if p.is_none() {
@@ -2471,12 +2471,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitPrev()` (emView.cpp:581-595).
     pub fn VisitPrev(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusablePrev(active);
         if p.is_none() {
@@ -2497,12 +2491,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitFirst()` (emView.cpp:598-608).
     pub fn VisitFirst(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusableParent(active);
         if let Some(parent) = p {
@@ -2514,12 +2502,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitLast()` (emView.cpp:611-621).
     pub fn VisitLast(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusableParent(active);
         if let Some(parent) = p {
@@ -2551,12 +2533,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitIn()` (emView.cpp:740-746).
     pub fn VisitIn(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         if let Some(p) = tree.GetFocusableFirstChild(active) {
             self.VisitPanel(tree, p, true);
@@ -2567,12 +2543,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitOut()` (emView.cpp:749-762).
     pub fn VisitOut(&mut self, tree: &mut PanelTree) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let Some(active) = self.active else { return };
         if let Some(p) = tree.GetFocusableParent(active) {
             self.VisitPanel(tree, p, true);
@@ -2589,12 +2559,6 @@ impl emView {
 
     /// Port of C++ `emView::VisitNeighbour(direction)` (emView.cpp:648-737).
     pub fn VisitNeighbour(&mut self, tree: &mut PanelTree, direction: i32) {
-        if self
-            .flags
-            .intersects(ViewFlags::NO_NAVIGATE | ViewFlags::NO_USER_NAVIGATION)
-        {
-            return;
-        }
         let direction = direction & 3;
         let Some(current0) = self.active else { return };
         let parent = tree

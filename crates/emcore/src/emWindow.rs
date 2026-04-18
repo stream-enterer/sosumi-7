@@ -933,12 +933,21 @@ impl emWindow {
             }
         }
 
-        // Tab / Shift+Tab focus cycling (C++ emPanel.cpp FocusNext/FocusPrev)
+        // Tab / Shift+Tab focus cycling (C++ emPanel.cpp FocusNext/FocusPrev).
+        // User-nav gate: C++ `emView::Visit*` nav methods do not gate internally
+        // (see comment above the nav block in emView.rs); the user-nav callers
+        // gate on `NO_USER_NAVIGATION`.
         if event.key == InputKey::Tab && event.variant == InputVariant::Press {
-            if state.GetShift() {
-                self.view.VisitPrev(tree);
-            } else {
-                self.view.VisitNext(tree);
+            if !self
+                .view
+                .flags
+                .contains(crate::emView::ViewFlags::NO_USER_NAVIGATION)
+            {
+                if state.GetShift() {
+                    self.view.VisitPrev(tree);
+                } else {
+                    self.view.VisitNext(tree);
+                }
             }
             return;
         }
@@ -1033,7 +1042,13 @@ impl emWindow {
         // Rust routes via this post-behavior block for architectural consistency
         // with the existing arrow-key arrangement.)
         // Only fires if no behavior consumed the event.
-        if !consumed && event.variant == InputVariant::Press {
+        // User-nav gate: C++ `emView::Visit*` nav methods do not gate internally;
+        // the user-nav caller (this keybinding block) gates on `NO_USER_NAVIGATION`.
+        let user_nav_blocked = self
+            .view
+            .flags
+            .contains(crate::emView::ViewFlags::NO_USER_NAVIGATION);
+        if !consumed && !user_nav_blocked && event.variant == InputVariant::Press {
             match event.key {
                 InputKey::ArrowLeft if state.IsNoMod() => self.view.VisitLeft(tree),
                 InputKey::ArrowRight if state.IsNoMod() => self.view.VisitRight(tree),

@@ -180,12 +180,19 @@ impl PipelineTestHarness {
             }
         }
 
-        // Tab / Shift+Tab focus cycling (C++ emPanel.cpp FocusNext/FocusPrev)
+        // Tab / Shift+Tab focus cycling (C++ emPanel.cpp FocusNext/FocusPrev).
+        // User-nav gate: nav methods don't gate internally; gate here.
         if event.key == InputKey::Tab && event.variant == InputVariant::Press {
-            if self.input_state.GetShift() {
-                self.view.VisitPrev(&mut self.tree);
-            } else {
-                self.view.VisitNext(&mut self.tree);
+            if !self
+                .view
+                .flags
+                .contains(emcore::emView::ViewFlags::NO_USER_NAVIGATION)
+            {
+                if self.input_state.GetShift() {
+                    self.view.VisitPrev(&mut self.tree);
+                } else {
+                    self.view.VisitNext(&mut self.tree);
+                }
             }
             return;
         }
@@ -246,7 +253,13 @@ impl PipelineTestHarness {
         // Rust routes via this post-behavior block for architectural consistency
         // with the existing arrow-key arrangement.)
         // Only fires if no behavior consumed the event.
-        if !consumed && event.variant == InputVariant::Press {
+        // User-nav gate: C++ `emView::Visit*` nav methods do not gate internally;
+        // the user-nav caller gates on `NO_USER_NAVIGATION`.
+        let user_nav_blocked = self
+            .view
+            .flags
+            .contains(emcore::emView::ViewFlags::NO_USER_NAVIGATION);
+        if !consumed && !user_nav_blocked && event.variant == InputVariant::Press {
             let st = &self.input_state;
             match event.key {
                 InputKey::ArrowLeft if st.IsNoMod() => self.view.VisitLeft(&mut self.tree),
