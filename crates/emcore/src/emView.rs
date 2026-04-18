@@ -595,7 +595,15 @@ impl emView {
         if self.window_focused == focused {
             return;
         }
+        // C++ emView.cpp:1211: InvalidateHighlight before clearing focus.
+        if self.window_focused {
+            self.InvalidateHighlight(tree);
+        }
         self.window_focused = focused;
+        // C++ emView.cpp:1213: InvalidateHighlight after acquiring focus.
+        if self.window_focused {
+            self.InvalidateHighlight(tree);
+        }
         // C++ emView::SetFocused iterates ALL panels and queues:
         //   NF_VIEW_FOCUS_CHANGED | NF_UPDATE_PRIORITY_CHANGED on every panel
         //   NF_FOCUS_CHANGED additionally on panels in the active path
@@ -1382,8 +1390,15 @@ impl emView {
         if self.active == Some(target) {
             if self.activation_adherent != adherent {
                 self.activation_adherent = adherent;
+                // C++ emView.cpp:312: InvalidateHighlight on adherent-only change.
+                self.InvalidateHighlight(tree);
             }
             return;
+        }
+
+        // C++ emView.cpp:284: InvalidateHighlight for the outgoing active panel.
+        if self.active.is_some() {
+            self.InvalidateHighlight(tree);
         }
 
         // Build notice flags: always ACTIVE_CHANGED, add FOCUS_CHANGED if focused
@@ -1418,6 +1433,8 @@ impl emView {
             }
         }
         self.activation_adherent = adherent;
+        // C++ emView.cpp:305: InvalidateHighlight for the new active panel.
+        self.InvalidateHighlight(tree);
         self.control_panel_invalid = true;
         if let Some(sig) = self.control_panel_signal {
             if let Some(sched) = &self.scheduler {
@@ -5743,6 +5760,66 @@ mod tests {
         assert!(
             v.dirty_rects.len() > before,
             "InvalidateHighlight should append a dirty rect"
+        );
+    }
+
+    /// W1b: set_active_panel on a transition must push a dirty rect,
+    /// matching C++ emView.cpp:284 (old active) and emView.cpp:305 (new
+    /// active). Checks the transition case where both branches contribute.
+    #[test]
+    fn set_active_panel_transition_invalidates_highlight() {
+        let (mut tree, root, child1, child2) = setup_tree();
+        let mut v = emView::new(root, 640.0, 480.0);
+        v.Update(&mut tree);
+        // Establish child1 as active first.
+        v.set_active_panel(&mut tree, child1, false);
+        v.dirty_rects.clear();
+        // Transition to child2 — must InvalidateHighlight for old (child1) and new (child2).
+        v.set_active_panel(&mut tree, child2, false);
+        assert!(
+            !v.dirty_rects.is_empty(),
+            "set_active_panel transition should InvalidateHighlight"
+        );
+    }
+
+    /// W1b: set_active_panel with only ActivationAdherent changing must
+    /// still push a dirty rect, matching C++ emView.cpp:312.
+    #[test]
+    fn set_active_panel_adherent_only_invalidates_highlight() {
+        let (mut tree, root, child1, _child2) = setup_tree();
+        let mut v = emView::new(root, 640.0, 480.0);
+        v.Update(&mut tree);
+        v.set_active_panel(&mut tree, child1, false);
+        v.dirty_rects.clear();
+        // Same panel, different adherent — only C++ emView.cpp:312 branch fires.
+        v.set_active_panel(&mut tree, child1, true);
+        assert!(
+            !v.dirty_rects.is_empty(),
+            "set_active_panel adherent-only change should InvalidateHighlight"
+        );
+    }
+
+    /// W1b: SetFocused must InvalidateHighlight twice — once if already
+    /// focused (C++ emView.cpp:1211) and once if now focused (C++
+    /// emView.cpp:1213). Observed as at least one dirty rect post-call.
+    #[test]
+    fn set_focused_invalidates_highlight() {
+        let (mut tree, root, child1, _child2) = setup_tree();
+        let mut v = emView::new(root, 640.0, 480.0);
+        v.Update(&mut tree);
+        v.set_active_panel(&mut tree, child1, false);
+        v.SetFocused(&mut tree, true);
+        v.dirty_rects.clear();
+        v.SetFocused(&mut tree, false);
+        assert!(
+            !v.dirty_rects.is_empty(),
+            "SetFocused(false) while focused should InvalidateHighlight"
+        );
+        v.dirty_rects.clear();
+        v.SetFocused(&mut tree, true);
+        assert!(
+            !v.dirty_rects.is_empty(),
+            "SetFocused(true) should InvalidateHighlight"
         );
     }
 
