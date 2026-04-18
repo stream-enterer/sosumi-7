@@ -17,8 +17,8 @@ This document is the source of truth for residual work. It catalogues the state 
 | Axis | Status |
 |---|---|
 | Phases delivered | **Original 10/10** + W3 + W4 |
-| Commits on main | **~44** (14 original + W3 cluster + 14 W4 + merges) |
-| Tests | 2425/2425 nextest, 9 skipped, 0 failed |
+| Commits on main | **~51** (14 original + W3 cluster + 14 W4 + SP1 bundle + SP3 bundle + merges) |
+| Tests | 2429/2429 nextest, 9 skipped, 0 failed |
 | Golden | 237 passed / 6 failed (baseline parity — same 6 pre-existing failures across all waves) |
 | Smoke (`timeout 20 cargo run --release --bin eaglemode`) | exits 143 / 124 — program stays alive |
 | Scaffolds still in tree | **0** (both `PopupPlaceholder` and the visit-stack scaffolding are gone) |
@@ -167,7 +167,7 @@ Per CLAUDE.md, `DIVERGED:` is the prescribed marker for name mismatches; the W4 
 
 ## 5. Reviewer findings carried forward
 
-Everything below was flagged during one of the three waves. Items closed by SP1 on 2026-04-18 are marked inline; the rest are open and covered by SP2–SP6 (see §8.0).
+Everything below was flagged during one of the three waves. Items closed by SP1 or SP3 on 2026-04-18 are marked inline; the rest are open and covered by SP4–SP7 (see §8.0).
 
 ### 5.1 Important
 
@@ -209,7 +209,7 @@ All items in this section closed by SP1 on 2026-04-18.
 | `UPSTREAM-GAP:` | 2 | Intentional — `IsSoftKeyboardShown` / `ShowSoftKeyboard` in `emViewPort.rs`; no upstream backend overrides them |
 | `backend-gap:` | 0 | Phase 8 cleared the last one |
 | `KNOWN GAP` | 0 | W4 closed the `factor=1.0` marker |
-| `DIVERGED:` (new this wave+W3+W4+SP1) | 6 | 1 W3 (`OsSurface` accessor inlining) + 4 W4 (arity-overload renames; `VisitByIdentityBare`/`SetGoalCoords` post-SP1) + 1 SP1 (`emView::Input` animator-forward location); all warranted per CLAUDE.md |
+| `DIVERGED:` (new this wave+W3+W4+SP1+SP3) | 8 | 1 W3 (`OsSurface` accessor inlining) + 4 W4 (arity-overload renames; `VisitByIdentityBare`/`SetGoalCoords` post-SP1) + 1 SP1 (`emView::Input` animator-forward location) + 2 SP3 (`emCoreConfig::VISIT_SPEED_MAX`/`VisitSpeed_GetMaxValue` flattening; `emSubViewPanel` standalone config); all warranted per CLAUDE.md |
 
 ---
 
@@ -243,7 +243,8 @@ All items in this section closed by SP1 on 2026-04-18.
 
 - Original wave close: 2409/2409.
 - Post-W3: 2418/2418 (+9 from W3 additions).
-- Post-W4: **2425/2425** (+10 W4 additions, −1 for the deletion, +some test-migration consolidations).
+- Post-W4: 2425/2425 (+10 W4 additions, −1 for the deletion, +some test-migration consolidations).
+- Post-SP3: **2429/2429** (+2 emCoreConfig SP3 tests + 1 emViewAnimator SP3 test + 1 emView SP3 test).
 - Golden: 237/243 throughout all three waves (same 6 pre-existing failures: `composition_tktest_{1x,2x}`, `notice_window_resize`, `testpanel_{expanded,root}`, `widget_file_selection_box`).
 
 ### 7.5 Smoke exit-code note
@@ -258,7 +259,7 @@ Numbered in rough priority / landing order. Items marked `[W#]` are cheap C++-mi
 
 ### 8.0 Sub-project decomposition (added 2026-04-18)
 
-Brainstorming on 2026-04-18 grouped the 14 residuals into six independently-schedulable sub-projects, each getting its own spec → plan → implementation cycle:
+Brainstorming on 2026-04-18 grouped the residuals into seven independently-schedulable sub-projects, each getting its own spec → plan → implementation cycle (SP7 was surfaced during SP3 brainstorming):
 
 | Sub-project | Items | State | Artifacts |
 |---|---|---|---|
@@ -270,7 +271,7 @@ Brainstorming on 2026-04-18 grouped the 14 residuals into six independently-sche
 | **SP6 — W3 surface de-dup** | 13 | Optional; may skip entirely | — |
 | **SP7 — emContext threading through view/window subsystem** | 15 | Not started; ARCH; surfaced 2026-04-18 during SP3 brainstorming | — |
 
-**Suggested execution order:** SP1 → SP3 → SP4 → (SP5 if unblocked) → SP6 if wanted → SP7 when the motivation arrives. (SP2 turned out to be already done — landed in SP1 as W1b.)
+**Suggested execution order:** ~~SP1~~ → ~~SP3~~ → SP4 → (SP5 if unblocked) → SP6 if wanted → SP7 when the motivation arrives. (SP2 turned out to be already done — landed in SP1 as W1b.) SP1 and SP3 landed 2026-04-18.
 
 ### 8.1 Residual inventory
 
@@ -289,7 +290,7 @@ Brainstorming on 2026-04-18 grouped the 14 residuals into six independently-sche
 13. **[ARCH] W3 surface-creation de-duplication** (optional) — extract `build_materialized_surface(gpu, winit_window) -> MaterializedSurface` to deduplicate ~50 lines between `materialize_popup_surface` and `emWindow::create()`. (§3.5 item 1.)
 14. **[ARCH] emView::Update scheduler re-entrant borrow** — discovered during W5a investigation. `emView::Update` at `emView.rs:~2288` calls `self.scheduler.as_ref().unwrap().borrow()` to check `is_signaled_for_engine(close_signal, eng_id)`. Callers (including `emGUIFramework::about_to_wait:491` in production, and any principled single-engine test design) hold `sched.borrow_mut()` across `DoTimeSlice`, whose engine chain runs `UpdateEngineClass::Cycle` → `emView::Update`. The inner `borrow()` panics re-entrantly. In production this path fires whenever a popup's `close_signal` is pending when the update engine's cycle runs — it is not merely a test issue. Fix options: (a) add an `Option<&mut EngineCtxInner>` (or equivalent) parameter to `emView::Update` so the caller can pass scheduler context directly rather than reaching back through `self.scheduler` — cascades through ~20 call sites; (b) cache the signal's clock value in a new field on `emView` during signal processing so `Update` can check without going through the scheduler. Option (a) matches C++ structure more closely (`emView::Update` in C++ has direct access to `Scheduler` via the view context); option (b) is a smaller localized change. Blocks item 11.
 
-15. **[ARCH] `emContext` threading through view/window subsystem** — surfaced 2026-04-18 during SP3 brainstorming (expanded from what was then called "option C" for SP3 — acquiring `CoreConfig` the C++ way rather than constructing it ad-hoc). SP3 itself will construct/pass a `CoreConfig` directly at `emView::new` without routing through a context; this item covers the broader architectural gap.
+15. **[ARCH] `emContext` threading through view/window subsystem** — surfaced 2026-04-18 during SP3 brainstorming (expanded from what was then called "option C" for SP3 — acquiring `CoreConfig` the C++ way rather than constructing it ad-hoc). SP3 landed the direct-injection approach (`emView::new` takes `Rc<RefCell<emCoreConfig>>`); this item covers the broader architectural gap of routing acquisition through a context tree.
 
     **Gap.** C++ `emView::emView(emContext & parentContext, ViewFlags)` takes a parent context, calls `emCoreConfig::Acquire(GetRootContext())` at construction (`emView.cpp:35`), and participates in a tree of contexts that inherit services (clipboard, config models, the model registry). The Rust port has an `emContext` type (`crates/emcore/src/emContext.rs`, ~393 lines) with `NewRoot`, `NewChild`, scheduler lookup via parent chain, and typed-singleton model Acquire — but **no caller in the view/window/panel subsystem ever threads one through.** Specifically:
     - `emView::new(root, w, h)` takes no context. ~15 production + test call sites.
