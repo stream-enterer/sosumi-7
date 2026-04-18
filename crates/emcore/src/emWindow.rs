@@ -194,6 +194,27 @@ impl emWindow {
             vp.borrow_mut().window = Some(Rc::downgrade(&window));
         }
 
+        // Phase 9 (emview-rewrite-followups): seed the view's max_popup_rect
+        // from the owning monitor's bounds so popup geometry uses real
+        // screen dimensions. `current_monitor()` may return None on Wayland
+        // without position queries; in that case the home-rect fallback in
+        // `GetMaxPopupViewRect` applies.
+        {
+            let mut win_mut = window.borrow_mut();
+            if let Some(monitor) = win_mut.winit_window.current_monitor() {
+                let pos = monitor.position();
+                let size = monitor.size();
+                win_mut
+                    .view
+                    .set_max_popup_rect(Some(crate::emPanel::Rect::new(
+                        pos.x as f64,
+                        pos.y as f64,
+                        size.width as f64,
+                        size.height as f64,
+                    )));
+            }
+        }
+
         window
     }
 

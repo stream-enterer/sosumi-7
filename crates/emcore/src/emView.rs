@@ -3093,10 +3093,9 @@ impl emView {
     /// Port of C++ `emView::GetMaxPopupViewRect(pX, pY, pW, pH)`.
     ///
     /// Returns the maximum bounding rect for the popup window (usually the
-    /// owning monitor's work area). Falls back to the home rect when no
-    /// backend provides monitor info.
-    ///
-    /// PHASE-5-TODO: delegate to emWindowPort for real monitor bounds.
+    /// owning monitor's work area). When no monitor info is available
+    /// (e.g., headless or Wayland without position queries), falls back to
+    /// the home rect.
     pub fn GetMaxPopupViewRect(&self, out: &mut (f64, f64, f64, f64)) {
         if let Some(ref rect) = self.max_popup_rect {
             *out = (rect.x, rect.y, rect.w, rect.h);

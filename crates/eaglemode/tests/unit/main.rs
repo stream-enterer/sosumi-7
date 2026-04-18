@@ -1,6 +1,7 @@
 mod image_file_panel;
 mod input;
 mod input_dispatch_chain;
+mod max_popup_rect_fallback;
 mod model;
 mod panel;
 mod popup_window;
