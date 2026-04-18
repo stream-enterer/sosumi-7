@@ -837,11 +837,11 @@ impl emWindow {
             self.last_mouse_pos = (event.mouse_x, event.mouse_y);
         }
 
-        // C++ emView.cpp:1004: forward input to ActiveAnimator first.
-        // Rust-arch note: the animator lives on emWindow (not emView) by the
-        // Phase 5/6 decision, so this forward happens in the caller. A
-        // `visiting` animator may eat the event here, in which case the VIF
-        // chain and panel broadcast below see an empty event.
+        // C++ emView.cpp:1004: forward input to ActiveAnimator first. The
+        // animator slot lives here (not on `emView`) per the Rust
+        // structural divergence documented on `emView::Input`. A `visiting`
+        // animator may eat the event, in which case the VIF chain and
+        // panel broadcast below see an empty event.
         let mut event = event.clone();
         if let Some(mut anim) = self.active_animator.take() {
             let was_active = anim.is_active();

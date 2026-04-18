@@ -3775,26 +3775,26 @@ impl emView {
     /// method only runs the prologue that the downstream code (tile
     /// invalidation, cursor resolution) depends on.
     ///
-    /// PHASE-6-FOLLOWUP: migrate the VIF-chain + panel-broadcast dispatch
-    /// from `emWindow::dispatch_input` into this method; invoke
-    /// `RecurseInput` once its Rust port exists. The animator forward
-    /// (C++ emView.cpp:1004) is handled by the caller sites
-    /// (`emWindow::dispatch_input`, `emSubViewPanel::Behavior::Input`)
-    /// because the animator lives on those owners, not on `emView`.
+    /// Port of C++ `emView::Input` (emView.cpp:1004).
+    ///
+    /// DIVERGED: animator-forward location. C++ `emView::Input` begins with
+    /// `ActiveAnimator->Input(event, state)` at emView.cpp:1004, because
+    /// C++ `emView` owns the `ActiveAnimator` field. In the Rust port the
+    /// active animator instead lives on the input-dispatch *owner* —
+    /// `emWindow::active_animator` (see `emWindow::dispatch_input` at
+    /// emWindow.rs:840-862) and `emSubViewPanel::active_animator` (see
+    /// `emSubViewPanel::Behavior::Input`). Both callers forward the event
+    /// to their animator slot BEFORE invoking this method, so the
+    /// C++-equivalent invariant ("animator sees input first") is preserved.
+    /// This is a structural — not observable — divergence, retained because
+    /// giving `emView` its own animator field would duplicate the slot and
+    /// cascade ownership changes across the input dispatch chain.
     pub fn Input(
         &mut self,
         _tree: &mut PanelTree,
         _event: &crate::emInput::emInputEvent,
         state: &crate::emInputState::emInputState,
     ) {
-        // C++ emView.cpp:1004: forward input to ActiveAnimator first.
-        // Rust-arch note: the active animator lives on emWindow
-        // (see emWindow::dispatch_input) and on emSubViewPanel
-        // (see emSubViewPanel::Behavior::Input), not on emView — by the
-        // Phase 5/6 design decision. Those callers forward the event to
-        // their animator slot BEFORE invoking this method, so by the time
-        // Input runs here the event may already have been eaten.
-
         // emView.cpp:1006-1014: cursor-invalid on mouse move.
         let mx = state.GetMouseX();
         let my = state.GetMouseY();
