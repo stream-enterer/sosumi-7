@@ -2,6 +2,29 @@
 
 A zoomable UI framework — reimplementation of Eagle Mode's emCore in Rust.
 
+## Port Ideology
+
+eaglemode-rs is an **observational port** of emCore. From a user's seat — visible behavior, event order, timing, signals, focus, input, pixel output — Rust and C++ must be indistinguishable. Not "same output": same what-fires-when, same what-is-true-at-each-observable-moment.
+
+**Authority order** (higher wins):
+1. C++ source — ground truth for behavior, algorithms, and design. Eagle Mode 0.96.4 at `~/git/eaglemode-0.96.4/` (headers in `include/emCore/`, implementation in `src/emCore/`).
+2. Golden tests — the mechanical arbiter of observable equivalence.
+3. Rust idiom — applies only below the observable surface, and only where C++ structure is not load-bearing.
+4. LLM judgment / convenience — lowest. Never outranks the above.
+
+**Classify every divergence from C++:**
+- **Forced** — Rust or a required dependency (winit/wgpu) makes the C++ shape literally impossible. Not "awkward", not "would require refactoring" — impossible. Minimize the concession.
+- **Design intent** — a deliberate architectural choice by the C++ author. Preserve; it is load-bearing.
+- **Idiom adaptation** — below the observable surface, outside name correspondence. Adapt syntax and ownership freely; behavior stays identical.
+
+**Failure modes this prevents:**
+- Collapsing *design intent* into *forced*: using one real constraint as license to redesign surrounding C++ structure.
+- Treating Rust convenience as a reason to diverge. Convenience is never a reason.
+- Speculating about author intent instead of reading C++ to confirm.
+- Preserving Rust out of inertia when it diverges from C++. Rust is defective by default; C++ is the reference.
+
+**When unsure:** match C++ exactly and mark the divergence point explicitly. Silent drift is worse than verbose preservation. If unclear whether a C++ choice is intent or incident, assume intent and read the source before concluding otherwise.
+
 ## Commands
 
 ```bash
@@ -17,9 +40,7 @@ Do not skip with `--no-verify`. If a commit fails, fix the cause and retry.
 
 ## Code Rules
 
-For any task of the form "identify/filter/classify code by property P": Is P a property that an existing tool computes exactly? If yes, your approach is: generate inputs → invoke tool on all inputs → parse structured output. Do not write a custom filter.
-- Abstract example: To find which functions in a codebase satisfy a type-level constraint, don't scan source text for signatures — generate a file that attempts to use each function in the constrained context, compile it, and parse the errors. The compiler is the arbiter of type-level properties.
-- Concrete example: To find which functions can have Kani harnesses generated, don't grep for "pure" functions or filter by name/signature patterns. Generate a harness for every function, compile them all, and let rustc and Kani tell you which ones are valid. Parse their structured error output into your inventory.
+For "identify/filter/classify code by property P" tasks where P is computed exactly by an existing tool: generate inputs → run the tool on all inputs → parse structured output. Don't write a custom filter. Example: to find which functions can have Kani harnesses generated, don't grep for "pure" signatures — generate a harness for every function, compile them all, and parse rustc/Kani's errors.
 
 - **Types & coordinates**: `f64` logical, `i32` pixel, `u32` image dims, `u8` color channels.
 - **Color**: `Color` (packed u32 RGBA) for storage. Intermediate blend math in `i32` or wider.
@@ -33,15 +54,14 @@ For any task of the form "identify/filter/classify code by property P": Is P a p
 - **Unwrap**: `expect("reason")` unless invariant is obvious from context. Bare `unwrap()` fine in tests and same-line proofs.
 - **Warnings**: Fix the cause (remove dead code, prefix `_`, apply clippy fix). Suppress only genuine false positives with a comment.
 
-## C++ Reference Source
-
-Eagle Mode 0.96.4 source is at `~/git/eaglemode-0.96.4/` (headers in `include/emCore/`, implementation in `src/emCore/`).
-
 ## File and Name Correspondence
 
-The codebase should be a transparent overlay on the C++ original. A developer holding `emFoo.h` open should be able to find `emFoo.rs`, scan for the method name, and land on the corresponding code without guessing, searching, or asking. Where the overlay can't be 1:1, the exception is marked at the exact point of divergence with the C++ name and the reason, so the developer never has to wonder whether something was missed or renamed silently.
+The codebase is a transparent overlay on the C++ original: a developer with `emFoo.h` open finds `emFoo.rs`, scans for the method name, and lands on the corresponding code without guessing. Every exception is marked at the point of divergence with the C++ name and the reason — nothing is renamed silently.
 
-Every C++ header in `include/emCore/` has exactly one Rust file in `src/emCore/` with the same name (`emFoo.h` → `emFoo.rs`), containing all types and methods from that header with identical names (`class emColor` → `struct emColor`, `GetRed` → `GetRed`). Where Rust requires splitting one C++ file into multiple Rust files (e.g., the Modules rule "one primary type per file" requires it), the primary file keeps the C++ name and the splits are named `emFoo{Suffix}.rs` where the suffix is derived from the existing Rust filename, with a `SPLIT:` comment at the top explaining why. Where a Rust method or type cannot keep the C++ name, it has a `DIVERGED:` comment at its definition with the C++ name and the reason. Everything not annotated `SPLIT:` or `DIVERGED:` is 1:1 by name.
+- **1:1 by default**: each `include/emCore/emFoo.h` → exactly one `src/emCore/emFoo.rs` with identical type and method names (`class emColor` → `struct emColor`, `GetRed` → `GetRed`).
+- **Splits**: when Modules' "one primary type per file" forces splitting, the primary file keeps the C++ name; splits are named `emFoo{Suffix}.rs` with a `SPLIT:` comment at the top explaining why.
+- **Renames**: any Rust method or type that can't keep the C++ name carries a `DIVERGED:` comment at its definition with the C++ name and the reason.
+- Anything not annotated `SPLIT:` or `DIVERGED:` is 1:1 by name.
 
 Filesystem markers in `src/emCore/`:
 - C++ headers with no Rust equivalent (e.g., `emArray.h` → `Vec<T>`) get an empty marker file: `emArray.no_rust_equivalent`. Lists all exempt headers visibly on the filesystem.
@@ -49,7 +69,7 @@ Filesystem markers in `src/emCore/`:
 
 ## Port Fidelity
 
-eaglemode-rs is a port of Eagle Mode's emCore. Golden tests compare Rust pixel output against C++ reference data. The fidelity rules depend on what layer the code is in.
+Concretization of the Port Ideology by code layer. Golden tests compare Rust pixel output against C++ reference data; the fidelity rules depend on what layer the code is in.
 
 **Pixel arithmetic** (blend, coverage, interpolation, sampling): Reproduce C++ integer formulas exactly. Use `(x*257+0x8073)>>16` not `f64` division. Wrap in newtypes (`Fixed12`, `div255_round()`). Named constants with derivations: `const BLINN_BIAS: u32 = 0x8073; // (128 * 257 + 1) / 2`. No f64 approximations in the compositing pipeline.
 
@@ -105,8 +125,6 @@ Parse `target/golden-divergence/divergence.jsonl` (auto-generated at zero tolera
 - Truncate color math to `u8` mid-calculation
 - `f64` in blend/coverage/interpolation paths — use C++ integer arithmetic
 - Rayon / parallel iteration on golden-tested code paths
-- `assert!` for recoverable errors
-- `--no-verify` on commits
 
 ## Plan Tool Rules
 
