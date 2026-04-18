@@ -28,23 +28,23 @@ This is sub-project 1 of 5 derived from the emView closeout residuals. Sibling s
 
 Ordered by suggested landing sequence; each task is independently committable.
 
-### 3.1 `emView::Input` animator-forward port
+### 3.1 `emView::Input` animator-forward — promote in-code comment to `DIVERGED:`
 
-**Source of truth:** C++ `emView.cpp:1004` — `ActiveAnimator->Input(event, state);` at the top of `emView::Input`, before the body processes the event.
+**Context discovered during plan-writing.** The reviewer item in §5.1/3 of the closeout characterises the animator-forward as "missing", but the existing Rust code at `crates/emcore/src/emView.rs:3778-3797` already documents that the forward is *architecturally* handled by the two callers that physically own an animator slot — `emWindow::dispatch_input` (`emWindow.rs:840-862`) and `emSubViewPanel::Behavior::Input`. Those call sites forward to the animator *before* invoking `emView::Input`. `emView` in Rust does not own an animator field; C++'s `emView::ActiveAnimator` sits on the owner of the input dispatch chain in the Rust port. The observable behavior matches C++ (animator sees input first); only the location of the forward differs.
 
-**Change.** At the top of `emView::Input` (`crates/emcore/src/emView.rs:~3524`), before the existing body, forward the event to the active animator:
+**Source of truth.** C++ `emView.cpp:1004` forwards from within `emView::Input`. Rust forwards from the two callers for structural reasons. This is a **structural divergence**, not a gap.
 
-```rust
-if let Some(anim) = self.active_animator.as_ref() {
-    anim.borrow_mut().Input(event, state);
-}
-```
+**Change.** Promote the existing code comment at `emView.rs:3778-3797` from a casual prose block to a formal `DIVERGED:` marker per CLAUDE.md's "File and Name Correspondence" rules. Delete the `PHASE-6-FOLLOWUP:` prefix line; the deferral is resolved. The new comment block should:
 
-(Exact field and borrow shape to be confirmed at implementation time — the active-animator handle already exists from W4.)
+- Open with `// DIVERGED: emView::Input animator-forward location.`
+- State the C++ reference: `emView.cpp:1004`'s `ActiveAnimator->Input(event, state);`.
+- State the Rust architectural choice: animator ownership lives on `emWindow` and `emSubViewPanel` (the input-dispatch owners), not on `emView`.
+- State the forwarding call sites: `emWindow::dispatch_input` and `emSubViewPanel::Behavior::Input`.
+- State the observable invariant: the animator still sees the event before any view-body side effect — tested by the existing integration tests.
 
-**Marker cleanup.** Remove the `PHASE-6-FOLLOWUP:` comment at `emView.rs:~3626` (the VIF-chain note); the forward covers what that comment anticipated.
+**No code change.** Observable behavior is already correct.
 
-**Test.** Add `input_forwards_to_active_animator` as a behavioural test: install a recording animator, dispatch an input event to the view, assert the animator saw the event before any view-body side effect.
+**Test.** None. The existing emWindow/emSubViewPanel integration tests cover the animator-sees-input-first invariant. No new test needed, since no code changes.
 
 ### 3.2 Navigation `NO_NAVIGATE` gate removal + caller audit
 
@@ -123,7 +123,9 @@ Update the `DIVERGED:` comments at each definition to reference both the C++ nam
 
 ### 3.7 Re-entrancy doc comments on `PaintView` / `InvalidatePainting`
 
-**Change.** Add a paragraph-length doc comment on each of `PaintView` and `InvalidatePainting` in `crates/emcore/src/emViewPort.rs` explaining:
+**Context discovered during plan-writing.** Detailed re-entrancy warnings already exist at `emViewPort.rs:164-174` (PaintView) and `~265-270` (InvalidatePainting). This task is a verification/polish pass, not fresh authoring.
+
+**Change.** Audit the two doc blocks and verify they cover:
 
 - Both upgrade `self.window: Weak<RefCell<emWindow>>` via `upgrade()` and then `borrow_mut()`.
 - Safe today because no existing call site holds an outstanding `&mut emWindow` when these methods are invoked.
@@ -139,7 +141,7 @@ Four one-liners (the fifth §5.2 item, the suffix rename, is task 3.5):
 1. **`emSubViewPanel.rs:48`.** Add one-line comment tying the literal `1.0` to `CurrentPixelTallness`'s initial value.
 2. **`emGUIFramework.rs:~393`.** Collapse `let mut win = rc.borrow_mut(); let win = &mut *win;` to `let win = &mut *rc.borrow_mut();`.
 3. **`emGUIFramework.rs::dispatch_forward_events`.** The current doc-comment describes caller-side usage. Either move it to the single call site or delete it; the function-site comment should describe the function.
-4. **`tests/unit/popup_window.rs`.** In `popup_window_creation_path_is_gated_on_display`, remove the dead `DISPLAY`/`WAYLAND_DISPLAY` gate (both branches run unconditionally today). Keep the reachability assertion; simplify the test to match what it actually exercises.
+4. ~~`tests/unit/popup_window.rs`~~ — **dropped.** Audit found the file already clean (no `DISPLAY`/`WAYLAND_DISPLAY` gate present). Closeout doc item was stale.
 
 **Test.** None beyond the existing suite.
 
