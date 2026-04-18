@@ -749,3 +749,107 @@ fn arrow_with_modifier_does_not_navigate() {
         "Shift+ArrowRight should not trigger sibling navigation"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// BP-20: Home/End/PageUp/PageDown navigation via dispatch fallback
+// C++ emPanel.cpp:1168-1198
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn home_end_pageup_pagedown_route_through_animator() {
+    // W4 Phase 4 Task 4.2: Home/End/PageUp/PageDown fire sibling/ancestor
+    // navigation via the emWindow dispatch fallback.
+    // Matches C++ emPanel.cpp:1168-1198.
+
+    let mut h = PipelineTestHarness::new();
+    let root = h.get_root_panel();
+
+    // Three children side-by-side so VisitFirst/VisitLast have somewhere to go.
+    // Layout: [p1 | p2 | p3] left-to-right, all equal-width.
+    let p1 = h.add_panel(root, "p1");
+    h.tree.Layout(p1, 0.0, 0.0, 0.333, 1.0, 1.0);
+    let p2 = h.add_panel(root, "p2");
+    h.tree.Layout(p2, 0.333, 0.0, 0.334, 1.0, 1.0);
+    let p3 = h.add_panel(root, "p3");
+    h.tree.Layout(p3, 0.667, 0.0, 0.333, 1.0, 1.0);
+    h.tick();
+
+    // ── Home (no mod) → VisitFirst → first focusable sibling ─────────
+    h.view.set_active_panel(&mut h.tree, p3, false);
+    h.tick();
+    assert_eq!(h.view.GetActivePanel(), Some(p3));
+
+    h.press_key(InputKey::Home);
+    h.tick();
+    assert_eq!(
+        h.view.GetActivePanel(),
+        Some(p1),
+        "Home should move focus to first sibling (p1)"
+    );
+
+    // ── End (no mod) → VisitLast → last focusable sibling ────────────
+    h.view.set_active_panel(&mut h.tree, p1, false);
+    h.tick();
+
+    h.press_key(InputKey::End);
+    h.tick();
+    assert_eq!(
+        h.view.GetActivePanel(),
+        Some(p3),
+        "End should move focus to last sibling (p3)"
+    );
+
+    // ── PageUp (no mod) → VisitOut → parent ──────────────────────────
+    // Start on p2 (a child of root); PageUp should visit root (parent).
+    h.view.set_active_panel(&mut h.tree, p2, false);
+    h.tick();
+
+    h.press_key(InputKey::PageUp);
+    h.tick();
+    assert_eq!(
+        h.view.GetActivePanel(),
+        Some(root),
+        "PageUp should move focus to parent (root)"
+    );
+
+    // ── PageDown (no mod) → VisitIn → first child ────────────────────
+    // Start on root; PageDown should descend to first focusable child (p1).
+    h.view.set_active_panel(&mut h.tree, root, false);
+    h.tick();
+
+    h.press_key(InputKey::PageDown);
+    h.tick();
+    assert_eq!(
+        h.view.GetActivePanel(),
+        Some(p1),
+        "PageDown should move focus to first child (p1)"
+    );
+}
+
+#[test]
+fn home_with_modifier_does_not_navigate_siblings() {
+    // Home+Ctrl (not a recognized modifier combo for Home) should be a no-op
+    // for sibling navigation, matching the no-mod guard on VisitFirst.
+    let mut h = PipelineTestHarness::new();
+    let root = h.get_root_panel();
+
+    let p1 = h.add_panel(root, "p1");
+    h.tree.Layout(p1, 0.0, 0.0, 0.5, 1.0, 1.0);
+    let _p2 = h.add_panel(root, "p2");
+    h.tree.Layout(_p2, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tick();
+
+    h.view.set_active_panel(&mut h.tree, _p2, false);
+    h.tick();
+
+    // Ctrl+Home — not a recognized combo → no navigation
+    h.input_state.press(InputKey::Ctrl);
+    h.press_key(InputKey::Home);
+    h.input_state.release(InputKey::Ctrl);
+    h.tick();
+    assert_eq!(
+        h.view.GetActivePanel(),
+        Some(_p2),
+        "Ctrl+Home should not trigger VisitFirst"
+    );
+}

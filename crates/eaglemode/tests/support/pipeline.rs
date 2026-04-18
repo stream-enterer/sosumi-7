@@ -241,14 +241,39 @@ impl PipelineTestHarness {
             }
         }
 
-        // Arrow key sibling navigation (C++ emPanel.cpp Input, state.IsNoMod() guard).
+        // Arrow key sibling navigation and Home/End/PageUp/PageDown.
+        // (C++ emPanel.cpp:1168-1198 routes these via emPanel::Input fallback;
+        // Rust routes via this post-behavior block for architectural consistency
+        // with the existing arrow-key arrangement.)
         // Only fires if no behavior consumed the event.
-        if !consumed && event.variant == InputVariant::Press && self.input_state.IsNoMod() {
+        if !consumed && event.variant == InputVariant::Press {
+            let st = &self.input_state;
             match event.key {
-                InputKey::ArrowLeft => self.view.VisitLeft(&mut self.tree),
-                InputKey::ArrowRight => self.view.VisitRight(&mut self.tree),
-                InputKey::ArrowUp => self.view.VisitUp(&mut self.tree),
-                InputKey::ArrowDown => self.view.VisitDown(&mut self.tree),
+                InputKey::ArrowLeft if st.IsNoMod() => self.view.VisitLeft(&mut self.tree),
+                InputKey::ArrowRight if st.IsNoMod() => self.view.VisitRight(&mut self.tree),
+                InputKey::ArrowUp if st.IsNoMod() => self.view.VisitUp(&mut self.tree),
+                InputKey::ArrowDown if st.IsNoMod() => self.view.VisitDown(&mut self.tree),
+
+                // C++ emPanel.cpp:1168-1180: Home with modifier variants.
+                InputKey::Home if st.IsNoMod() => self.view.VisitFirst(&mut self.tree),
+                InputKey::Home if st.IsAltMod() => {
+                    if let Some(p) = self.view.GetActivePanel() {
+                        let adherent = self.view.IsActivationAdherent();
+                        self.view.VisitFullsized(&self.tree, p, adherent, false);
+                    }
+                }
+                InputKey::Home if st.IsShiftAltMod() => {
+                    if let Some(p) = self.view.GetActivePanel() {
+                        let adherent = self.view.IsActivationAdherent();
+                        self.view.VisitFullsized(&self.tree, p, adherent, true);
+                    }
+                }
+
+                // C++ emPanel.cpp:1182-1198
+                InputKey::End if st.IsNoMod() => self.view.VisitLast(&mut self.tree),
+                InputKey::PageUp if st.IsNoMod() => self.view.VisitOut(&mut self.tree),
+                InputKey::PageDown if st.IsNoMod() => self.view.VisitIn(&mut self.tree),
+
                 _ => {}
             }
         }

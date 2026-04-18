@@ -1028,14 +1028,38 @@ impl emWindow {
             }
         }
 
-        // Arrow key sibling navigation (C++ emPanel.cpp Input, state.IsNoMod() guard).
+        // Arrow key sibling navigation and Home/End/PageUp/PageDown.
+        // (C++ emPanel.cpp:1168-1198 routes these via emPanel::Input fallback;
+        // Rust routes via this post-behavior block for architectural consistency
+        // with the existing arrow-key arrangement.)
         // Only fires if no behavior consumed the event.
-        if !consumed && event.variant == InputVariant::Press && state.IsNoMod() {
+        if !consumed && event.variant == InputVariant::Press {
             match event.key {
-                InputKey::ArrowLeft => self.view.VisitLeft(tree),
-                InputKey::ArrowRight => self.view.VisitRight(tree),
-                InputKey::ArrowUp => self.view.VisitUp(tree),
-                InputKey::ArrowDown => self.view.VisitDown(tree),
+                InputKey::ArrowLeft if state.IsNoMod() => self.view.VisitLeft(tree),
+                InputKey::ArrowRight if state.IsNoMod() => self.view.VisitRight(tree),
+                InputKey::ArrowUp if state.IsNoMod() => self.view.VisitUp(tree),
+                InputKey::ArrowDown if state.IsNoMod() => self.view.VisitDown(tree),
+
+                // C++ emPanel.cpp:1168-1180: Home with modifier variants.
+                InputKey::Home if state.IsNoMod() => self.view.VisitFirst(tree),
+                InputKey::Home if state.IsAltMod() => {
+                    if let Some(p) = self.view.GetActivePanel() {
+                        let adherent = self.view.IsActivationAdherent();
+                        self.view.VisitFullsized(tree, p, adherent, false);
+                    }
+                }
+                InputKey::Home if state.IsShiftAltMod() => {
+                    if let Some(p) = self.view.GetActivePanel() {
+                        let adherent = self.view.IsActivationAdherent();
+                        self.view.VisitFullsized(tree, p, adherent, true);
+                    }
+                }
+
+                // C++ emPanel.cpp:1182-1198
+                InputKey::End if state.IsNoMod() => self.view.VisitLast(tree),
+                InputKey::PageUp if state.IsNoMod() => self.view.VisitOut(tree),
+                InputKey::PageDown if state.IsNoMod() => self.view.VisitIn(tree),
+
                 _ => {}
             }
         }
