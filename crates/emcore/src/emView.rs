@@ -6353,136 +6353,80 @@ mod tests {
         }
     }
 
-    /// Phase 8 acceptance test — `emView::Update` drains the popup's
-    /// close_signal and calls `ZoomOut`, and `SwapViewPorts` (via the
-    /// popup-creation path) connects the close_signal to the update engine
-    /// as a wake-up.
+    /// SP4 Phase-8: popup's close_signal, when fired and processed through
+    /// the scheduler, wakes `UpdateEngineClass`, which invokes
+    /// `emView::Update`, which reads `close_signal_pending` and calls
+    /// `ZoomOut`. ZoomOut's popup teardown enqueues a Disconnect +
+    /// RemoveSignal + Fire(geometry_signal), drained at end of Cycle. The
+    /// entire sequence runs in one `DoTimeSlice`.
     ///
-    /// TWO-ENGINE SHAPE IS LOAD-BEARING (W5a finding). The test (a)
-    /// verifies the real `WakeUpUpdateEngineClass` connection via
-    /// `get_signal_refs(close_sig, eng_id) >= 1`, then (b) drives the
-    /// zoom-out teardown via a dormant `NoopEngine` swap + direct
-    /// `v.Update()` call. The apparent harness hack exists because a
-    /// single-engine integrated drive loop is currently infeasible for
-    /// two reasons discovered during the W5a investigation:
-    ///
-    ///   1. `UpdateEngineClass::Cycle` dispatches through
-    ///      `ctx.windows.get(&self.window_id)`. A bare `emView`
-    ///      attached with `WindowId::dummy()` has no registered window,
-    ///      so the engine wakes, cycles once, and no-ops.
-    ///
-    ///   2. `emView::Update` (below, popup-close-signal check) does
-    ///      `sched.borrow()` to call `is_signaled_for_engine`. Callers
-    ///      — including `emGUIFramework::about_to_wait` in production —
-    ///      hold `sched.borrow_mut()` across `DoTimeSlice`, whose
-    ///      engine chain runs `UpdateEngineClass::Cycle` → `Update`.
-    ///      The `borrow()` re-entrantly panics. The `(scoped for
-    ///      borrow correctness)` comment at the call site is
-    ///      incorrect: scoping only helps when the outer borrow isn't
-    ///      live. This is a production defect tracked in the emView
-    ///      subsystem closeout doc §8 as **"emView::Update scheduler
-    ///      re-entrant borrow"**.
-    ///
-    /// When the §8 successor workstream lands (option set: (a) pass
-    /// scheduler context into `Update` via signature change, or (b)
-    /// cache signaled state on the view during the signal-processing
-    /// phase), this test should be rewritten to drive a single real
-    /// engine end-to-end: wrap the view in a real `emWindow` via
-    /// `emWindow::new_popup_pending` (winit/GPU-free — see the test at
-    /// `emWindow.rs::new_popup_pending_constructs_without_event_loop`),
-    /// register it in the `windows` HashMap at the same id given to
-    /// `attach_to_scheduler`, fire the real `close_signal` via the
-    /// consumer API, and drive `DoTimeSlice` in a bounded loop until
-    /// `PopupWindow.is_none()`.
-    // SP4 Phase 3 (Task 3.3) removed the legacy scheduler-borrow fallback in
-    // `emView::Update`; the popup-close probe is now exclusively fed by
-    // `UpdateEngineClass::Cycle` writing `close_signal_pending` ahead of the
-    // `Update` call. This test drives `v.Update(&mut tree)` directly without
-    // going through `Cycle`, so `close_signal_pending` is never set and the
-    // popup can no longer be torn down via this path. The test is rewritten as
-    // a single-engine `DoTimeSlice`-driven flow in SP4 Phase 5 (Task 5.3). See
-    // docs/superpowers/specs/2026-04-18-emview-sp4-update-engine-routing-design.md §2.5.
+    /// Supersedes the previous two-engine harness (dormant-engine swap +
+    /// direct `v.Update()` call), which was a compromise against the
+    /// now-fixed (SP4 Phases 2–5) scheduler re-entrant borrow.
     #[test]
-    #[ignore = "SP4 Phase 5 Task 5.3: rewrite as single-engine DoTimeSlice flow"]
     fn test_phase8_popup_close_signal_zooms_out() {
+        use std::collections::HashMap;
+
         let (mut tree, root, child_a, _) = setup_tree();
-        let mut v = emView::new_for_test(root, 640.0, 480.0);
+        let win_id = winit::window::WindowId::dummy();
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        v.attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
+        let win = crate::emWindow::emWindow::new_for_test(win_id, &sched, root, 640.0, 480.0);
 
-        // Clear zoomed_out_before_sg, enable popup zoom, and create a popup.
-        v.Update(&mut tree);
-        v.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree);
-        v.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true);
-        assert!(
-            v.PopupWindow.is_some(),
-            "popup should be created by RawVisit under POPUP_ZOOM"
-        );
+        // Prime Update (clear zoomed_out_before_sg), push a popup under
+        // POPUP_ZOOM. RawVisit wires close_signal to UpdateEngineClass via
+        // SwapViewPorts.
+        {
+            let mut w = win.borrow_mut();
+            let v = w.view_mut();
+            v.Update(&mut tree);
+            v.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree);
+            v.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true);
+            assert!(v.PopupWindow.is_some());
+        }
 
-        // SwapViewPorts (Step 2) should have allocated close_signal and
-        // connected it to the update engine.
-        let close_sig = v
+        let close_sig = win
+            .borrow()
+            .view()
             .PopupWindow
             .as_ref()
-            .map(|p| p.borrow().close_signal)
-            .expect("PopupWindow present when scheduler is attached");
-        let eng_id = v.update_engine_id.expect("update engine registered");
-        assert!(
-            sched.borrow().get_signal_refs(close_sig, eng_id) >= 1,
-            "close_signal must be connected to the update engine"
-        );
-
-        // Drive the signal phase so sig.clock advances past eng.clock, then
-        // call Update() directly. We swap `update_engine_id` for a dormant
-        // dummy engine before the slice so that (a) the real update engine
-        // (which RawVisit may have woken via WakeUpUpdateEngine) doesn't
-        // interfere with the Update drain test, and (b) the dummy's clock
-        // stays at its registration value while sig.clock advances. The
-        // wake-up connection against the real engine was verified above.
-        use crate::emEngine::{emEngine as EngineTrait, EngineCtx, Priority};
-        struct NoopEngine;
-        impl EngineTrait for NoopEngine {
-            fn Cycle(&mut self, _ctx: &mut EngineCtx<'_>) -> bool {
-                false
-            }
-        }
-        sched.borrow_mut().disconnect(close_sig, eng_id);
-        let dummy_id = sched
-            .borrow_mut()
-            .register_engine(Priority::High, Box::new(NoopEngine));
-        v.update_engine_id = Some(dummy_id);
-        sched.borrow_mut().connect(close_sig, dummy_id);
-        // Immediately disconnect so DoTimeSlice doesn't wake the dummy
-        // either — we only need sig.clock to advance via process signals.
-        sched.borrow_mut().disconnect(close_sig, dummy_id);
-
+            .unwrap()
+            .borrow()
+            .close_signal;
         sched.borrow_mut().fire(close_sig);
-        let mut windows = std::collections::HashMap::new();
-        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
-        // Now sig.clock > dummy.clock (dummy was never cycled this slice).
-        v.Update(&mut tree);
 
-        // Primary invariant: popup is torn down. This proves
-        // Update -> ZoomOut -> RawVisit -> popup teardown branch fired.
+        // One DoTimeSlice: signal processing advances sig.clock; Cycle
+        // observes ctx.IsSignaled(close_sig) = true, stores
+        // close_signal_pending, calls Update → ZoomOut → RawVisitAbs (popup
+        // teardown); drains queued Disconnect/RemoveSignal/Fire ops; exits.
+        let mut windows: HashMap<_, _> = HashMap::new();
+        windows.insert(win_id, Rc::clone(&win));
+        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+
         assert!(
-            v.PopupWindow.is_none(),
-            "popup should be torn down after ZoomOut"
+            win.borrow().view().PopupWindow.is_none(),
+            "close_signal → ZoomOut must tear down PopupWindow in one time slice"
+        );
+        assert!(
+            !win.borrow().view().popped_up,
+            "popped_up must be false after ZoomOut"
         );
 
-        // Scheduler cleanup for Drop debug_asserts. `update_engine_id` now
-        // points at the dummy; the original engine is still registered.
-        if let Some(id) = v.update_engine_id.take() {
-            sched.borrow_mut().remove_engine(id);
-        }
-        sched.borrow_mut().remove_engine(eng_id);
-        if let Some(eoi) = v.EOISignal.take() {
-            sched.borrow_mut().remove_signal(eoi);
-        }
-        if let Some(id) = v.eoi_engine_id.take() {
-            sched.borrow_mut().remove_engine(id);
-        }
-        if let Some(id) = v.visiting_va_engine_id.take() {
-            sched.borrow_mut().remove_engine(id);
+        // Cleanup for scheduler Drop debug_asserts.
+        {
+            let mut w = win.borrow_mut();
+            let v = w.view_mut();
+            if let Some(id) = v.update_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.visiting_va_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.eoi_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(s) = v.EOISignal.take() {
+                sched.borrow_mut().remove_signal(s);
+            }
         }
     }
 
