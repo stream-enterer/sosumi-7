@@ -366,7 +366,7 @@ impl emEngine for MainWindowEngine {
             } else {
                 format!("Eagle Mode - {view_title}")
             };
-            win.winit_window.set_title(&title);
+            win.winit_window().set_title(&title);
         }
 
         // Check if startup is now done.
@@ -816,7 +816,7 @@ pub fn create_main_window(
         focus_signal,
         geometry_signal,
     );
-    let window_id = window.borrow().winit_window.id();
+    let window_id = window.borrow().winit_window().id();
     app.windows.insert(window_id, window);
     mw.window_id = Some(window_id);
 
@@ -945,7 +945,7 @@ pub fn create_control_window(
     let existing_id = with_main_window(|mw| mw.control_window_id).flatten();
     if let Some(cw_id) = existing_id {
         if let Some(rc) = app.windows.get(&cw_id) {
-            rc.borrow().winit_window.focus_window();
+            rc.borrow().winit_window().focus_window();
             return Some(cw_id);
         }
         // Window was closed/removed — clear stale ID.
@@ -983,7 +983,7 @@ pub fn create_control_window(
         focus_signal,
         geometry_signal,
     );
-    let window_id = window.borrow().winit_window.id();
+    let window_id = window.borrow().winit_window().id();
     app.windows.insert(window_id, window);
 
     // Store the control window ID for raise-if-existing logic.

@@ -34,19 +34,46 @@ bitflags! {
     }
 }
 
+/// The OS-level surface state of an `emWindow`.
+///
+/// Popup windows created from `emView::RawVisitAbs` are constructed in
+/// `Pending` state (no winit/wgpu objects yet) because `RawVisitAbs`
+/// runs inside `emView::Update` where `&ActiveEventLoop` is unavailable.
+/// The `emGUIFramework::about_to_wait` drain materializes the surface on
+/// the next tick, transitioning to `Materialized`.
+///
+/// Non-popup windows (the home window, duplicate/ccw children) enter
+/// `Materialized` directly at construction time.
+// W3 Task 1: fields read by Task 2 (deferred popup surface materialization).
+#[allow(dead_code)]
+pub(crate) struct PendingSurface {
+    pub flags: WindowFlags,
+    pub caption: String,
+    pub requested_pos_size: Option<(i32, i32, i32, i32)>,
+}
+
+pub(crate) struct MaterializedSurface {
+    pub winit_window: Arc<winit::window::Window>,
+    pub surface: wgpu::Surface<'static>,
+    pub surface_config: wgpu::SurfaceConfiguration,
+    pub compositor: WgpuCompositor,
+    pub tile_cache: TileCache,
+    pub viewport_buffer: crate::emImage::emImage,
+}
+
+pub(crate) enum OsSurface {
+    // W3 Task 1: variant introduced ahead of constructors. Constructed in
+    // Task 2 (deferred popup creation from `emView::RawVisitAbs`).
+    #[allow(dead_code)]
+    Pending(Box<PendingSurface>),
+    Materialized(Box<MaterializedSurface>),
+}
+
 /// An eaglemode-rs window: owns a winit window, wgpu surface, compositor, tile
 /// cache, and view.
 pub struct emWindow {
-    pub winit_window: Arc<winit::window::Window>,
-    surface: wgpu::Surface<'static>,
-    surface_config: wgpu::SurfaceConfiguration,
-    compositor: WgpuCompositor,
-    tile_cache: TileCache,
+    pub(crate) os_surface: OsSurface,
     view: emView,
-    /// Pre-allocated viewport-sized buffer for single-pass rendering.
-    /// Used when many tiles are dirty (e.g. during panning) to avoid
-    /// redundant tree walks and primitive rasterization across tiles.
-    viewport_buffer: crate::emImage::emImage,
     pub flags: WindowFlags,
     pub close_signal: SignalId,
     pub flags_signal: SignalId,
@@ -153,12 +180,14 @@ impl emWindow {
         ];
 
         let window = Rc::new(RefCell::new(Self {
-            winit_window,
-            surface,
-            surface_config,
-            compositor,
-            tile_cache,
-            viewport_buffer,
+            os_surface: OsSurface::Materialized(Box::new(MaterializedSurface {
+                winit_window,
+                surface,
+                surface_config,
+                compositor,
+                tile_cache,
+                viewport_buffer,
+            })),
             view,
             flags,
             close_signal,
@@ -201,7 +230,7 @@ impl emWindow {
         // `GetMaxPopupViewRect` applies.
         {
             let mut win_mut = window.borrow_mut();
-            if let Some(monitor) = win_mut.winit_window.current_monitor() {
+            if let Some(monitor) = win_mut.winit_window().current_monitor() {
                 let pos = monitor.position();
                 let size = monitor.size();
                 win_mut
@@ -243,6 +272,30 @@ impl emWindow {
         )
     }
 
+    // DIVERGED: Plan listed `materialized()`/`materialized_mut()` returning 6-tuple borrows; inlined as match in callers because the multi-borrow signature is awkward in Rust.
+    /// Public accessor for the materialized winit window.
+    ///
+    /// Panics if the window is still in `OsSurface::Pending`. External
+    /// code that needs to tolerate `Pending` should call
+    /// [`winit_window_if_materialized`](Self::winit_window_if_materialized).
+    pub fn winit_window(&self) -> &Arc<winit::window::Window> {
+        match &self.os_surface {
+            OsSurface::Materialized(m) => &m.winit_window,
+            OsSurface::Pending(_) => panic!("emWindow::winit_window() called while Pending"),
+        }
+    }
+
+    pub fn is_materialized(&self) -> bool {
+        matches!(self.os_surface, OsSurface::Materialized(_))
+    }
+
+    pub(crate) fn winit_window_if_materialized(&self) -> Option<&Arc<winit::window::Window>> {
+        match &self.os_surface {
+            OsSurface::Materialized(m) => Some(&m.winit_window),
+            OsSurface::Pending(_) => None,
+        }
+    }
+
     /// Handle a resize event.
     pub fn resize(
         &mut self,
@@ -253,12 +306,17 @@ impl emWindow {
     ) {
         let w = width.max(1);
         let h = height.max(1);
-        self.surface_config.width = w;
-        self.surface_config.height = h;
-        self.surface.configure(&gpu.device, &self.surface_config);
-        self.compositor.resize(w, h);
-        self.tile_cache.resize(w, h);
-        self.viewport_buffer.setup(w, h, 4);
+        match &mut self.os_surface {
+            OsSurface::Materialized(m) => {
+                m.surface_config.width = w;
+                m.surface_config.height = h;
+                m.surface.configure(&gpu.device, &m.surface_config);
+                m.compositor.resize(w, h);
+                m.tile_cache.resize(w, h);
+                m.viewport_buffer.setup(w, h, 4);
+            }
+            OsSurface::Pending(_) => return,
+        }
         self.view
             .SetGeometry(tree, 0.0, 0.0, w as f64, h as f64, 1.0);
     }
@@ -272,27 +330,51 @@ impl emWindow {
     pub fn render(&mut self, tree: &mut crate::emPanelTree::PanelTree, gpu: &GpuContext) {
         use crate::emPainter::emPainter;
 
+        let (winit_window, surface, surface_config, compositor, tile_cache, viewport_buffer) =
+            match &mut self.os_surface {
+                OsSurface::Materialized(m) => {
+                    let MaterializedSurface {
+                        winit_window,
+                        surface,
+                        surface_config,
+                        compositor,
+                        tile_cache,
+                        viewport_buffer,
+                    } = m.as_mut();
+                    (
+                        winit_window,
+                        surface,
+                        surface_config,
+                        compositor,
+                        tile_cache,
+                        viewport_buffer,
+                    )
+                }
+                OsSurface::Pending(_) => return,
+            };
+        let view = &mut self.view;
+
         // Phase 5 (emview-rewrite-followups): consume cursor-dirty flag set
         // by emViewPort::InvalidateCursor and apply the cached cursor to
         // the winit window. Matches the C++ emWindowPort frame prologue.
         {
-            let vp = self.view.CurrentViewPort.clone();
+            let vp = view.CurrentViewPort.clone();
             let dirty = vp.borrow().cursor_dirty;
             if dirty {
                 let cursor = vp.borrow().cursor;
-                self.winit_window.set_cursor(cursor.to_winit_cursor());
+                winit_window.set_cursor(cursor.to_winit_cursor());
                 vp.borrow_mut().cursor_dirty = false;
             }
         }
 
-        let (cols, rows) = self.tile_cache.grid_size();
+        let (cols, rows) = tile_cache.grid_size();
         let tile_size = crate::emViewRendererTileCache::TILE_SIZE;
 
         // Count dirty tiles to choose rendering strategy.
         let mut dirty_count = 0u32;
         for row in 0..rows {
             for col in 0..cols {
-                if self.tile_cache.get_or_create(col, row).dirty {
+                if tile_cache.get_or_create(col, row).dirty {
                     dirty_count += 1;
                 }
             }
@@ -302,71 +384,70 @@ impl emWindow {
             // Many dirty tiles (e.g. panning): paint into viewport-sized buffer
             // once, then copy tile-sized chunks. Avoids redundant tree walks and
             // re-rasterization of primitives across tiles.
-            self.viewport_buffer.fill(crate::emColor::emColor::BLACK);
+            viewport_buffer.fill(crate::emColor::emColor::BLACK);
             {
-                let mut painter = emPainter::new(&mut self.viewport_buffer);
-                self.view
-                    .Paint(tree, &mut painter, crate::emColor::emColor::TRANSPARENT);
+                let mut painter = emPainter::new(viewport_buffer);
+                view.Paint(tree, &mut painter, crate::emColor::emColor::TRANSPARENT);
             }
             for row in 0..rows {
                 for col in 0..cols {
-                    let tile = self.tile_cache.get_or_create(col, row);
+                    let tile = tile_cache.get_or_create(col, row);
                     if tile.dirty {
                         tile.image.copy_from_rect(
                             0,
                             0,
-                            &self.viewport_buffer,
+                            viewport_buffer,
                             (col * tile_size, row * tile_size, tile_size, tile_size),
                         );
                         tile.dirty = false;
-                        let tile_ref = self.tile_cache.GetRec(col, row).unwrap();
-                        self.compositor
-                            .upload_tile(&gpu.device, &gpu.queue, col, row, tile_ref);
+                        let tile_ref = tile_cache.GetRec(col, row).unwrap();
+                        compositor.upload_tile(&gpu.device, &gpu.queue, col, row, tile_ref);
                     }
                 }
             }
         } else if self.render_pool.GetThreadCount() > 1 && dirty_count > 1 {
             // Multi-threaded rendering via display list.
             // Phase 1: Record all draw operations single-threaded.
-            self.render_parallel(tree, gpu, cols, rows, tile_size);
+            Self::render_parallel_inner(
+                view,
+                tile_cache,
+                compositor,
+                surface_config,
+                &mut self.render_pool,
+                tree,
+                gpu,
+                cols,
+                rows,
+                tile_size,
+            );
         } else {
             // Few dirty tiles, single-threaded: paint per-tile.
             for row in 0..rows {
                 for col in 0..cols {
-                    let tile = self.tile_cache.get_or_create(col, row);
+                    let tile = tile_cache.get_or_create(col, row);
                     if tile.dirty {
                         tile.image.fill(crate::emColor::emColor::BLACK);
                         {
                             let mut painter = emPainter::new(&mut tile.image);
                             let ts = tile_size as f64;
                             painter.translate(-(col as f64 * ts), -(row as f64 * ts));
-                            self.view.Paint(
-                                tree,
-                                &mut painter,
-                                crate::emColor::emColor::TRANSPARENT,
-                            );
+                            view.Paint(tree, &mut painter, crate::emColor::emColor::TRANSPARENT);
                         }
                         tile.dirty = false;
-                        let tile_ref = self.tile_cache.GetRec(col, row).unwrap();
-                        self.compositor
-                            .upload_tile(&gpu.device, &gpu.queue, col, row, tile_ref);
+                        let tile_ref = tile_cache.GetRec(col, row).unwrap();
+                        compositor.upload_tile(&gpu.device, &gpu.queue, col, row, tile_ref);
                     }
                 }
             }
         }
 
-        self.tile_cache.advance_frame();
+        tile_cache.advance_frame();
 
         // Composite and present
-        match self.compositor.render_frame(
-            &gpu.device,
-            &gpu.queue,
-            &self.surface,
-            &self.surface_config,
-        ) {
+        match compositor.render_frame(&gpu.device, &gpu.queue, surface, surface_config) {
             Ok(()) => {}
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                self.surface.configure(&gpu.device, &self.surface_config);
+                surface.configure(&gpu.device, surface_config);
             }
             Err(e) => {
                 log::error!("render error: {e}");
@@ -383,8 +464,13 @@ impl emWindow {
     /// buffer concurrently, with tile-specific clipping.
     ///
     /// Phase 3 (single-threaded): Upload rendered tiles to GPU.
-    fn render_parallel(
-        &mut self,
+    #[allow(clippy::too_many_arguments)]
+    fn render_parallel_inner(
+        view: &mut emView,
+        tile_cache: &mut TileCache,
+        compositor: &mut WgpuCompositor,
+        surface_config: &wgpu::SurfaceConfiguration,
+        render_pool: &mut emRenderThreadPool,
         tree: &mut crate::emPanelTree::PanelTree,
         gpu: &GpuContext,
         cols: u32,
@@ -395,21 +481,21 @@ impl emWindow {
         use crate::emPainter::emPainter;
         use crate::emPainterDrawList::DrawList;
 
-        let vp_w = self.surface_config.width;
-        let vp_h = self.surface_config.height;
+        let vp_w = surface_config.width;
+        let vp_h = surface_config.height;
 
         // Phase 1: Record draw operations.
         let mut draw_list = DrawList::new();
         {
             let mut painter = emPainter::new_recording(vp_w, vp_h, draw_list.ops_mut());
-            self.view.Paint(tree, &mut painter, emColor::TRANSPARENT);
+            view.Paint(tree, &mut painter, emColor::TRANSPARENT);
         }
 
         // Collect dirty tiles.
         let mut dirty_tiles: Vec<(u32, u32)> = Vec::new();
         for row in 0..rows {
             for col in 0..cols {
-                if self.tile_cache.get_or_create(col, row).dirty {
+                if tile_cache.get_or_create(col, row).dirty {
                     dirty_tiles.push((col, row));
                 }
             }
@@ -429,7 +515,7 @@ impl emWindow {
         let results_ref = &results;
         let dirty_ref = &dirty_tiles;
 
-        self.render_pool.CallParallel(
+        render_pool.CallParallel(
             |idx| {
                 let (col, row) = dirty_ref[idx];
                 let mut buffer = crate::emImage::emImage::new(tile_size, tile_size, 4);
@@ -447,12 +533,11 @@ impl emWindow {
         // Phase 3: Upload results to GPU.
         for (idx, (col, row)) in dirty_tiles.iter().enumerate() {
             if let Some(buffer) = results[idx].lock().expect("result mutex poisoned").take() {
-                let tile = self.tile_cache.get_or_create(*col, *row);
+                let tile = tile_cache.get_or_create(*col, *row);
                 tile.image = buffer;
                 tile.dirty = false;
-                let tile_ref = self.tile_cache.GetRec(*col, *row).unwrap();
-                self.compositor
-                    .upload_tile(&gpu.device, &gpu.queue, *col, *row, tile_ref);
+                let tile_ref = tile_cache.GetRec(*col, *row).unwrap();
+                compositor.upload_tile(&gpu.device, &gpu.queue, *col, *row, tile_ref);
             }
         }
     }
@@ -939,12 +1024,12 @@ impl emWindow {
     pub fn set_win_pos_view_size_from_geometry(&self, geometry: &str) {
         let (w, h, x, y) = parse_x11_geometry(geometry);
         if let (Some(x), Some(y)) = (x, y) {
-            self.winit_window
+            self.winit_window()
                 .set_outer_position(winit::dpi::LogicalPosition::new(x as f64, y as f64));
         }
         if let (Some(w), Some(h)) = (w, h) {
             let _ = self
-                .winit_window
+                .winit_window()
                 .request_inner_size(winit::dpi::LogicalSize::new(w as f64, h as f64));
         }
     }
@@ -961,12 +1046,12 @@ impl emWindow {
             return (0, 0, 0, 0);
         }
 
-        match self.winit_window.inner_position() {
+        match self.winit_window().inner_position() {
             Ok(inner_pos) => {
                 // X11: exact per-side sizes from position/size differences.
-                let outer_pos = self.winit_window.outer_position().unwrap_or_default();
-                let outer = self.winit_window.outer_size();
-                let inner = self.winit_window.inner_size();
+                let outer_pos = self.winit_window().outer_position().unwrap_or_default();
+                let outer = self.winit_window().outer_size();
+                let inner = self.winit_window().inner_size();
                 let left = (inner_pos.x - outer_pos.x).max(0);
                 let top = (inner_pos.y - outer_pos.y).max(0);
                 let right = (outer.width as i32 - inner.width as i32 - left).max(0);
@@ -975,8 +1060,8 @@ impl emWindow {
             }
             Err(_) => {
                 // Wayland: inner_position not supported.
-                let outer = self.winit_window.outer_size();
-                let inner = self.winit_window.inner_size();
+                let outer = self.winit_window().outer_size();
+                let inner = self.winit_window().inner_size();
                 if outer == inner {
                     // SSD: compositor draws decorations outside the surface.
                     (0, 0, 0, 0)
@@ -1059,22 +1144,26 @@ impl emWindow {
     }
 
     pub fn request_redraw(&self) {
-        self.winit_window.request_redraw();
+        if let Some(w) = self.winit_window_if_materialized() {
+            w.request_redraw();
+        }
     }
 
     /// Request the window manager to bring this window to front.
     pub fn Raise(&self) {
-        self.winit_window.focus_window();
+        self.winit_window().focus_window();
     }
 
     /// Set the window title.
     pub fn SetRootTitle(&self, title: &str) {
-        self.winit_window.set_title(title);
+        self.winit_window().set_title(title);
     }
 
     /// Mark all tiles as dirty so the next render repaints everything.
     pub fn invalidate(&mut self) {
-        self.tile_cache.mark_all_dirty();
+        if let OsSurface::Materialized(m) = &mut self.os_surface {
+            m.tile_cache.mark_all_dirty();
+        }
     }
 
     /// Invalidate a pixel-coordinate rectangle `(x, y, w, h)` in the tile
@@ -1092,8 +1181,13 @@ impl emWindow {
     pub fn mark_dirty_rect(&mut self, x1: f64, y1: f64, x2: f64, y2: f64) {
         use crate::emViewRendererTileCache::TILE_SIZE;
 
+        let tile_cache = match &mut self.os_surface {
+            OsSurface::Materialized(m) => &mut m.tile_cache,
+            OsSurface::Pending(_) => return,
+        };
+
         let ts = TILE_SIZE as f64;
-        let (cols, rows) = self.tile_cache.grid_size();
+        let (cols, rows) = tile_cache.grid_size();
 
         // Clamp to viewport and convert to tile grid coordinates.
         let col_start = (x1 / ts).floor().max(0.0) as u32;
@@ -1103,7 +1197,7 @@ impl emWindow {
 
         for row in row_start..row_end {
             for col in col_start..col_end {
-                self.tile_cache.mark_dirty(col, row);
+                tile_cache.mark_dirty(col, row);
             }
         }
     }
@@ -1127,23 +1221,23 @@ impl emWindow {
 
         // Apply decoration changes.
         if old.contains(WindowFlags::UNDECORATED) != new_flags.contains(WindowFlags::UNDECORATED) {
-            self.winit_window
+            self.winit_window()
                 .set_decorations(!new_flags.contains(WindowFlags::UNDECORATED));
         }
 
         // Apply maximized changes.
         if old.contains(WindowFlags::MAXIMIZED) != new_flags.contains(WindowFlags::MAXIMIZED) {
-            self.winit_window
+            self.winit_window()
                 .set_maximized(new_flags.contains(WindowFlags::MAXIMIZED));
         }
 
         // Apply fullscreen changes.
         if old.contains(WindowFlags::FULLSCREEN) != new_flags.contains(WindowFlags::FULLSCREEN) {
             if new_flags.contains(WindowFlags::FULLSCREEN) {
-                self.winit_window
+                self.winit_window()
                     .set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
             } else {
-                self.winit_window.set_fullscreen(None);
+                self.winit_window().set_fullscreen(None);
             }
         }
     }
@@ -1154,7 +1248,7 @@ impl emWindow {
     /// Winit does not distinguish between view vs window position on all
     /// platforms, so this uses inner-size-aware outer position.
     pub fn SetViewPos(&self, x: f64, y: f64) {
-        self.winit_window
+        self.winit_window()
             .set_outer_position(winit::dpi::LogicalPosition::new(x, y));
     }
 
@@ -1163,7 +1257,7 @@ impl emWindow {
     /// Matches C++ emWindow::SetViewSize (PSAS_IGNORE pos, PSAS_VIEW size).
     pub fn SetViewSize(&self, w: f64, h: f64) {
         let _ = self
-            .winit_window
+            .winit_window()
             .request_inner_size(winit::dpi::LogicalSize::new(w, h));
     }
 
@@ -1171,10 +1265,10 @@ impl emWindow {
     ///
     /// Matches C++ emWindow::SetViewPosSize (PSAS_VIEW pos, PSAS_VIEW size).
     pub fn SetViewPosSize(&self, x: f64, y: f64, w: f64, h: f64) {
-        self.winit_window
+        self.winit_window()
             .set_outer_position(winit::dpi::LogicalPosition::new(x, y));
         let _ = self
-            .winit_window
+            .winit_window()
             .request_inner_size(winit::dpi::LogicalSize::new(w, h));
     }
 
@@ -1182,7 +1276,7 @@ impl emWindow {
     ///
     /// Matches C++ emWindow::SetWinPos (PSAS_WINDOW pos, PSAS_IGNORE size).
     pub fn SetWinPos(&self, x: f64, y: f64) {
-        self.winit_window
+        self.winit_window()
             .set_outer_position(winit::dpi::LogicalPosition::new(x, y));
     }
 
@@ -1197,7 +1291,7 @@ impl emWindow {
         let inner_w = (w - (left + right) as f64).max(1.0);
         let inner_h = (h - (top + bottom) as f64).max(1.0);
         let _ = self
-            .winit_window
+            .winit_window()
             .request_inner_size(winit::dpi::LogicalSize::new(inner_w, inner_h));
     }
 
@@ -1206,12 +1300,12 @@ impl emWindow {
     /// Matches C++ emWindow::SetWinPosSize (PSAS_WINDOW pos, PSAS_WINDOW size).
     pub fn SetWinPosSize(&self, x: f64, y: f64, w: f64, h: f64) {
         let (left, top, right, bottom) = self.GetBorderSizes();
-        self.winit_window
+        self.winit_window()
             .set_outer_position(winit::dpi::LogicalPosition::new(x, y));
         let inner_w = (w - (left + right) as f64).max(1.0);
         let inner_h = (h - (top + bottom) as f64).max(1.0);
         let _ = self
-            .winit_window
+            .winit_window()
             .request_inner_size(winit::dpi::LogicalSize::new(inner_w, inner_h));
     }
 
@@ -1219,10 +1313,10 @@ impl emWindow {
     ///
     /// Matches C++ emWindow::SetWinPosViewSize (PSAS_WINDOW pos, PSAS_VIEW size).
     pub fn SetWinPosViewSize(&self, x: f64, y: f64, w: f64, h: f64) {
-        self.winit_window
+        self.winit_window()
             .set_outer_position(winit::dpi::LogicalPosition::new(x, y));
         let _ = self
-            .winit_window
+            .winit_window()
             .request_inner_size(winit::dpi::LogicalSize::new(w, h));
     }
 
@@ -1236,8 +1330,8 @@ impl emWindow {
     /// emScreen::monitor_index_of_rect with the window's outer position
     /// and inner size.
     pub fn GetMonitorIndex(&self, screen: &emScreen) -> Option<usize> {
-        let pos = self.winit_window.outer_position().unwrap_or_default();
-        let size = self.winit_window.inner_size();
+        let pos = self.winit_window().outer_position().unwrap_or_default();
+        let size = self.winit_window().inner_size();
         screen.GetMonitorIndexOfRect(pos.x, pos.y, size.width, size.height)
     }
 
@@ -1263,7 +1357,7 @@ impl emWindow {
         self.window_icon = Some(icon.clone());
 
         if icon.IsEmpty() {
-            self.winit_window.set_window_icon(None);
+            self.winit_window().set_window_icon(None);
             return;
         }
 
@@ -1279,7 +1373,7 @@ impl emWindow {
             rgba.GetWidth(),
             rgba.GetHeight(),
         ) {
-            self.winit_window.set_window_icon(Some(winit_icon));
+            self.winit_window().set_window_icon(Some(winit_icon));
         } else {
             log::error!(
                 "failed to create window icon from {}x{} image",
@@ -1343,7 +1437,7 @@ impl emWindow {
         let target_x = self.last_mouse_pos.0 + dx;
         let target_y = self.last_mouse_pos.1 + dy;
         if let Err(e) = self
-            .winit_window
+            .winit_window()
             .set_cursor_position(winit::dpi::PhysicalPosition::new(target_x, target_y))
         {
             log::debug!("move_mouse_pointer failed: {e}");

@@ -245,8 +245,8 @@ impl emEngine for emWindowStateSaver {
                     // Need mutable self for Save, but we only need an immutable
                     // window reference. Clone the relevant data to avoid borrow conflict.
                     let flags = window.flags;
-                    let pos = window.winit_window.outer_position().unwrap_or_default();
-                    let size = window.winit_window.inner_size();
+                    let pos = window.winit_window().outer_position().unwrap_or_default();
+                    let size = window.winit_window().inner_size();
 
                     if !flags.contains(WindowFlags::MAXIMIZED)
                         && !flags.contains(WindowFlags::FULLSCREEN)
