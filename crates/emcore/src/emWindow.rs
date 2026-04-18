@@ -44,7 +44,10 @@ bitflags! {
 ///
 /// Non-popup windows (the home window, duplicate/ccw children) enter
 /// `Materialized` directly at construction time.
-// W3 Task 1: fields read by Task 2 (deferred popup surface materialization).
+// W3 Task 2: fields populated by `new_popup_pending` but not yet read by
+// non-test code. Task 3 wires the `about_to_wait` drain which reads
+// `flags`, `caption`, and `requested_pos_size` to materialize the OS
+// surface. Narrow-scoped allow until that consumer lands.
 #[allow(dead_code)]
 pub(crate) struct PendingSurface {
     pub flags: WindowFlags,
@@ -62,8 +65,8 @@ pub(crate) struct MaterializedSurface {
 }
 
 pub(crate) enum OsSurface {
-    // W3 Task 1: variant introduced ahead of constructors. Constructed in
-    // Task 2 (deferred popup creation from `emView::RawVisitAbs`).
+    // W3 Task 2: payload read only by tests until Task 3 lands the
+    // `about_to_wait` materialization drain.
     #[allow(dead_code)]
     Pending(Box<PendingSurface>),
     Materialized(Box<MaterializedSurface>),
@@ -95,6 +98,35 @@ pub struct emWindow {
     render_pool: emRenderThreadPool,
 }
 
+/// Contract for methods on `emWindow` with respect to `OsSurface` state.
+///
+/// Most accessors and setters below assume `OsSurface::Materialized`
+/// (they touch the winit window or wgpu surface). Calling them while
+/// the window is still `OsSurface::Pending` will panic via
+/// [`winit_window`](emWindow::winit_window).
+///
+/// Methods that panic on `Pending` state:
+/// - `SetWindowFlags`
+/// - `SetViewPos`, `SetViewSize`, `SetViewPosSize`
+/// - `SetWinPos`, `SetWinSize`, `SetWinPosSize`, `SetWinPosViewSize`
+/// - `set_win_pos_view_size_from_geometry`
+/// - `GetBorderSizes`, `GetMonitorIndex`
+/// - `Raise`, `SetRootTitle`
+/// - `SetWindowIcon`
+/// - `MoveMousePointer`
+///
+/// Methods that tolerate `Pending` state:
+/// - `is_materialized`, `winit_window_if_materialized`
+/// - `request_redraw` (no-op while Pending)
+/// - `render`, `resize` (early-return while Pending)
+/// - `invalidate`, `mark_dirty_rect`, `invalidate_rect` (no-op while Pending)
+/// - Signal getters (`SignalClosing`, `GetWindowFlagsSignal`, etc.)
+/// - Signal-latch accessors (`flags_changed`, `focus_changed`, `geometry_changed`)
+///
+/// Per-call-site audits for graceful `Pending` handling are deferred to
+/// later tasks in the W3 popup-architecture sequence; this task
+/// (constructor only) documents the contract without rewriting call
+/// sites.
 impl emWindow {
     /// Create a new window with a wgpu surface and rendering pipeline.
     ///
@@ -270,6 +302,84 @@ impl emWindow {
             focus_signal,
             geometry_signal,
         )
+    }
+
+    /// Construct an `emWindow` in `Pending` state — no winit/wgpu objects
+    /// yet. Callable from any context (does NOT require `&ActiveEventLoop`
+    /// or `&GpuContext`). The OS surface is materialized later by the
+    /// `emGUIFramework::about_to_wait` drain that consumes pending popup
+    /// windows.
+    ///
+    /// Mirrors the first side-effects of C++ `emView::RawVisitAbs`
+    /// popup-entry (`emView.cpp:1636-1643`) at the struct level: the
+    /// `emWindow` object exists and every emCore observer sees a
+    /// fully-wired popup immediately, even before the OS window is
+    /// created.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_popup_pending(
+        root_panel: PanelId,
+        flags: WindowFlags,
+        caption: String,
+        close_signal: SignalId,
+        flags_signal: SignalId,
+        focus_signal: SignalId,
+        geometry_signal: SignalId,
+        background_color: crate::emColor::emColor,
+    ) -> Rc<RefCell<Self>> {
+        // Placeholder geometry — real position/size lands via
+        // `SetViewPosSize` before materialization.
+        let mut view = emView::new(root_panel, 1.0, 1.0);
+        view.SetBackgroundColor(background_color);
+
+        let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
+            {
+                let mut mouse_vif = emMouseZoomScrollVIF::new();
+                let zflpp = view.GetZoomFactorLogarithmPerPixel();
+                mouse_vif.set_mouse_anim_params(1.0, 0.25, zflpp);
+                mouse_vif.set_wheel_anim_params(1.0, 0.25, zflpp);
+                Box::new(mouse_vif)
+            },
+            Box::new(emKeyboardZoomScrollVIF::new()),
+        ];
+
+        let window = Rc::new(RefCell::new(Self {
+            os_surface: OsSurface::Pending(Box::new(PendingSurface {
+                flags,
+                caption,
+                requested_pos_size: None,
+            })),
+            view,
+            flags,
+            close_signal,
+            flags_signal,
+            focus_signal,
+            geometry_signal,
+            root_panel,
+            vif_chain,
+            cheat_vif: emCheatVIF::new(),
+            touch_vif: emDefaultTouchVIF::new(),
+            active_animator: None,
+            window_icon: None,
+            last_mouse_pos: (0.0, 0.0),
+            screensaver_inhibit_count: 0,
+            screensaver_cookie: None,
+            flags_changed: false,
+            focus_changed: false,
+            geometry_changed: false,
+            wm_res_name: String::from("eaglemode-rs"),
+            render_pool: emRenderThreadPool::new(
+                crate::emCoreConfig::emCoreConfig::default().max_render_threads,
+            ),
+        }));
+
+        // Wire the emViewPort back-reference, same as `create()`.
+        {
+            let win_ref = window.borrow();
+            let vp = win_ref.view.CurrentViewPort.clone();
+            vp.borrow_mut().window = Some(Rc::downgrade(&window));
+        }
+
+        window
     }
 
     // DIVERGED: Plan listed `materialized()`/`materialized_mut()` returning 6-tuple borrows; inlined as match in callers because the multi-borrow signature is awkward in Rust.
@@ -1580,6 +1690,55 @@ pub(crate) fn find_next_screenshot_path_in(dir: &std::path::Path) -> Option<std:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emPanelTree::PanelTree;
+    use crate::emScheduler::EngineScheduler;
+
+    #[test]
+    fn new_popup_pending_constructs_without_event_loop() {
+        let mut scheduler = EngineScheduler::new();
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+
+        let close_sig = scheduler.create_signal();
+        let flags_sig = scheduler.create_signal();
+        let focus_sig = scheduler.create_signal();
+        let geom_sig = scheduler.create_signal();
+        let bg_color = crate::emColor::emColor::rgba(0, 0, 0, 0xFF);
+
+        let popup = emWindow::new_popup_pending(
+            root,
+            WindowFlags::POPUP | WindowFlags::UNDECORATED | WindowFlags::AUTO_DELETE,
+            "emViewPopup".to_string(),
+            close_sig,
+            flags_sig,
+            focus_sig,
+            geom_sig,
+            bg_color,
+        );
+
+        let p = popup.borrow();
+        assert!(
+            !p.is_materialized(),
+            "new_popup_pending must start in Pending state"
+        );
+        match &p.os_surface {
+            OsSurface::Pending(ps) => {
+                assert!(ps.flags.contains(WindowFlags::POPUP));
+                assert!(ps.flags.contains(WindowFlags::UNDECORATED));
+                assert!(ps.flags.contains(WindowFlags::AUTO_DELETE));
+                assert_eq!(ps.caption, "emViewPopup");
+                assert!(ps.requested_pos_size.is_none());
+            }
+            OsSurface::Materialized(_) => panic!("expected Pending"),
+        }
+        assert_eq!(p.close_signal, close_sig);
+        assert_eq!(p.flags_signal, flags_sig);
+        assert_eq!(p.focus_signal, focus_sig);
+        assert_eq!(p.geometry_signal, geom_sig);
+        assert_eq!(p.root_panel, root);
+        assert_eq!(p.view().GetBackgroundColor(), bg_color);
+        assert!(p.winit_window_if_materialized().is_none());
+    }
 
     #[test]
     fn screenshot_numbering_skips_existing() {
