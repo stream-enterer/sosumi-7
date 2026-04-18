@@ -935,6 +935,30 @@ impl emView {
         self.Visit(tree, panel, x, y, a, false);
     }
 
+    /// DIVERGED: C++ overload `emView::Visit(panel, adherent)` (emView.cpp:511-514)
+    /// — Rust cannot overload by arity; renamed `VisitPanel` to disambiguate from
+    /// the canonical 6-arg `Visit` added in Task 3.1.
+    ///
+    /// Port of C++ `emView::Visit(panel, adherent)` (emView.cpp:511-514).
+    pub fn VisitPanel(&mut self, tree: &PanelTree, panel: PanelId, adherent: bool) {
+        let identity = tree.GetIdentity(panel);
+        let subject = tree.get_title(panel);
+        self.VisitByIdentityShort(&identity, adherent, &subject);
+    }
+
+    /// DIVERGED: C++ overload `emView::Visit(identity, adherent, subject)` (emView.cpp:517-523)
+    /// — Rust cannot overload by arity; renamed `VisitByIdentityShort` to disambiguate from
+    /// the canonical 7-arg `VisitByIdentity` added in Task 3.1.
+    ///
+    /// Port of C++ `emView::Visit(identity, adherent, subject)` (emView.cpp:517-523).
+    pub fn VisitByIdentityShort(&mut self, identity: &str, adherent: bool, subject: &str) {
+        let mut va = self.VisitingVA.borrow_mut();
+        // PHASE-W4-FOLLOWUP: CoreConfig defaults — see Task 3.1.
+        va.SetAnimParamsByCoreConfig(1.0, 10.0);
+        va.SetGoal(identity, adherent, subject);
+        va.Activate();
+    }
+
     /// D-PANEL-02: Request an animated visit to a panel. Sets a pending goal
     /// that the window loop feeds to the emVisitingViewAnimator. Also sets the
     /// active panel immediately for UI responsiveness.
@@ -5623,6 +5647,27 @@ mod tests {
         assert!((va.rel_x() - 0.25).abs() < 1e-9);
         assert!((va.rel_y() - 0.5).abs() < 1e-9);
         assert!((va.rel_a() - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn visit_panel_short_form_routes_through_animator() {
+        // Short-form VisitPanel(tree, panel, adherent) delegates to VisitingVA
+        // via VisitByIdentityShort, matching C++ emView.cpp:511-523.
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+
+        let mut view = emView::new(root, 800.0, 600.0);
+        assert!(
+            !view.VisitingVA.borrow().is_active(),
+            "inactive before VisitPanel"
+        );
+
+        view.VisitPanel(&tree, root, true);
+
+        let va = view.VisitingVA.borrow();
+        assert!(va.is_active(), "active after VisitPanel");
+        assert_eq!(va.identity(), tree.GetIdentity(root));
     }
 
     #[test]
