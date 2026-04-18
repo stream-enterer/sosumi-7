@@ -18,6 +18,18 @@ pub trait emViewAnimator {
 
     /// Downcast to concrete type for velocity handoff (C++ dynamic_cast equivalent).
     fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Port of C++ `emViewAnimator::Input(emInputEvent&, const emInputState&)`
+    /// (emViewAnimator.cpp:111). Base default forwards to the active slave in
+    /// C++; the Rust trait has no slave concept, so the default is a no-op.
+    /// Subclasses that want to consume input (e.g. `emVisitingViewAnimator`)
+    /// override this.
+    fn Input(
+        &mut self,
+        _event: &mut crate::emInput::emInputEvent,
+        _state: &crate::emInputState::emInputState,
+    ) {
+    }
 }
 
 /// Master/slave animator slot with deactivation chain.
@@ -2179,6 +2191,26 @@ impl emViewAnimator for emVisitingViewAnimator {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    /// Port of C++ `emVisitingViewAnimator::Input` (emViewAnimator.cpp:1066).
+    fn Input(
+        &mut self,
+        event: &mut crate::emInput::emInputEvent,
+        _state: &crate::emInputState::emInputState,
+    ) {
+        // C++ emViewAnimator.cpp:1068: no-op unless active and in Seek/GivingUp.
+        if !self.active
+            || (self.state != VisitingState::Seek && self.state != VisitingState::GivingUp)
+        {
+            return;
+        }
+        // C++ emViewAnimator.cpp:1070-1073: eat event and deactivate.
+        if !event.IsEmpty() {
+            event.eat();
+            self.active = false;
+            self.state = VisitingState::NoGoal;
+        }
+    }
 }
 
 /// Swiping view animator — spring-based drag with kinetic coasting.
@@ -3506,6 +3538,42 @@ mod tests {
             (eff_rel_a - ta).abs()
         );
         let _ = (svp_vy, svp_vh);
+    }
+
+    /// W1a: emVisitingViewAnimator::Input must eat non-empty events and
+    /// deactivate when in Seek or GivingUp states (C++ emViewAnimator.cpp:1066).
+    #[test]
+    fn visiting_animator_input_eats_event_and_deactivates_in_seek() {
+        use crate::emInput::{emInputEvent, InputKey};
+        use crate::emInputState::emInputState;
+
+        let mut anim = emVisitingViewAnimator::new(0.0, 0.0, 1.0, 0.0);
+        anim.active = true;
+        anim.state = VisitingState::Seek;
+        let mut ev = emInputEvent::press(InputKey::Enter);
+        let st = emInputState::default();
+        emViewAnimator::Input(&mut anim, &mut ev, &st);
+        assert!(ev.IsEmpty(), "event should be eaten");
+        assert!(!anim.active, "animator should deactivate");
+    }
+
+    /// W1a: emVisitingViewAnimator::Input is a no-op in inactive state,
+    /// mirroring C++ early return.
+    #[test]
+    fn visiting_animator_input_noop_when_inactive() {
+        use crate::emInput::{emInputEvent, InputKey};
+        use crate::emInputState::emInputState;
+
+        let mut anim = emVisitingViewAnimator::new(0.0, 0.0, 1.0, 0.0);
+        anim.active = false;
+        anim.state = VisitingState::Seek;
+        let mut ev = emInputEvent::press(InputKey::Enter);
+        let st = emInputState::default();
+        emViewAnimator::Input(&mut anim, &mut ev, &st);
+        assert!(
+            !ev.IsEmpty(),
+            "event must not be eaten when animator inactive"
+        );
     }
 }
 
