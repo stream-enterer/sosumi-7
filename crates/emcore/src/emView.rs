@@ -4714,13 +4714,17 @@ mod tests {
         view.Update(&mut tree);
 
         // Zoom around center — should keep center stable
-        let before = view.current_visit().clone();
+        let (_, _, _, before_ra) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist before zoom");
         view.Zoom(&mut tree, 2.0, 400.0, 300.0);
-        let after = view.current_visit().clone();
+        let (_, _, _, after_ra) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist after zoom");
 
         // C++ Zoom(factor=2): reFac = 1/2, ra *= reFac^2 = 1/4.
         // relA = HomeW*HomeH/(vw*vh); zooming in by 2 grows vw*vh by 4, so relA /= 4.
-        assert!((after.rel_a - before.rel_a / 4.0).abs() < 0.01 * before.rel_a);
+        assert!((after_ra - before_ra / 4.0).abs() < 0.01 * before_ra);
     }
 
     #[test]
@@ -5069,18 +5073,21 @@ mod tests {
         let mut view = emView::new(root, 800.0, 600.0);
         view.RawZoomOut(&mut tree, false);
 
-        let state = view.current_visit();
+        let mut state_rx = 0.0;
+        let mut state_ry = 0.0;
+        let mut state_ra = 0.0;
+        view.GetVisitedPanel(&tree, &mut state_rx, &mut state_ry, &mut state_ra);
         // C++ formula: max(W*H_root/hpt/H, H/H_root*hpt/W)
         // HomePixelTallness = 1.0 (square pixels)
         let hpt = 1.0;
         let expected = (800.0 * 0.75 / hpt / 600.0_f64).max(600.0 / 0.75 * hpt / 800.0);
         assert!(
-            (state.rel_a - expected).abs() < 0.001,
+            (state_ra - expected).abs() < 0.001,
             "rel_a should be {expected}, got {}",
-            state.rel_a
+            state_ra
         );
-        assert!(state.rel_x.abs() < 0.001);
-        assert!(state.rel_y.abs() < 0.001);
+        assert!(state_rx.abs() < 0.001);
+        assert!(state_ry.abs() < 0.001);
     }
 
     #[test]
@@ -5179,23 +5186,27 @@ mod tests {
         view.Update(&mut tree);
 
         // Record initial center position
-        let visit_before = view.current_visit().clone();
+        let (_, before_rx, before_ry, _) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist before scroll");
 
         // Enable EGO_MODE and attempt to scroll
         view.flags |= ViewFlags::EGO_MODE;
         let done = view.RawScrollAndZoom(&mut tree, 400.0, 300.0, 50.0, 50.0, 0.0);
 
         // Scroll delta should be zero — viewport center locked
-        let visit_after = view.current_visit().clone();
+        let (_, after_rx, after_ry, _) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist after scroll");
         assert!(
-            (visit_after.rel_x - visit_before.rel_x).abs() < 1e-12,
+            (after_rx - before_rx).abs() < 1e-12,
             "rel_x should not change under EGO_MODE, delta={}",
-            visit_after.rel_x - visit_before.rel_x
+            after_rx - before_rx
         );
         assert!(
-            (visit_after.rel_y - visit_before.rel_y).abs() < 1e-12,
+            (after_ry - before_ry).abs() < 1e-12,
             "rel_y should not change under EGO_MODE, delta={}",
-            visit_after.rel_y - visit_before.rel_y
+            after_ry - before_ry
         );
         assert!(
             done[0].abs() < 1e-12 && done[1].abs() < 1e-12,
@@ -5209,13 +5220,17 @@ mod tests {
         let mut view = emView::new(root, 800.0, 600.0);
         view.Update(&mut tree);
 
-        let rel_a_before = view.current_visit().rel_a;
+        let (_, _, _, rel_a_before) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist before zoom");
 
         // Enable EGO_MODE and zoom
         view.flags |= ViewFlags::EGO_MODE;
         view.RawScrollAndZoom(&mut tree, 400.0, 300.0, 0.0, 0.0, 50.0);
 
-        let rel_a_after = view.current_visit().rel_a;
+        let (_, _, _, rel_a_after) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist after zoom");
         assert!(
             (rel_a_after - rel_a_before).abs() > 1e-6,
             "zoom should still work under EGO_MODE"
@@ -5378,7 +5393,9 @@ mod tests {
         for &(cx, cy) in &cursors {
             for &factor in &factors {
                 // Save and restore state for each combo
-                let saved = view.current_visit().clone();
+                let (saved_panel, saved_rx, saved_ry, saved_ra) = view
+                    .get_visited_panel_idiom(&tree)
+                    .expect("visited panel should exist at loop start");
 
                 // Use the SVP as the reference panel (root.viewed_* are only valid
                 // when root is the SVP; using SVP is always correct).
@@ -5411,14 +5428,7 @@ mod tests {
                 // Restore by calling RawVisit with the saved rel coords.
                 // Phase 3: visit_stack mutation + Update does not re-apply rel coords;
                 // RawVisit is the correct API to set viewing from rel coords.
-                view.RawVisit(
-                    &mut tree,
-                    saved.panel,
-                    saved.rel_x,
-                    saved.rel_y,
-                    saved.rel_a,
-                    true,
-                );
+                view.RawVisit(&mut tree, saved_panel, saved_rx, saved_ry, saved_ra, true);
             }
         }
     }

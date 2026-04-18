@@ -179,7 +179,9 @@ fn view_zoom_and_scroll() {
 
     // C++ rel_a = HomeW*HomeH/(vw*vh). Zoom(factor=4): vw *= 4, rel_a /= 16.
     // Starting from zoom-out rel_a (≈1.333 for 800x600 with 1x1 panel), /= 16.
-    let ra_before_scroll = view.current_visit().rel_a;
+    let (_, _, _, ra_before_scroll) = view
+        .get_visited_panel_idiom(&tree)
+        .expect("visited panel should exist after zoom");
     assert!(
         ra_before_scroll < 0.5,
         "zoomed in: rel_a should be < zoom-out value"
@@ -187,18 +189,26 @@ fn view_zoom_and_scroll() {
 
     // Scroll(dx, dy): at zoomed-in state, pvw ≈ 3200, so delta_rx = 10/3200 ≈ tiny.
     // We just verify that scroll changes rel_x in the correct direction.
-    let rx_before = view.current_visit().rel_x;
+    let (_, rx_before, _, _) = view
+        .get_visited_panel_idiom(&tree)
+        .expect("visited panel should exist before scroll");
     view.Scroll(&mut tree, 10.0, 0.0);
-    let rx_after = view.current_visit().rel_x;
+    let (_, rx_after, _, _) = view
+        .get_visited_panel_idiom(&tree)
+        .expect("visited panel should exist after scroll");
     assert!(
         (rx_after - rx_before).abs() > 1e-10,
         "Scroll should change rel_x"
     );
 
     // Zoom: factor=2 reduces vw by 2 → rel_a *= 4 (more zoomed in).
-    let ra_before_zoom = view.current_visit().rel_a;
+    let (_, _, _, ra_before_zoom) = view
+        .get_visited_panel_idiom(&tree)
+        .expect("visited panel should exist before second zoom");
     view.Zoom(&mut tree, 2.0, 400.0, 300.0);
-    let ra_after_zoom = view.current_visit().rel_a;
+    let (_, _, _, ra_after_zoom) = view
+        .get_visited_panel_idiom(&tree)
+        .expect("visited panel should exist after second zoom");
     // C++ convention: Zoom(factor=2) → reFac=0.5 → ra *= reFac^2 = 0.25. rel_a /= 4.
     assert!(
         (ra_after_zoom - ra_before_zoom / 4.0).abs() < 0.01 * ra_before_zoom,

@@ -76,12 +76,13 @@ fn setup_keyboard_vif(view: &emView) -> emKeyboardZoomScrollVIF {
 /// The C++ gen_golden stores `1/ra` (i.e., `vw*vh/(HomeW*HomeH)`, the old
 /// "Rust scale-factor convention"). Rust now uses C++ convention internally
 /// (`rel_a = HomeW*HomeH/(vw*vh)`), so invert here to keep golden data stable.
-fn read_view_state(view: &emView) -> TrajectoryStep {
-    let visit = view.current_visit();
-    let ra = visit.rel_a;
+fn read_view_state(view: &emView, tree: &PanelTree) -> TrajectoryStep {
+    let (_, rx, ry, ra) = view
+        .get_visited_panel_idiom(tree)
+        .expect("visited panel should exist at observation point");
     TrajectoryStep {
-        vel_x: visit.rel_x,
-        vel_y: visit.rel_y,
+        vel_x: rx,
+        vel_y: ry,
         vel_z: if ra > 1e-100 { 1.0 / ra } else { 1000.0 },
     }
 }
@@ -105,7 +106,7 @@ fn filter_wheel_zoom_in() {
     for i in 0..60 {
         vif.set_test_clock(CLOCK_INIT + (i as u64 + 1) * CLOCK_STEP);
         vif.animate_wheel(&mut view, &mut tree, dt_for_frame(i));
-        actual.push(read_view_state(&view));
+        actual.push(read_view_state(&view, &tree));
     }
 
     compare_trajectory("filter_wheel_zoom_in", &actual, &golden, 1e-6)
@@ -128,7 +129,7 @@ fn filter_wheel_zoom_out() {
     for i in 0..60 {
         vif.set_test_clock(CLOCK_INIT + (i as u64 + 1) * CLOCK_STEP);
         vif.animate_wheel(&mut view, &mut tree, dt_for_frame(i));
-        actual.push(read_view_state(&view));
+        actual.push(read_view_state(&view, &tree));
     }
 
     compare_trajectory("filter_wheel_zoom_out", &actual, &golden, 1e-6)
@@ -155,7 +156,7 @@ fn filter_wheel_acceleration() {
 
         vif.set_test_clock(CLOCK_INIT + (i as u64 + 1) * CLOCK_STEP);
         vif.animate_wheel(&mut view, &mut tree, dt_for_frame(i));
-        actual.push(read_view_state(&view));
+        actual.push(read_view_state(&view, &tree));
     }
 
     compare_trajectory("filter_wheel_acceleration", &actual, &golden, 1e-6)
@@ -194,7 +195,7 @@ fn filter_middle_pan() {
         }
 
         vif.animate_grip(&mut view, &mut tree, dt_for_frame(i));
-        actual.push(read_view_state(&view));
+        actual.push(read_view_state(&view, &tree));
     }
 
     compare_trajectory("filter_middle_pan", &actual, &golden, 1e-6)
@@ -239,7 +240,7 @@ fn filter_middle_fling() {
         }
 
         vif.animate_grip(&mut view, &mut tree, dt_for_frame(i));
-        actual.push(read_view_state(&view));
+        actual.push(read_view_state(&view, &tree));
     }
 
     compare_trajectory("filter_middle_fling", &actual, &golden, 1e-6)
@@ -268,7 +269,7 @@ fn filter_keyboard_scroll() {
     let mut actual = Vec::with_capacity(60);
     for i in 0..60 {
         vif.animate(&mut view, &mut tree, dt_for_frame(i));
-        actual.push(read_view_state(&view));
+        actual.push(read_view_state(&view, &tree));
     }
 
     compare_trajectory("filter_keyboard_scroll", &actual, &golden, 1e-6)
@@ -295,7 +296,7 @@ fn filter_keyboard_zoom() {
     let mut actual = Vec::with_capacity(60);
     for i in 0..60 {
         vif.animate(&mut view, &mut tree, dt_for_frame(i));
-        actual.push(read_view_state(&view));
+        actual.push(read_view_state(&view, &tree));
     }
 
     compare_trajectory("filter_keyboard_zoom", &actual, &golden, 1e-4)
@@ -331,7 +332,7 @@ fn filter_keyboard_release() {
         }
 
         vif.animate(&mut view, &mut tree, dt_for_frame(i));
-        actual.push(read_view_state(&view));
+        actual.push(read_view_state(&view, &tree));
     }
 
     compare_trajectory("filter_keyboard_release", &actual, &golden, 1e-4)

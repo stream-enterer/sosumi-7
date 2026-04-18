@@ -2571,8 +2571,9 @@ mod tests {
         let root = view.GetRootPanel();
         tree.set_focusable(root, true);
         view.Update(&mut tree);
-        let rx_before = view.current_visit().rel_x;
-        let ry_before = view.current_visit().rel_y;
+        let (_, rx_before, ry_before, _) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist before gesture");
 
         let mut vif = emDefaultTouchVIF::new();
         vif.touch_start(1, 100.0, 100.0, &mut view, &mut tree);
@@ -2580,8 +2581,9 @@ mod tests {
         vif.touch_move(1, 110.0, 100.0, 0.016, &mut view, &mut tree);
 
         // With old system suppressed, view should NOT have scrolled
-        let rx_after = view.current_visit().rel_x;
-        let ry_after = view.current_visit().rel_y;
+        let (_, rx_after, ry_after, _) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist after gesture");
         assert!(
             (rx_after - rx_before).abs() < 1e-12 && (ry_after - ry_before).abs() < 1e-12,
             "View scrolled during dead zone — old SingleTouch not suppressed \
@@ -2821,12 +2823,16 @@ mod tests {
         vif.set_animator_params(1.0, 0.25, 1.0, 1.0, zflpp);
         vif.key_state.insert(KeyState::ZOOM_IN);
 
-        let before = view.current_visit().rel_a;
+        let (_, _, _, before) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist before zoom animation");
         for _ in 0..20 {
             vif.animate(&mut view, &mut tree, 0.016);
         }
 
-        let after = view.current_visit().rel_a;
+        let (_, _, _, after) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist after zoom animation");
         // rel_a uses C++ convention: HomeW*HomeH/(vw*vh). Zooming IN enlarges vw*vh,
         // so rel_a DECREASES when zooming in.
         assert!(after < before, "Should have zoomed in");

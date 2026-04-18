@@ -290,12 +290,13 @@ fn run_visiting_trajectory(
 
     for _ in 0..steps {
         anim.animate(view, tree, dt);
-        let visit = view.current_visit();
+        let (_, rx, ry, ra) = view
+            .get_visited_panel_idiom(tree)
+            .expect("visited panel should exist at trajectory step");
         // C++ gen_golden stores (rx, ry, 1/ra) — invert rel_a to match.
-        let ra = visit.rel_a;
         trajectory.push(TrajectoryStep {
-            vel_x: visit.rel_x,
-            vel_y: visit.rel_y,
+            vel_x: rx,
+            vel_y: ry,
             vel_z: if ra > 1e-100 { 1.0 / ra } else { 1000.0 },
         });
     }

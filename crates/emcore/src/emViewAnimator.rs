@@ -2770,14 +2770,19 @@ mod tests {
     fn kinetic_with_zoom() {
         let (mut tree, mut view) = setup();
         view.Update(&mut tree);
-        let initial_a = view.current_visit().rel_a;
+        let (_, _, _, initial_a) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist at initial state");
 
         let mut anim = emKineticViewAnimator::new(0.0, 0.0, 100.0, 1000.0);
         // friction_enabled defaults to false — just test that zoom scroll works
         anim.animate(&mut view, &mut tree, 0.1);
 
         // Zoom velocity should have changed rel_a (dz = 100 * 0.1 = 10)
-        assert!((view.current_visit().rel_a - initial_a).abs() > 0.001);
+        let (_, _, _, final_a) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist after animation");
+        assert!((final_a - initial_a).abs() > 0.001);
     }
 
     #[test]
@@ -2874,7 +2879,9 @@ mod tests {
     fn speeding_delegates_to_kinetic() {
         let (mut tree, mut view) = setup();
         view.Update(&mut tree);
-        let initial_a = view.current_visit().rel_a;
+        let (_, _, _, initial_a) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist at initial state");
 
         let mut anim = emSpeedingViewAnimator::new(1000.0);
         anim.SetTargetVelocity(0.0, 0.0, 2.0);
@@ -2885,7 +2892,10 @@ mod tests {
         }
 
         // Inner kinetic should have applied zoom via raw_scroll_and_zoom
-        assert!((view.current_visit().rel_a - initial_a).abs() > 0.001);
+        let (_, _, _, final_a) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist after animation");
+        assert!((final_a - initial_a).abs() > 0.001);
     }
 
     #[test]
@@ -2943,8 +2953,10 @@ mod tests {
         view.Update(&mut tree);
 
         // Target is the root at current coords — should reach goal quickly
-        let state = view.current_visit().clone();
-        let mut anim = emVisitingViewAnimator::new(state.rel_x, state.rel_y, state.rel_a, 5.0);
+        let (_, state_rx, state_ry, state_ra) = view
+            .get_visited_panel_idiom(&tree)
+            .expect("visited panel should exist at initial state");
+        let mut anim = emVisitingViewAnimator::new(state_rx, state_ry, state_ra, 5.0);
         anim.set_identity("root", "");
         anim.SetAnimated(true);
         anim.SetAcceleration(5.0);
@@ -3397,12 +3409,14 @@ mod tests {
             let (mut tree, mut view) = setup_scrolled(factor);
             let root = view.GetRootPanel();
 
-            let state = view.current_visit().clone();
+            let (_, state_rx, state_ry, state_ra) = view
+                .get_visited_panel_idiom(&tree)
+                .expect("visited panel should exist at initial state");
             let viewed_x_before = tree.GetRec(root).unwrap().viewed_x;
             let viewed_y_before = tree.GetRec(root).unwrap().viewed_y;
 
             // Create animator targeting exactly the current state
-            let mut anim = emVisitingViewAnimator::new(state.rel_x, state.rel_y, state.rel_a, 0.0);
+            let mut anim = emVisitingViewAnimator::new(state_rx, state_ry, state_ra, 0.0);
             anim.set_identity("root", "");
             anim.SetAnimated(true);
             anim.SetAcceleration(5.0);
@@ -3411,26 +3425,28 @@ mod tests {
             // Drive several steps — view should not move
             for step in 0..10 {
                 anim.animate(&mut view, &mut tree, 1.0 / 60.0);
-                let after = view.current_visit();
+                let (_, after_rx, after_ry, after_ra) = view
+                    .get_visited_panel_idiom(&tree)
+                    .expect("visited panel should exist at step");
                 assert!(
-                    (after.rel_x - state.rel_x).abs() < 1e-10,
+                    (after_rx - state_rx).abs() < 1e-10,
                     "factor={factor} step={step}: rel_x moved from {:.15e} to {:.15e}",
-                    state.rel_x,
-                    after.rel_x
+                    state_rx,
+                    after_rx
                 );
                 assert!(
-                    (after.rel_y - state.rel_y).abs() < 1e-10,
+                    (after_ry - state_ry).abs() < 1e-10,
                     "factor={factor} step={step}: rel_y moved from {:.15e} to {:.15e}",
-                    state.rel_y,
-                    after.rel_y
+                    state_ry,
+                    after_ry
                 );
                 // Tolerance scales with rel_a magnitude (higher zoom = larger absolute drift).
-                let a_tol = 1e-10 * state.rel_a.max(1.0);
+                let a_tol = 1e-10 * state_ra.max(1.0);
                 assert!(
-                    (after.rel_a - state.rel_a).abs() < a_tol,
+                    (after_ra - state_ra).abs() < a_tol,
                     "factor={factor} step={step}: rel_a moved from {:.15e} to {:.15e} (tol={a_tol:.3e})",
-                    state.rel_a,
-                    after.rel_a
+                    state_ra,
+                    after_ra
                 );
             }
 
