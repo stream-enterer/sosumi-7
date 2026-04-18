@@ -1649,7 +1649,7 @@ impl TouchTracker {
                     let x = self.touches[0].down_x;
                     let y = self.touches[0].down_y;
                     if let Some(panel) = view.GetFocusablePanelAt(tree, x, y) {
-                        view.VisitFullsized(tree, panel);
+                        view.VisitFullsized(tree, panel, true, false);
                     }
                     self.gesture_state = GestureState::Finish;
                 }
@@ -1672,8 +1672,7 @@ impl TouchTracker {
                     let x = self.touches[0].down_x;
                     let y = self.touches[0].down_y;
                     if let Some(panel) = view.GetFocusablePanelAt(tree, x, y) {
-                        let (rx, ry, ra) = view.CalcVisitFullsizedCoords(tree, panel, true);
-                        view.Visit(tree, panel, rx, ry, ra, false);
+                        view.VisitFullsized(tree, panel, true, true);
                     }
                     self.gesture_state = GestureState::Finish;
                 }

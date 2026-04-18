@@ -930,9 +930,36 @@ impl emView {
         self.VisitByIdentity(&identity, rel_x, rel_y, rel_a, adherent, &subject);
     }
 
-    pub fn VisitFullsized(&mut self, tree: &PanelTree, panel: PanelId) {
-        let (x, y, a) = self.CalcVisitFullsizedCoords(tree, panel, false);
-        self.Visit(tree, panel, x, y, a, false);
+    /// Port of C++ `emView::VisitFullsized(panel, adherent, utilizeView)` (emView.cpp:525-528).
+    pub fn VisitFullsized(
+        &mut self,
+        tree: &PanelTree,
+        panel: PanelId,
+        adherent: bool,
+        utilize_view: bool,
+    ) {
+        let identity = tree.GetIdentity(panel);
+        let subject = tree.get_title(panel);
+        self.VisitFullsizedByIdentity(&identity, adherent, utilize_view, &subject);
+    }
+
+    /// DIVERGED: C++ overload `emView::VisitFullsized(identity, adherent, utilizeView, subject)` (emView.cpp:531-541)
+    /// — Rust cannot overload by name; panel-form keeps `VisitFullsized`, identity-form renamed to
+    /// `VisitFullsizedByIdentity`.
+    ///
+    /// Port of C++ `emView::VisitFullsized(identity, adherent, utilizeView, subject)` (emView.cpp:531-541).
+    pub fn VisitFullsizedByIdentity(
+        &mut self,
+        identity: &str,
+        adherent: bool,
+        utilize_view: bool,
+        subject: &str,
+    ) {
+        let mut va = self.VisitingVA.borrow_mut();
+        // PHASE-W4-FOLLOWUP: CoreConfig defaults — see Task 3.1.
+        va.SetAnimParamsByCoreConfig(1.0, 10.0);
+        va.SetGoalFullsized(identity, adherent, utilize_view, subject);
+        va.Activate();
     }
 
     /// DIVERGED: C++ overload `emView::Visit(panel, adherent)` (emView.cpp:511-514)
@@ -2486,7 +2513,7 @@ impl emView {
         // Rust panels post requests via PanelCtx::request_visit and emView drains
         // them here (after the main loop so SVP is up to date).
         for target in tree.drain_navigation_requests() {
-            self.VisitFullsized(tree, target);
+            self.VisitFullsized(tree, target, false, false);
         }
     }
 
@@ -2635,8 +2662,8 @@ impl emView {
                 return;
             }
         }
-        // No focusable child — visit active fullsized
-        self.VisitFullsized(tree, active);
+        // No focusable child — visit active fullsized (C++ emView.cpp:745: adherent=true)
+        self.VisitFullsized(tree, active, true, false);
     }
 
     pub fn VisitOut(&mut self, tree: &mut PanelTree) {
