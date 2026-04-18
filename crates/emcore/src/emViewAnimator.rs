@@ -2207,8 +2207,7 @@ impl emViewAnimator for emVisitingViewAnimator {
         // C++ emViewAnimator.cpp:1070-1073: eat event and deactivate.
         if !event.IsEmpty() {
             event.eat();
-            self.active = false;
-            self.state = VisitingState::NoGoal;
+            self.stop();
         }
     }
 }
@@ -3555,6 +3554,25 @@ mod tests {
         emViewAnimator::Input(&mut anim, &mut ev, &st);
         assert!(ev.IsEmpty(), "event should be eaten");
         assert!(!anim.active, "animator should deactivate");
+        assert_eq!(anim.state, VisitingState::NoGoal, "state should reset");
+    }
+
+    /// W1a: emVisitingViewAnimator::Input also deactivates in GivingUp state
+    /// (C++ emViewAnimator.cpp:1068).
+    #[test]
+    fn visiting_animator_input_eats_event_and_deactivates_in_giving_up() {
+        use crate::emInput::{emInputEvent, InputKey};
+        use crate::emInputState::emInputState;
+
+        let mut anim = emVisitingViewAnimator::new(0.0, 0.0, 1.0, 0.0);
+        anim.active = true;
+        anim.state = VisitingState::GivingUp;
+        let mut ev = emInputEvent::press(InputKey::Enter);
+        let st = emInputState::default();
+        emViewAnimator::Input(&mut anim, &mut ev, &st);
+        assert!(ev.IsEmpty(), "event should be eaten");
+        assert!(!anim.active, "animator should deactivate");
+        assert_eq!(anim.state, VisitingState::NoGoal, "state should reset");
     }
 
     /// W1a: emVisitingViewAnimator::Input is a no-op in inactive state,
