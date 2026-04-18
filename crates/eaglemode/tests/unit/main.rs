@@ -4,6 +4,7 @@ mod input_dispatch_chain;
 mod max_popup_rect_fallback;
 mod model;
 mod panel;
+mod popup_materialization;
 mod popup_window;
 mod render;
 mod scheduler;
