@@ -2070,11 +2070,19 @@ impl emView {
         }
 
         // SVPUpdSlice fp-instability throttle (emView.cpp:1734-1751).
+        //
+        // SP4 Phase 5: Update now runs from inside UpdateEngineClass::Cycle
+        // while `EngineScheduler` is borrowed_mut via DoTimeSlice. A plain
+        // `self.scheduler.borrow()` here would reentrantly panic. Fall
+        // through try_borrow; on failure (scheduler in use), leave
+        // SVPUpdSlice unchanged — at worst the throttle's retry counter
+        // stays stable for one extra slice, which is harmless given the
+        // fallback only triggers after 1000+ retries in a single slice.
         let slice = self
             .scheduler
             .as_ref()
-            .map(|s| s.borrow().GetTimeSliceCounter())
-            .unwrap_or(0);
+            .and_then(|s| s.try_borrow().ok().map(|b| b.GetTimeSliceCounter()))
+            .unwrap_or(self.SVPUpdSlice);
         if self.SVPUpdSlice != slice {
             self.SVPUpdSlice = slice;
             self.SVPUpdCount = 0;
@@ -6222,6 +6230,127 @@ mod tests {
         assert_eq!(v.HomePixelTallness, 1.25);
         assert_eq!(v.CurrentX, 100.0); // Current tracks Home when no popup.
         assert_eq!(v.CurrentPixelTallness, 1.25);
+    }
+
+    /// SP4 Task 5.2: a signal fired from inside Update via
+    /// `queue_or_apply_sched_op` must still wake a receiver engine that is
+    /// connected to that signal and is at a lower priority than
+    /// `UpdateEngineClass` — all in the same `DoTimeSlice`. Guards against
+    /// "drain-too-late" bugs where queued Fire ops would be delivered past
+    /// the current slice.
+    ///
+    /// Trigger path: create a popup via `RawVisit` under `POPUP_ZOOM`, wire
+    /// a Low-priority `Receiver` to the view's `geometry_signal`, fire the
+    /// popup's `close_signal`, then run one `DoTimeSlice`:
+    ///   - `UpdateEngineClass::Cycle` (High) pre-probes `close_signal` and
+    ///     sets `close_signal_pending`, then calls `Update`.
+    ///   - `Update` → `ZoomOut` → `RawVisitAbs` popup-teardown path
+    ///     enqueues `SchedOp::Fire(geometry_signal)` via
+    ///     `queue_or_apply_sched_op` (line 1970).
+    ///   - `UpdateEngineClass::Cycle` drains pending ops via `apply_via_ctx`,
+    ///     marking `geometry_signal` pending in the scheduler.
+    ///   - The same `DoTimeSlice` processes the pending signal, which wakes
+    ///     the Low-priority `Receiver` and cycles it before exiting.
+    #[test]
+    fn sp4_signal_fired_from_update_reaches_receiver_same_slice() {
+        use crate::emEngine::{emEngine as EngineTrait, EngineCtx, Priority};
+        use std::collections::HashMap;
+
+        let (mut tree, root, child_a, _) = setup_tree();
+        let win_id = winit::window::WindowId::dummy();
+        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        let win = crate::emWindow::emWindow::new_for_test(win_id, &sched, root, 640.0, 480.0);
+
+        // Receiver engine at Low priority (strictly below UpdateEngineClass
+        // at High priority). Same-slice wake must traverse all priorities
+        // below the engine that fired the signal.
+        struct Receiver {
+            cycled: Rc<RefCell<bool>>,
+        }
+        impl EngineTrait for Receiver {
+            fn Cycle(&mut self, _ctx: &mut EngineCtx<'_>) -> bool {
+                *self.cycled.borrow_mut() = true;
+                false
+            }
+        }
+        let cycled = Rc::new(RefCell::new(false));
+        let recv_id = sched.borrow_mut().register_engine(
+            Priority::Low,
+            Box::new(Receiver {
+                cycled: Rc::clone(&cycled),
+            }),
+        );
+
+        // Prime Update once so the view is in a stable "after-first-Update"
+        // state (clears zoomed_out_before_sg, populates SVP).
+        {
+            let mut w = win.borrow_mut();
+            w.view_mut().Update(&mut tree);
+        }
+
+        // Put the view into POPUP_ZOOM and push a popup. RawVisit under
+        // POPUP_ZOOM creates a PopupWindow; its tear-down on ZoomOut is
+        // what fires geometry_signal from inside Update.
+        {
+            let mut w = win.borrow_mut();
+            let v = w.view_mut();
+            v.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree);
+            v.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true);
+            assert!(v.PopupWindow.is_some(), "popup created under POPUP_ZOOM");
+        }
+
+        // Allocate a geometry_signal on the view and wire Receiver to it.
+        // The view's geometry_signal field is used by SwapViewPorts and
+        // the popup-teardown path inside RawVisitAbs.
+        let geom_sig = sched.borrow_mut().create_signal();
+        win.borrow_mut().view_mut().geometry_signal = Some(geom_sig);
+        sched.borrow_mut().connect(geom_sig, recv_id);
+
+        // Fire the popup's close_signal. DoTimeSlice below will observe it
+        // via UpdateEngineClass::Cycle's pre-probe of ctx.IsSignaled, then
+        // Update will run ZoomOut → RawVisitAbs teardown → queue a Fire of
+        // geometry_signal, drained at the end of Cycle.
+        let close_sig = win
+            .borrow()
+            .view()
+            .PopupWindow
+            .as_ref()
+            .unwrap()
+            .borrow()
+            .close_signal;
+        sched.borrow_mut().fire(close_sig);
+
+        let mut windows: HashMap<_, _> = HashMap::new();
+        windows.insert(win_id, Rc::clone(&win));
+        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+
+        assert!(
+            *cycled.borrow(),
+            "Receiver at Low priority must cycle in the same slice as the \
+             Update-issued Fire(geometry_signal)"
+        );
+
+        // Cleanup for scheduler Drop debug_asserts.
+        sched.borrow_mut().disconnect(geom_sig, recv_id);
+        sched.borrow_mut().remove_signal(geom_sig);
+        sched.borrow_mut().remove_engine(recv_id);
+        {
+            let mut w = win.borrow_mut();
+            let v = w.view_mut();
+            v.geometry_signal = None;
+            if let Some(id) = v.update_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.visiting_va_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.eoi_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(s) = v.EOISignal.take() {
+                sched.borrow_mut().remove_signal(s);
+            }
+        }
     }
 
     /// Phase 8 acceptance test — `emView::Update` drains the popup's
