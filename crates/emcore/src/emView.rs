@@ -3166,10 +3166,16 @@ impl emView {
     /// If the active panel is viewed and highlight should be drawn, marks the
     /// whole view dirty so the highlight is repainted.  C++ comment notes this
     /// is overly broad ("too much") — we preserve that behaviour.
-    pub fn InvalidateHighlight(&mut self) {
-        let active_viewed = self.active.is_some();
+    pub fn InvalidateHighlight(&mut self, tree: &PanelTree) {
+        let active_viewed = self.active.map(|id| tree.IsViewed(id)).unwrap_or(false);
 
         if !active_viewed {
+            return;
+        }
+
+        let no_active = self.flags.contains(ViewFlags::NO_ACTIVE_HIGHLIGHT);
+        let no_focus = self.flags.contains(ViewFlags::NO_FOCUS_HIGHLIGHT);
+        if no_active && (no_focus || !self.window_focused) {
             return;
         }
 
@@ -5729,7 +5735,7 @@ mod tests {
         let mut v = emView::new(root, 640.0, 480.0);
         v.Update(&mut tree);
         let before = v.dirty_rects.len();
-        v.InvalidateHighlight();
+        v.InvalidateHighlight(&tree);
         assert!(
             v.dirty_rects.len() > before,
             "InvalidateHighlight should append a dirty rect"
