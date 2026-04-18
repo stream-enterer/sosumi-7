@@ -7,6 +7,7 @@ use emcore::emPanelCtx::PanelCtx;
 use emcore::emPanelTree::{PanelId, PanelTree};
 
 use emcore::emView::{emView, ViewFlags};
+use emcore::emViewAnimator::emViewAnimator as _;
 
 use emcore::emPainter::emPainter;
 
@@ -141,6 +142,9 @@ fn remove_subtree() {
 
 #[test]
 fn view_visit_and_navigation() {
+    // W4 Phase 3: Visit now routes through VisitingVA (emView.cpp:492-510),
+    // so the observable post-call state is animator activation, not an
+    // immediate visit_stack push or synchronous active-panel change.
     let mut tree = PanelTree::new();
     let root = tree.create_root("root");
     let child = tree.create_child(root, "child");
@@ -150,17 +154,22 @@ fn view_visit_and_navigation() {
     assert_eq!(view.GetRootPanel(), root);
     assert_eq!(view.current_visit().panel, root);
 
-    // Visit a child
-    view.Visit(child, 10.0, 20.0, 0.5);
-    assert_eq!(view.current_visit().panel, child);
-    assert_eq!(view.visit_stack().len(), 2);
+    // Visit a child — goal is set on VisitingVA; the cycle engine will
+    // drive the camera toward it.
+    view.Visit(&tree, child, 10.0, 20.0, 0.5, false);
 
-    // Go back
-    assert!(view.go_back());
-    assert_eq!(view.current_visit().panel, root);
-    assert_eq!(view.visit_stack().len(), 1);
+    // After Visit, animator should be active with the target identity + coords.
+    {
+        let va = view.visiting_va();
+        assert!(va.is_active(), "animator active after Visit");
+        assert_eq!(va.identity(), tree.GetIdentity(child));
+        assert!((va.rel_x() - 10.0).abs() < 1e-9);
+        assert!((va.rel_y() - 20.0).abs() < 1e-9);
+        assert!((va.rel_a() - 0.5).abs() < 1e-9);
+    }
 
-    // Can't go back past root
+    // go_back still operates on the (now-legacy) visit_stack; in this
+    // test only the initial root entry is pushed, so we can't go back.
     assert!(!view.go_back());
 }
 

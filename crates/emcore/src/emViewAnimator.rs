@@ -786,8 +786,11 @@ impl emVisitingViewAnimator {
         self.activate_goal(identity);
     }
 
-    /// Set goal: visit panel at explicit relative coordinates.
-    pub fn set_goal_rel(
+    /// Port of C++ `emVisitingViewAnimator::SetGoal(identity, relX, relY, relA, adherent, subject)`
+    /// at `emViewAnimator.cpp:1001-1007`.
+    /// DIVERGED: C++ name is `SetGoal` (6-arg overload). Rust cannot overload by arity;
+    /// 3-arg variant keeps bare `SetGoal`, coords-carrying variant suffixed with `WithCoords`.
+    pub fn SetGoalWithCoords(
         &mut self,
         identity: &str,
         rel_x: f64,
@@ -804,6 +807,24 @@ impl emVisitingViewAnimator {
         self.utilize_view = false;
         self.subject = subject.to_string();
         self.activate_goal(identity);
+    }
+
+    /// Goal relative X coordinate (visit-rel mode).
+    /// C++ equivalent: `emVisitingViewAnimator::GetRelX` (public accessor).
+    pub fn rel_x(&self) -> f64 {
+        self.rel_x
+    }
+
+    /// Goal relative Y coordinate (visit-rel mode).
+    /// C++ equivalent: `emVisitingViewAnimator::GetRelY` (public accessor).
+    pub fn rel_y(&self) -> f64 {
+        self.rel_y
+    }
+
+    /// Goal relative area coordinate (visit-rel mode).
+    /// C++ equivalent: `emVisitingViewAnimator::GetRelA` (public accessor).
+    pub fn rel_a(&self) -> f64 {
+        self.rel_a
     }
 
     /// Set goal: visit panel fullsized.

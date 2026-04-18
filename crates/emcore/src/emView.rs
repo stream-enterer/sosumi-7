@@ -913,21 +913,26 @@ impl emView {
             .map(|id| (id, rx, ry, ra))
     }
 
-    pub fn Visit(&mut self, panel: PanelId, rel_x: f64, rel_y: f64, rel_a: f64) {
-        self.visit_stack.push(VisitState {
-            panel,
-            rel_x,
-            rel_y,
-            rel_a,
-        });
-        self.active = Some(panel);
-        self.viewport_changed = true;
-        self.SVPChoiceInvalid = true;
+    /// Port of C++ `emView::Visit(panel, relX, relY, relA, adherent)` at
+    /// emView.cpp:492-497. Three-line delegation: look up identity+title on
+    /// the tree, then forward to the identity-keyed overload.
+    pub fn Visit(
+        &mut self,
+        tree: &PanelTree,
+        panel: PanelId,
+        rel_x: f64,
+        rel_y: f64,
+        rel_a: f64,
+        adherent: bool,
+    ) {
+        let identity = tree.GetIdentity(panel);
+        let subject = tree.get_title(panel);
+        self.VisitByIdentity(&identity, rel_x, rel_y, rel_a, adherent, &subject);
     }
 
     pub fn VisitFullsized(&mut self, tree: &PanelTree, panel: PanelId) {
         let (x, y, a) = self.CalcVisitFullsizedCoords(tree, panel, false);
-        self.Visit(panel, x, y, a);
+        self.Visit(tree, panel, x, y, a, false);
     }
 
     /// D-PANEL-02: Request an animated visit to a panel. Sets a pending goal
@@ -3051,21 +3056,38 @@ impl emView {
         }
     }
 
-    /// Visit a panel by identity string, matching C++ emView::Visit(identity, ...).
-    /// Uses find_panel_by_identity to resolve the identity to a PanelId, then calls Visit.
+    /// Port of C++ `emView::Visit(identity, relX, relY, relA, adherent, subject)`
+    /// at emView.cpp:500-508. Three-line delegation to `VisitingVA`:
+    /// `SetAnimParamsByCoreConfig` → `SetGoalWithCoords` → `Activate`. The
+    /// animator engine (`VisitingVAEngineClass::Cycle`) observes `is_active()`
+    /// and drives the curve each scheduler tick.
+    ///
+    /// PHASE-W4-FOLLOWUP: C++ passes this view's `CoreConfig` to
+    /// `SetAnimParamsByCoreConfig`. Rust `emView` does not yet own a
+    /// `emCoreConfig`, so we hardcode the stock defaults
+    /// (`VisitSpeed=1.0`, `MaxVisitSpeed=10.0`) from emCoreConfig.cpp:53.
+    /// Full `CoreConfig` ownership is a future wave.
     pub fn VisitByIdentity(
         &mut self,
-        tree: &mut PanelTree,
         identity: &str,
         rel_x: f64,
         rel_y: f64,
         rel_a: f64,
+        adherent: bool,
+        subject: &str,
     ) {
-        if let Some(panel_id) = tree.find_panel_by_identity(identity) {
-            self.Visit(panel_id, rel_x, rel_y, rel_a);
-        } else {
-            log::warn!("VisitByIdentity: panel not found for identity '{identity}'");
-        }
+        let mut va = self.VisitingVA.borrow_mut();
+        va.SetAnimParamsByCoreConfig(1.0, 10.0);
+        va.SetGoalWithCoords(identity, rel_x, rel_y, rel_a, adherent, subject);
+        va.Activate();
+    }
+
+    /// Borrow the visiting view animator for inspection.
+    /// Exposes `VisitingVA` to cross-crate callers (e.g. integration tests)
+    /// without making the field itself `pub`. C++ field is private; this
+    /// provides read access equivalent to C++ friend/test-only inspection.
+    pub fn visiting_va(&self) -> std::cell::Ref<'_, super::emViewAnimator::emVisitingViewAnimator> {
+        self.VisitingVA.borrow()
     }
 
     /// Check whether any dirty rectangles have been accumulated.
@@ -4635,6 +4657,7 @@ mod tests {
     use super::*;
     use crate::emPanelTree::PanelTree;
     use crate::emScheduler::EngineScheduler;
+    use crate::emViewAnimator::emViewAnimator as _;
 
     fn setup_tree() -> (PanelTree, PanelId, PanelId, PanelId) {
         let mut tree = PanelTree::new();
@@ -5563,14 +5586,43 @@ mod tests {
         view.set_active_panel(&mut tree, child, false);
         assert!(sched.borrow().is_pending(cp_sig));
 
-        // VisitByIdentity resolves identity -> panel and visits.
-        view.VisitByIdentity(&mut tree, "root:child", 0.5, 0.5, 1.0);
-        // Non-existent identity logs a warning but doesn't panic.
-        view.VisitByIdentity(&mut tree, "no_such_panel", 0.0, 0.0, 1.0);
+        // VisitByIdentity routes through VisitingVA per W4 Phase 3.
+        view.VisitByIdentity("root:child", 0.5, 0.5, 1.0, false, "child-title");
+        assert!(view.VisitingVA.borrow().is_active());
+        assert_eq!(view.VisitingVA.borrow().identity(), "root:child");
+        // Non-existent identity no longer requires tree lookup — the animator
+        // just sets the goal; resolution happens later during Cycle.
+        view.VisitByIdentity("no_such_panel", 0.0, 0.0, 1.0, false, "");
 
         // Clean up signals so EngineScheduler's debug_assert on drop is satisfied.
         sched.borrow_mut().remove_signal(cp_sig);
         sched.borrow_mut().remove_signal(title_sig);
+    }
+
+    #[test]
+    fn visit_routes_through_animator() {
+        // W4 Phase 3: Visit(tree, panel, rx, ry, ra, adherent) must set a goal
+        // on VisitingVA and activate it, matching C++ emView.cpp:492-510.
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root");
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        let child = tree.create_child(root, "child");
+        tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
+
+        let mut view = emView::new(root, 800.0, 600.0);
+        assert!(
+            !view.VisitingVA.borrow().is_active(),
+            "inactive before Visit"
+        );
+
+        view.Visit(&tree, child, 0.25, 0.5, 2.0, false);
+
+        let va = view.VisitingVA.borrow();
+        assert!(va.is_active(), "active after Visit");
+        assert_eq!(va.identity(), tree.GetIdentity(child));
+        assert!((va.rel_x() - 0.25).abs() < 1e-9);
+        assert!((va.rel_y() - 0.5).abs() < 1e-9);
+        assert!((va.rel_a() - 2.0).abs() < 1e-9);
     }
 
     #[test]
