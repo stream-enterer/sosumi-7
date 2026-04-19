@@ -543,23 +543,30 @@ pub struct emView {
     pub(crate) VisitingVA: Rc<RefCell<super::emViewAnimator::emVisitingViewAnimator>>,
 
     /// Port of C++ `emView.h:664` — `emRef<emCoreConfig> CoreConfig`.
-    /// Acquired at construction. SP7 (emContext threading) will source
-    /// this via `emCoreConfig::Acquire(ctx.GetRootContext())` once
-    /// `emContext` is threaded through `emView::new`.
-    pub CoreConfig: Rc<RefCell<crate::emCoreConfig::emCoreConfig>>,
+    /// Acquired at construction (`emView.cpp:35`).
+    pub CoreConfig:
+        Rc<RefCell<crate::emConfigModel::emConfigModel<crate::emCoreConfig::emCoreConfig>>>,
+
+    // DIVERGED: C++ `class emView : public emContext` — Rust has no
+    // inheritance; store the context by composition. `GetContext` /
+    // `GetRootContext` accessors below delegate, giving callers the same
+    // observable access the C++ inheritance grants.
+    pub(crate) Context: Rc<crate::emContext::emContext>,
 }
 
 impl emView {
     pub fn new(
+        parent_context: Rc<crate::emContext::emContext>,
         root: PanelId,
         viewport_width: f64,
         viewport_height: f64,
-        core_config: Rc<RefCell<crate::emCoreConfig::emCoreConfig>>,
     ) -> Self {
         // C++ HomeViewPort == CurrentViewPort in non-popup state.
         // Rc::clone shares the same allocation so Rc::ptr_eq returns true.
         let home_vp = Rc::new(RefCell::new(super::emViewPort::emViewPort::new_dummy()));
         let current_vp = Rc::clone(&home_vp);
+        let Context = crate::emContext::emContext::NewChild(&parent_context);
+        let CoreConfig = crate::emCoreConfig::emCoreConfig::Acquire(&Context);
         Self {
             root,
             active: Some(root),
@@ -634,7 +641,8 @@ impl emView {
             VisitingVA: Rc::new(RefCell::new(
                 super::emViewAnimator::emVisitingViewAnimator::new_for_view(),
             )),
-            CoreConfig: core_config,
+            CoreConfig,
+            Context,
         }
     }
 
@@ -656,6 +664,14 @@ impl emView {
     }
 
     // --- Accessors ---
+
+    pub fn GetContext(&self) -> &Rc<crate::emContext::emContext> {
+        &self.Context
+    }
+
+    pub fn GetRootContext(&self) -> Rc<crate::emContext::emContext> {
+        self.Context.GetRootContext()
+    }
 
     pub fn GetRootPanel(&self) -> PanelId {
         self.root
@@ -988,8 +1004,9 @@ impl emView {
         subject: &str,
     ) {
         let cfg = self.CoreConfig.borrow();
+        let cfg = cfg.GetRec();
         let mut va = self.VisitingVA.borrow_mut();
-        va.SetAnimParamsByCoreConfig(&cfg);
+        va.SetAnimParamsByCoreConfig(cfg);
         va.SetGoalCoords(identity, rel_x, rel_y, rel_a, adherent, subject);
         va.Activate();
     }
@@ -1020,8 +1037,9 @@ impl emView {
         subject: &str,
     ) {
         let cfg = self.CoreConfig.borrow();
+        let cfg = cfg.GetRec();
         let mut va = self.VisitingVA.borrow_mut();
-        va.SetAnimParamsByCoreConfig(&cfg);
+        va.SetAnimParamsByCoreConfig(cfg);
         va.SetGoalFullsized(identity, adherent, utilize_view, subject);
         va.Activate();
     }
@@ -1044,8 +1062,9 @@ impl emView {
     /// Port of C++ `emView::Visit(identity, adherent, subject)` (emView.cpp:517-523).
     pub fn VisitByIdentityBare(&mut self, identity: &str, adherent: bool, subject: &str) {
         let cfg = self.CoreConfig.borrow();
+        let cfg = cfg.GetRec();
         let mut va = self.VisitingVA.borrow_mut();
-        va.SetAnimParamsByCoreConfig(&cfg);
+        va.SetAnimParamsByCoreConfig(cfg);
         va.SetGoal(identity, adherent, subject);
         va.Activate();
     }
@@ -1829,6 +1848,7 @@ impl emView {
                             )
                         };
                     let popup = super::emWindow::emWindow::new_popup_pending(
+                        Rc::clone(&self.Context),
                         self.root,
                         super::emWindow::WindowFlags::POPUP
                             | super::emWindow::WindowFlags::UNDECORATED
@@ -4983,14 +5003,7 @@ mod tests {
     #[test]
     fn sp4_phase1_sched_op_routing() {
         let (_tree, root, _c1, _c2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
 
         // 1. No scheduler wired: op is silently dropped.
         view.queue_or_apply_sched_op(SchedOp::Fire(
@@ -5062,14 +5075,7 @@ mod tests {
     #[test]
     fn test_update_viewing_sets_coords() {
         let (mut tree, root, child1, child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         // Root should be viewed
@@ -5086,14 +5092,7 @@ mod tests {
     #[test]
     fn test_svp_selection() {
         let (mut tree, root, _child1, _child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         // SVP should be set
@@ -5109,14 +5108,7 @@ mod tests {
         let offscreen = tree.create_child(root, "offscreen");
         tree.Layout(offscreen, 5.0, 5.0, 0.1, 0.1, 1.0);
 
-        let mut view = emView::new(
-            root,
-            100.0,
-            100.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 100.0, 100.0);
         view.Update(&mut tree);
 
         assert!(!tree.GetRec(offscreen).unwrap().viewed);
@@ -5125,14 +5117,7 @@ mod tests {
     #[test]
     fn test_active_path_flags() {
         let (mut tree, root, child1, _child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.set_active_panel(&mut tree, child1, false);
         view.Update(&mut tree);
 
@@ -5144,14 +5129,7 @@ mod tests {
     #[test]
     fn test_fix_point_zoom() {
         let (mut tree, root, _c1, _c2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         // Read root's viewed_width pre/post; ra = HomeW*HomeH/(vw*vh).
@@ -5175,14 +5153,7 @@ mod tests {
     #[test]
     fn test_visit_next_prev() {
         let (mut tree, root, child1, child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
         view.set_active_panel(&mut tree, child1, false);
 
@@ -5202,14 +5173,7 @@ mod tests {
         tree.get_mut(grandchild).unwrap().focusable = true;
         tree.Layout(grandchild, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
         view.set_active_panel(&mut tree, child1, false);
 
@@ -5225,14 +5189,7 @@ mod tests {
     #[test]
     fn test_hit_testing() {
         let (mut tree, root, child1, child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         // Hit test in left half should find child1, right half child2
@@ -5246,14 +5203,7 @@ mod tests {
     #[test]
     fn test_directional_navigation() {
         let (mut tree, root, child1, child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
         view.set_active_panel(&mut tree, child1, false);
 
@@ -5270,14 +5220,7 @@ mod tests {
     #[test]
     fn test_focus_panel() {
         let (mut tree, root, child1, _child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.SetFocused(&mut tree, false);
 
         view.focus_panel(&mut tree, child1);
@@ -5288,14 +5231,7 @@ mod tests {
     #[test]
     fn test_is_panel_focused() {
         let (mut tree, root, child1, _child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
         view.set_active_panel(&mut tree, child1, false);
 
@@ -5309,14 +5245,7 @@ mod tests {
     #[test]
     fn test_is_panel_in_focused_path() {
         let (mut tree, root, child1, child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
         view.set_active_panel(&mut tree, child1, false);
 
@@ -5331,14 +5260,7 @@ mod tests {
     #[test]
     fn test_is_view_focused_delegate() {
         let (mut tree, root, _c1, _c2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         assert!(view.is_view_focused());
         view.SetFocused(&mut tree, false);
         assert!(!view.is_view_focused());
@@ -5349,14 +5271,7 @@ mod tests {
     #[test]
     fn test_invalidate_painting_whole() {
         let (mut tree, root, child1, _child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
         view.take_dirty_rects(); // drain change-block invalidation
 
@@ -5373,14 +5288,7 @@ mod tests {
     #[test]
     fn test_invalidate_painting_rect() {
         let (mut tree, root, child1, _child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
         view.take_dirty_rects(); // drain change-block invalidation
 
@@ -5401,14 +5309,7 @@ mod tests {
     #[test]
     fn test_invalidate_title_and_cursor() {
         let (mut tree, root, child1, _child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
         view.clear_cursor_invalid(); // drain change-block side effect
         view.set_active_panel(&mut tree, child1, false);
@@ -5434,14 +5335,7 @@ mod tests {
     #[test]
     fn test_update_change_block_side_effects() {
         let (mut tree, root, _child_a, _child_b) = setup_tree();
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
         // Update triggers zoomed_out_before_sg → RawZoomOut → RawVisitAbs.
         v.Update(&mut tree);
 
@@ -5474,14 +5368,7 @@ mod tests {
     #[test]
     fn test_invalidate_control_panel() {
         let (mut tree, root, child1, child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
         view.set_active_panel(&mut tree, child1, false);
 
@@ -5503,24 +5390,10 @@ mod tests {
     fn test_pixel_tallness() {
         let (mut tree, root, _c1, _c2) = setup_tree();
         // new() initialises CurrentPixelTallness to 1.0 (square pixels).
-        let view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         assert_eq!(view.GetCurrentPixelTallness(), 1.0);
 
-        let mut view2 = emView::new(
-            root,
-            1920.0,
-            1080.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view2 = emView::new(crate::emContext::emContext::NewRoot(), root, 1920.0, 1080.0);
         assert_eq!(view2.GetCurrentPixelTallness(), 1.0);
 
         // SetGeometry now takes explicit pixel_tallness.
@@ -5531,14 +5404,7 @@ mod tests {
     #[test]
     fn test_activation_adherent() {
         let (mut tree, root, child1, _child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         // Direct activation is not adherent
@@ -5559,14 +5425,7 @@ mod tests {
     #[test]
     fn test_activation_adherent_early_return_update() {
         let (mut tree, root, child1, _child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         // Set active non-adherent
@@ -5585,14 +5444,7 @@ mod tests {
     #[test]
     fn test_get_input_clock_ms() {
         let (_tree, root, _c1, _c2) = setup_tree();
-        let view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         let ms = view.GetInputClockMS();
         // Should be a reasonable epoch-based timestamp (after year 2020)
         assert!(ms > 1_577_836_800_000);
@@ -5613,14 +5465,7 @@ mod tests {
         // Non-square child: w=0.5, h=0.25 → tallness = 0.5
         tree.Layout(child, 0.1, 0.1, 0.5, 0.25, 1.0);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.set_active_panel(&mut tree, child, false);
         view.Update(&mut tree);
 
@@ -5654,14 +5499,7 @@ mod tests {
         let root = tree.create_root_deferred_view("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.RawZoomOut(&mut tree, false);
 
         let mut state_rx = 0.0;
@@ -5687,14 +5525,7 @@ mod tests {
         let root = tree.create_root_deferred_view("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.RawZoomOut(&mut tree, false);
         assert!(view.IsZoomedOut(&tree));
 
@@ -5709,14 +5540,7 @@ mod tests {
         let root = tree.create_root_deferred_view("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0); // starts square
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         // pixel_tallness = 600/800 = 0.75
         let flags = view.flags | ViewFlags::ROOT_SAME_TALLNESS;
         view.SetViewFlags(flags, &mut tree);
@@ -5763,14 +5587,7 @@ mod tests {
     #[test]
     fn ego_mode_cursor_override() {
         let (mut tree, root, _, _) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         // Default cursor is Normal
@@ -5794,14 +5611,7 @@ mod tests {
     #[test]
     fn ego_mode_scroll_locked() {
         let (mut tree, root, _, _) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         // Record initial center position
@@ -5836,14 +5646,7 @@ mod tests {
     #[test]
     fn ego_mode_zoom_still_works() {
         let (mut tree, root, _, _) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         let (_, _, _, rel_a_before) = view
@@ -5866,14 +5669,7 @@ mod tests {
     #[test]
     fn ego_mode_toggle_invalidates_cursor() {
         let (mut tree, root, _, _) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
         view.clear_cursor_invalid(); // drain change-block side effect
 
@@ -5886,14 +5682,7 @@ mod tests {
     #[test]
     fn stress_test_sync_creates_and_destroys() {
         let (mut tree, root, _, _) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         // Initially no stress test
@@ -5916,14 +5705,7 @@ mod tests {
     #[test]
     fn stress_test_ring_buffer_accumulates() {
         let (mut tree, root, _, _) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         view.flags |= ViewFlags::STRESS_TEST;
@@ -5940,14 +5722,7 @@ mod tests {
         use crate::emImage::emImage;
 
         let (mut tree, root, _, _) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         view.flags |= ViewFlags::STRESS_TEST;
@@ -5975,14 +5750,7 @@ mod tests {
         use crate::emRec::parse_rec_with_format;
 
         let (mut tree, root, _child1, _child2) = setup_tree();
-        let view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
 
         let path = view.dump_tree(&mut tree);
 
@@ -6034,14 +5802,7 @@ mod tests {
         // The pixel under the cursor maps to the same panel-space point
         // before and after zoom, at various cursor positions and zoom factors.
         let (mut tree, root, _child1, _child2) = setup_tree();
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
 
@@ -6109,14 +5870,7 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
 
@@ -6155,14 +5909,7 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         let mut deltas = Vec::new();
@@ -6199,14 +5946,7 @@ mod tests {
     fn test_soft_keyboard_toggle() {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         assert!(!view.IsSoftKeyboardShown());
         view.ShowSoftKeyboard(true);
         assert!(view.IsSoftKeyboardShown());
@@ -6228,14 +5968,7 @@ mod tests {
         tree.get_mut(child).unwrap().focusable = true;
         tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
 
         // Signal getters return None before being set.
         assert!(view.GetControlPanelSignal().is_none());
@@ -6280,14 +6013,7 @@ mod tests {
         let child = tree.create_child(root, "child");
         tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         assert!(
             !view.VisitingVA.borrow().is_active(),
             "inactive before Visit"
@@ -6311,14 +6037,7 @@ mod tests {
         let root = tree.create_root_deferred_view("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         assert!(
             !view.VisitingVA.borrow().is_active(),
             "inactive before VisitPanel"
@@ -6334,14 +6053,7 @@ mod tests {
     #[test]
     fn test_phase1_new_fields_default_initialized() {
         let (tree, root, _, _) = setup_tree();
-        let v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
 
         // Home rect defaults to the viewport rect passed to new().
         assert_eq!(v.HomeX, 0.0);
@@ -6386,14 +6098,7 @@ mod tests {
     fn test_phase2_raw_visit_abs_matches_inline_update() {
         // Build the standard test tree: root with two children, one focused.
         let (mut tree, root, child_a, _child_b) = setup_tree();
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
         v.SetActivePanel(child_a);
         // Run Update to populate SVP + viewed rects the old way.
         v.Update(&mut tree);
@@ -6406,14 +6111,7 @@ mod tests {
         // the same SVP and same viewed rect.
         let mut tree2 = setup_tree().0;
         let root2 = tree2.GetRootPanel().unwrap();
-        let mut v2 = emView::new(
-            root2,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v2 = emView::new(crate::emContext::emContext::NewRoot(), root2, 640.0, 480.0);
         v2.SetActivePanel(tree2.GetFirstChild(root2).unwrap());
         v2.RawVisitAbs(
             &mut tree2,
@@ -6468,14 +6166,7 @@ mod tests {
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
 
         // HomeWidth=640, HomeHeight=480 (default from emView::new).
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
 
         // vw_in=300 < HomeHeight=480 < HomeWidth=640 → root-centering fires.
         let vx_in = 200.0_f64;
@@ -6518,14 +6209,7 @@ mod tests {
     #[test]
     fn test_phase3_update_drains_title_then_cursor() {
         let (mut tree, root, child_a, _child_b) = setup_tree();
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
         v.SetActivePanel(child_a);
         // Bring viewing to steady state.
         v.SVPChoiceInvalid = true;
@@ -6545,14 +6229,7 @@ mod tests {
         // does. Verify that Update after set_active_panel leaves in_active_path
         // unchanged across repeated calls.
         let (mut tree, root, child_a, _child_b) = setup_tree();
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
         // Use set_active_panel (lowercase) which actually sets in_active_path.
         v.set_active_panel(&mut tree, child_a, false);
         v.Update(&mut tree);
@@ -6586,14 +6263,7 @@ mod tests {
     #[test]
     fn test_phase4_popup_zoom_creates_popup_window() {
         let (mut tree, root, child_a, _) = setup_tree();
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
         // First Update handles zoomed_out_before_sg (zoom to root).
         v.Update(&mut tree);
         // Enable popup zoom mode.
@@ -6630,12 +6300,10 @@ mod tests {
 
         let (mut tree, root, _, _) = setup_tree();
         let v_rc = Rc::new(RefCell::new(emView::new(
+            crate::emContext::emContext::NewRoot(),
             root,
             640.0,
             480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let v_weak = Rc::downgrade(&v_rc);
@@ -6693,12 +6361,10 @@ mod tests {
     fn test_phase7_update_engine_wakeup_via_scheduler() {
         let (_tree, root, _, _) = setup_tree();
         let v_rc = Rc::new(RefCell::new(emView::new(
+            crate::emContext::emContext::NewRoot(),
             root,
             640.0,
             480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let v_weak = Rc::downgrade(&v_rc);
@@ -6728,14 +6394,7 @@ mod tests {
     #[test]
     fn test_phase7_invalidate_highlight_dirties_view() {
         let (mut tree, root, _, _) = setup_tree();
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
         v.Update(&mut tree);
         let before = v.dirty_rects.len();
         v.InvalidateHighlight(&tree);
@@ -6751,14 +6410,7 @@ mod tests {
     #[test]
     fn set_active_panel_transition_invalidates_highlight() {
         let (mut tree, root, child1, child2) = setup_tree();
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
         v.Update(&mut tree);
         // Establish child1 as active first.
         v.set_active_panel(&mut tree, child1, false);
@@ -6776,14 +6428,7 @@ mod tests {
     #[test]
     fn set_active_panel_adherent_only_invalidates_highlight() {
         let (mut tree, root, child1, _child2) = setup_tree();
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
         v.Update(&mut tree);
         v.set_active_panel(&mut tree, child1, false);
         v.dirty_rects.clear();
@@ -6801,14 +6446,7 @@ mod tests {
     #[test]
     fn set_focused_invalidates_highlight() {
         let (mut tree, root, child1, _child2) = setup_tree();
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
         v.Update(&mut tree);
         v.set_active_panel(&mut tree, child1, false);
         v.SetFocused(&mut tree, true);
@@ -6838,12 +6476,10 @@ mod tests {
         let (mut tree, root, child1, _) = setup_tree();
         // Wrap the view behind Rc<RefCell> so add_to_notice_list can upgrade it.
         let v_rc = Rc::new(RefCell::new(emView::new(
+            crate::emContext::emContext::NewRoot(),
             root,
             640.0,
             480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
         )));
         // Set the view on all panels (root + descendants) so add_to_notice_list
         // can upgrade the Weak and call WakeUpUpdateEngine.
@@ -6885,14 +6521,7 @@ mod tests {
     #[test]
     fn test_phase6_set_geometry_accepts_pixel_tallness() {
         let (mut tree, root, _, _) = setup_tree();
-        let mut v = emView::new(
-            root,
-            640.0,
-            480.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
         v.SetGeometry(&mut tree, 100.0, 50.0, 800.0, 600.0, 1.25);
         assert_eq!(v.HomeX, 100.0);
         assert_eq!(v.HomeY, 50.0);
@@ -6938,6 +6567,7 @@ mod tests {
             let fos = sched.borrow_mut().create_signal();
             let gs = sched.borrow_mut().create_signal();
             let w = emWindow::new_popup_pending(
+                crate::emContext::emContext::NewRoot(),
                 root,
                 WindowFlags::empty(),
                 "test".to_string(),
@@ -7075,6 +6705,7 @@ mod tests {
             let fos = sched.borrow_mut().create_signal();
             let gs = sched.borrow_mut().create_signal();
             let w = emWindow::new_popup_pending(
+                crate::emContext::emContext::NewRoot(),
                 root,
                 WindowFlags::empty(),
                 "test".to_string(),
@@ -7165,12 +6796,10 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         let view_rc = Rc::new(RefCell::new(emView::new(
+            crate::emContext::emContext::NewRoot(),
             root,
             800.0,
             600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let view_weak = Rc::downgrade(&view_rc);
@@ -7230,14 +6859,7 @@ mod tests {
         use crate::emViewAnimator::emViewAnimator as _;
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        let view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         let va = view.VisitingVA.borrow();
         assert!(
             !va.is_active(),
@@ -7252,14 +6874,7 @@ mod tests {
         let root = tree.create_root_deferred_view("root");
         tree.get_mut(root).unwrap().focusable = true;
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         let mut rx = 99.0_f64;
@@ -7280,31 +6895,32 @@ mod tests {
 
     #[test]
     fn sp3_view_owns_corecfg() {
-        use crate::emCoreConfig::emCoreConfig;
-
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("");
-        let cfg = Rc::new(RefCell::new(emCoreConfig::default()));
-        let view = emView::new(root, 800.0, 600.0, Rc::clone(&cfg));
+        let ctx = crate::emContext::emContext::NewRoot();
+        let view = emView::new(Rc::clone(&ctx), root, 800.0, 600.0);
+
+        // The view's CoreConfig must be the singleton registered on the root
+        // context — a second Acquire from the same root returns the same Rc.
+        let cfg = crate::emCoreConfig::emCoreConfig::Acquire(&ctx);
         assert!(Rc::ptr_eq(&view.CoreConfig, &cfg));
 
-        cfg.borrow_mut().visit_speed = 7.5;
-        assert_eq!(view.CoreConfig.borrow().visit_speed, 7.5);
+        cfg.borrow_mut().modify(|c| c.visit_speed = 7.5);
+        assert_eq!(view.CoreConfig.borrow().GetRec().visit_speed, 7.5);
     }
 
     #[test]
     fn sp3_visit_uses_view_corecfg() {
-        use crate::emCoreConfig::emCoreConfig;
-
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("");
         tree.Layout(root, 0.0, 0.0, 800.0, 600.0, 1.0);
 
-        let cfg = Rc::new(RefCell::new(emCoreConfig {
-            visit_speed: 10.0,
-            ..Default::default()
-        }));
-        let mut view = emView::new(root, 800.0, 600.0, Rc::clone(&cfg));
+        let ctx = crate::emContext::emContext::NewRoot();
+        let mut view = emView::new(Rc::clone(&ctx), root, 800.0, 600.0);
+
+        // Mutate the shared singleton's visit_speed to 10.0 before visiting.
+        let cfg = crate::emCoreConfig::emCoreConfig::Acquire(&ctx);
+        cfg.borrow_mut().modify(|c| c.visit_speed = 10.0);
 
         view.VisitByIdentityBare(":", false, "");
 
@@ -7325,24 +6941,15 @@ mod tests {
 
         let mut tree_a = PanelTree::new();
         let root_a = tree_a.create_root_deferred_view("root_a");
-        let mut view_a = emView::new(
-            root_a,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view_a = emView::new(crate::emContext::emContext::NewRoot(), root_a, 800.0, 600.0);
 
         let mut tree_b = PanelTree::new();
         let root_b = tree_b.create_root_deferred_view("root_b");
         let mut view_b = emView::new(
+            crate::emContext::emContext::NewRoot(),
             root_b,
             1920.0,
             1080.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
         );
 
         // Distinct pixel tallness via SetGeometry.

@@ -38,17 +38,11 @@ pub struct emSubViewPanel {
     /// sub-view gets its own EngineScheduler. It is ticked from the outer
     /// PanelCycleEngine (PanelBehavior::Cycle below) once per parent-scheduler
     /// slice, preserving C++ observable cross-frame settlement behavior.
-    /// Will be unified with the parent scheduler if/when SP7 threads emContext
-    /// through the view/window subsystem.
+    /// Unrelated to SP7's emContext threading — each emSubViewPanel still owns
+    /// its own scheduler because engines cycle against a single PanelTree.
     pub(crate) sub_scheduler: std::rc::Rc<std::cell::RefCell<crate::emScheduler::EngineScheduler>>,
     /// Wall-clock timestamp of previous Cycle, used for active_animator dt.
     last_cycle: Option<std::time::Instant>,
-}
-
-impl Default for emSubViewPanel {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl emSubViewPanel {
@@ -56,7 +50,7 @@ impl emSubViewPanel {
     ///
     /// The sub-tree is initialized with a root panel. Use [`sub_root`],
     /// [`sub_tree_mut`], and [`sub_view_mut`] to populate the sub-view.
-    pub fn new() -> Self {
+    pub fn new(parent_context: Rc<crate::emContext::emContext>) -> Self {
         let mut sub_tree = PanelTree::new();
         // Deferred-view create: sub_view needs root, root needs view weak.
         // Resolve chicken-and-egg: create root with empty Weak, then wire
@@ -65,15 +59,7 @@ impl emSubViewPanel {
         // Last arg is pixel tallness; sub_view.CurrentPixelTallness starts at 1.0.
         sub_tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-        // DIVERGED: C++ emSubViewPanel shares the parent context's emCoreConfig
-        // singleton via the context chain (emView ctor: emCoreConfig::Acquire(
-        // GetRootContext())). Rust emSubViewPanel::new has no parent/context
-        // accessible, so it default-constructs a standalone config. Removed
-        // by SP7 when emContext is threaded through emView::new.
-        let core_config = std::rc::Rc::new(std::cell::RefCell::new(
-            crate::emCoreConfig::emCoreConfig::default(),
-        ));
-        let sub_view = Rc::new(RefCell::new(emView::new(root, 1.0, 1.0, core_config)));
+        let sub_view = Rc::new(RefCell::new(emView::new(parent_context, root, 1.0, 1.0)));
         sub_tree.init_panel_view(root, Rc::downgrade(&sub_view));
 
         let sub_scheduler = std::rc::Rc::new(std::cell::RefCell::new(
@@ -447,7 +433,7 @@ mod sp8_tests {
 
     #[test]
     fn sp8_sub_view_update_engine_registered() {
-        let mut panel = emSubViewPanel::new();
+        let mut panel = emSubViewPanel::new(crate::emContext::emContext::NewRoot());
         {
             let sub_view = panel.GetSubView();
             assert!(
@@ -460,7 +446,7 @@ mod sp8_tests {
 
     #[test]
     fn sp8_sub_tree_root_panel_engine_registered() {
-        let mut panel = emSubViewPanel::new();
+        let mut panel = emSubViewPanel::new(crate::emContext::emContext::NewRoot());
         let root = panel.sub_root();
         let engine_id = panel.sub_tree().panel_engine_id(root);
         assert!(
@@ -481,7 +467,7 @@ mod sp8_tests {
     fn sp8_cycle_drives_sub_scheduler() {
         // After emSubViewPanel::new, the sub_scheduler has awake engines
         // (UpdateEngineClass woken in attach_to_scheduler).
-        let mut panel = emSubViewPanel::new();
+        let mut panel = emSubViewPanel::new(crate::emContext::emContext::NewRoot());
         assert!(
             panel.sub_scheduler.borrow().has_awake_engines(),
             "sub_scheduler must have awake engines after construction"

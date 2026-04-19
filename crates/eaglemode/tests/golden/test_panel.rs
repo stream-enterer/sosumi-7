@@ -2553,12 +2553,10 @@ fn testpanel_root() {
     tree.SetAutoExpansionThreshold(root, 1e9, ViewConditionType::Area);
 
     let mut view = emView::new(
+        emcore::emContext::emContext::NewRoot(),
         root,
         1000.0,
         1000.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
     );
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     // C++ golden gen doesn't focus the window — match unfocused state
@@ -2593,12 +2591,10 @@ fn testpanel_expanded() {
     tree.SetAutoExpansionThreshold(root, 900.0, ViewConditionType::Area);
 
     let mut view = emView::new(
+        emcore::emContext::emContext::NewRoot(),
         root,
         1000.0,
         1000.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
     );
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     // C++ golden gen doesn't focus the window — match unfocused state

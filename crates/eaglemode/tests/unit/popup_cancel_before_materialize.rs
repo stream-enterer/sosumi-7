@@ -245,6 +245,7 @@ fn popup_cancels_when_dropped_before_materialize() {
         let home = emWindow::create(
             event_loop,
             app.gpu(),
+            std::rc::Rc::clone(&app.context),
             root,
             WindowFlags::empty(),
             close,

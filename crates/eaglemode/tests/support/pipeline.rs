@@ -43,14 +43,7 @@ impl PipelineTestHarness {
         tree.set_focusable(root, true);
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                emcore::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![

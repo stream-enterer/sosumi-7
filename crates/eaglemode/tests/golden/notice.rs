@@ -55,14 +55,7 @@ fn notice_active_changed() {
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
     // C++ emView starts unfocused; Rust emView::new starts focused.
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -114,14 +107,7 @@ fn notice_focus_changed() {
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
     // Start unfocused to match C++
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -171,14 +157,7 @@ fn notice_layout_changed() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -226,14 +205,7 @@ fn notice_children_changed() {
     let child1 = tree.create_child(root, "child1");
     tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -285,14 +257,7 @@ fn notice_window_focus_gained() {
     tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
 
     // Start unfocused
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -339,14 +304,7 @@ fn notice_window_focus_lost() {
     tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
 
     // Start unfocused, then gain focus to match C++ setup
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -395,14 +353,7 @@ fn notice_window_resize() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
     view.SetFocused(&mut tree, false);
 
@@ -455,14 +406,7 @@ fn notice_recursive_enable() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -514,14 +458,7 @@ fn notice_re_enable() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -581,14 +518,7 @@ fn notice_remove_child() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -630,14 +560,7 @@ fn notice_focus_and_layout() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -684,14 +607,7 @@ fn notice_add_and_activate() {
     let child1 = tree.create_child(root, "child1");
     tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);
@@ -740,14 +656,7 @@ fn notice_enable_changed() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.SetFocused(&mut tree, false);
 
     let acc_root = attach_notice(&mut tree, root);

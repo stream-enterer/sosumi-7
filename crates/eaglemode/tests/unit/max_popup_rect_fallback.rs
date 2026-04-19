@@ -12,14 +12,7 @@ fn max_popup_rect_falls_back_to_home() {
     let root = tree.create_root_deferred_view("root");
 
     // Construct emView without calling set_max_popup_rect.
-    let view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
 
     // Sanity: the popup rect is unset.
     assert!(view.max_popup_rect().is_none());

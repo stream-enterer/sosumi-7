@@ -778,14 +778,14 @@ pub fn create_main_window(
     // (emMainPanel.cpp:39-41): create control view, content view, and slider
     // children immediately at construction time. C++ has these as emView
     // members instantiated inline; in Rust the creator has tree access here.
-    let mut ctrl_svp = emSubViewPanel::new();
+    let mut ctrl_svp = emSubViewPanel::new(Rc::clone(&app.context));
     ctrl_svp.set_sub_view_flags(
         ViewFlags::POPUP_ZOOM | ViewFlags::ROOT_SAME_TALLNESS | ViewFlags::NO_ACTIVE_HIGHLIGHT,
     );
     let ctrl_id = app.tree.create_child(root_id, "control view");
     app.tree.set_behavior(ctrl_id, Box::new(ctrl_svp));
 
-    let mut content_svp = emSubViewPanel::new();
+    let mut content_svp = emSubViewPanel::new(Rc::clone(&app.context));
     content_svp.set_sub_view_flags(ViewFlags::ROOT_SAME_TALLNESS);
     let content_id = app.tree.create_child(root_id, "content view");
     app.tree.set_behavior(content_id, Box::new(content_svp));
@@ -816,6 +816,7 @@ pub fn create_main_window(
     let window = emWindow::create(
         event_loop,
         app.gpu(),
+        Rc::clone(&app.context),
         root_id,
         flags,
         close_signal,
@@ -997,6 +998,7 @@ pub fn create_control_window(
     let window = emWindow::create(
         event_loop,
         app.gpu(),
+        Rc::clone(&app.context),
         root_id,
         flags,
         close_signal,

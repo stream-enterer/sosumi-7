@@ -787,14 +787,7 @@ fn composition_click_through_tree() {
 
     tree.set_behavior(root, Box::new(root_group));
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     for _ in 0..200 {
         view.HandleNotice(&mut tree);

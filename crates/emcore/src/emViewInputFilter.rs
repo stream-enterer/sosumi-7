@@ -2534,14 +2534,7 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
-        let view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         (tree, view)
     }
 

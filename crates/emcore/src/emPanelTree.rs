@@ -2892,14 +2892,8 @@ mod tests {
         let _b = t.create_child(root, "b");
 
         // Clear pending notices before sort
-        let mut view = crate::emView::emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view =
+            crate::emView::emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.HandleNotice(&mut t);
 
         // Build name map
@@ -3172,10 +3166,10 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         let view = Rc::new(RefCell::new(emView::new(
+            crate::emContext::emContext::NewRoot(),
             root,
             800.0,
             600.0,
-            Rc::new(RefCell::new(crate::emCoreConfig::emCoreConfig::default())),
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         view.borrow_mut().set_scheduler(sched.clone());
@@ -3245,10 +3239,10 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         let view = Rc::new(RefCell::new(emView::new(
+            crate::emContext::emContext::NewRoot(),
             root,
             800.0,
             600.0,
-            Rc::new(RefCell::new(crate::emCoreConfig::emCoreConfig::default())),
         )));
         // Step 1: init_panel_view BEFORE attach_to_scheduler. The helper
         // early-returns with no engine_id because the view has no scheduler.
@@ -3338,10 +3332,10 @@ mod tests {
         let mut tree_a = PanelTree::new();
         let root_a = tree_a.create_root_deferred_view("rootA");
         let view_a = Rc::new(RefCell::new(emView::new(
+            crate::emContext::emContext::NewRoot(),
             root_a,
             800.0,
             600.0,
-            Rc::new(RefCell::new(crate::emCoreConfig::emCoreConfig::default())),
         )));
         let sched_a = Rc::new(RefCell::new(EngineScheduler::new()));
         view_a.borrow_mut().set_scheduler(sched_a.clone());
@@ -3360,10 +3354,10 @@ mod tests {
         let mut tree_b = PanelTree::new();
         let root_b = tree_b.create_root_deferred_view("rootB");
         let view_b = Rc::new(RefCell::new(emView::new(
+            crate::emContext::emContext::NewRoot(),
             root_b,
             800.0,
             600.0,
-            Rc::new(RefCell::new(crate::emCoreConfig::emCoreConfig::default())),
         )));
         let sched_b = Rc::new(RefCell::new(EngineScheduler::new()));
         view_b.borrow_mut().set_scheduler(sched_b.clone());
@@ -3448,10 +3442,10 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         let view = Rc::new(RefCell::new(emView::new(
+            crate::emContext::emContext::NewRoot(),
             root,
             800.0,
             600.0,
-            Rc::new(RefCell::new(crate::emCoreConfig::emCoreConfig::default())),
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         view.borrow_mut().set_scheduler(sched.clone());

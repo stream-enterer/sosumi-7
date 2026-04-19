@@ -114,14 +114,8 @@ fn notice_flag_propagation() {
         .contains(NoticeFlags::CHILD_LIST_CHANGED));
 
     // Deliver notices
-    let mut view = emcore::emView::emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view =
+        emcore::emView::emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.HandleNotice(&mut tree);
 
     // Verify notices were cleared after delivery
@@ -153,14 +147,7 @@ fn view_zoom_and_scroll() {
     let root = tree.create_root_deferred_view("root");
     tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.Update(&mut tree); // required: sets viewed_* on root so Scroll/Zoom work
 
     // Zoom in so the panel is larger than the viewport; scroll won't be clamped.
@@ -211,14 +198,7 @@ fn view_flags_disable_zoom() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags = ViewFlags::NO_ZOOM;
 
     view.Zoom(&mut tree, 2.0, 400.0, 300.0);

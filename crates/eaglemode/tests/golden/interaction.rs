@@ -29,14 +29,7 @@ fn three_panel_tree() -> (PanelTree, emView, PanelId, PanelId, PanelId) {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
 
     (tree, view, root, child1, child2)
@@ -81,14 +74,7 @@ fn interaction_activate_path() {
     let gc = tree.create_child(child1, "gc");
     tree.Layout(gc, 0.0, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
     view.set_active_panel(&mut tree, gc, false);
 
@@ -261,14 +247,7 @@ fn interaction_focus_unfocusable_skip() {
     let child3 = tree.create_child(root, "child3");
     tree.Layout(child3, 0.66, 0.0, 0.34, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
 
     tree.set_focusable(child2, false);
@@ -308,14 +287,7 @@ fn interaction_focus_nested() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -354,14 +326,7 @@ fn interaction_focus_visit_out() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -426,14 +391,7 @@ fn interaction_focus_visit_first() {
     let child3 = tree.create_child(root, "child3");
     tree.Layout(child3, 0.66, 0.0, 0.34, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -472,14 +430,7 @@ fn interaction_focus_visit_last() {
     let child3 = tree.create_child(root, "child3");
     tree.Layout(child3, 0.66, 0.0, 0.34, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -518,14 +469,7 @@ fn interaction_focus_visit_left() {
     let child3 = tree.create_child(root, "child3");
     tree.Layout(child3, 0.66, 0.0, 0.34, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -564,14 +508,7 @@ fn interaction_focus_visit_right() {
     let child3 = tree.create_child(root, "child3");
     tree.Layout(child3, 0.66, 0.0, 0.34, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -610,14 +547,7 @@ fn interaction_focus_visit_down() {
     let child3 = tree.create_child(root, "child3");
     tree.Layout(child3, 0.0, 0.66, 1.0, 0.34, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -656,14 +586,7 @@ fn interaction_focus_visit_up() {
     let child3 = tree.create_child(root, "child3");
     tree.Layout(child3, 0.0, 0.66, 1.0, 0.34, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -727,14 +650,7 @@ fn interaction_activate_remove_middle() {
     let child3 = tree.create_child(root, "child3");
     tree.Layout(child3, 0.66, 0.0, 0.34, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -771,14 +687,7 @@ fn interaction_activate_remove_in_path() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -813,14 +722,7 @@ fn interaction_focus_tab_deep() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
@@ -860,14 +762,7 @@ fn interaction_focus_tab_ascend() {
     let gc2 = tree.create_child(child1, "gc2");
     tree.Layout(gc2, 0.5, 0.0, 0.5, 1.0, 1.0);
 
-    let mut view = emView::new(
-        root,
-        100.0,
-        100.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);

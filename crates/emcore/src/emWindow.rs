@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use bitflags::bitflags;
 
-use crate::emCoreConfig::emCoreConfig;
 use crate::emImage::emImage;
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
@@ -176,6 +175,7 @@ impl emWindow {
     pub fn create(
         event_loop: &winit::event_loop::ActiveEventLoop,
         gpu: &GpuContext,
+        parent_context: Rc<crate::emContext::emContext>,
         root_panel: PanelId,
         flags: WindowFlags,
         close_signal: SignalId,
@@ -207,8 +207,7 @@ impl emWindow {
         let materialized = MaterializedSurface::build(gpu, winit_window);
         let w = materialized.surface_config.width;
         let h = materialized.surface_config.height;
-        let core_config = Rc::new(RefCell::new(emCoreConfig::default()));
-        let view = emView::new(root_panel, w as f64, h as f64, core_config);
+        let view = emView::new(parent_context, root_panel, w as f64, h as f64);
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
             {
@@ -290,6 +289,7 @@ impl emWindow {
     pub fn new_popup(
         event_loop: &winit::event_loop::ActiveEventLoop,
         gpu: &GpuContext,
+        parent_context: Rc<crate::emContext::emContext>,
         root_panel: PanelId,
         close_signal: SignalId,
         flags_signal: SignalId,
@@ -299,6 +299,7 @@ impl emWindow {
         Self::create(
             event_loop,
             gpu,
+            parent_context,
             root_panel,
             WindowFlags::POPUP | WindowFlags::UNDECORATED | WindowFlags::AUTO_DELETE,
             close_signal,
@@ -321,6 +322,7 @@ impl emWindow {
     /// created.
     #[allow(clippy::too_many_arguments)]
     pub fn new_popup_pending(
+        parent_context: Rc<crate::emContext::emContext>,
         root_panel: PanelId,
         flags: WindowFlags,
         caption: String,
@@ -332,8 +334,7 @@ impl emWindow {
     ) -> Rc<RefCell<Self>> {
         // Placeholder geometry — real position/size lands via
         // `SetViewPosSize` before materialization.
-        let core_config = Rc::new(RefCell::new(emCoreConfig::default()));
-        let mut view = emView::new(root_panel, 1.0, 1.0, core_config);
+        let mut view = emView::new(parent_context, root_panel, 1.0, 1.0);
         view.SetBackgroundColor(background_color);
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
@@ -1793,6 +1794,7 @@ mod tests {
         let focus_sig = sched.borrow_mut().create_signal();
         let geom_sig = sched.borrow_mut().create_signal();
         let win = emWindow::new_popup_pending(
+            crate::emContext::emContext::NewRoot(),
             root,
             WindowFlags::empty(),
             "test".to_string(),
@@ -1841,6 +1843,7 @@ mod tests {
         let bg_color = crate::emColor::emColor::rgba(0, 0, 0, 0xFF);
 
         let popup = emWindow::new_popup_pending(
+            crate::emContext::emContext::NewRoot(),
             root,
             WindowFlags::POPUP | WindowFlags::UNDECORATED | WindowFlags::AUTO_DELETE,
             "emViewPopup".to_string(),

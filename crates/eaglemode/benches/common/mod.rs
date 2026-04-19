@@ -762,10 +762,12 @@ pub fn setup_tree_and_view(vw: u32, vh: u32) -> (PanelTree, emView, PanelId) {
     tree.Layout(root, 0.0, 0.0, 1.0, tallness, 1.0);
     tree.set_focusable(root, true);
 
-    let core_config = std::rc::Rc::new(std::cell::RefCell::new(
-        emcore::emCoreConfig::emCoreConfig::default(),
-    ));
-    let mut view = emView::new(root, vw as f64, vh as f64, core_config);
+    let mut view = emView::new(
+        emcore::emContext::emContext::NewRoot(),
+        root,
+        vw as f64,
+        vh as f64,
+    );
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     // SP5: HandleNotice is now driven from emView::Update internally.
     view.Update(&mut tree);

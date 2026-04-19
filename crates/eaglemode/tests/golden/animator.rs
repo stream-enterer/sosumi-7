@@ -27,14 +27,7 @@ fn setup_anim_view() -> (PanelTree, emView) {
     let root = tree.create_root_deferred_view("root");
     tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
     view.Update(&mut tree);
 
@@ -349,14 +342,7 @@ fn setup_anim_view_square_panel() -> (PanelTree, emView) {
     let root = tree.create_root_deferred_view("root");
     tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0); // square panel
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
     view.Update(&mut tree);
 
@@ -406,14 +392,7 @@ fn run_magnetic_trajectory(steps: usize) -> Vec<TrajectoryStep> {
     tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
     tree.set_focusable(root, true);
 
-    let mut view = emView::new(
-        root,
-        800.0,
-        600.0,
-        std::rc::Rc::new(std::cell::RefCell::new(
-            emcore::emCoreConfig::emCoreConfig::default(),
-        )),
-    );
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
     view.Update(&mut tree);
 

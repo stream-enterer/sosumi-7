@@ -219,6 +219,7 @@ fn popup_surface_materializes_on_about_to_wait() {
         let home = emWindow::create(
             event_loop,
             app.gpu(),
+            std::rc::Rc::clone(&app.context),
             root,
             WindowFlags::empty(),
             close,

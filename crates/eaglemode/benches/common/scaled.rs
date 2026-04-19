@@ -77,10 +77,12 @@ pub fn build_scaled_tree(panel_count: usize) -> (PanelTree, emView, PanelId) {
         }
     }
 
-    let core_config = std::rc::Rc::new(std::cell::RefCell::new(
-        emcore::emCoreConfig::emCoreConfig::default(),
-    ));
-    let mut view = emView::new(root, DEFAULT_VW as f64, DEFAULT_VH as f64, core_config);
+    let mut view = emView::new(
+        emcore::emContext::emContext::NewRoot(),
+        root,
+        DEFAULT_VW as f64,
+        DEFAULT_VH as f64,
+    );
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     // SP5: HandleNotice is now driven from emView::Update internally.
     view.Update(&mut tree);

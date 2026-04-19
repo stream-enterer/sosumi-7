@@ -2794,14 +2794,7 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
-        let view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         (tree, view)
     }
 
@@ -3150,14 +3143,7 @@ mod tests {
         tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
         tree.set_focusable(root, true);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
         // Zoom in so root panel is offset, giving nonzero distance
@@ -3331,14 +3317,7 @@ mod tests {
         tree.Layout(right, 0.7, 0.0, 0.3, 1.0, 1.0);
         tree.set_focusable(right, true);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
 
@@ -3363,14 +3342,7 @@ mod tests {
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
         tree.set_focusable(root, true);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         let (_dx, _dy, dz, abs_dist) = emMagneticViewAnimator::calculate_distance(&view, &tree);
@@ -3444,14 +3416,7 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
         view.Zoom(&mut tree, factor, 400.0, 300.0);
@@ -3551,14 +3516,7 @@ mod tests {
         tree.get_mut(child).unwrap().focusable = true;
         tree.Layout(child, 0.1, 0.1, 0.4, 0.5, 1.0);
 
-        let mut view = emView::new(
-            root,
-            800.0,
-            600.0,
-            std::rc::Rc::new(std::cell::RefCell::new(
-                crate::emCoreConfig::emCoreConfig::default(),
-            )),
-        );
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         view.Update(&mut tree);
         // Start zoomed in 4x, off-center
