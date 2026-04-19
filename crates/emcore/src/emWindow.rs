@@ -208,6 +208,7 @@ impl emWindow {
         let w = materialized.surface_config.width;
         let h = materialized.surface_config.height;
         let view = emView::new(parent_context, root_panel, w as f64, h as f64);
+        let max_render_threads = view.CoreConfig.borrow().GetRec().max_render_threads;
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
             {
@@ -241,9 +242,7 @@ impl emWindow {
             focus_changed: false,
             geometry_changed: false,
             wm_res_name: String::from("eaglemode-rs"),
-            render_pool: emRenderThreadPool::new(
-                crate::emCoreConfig::emCoreConfig::default().max_render_threads,
-            ),
+            render_pool: emRenderThreadPool::new(max_render_threads),
         }));
 
         // Wire the emViewPort back-reference (Phase 6 / Phase-5 absorbed work).
@@ -336,6 +335,7 @@ impl emWindow {
         // `SetViewPosSize` before materialization.
         let mut view = emView::new(parent_context, root_panel, 1.0, 1.0);
         view.SetBackgroundColor(background_color);
+        let max_render_threads = view.CoreConfig.borrow().GetRec().max_render_threads;
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
             {
@@ -373,9 +373,7 @@ impl emWindow {
             focus_changed: false,
             geometry_changed: false,
             wm_res_name: String::from("eaglemode-rs"),
-            render_pool: emRenderThreadPool::new(
-                crate::emCoreConfig::emCoreConfig::default().max_render_threads,
-            ),
+            render_pool: emRenderThreadPool::new(max_render_threads),
         }));
 
         // Wire the emViewPort back-reference, same as `create()`.

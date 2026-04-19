@@ -1,7 +1,11 @@
+use std::rc::Rc;
+
 use emcore::emContext::emContext;
 use emcore::emCoreConfig::emCoreConfig;
+use emcore::emPanelTree::PanelTree;
 use emcore::emRec::RecStruct;
 use emcore::emRecRecord::Record;
+use emcore::emView::emView;
 
 #[test]
 fn defaults_match_cpp() {
@@ -114,6 +118,24 @@ fn core_config_is_singleton_across_sibling_contexts() {
 
     assert!(std::rc::Rc::ptr_eq(&m_a, &m_b));
     assert!(std::rc::Rc::ptr_eq(&m_a, &m_root));
+}
+
+#[test]
+fn sp7_sibling_views_share_core_config_singleton() {
+    // Two views built under the same parent emContext see the same
+    // emCoreConfig singleton — per C++ Acquire semantics (emView.cpp:35).
+    let root = emContext::NewRoot();
+
+    let mut tree1 = PanelTree::new();
+    let p1 = tree1.create_root_deferred_view("");
+    let mut tree2 = PanelTree::new();
+    let p2 = tree2.create_root_deferred_view("");
+
+    let v1 = emView::new(Rc::clone(&root), p1, 100.0, 100.0);
+    let v2 = emView::new(Rc::clone(&root), p2, 100.0, 100.0);
+
+    assert!(Rc::ptr_eq(&v1.CoreConfig, &v2.CoreConfig));
+    let _ = (tree1, tree2);
 }
 
 #[test]
