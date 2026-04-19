@@ -103,7 +103,6 @@ impl emSubViewPanel {
     ///
     /// Used by SP5 Task 2.2 to downgrade to `Weak<RefCell<emView>>` for
     /// per-view notice dispatch on emPanel::View.
-    #[allow(dead_code)] // used by SP5 Task 2.2
     pub fn sub_view_rc(&self) -> &Rc<RefCell<emView>> {
         &self.sub_view
     }
