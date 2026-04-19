@@ -270,9 +270,10 @@ impl PanelData {
         }
     }
 
-    /// 1:1 with C++ `emPanel::GetView()` — upgrades the weak ref to a
-    /// strong `Rc`. Returns `None` only before the view is set at
-    /// construction (should never be `None` after `create_root`/`create_child`).
+    /// Upgrades the weak ref to a strong `Rc`. Returns `None` only before
+    /// the view is set at construction (should never be `None` after
+    /// `create_root`/`create_child`).
+    // DIVERGED: C++ `emPanel::GetView()` — renamed to `view()` for Rust snake_case convention.
     pub(crate) fn view(&self) -> Option<std::rc::Rc<std::cell::RefCell<crate::emView::emView>>> {
         self.View.upgrade()
     }
@@ -355,8 +356,8 @@ impl PanelTree {
     /// Link `id` into the notice ring at the tail.
     /// Port of C++ `emView::AddToNoticeList` (emView.cpp).
     pub(crate) fn add_to_notice_list(&mut self, id: PanelId) {
-        // Capture the view weak-ref; Task 2.3 will route notice delivery
-        // through this view once create_root/create_child populate it.
+        // DO NOT REMOVE: keeps `View` field live for `-D warnings` until Task 2.3
+        // replaces this with a real read (debug_assert on non-dangling upgrade).
         let _view = self.panels[id].view();
         // Already linked?
         {
