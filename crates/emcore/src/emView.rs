@@ -722,18 +722,23 @@ impl emView {
         // C++ emView::SetFocused iterates ALL panels and queues:
         //   NF_VIEW_FOCUS_CHANGED | NF_UPDATE_PRIORITY_CHANGED on every panel
         //   NF_FOCUS_CHANGED additionally on panels in the active path
-        let ids: Vec<_> = tree.panel_ids();
-        for id in ids {
-            if let Some(panel) = tree.get_mut(id) {
-                let mut flags = super::emPanel::NoticeFlags::VIEW_FOCUS_CHANGED
-                    | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED;
-                if panel.in_active_path {
-                    flags |= super::emPanel::NoticeFlags::FOCUS_CHANGED;
-                }
-                panel.pending_notices.insert(flags);
-            }
+        let notice_list: Vec<_> = tree
+            .panel_ids()
+            .into_iter()
+            .filter_map(|id| {
+                tree.GetRec(id).map(|panel| {
+                    let mut flags = super::emPanel::NoticeFlags::VIEW_FOCUS_CHANGED
+                        | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED;
+                    if panel.in_active_path {
+                        flags |= super::emPanel::NoticeFlags::FOCUS_CHANGED;
+                    }
+                    (id, flags)
+                })
+            })
+            .collect();
+        for (id, flags) in notice_list {
+            tree.queue_notice(id, flags);
         }
-        tree.mark_notices_pending();
     }
 
     pub fn IsActivationAdherent(&self) -> bool {
@@ -1547,19 +1552,20 @@ impl emView {
             flags.insert(super::emPanel::NoticeFlags::FOCUS_CHANGED);
         }
 
-        // Clear old active path
+        // Clear old active path: update state, collect ids for notice queueing
+        let mut notice_ids: Vec<PanelId> = Vec::new();
         if let Some(old_active) = self.active {
             let old_path = tree.ancestors(old_active);
             for id in &old_path {
                 if let Some(p) = tree.get_mut(*id) {
                     p.is_active = false;
                     p.in_active_path = false;
-                    p.pending_notices.insert(flags);
+                    notice_ids.push(*id);
                 }
             }
         }
 
-        // Set new active path
+        // Set new active path: update state, collect ids for notice queueing
         self.active = Some(target);
         dlog!("active panel changed to {:?}", target);
         if let Some(p) = tree.get_mut(target) {
@@ -1569,7 +1575,7 @@ impl emView {
         for id in &new_path {
             if let Some(p) = tree.get_mut(*id) {
                 p.in_active_path = true;
-                p.pending_notices.insert(flags);
+                notice_ids.push(*id);
             }
         }
         self.activation_adherent = adherent;
@@ -1579,7 +1585,9 @@ impl emView {
         if let Some(sig) = self.control_panel_signal {
             self.queue_or_apply_sched_op(SchedOp::Fire(sig));
         }
-        tree.mark_notices_pending();
+        for id in notice_ids {
+            tree.queue_notice(id, flags);
+        }
     }
 
     /// Auto-select best visible focusable panel as active.
@@ -3561,13 +3569,8 @@ impl emView {
             };
             let mut new_ae_di = ae_decision_invalid;
             let mut new_cli = children_layout_invalid;
-            // C++ checks NF_VIEWING_CHANGED|NF_SOUGHT_NAME_CHANGED (emPanel.cpp:1402).
-            // NF_VIEWING_CHANGED = Rust VISIBILITY. VIEW_CHANGED is Rust-internal (INIT + children).
-            if flags.intersects(
-                NoticeFlags::SOUGHT_NAME_CHANGED
-                    | NoticeFlags::VIEWING_CHANGED
-                    | NoticeFlags::VIEWING_CHANGED,
-            ) {
+            // C++ checks NF_SOUGHT_NAME_CHANGED|NF_VIEWING_CHANGED (emPanel.cpp:1402).
+            if flags.intersects(NoticeFlags::SOUGHT_NAME_CHANGED | NoticeFlags::VIEWING_CHANGED) {
                 let should_expand = tree.is_seek_target(id)
                     || tree.GetViewCondition(id, ae_threshold_type) >= ae_threshold_value;
                 if should_expand != ae_expanded {

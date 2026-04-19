@@ -683,11 +683,6 @@ impl PanelTree {
         }
     }
 
-    /// Mark the tree as having pending notices (for callers that queue via get_mut directly).
-    pub(crate) fn mark_notices_pending(&mut self) {
-        self.has_pending_notices = true;
-    }
-
     // ── Public read accessors ──────────────────────────────────────────
 
     /// Get the panel's name.
