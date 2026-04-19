@@ -218,6 +218,11 @@ pub(crate) struct PanelData {
     // is set, the panel is NOT in the ring.
     pub(crate) notice_prev_in_ring: Option<PanelId>,
     pub(crate) notice_next_in_ring: Option<PanelId>,
+
+    /// 1:1 with C++ `emPanel::View &` (emPanel.h).
+    /// Set at construction by `PanelTree::create_root` / `create_child`;
+    /// never mutated thereafter.
+    pub(crate) View: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
 }
 
 impl PanelData {
@@ -261,7 +266,15 @@ impl PanelData {
             pending_input: false,
             notice_prev_in_ring: None,
             notice_next_in_ring: None,
+            View: std::rc::Weak::new(),
         }
+    }
+
+    /// 1:1 with C++ `emPanel::GetView()` — upgrades the weak ref to a
+    /// strong `Rc`. Returns `None` only before the view is set at
+    /// construction (should never be `None` after `create_root`/`create_child`).
+    pub(crate) fn view(&self) -> Option<std::rc::Rc<std::cell::RefCell<crate::emView::emView>>> {
+        self.View.upgrade()
     }
 }
 
@@ -342,6 +355,9 @@ impl PanelTree {
     /// Link `id` into the notice ring at the tail.
     /// Port of C++ `emView::AddToNoticeList` (emView.cpp).
     pub(crate) fn add_to_notice_list(&mut self, id: PanelId) {
+        // Capture the view weak-ref; Task 2.3 will route notice delivery
+        // through this view once create_root/create_child populate it.
+        let _view = self.panels[id].view();
         // Already linked?
         {
             let p = &self.panels[id];
@@ -3235,5 +3251,18 @@ mod tests {
         let limit_viewed = t.GetMemoryLimit(root, vw, vh, max_user, None);
         assert!(limit_viewed > 0);
         assert!(limit_viewed <= (1_000_000.0 * 0.33) as u64);
+    }
+
+    /// SP5 Task 2.1 — PanelData::View defaults to Weak::new() (dangling).
+    /// PanelData::view() returns None until create_root/create_child set it
+    /// (Tasks 2.2/2.3).
+    #[test]
+    fn panel_data_view_defaults_none() {
+        let mut t = PanelTree::new();
+        let root = t.create_root("root");
+        assert!(
+            t.panels[root].view().is_none(),
+            "View must be Weak::new() until populated by create_root (Task 2.2)"
+        );
     }
 }
