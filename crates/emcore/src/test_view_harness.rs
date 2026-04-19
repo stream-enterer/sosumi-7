@@ -1,0 +1,120 @@
+// RUST_ONLY: test harness for Phase 1.5 keystone migration.
+//
+// Bundles `EngineScheduler`, `Vec<DeferredAction>`, `Rc<emContext>`,
+// `PanelTree`, and `HashMap<WindowId, Rc<RefCell<emWindow>>>` so unit
+// tests can construct the four ctx types (`EngineCtx`, `SchedCtx`,
+// `InitCtx`) without duplicating setup across ~150 test sites.
+//
+// Introduced by Phase 1.5 Task 1 step 1a. Consumed by step 1h's test
+// rewire pass.
+
+#![cfg(any(test, feature = "test-support"))]
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use winit::window::WindowId;
+
+use crate::emContext::emContext;
+use crate::emEngine::EngineId;
+use crate::emEngineCtx::{DeferredAction, EngineCtx, InitCtx, SchedCtx};
+use crate::emPanelTree::PanelTree;
+use crate::emScheduler::EngineScheduler;
+use crate::emWindow::emWindow;
+
+/// Bundle of the framework-owned state needed to construct `EngineCtx`,
+/// `SchedCtx`, and `InitCtx` in unit tests.
+pub struct TestViewHarness {
+    pub scheduler: EngineScheduler,
+    pub framework_actions: Vec<DeferredAction>,
+    pub root_context: Rc<emContext>,
+    pub tree: PanelTree,
+    pub windows: HashMap<WindowId, Rc<RefCell<emWindow>>>,
+}
+
+impl Default for TestViewHarness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TestViewHarness {
+    pub fn new() -> Self {
+        Self {
+            scheduler: EngineScheduler::new(),
+            framework_actions: Vec::new(),
+            root_context: emContext::NewRoot(),
+            tree: PanelTree::new(),
+            windows: HashMap::new(),
+        }
+    }
+
+    /// Construct a `SchedCtx` covering the harness's scheduler / actions /
+    /// root context. `current_engine` is `None` (InitCtx-equivalent scope);
+    /// use `sched_ctx_for(engine_id)` to thread a specific engine.
+    pub fn sched_ctx(&mut self) -> SchedCtx<'_> {
+        SchedCtx {
+            scheduler: &mut self.scheduler,
+            framework_actions: &mut self.framework_actions,
+            root_context: &self.root_context,
+            current_engine: None,
+        }
+    }
+
+    /// Construct a `SchedCtx` whose `current_engine` is pre-populated.
+    pub fn sched_ctx_for(&mut self, engine: EngineId) -> SchedCtx<'_> {
+        SchedCtx {
+            scheduler: &mut self.scheduler,
+            framework_actions: &mut self.framework_actions,
+            root_context: &self.root_context,
+            current_engine: Some(engine),
+        }
+    }
+
+    /// Construct an `EngineCtx` simulating an engine-dispatch slice.
+    /// Callers pass the engine id that would be currently dispatched.
+    pub fn engine_ctx(&mut self, engine_id: EngineId) -> EngineCtx<'_> {
+        EngineCtx {
+            scheduler: &mut self.scheduler,
+            tree: &mut self.tree,
+            windows: &mut self.windows,
+            root_context: &self.root_context,
+            framework_actions: &mut self.framework_actions,
+            engine_id,
+        }
+    }
+
+    /// Construct an `InitCtx` (no engine currently running; framework-init
+    /// scope).
+    pub fn init_ctx(&mut self) -> InitCtx<'_> {
+        InitCtx {
+            scheduler: &mut self.scheduler,
+            framework_actions: &mut self.framework_actions,
+            root_context: &self.root_context,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn harness_bundles_all_four_pieces() {
+        let mut h = TestViewHarness::new();
+        assert!(h.framework_actions.is_empty());
+        assert!(h.windows.is_empty());
+
+        // sched_ctx — no engine
+        {
+            let sc = h.sched_ctx();
+            assert!(sc.current_engine.is_none());
+        }
+
+        // init_ctx — construct-only
+        {
+            let _ic = h.init_ctx();
+        }
+    }
+}
