@@ -182,16 +182,7 @@ impl StressTest {
 /// reachable call tree when the scheduler is already `borrow_mut`'d by
 /// the enclosing `DoTimeSlice`. Drained by `UpdateEngineClass::Cycle`
 /// immediately after `Update` returns.
-///
-/// IDIOM: C++ calls `Scheduler.X(...)` inline during Update because its
-/// scheduler has no aliasing restrictions. Rust's `RefCell<EngineScheduler>`
-/// forbids inner borrows while `DoTimeSlice` holds the outer borrow;
-/// deferral restores inline semantics within the same time slice
-/// without violating borrow rules.
-// SP4 Phase 2: `SchedOp` and its dispatch methods are now driven by
-// Phase 2 call-site migrations inside `emView` (e.g. `SetGeometry`,
-// `SwapViewPorts`, popup setup/teardown). Phase 3 will wire the drain
-// into `UpdateEngineClass::Cycle`.
+// TODO(phase-1 task-9): delete when emEngine::Cycle trait migration lands; see 2026-04-19-phase-1-task-4-5-blocked.md
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum SchedOp {
     Fire(super::emSignal::SignalId),
@@ -426,11 +417,13 @@ pub struct emView {
     /// DIVERGED: C++ emView is an emEngine (via emContext); Rust emView is
     /// not yet (tracked as SP7). UpdateEngine's clock substitutes for
     /// emView's own clock.
+    // TODO(phase-1 task-9): delete when emEngine::Cycle trait migration lands; see 2026-04-19-phase-1-task-4-5-blocked.md
     pub(crate) close_signal_pending: bool,
     /// Queue of scheduler ops issued from inside Update's call tree when
     /// the scheduler is already borrow_mut'd. Drained by
     /// UpdateEngineClass::Cycle after Update returns. Invariant: only
     /// nonempty transiently, inside a `Cycle` invocation.
+    // TODO(phase-1 task-9): delete when emEngine::Cycle trait migration lands; see 2026-04-19-phase-1-task-4-5-blocked.md
     pub(crate) pending_sched_ops: Vec<SchedOp>,
     /// The view title. Updated from the active panel's title.
     pub title: String,
@@ -653,6 +646,7 @@ impl emView {
     /// Used by every scheduler-write call site in `emView.rs` that is
     /// reachable from `Update`. Non-Update call sites hit the inline-apply
     /// arm and incur zero queue overhead.
+    // TODO(phase-1 task-9): delete when emEngine::Cycle trait migration lands; see 2026-04-19-phase-1-task-4-5-blocked.md
     pub(crate) fn queue_or_apply_sched_op(&mut self, op: SchedOp) {
         let Some(sched_rc) = self.scheduler.as_ref() else {
             return; // Unit-test bare view: no scheduler, all ops no-op.

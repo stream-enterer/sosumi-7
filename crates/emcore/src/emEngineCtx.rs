@@ -114,6 +114,12 @@ impl EngineCtx<'_> {
     ) -> EngineId {
         self.scheduler.register_engine(behavior, pri)
     }
+
+    /// True if `sig` is pending this time slice (i.e. has been fired and
+    /// not yet cleared). Forwards to `EngineScheduler::is_pending`.
+    pub(crate) fn is_signaled(&self, sig: SignalId) -> bool {
+        self.scheduler.is_pending(sig)
+    }
 }
 
 impl SchedCtx<'_> {
@@ -151,6 +157,12 @@ impl SchedCtx<'_> {
 
     pub(crate) fn wake_up(&mut self, eng: EngineId) {
         self.scheduler.wake_up(eng);
+    }
+
+    /// True if `sig` is pending this time slice (i.e. has been fired and
+    /// not yet cleared). Forwards to `EngineScheduler::is_pending`.
+    pub(crate) fn is_signaled(&self, sig: SignalId) -> bool {
+        self.scheduler.is_pending(sig)
     }
 }
 
@@ -239,6 +251,7 @@ pub(crate) fn __scaffold_keepalive() {
         let _ = EngineCtx::disconnect;
         let _ = EngineCtx::remove_engine;
         let _ = EngineCtx::register_engine;
+        let _ = EngineCtx::is_signaled;
         let _ = SchedCtx::create_signal;
         let _ = SchedCtx::fire;
         let _ = SchedCtx::remove_signal;
@@ -247,6 +260,7 @@ pub(crate) fn __scaffold_keepalive() {
         let _ = SchedCtx::remove_engine;
         let _ = SchedCtx::register_engine;
         let _ = SchedCtx::wake_up;
+        let _ = SchedCtx::is_signaled;
         let _ = <SchedCtx as ConstructCtx>::create_signal;
         let _ = <SchedCtx as ConstructCtx>::register_engine;
         let _ = <SchedCtx as ConstructCtx>::wake_up;
@@ -436,6 +450,26 @@ mod tests {
 
         // Clean up before the scheduler drops.
         sc.remove_engine(eng);
+    }
+
+    #[test]
+    fn is_signaled_tracks_fire_and_remove() {
+        let mut sched = EngineScheduler::new();
+        let mut actions: Vec<DeferredAction> = Vec::new();
+        let ctx_root = crate::emContext::emContext::NewRoot();
+        let mut sc = SchedCtx {
+            scheduler: &mut sched,
+            framework_actions: &mut actions,
+            root_context: &ctx_root,
+            current_engine: None,
+        };
+
+        let sig = sc.create_signal();
+        assert!(!sc.is_signaled(sig));
+        sc.fire(sig);
+        assert!(sc.is_signaled(sig));
+        sc.remove_signal(sig);
+        assert!(!sc.is_signaled(sig));
     }
 
     #[test]
