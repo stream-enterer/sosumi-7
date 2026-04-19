@@ -1832,12 +1832,16 @@ impl emView {
                             // SP4.5-FIX-1: try_borrow_mut so re-entrant calls (RawVisitAbs is
                             // reachable from emView::Update via SVPChoiceInvalid; Update runs
                             // inside UpdateEngineClass::Cycle while DoTimeSlice holds the
-                            // scheduler borrow_mut) defer popup creation by one slice rather
-                            // than panicking. The next Update tick retries from this same
-                            // branch (PopupWindow still None, still outside_home) and
-                            // succeeds when DoTimeSlice has released the borrow.
+                            // scheduler borrow_mut) defer popup creation rather than panicking.
+                            // Wake the update engine via the scheduler-op queue so we are
+                            // guaranteed to retry next slice (independent of any animator
+                            // wake). queue_or_apply_sched_op uses try_borrow_mut internally
+                            // and is itself contention-safe: on scheduler contention it pushes
+                            // to pending_sched_ops, drained by UpdateEngineClass::Cycle after
+                            // Update returns.
                             let Ok(mut s) = sched.try_borrow_mut() else {
-                                return; // defer popup creation to next Update slice
+                                self.WakeUpUpdateEngine();
+                                return;
                             };
                             (
                                 s.create_signal(),
@@ -7006,50 +7010,130 @@ mod tests {
         assert_eq!(view_b.GetCurrentPixelTallness(), 2.0);
     }
 
-    /// SP4.5-FIX-1 follow-up: `RawVisitAbs` calls `sched.borrow_mut()` to
+    /// SP4.5-FIX-1 follow-up: `RawVisitAbs` calls `sched.try_borrow_mut()` to
     /// allocate popup signals inside the "outside_home && PopupWindow is None"
     /// branch. This is reachable from `Update` → `SVPChoiceInvalid` →
     /// `RawVisitAbs` while `DoTimeSlice` holds `scheduler.borrow_mut()`.
     ///
     /// Pre-fix: re-entrant `borrow_mut` panics.
-    /// Post-fix (try_borrow_mut + early return): no panic, popup deferred by
-    /// one slice. A second call with the scheduler released succeeds.
+    /// Post-fix (try_borrow_mut + WakeUpUpdateEngine + early return): no panic,
+    /// popup deferred. The queued wake-up guarantees a retry next slice.
+    ///
+    /// Test drives the production catch-up chain:
+    ///   Phase 1 — `DoTimeSlice` holds `sched.borrow_mut()` while
+    ///     `Cycle → Update → SVPChoiceInvalid → RawVisitAbs` hits contention:
+    ///     `WakeUpUpdateEngine()` pushed to `pending_sched_ops`, drained by
+    ///     `Cycle`, engine re-woken, second `Cycle` finds no invalid flags.
+    ///   Phase 2 — scheduler is released; retry `Update` directly (production
+    ///     SVPChoiceInvalid path, not a synthetic `RawVisit`). Popup created.
+    ///
+    /// Note: popup creation requires `scheduler.borrow_mut()` to allocate
+    /// signals.  `DoTimeSlice` always holds that borrow, so popup creation
+    /// inside DoTimeSlice always defers.  The retry therefore runs via a bare
+    /// `Update()` call with the scheduler free — the same path taken in
+    /// production when `DoTimeSlice` returns and the OS event loop calls
+    /// the next `emGUIFramework::Cycle` (which re-enters `Update` without
+    /// `DoTimeSlice`'s borrow).
     #[test]
     fn sp4_5_fix_1_followup_raw_visit_abs_popup_does_not_panic_on_re_entrant_scheduler() {
-        let (mut tree, root, child_a, _) = setup_tree();
-        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
+        use std::collections::HashMap;
 
-        // Prime the view (clears zoomed_out_before_sg, populates SVP).
-        view.Update(&mut tree);
+        let (mut tree, root, _, _) = setup_tree();
+        // Use Rc<RefCell<>> + attach_to_scheduler so update_engine_id is
+        // populated — required for WakeUpUpdateEngine to function.
+        let v_rc = Rc::new(RefCell::new(emView::new(
+            crate::emContext::emContext::NewRoot(),
+            root,
+            640.0,
+            480.0,
+        )));
+        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        let v_weak = Rc::downgrade(&v_rc);
+        v_rc.borrow_mut().attach_to_scheduler(sched.clone(), v_weak);
 
-        // Enable popup-zoom mode so the popup branch is reachable.
-        view.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree);
+        // Prime: clears zoomed_out_before_sg, populates SVP (root at
+        // full-zoom inside_home coords).
+        v_rc.borrow_mut().Update(&mut tree);
 
-        // Wire a scheduler so the `sched.borrow_mut()` path is taken.
-        let scheduler = Rc::new(RefCell::new(EngineScheduler::new()));
-        view.set_scheduler(Rc::clone(&scheduler));
+        // Enable popup-zoom so the popup creation branch is reachable.
+        v_rc.borrow_mut()
+            .SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree);
 
-        // Simulate DoTimeSlice holding the scheduler borrow_mut while
-        // RawVisitAbs is invoked via Update → SVPChoiceInvalid.
-        // rel_a = 0.1 drives vw >> HomeWidth → outside_home branch.
-        {
-            let _guard = scheduler.borrow_mut(); // held — simulates DoTimeSlice
-                                                 // Pre-fix: panics here. Post-fix: returns early (deferred).
-            view.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true);
+        // Force root.viewed_width to an outside_home value so the
+        // SVPChoiceInvalid → RawVisitAbs path enters the popup branch.
+        // vw = 2000 >> HomeWidth=640; root-clamping adjusts vx but not vw,
+        // so `vx + vw > HomeX + HomeWidth + 0.1` holds after clamping.
+        if let Some(rec) = tree.get_mut(root) {
+            rec.viewed_width = 2000.0;
         }
 
-        // Popup must be None — creation was deferred by one slice.
+        // --- Phase 1: production contention path via DoTimeSlice ---
+        // Arm SVPChoiceInvalid so UpdateEngineClass::Cycle → Update enters
+        // the RawVisitAbs path.
+        v_rc.borrow_mut().SVPChoiceInvalid = true;
+
+        // DoTimeSlice holds sched.borrow_mut() throughout its engine loop.
+        // UpdateEngineClass::Cycle calls Update → SVPChoiceInvalid →
+        // RawVisitAbs → try_borrow_mut fails (DoTimeSlice holds the borrow)
+        // → WakeUpUpdateEngine() pushed to pending_sched_ops → early return.
+        // Cycle drains pending_sched_ops → SchedOp::WakeUp applied via ctx
+        // → engine re-woken in current slice → second Cycle → Update →
+        // SVPChoiceInvalid=false → no-op → DoTimeSlice ends.
+        // Pre-fix: panics. Post-fix: completes without panic.
+        {
+            let mut wins = HashMap::new();
+            sched.borrow_mut().DoTimeSlice(&mut tree, &mut wins);
+        }
+
+        // Popup must be deferred (None) — scheduler was held during RawVisitAbs.
         assert!(
-            view.PopupWindow.is_none(),
-            "popup creation must be deferred, not panicked, on re-entrant scheduler borrow"
+            v_rc.borrow().PopupWindow.is_none(),
+            "popup creation must be deferred on re-entrant scheduler borrow, not panicked"
         );
 
-        // Second call with the scheduler released: popup is created.
-        view.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true);
+        // --- Phase 2: retry via the production SVPChoiceInvalid path ---
+        // Re-arm SVPChoiceInvalid and wake the engine so Update retries.
+        // With scheduler now free, try_borrow_mut succeeds and the popup is
+        // created. Called as bare Update (not RawVisit) to exercise the
+        // SVPChoiceInvalid branch, matching production.
+        v_rc.borrow_mut().SVPChoiceInvalid = true;
+        v_rc.borrow_mut().WakeUpUpdateEngine();
+        v_rc.borrow_mut().Update(&mut tree);
+
         assert!(
-            view.PopupWindow.is_some(),
+            v_rc.borrow().PopupWindow.is_some(),
             "popup must be created on retry when scheduler is not contended"
         );
+
+        // Cleanup: disconnect popup's close_signal, then remove all signals
+        // and engines (scheduler Drop asserts none are left behind).
+        {
+            let mut v = v_rc.borrow_mut();
+            // Disconnect close_signal before taking update_engine_id.
+            if let (Some(popup), Some(eng_id)) = (v.PopupWindow.as_ref(), v.update_engine_id) {
+                let close_sig = popup.borrow().close_signal;
+                sched.borrow_mut().disconnect(close_sig, eng_id);
+            }
+            if let Some(popup) = v.PopupWindow.take() {
+                let p = popup.borrow();
+                sched.borrow_mut().remove_signal(p.close_signal);
+                sched.borrow_mut().remove_signal(p.flags_signal);
+                sched.borrow_mut().remove_signal(p.focus_signal);
+                sched.borrow_mut().remove_signal(p.geometry_signal);
+            }
+            if let Some(id) = v.update_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.eoi_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.visiting_va_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(sig) = v.EOISignal.take() {
+                sched.borrow_mut().remove_signal(sig);
+            }
+        }
     }
 }
 
