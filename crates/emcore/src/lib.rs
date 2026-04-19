@@ -106,3 +106,10 @@ pub mod emViewRendererTileCache;
 pub mod emWindow;
 pub mod emWindowPlatform;
 pub mod emWindowStateSaver;
+
+// Scaffold-phase keepalive for `emEngineCtx`. Retires when Task 6/10 land
+// real consumers; see the function's doc comment.
+#[doc(hidden)]
+pub fn __emcore_scaffold_keepalive() {
+    emEngineCtx::__scaffold_keepalive();
+}
