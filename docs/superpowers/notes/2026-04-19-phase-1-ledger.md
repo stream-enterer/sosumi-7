@@ -246,3 +246,14 @@ tracked workaround**. See agent report in conversation.
     field deletion).
   - Invariants I1a (SchedOp=0), I1b (pending_sched_ops=0), I1d (try_borrow=0
     in emView) REMAIN UNSATISFIED — Chunk 3.
+
+### Chunk 2 review findings (2026-04-19)
+
+Verdict: **PASS** with one carry-forward to Phase 3.
+
+- Ch2-A (App.scheduler re-wrap): OK — genuine intermediate, `DIVERGED:` comment at `emGUIFramework.rs:89-95` references Chunk 3. Chunk 3 closes.
+- Ch2-B (`pending_inputs` deletion): WORKAROUND — spec §4 D4.9 and Phase 3 plan require this field. **Fixed by adding a "Phase-1 carry-in (CI.1)" section to Phase 3 plan** (this commit) mandating restoration before `InputDispatchEngine` lands.
+- Ch2-C/D/E/F/G/H: all OK. C2 fix clean; DoTimeSlice signature matches spec §3.1; no CLAUDE.md violations; no Chunk 3 scope-creep.
+- Invariant state unchanged from Chunk 2 report: I1/I1a/I1b/I1c/I1d all still UNSATISFIED (Chunks 3 and 4 close).
+
+Proceed to Chunk 3.

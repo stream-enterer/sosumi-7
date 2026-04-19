@@ -27,6 +27,16 @@
 
 Run B1–B12 with `<N>` = `3`. Verify Phase 2 closeout status.
 
+## Phase-1 carry-in (REQUIRED before Task 1)
+
+**CI.1 — Restore `App.pending_inputs`.** The field `pending_inputs: Vec<(WindowId, InputEvent)>` was deleted in Phase 1 Chunk 2 (commit `0e68a1f`) because no consumer existed at that point. Phase 3 introduces `InputDispatchEngine` as the consumer. Before writing any `InputDispatchEngine` code:
+
+1. Re-add `pub(crate) pending_inputs: Vec<(winit::window::WindowId, emInputEvent)>` to `crates/emcore/src/emGUIFramework.rs` App struct (alphabetical among `framework_actions`, `windows`, etc.).
+2. Initialize to `Vec::new()` in the constructor.
+3. `cargo check -p emcore` — confirm it compiles unused; `InputDispatchEngine` will consume it in the same phase, so clippy dead_code must not surface before then (combine the re-add and the engine registration in one commit if the gap would otherwise warn).
+
+Reference: `docs/superpowers/notes/2026-04-19-phase-1-ledger.md` Chunk 2 entry; spec §4 D4.9.
+
 ---
 
 ## File Structure
