@@ -6,6 +6,7 @@ use slotmap::{new_key_type, SlotMap};
 
 use crate::dlog;
 
+use super::emEngine::EngineId;
 use super::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use crate::emColor::emColor;
 use crate::emPanel::Rect;
@@ -223,6 +224,15 @@ pub(crate) struct PanelData {
     /// Set at construction by `PanelTree::create_root` / `create_child`;
     /// never mutated thereafter.
     pub(crate) View: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
+
+    /// Scheduler engine handle for this panel (SP4.5).
+    ///
+    /// C++ `emPanel` inherits from `emEngine`; every panel is implicitly an
+    /// engine from construction. In Rust the engine registration is done
+    /// by `PanelTree::init_panel_view` via a `PanelCycleEngine` adapter.
+    /// `None` until `init_panel_view` runs (panel not yet attached to a view).
+    #[allow(dead_code)] // SP4.5: written by Task 2.3 (`init_panel_view`); remove then.
+    pub(crate) engine_id: Option<EngineId>,
 }
 
 impl PanelData {
@@ -267,6 +277,7 @@ impl PanelData {
             notice_prev_in_ring: None,
             notice_next_in_ring: None,
             View: std::rc::Weak::new(),
+            engine_id: None,
         }
     }
 }
