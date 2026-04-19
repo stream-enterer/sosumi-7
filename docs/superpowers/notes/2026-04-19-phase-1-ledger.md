@@ -12,3 +12,4 @@
 - Task 1 note: name collision — `emEngine::EngineCtx` (existing, cycle-context) coexists with new `emEngineCtx::EngineCtx`. Both `pub`; different module paths. No rename performed. May warrant reconciliation in later phase.
 - Task 1 note: `SignalId`/`EngineId`/`Priority` are re-exports only internally in `emScheduler`; imports sourced from `emSignal` and `emEngine` modules directly.
   - Task 1 quality-review fixes @ 152460b
+  - Task 1 allow(dead_code) removed; scaffolding exercised via tests @ fe3b7a6
