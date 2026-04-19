@@ -18,12 +18,12 @@ This document is the source of truth for residual work. It catalogues the state 
 |---|---|
 | Phases delivered | **Original 10/10** + W3 + W4 |
 | Commits on main | **~84** (14 original + W3 cluster + 14 W4 + SP1 bundle + SP3 bundle + SP4 bundle + SP5 bundle [16 commits] + merges) |
-| Tests | 2446/2446 nextest, 9 skipped, 0 failed (2 new in SP5; 6 new in SP4.5; 3 new in SP8; 3 new in SP7: `get_root_context_returns_root_from_deep_child`, `core_config_is_singleton_across_sibling_contexts`, `sp7_sibling_views_share_core_config_singleton`) |
+| Tests | 2451/2451 nextest, 9 skipped, 0 failed (2 new in SP5; 6 new in SP4.5; 3 new in SP8; 3 new in SP7; 2 new in SP4.5-FIX-1 hotfix; 3 new in SP4.5-FIX-1 follow-ups timing fixtures) |
 | Golden | 237 passed / 6 failed (baseline parity — same 6 pre-existing failures across all waves) |
 | Smoke (`timeout 20 cargo run --release --bin eaglemode`) | exits 143 / 124 — program stays alive |
 | Scaffolds still in tree | **0** (both `PopupPlaceholder` and the visit-stack scaffolding are gone) |
 | Phase-follow-up markers | ~~1 `PHASE-6-FOLLOWUP`~~ **0** (closed by SP1) + ~~3 `PHASE-W4-FOLLOWUP`~~ **0** (closed by SP3) + 2 `UPSTREAM-GAP` (intentional) |
-| Known Rust-port incompletenesses remaining | **None blocking.** SP1–SP8 all closed (SP1–SP5 on 2026-04-18; SP4.5, SP6, SP7, and SP8 on 2026-04-19). One residual carry-forward: real `emClipboard` backend implementation (wiring point exists on `emContext::set_clipboard`; no backend installed). |
+| Known Rust-port incompletenesses remaining | SP1–SP8 closed (SP1–SP5 on 2026-04-18; SP4.5, SP6, SP7, SP8 on 2026-04-19). SP4.5-FIX-1 hotfix landed 2026-04-19 (re-entrant-borrow defer in `register_engine_for`). Three residual sub-projects open, none blocking: (a) real `emClipboard` backend implementation (wiring point on `emContext::set_clipboard`); (b) **SP4.5-FIX-2** popup signal allocation in `RawVisitAbs` (audit row `emView.rs:1832`; latent panic, fix shape: pre-allocate at construction — see §8.1 item 16); (c) **SP4.5-FIX-3** same-slice panel-engine registration (Rust delta=1 vs C++ delta=0; +1 slice drift below user-perceptible threshold; fix shape: `SchedOp::RegisterPanelEngine` + priority re-ascent — see §8.1 item 16). |
 
 The subsystem is structurally aligned with C++ emCore on every path the original plan targeted. Remaining debt is enumerated in §8.
 
