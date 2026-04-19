@@ -359,57 +359,13 @@ impl PanelBehavior for emSubViewPanel {
         if !state.viewed {
             return;
         }
-
-        // Drive sub-tree lifecycle. C++ panels participate in a global
-        // scheduler that calls HandleNotice continuously. Rust sub-trees are
-        // driven here. We interleave animator ticks, view updates, and notice
-        // delivery to allow the seek mechanism to expand panels layer by layer
-        // within a single frame (C++ does this across scheduler cycles).
-        // SP5: HandleNotice is now on emView, driven per-view (emView.cpp:1303-1314).
-        self.sub_tree.run_panel_cycles(state.pixel_tallness);
-        self.sub_view.borrow_mut().HandleNotice(&mut self.sub_tree);
-        self.sub_view.borrow_mut().Update(&mut self.sub_tree);
-
-        // Run animator + expand loop: animator seeks deeper, view updates
-        // reveal new panels, HandleNotice triggers their LayoutChildren.
-        // Also run_panel_cycles in the loop so file models load while
-        // the animator seeks (C++ runs emEngine cycles continuously
-        // from its global scheduler).
-        for _ in 0..50 {
-            let anim_active = if let Some(mut anim) = self.active_animator.take() {
-                let cont = anim.animate(&mut self.sub_view.borrow_mut(), &mut self.sub_tree, 0.016);
-                if cont {
-                    self.active_animator = Some(anim);
-                }
-                cont
-            } else {
-                false
-            };
-
-            self.sub_view.borrow_mut().Update(&mut self.sub_tree);
-            let had_notices = self.sub_view.borrow_mut().HandleNotice(&mut self.sub_tree);
-            self.sub_tree.run_panel_cycles(state.pixel_tallness);
-            let had_notices2 = self.sub_view.borrow_mut().HandleNotice(&mut self.sub_tree);
-
-            if !anim_active && !had_notices && !had_notices2 {
-                break;
-            }
-        }
-
-        // Update the sub-view's viewing state so panel coordinates are current.
-        self.sub_view.borrow_mut().Update(&mut self.sub_tree);
-
-        // The parent's paint_panel_recursive set the painter's origin to
-        // (base_offset.x + viewed_x, base_offset.y + viewed_y), i.e. this
-        // panel's top-left in pixel space. The sub-view's panels have their
-        // viewed coordinates relative to the sub-view viewport starting at
-        // (0, 0). paint_panel_recursive adds each panel's viewed_x/y to the
-        // base offset, so we pass the current origin as-is (the sub-view's
-        // (0, 0) == this panel's top-left).
+        // C++ emSubViewPanel::Paint (src/emCore/emSubViewPanel.cpp:94) just
+        // delegates to SubViewPort->PaintView. No settlement inside Paint —
+        // sub-view settlement happens across frames via sub_scheduler, driven
+        // from PanelBehavior::Cycle above.
         let base_offset = painter.origin();
         let bg = self.sub_view.borrow().GetBackgroundColor();
         let root = self.sub_root();
-
         self.sub_view.borrow_mut().paint_sub_tree(
             &mut self.sub_tree,
             painter,
