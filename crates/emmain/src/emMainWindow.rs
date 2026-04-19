@@ -674,8 +674,13 @@ impl emEngine for StartupEngine {
                     ctx.tree
                         .with_behavior_as::<emSubViewPanel, _>(svp_id, |svp| {
                             svp.active_animator = None;
-                            let (view, tree) = svp.view_and_tree_mut();
-                            view.RawZoomOut(tree, false);
+                            // Clone the Rc so the RefMut holds no borrow of
+                            // svp, allowing sub_tree_mut() (&mut self) to
+                            // coexist with the live RefMut.
+                            let sub_view_rc = svp.sub_view_rc().clone();
+                            sub_view_rc
+                                .borrow_mut()
+                                .RawZoomOut(svp.sub_tree_mut(), false);
                         });
                 }
                 let overlay_id = ctx
@@ -1045,20 +1050,17 @@ fn RecreateContentPanels(app: &mut App) {
             let mut rel_x = 0.0;
             let mut rel_y = 0.0;
             let mut rel_a = 0.0;
-            let panel_opt = svp.GetSubView().GetVisitedPanel(
-                svp.sub_tree(),
-                &mut rel_x,
-                &mut rel_y,
-                &mut rel_a,
-            );
+            let sv = svp.GetSubView();
+            let panel_opt = sv.GetVisitedPanel(svp.sub_tree(), &mut rel_x, &mut rel_y, &mut rel_a);
             let identity = panel_opt
                 .map(|p| svp.sub_tree().GetIdentity(p))
                 .unwrap_or_default();
             // C++ emMainWindow.cpp:297, 301, 304 — snapshot title+adherent
             // before the content panel is rebuilt, then feed them back into
             // the Visit call afterward.
-            let title = svp.GetSubView().GetTitle().to_string();
-            let adherent = svp.GetSubView().IsActivationAdherent();
+            let title = sv.GetTitle().to_string();
+            let adherent = sv.IsActivationAdherent();
+            drop(sv);
 
             // Delete old content panel(s) — remove all children of sub-tree root
             // (C++ emMainWindow.cpp:302).

@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::emCursor::emCursor;
 use crate::emInput::emInputEvent;
 use crate::emInputState::emInputState;
@@ -19,7 +22,7 @@ use super::emView::{emView, ViewFlags};
 /// Corresponds to C++ `emSubViewPanel`.
 pub struct emSubViewPanel {
     sub_tree: PanelTree,
-    sub_view: emView,
+    sub_view: Rc<RefCell<emView>>,
     /// Cached viewed geometry from the parent panel (absolute viewport pixels).
     viewed_x: f64,
     viewed_y: f64,
@@ -56,7 +59,7 @@ impl emSubViewPanel {
         let core_config = std::rc::Rc::new(std::cell::RefCell::new(
             crate::emCoreConfig::emCoreConfig::default(),
         ));
-        let sub_view = emView::new(root, 1.0, 1.0, core_config);
+        let sub_view = Rc::new(RefCell::new(emView::new(root, 1.0, 1.0, core_config)));
 
         Self {
             sub_tree,
@@ -87,19 +90,22 @@ impl emSubViewPanel {
     }
 
     /// Get a reference to the sub-view.
-    pub fn GetSubView(&self) -> &emView {
-        &self.sub_view
+    pub fn GetSubView(&self) -> std::cell::Ref<'_, emView> {
+        self.sub_view.borrow()
     }
 
     /// Get a mutable reference to the sub-view.
-    pub fn sub_view_mut(&mut self) -> &mut emView {
-        &mut self.sub_view
+    pub fn sub_view_mut(&self) -> std::cell::RefMut<'_, emView> {
+        self.sub_view.borrow_mut()
     }
 
-    /// Borrow sub_view and sub_tree mutably at the same time.
-    /// Needed when a method on the view requires a mutable tree reference.
-    pub fn view_and_tree_mut(&mut self) -> (&mut emView, &mut PanelTree) {
-        (&mut self.sub_view, &mut self.sub_tree)
+    /// Get the `Rc<RefCell<emView>>` for the sub-view.
+    ///
+    /// Used by SP5 Task 2.2 to downgrade to `Weak<RefCell<emView>>` for
+    /// per-view notice dispatch on emPanel::View.
+    #[allow(dead_code)] // used by SP5 Task 2.2
+    pub fn sub_view_rc(&self) -> &Rc<RefCell<emView>> {
+        &self.sub_view
     }
 
     /// Visit a panel in the sub-view by identity string.
@@ -117,12 +123,13 @@ impl emSubViewPanel {
         subject: &str,
     ) {
         self.sub_view
+            .borrow_mut()
             .VisitByIdentity(identity, rel_x, rel_y, rel_a, adherent, subject);
     }
 
     /// Set the view flags on the sub-view.
     pub fn set_sub_view_flags(&mut self, flags: ViewFlags) {
-        self.sub_view.flags = flags;
+        self.sub_view.borrow_mut().flags = flags;
     }
 
     /// Update the sub-view geometry to match the parent panel's viewed area.
@@ -135,7 +142,7 @@ impl emSubViewPanel {
             self.viewed_y = state.viewed_rect.y;
             self.viewed_width = state.viewed_rect.w;
             self.viewed_height = state.viewed_rect.h;
-            self.sub_view.SetGeometry(
+            self.sub_view.borrow_mut().SetGeometry(
                 &mut self.sub_tree,
                 0.0,
                 0.0,
@@ -150,8 +157,14 @@ impl emSubViewPanel {
             self.viewed_y = 0.0;
             self.viewed_width = 1.0;
             self.viewed_height = state.height;
-            self.sub_view
-                .SetGeometry(&mut self.sub_tree, 0.0, 0.0, 1.0, state.height, 1.0);
+            self.sub_view.borrow_mut().SetGeometry(
+                &mut self.sub_tree,
+                0.0,
+                0.0,
+                1.0,
+                state.height,
+                1.0,
+            );
         }
     }
 }
@@ -183,7 +196,9 @@ impl PanelBehavior for emSubViewPanel {
             if deactivated {
                 // C++ emViewAnimator.cpp:1060: clear seek-pos so the next notice
                 // cycle doesn't fire SOUGHT_NAME_CHANGED on a stale target.
-                self.sub_view.SetSeekPos(&mut self.sub_tree, None, "");
+                self.sub_view
+                    .borrow_mut()
+                    .SetSeekPos(&mut self.sub_tree, None, "");
                 // C++ emViewAnimator.cpp:1061: whole-view InvalidatePainting() skipped.
                 // Rust has no emViewAnimator::InvalidatePainting method; the visiting
                 // overlay will repaint correctly on the next scheduled paint cycle.
@@ -203,6 +218,7 @@ impl PanelBehavior for emSubViewPanel {
         // propagate focus state to the sub-view here, matching C++.
         if event.is_mouse_event() || event.is_touch_event() {
             self.sub_view
+                .borrow_mut()
                 .SetFocused(&mut self.sub_tree, state.is_focused());
         }
 
@@ -216,32 +232,29 @@ impl PanelBehavior for emSubViewPanel {
         if event.is_mouse_event() && event.variant == crate::emInput::InputVariant::Press {
             let panel = self
                 .sub_view
+                .borrow()
                 .GetFocusablePanelAt(&self.sub_tree, sub_vx, sub_vy)
-                .unwrap_or_else(|| self.sub_view.GetRootPanel());
+                .unwrap_or_else(|| self.sub_view.borrow().GetRootPanel());
             self.sub_view
+                .borrow_mut()
                 .set_active_panel(&mut self.sub_tree, panel, false);
         }
 
         // Ensure sub-view viewing state is current for coordinate transforms.
-        self.sub_view.Update(&mut self.sub_tree);
+        self.sub_view.borrow_mut().Update(&mut self.sub_tree);
 
         // Dispatch to sub-tree panels (DFS order, matching C++ RecurseInput).
-        let wf = self.sub_view.IsFocused();
+        let wf = self.sub_view.borrow().IsFocused();
+        let pixel_tallness = self.sub_view.borrow().GetCurrentPixelTallness();
         let viewed = self.sub_tree.viewed_panels_dfs();
         for panel_id in viewed {
             let mut panel_ev = event.clone();
             panel_ev.mouse_x = self.sub_tree.ViewToPanelX(panel_id, sub_vx);
-            panel_ev.mouse_y = self.sub_tree.ViewToPanelY(
-                panel_id,
-                sub_vy,
-                self.sub_view.GetCurrentPixelTallness(),
-            );
+            panel_ev.mouse_y = self.sub_tree.ViewToPanelY(panel_id, sub_vy, pixel_tallness);
             if let Some(mut behavior) = self.sub_tree.take_behavior(panel_id) {
-                let panel_state = self.sub_tree.build_panel_state(
-                    panel_id,
-                    wf,
-                    self.sub_view.GetCurrentPixelTallness(),
-                );
+                let panel_state = self
+                    .sub_tree
+                    .build_panel_state(panel_id, wf, pixel_tallness);
                 // Suppress keyboard events for panels not in the active path.
                 if panel_ev.is_keyboard_event() && !panel_state.in_active_path {
                     self.sub_tree.put_behavior(panel_id, behavior);
@@ -250,7 +263,9 @@ impl PanelBehavior for emSubViewPanel {
                 let consumed = behavior.Input(&panel_ev, &panel_state, input_state);
                 self.sub_tree.put_behavior(panel_id, behavior);
                 if consumed {
-                    self.sub_view.InvalidatePainting(&self.sub_tree, panel_id);
+                    self.sub_view
+                        .borrow_mut()
+                        .InvalidatePainting(&self.sub_tree, panel_id);
                     return true;
                 }
             }
@@ -263,6 +278,7 @@ impl PanelBehavior for emSubViewPanel {
         // C++ NF_FOCUS_CHANGED → SetViewFocused(IsFocused())
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
             self.sub_view
+                .borrow_mut()
                 .SetFocused(&mut self.sub_tree, state.is_focused());
         }
         // C++ NF_VIEWING_CHANGED → SetViewGeometry(...)
@@ -284,7 +300,7 @@ impl PanelBehavior for emSubViewPanel {
         self.sub_tree.run_panel_cycles(state.pixel_tallness);
         self.sub_tree
             .HandleNotice(state.is_focused(), state.pixel_tallness);
-        self.sub_view.Update(&mut self.sub_tree);
+        self.sub_view.borrow_mut().Update(&mut self.sub_tree);
 
         // Run animator + expand loop: animator seeks deeper, view updates
         // reveal new panels, HandleNotice triggers their LayoutChildren.
@@ -293,7 +309,7 @@ impl PanelBehavior for emSubViewPanel {
         // from its global scheduler).
         for _ in 0..50 {
             let anim_active = if let Some(mut anim) = self.active_animator.take() {
-                let cont = anim.animate(&mut self.sub_view, &mut self.sub_tree, 0.016);
+                let cont = anim.animate(&mut self.sub_view.borrow_mut(), &mut self.sub_tree, 0.016);
                 if cont {
                     self.active_animator = Some(anim);
                 }
@@ -302,7 +318,7 @@ impl PanelBehavior for emSubViewPanel {
                 false
             };
 
-            self.sub_view.Update(&mut self.sub_tree);
+            self.sub_view.borrow_mut().Update(&mut self.sub_tree);
             let had_notices = self
                 .sub_tree
                 .HandleNotice(state.is_focused(), state.pixel_tallness);
@@ -317,7 +333,7 @@ impl PanelBehavior for emSubViewPanel {
         }
 
         // Update the sub-view's viewing state so panel coordinates are current.
-        self.sub_view.Update(&mut self.sub_tree);
+        self.sub_view.borrow_mut().Update(&mut self.sub_tree);
 
         // The parent's paint_panel_recursive set the painter's origin to
         // (base_offset.x + viewed_x, base_offset.y + viewed_y), i.e. this
@@ -327,15 +343,20 @@ impl PanelBehavior for emSubViewPanel {
         // base offset, so we pass the current origin as-is (the sub-view's
         // (0, 0) == this panel's top-left).
         let base_offset = painter.origin();
-        let bg = self.sub_view.GetBackgroundColor();
+        let bg = self.sub_view.borrow().GetBackgroundColor();
         let root = self.sub_root();
 
-        self.sub_view
-            .paint_sub_tree(&mut self.sub_tree, painter, root, base_offset, bg);
+        self.sub_view.borrow_mut().paint_sub_tree(
+            &mut self.sub_tree,
+            painter,
+            root,
+            base_offset,
+            bg,
+        );
     }
 
     fn GetCursor(&self) -> emCursor {
-        self.sub_view.GetCursor()
+        self.sub_view.borrow().GetCursor()
     }
 
     fn get_title(&self) -> Option<String> {
@@ -346,19 +367,19 @@ impl PanelBehavior for emSubViewPanel {
     }
 
     fn drain_parent_invalidation(&mut self) -> Option<ParentInvalidation> {
-        let title = self.sub_view.is_title_invalid();
-        let cursor = self.sub_view.is_cursor_invalid();
-        let has_dirty = self.sub_view.has_dirty_rects();
+        let title = self.sub_view.borrow().is_title_invalid();
+        let cursor = self.sub_view.borrow().is_cursor_invalid();
+        let has_dirty = self.sub_view.borrow().has_dirty_rects();
 
         if !title && !cursor && !has_dirty {
             return None;
         }
 
         if title {
-            self.sub_view.clear_title_invalid();
+            self.sub_view.borrow_mut().clear_title_invalid();
         }
         if cursor {
-            self.sub_view.clear_cursor_invalid();
+            self.sub_view.borrow_mut().clear_cursor_invalid();
         }
 
         // C++ SubViewPortClass::InvalidatePainting calls
@@ -367,7 +388,7 @@ impl PanelBehavior for emSubViewPanel {
         // rects are already in absolute view (pixel) coordinates, so we
         // pass them through unchanged.
         let dirty_rects = if has_dirty {
-            self.sub_view.take_dirty_rects()
+            self.sub_view.borrow_mut().take_dirty_rects()
         } else {
             Vec::new()
         };
