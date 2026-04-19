@@ -18,12 +18,12 @@ This document is the source of truth for residual work. It catalogues the state 
 |---|---|
 | Phases delivered | **Original 10/10** + W3 + W4 |
 | Commits on main | **~84** (14 original + W3 cluster + 14 W4 + SP1 bundle + SP3 bundle + SP4 bundle + SP5 bundle [16 commits] + merges) |
-| Tests | 2443/2443 nextest, 9 skipped, 0 failed (2 new in SP5; 6 new in SP4.5; 3 new in SP8: `sp8_sub_view_update_engine_registered`, `sp8_sub_tree_root_panel_engine_registered`, `sp8_cycle_drives_sub_scheduler`) |
+| Tests | 2446/2446 nextest, 9 skipped, 0 failed (2 new in SP5; 6 new in SP4.5; 3 new in SP8; 3 new in SP7: `get_root_context_returns_root_from_deep_child`, `core_config_is_singleton_across_sibling_contexts`, `sp7_sibling_views_share_core_config_singleton`) |
 | Golden | 237 passed / 6 failed (baseline parity — same 6 pre-existing failures across all waves) |
 | Smoke (`timeout 20 cargo run --release --bin eaglemode`) | exits 143 / 124 — program stays alive |
 | Scaffolds still in tree | **0** (both `PopupPlaceholder` and the visit-stack scaffolding are gone) |
 | Phase-follow-up markers | ~~1 `PHASE-6-FOLLOWUP`~~ **0** (closed by SP1) + ~~3 `PHASE-W4-FOLLOWUP`~~ **0** (closed by SP3) + 2 `UPSTREAM-GAP` (intentional) |
-| Known Rust-port incompletenesses remaining | `emContext` threading (SP7, ARCH). SP1, SP2, SP3, SP4, SP4.5, SP5, SP6, and SP8 all closed (SP1–SP5 on 2026-04-18; SP4.5, SP6, and SP8 on 2026-04-19). |
+| Known Rust-port incompletenesses remaining | **None blocking.** SP1–SP8 all closed (SP1–SP5 on 2026-04-18; SP4.5, SP6, SP7, and SP8 on 2026-04-19). One residual carry-forward: real `emClipboard` backend implementation (wiring point exists on `emContext::set_clipboard`; no backend installed). |
 
 The subsystem is structurally aligned with C++ emCore on every path the original plan targeted. Remaining debt is enumerated in §8.
 
@@ -209,7 +209,7 @@ All items in this section closed by SP1 on 2026-04-18.
 | `UPSTREAM-GAP:` | 2 | Intentional — `IsSoftKeyboardShown` / `ShowSoftKeyboard` in `emViewPort.rs`; no upstream backend overrides them |
 | `backend-gap:` | 0 | Phase 8 cleared the last one |
 | `KNOWN GAP` | 0 | W4 closed the `factor=1.0` marker |
-| `DIVERGED:` (new this wave+W3+W4+SP1+SP3+SP5+SP4.5+SP8) | 13 | 1 W3 + 4 W4 + 1 SP1 + 2 SP3 + 3 SP5 + 1 SP4.5 + 1 SP8 (per-sub-view `sub_scheduler` on `emSubViewPanel` — forced by nested `PanelTree` ownership + singular `EngineCtx::tree`; unifiable only via SP7 `emContext` threading); all warranted per CLAUDE.md |
+| `DIVERGED:` (new this wave+W3+W4+SP1+SP3+SP5+SP4.5+SP8+SP7) | 14 | 1 W3 + 4 W4 + 1 SP1 + 2 SP3 + 3 SP5 + 1 SP4.5 + 1 SP8 + 1 SP7 (`emView::Context: Rc<emContext>` — composition replacing C++ `class emView : public emContext`, forced by Rust's lack of inheritance); all warranted per CLAUDE.md |
 
 ---
 
@@ -274,10 +274,10 @@ Brainstorming on 2026-04-18 grouped the residuals into seven independently-sched
 | **SP4.5 — `emPanel` engine-registration port (`PanelCycleEngine` adapter)** | 16 | **Complete 2026-04-19** (branch `sp4.5-empanel-engine-registration`; merged as `67fc006`). | `specs/2026-04-19-emview-sp4-5-empanel-engine-registration-design.md`, `plans/2026-04-19-emview-sp4-5-empanel-engine-registration.md` |
 | **SP5 — Per-view notice dispatch** | ~~12~~ | **Complete 2026-04-18** (merged as `47efa6b`; implemented across 16 commits on branch `sp5-per-view-notice-dispatch`). | `specs/2026-04-18-emview-sp5-per-view-notice-dispatch-design.md`, `plans/2026-04-18-emview-sp5-per-view-notice-dispatch.md` |
 | **SP6 — W3 surface de-dup** | ~~13~~ | **Complete 2026-04-19** (`894bdba`). | `specs/2026-04-19-emview-sp6-surface-creation-dedup-design.md`, `plans/2026-04-19-emview-sp6-surface-creation-dedup.md` |
-| **SP7 — emContext threading through view/window subsystem** | 15 | Not started; ARCH; surfaced 2026-04-18 during SP3 brainstorming | — |
+| **SP7 — emContext threading through view/window subsystem** | ~~15~~ | **Complete 2026-04-19** (3 commits on branch `sp7-emcontext-threading`: `76f96b0`, `5975874`, `b1a4d9d`). | `specs/2026-04-19-emview-sp7-emcontext-threading-design.md`, `plans/2026-04-19-emview-sp7-emcontext-threading.md` |
 | **SP8 — Sub-view synchronous-settlement divergence** | ~~17~~ | **Complete 2026-04-19** (6 commits on main: `54ccc5d`, `cf8adc2`, `9e286e2`, `17d6dac`, `3b8e6c5`, `2b3a186`). | `specs/2026-04-19-emview-sp8-subview-settlement-design.md`, `plans/2026-04-19-emview-sp8-subview-settlement.md` |
 
-**Suggested execution order:** ~~SP1~~ → ~~SP3~~ → ~~SP4~~ → ~~SP5~~ → ~~SP4.5~~ → ~~SP8~~ → ~~SP6~~ → SP7 when the motivation arrives. (SP2 turned out to be already done — landed in SP1 as W1b.) SP1, SP3, SP4, and SP5 landed 2026-04-18; SP4.5, SP8, and SP6 landed 2026-04-19.
+**Suggested execution order:** ~~SP1~~ → ~~SP3~~ → ~~SP4~~ → ~~SP5~~ → ~~SP4.5~~ → ~~SP8~~ → ~~SP6~~ → ~~SP7~~. (SP2 turned out to be already done — landed in SP1 as W1b.) SP1, SP3, SP4, and SP5 landed 2026-04-18; SP4.5, SP8, SP6, and SP7 landed 2026-04-19. **All sub-projects complete.**
 
 **SP4 divergences from plan.** A few implementation details departed from the SP4 plan and are worth recording:
 
@@ -303,7 +303,11 @@ Brainstorming on 2026-04-18 grouped the residuals into seven independently-sched
 13. ~~**[ARCH] W3 surface-creation de-duplication** (optional) — extract `build_materialized_surface(gpu, winit_window) -> MaterializedSurface` to deduplicate ~50 lines between `materialize_popup_surface` and `emWindow::create()`. (§3.5 item 1.)~~ **CLOSED 2026-04-19 by SP6** (`894bdba`). Resolution: `pub(crate) fn MaterializedSurface::build(gpu, winit_window) -> Self` associated function in `emWindow.rs`. Both `emWindow::create` and `emGUIFramework::materialize_popup_surface` call it; post-clamp `w`/`h` read back from `materialized.surface_config.width/height`. No observable behaviour change, no new tests, no new `DIVERGED:` markers. Tests 2443/2443; golden 237/6.
 14. ~~**[ARCH] emView::Update scheduler re-entrant borrow**~~ **CLOSED 2026-04-18 by SP4** (`c78c36b`). Chosen fix: hybrid — option (b)'s cached-field probe (`popup_close_signal_fired: bool`, refreshed at signal-processing time) for the specific popup-close check, plus a structural `SchedOp` enum + `pending_sched_ops: Vec<SchedOp>` queue so scheduler mutations issued from inside `Update` (connect/disconnect/remove_signal/wake_up/fire) are deferred until after the borrow unwinds. `emView::update()` was deleted outright; `UpdateEngineClass::Cycle` is now the sole routing path, matching C++ one-engine-per-view semantics. 8 previous scheduler-borrow sites migrated to `queue_or_apply`; direct `view_mut().update(tree)` calls removed from `emGUIFramework::about_to_wait`. Smoke + 2432/2432 nextest + 237/6 golden parity preserved.
 
-15. **[ARCH] `emContext` threading through view/window subsystem** — surfaced 2026-04-18 during SP3 brainstorming (expanded from what was then called "option C" for SP3 — acquiring `CoreConfig` the C++ way rather than constructing it ad-hoc). SP3 landed the direct-injection approach (`emView::new` takes `Rc<RefCell<emCoreConfig>>`); this item covers the broader architectural gap of routing acquisition through a context tree.
+15. ~~**[ARCH] `emContext` threading through view/window subsystem**~~ **CLOSED 2026-04-19 by SP7** (3 commits on branch `sp7-emcontext-threading`: `76f96b0`, `5975874`, `b1a4d9d`). Resolution: `emContext::GetRootContext` added; `emCoreConfig::Acquire(&Rc<emContext>)` walks to root and returns the singleton `Rc<RefCell<emConfigModel<emCoreConfig>>>` — replacing SP3's direct-injection bridge. `emView::new(parent_context, root, w, h)` constructs a child context (`emContext::NewChild`) and acquires the singleton; `emView::CoreConfig` field type fixed from `Rc<RefCell<emCoreConfig>>` to the model wrapper for C++ parity. `emWindow::create`, `emWindow::new_popup_pending`, `emSubViewPanel::new` all thread `Rc<emContext>`. Production paths use `app.context` (already the shared root); tests pass `emContext::NewRoot()` inline. One new `DIVERGED:` block on `emView::Context` (composition replacing C++ `class emView : public emContext` — Rust has no inheritance). Audit-finding correction: the closeout-doc claim of "~38 ad-hoc `NewRoot()` in `emmain`/`emfileman` production" was stale — every site is inside `#[cfg(test)]`. **Residual:** real `emClipboard` backend implementation not installed (wiring point on `emContext::set_clipboard` exists; needs winit/arboard or platform-specific backend — not blocking, separate sub-project). Tests 2445 → 2446 (+3 SP7 tests minus the 2 SP3-era tests rewritten to go through `Acquire`); golden 237/6 unchanged.
+
+    *Original item below, preserved for the historical record.*
+
+    Surfaced 2026-04-18 during SP3 brainstorming (expanded from what was then called "option C" for SP3 — acquiring `CoreConfig` the C++ way rather than constructing it ad-hoc). SP3 landed the direct-injection approach (`emView::new` takes `Rc<RefCell<emCoreConfig>>`); this item covers the broader architectural gap of routing acquisition through a context tree.
 
     **Gap.** C++ `emView::emView(emContext & parentContext, ViewFlags)` takes a parent context, calls `emCoreConfig::Acquire(GetRootContext())` at construction (`emView.cpp:35`), and participates in a tree of contexts that inherit services (clipboard, config models, the model registry). The Rust port has an `emContext` type (`crates/emcore/src/emContext.rs`, ~393 lines) with `NewRoot`, `NewChild`, scheduler lookup via parent chain, and typed-singleton model Acquire — but **no caller in the view/window/panel subsystem ever threads one through.** Specifically:
     - `emView::new(root, w, h)` takes no context. ~15 production + test call sites.
