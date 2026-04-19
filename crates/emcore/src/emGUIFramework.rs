@@ -545,7 +545,7 @@ impl ApplicationHandler for App {
 
             // Tick animator (take out to avoid borrow conflict)
             if let Some(mut anim) = win.active_animator.take() {
-                if anim.animate(win.view_mut(), tree, dt) {
+                if anim.animate(&mut win.view_mut(), tree, dt) {
                     win.active_animator = Some(anim);
                     needs_full_repaint = true;
                 }
@@ -603,7 +603,8 @@ impl ApplicationHandler for App {
             // matches C++ emCore where Input() is called for all viewed
             // panels on every frame, and emTextField invalidates itself
             // when the blink timer fires.
-            if let Some(active_id) = win.view().GetActivePanel() {
+            let active_id = win.view().GetActivePanel();
+            if let Some(active_id) = active_id {
                 win.view_mut().InvalidatePainting(tree, active_id);
             }
 
@@ -611,7 +612,8 @@ impl ApplicationHandler for App {
             // Convert each dirty rect to tile grid coordinates and mark only
             // the overlapping tiles as dirty (partial repaint).
             let mut has_dirty_rects = false;
-            if win.view().has_dirty_rects() {
+            let has_dirty = win.view().has_dirty_rects();
+            if has_dirty {
                 let dirty = win.view_mut().take_dirty_clip_rects();
                 log::trace!(
                     "dirty clip rects: {} regions, bounds {:?}",

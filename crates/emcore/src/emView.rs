@@ -250,7 +250,7 @@ impl super::emEngine::emEngine for UpdateEngineClass {
         };
         let win_rc = Rc::clone(win_rc);
         let mut win = win_rc.borrow_mut();
-        let view = win.view_mut();
+        let mut view = win.view_mut();
 
         // SP4 Part A: pre-compute the popup-close probe here (C++ emView.cpp:1299;
         // in C++ this is inside Update against emView's own engine clock, but
@@ -317,7 +317,7 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
             None => return false,
         };
         let mut win = win_rc.borrow_mut();
-        let view = win.view_mut();
+        let mut view = win.view_mut();
         // Clone the animator Rc so we can mutably borrow it alongside &mut view.
         // The animator's RefCell is independent of the view's storage.
         let va_rc = Rc::clone(&view.VisitingVA);
@@ -326,7 +326,7 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
             return false;
         }
         use super::emViewAnimator::emViewAnimator as _;
-        va.animate(view, ctx.tree, dt)
+        va.animate(&mut view, ctx.tree, dt)
     }
 }
 
@@ -6293,7 +6293,7 @@ mod tests {
         // what fires geometry_signal from inside Update.
         {
             let mut w = win.borrow_mut();
-            let v = w.view_mut();
+            let mut v = w.view_mut();
             v.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree);
             v.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true);
             assert!(v.PopupWindow.is_some(), "popup created under POPUP_ZOOM");
@@ -6336,7 +6336,7 @@ mod tests {
         sched.borrow_mut().remove_engine(recv_id);
         {
             let mut w = win.borrow_mut();
-            let v = w.view_mut();
+            let mut v = w.view_mut();
             v.geometry_signal = None;
             if let Some(id) = v.update_engine_id.take() {
                 sched.borrow_mut().remove_engine(id);
@@ -6377,7 +6377,7 @@ mod tests {
         // SwapViewPorts.
         {
             let mut w = win.borrow_mut();
-            let v = w.view_mut();
+            let mut v = w.view_mut();
             v.Update(&mut tree);
             v.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree);
             v.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true);
@@ -6414,7 +6414,7 @@ mod tests {
         // Cleanup for scheduler Drop debug_asserts.
         {
             let mut w = win.borrow_mut();
-            let v = w.view_mut();
+            let mut v = w.view_mut();
             if let Some(id) = v.update_engine_id.take() {
                 sched.borrow_mut().remove_engine(id);
             }

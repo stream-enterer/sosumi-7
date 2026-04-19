@@ -163,7 +163,8 @@ impl emMainWindow {
             && let Some(rc) = self.window_id.and_then(|id| app.windows.get(&id))
         {
             let win = rc.borrow();
-            let title = win.view().GetTitle();
+            let view = win.view();
+            let title = view.GetTitle();
             if !title.is_empty() {
                 return format!("Eagle Mode - {title}");
             }
@@ -359,7 +360,8 @@ impl emEngine for MainWindowEngine {
             && let Some(rc) = ctx.windows.get(&wid)
         {
             let win = rc.borrow();
-            let view_title = win.view().GetTitle();
+            let view = win.view();
+            let view_title = view.GetTitle();
             let title = if view_title.is_empty() {
                 "Eagle Mode".to_string()
             } else {

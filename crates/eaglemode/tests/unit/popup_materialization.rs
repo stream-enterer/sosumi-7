@@ -114,7 +114,7 @@ impl ApplicationHandler for Harness {
                 {
                     let mut home = home_rc.borrow_mut();
                     let tree = &mut self.app.tree;
-                    let view = home.view_mut();
+                    let mut view = home.view_mut();
                     // Attach to scheduler so popup-entry can allocate popup
                     // signals via the real scheduler path.
                     view.set_scheduler(Rc::clone(&self.app.scheduler));
