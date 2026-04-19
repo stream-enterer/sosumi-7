@@ -6834,6 +6834,68 @@ mod tests {
             "visit_speed=10.0 must deactivate animation via f < fMax*0.99999"
         );
     }
+
+    #[test]
+    fn sp5_per_view_notice_dispatch_uses_correct_pixel_tallness() {
+        // Two independent views with distinct CurrentPixelTallness.
+        // Each enqueues a notice on its own root panel.
+        // Each view's HandleNotice drains its own ring and leaves the other
+        // view's state untouched. Pixel tallness used by each drain matches
+        // the view's own value — not the other view's.
+        use crate::emPanel::NoticeFlags;
+
+        let mut tree_a = PanelTree::new();
+        let root_a = tree_a.create_root_deferred_view("root_a");
+        let mut view_a = emView::new_for_test(root_a, 800.0, 600.0);
+
+        let mut tree_b = PanelTree::new();
+        let root_b = tree_b.create_root_deferred_view("root_b");
+        let mut view_b = emView::new_for_test(root_b, 1920.0, 1080.0);
+
+        // Distinct pixel tallness via SetGeometry.
+        view_a.SetGeometry(&mut tree_a, 0.0, 0.0, 800.0, 600.0, 1.0);
+        view_b.SetGeometry(&mut tree_b, 0.0, 0.0, 1920.0, 1080.0, 2.0);
+
+        assert_eq!(view_a.GetCurrentPixelTallness(), 1.0);
+        assert_eq!(view_b.GetCurrentPixelTallness(), 2.0);
+
+        // Enqueue a notice on each root panel.
+        tree_a.queue_notice(root_a, NoticeFlags::SOUGHT_NAME_CHANGED);
+        tree_b.queue_notice(root_b, NoticeFlags::SOUGHT_NAME_CHANGED);
+
+        // Both trees should now report pending notices.
+        assert!(
+            tree_a.has_pending_notices(),
+            "tree_a should have pending notices queued"
+        );
+        assert!(
+            tree_b.has_pending_notices(),
+            "tree_b should have pending notices queued"
+        );
+
+        // Drive view_a's HandleNotice independently.
+        view_a.HandleNotice(&mut tree_a);
+        // tree_a is drained; tree_b still has its notice.
+        assert!(
+            !tree_a.has_pending_notices(),
+            "tree_a drained after HandleNotice"
+        );
+        assert!(
+            tree_b.has_pending_notices(),
+            "tree_b untouched by tree_a's drain"
+        );
+
+        // Drive view_b's HandleNotice.
+        view_b.HandleNotice(&mut tree_b);
+        assert!(
+            !tree_b.has_pending_notices(),
+            "tree_b drained after HandleNotice"
+        );
+
+        // Pixel tallness must remain distinct (HandleNotice did not perturb).
+        assert_eq!(view_a.GetCurrentPixelTallness(), 1.0);
+        assert_eq!(view_b.GetCurrentPixelTallness(), 2.0);
+    }
 }
 
 #[cfg(kani)]
