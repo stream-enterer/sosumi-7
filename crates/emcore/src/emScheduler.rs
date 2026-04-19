@@ -449,6 +449,31 @@ impl EngineScheduler {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
+impl EngineScheduler {
+    /// Attach a first-cycle slice probe to a registered `PanelCycleEngine`.
+    /// Used by SP4.5-FIX-1 timing fixtures (Tasks 5-7).
+    pub fn attach_first_cycle_probe(
+        &mut self,
+        eid: super::emEngine::EngineId,
+        captured_slice: std::rc::Rc<std::cell::Cell<Option<u64>>>,
+    ) {
+        let Some(eng) = self.inner.engines.get_mut(eid) else {
+            return;
+        };
+        let Some(behavior) = eng.behavior.as_mut() else {
+            return;
+        };
+        let Some(pce) = (behavior.as_mut() as &mut dyn std::any::Any)
+            .downcast_mut::<crate::emPanelCycleEngine::PanelCycleEngine>()
+        else {
+            panic!("attach_first_cycle_probe: engine {eid:?} is not a PanelCycleEngine");
+        };
+        pce.first_cycle_probe =
+            Some(crate::emPanelCycleEngine::PanelCycleEngineFirstCycleProbe { captured_slice });
+    }
+}
+
 impl Drop for EngineScheduler {
     fn drop(&mut self) {
         debug_assert!(

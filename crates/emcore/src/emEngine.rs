@@ -16,7 +16,12 @@ new_key_type! {
 /// Engines are the primary scheduling primitive. They receive `cycle()` calls
 /// from the scheduler with an `EngineCtx` that provides access to signals,
 /// timers, and time-slice queries.
-pub trait emEngine {
+///
+/// `std::any::Any` supertrait is required so that test-support helpers can
+/// downcast `Box<dyn emEngine>` to a concrete type (e.g.
+/// `PanelCycleEngine`) without a separate registry. Only `'static` types
+/// may implement `emEngine`; all current implementations satisfy this.
+pub trait emEngine: std::any::Any {
     /// Called when the engine is awake. Return `true` to stay awake next slice,
     /// `false` to go to sleep.
     ///
@@ -107,6 +112,13 @@ impl EngineCtx<'_> {
         } else {
             false
         }
+    }
+
+    /// Current scheduler time-slice counter. Used by SP4.5-FIX-1 timing
+    /// fixtures to measure slices-between-create-and-first-Cycle.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn time_slice_counter(&self) -> u64 {
+        self.scheduler.time_slice_counter
     }
 
     /// Check if the current time slice has exceeded its deadline.

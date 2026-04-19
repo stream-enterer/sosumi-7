@@ -19,13 +19,32 @@ use super::emPanelCtx::PanelCtx;
 use super::emPanelTree::PanelId;
 use super::emView::emView;
 
+/// Probe attached to a `PanelCycleEngine` in test/test-support builds.
+/// Records the scheduler's `time_slice_counter` on the engine's first
+/// `Cycle` invocation. Used by SP4.5-FIX-1 timing fixtures (Tasks 5-7)
+/// to measure slices-between-create-and-first-Cycle.
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Clone)]
+pub(crate) struct PanelCycleEngineFirstCycleProbe {
+    pub captured_slice: std::rc::Rc<std::cell::Cell<Option<u64>>>,
+}
+
 pub(crate) struct PanelCycleEngine {
     pub(crate) panel_id: PanelId,
     pub(crate) view: Weak<RefCell<emView>>,
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) first_cycle_probe: Option<PanelCycleEngineFirstCycleProbe>,
 }
 
 impl emEngine for PanelCycleEngine {
     fn Cycle(&mut self, ctx: &mut EngineCtx<'_>) -> bool {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(probe) = &self.first_cycle_probe {
+            if probe.captured_slice.get().is_none() {
+                probe.captured_slice.set(Some(ctx.time_slice_counter()));
+            }
+        }
+
         // View gone (test teardown / window closed) → sleep.
         let Some(view_rc) = self.view.upgrade() else {
             return false;

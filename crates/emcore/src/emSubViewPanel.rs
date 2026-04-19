@@ -501,3 +501,174 @@ mod sp8_tests {
         teardown(&mut panel);
     }
 }
+
+#[cfg(test)]
+mod sp4_5_fix_1_tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    /// Reuse the same teardown logic as sp8_tests: deregister sub-view and
+    /// sub-tree engines so the sub_scheduler Drop debug_assert passes.
+    fn teardown(panel: &mut emSubViewPanel) {
+        let root = panel.sub_root();
+        panel.sub_tree.remove(root);
+        let mut view = panel.sub_view.borrow_mut();
+        let mut sched = panel.sub_scheduler.borrow_mut();
+        if let Some(eid) = view.update_engine_id.take() {
+            sched.remove_engine(eid);
+        }
+        if let Some(eid) = view.visiting_va_engine_id.take() {
+            sched.remove_engine(eid);
+        }
+        if let Some(sig) = view.EOISignal.take() {
+            sched.remove_signal(sig);
+        }
+    }
+
+    /// SP4.5-FIX-1 Part B Path 3 — baseline slice delta for the sub-scheduler
+    /// path inside `emSubViewPanel`.
+    ///
+    /// Production shape: an engine running on the sub-scheduler calls
+    /// `ctx.tree.create_child(...)`. The spawned panel's `PanelCycleEngine` is
+    /// deferred because `sub_scheduler.borrow_mut()` is held during
+    /// `DoTimeSlice`. The catch-up fires via
+    /// `self.sub_tree.register_pending_engines()` after `DoTimeSlice` returns
+    /// (SP4.5-FIX-1 commit 85828c2).
+    ///
+    /// Delta is measured from the scheduler counter at the moment `create_child`
+    /// returns inside the spawn engine's `Cycle` to the counter when the spawned
+    /// panel's `PanelCycleEngine` fires its first `Cycle`.
+    #[test]
+    fn sp4_5_fix_1_timing_sub_scheduler_baseline_slices() {
+        let mut panel = emSubViewPanel::new(crate::emContext::emContext::NewRoot());
+        let sub_root = panel.sub_root();
+
+        // Captured inside SpawnShapeEngine::Cycle at the moment create_child
+        // returns.
+        let create_slice: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
+        let spawned_id: Rc<Cell<Option<crate::emPanelTree::PanelId>>> = Rc::new(Cell::new(None));
+
+        struct SpawnShapeEngine {
+            parent: crate::emPanelTree::PanelId,
+            spawned_out: Rc<Cell<Option<crate::emPanelTree::PanelId>>>,
+            create_slice_out: Rc<Cell<Option<u64>>>,
+            done: bool,
+        }
+        impl crate::emEngine::emEngine for SpawnShapeEngine {
+            fn Cycle(&mut self, ctx: &mut crate::emEngine::EngineCtx<'_>) -> bool {
+                if !self.done {
+                    let child = ctx.tree.create_child(self.parent, "spawned");
+                    self.spawned_out.set(Some(child));
+                    self.create_slice_out.set(Some(ctx.time_slice_counter()));
+                    self.done = true;
+                }
+                false
+            }
+        }
+
+        // Register the spawn engine on the sub_scheduler.
+        let spawn_eid = panel.sub_scheduler.borrow_mut().register_engine(
+            crate::emEngine::Priority::Medium,
+            Box::new(SpawnShapeEngine {
+                parent: sub_root,
+                spawned_out: spawned_id.clone(),
+                create_slice_out: create_slice.clone(),
+                done: false,
+            }),
+        );
+        panel.sub_scheduler.borrow_mut().wake_up(spawn_eid);
+
+        let mut empty_windows: HashMap<
+            winit::window::WindowId,
+            std::rc::Rc<std::cell::RefCell<crate::emWindow::emWindow>>,
+        > = HashMap::new();
+
+        // Slice 1: SpawnShapeEngine::Cycle fires, calls create_child, captures
+        // create_slice. The spawned panel's PanelCycleEngine is not yet
+        // registered (deferred because sub_scheduler borrow_mut is held during
+        // DoTimeSlice).
+        panel
+            .sub_scheduler
+            .borrow_mut()
+            .DoTimeSlice(&mut panel.sub_tree, &mut empty_windows);
+
+        let create_at = create_slice
+            .get()
+            .expect("SpawnShapeEngine must have captured create_slice in slice 1");
+        let child = spawned_id
+            .get()
+            .expect("SpawnShapeEngine must have set spawned_id");
+
+        // Mirrors emSubViewPanel::Cycle (SP4.5-FIX-1 fix): register engines
+        // that were deferred because sub_scheduler.borrow_mut was held during
+        // DoTimeSlice.
+        panel.sub_tree.register_pending_engines();
+
+        // Attach the first-cycle probe to the spawned panel's engine.
+        let child_eid = panel
+            .sub_tree
+            .GetRec(child)
+            .and_then(|p| p.engine_id)
+            .expect("spawned panel must have engine_id after register_pending_engines");
+        let cycled_at: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
+        {
+            let mut s = panel.sub_scheduler.borrow_mut();
+            s.attach_first_cycle_probe(child_eid, cycled_at.clone());
+            // Mirror C++ emPanel constructor: a freshly-created panel wakes
+            // itself immediately. In Rust the PanelCycleEngine adapter starts
+            // sleeping; wake it so it runs in the next slice.
+            s.wake_up(child_eid);
+        }
+
+        // Drive slices until the probe fires (or bail at 10 to prevent hang).
+        // Between slices, drain any pending view ops and call
+        // register_pending_engines (mirrors emSubViewPanel::Cycle production
+        // loop).
+        for _ in 0..10 {
+            if cycled_at.get().is_some() {
+                break;
+            }
+            // Drain any pending view ops queued during the previous slice
+            // (mirrors App::about_to_wait SchedOp drain).
+            let ops: Vec<crate::emView::SchedOp> = panel
+                .sub_view
+                .borrow_mut()
+                .pending_sched_ops
+                .drain(..)
+                .collect();
+            {
+                let mut s = panel.sub_scheduler.borrow_mut();
+                for op in ops {
+                    op.apply_to(&mut s);
+                }
+            }
+            panel
+                .sub_scheduler
+                .borrow_mut()
+                .DoTimeSlice(&mut panel.sub_tree, &mut empty_windows);
+            panel.sub_tree.register_pending_engines();
+        }
+
+        let cycled_at_val = cycled_at
+            .get()
+            .expect("spawned panel's PanelCycleEngine must have cycled within 10 slices");
+
+        let delta = cycled_at_val - create_at;
+
+        // Cleanup before assertion so the scheduler Drop invariant holds even
+        // if the assert panics. Remove the spawn engine (already done its job);
+        // teardown handles root removal + view engine deregistration.
+        panel.sub_scheduler.borrow_mut().remove_engine(spawn_eid);
+        teardown(&mut panel);
+
+        // Baseline locked via first-run measurement. Re-run with
+        // `panic!("MEASURED_DELTA={}", delta);` to re-measure if the
+        // production scheduling shape changes.
+        assert_eq!(
+            delta, 1u64,
+            "SP4.5-FIX-1 sub-scheduler slice delta drifted; re-run Part B measurement"
+        );
+    }
+}
