@@ -72,7 +72,7 @@ fn remove_panel_with_engine() {
     // Register an engine associated with this panel
     let eng = h
         .scheduler
-        .register_engine(Priority::Medium, Box::new(DummyEngine));
+        .register_engine( Box::new(DummyEngine),Priority::Medium);
     h.scheduler.wake_up(eng);
     h.tick();
 

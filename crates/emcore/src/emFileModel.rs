@@ -898,7 +898,8 @@ mod tests {
             use winit::window::WindowId;
             let mut tree = PanelTree::new();
             let mut windows: HashMap<WindowId, Rc<RefCell<emWindow>>> = HashMap::new();
-            sched.DoTimeSlice(&mut tree, &mut windows);
+            let __root_ctx = crate::emContext::emContext::NewRoot();
+            sched.DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
         }
 
         assert!(ps_model.HasAccess(agent));

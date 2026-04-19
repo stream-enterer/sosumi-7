@@ -358,7 +358,7 @@ mod platform {
                 inner: Rc::clone(&inner),
                 timer_signal,
             };
-            let engine_id = scheduler.register_engine(Priority::Low, Box::new(engine));
+            let engine_id = scheduler.register_engine( Box::new(engine),Priority::Low);
             scheduler.connect(timer_signal, engine_id);
 
             Self {

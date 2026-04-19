@@ -112,7 +112,7 @@ impl EngineCtx<'_> {
         behavior: Box<dyn crate::emEngine::emEngine>,
         pri: Priority,
     ) -> EngineId {
-        self.scheduler.register_engine(pri, behavior)
+        self.scheduler.register_engine(behavior, pri)
     }
 }
 
@@ -146,7 +146,7 @@ impl SchedCtx<'_> {
         behavior: Box<dyn crate::emEngine::emEngine>,
         pri: Priority,
     ) -> EngineId {
-        self.scheduler.register_engine(pri, behavior)
+        self.scheduler.register_engine(behavior, pri)
     }
 
     pub(crate) fn wake_up(&mut self, eng: EngineId) {
@@ -164,7 +164,7 @@ impl ConstructCtx for SchedCtx<'_> {
         behavior: Box<dyn crate::emEngine::emEngine>,
         pri: Priority,
     ) -> EngineId {
-        self.scheduler.register_engine(pri, behavior)
+        self.scheduler.register_engine(behavior, pri)
     }
 
     fn wake_up(&mut self, eng: EngineId) {
@@ -182,7 +182,7 @@ impl ConstructCtx for InitCtx<'_> {
         behavior: Box<dyn crate::emEngine::emEngine>,
         pri: Priority,
     ) -> EngineId {
-        self.scheduler.register_engine(pri, behavior)
+        self.scheduler.register_engine(behavior, pri)
     }
 
     fn wake_up(&mut self, eng: EngineId) {

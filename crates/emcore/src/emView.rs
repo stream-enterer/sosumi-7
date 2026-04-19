@@ -3140,8 +3140,8 @@ impl emView {
         let (engine_id, eoi_signal, visiting_va_engine_id) = {
             let mut sched = scheduler.borrow_mut();
             let engine_id = sched.register_engine(
-                super::emEngine::Priority::High,
                 Box::new(UpdateEngineClass::new(self_view_weak.clone())),
+                super::emEngine::Priority::High,
             );
             let eoi_signal = sched.create_signal();
             // W4 Task 1.3: register the VisitingVA engine. C++ equivalent:
@@ -3149,8 +3149,8 @@ impl emView {
             // (see emViewAnimator.cpp:930 + emEngine ctor chain).
             // C++ emViewAnimator base ctor sets HIGH_PRIORITY (emViewAnimator.cpp:39).
             let visiting_va_engine_id = sched.register_engine(
-                super::emEngine::Priority::High,
                 Box::new(VisitingVAEngineClass::new(self_view_weak)),
+                super::emEngine::Priority::High,
             );
             (engine_id, eoi_signal, visiting_va_engine_id)
         };
@@ -3418,8 +3418,8 @@ impl emView {
             sched.remove_engine(old);
         }
         let eng_id = sched.register_engine(
-            super::emEngine::Priority::High,
             Box::new(EOIEngineClass::new(sig)),
+            super::emEngine::Priority::High,
         );
         sched.wake_up(eng_id);
         self.eoi_engine_id = Some(eng_id);
@@ -5060,15 +5060,16 @@ mod tests {
             }
         }
         let eid = scheduler.borrow_mut().register_engine(
-            super::super::emEngine::Priority::Medium,
             Box::new(OneShot {
                 op: Some(SchedOp::Fire(sig)),
             }),
+            super::super::emEngine::Priority::Medium,
         );
         scheduler.borrow_mut().wake_up(eid);
         let mut tree2 = PanelTree::new();
         let mut wins = std::collections::HashMap::new();
-        scheduler.borrow_mut().DoTimeSlice(&mut tree2, &mut wins);
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        scheduler.borrow_mut().DoTimeSlice(&mut tree2, &mut wins, &__root_ctx);
         scheduler.borrow_mut().remove_engine(eid);
     }
 
@@ -6316,18 +6317,19 @@ mod tests {
         // Register a listener that records when EOISignal fires.
         let fired = Rc::new(std::cell::Cell::new(false));
         let listener_id = sched.borrow_mut().register_engine(
-            Priority::Low,
             Box::new(ListenEngine {
                 watched: eoi,
                 fired: Rc::clone(&fired),
             }),
+            Priority::Low,
         );
         sched.borrow_mut().connect(eoi, listener_id);
 
         v_rc.borrow_mut().SignalEOIDelayed();
         let mut windows = std::collections::HashMap::new();
         for _ in 0..10 {
-            sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+            let __root_ctx = crate::emContext::emContext::NewRoot();
+            sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
             if fired.get() {
                 break;
             }
@@ -6602,10 +6604,10 @@ mod tests {
         }
         let cycled = Rc::new(RefCell::new(false));
         let recv_id = sched.borrow_mut().register_engine(
-            Priority::Low,
             Box::new(Receiver {
                 cycled: Rc::clone(&cycled),
             }),
+            Priority::Low,
         );
 
         // Prime Update once so the view is in a stable "after-first-Update"
@@ -6649,7 +6651,8 @@ mod tests {
 
         let mut windows: HashMap<_, _> = HashMap::new();
         windows.insert(win_id, Rc::clone(&win));
-        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
 
         assert!(
             *cycled.borrow(),
@@ -6754,7 +6757,8 @@ mod tests {
         // teardown); drains queued Disconnect/RemoveSignal/Fire ops; exits.
         let mut windows: HashMap<_, _> = HashMap::new();
         windows.insert(win_id, Rc::clone(&win));
-        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
 
         assert!(
             win.borrow().view().PopupWindow.is_none(),
@@ -6831,7 +6835,8 @@ mod tests {
         // either progresses (remaining active) or cleanly deactivates.
         sched.borrow_mut().wake_up(visiting_id);
         let mut windows = std::collections::HashMap::new();
-        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
 
         // Either outcome is valid — we only assert that Cycle ran without panic.
         let _ = view_rc.borrow().VisitingVA.borrow().is_active();

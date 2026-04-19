@@ -320,9 +320,10 @@ impl PanelBehavior for emSubViewPanel {
             winit::window::WindowId,
             std::rc::Rc<std::cell::RefCell<crate::emWindow::emWindow>>,
         > = std::collections::HashMap::new();
+        let __root_ctx = crate::emContext::emContext::NewRoot();
         self.sub_scheduler
             .borrow_mut()
-            .DoTimeSlice(&mut self.sub_tree, &mut empty_windows);
+            .DoTimeSlice(&mut self.sub_tree, &mut empty_windows, &__root_ctx);
 
         // SP4.5 fix: register any sub-tree panels created via `create_child`
         // from inside a sub-scheduler engine's `Cycle`. Their
@@ -570,13 +571,13 @@ mod sp4_5_fix_1_tests {
 
         // Register the spawn engine on the sub_scheduler.
         let spawn_eid = panel.sub_scheduler.borrow_mut().register_engine(
-            crate::emEngine::Priority::Medium,
             Box::new(SpawnShapeEngine {
                 parent: sub_root,
                 spawned_out: spawned_id.clone(),
                 create_slice_out: create_slice.clone(),
                 done: false,
             }),
+            crate::emEngine::Priority::Medium,
         );
         panel.sub_scheduler.borrow_mut().wake_up(spawn_eid);
 
@@ -589,10 +590,11 @@ mod sp4_5_fix_1_tests {
         // create_slice. The spawned panel's PanelCycleEngine is not yet
         // registered (deferred because sub_scheduler borrow_mut is held during
         // DoTimeSlice).
+        let __root_ctx = crate::emContext::emContext::NewRoot();
         panel
             .sub_scheduler
             .borrow_mut()
-            .DoTimeSlice(&mut panel.sub_tree, &mut empty_windows);
+            .DoTimeSlice(&mut panel.sub_tree, &mut empty_windows, &__root_ctx);
 
         let create_at = create_slice
             .get()
@@ -644,10 +646,11 @@ mod sp4_5_fix_1_tests {
                     op.apply_to(&mut s);
                 }
             }
+            let __root_ctx = crate::emContext::emContext::NewRoot();
             panel
                 .sub_scheduler
                 .borrow_mut()
-                .DoTimeSlice(&mut panel.sub_tree, &mut empty_windows);
+                .DoTimeSlice(&mut panel.sub_tree, &mut empty_windows, &__root_ctx);
             panel.sub_tree.register_pending_engines();
         }
 

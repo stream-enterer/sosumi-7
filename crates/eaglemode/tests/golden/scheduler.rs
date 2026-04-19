@@ -14,7 +14,8 @@ use winit::window::WindowId;
 fn slice(sched: &mut EngineScheduler) {
     let mut tree = PanelTree::new();
     let mut windows: HashMap<WindowId, std::rc::Rc<std::cell::RefCell<emWindow>>> = HashMap::new();
-    sched.DoTimeSlice(&mut tree, &mut windows);
+    let __root_ctx = emcore::emContext::emContext::NewRoot();
+    sched.DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
 }
 
 // ─── Helper: engine that records Cycle calls ────────────────────
@@ -88,12 +89,12 @@ fn signal_abort() {
     let sig = sched.create_signal();
 
     let eng = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "target",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Medium,
     );
     sched.connect(sig, eng);
 
@@ -120,12 +121,12 @@ fn timer_oneshot() {
     let log = Rc::new(RefCell::new(Vec::new()));
 
     let eng = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "timer_recv",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Medium,
     );
     sched.connect(sig, eng);
 
@@ -156,12 +157,12 @@ fn timer_periodic() {
     let log = Rc::new(RefCell::new(Vec::new()));
 
     let eng = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "periodic",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Medium,
     );
     sched.connect(sig, eng);
 
@@ -196,12 +197,12 @@ fn timer_cancel() {
     let log = Rc::new(RefCell::new(Vec::new()));
 
     let eng = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "no_fire",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Medium,
     );
     sched.connect(sig, eng);
 
@@ -250,12 +251,12 @@ fn engine_basic() {
     let log = Rc::new(RefCell::new(Vec::new()));
 
     let eng = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "basic",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Medium,
     );
     sched.connect(sig, eng);
 
@@ -276,28 +277,28 @@ fn engine_priority() {
     let log = Rc::new(RefCell::new(Vec::new()));
 
     let vl = sched.register_engine(
-        Priority::VeryLow,
         Box::new(RecordingEngine {
             label: "very_low",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::VeryLow,
     );
     let med = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "medium",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Medium,
     );
     let vh = sched.register_engine(
-        Priority::VeryHigh,
         Box::new(RecordingEngine {
             label: "very_high",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::VeryHigh,
     );
 
     sched.wake_up(vl);
@@ -320,12 +321,12 @@ fn engine_wake_sleep() {
     let log = Rc::new(RefCell::new(Vec::new()));
 
     let eng = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "ws",
             log: Rc::clone(&log),
             stay_awake: true, // stays awake each Cycle
         }),
+        Priority::Medium,
     );
 
     // Wake → should Cycle
@@ -381,7 +382,6 @@ fn engine_multi_signal() {
     }
 
     let eng = sched.register_engine(
-        Priority::Medium,
         Box::new(MultiSigEngine {
             sig_a,
             sig_b,
@@ -390,6 +390,7 @@ fn engine_multi_signal() {
             b_seen: Rc::clone(&b_seen),
             c_seen: Rc::clone(&c_seen),
         }),
+        Priority::Medium,
     );
     sched.connect(sig_a, eng);
     sched.connect(sig_b, eng);

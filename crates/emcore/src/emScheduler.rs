@@ -146,7 +146,7 @@ impl EngineScheduler {
     // ── emEngine API ──────────────────────────────────────────────────
 
     /// Register an engine with the given priority and behavior. Starts sleeping.
-    pub fn register_engine(&mut self, priority: Priority, behavior: Box<dyn emEngine>) -> EngineId {
+    pub fn register_engine(&mut self, behavior: Box<dyn emEngine>, priority: Priority) -> EngineId {
         self.inner.engines.insert(EngineData {
             priority,
             awake_state: -1, // sleeping
@@ -279,7 +279,14 @@ impl EngineScheduler {
         &mut self,
         tree: &mut PanelTree,
         windows: &mut HashMap<WindowId, std::rc::Rc<std::cell::RefCell<emWindow>>>,
+        root_context: &std::rc::Rc<crate::emContext::emContext>,
     ) {
+        // Task 3: root_context is held for the new EngineCtx dispatch that
+        // Task 9 installs when the emEngine::Cycle trait flips to the
+        // emEngineCtx::EngineCtx type. Until then, the inner Cycle call
+        // keeps using the legacy emEngine::EngineCtx and root_context is
+        // not yet consumed. Bind so the parameter is not flagged unused.
+        let _ = root_context;
         self.inner.time_slice_counter += 1;
         self.inner.deadline = Instant::now() + TIME_SLICE_DURATION;
         let next_parity = self.inner.time_slice ^ 1;
@@ -404,9 +411,10 @@ impl EngineScheduler {
     pub fn run(&mut self) {
         let mut tree = PanelTree::new();
         let mut windows = HashMap::new();
+        let root_context = crate::emContext::emContext::NewRoot();
         self.terminated = false;
         while !self.terminated {
-            self.DoTimeSlice(&mut tree, &mut windows);
+            self.DoTimeSlice(&mut tree, &mut windows, &root_context);
         }
     }
 
@@ -502,7 +510,8 @@ mod tests {
     fn slice(sched: &mut EngineScheduler) {
         let mut tree = PanelTree::new();
         let mut windows = HashMap::new();
-        sched.DoTimeSlice(&mut tree, &mut windows);
+        let root_context = crate::emContext::emContext::NewRoot();
+        sched.DoTimeSlice(&mut tree, &mut windows, &root_context);
     }
 
     struct CountingEngine {
@@ -534,10 +543,10 @@ mod tests {
         let mut sched = EngineScheduler::new();
         let count = Rc::new(RefCell::new(0u32));
         let id = sched.register_engine(
-            Priority::Medium,
             Box::new(CountingEngine {
                 count: Rc::clone(&count),
             }),
+            Priority::Medium,
         );
         sched.wake_up(id);
         slice(&mut sched);
@@ -553,11 +562,11 @@ mod tests {
         let mut sched = EngineScheduler::new();
         let count = Rc::new(RefCell::new(0u32));
         let id = sched.register_engine(
-            Priority::Medium,
             Box::new(PollingEngine {
                 remaining: 3,
                 count: Rc::clone(&count),
             }),
+            Priority::Medium,
         );
         sched.wake_up(id);
         slice(&mut sched);
@@ -576,10 +585,10 @@ mod tests {
         let count = Rc::new(RefCell::new(0u32));
         let sig = sched.create_signal();
         let eng = sched.register_engine(
-            Priority::High,
             Box::new(CountingEngine {
                 count: Rc::clone(&count),
             }),
+            Priority::High,
         );
         sched.connect(sig, eng);
         // emEngine is sleeping, nothing should run
@@ -598,10 +607,10 @@ mod tests {
         let count = Rc::new(RefCell::new(0u32));
         let sig = sched.create_signal();
         let eng = sched.register_engine(
-            Priority::Medium,
             Box::new(CountingEngine {
                 count: Rc::clone(&count),
             }),
+            Priority::Medium,
         );
         sched.connect(sig, eng);
         sched.fire(sig);
@@ -628,18 +637,18 @@ mod tests {
         }
 
         let low = sched.register_engine(
-            Priority::Low,
             Box::new(OrderEngine {
                 label: "low",
                 order: Rc::clone(&order),
             }),
+            Priority::Low,
         );
         let high = sched.register_engine(
-            Priority::VeryHigh,
             Box::new(OrderEngine {
                 label: "high",
                 order: Rc::clone(&order),
             }),
+            Priority::VeryHigh,
         );
         sched.wake_up(low);
         sched.wake_up(high);
@@ -676,13 +685,13 @@ mod tests {
         let a_fired = Rc::new(RefCell::new(false));
         let b_fired = Rc::new(RefCell::new(false));
         let eng = sched.register_engine(
-            Priority::Medium,
             Box::new(CheckSignalEngine {
                 sig_a,
                 sig_b,
                 a_fired: Rc::clone(&a_fired),
                 b_fired: Rc::clone(&b_fired),
             }),
+            Priority::Medium,
         );
         sched.connect(sig_a, eng);
         sched.connect(sig_b, eng);
@@ -700,10 +709,10 @@ mod tests {
         let mut sched = EngineScheduler::new();
         let sig = sched.create_signal();
         let eng = sched.register_engine(
-            Priority::Medium,
             Box::new(CountingEngine {
                 count: Rc::new(RefCell::new(0)),
             }),
+            Priority::Medium,
         );
 
         // Connect twice
@@ -738,18 +747,18 @@ mod tests {
         }
 
         let eng_a = sched.register_engine(
-            Priority::Low,
             Box::new(OrderEngine {
                 label: "A",
                 order: Rc::clone(&order),
             }),
+            Priority::Low,
         );
         let eng_b = sched.register_engine(
-            Priority::High,
             Box::new(OrderEngine {
                 label: "B",
                 order: Rc::clone(&order),
             }),
+            Priority::High,
         );
 
         // Promote A to VeryHigh — it should run before B
@@ -797,19 +806,19 @@ mod tests {
         }
 
         let eng_b = sched.register_engine(
-            Priority::Medium,
             Box::new(ReceivingEngine {
                 log: Rc::clone(&log),
             }),
+            Priority::Medium,
         );
         sched.connect(sig, eng_b);
 
         let _eng_a = sched.register_engine(
-            Priority::High,
             Box::new(FiringEngine {
                 sig,
                 log: Rc::clone(&log),
             }),
+            Priority::High,
         );
         sched.wake_up(_eng_a);
 
@@ -853,19 +862,19 @@ mod tests {
         }
 
         let eng_high = sched.register_engine(
-            Priority::VeryHigh,
             Box::new(HighEngine {
                 log: Rc::clone(&log),
             }),
+            Priority::VeryHigh,
         );
         sched.connect(sig, eng_high);
 
         let eng_low = sched.register_engine(
-            Priority::VeryLow,
             Box::new(FiringEngine {
                 sig,
                 log: Rc::clone(&log),
             }),
+            Priority::VeryLow,
         );
         sched.wake_up(eng_low);
 

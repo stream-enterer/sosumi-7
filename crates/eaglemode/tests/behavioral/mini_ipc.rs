@@ -101,7 +101,8 @@ mod linux {
         let mut tree = PanelTree::new();
         let mut windows: HashMap<WindowId, std::rc::Rc<std::cell::RefCell<emWindow>>> =
             HashMap::new();
-        sched.DoTimeSlice(&mut tree, &mut windows);
+        let __root_ctx = emcore::emContext::emContext::NewRoot();
+        sched.DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
     }
 
     static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);

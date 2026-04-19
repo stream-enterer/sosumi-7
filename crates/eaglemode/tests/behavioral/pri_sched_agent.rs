@@ -11,7 +11,8 @@ use winit::window::WindowId;
 fn slice(sched: &mut EngineScheduler) {
     let mut tree = PanelTree::new();
     let mut windows: HashMap<WindowId, std::rc::Rc<std::cell::RefCell<emWindow>>> = HashMap::new();
-    sched.DoTimeSlice(&mut tree, &mut windows);
+    let __root_ctx = emcore::emContext::emContext::NewRoot();
+    sched.DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
 }
 
 #[test]

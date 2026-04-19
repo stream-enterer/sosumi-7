@@ -593,7 +593,7 @@ impl PanelTree {
             // post-slice catch-up sweep.
             return;
         };
-        let eid = sched.register_engine(Priority::Medium, Box::new(adapter));
+        let eid = sched.register_engine( Box::new(adapter),Priority::Medium);
         self.panels[id].engine_id = Some(eid);
     }
 
@@ -3350,11 +3350,11 @@ mod tests {
         }
 
         let spawn_eid = sched.borrow_mut().register_engine(
-            crate::emEngine::Priority::Medium,
             Box::new(ChildSpawnEngine {
                 parent: root,
                 spawned: false,
             }),
+            crate::emEngine::Priority::Medium,
         );
         sched.borrow_mut().wake_up(spawn_eid);
 
@@ -3362,9 +3362,10 @@ mod tests {
             winit::window::WindowId,
             Rc<RefCell<crate::emWindow::emWindow>>,
         > = HashMap::new();
+        let __root_ctx = crate::emContext::emContext::NewRoot();
         sched
             .borrow_mut()
-            .DoTimeSlice(&mut tree, &mut empty_windows);
+            .DoTimeSlice(&mut tree, &mut empty_windows, &__root_ctx);
 
         let child = tree
             .GetRec(root)
@@ -3499,8 +3500,10 @@ mod tests {
 
         // Drive each scheduler one slice each.
         let mut windows = HashMap::new();
-        sched_a.borrow_mut().DoTimeSlice(&mut tree_a, &mut windows);
-        sched_b.borrow_mut().DoTimeSlice(&mut tree_b, &mut windows);
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        sched_a.borrow_mut().DoTimeSlice(&mut tree_a, &mut windows, &__root_ctx);
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        sched_b.borrow_mut().DoTimeSlice(&mut tree_b, &mut windows, &__root_ctx);
 
         assert_eq!(
             recorded_a.get(),
@@ -3603,7 +3606,8 @@ mod tests {
         // scheduler is borrowed, the WakeUp op is queued onto
         // view.pending_sched_ops rather than applied directly.
         let mut windows = HashMap::new();
-        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
         assert_eq!(a_cycles.get(), 1, "A must have cycled once");
         assert_eq!(woke.get(), 1, "A must have called wake_up_panel");
         assert_eq!(
@@ -3627,7 +3631,8 @@ mod tests {
         }
 
         // Slice 2: B should now run.
-        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
         assert_eq!(
             b_cycles.get(),
             1,
@@ -3689,13 +3694,13 @@ mod tests {
         }
 
         let spawn_eid = sched.borrow_mut().register_engine(
-            crate::emEngine::Priority::Medium,
             Box::new(StartupShapeEngine {
                 parent: root,
                 spawned_out: spawned_id.clone(),
                 create_slice_out: create_slice.clone(),
                 done: false,
             }),
+            crate::emEngine::Priority::Medium,
         );
         sched.borrow_mut().wake_up(spawn_eid);
 
@@ -3704,7 +3709,8 @@ mod tests {
         // not yet registered (deferred until register_pending_engines).
         let mut windows: HashMap<winit::window::WindowId, Rc<RefCell<crate::emWindow::emWindow>>> =
             HashMap::new();
-        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
 
         let create_at = create_slice
             .get()
@@ -3747,7 +3753,8 @@ mod tests {
                     op.apply_to(&mut s);
                 }
             }
-            sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
+            let __root_ctx = crate::emContext::emContext::NewRoot();
+            sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows, &__root_ctx);
             tree.register_pending_engines();
         }
 
@@ -3826,9 +3833,10 @@ mod tests {
 
         let mut slices = 0u64;
         while probe_captured.get().is_none() {
+            let __root_ctx = crate::emContext::emContext::NewRoot();
             sched
                 .borrow_mut()
-                .DoTimeSlice(&mut tree, &mut empty_windows);
+                .DoTimeSlice(&mut tree, &mut empty_windows, &__root_ctx);
             tree.register_pending_engines();
             slices += 1;
             assert!(

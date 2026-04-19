@@ -472,7 +472,7 @@ impl ApplicationHandler for App {
         //   DoTimeSlice(&mut self.windows, &self.context, &mut self.tree, ...)
         // For now, keep the call form and let Task 3 adjust.
         self.scheduler
-            .DoTimeSlice(&mut self.tree, &mut self.windows);
+            .DoTimeSlice(&mut self.tree, &mut self.windows, &self.context);
 
         // SP4.5 fix: register any panels created via `create_child` from
         // inside an engine's `Cycle` (e.g. `StartupEngine`). Their
