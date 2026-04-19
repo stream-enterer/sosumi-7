@@ -6,8 +6,9 @@ use slotmap::{new_key_type, SlotMap};
 
 use crate::dlog;
 
-use super::emEngine::EngineId;
+use super::emEngine::{EngineId, Priority};
 use super::emPanel::{NoticeFlags, PanelBehavior, PanelState};
+use super::emPanelCycleEngine::PanelCycleEngine;
 use crate::emColor::emColor;
 use crate::emPanel::Rect;
 use crate::emPanelCtx::PanelCtx;
@@ -231,7 +232,6 @@ pub(crate) struct PanelData {
     /// engine from construction. In Rust the engine registration is done
     /// by `PanelTree::init_panel_view` via a `PanelCycleEngine` adapter.
     /// `None` until `init_panel_view` runs (panel not yet attached to a view).
-    #[allow(dead_code)] // SP4.5: written by Task 2.3 (`init_panel_view`); remove then.
     pub(crate) engine_id: Option<EngineId>,
 }
 
@@ -533,15 +533,65 @@ impl PanelTree {
         view: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
     ) {
         self.panels[id].View = view.clone();
+        self.register_engine_for(id);
         let mut stack = vec![id];
         while let Some(p) = stack.pop() {
             let mut child = self.panels[p].first_child;
             while let Some(c) = child {
                 self.panels[c].View = view.clone();
+                self.register_engine_for(c);
                 stack.push(c);
                 child = self.panels[c].next_sibling;
             }
         }
+    }
+
+    /// Register `id`'s scheduler engine if the panel has a live view and
+    /// does not already have one. Called from `init_panel_view` and its
+    /// descendant walk, and from `create_child` (SP4.5).
+    fn register_engine_for(&mut self, id: PanelId) {
+        if self.panels.get(id).and_then(|p| p.engine_id).is_some() {
+            return; // idempotent re-attachment guard
+        }
+        let Some(view_weak) = self
+            .panels
+            .get(id)
+            .map(|p| p.View.clone())
+            .filter(|w| w.strong_count() > 0)
+        else {
+            return; // no view yet (or view dropped)
+        };
+        let Some(view_rc) = view_weak.upgrade() else {
+            return;
+        };
+        let Some(sched_rc) = view_rc.borrow().scheduler_ref().cloned() else {
+            return; // unit-test bare view with no scheduler
+        };
+        let adapter = PanelCycleEngine {
+            panel_id: id,
+            view: view_weak,
+        };
+        let eid = sched_rc
+            .borrow_mut()
+            .register_engine(Priority::Medium, Box::new(adapter));
+        self.panels[id].engine_id = Some(eid);
+    }
+
+    /// Deregister `id`'s scheduler engine. Uses
+    /// `queue_or_apply_sched_op(SchedOp::RemoveEngine(eid))` on the owning
+    /// view so a panel removed from inside a sibling's `Cycle` (scheduler
+    /// already borrowed) defers the removal to after the slice.
+    fn deregister_engine_for(&mut self, id: PanelId) {
+        let Some(eid) = self.panels.get_mut(id).and_then(|p| p.engine_id.take()) else {
+            return;
+        };
+        let Some(view_rc) = self.panels.get(id).and_then(|p| p.View.upgrade()) else {
+            // View gone; scheduler teardown will drain engines.
+            return;
+        };
+        view_rc
+            .borrow_mut()
+            .queue_or_apply_sched_op(crate::emView::SchedOp::RemoveEngine(eid));
     }
 
     /// Propagate a view weak reference to a panel and all its descendants.
@@ -568,6 +618,9 @@ impl PanelTree {
 
         let id = self.panels.insert(PanelData::new(name.to_string()));
         self.panels[id].View = parent_view;
+        if self.panels[id].View.strong_count() > 0 {
+            self.register_engine_for(id);
+        }
         self.name_index.insert((parent, name.to_string()), id);
 
         // Link into parent's child list
@@ -611,6 +664,13 @@ impl PanelTree {
         for &desc_id in &descendants {
             self.remove_from_notice_list(desc_id);
         }
+
+        // SP4.5: deregister scheduler engines for self and descendants while
+        // the View weak ref is still reachable.
+        for &desc_id in &descendants {
+            self.deregister_engine_for(desc_id);
+        }
+        self.deregister_engine_for(id);
 
         // Unlink from parent's child list
         if let Some(parent_id) = self.panels[id].parent {
@@ -3111,5 +3171,95 @@ mod tests {
             t.panels[root].View.upgrade().is_none(),
             "View must be Weak::new() until populated by create_root (Task 2.2)"
         );
+    }
+
+    // ── SP4.5 engine-registration lifecycle tests ─────────────────────
+    //
+    // Each test wires a scheduler into `emView` before calling
+    // `set_panel_view` so that `PanelTree::register_engine_for` sees a
+    // live scheduler and registers a `PanelCycleEngine` adapter.
+    // Scheduler `Drop` asserts "no dangling engines"; tests clean up by
+    // removing panels (which enqueues `SchedOp::RemoveEngine`) before
+    // dropping the scheduler.
+
+    use crate::emEngine::EngineId as _EngineId;
+    use crate::emScheduler::EngineScheduler;
+    use crate::emView::emView;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    /// Build a fresh PanelTree + emView (wrapped in Rc<RefCell>) +
+    /// scheduler, with the view's scheduler wired and the root panel's
+    /// View weak set. Returns (tree, view_rc, sched_rc, root_id).
+    fn make_registered_tree() -> (
+        PanelTree,
+        Rc<RefCell<emView>>,
+        Rc<RefCell<EngineScheduler>>,
+        PanelId,
+    ) {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("root");
+        let view = Rc::new(RefCell::new(emView::new(
+            root,
+            800.0,
+            600.0,
+            Rc::new(RefCell::new(crate::emCoreConfig::emCoreConfig::default())),
+        )));
+        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        view.borrow_mut().set_scheduler(sched.clone());
+        tree.set_panel_view(root, Rc::downgrade(&view));
+        (tree, view, sched, root)
+    }
+
+    #[test]
+    fn sp4_5_panel_engine_registered_at_init_panel_view() {
+        let (mut tree, _view, sched, root) = make_registered_tree();
+        let eid: _EngineId = tree
+            .GetRec(root)
+            .and_then(|p| p.engine_id)
+            .expect("root panel should have engine_id after init_panel_view");
+        assert!(
+            sched.borrow().get_engine_priority(eid).is_some(),
+            "scheduler should hold the registered engine"
+        );
+        // Cleanup: remove root → deregisters engine so scheduler Drop passes.
+        tree.remove(root);
+        assert!(sched.borrow().get_engine_priority(eid).is_none());
+    }
+
+    #[test]
+    fn sp4_5_child_panel_engine_registered_via_init_propagation() {
+        let (mut tree, _view, sched, root) = make_registered_tree();
+        let child = tree.create_child(root, "child");
+        let eid = tree
+            .GetRec(child)
+            .and_then(|p| p.engine_id)
+            .expect("child should have engine_id inherited via create_child");
+        assert!(
+            sched.borrow().get_engine_priority(eid).is_some(),
+            "scheduler should have the registered child engine"
+        );
+        // Cleanup.
+        tree.remove(root);
+    }
+
+    #[test]
+    fn sp4_5_panel_engine_deregistered_on_panel_removal() {
+        let (mut tree, _view, sched, root) = make_registered_tree();
+        let child = tree.create_child(root, "child");
+        let eid = tree
+            .GetRec(child)
+            .and_then(|p| p.engine_id)
+            .expect("child has engine_id");
+        assert!(sched.borrow().get_engine_priority(eid).is_some());
+
+        tree.remove(child);
+
+        assert!(
+            sched.borrow().get_engine_priority(eid).is_none(),
+            "scheduler must not hold a removed panel's engine"
+        );
+        // Cleanup root engine too.
+        tree.remove(root);
     }
 }

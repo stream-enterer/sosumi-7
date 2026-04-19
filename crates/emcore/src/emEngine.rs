@@ -119,6 +119,21 @@ impl EngineCtx<'_> {
         self.scheduler.wake_up_engine(id);
     }
 
+    /// Remove an engine from the scheduler. Used by panel-tree removal
+    /// reached through a SchedOp drain (SP4.5). Mirrors
+    /// `EngineScheduler::remove_engine` against `EngineCtxInner`.
+    pub fn remove_engine(&mut self, id: EngineId) {
+        // Remove from wake queues
+        for queue in &mut self.scheduler.wake_queues {
+            queue.retain(|&e| e != id);
+        }
+        // Remove from all signal connections
+        for (_, sig) in &mut self.scheduler.signals {
+            sig.connected_engines.retain(|c| c.engine != id);
+        }
+        self.scheduler.engines.remove(id);
+    }
+
     /// Connect a signal to an engine so the engine wakes whenever the
     /// signal is fired. Forwards to `EngineScheduler::connect`.
     pub fn connect(&mut self, signal: super::emSignal::SignalId, engine: EngineId) {

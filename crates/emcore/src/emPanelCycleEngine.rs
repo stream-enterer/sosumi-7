@@ -19,7 +19,6 @@ use super::emPanelCtx::PanelCtx;
 use super::emPanelTree::PanelId;
 use super::emView::emView;
 
-#[allow(dead_code)] // SP4.5: constructed by Task 2.3 (`register_engine_for`); remove then.
 pub(crate) struct PanelCycleEngine {
     pub(crate) panel_id: PanelId,
     pub(crate) view: Weak<RefCell<emView>>,

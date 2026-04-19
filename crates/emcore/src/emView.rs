@@ -199,6 +199,10 @@ pub(crate) enum SchedOp {
     Connect(super::emSignal::SignalId, super::emEngine::EngineId),
     Disconnect(super::emSignal::SignalId, super::emEngine::EngineId),
     RemoveSignal(super::emSignal::SignalId),
+    /// Remove an engine from the scheduler. Panels deregister through this
+    /// on tree removal (SP4.5). Queued when the scheduler is already
+    /// borrowed (e.g. a panel deleting a sibling from inside `Cycle`).
+    RemoveEngine(super::emEngine::EngineId),
 }
 
 impl SchedOp {
@@ -211,6 +215,7 @@ impl SchedOp {
             SchedOp::Connect(s, e) => sched.connect(s, e),
             SchedOp::Disconnect(s, e) => sched.disconnect(s, e),
             SchedOp::RemoveSignal(s) => sched.remove_signal(s),
+            SchedOp::RemoveEngine(e) => sched.remove_engine(e),
         }
     }
 
@@ -222,6 +227,7 @@ impl SchedOp {
             SchedOp::Connect(s, e) => ctx.connect(s, e),
             SchedOp::Disconnect(s, e) => ctx.disconnect(s, e),
             SchedOp::RemoveSignal(s) => ctx.remove_signal(s),
+            SchedOp::RemoveEngine(e) => ctx.remove_engine(e),
         }
     }
 }
@@ -3098,6 +3104,15 @@ impl emView {
 
     pub fn set_scheduler(&mut self, scheduler: Rc<RefCell<super::emScheduler::EngineScheduler>>) {
         self.scheduler = Some(scheduler);
+    }
+
+    /// Access the attached scheduler (if any).
+    ///
+    /// SP4.5: `PanelTree::register_engine_for` reads this to register a
+    /// `PanelCycleEngine` adapter for each panel that has a live view.
+    /// Returns `None` for unit-test bare views without a scheduler.
+    pub fn scheduler_ref(&self) -> Option<&Rc<RefCell<super::emScheduler::EngineScheduler>>> {
+        self.scheduler.as_ref()
     }
 
     /// Wire the back-channel into `App::pending_actions` so that
