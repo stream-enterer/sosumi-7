@@ -36,7 +36,6 @@ cargo-nextest ntr
 ## Pre-commit hook
 
 Runs `cargo fmt` (auto-applied) then `clippy -D warnings` then `cargo-nextest ntr`.
-Do not skip with `--no-verify`. If a commit fails, fix the cause and retry.
 
 ## Code Rules
 
