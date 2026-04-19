@@ -268,11 +268,12 @@ Brainstorming on 2026-04-18 grouped the residuals into seven independently-sched
 | **SP2 — InvalidateHighlight scoping** | ~~2~~ | **Complete 2026-04-18** — audit found all 5 C++ call sites already mirrored in Rust as part of SP1's W1b task; no additional work needed. | `plans/2026-04-18-emview-followups-wave1.md` Task 3 |
 | **SP3 — CoreConfig ownership** | ~~10~~ | **Complete 2026-04-18** (merged as `c6bb071`). | `specs/2026-04-18-emview-sp3-coreconfig-ownership-design.md`, `plans/2026-04-18-emview-sp3-coreconfig-ownership.md` |
 | **SP4 — Scheduler re-entrant borrow → Phase-8 test** | ~~14 then 11~~ | **Complete 2026-04-18** (branch tip `c78c36b`; merge commit `2f2b1cd`). | `specs/2026-04-18-emview-sp4-update-engine-only-routing.md`, `plans/2026-04-18-emview-sp4-engine-only-update-routing.md` |
-| **SP5 — Per-view notice dispatch** | 12 | Blocked on multi-window roadmap decision | — |
+| **SP4.5 — `emPanel` engine-registration port (`run_panel_cycles`)** | 16 | Not started; ARCH; surfaced 2026-04-18 during SP5 brainstorming — same Rust-only-construct shape as SP5 notice dispatch, separate subsystem. | — |
+| **SP5 — Per-view notice dispatch** | 12 | Spec + plan written 2026-04-18; implementation not started. | `specs/2026-04-18-emview-sp5-per-view-notice-dispatch-design.md`, `plans/2026-04-18-emview-sp5-per-view-notice-dispatch.md` |
 | **SP6 — W3 surface de-dup** | 13 | Optional; may skip entirely | — |
 | **SP7 — emContext threading through view/window subsystem** | 15 | Not started; ARCH; surfaced 2026-04-18 during SP3 brainstorming | — |
 
-**Suggested execution order:** ~~SP1~~ → ~~SP3~~ → ~~SP4~~ → (SP5 if unblocked) → SP6 if wanted → SP7 when the motivation arrives. (SP2 turned out to be already done — landed in SP1 as W1b.) SP1, SP3, and SP4 landed 2026-04-18.
+**Suggested execution order:** ~~SP1~~ → ~~SP3~~ → ~~SP4~~ → (SP5 if unblocked) → SP4.5 (naturally pairs with SP5 — same divergence shape) → SP6 if wanted → SP7 when the motivation arrives. (SP2 turned out to be already done — landed in SP1 as W1b.) SP1, SP3, and SP4 landed 2026-04-18.
 
 **SP4 divergences from plan.** A few implementation details departed from the SP4 plan and are worth recording:
 
@@ -328,6 +329,32 @@ Brainstorming on 2026-04-18 grouped the residuals into seven independently-sched
     **Dependencies and ordering.** No hard blockers from SP3–SP6. Naturally pairs with whatever multi-window roadmap decision unblocks SP5, because per-window context nesting is the same question asked from a different direction. Defer until there is a motivating feature (real clipboard support, config persistence in the main binary, or the multi-window work for SP5); otherwise the churn buys nothing observable today.
 
     **Discovery trail.** SP3 brainstorming (2026-04-18) proposed three scopes: (A) minimal CoreConfig field, (B) also realign `SetAnimParamsByCoreConfig` signature to match C++, (C) also route acquisition through `emContext`. Investigation of (C) found that `emContext` is not threaded anywhere in the view/window subsystem today, making (C) a sub-project in its own right. SP3 adopted (B); (C) was extracted as this item.
+
+16. **[ARCH / SP4.5] `emPanel` engine-registration port (`run_panel_cycles` Rust-only divergence)** — surfaced 2026-04-18 during SP5 brainstorming as an explicit out-of-scope carve-out of the SP5 work. SP5 closed the per-view notice-dispatch divergence but deliberately did *not* touch `run_panel_cycles`, because the underlying cause is a separate structural gap.
+
+    **Gap.** In C++, `emPanel` inherits from `emEngine`. When a panel needs periodic cycling it registers *itself* with the scheduler via the `emEngine` base-class machinery (`WakeUp` → `Cycle`). There is no parallel per-frame "panel tick list"; panels participate in the same scheduler loop as every other engine. The Rust port does **not** mirror this inheritance relationship: `emPanel` is not an `emEngine` and has no equivalent self-registration path. Instead, `PanelTree` maintains a Rust-only `cycle_list: Vec<PanelId>` (`emPanelTree.rs` field; drained by `run_panel_cycles` at `emPanelTree.rs:1475`), and `emGUIFramework::about_to_wait` calls `self.tree.run_panel_cycles(pixel_tallness)` once per frame with an arbitrarily-chosen window's `CurrentPixelTallness` (the same "pick the first window" shortcut SP5 closed for notice dispatch).
+
+    **Why this is a separate sub-project, not SP5.** SP5's charter is per-view `HandleNotice` dispatch (C++ `emView.cpp:1312`). Fixing `run_panel_cycles` correctly means making `emPanel` participate in the `emEngine` registration pathway — i.e., giving every panel that wants cycling a real `emEngine` slot that registers with the per-view scheduler. That is a structural port (closer in spirit to SP4's engine-routing work) that affects any panel subclass relying on `Cycle()`, not just the per-view pixel-tallness pick. Lumping it into SP5 would conflate two orthogonal C++-fidelity debts and balloon SP5's blast radius well beyond the notice-dispatch core.
+
+    **What stays visibly wrong after SP5.** `emGUIFramework::about_to_wait` retains (post-SP5) a reduced pick-first-window pixel-tallness computation, solely to feed `run_panel_cycles`. Multi-window cycling then picks the wrong tallness for all views except the one winning the `windows.values().next()` race — exactly the shape SP5 closed for notices. A multi-window deployment would manifest the same class of bug (panel cycling running against the wrong view's tallness, potentially invalidating layout or animation timing for panels rooted in other views).
+
+    **Scope of SP4.5.**
+    - Make `emPanel` register per-view as an engine with the scheduler — either by introducing an `emEngine` trait/struct relationship that `emPanel` can participate in, or by adopting a Rust-side per-view `cycle_list` on `emView` (moving the list off `PanelTree` the same way SP5 moved `NoticeList`, so each view drives its own panel cycles from `emView::Update` using its own `CurrentPixelTallness`).
+    - Delete `PanelTree::cycle_list` and `PanelTree::run_panel_cycles`.
+    - Delete the pick-first-window pixel-tallness computation in `emGUIFramework::about_to_wait` — the last one standing post-SP5.
+    - Classify remaining "pick first window" patterns in `emGUIFramework` under the Port Ideology and either close them with the same mechanism or document as forced.
+
+    **Option A (cheap, mirrors SP5 exactly).** Move `cycle_list` ownership from `PanelTree` to `emView`. `emView::Update` drains its own `cycle_list` using `self.CurrentPixelTallness`. Panel-side registration keeps the current API shape (panels ask `emView` to schedule them via an emView-level method), but routing is per-view. Does not port the `emEngine` inheritance — that remains a Rust-only divergence — but closes the observable multi-window bug. Matches SP5 in flavor and blast radius (~120–180 lines).
+
+    **Option B (faithful to C++, larger).** Make `emPanel` an `emEngine` (trait or struct-embed). Panel cycling goes through the scheduler's normal engine loop; `cycle_list` disappears; `run_panel_cycles` disappears. Biggest fidelity win; bigger blast radius, particularly if `emEngine` in Rust is currently a trait that panels would need to dispatch through.
+
+    **Recommended approach.** Option A, by default. Option B if SP7 (`emContext` threading) or some other structural rework has already surfaced the `emEngine` trait questions and makes Option B cheap. Decide at spec time after confirming the `emEngine`/scheduler shape post-SP4.
+
+    **Blast radius estimate (Option A).** ~5 files touched: `emPanelTree.rs` (delete cycle_list + run_panel_cycles), `emView.rs` (add cycle_list + drain method), `emGUIFramework.rs` (delete the pixel-tallness block entirely), two or three panel-subclass call sites that register for cycling. ~120–180 lines net — similar to SP5 without the `Rc<RefCell<emView>>` cascade (already paid by SP5).
+
+    **Dependencies and ordering.** Hard dependency on SP5 (Option A re-uses the `Rc<RefCell<emView>>` ownership SP5 established and the per-view `emView::Update` dispatch slot SP5 wired). Naturally follows SP5. No dependency on SP6 or SP7.
+
+    **Discovery trail.** SP5 brainstorming (2026-04-18) flagged `run_panel_cycles` as an out-of-scope Rust-only construct when choosing what SP5 would and wouldn't touch. The user asked for that carve-out to be recorded as its own sub-project so the next operator isn't surprised that SP5 closed notice dispatch without closing the adjacent-looking `run_panel_cycles` shortcut.
 
 ---
 
