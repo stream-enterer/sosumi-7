@@ -10,6 +10,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use crate::emContext::emContext;
+use crate::emEngineCtx::DeferredAction as FrameworkDeferredAction;
 use crate::emInput::{InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emPanelTree::PanelTree;
@@ -86,10 +87,23 @@ pub type DeferredAction = Box<dyn FnOnce(&mut App, &ActiveEventLoop)>;
 pub struct App {
     pub gpu: Option<GpuContext>,
     pub screen: Option<emScreen>,
+    /// Scheduler handle.
+    ///
+    /// DIVERGED from spec §3.1/D4.1 (plain value): Chunk 2 carry-forward.
+    /// `emView::attach_to_scheduler` and the view's `self.scheduler: Option<Rc<RefCell<_>>>`
+    /// field still require a shared handle. Chunk 3 deletes SchedOp + the view's
+    /// scheduler field, at which point this narrows back to `EngineScheduler`.
     pub scheduler: Rc<RefCell<EngineScheduler>>,
     pub context: Rc<emContext>,
     pub tree: PanelTree,
+    // NOTE (Phase 1 Task 2): plan calls for `HashMap<WindowId, emWindow>` (plain
+    // value) but narrowing the wrapper cascades into dozens of call sites across
+    // emWindow / materialize_popup_surface / view wiring. Deferred to a later task.
     pub windows: HashMap<WindowId, Rc<RefCell<emWindow>>>,
+    /// Framework-level deferred actions produced by scheduler/view code that
+    /// need to run back on `App` between time slices. Spec §3.1 / §3.7 —
+    /// passed as `&mut Vec<DeferredAction>` into `EngineScheduler::DoTimeSlice`.
+    pub(crate) framework_actions: Vec<FrameworkDeferredAction>,
     pub input_state: emInputState,
     /// Deferred actions queued by input handlers that need `&ActiveEventLoop`
     /// (e.g., window creation for Duplicate/CreateControlWindow, popup
@@ -109,9 +123,10 @@ pub struct App {
 
 impl App {
     pub fn new(setup: SetupFn) -> Self {
-        let scheduler = Rc::new(RefCell::new(EngineScheduler::new()));
-        let file_update_signal = scheduler.borrow_mut().create_signal();
-        let context = emContext::NewRootWithScheduler(Rc::clone(&scheduler));
+        let mut scheduler = EngineScheduler::new();
+        let file_update_signal = scheduler.create_signal();
+        let context = emContext::NewRoot();
+        let scheduler = Rc::new(RefCell::new(scheduler));
         Self {
             gpu: None,
             screen: None,
@@ -119,6 +134,7 @@ impl App {
             context,
             tree: PanelTree::new(),
             windows: HashMap::new(),
+            framework_actions: Vec::new(),
             input_state: emInputState::new(),
             pending_actions: Rc::new(RefCell::new(Vec::new())),
             file_update_signal,
@@ -450,10 +466,28 @@ impl ApplicationHandler for App {
             self.scheduler.borrow_mut().fire(sig);
         }
 
-        // Run one scheduler time slice
-        self.scheduler
-            .borrow_mut()
-            .DoTimeSlice(&mut self.tree, &mut self.windows);
+        // Run one scheduler time slice. `framework_actions` is now owned by
+        // `App` per spec §3.1 and passed through as a `&mut Vec<DeferredAction>`
+        // parameter — engines push via `EngineCtx::framework_action` and the
+        // framework consumes here between slices.
+        //
+        // Disjoint-field borrow: destructure `self` so scheduler, tree, windows,
+        // context, and framework_actions can all be borrowed simultaneously.
+        {
+            let App {
+                ref scheduler,
+                ref mut tree,
+                ref mut windows,
+                ref context,
+                ref mut framework_actions,
+                ..
+            } = *self;
+            scheduler
+                .borrow_mut()
+                .DoTimeSlice(tree, windows, context, framework_actions);
+        }
+        // Chunk 2+ will extend this pump to emit real window operations;
+        // for now `framework_actions` accumulates for visibility.
 
         // SP4.5 fix: register any panels created via `create_child` from
         // inside an engine's `Cycle` (e.g. `StartupEngine`). Their
@@ -599,5 +633,20 @@ impl ApplicationHandler for App {
                 win.request_redraw();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Phase 1 Chunk 2: `App` owns `framework_actions` (spec §3.1); scheduler
+    /// stays `Rc<RefCell<_>>` as a Chunk 2 carry-forward until Chunk 3 deletes
+    /// `emView::attach_to_scheduler` and the view-side scheduler field.
+    #[test]
+    fn framework_scheduler_shape() {
+        let framework = App::new(Box::new(|_app, _el| {}));
+        let _: &Rc<RefCell<EngineScheduler>> = &framework.scheduler;
+        assert!(framework.framework_actions.is_empty());
     }
 }

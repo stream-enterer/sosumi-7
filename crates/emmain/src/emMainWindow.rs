@@ -12,7 +12,8 @@ use std::rc::Rc;
 use winit::event_loop::ActiveEventLoop;
 
 use emcore::emContext::emContext;
-use emcore::emEngine::{EngineCtx, EngineId, Priority, emEngine};
+use emcore::emEngine::{EngineId, Priority, emEngine};
+use emcore::emEngineCtx::EngineCtx;
 use emcore::emGUIFramework::App;
 use emcore::emInput::{InputKey, emInputEvent};
 use emcore::emInputHotkey::Hotkey;
@@ -843,7 +844,7 @@ pub fn create_main_window(
     let engine_id = app
         .scheduler
         .borrow_mut()
-        .register_engine(Priority::Low, Box::new(startup_engine));
+        .register_engine(Box::new(startup_engine), Priority::Low);
     app.scheduler.borrow_mut().wake_up(engine_id);
     mw.startup_engine_id = Some(engine_id);
 
@@ -863,7 +864,7 @@ pub fn create_main_window(
     let mw_engine_id = app
         .scheduler
         .borrow_mut()
-        .register_engine(Priority::Low, Box::new(mw_engine));
+        .register_engine(Box::new(mw_engine), Priority::Low);
     app.scheduler
         .borrow_mut()
         .connect(close_signal, mw_engine_id);
@@ -896,7 +897,7 @@ pub fn create_main_window(
     let bridge_id = app
         .scheduler
         .borrow_mut()
-        .register_engine(Priority::Low, Box::new(bridge));
+        .register_engine(Box::new(bridge), Priority::Low);
     app.scheduler.borrow_mut().connect(cp_signal, bridge_id);
 
     // Register emWindowStateSaver engine — persists window geometry.
@@ -935,7 +936,7 @@ pub fn create_main_window(
         let saver_id = app
             .scheduler
             .borrow_mut()
-            .register_engine(Priority::Low, Box::new(saver));
+            .register_engine(Box::new(saver), Priority::Low);
         app.scheduler.borrow_mut().connect(flags_signal, saver_id);
         app.scheduler.borrow_mut().connect(focus_signal, saver_id);
         app.scheduler

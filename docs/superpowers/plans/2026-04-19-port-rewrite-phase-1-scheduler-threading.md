@@ -24,7 +24,7 @@
 - **I1c.** `rg 'sub_scheduler' crates/` returns zero matches.
 - **I1d.** `rg 'try_borrow(_mut)?\(\)' crates/emcore/src/emView.rs crates/emcore/src/emPanelTree.rs` returns zero matches (the scheduler-adjacent try_borrow fallbacks).
 - **I5 partial.** `rg 'IDIOM:' crates/` returns zero matches (the sole occurrence at emView.rs is deleted by Task 4).
-- **Delta target:** `try_borrow_total` drops by ≥ 40 from baseline; `rc_refcell_total` drops by ≥ 1; `diverged_total` drops by ≥ 6 (the SP4/SP4.5/SP8 DIVERGED blocks that dissolve).
+- **Delta target** (re-baselined 2026-04-19 against ground-truth measurements): `try_borrow_total` ends at **0** (baseline 11; all 11 occurrences live in `emView.rs` (4) + `emPanelTree.rs` (7), and I1d already requires zero in those two files — so the global total goes to zero by construction); `rc_refcell_total` drops by ≥ 5 from its 284 baseline (scheduler/window/view core sites: `EngineScheduler`, per-`emWindow` wrapper, per-`emView` wrapper, `sub_scheduler`, `emContext::scheduler`); `diverged_total` drops by ≥ 6 (the SP4/SP4.5/SP8 DIVERGED blocks that dissolve). Note: the original spec draft cited a "≥ 40 drop" target that was based on a stale pre-SP4.5-FIX-1 baseline; the SP4.5-FIX-1 wave already reduced the population to 11.
 
 **Timing test invariants:**
 - The SP4.5-FIX-3 timing fixtures in `crates/emcore/tests/sp4_5_fix_1_timing_*.rs` — previously asserting `delta == 1` (the +1 slice drift) — are rewritten in Task 11 to assert `delta == 0`.
@@ -123,14 +123,14 @@ use crate::emContext::emContext;
 use crate::emScheduler::{EngineId, EngineScheduler, Priority, SignalId};
 
 pub enum DeferredAction {
-    CloseWindow(crate::emGUIFramework::WindowId),
-    MaterializePopup(crate::emGUIFramework::WindowId),
+    CloseWindow(winit::window::WindowId),
+    MaterializePopup(winit::window::WindowId),
     // additional variants populated as migration progresses (Phase 2+)
 }
 
 pub struct EngineCtx<'a> {
     pub scheduler: &'a mut EngineScheduler,
-    pub windows: &'a mut HashMap<crate::emGUIFramework::WindowId, crate::emWindow::emWindow>,
+    pub windows: &'a mut HashMap<winit::window::WindowId, crate::emWindow::emWindow>,
     pub root_context: &'a Rc<emContext>,
     pub framework_actions: &'a mut Vec<DeferredAction>,
     pub current_engine: Option<EngineId>,
@@ -158,7 +158,7 @@ pub trait ConstructCtx {
 impl<'a> EngineCtx<'a> {
     pub fn with_view_mut<R>(
         &mut self,
-        window: crate::emGUIFramework::WindowId,
+        window: winit::window::WindowId,
         f: impl FnOnce(&mut crate::emView::emView, &mut SchedCtx<'_>) -> R,
     ) -> Option<R> {
         let win = self.windows.get_mut(&window)?;
@@ -227,6 +227,8 @@ Add `pub mod emEngineCtx;` to `crates/emcore/src/lib.rs` in alphabetical positio
 
 Run: `cargo test -p emcore emEngineCtx::tests::sched_ctx_exposes_full_api`
 Expected: PASS.
+
+> **Argument-order note.** The adapter methods above call `self.scheduler.register_engine(b, pri)` — the *target* signature `register_engine(behavior, priority)` matches the new spec §4 D4.x design. The current `EngineScheduler::register_engine` (in `emScheduler.rs:149`) is declared as `(priority, behavior)` (legacy order). If you choose to defer the scheduler-side flip to Task 3, write Task 1's adapters as `self.scheduler.register_engine(pri, b)` to keep Task 1 compilable standalone, then flip both adapter and scheduler in Task 3 in a single commit. Either way the final state is `(behavior, priority)`. Pick one and document the choice in the ledger.
 
 - [ ] **Step 5: Commit.**
 
@@ -321,7 +323,7 @@ To:
 ```rust
 pub fn DoTimeSlice(
     &mut self,
-    windows: &mut std::collections::HashMap<crate::emGUIFramework::WindowId, crate::emWindow::emWindow>,
+    windows: &mut std::collections::HashMap<winit::window::WindowId, crate::emWindow::emWindow>,
     root_context: &std::rc::Rc<crate::emContext::emContext>,
 ) -> bool { ... }
 ```

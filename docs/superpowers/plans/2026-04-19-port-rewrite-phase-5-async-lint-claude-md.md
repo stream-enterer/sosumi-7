@@ -208,7 +208,7 @@ Edit the comment to include the tag:
 
 For each RUST_ONLY block similarly with P5 charters.
 
-This is a bulk edit — expect ~30–60 sites across the tree. Do not remove any comment unless the rationale is now wrong (in which case investigate; the rewrite might belong to one of the earlier phases as a fidelity-bug).
+This is a bulk edit. Ground-truth baseline (measured 2026-04-19): **177 `DIVERGED:` blocks + 16 `RUST_ONLY:` blocks**, all currently un-tagged. Earlier phases (1–4) may delete some `DIVERGED:` blocks (e.g., scheduler-cascade ones — Phase 1's delta target promises ≥ 6) and add others; recapture the count at Phase 5 Bootstrap before sizing this task. Do not remove any comment unless the rationale is now wrong (in which case investigate; the rewrite might belong to one of the earlier phases as a fidelity-bug).
 
 - [ ] **Step 3: Re-run lint until green.**
 ```bash

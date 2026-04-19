@@ -81,7 +81,7 @@ mod tests {
     use super::*;
     #[test]
     fn scope_variants_exist() {
-        let _ = PanelScope::Toplevel(crate::emGUIFramework::WindowId(0));
+        let _ = PanelScope::Toplevel(winit::window::WindowId(0));
         let _ = PanelScope::SubView(crate::emPanelTree::PanelId(0));
     }
 }
@@ -93,7 +93,7 @@ mod tests {
 //!
 //! See `docs/superpowers/specs/2026-04-19-port-ownership-rewrite-design.md` §3.2.
 
-use crate::emGUIFramework::WindowId;
+use winit::window::WindowId;
 use crate::emPanelTree::PanelId;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

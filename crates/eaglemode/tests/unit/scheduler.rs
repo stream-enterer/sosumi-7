@@ -2,7 +2,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use emcore::emEngine::{emEngine, EngineCtx, Priority};
+use emcore::emEngine::{emEngine, Priority};
+use emcore::emEngineCtx::EngineCtx;
 use emcore::emPanelTree::PanelTree;
 use emcore::emScheduler::EngineScheduler;
 use emcore::emSignal::SignalId;
@@ -12,7 +13,9 @@ use winit::window::WindowId;
 fn slice(sched: &mut EngineScheduler) {
     let mut tree = PanelTree::new();
     let mut windows: HashMap<WindowId, std::rc::Rc<std::cell::RefCell<emWindow>>> = HashMap::new();
-    sched.DoTimeSlice(&mut tree, &mut windows);
+    let __root_ctx = emcore::emContext::emContext::NewRoot();
+    let mut __fw: Vec<_> = Vec::new();
+    sched.DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
 }
 
 struct RecordingEngine {
@@ -34,28 +37,28 @@ fn engines_execute_in_priority_order() {
     let log = Rc::new(RefCell::new(Vec::new()));
 
     let low = sched.register_engine(
-        Priority::VeryLow,
         Box::new(RecordingEngine {
             label: "very_low",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::VeryLow,
     );
     let med = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "medium",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Medium,
     );
     let high = sched.register_engine(
-        Priority::VeryHigh,
         Box::new(RecordingEngine {
             label: "very_high",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::VeryHigh,
     );
 
     sched.wake_up(low);
@@ -81,12 +84,12 @@ fn signal_chaining_within_time_slice() {
 
     // emEngine B: low priority, woken by signal
     let eng_b = sched.register_engine(
-        Priority::Low,
         Box::new(RecordingEngine {
             label: "B",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Low,
     );
     sched.connect(sig, eng_b);
 
@@ -107,12 +110,12 @@ fn timer_fires_signal() {
 
     let sig = sched.create_signal();
     let eng = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "timer_target",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Medium,
     );
     sched.connect(sig, eng);
 
@@ -133,12 +136,12 @@ fn remove_engine_cleans_up() {
     let log = Rc::new(RefCell::new(Vec::new()));
 
     let eng = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "removed",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Medium,
     );
     sched.wake_up(eng);
     sched.remove_engine(eng);
@@ -168,21 +171,21 @@ fn instant_signal_chaining_via_engine() {
     }
 
     let eng_b = sched.register_engine(
-        Priority::Medium,
         Box::new(RecordingEngine {
             label: "B_runs",
             log: Rc::clone(&log),
             stay_awake: false,
         }),
+        Priority::Medium,
     );
     sched.connect(sig, eng_b);
 
     let eng_a = sched.register_engine(
-        Priority::High,
         Box::new(FiringEngine {
             sig,
             log: Rc::clone(&log),
         }),
+        Priority::High,
     );
     sched.wake_up(eng_a);
 
@@ -218,13 +221,13 @@ fn is_signaled_distinguishes_signals() {
     let a_fired = Rc::new(RefCell::new(false));
     let b_fired = Rc::new(RefCell::new(false));
     let eng = sched.register_engine(
-        Priority::Medium,
         Box::new(CheckSignalEngine {
             sig_a,
             sig_b,
             a_fired: Rc::clone(&a_fired),
             b_fired: Rc::clone(&b_fired),
         }),
+        Priority::Medium,
     );
     sched.connect(sig_a, eng);
     sched.connect(sig_b, eng);

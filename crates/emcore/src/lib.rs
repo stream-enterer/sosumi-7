@@ -24,6 +24,7 @@ pub mod emCrossPtr;
 pub mod emCursor;
 pub mod emDialog;
 pub mod emEngine;
+pub mod emEngineCtx;
 pub mod emErrorPanel;
 pub mod emFileDialog;
 pub mod emFileModel;

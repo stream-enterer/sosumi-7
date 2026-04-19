@@ -11,7 +11,7 @@
 **JSON entries closed:** E026 (fully), E027.
 
 **Phase-specific invariants (C4):**
-- **I4d-1.** `emCoreConfig.rs:237–250` DIVERGED block deleted; `VISIT_SPEED_MAX` constant absent; `VisitSpeed_GetMaxValue` absent.
+- **I4d-1.** The DIVERGED block currently at `emCoreConfig.rs` ~lines 237–252 (locate by symbol; verified 2026-04-19) is deleted; `VISIT_SPEED_MAX` constant absent; `VisitSpeed_GetMaxValue` absent.
 - **I4d-2.** `grep "emDoubleRec\|emBoolRec\|emIntRec\|emEnumRec\|emFlagsRec\|emAlignmentRec\|emColorRec\|emStringRec" crates/emcore/src/emCoreConfig.rs` returns matches for every typed field C++ declares.
 - **I4d-3.** `rg 'Rc<RefCell<emConfigModel' crates/ --glob '!*/tests/*'` returns zero matches in production code.
 - **I4d-4.** `VisitSpeed` change-notification fires its signal on `SetValue`.
@@ -30,8 +30,8 @@ Run B1–B12 with `<N>` = `4d`. At B3 read `/home/a0/git/eaglemode-0.96.4/includ
 ## File Structure
 
 **Heavy modifications:**
-- `crates/emcore/src/emCoreConfig.rs` — replace every flattened-scalar field with its emRec typed field. Delete `VISIT_SPEED_MAX` and `VisitSpeed_GetMaxValue`. Delete DIVERGED block at 237-250. `load_from_rec`/`save_to_rec` methods (lines ~141, ~192) migrate to using the emRec TryRead/TryWrite shape ported in Phase 4c.
-- `crates/emcore/src/emCoreConfigPanel.rs` — migrate ~40 sites from `config_ref.borrow_mut().visit_speed = new_val` to `config.VisitSpeed.SetValue(new_val, ctx)`.
+- `crates/emcore/src/emCoreConfig.rs` — replace every flattened-scalar field with its emRec typed field. Delete `VISIT_SPEED_MAX` and `VisitSpeed_GetMaxValue`. Delete the DIVERGED block at ~lines 237–252 (locate by symbol). `load_from_rec`/`save_to_rec` methods (lines ~141, ~192) migrate to using the emRec TryRead/TryWrite shape ported in Phase 4c.
+- `crates/emcore/src/emCoreConfigPanel.rs` — migrate the `config_ref.borrow_mut()` call sites (measured 2026-04-19: **19 occurrences**, not the original spec estimate of ~40 — the figure was based on a stale draft) to `config.VisitSpeed.SetValue(new_val, ctx)` form.
 - `crates/emcore/src/emRef.no_rs` — update mapping note.
 
 **Possibly created:**

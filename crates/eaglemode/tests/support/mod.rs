@@ -76,7 +76,10 @@ impl TestHarness {
     pub fn tick(&mut self) {
         let mut windows: HashMap<WindowId, std::rc::Rc<std::cell::RefCell<emWindow>>> =
             HashMap::new();
-        self.scheduler.DoTimeSlice(&mut self.tree, &mut windows);
+        let __root_ctx = emcore::emContext::emContext::NewRoot();
+        let mut __fw: Vec<_> = Vec::new();
+        self.scheduler
+            .DoTimeSlice(&mut self.tree, &mut windows, &__root_ctx, &mut __fw);
         self.view.HandleNotice(&mut self.tree);
         self.view.Update(&mut self.tree);
     }

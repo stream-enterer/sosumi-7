@@ -6,7 +6,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use emcore::emEngine::{emEngine, EngineCtx};
+use emcore::emEngine::emEngine;
+use emcore::emEngineCtx::EngineCtx;
 use emcore::emProcess::{emProcess, PipeResult, StartFlags};
 
 use super::emStocksRec::{

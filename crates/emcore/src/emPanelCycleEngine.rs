@@ -14,7 +14,8 @@
 use std::cell::RefCell;
 use std::rc::Weak;
 
-use super::emEngine::{emEngine, EngineCtx};
+use super::emEngine::emEngine;
+use super::emEngineCtx::EngineCtx;
 use super::emPanelCtx::PanelCtx;
 use super::emPanelTree::PanelId;
 use super::emView::emView;

@@ -58,10 +58,10 @@ Views, panel trees, contexts, and their descendants are owned by their structura
 
 **Concrete rule.** Every remaining `Rc<RefCell<T>>` in the tree after migration must be justified by a same-file comment citing (a) or (b) above. The comment is machine-checked by a lint added in Phase 5 (§10.5).
 
-**What this replaces.** The blanket "Rust: Rc/RefCell shared state" policy from CLAUDE.md:47 and `emRef.no_rs`. The current 156 `Rc<RefCell<T>>` declarations are migrated to:
+**What this replaces.** The blanket "Rust: Rc/RefCell shared state" policy from CLAUDE.md:47 and `emRef.no_rs`. The current **284** `Rc<RefCell<T>>` declarations (measured 2026-04-19; the spec was originally drafted against a stale 156-site count and the figure has been re-baselined) are migrated to:
 - **Plain values** where the type has a single owner (most cases — views, panel trees, scheduler internals, config panels holding config-copy state).
 - **`Rc<T>`** (immutable) where the type is shared-immutable (contexts post-init, look/theme data).
-- **`Rc<RefCell<T>>` retained** only at the justified cross-closure or context-registry sites. Expected remaining count: 30-60, all chartered (§3.6).
+- **`Rc<RefCell<T>>` retained** only at the justified cross-closure or context-registry sites. Expected remaining count proportional to original target: ≤ 60, all chartered (§3.6). Phase 5 closeout enforces the ≤60 ceiling; intermediate phases must monotonically reduce `rc_refcell_total`.
 
 **Observational argument.** RefCell interior mutability has no observable semantics of its own; it is purely a borrow-check accommodation. Removing it where unjustified cannot change observable behavior. Retaining it only where structurally required preserves the cases it was introduced to handle.
 
@@ -495,7 +495,7 @@ The port provides:
 
 **D7.3.** `emConfigModel<T>` becomes a first-class generic model wrapper. The current `Rc<RefCell<emConfigModel<emCoreConfig>>>` sharing pattern is replaced: `emConfigModel<T>` is owned by its registering context as `Rc<emConfigModel<T>>` (Rc<T> immutable — the inner emRec fields handle mutation internally via their own event-loop-aware mechanism, typically via a scheduler signal). The ~40 `Rc<RefCell<emConfigModel<emCoreConfig>>>` sites in `emCoreConfigPanel.rs` migrate to `Rc<emConfigModel<emCoreConfig>>` reads + `ctx`-mediated writes through the registered model's `SetValue`.
 
-**D7.4.** `emRef<T>` → `Rc<T>` throughout. The mapping note in `emRef.no_rs` is updated: `emRef<T>` → `Rc<T>` by default, `Rc<RefCell<T>>` only at the chartered categories in §3.6. The 155 current `Rc<RefCell<T>>` declarations reduce to 30-60 (all chartered).
+**D7.4.** `emRef<T>` → `Rc<T>` throughout. The mapping note in `emRef.no_rs` is updated: `emRef<T>` → `Rc<T>` by default, `Rc<RefCell<T>>` only at the chartered categories in §3.6. The **284** current `Rc<RefCell<T>>` declarations (re-baselined 2026-04-19; original draft assumed 155) reduce to ≤ 60 (all chartered).
 
 **D7.5.** `emFileModel` async loading (E028): ported. `emImageFileModel`, `emTgaImageFileModel`, `emBmpImageFileModel` etc. become real models loading via a scheduler engine rather than the current synchronous `load_image_from_file` stub. Scheduler-attached loader engines use the standard emCore pattern.
 

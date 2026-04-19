@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 use crate::emClipboard::emClipboard;
-use crate::emScheduler::EngineScheduler;
 
 /// Key for the model registry: (concrete type, name).
 ///
@@ -43,9 +42,6 @@ pub struct emContext {
     clipboard: RefCell<Option<Rc<RefCell<dyn emClipboard>>>>,
     /// Registry of common (named) models, keyed by `(TypeId, name)`.
     registry: RefCell<HashMap<ModelKey, ModelEntry>>,
-    /// Scheduler reference, set on root contexts created via `NewRootWithScheduler`.
-    /// Children walk the parent chain via `GetScheduler`.
-    scheduler: Option<Rc<RefCell<EngineScheduler>>>,
 }
 
 impl emContext {
@@ -55,20 +51,6 @@ impl emContext {
             children: RefCell::new(Vec::new()),
             clipboard: RefCell::new(None),
             registry: RefCell::new(HashMap::new()),
-            scheduler: None,
-        })
-    }
-
-    /// Create a root context with an attached scheduler.
-    ///
-    /// Port of C++ `emRootContext(emScheduler &)`.
-    pub fn NewRootWithScheduler(scheduler: Rc<RefCell<EngineScheduler>>) -> Rc<Self> {
-        Rc::new(Self {
-            parent: None,
-            children: RefCell::new(Vec::new()),
-            clipboard: RefCell::new(None),
-            registry: RefCell::new(HashMap::new()),
-            scheduler: Some(scheduler),
         })
     }
 
@@ -78,7 +60,6 @@ impl emContext {
             children: RefCell::new(Vec::new()),
             clipboard: RefCell::new(None),
             registry: RefCell::new(HashMap::new()),
-            scheduler: None,
         });
         parent.children.borrow_mut().push(Rc::downgrade(&child));
         child
@@ -98,17 +79,6 @@ impl emContext {
             cur = parent;
         }
         cur
-    }
-
-    /// Get the scheduler by walking up the parent chain.
-    ///
-    /// Port of C++ `emRootContext::GetScheduler()`.
-    pub fn GetScheduler(&self) -> Option<Rc<RefCell<EngineScheduler>>> {
-        if let Some(sched) = &self.scheduler {
-            return Some(Rc::clone(sched));
-        }
-        self.GetParentContext()
-            .and_then(|parent| parent.GetScheduler())
     }
 
     /// Number of live children (expired weak references are not counted).
@@ -380,24 +350,6 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_access_from_context() {
-        use crate::emScheduler::EngineScheduler;
-        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        let ctx = emContext::NewRootWithScheduler(Rc::clone(&sched));
-        let retrieved = ctx.GetScheduler();
-        assert!(retrieved.is_some());
-    }
-
-    #[test]
-    fn child_inherits_scheduler() {
-        use crate::emScheduler::EngineScheduler;
-        let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        let root = emContext::NewRootWithScheduler(Rc::clone(&sched));
-        let child = emContext::NewChild(&root);
-        assert!(child.GetScheduler().is_some());
-    }
-
-    #[test]
     fn get_root_context_returns_root_from_deep_child() {
         let root = emContext::NewRoot();
         let child = emContext::NewChild(&root);
@@ -406,11 +358,5 @@ mod tests {
         assert!(Rc::ptr_eq(&root.GetRootContext(), &root));
         assert!(Rc::ptr_eq(&child.GetRootContext(), &root));
         assert!(Rc::ptr_eq(&grandchild.GetRootContext(), &root));
-    }
-
-    #[test]
-    fn new_root_without_scheduler() {
-        let ctx = emContext::NewRoot();
-        assert!(ctx.GetScheduler().is_none());
     }
 }

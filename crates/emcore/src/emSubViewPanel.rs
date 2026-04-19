@@ -320,10 +320,14 @@ impl PanelBehavior for emSubViewPanel {
             winit::window::WindowId,
             std::rc::Rc<std::cell::RefCell<crate::emWindow::emWindow>>,
         > = std::collections::HashMap::new();
-        self.sub_scheduler
-            .borrow_mut()
-            .DoTimeSlice(&mut self.sub_tree, &mut empty_windows);
-
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        let mut __fw: Vec<_> = Vec::new();
+        self.sub_scheduler.borrow_mut().DoTimeSlice(
+            &mut self.sub_tree,
+            &mut empty_windows,
+            &__root_ctx,
+            &mut __fw,
+        );
         // SP4.5 fix: register any sub-tree panels created via `create_child`
         // from inside a sub-scheduler engine's `Cycle`. Their
         // `register_engine_for` deferred while the sub-scheduler was
@@ -557,7 +561,7 @@ mod sp4_5_fix_1_tests {
             done: bool,
         }
         impl crate::emEngine::emEngine for SpawnShapeEngine {
-            fn Cycle(&mut self, ctx: &mut crate::emEngine::EngineCtx<'_>) -> bool {
+            fn Cycle(&mut self, ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
                 if !self.done {
                     let child = ctx.tree.create_child(self.parent, "spawned");
                     self.spawned_out.set(Some(child));
@@ -570,13 +574,13 @@ mod sp4_5_fix_1_tests {
 
         // Register the spawn engine on the sub_scheduler.
         let spawn_eid = panel.sub_scheduler.borrow_mut().register_engine(
-            crate::emEngine::Priority::Medium,
             Box::new(SpawnShapeEngine {
                 parent: sub_root,
                 spawned_out: spawned_id.clone(),
                 create_slice_out: create_slice.clone(),
                 done: false,
             }),
+            crate::emEngine::Priority::Medium,
         );
         panel.sub_scheduler.borrow_mut().wake_up(spawn_eid);
 
@@ -589,11 +593,14 @@ mod sp4_5_fix_1_tests {
         // create_slice. The spawned panel's PanelCycleEngine is not yet
         // registered (deferred because sub_scheduler borrow_mut is held during
         // DoTimeSlice).
-        panel
-            .sub_scheduler
-            .borrow_mut()
-            .DoTimeSlice(&mut panel.sub_tree, &mut empty_windows);
-
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        let mut __fw: Vec<_> = Vec::new();
+        panel.sub_scheduler.borrow_mut().DoTimeSlice(
+            &mut panel.sub_tree,
+            &mut empty_windows,
+            &__root_ctx,
+            &mut __fw,
+        );
         let create_at = create_slice
             .get()
             .expect("SpawnShapeEngine must have captured create_slice in slice 1");
@@ -644,10 +651,14 @@ mod sp4_5_fix_1_tests {
                     op.apply_to(&mut s);
                 }
             }
-            panel
-                .sub_scheduler
-                .borrow_mut()
-                .DoTimeSlice(&mut panel.sub_tree, &mut empty_windows);
+            let __root_ctx = crate::emContext::emContext::NewRoot();
+            let mut __fw: Vec<_> = Vec::new();
+            panel.sub_scheduler.borrow_mut().DoTimeSlice(
+                &mut panel.sub_tree,
+                &mut empty_windows,
+                &__root_ctx,
+                &mut __fw,
+            );
             panel.sub_tree.register_pending_engines();
         }
 

@@ -1,0 +1,1 @@
+Rust-only: ctx structs translate C++'s raw-pointer event-loop threading to Rust &mut discipline; no direct C++ analogue.

@@ -52,6 +52,8 @@ Run at the *very first line* of every phase plan, before any task.
 
     Write the captured numbers to `docs/superpowers/notes/2026-04-19-phase-<N>-baseline.md` under headings `nextest`, `goldens`, `clippy`, `rc_refcell_total`, `diverged_total`, `rust_only_total`, `idiom_total`, `try_borrow_total`.
 
+    **Ground-truth reference (measured 2026-04-19, pre-Phase-1):** `rc_refcell_total=284`, `try_borrow_total=11`, `diverged_total=177`, `rust_only_total=16`, `idiom_total=1`. Phase 1's Bootstrap baseline should match these within a small drift window. If Phase 1's measured baseline diverges from these reference numbers by > 10% on any metric, STOP and investigate — the spec/plan numerics may need re-baselining, or recent unrelated work shifted the tree. Later phases inherit the prior phase's exit numbers, not these reference numbers.
+
 - [ ] **B8. Verify baseline is green.**
 
     Inspect the `nextest` and `goldens` captures from B7. Nextest must show `0 failed`. Goldens must show `237 passed; 6 failed` (the known baseline from the 2026-04-18 emview closeout) OR strictly better (more passed, no regressions in previously-passing tests). Clippy must exit 0.

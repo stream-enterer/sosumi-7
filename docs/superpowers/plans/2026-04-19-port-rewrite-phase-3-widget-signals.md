@@ -27,6 +27,16 @@
 
 Run B1–B12 with `<N>` = `3`. Verify Phase 2 closeout status.
 
+## Phase-1 carry-in (REQUIRED before Task 1)
+
+**CI.1 — Restore `App.pending_inputs`.** The field `pending_inputs: Vec<(WindowId, InputEvent)>` was deleted in Phase 1 Chunk 2 (commit `0e68a1f`) because no consumer existed at that point. Phase 3 introduces `InputDispatchEngine` as the consumer. Before writing any `InputDispatchEngine` code:
+
+1. Re-add `pub(crate) pending_inputs: Vec<(winit::window::WindowId, emInputEvent)>` to `crates/emcore/src/emGUIFramework.rs` App struct (alphabetical among `framework_actions`, `windows`, etc.).
+2. Initialize to `Vec::new()` in the constructor.
+3. `cargo check -p emcore` — confirm it compiles unused; `InputDispatchEngine` will consume it in the same phase, so clippy dead_code must not surface before then (combine the re-add and the engine registration in one commit if the gap would otherwise warn).
+
+Reference: `docs/superpowers/notes/2026-04-19-phase-1-ledger.md` Chunk 2 entry; spec §4 D4.9.
+
 ---
 
 ## File Structure
@@ -44,7 +54,7 @@ Run B1–B12 with `<N>` = `3`. Verify Phase 2 closeout status.
 - `crates/emcore/src/emColorField.rs` — `color_signal`.
 - `crates/emcore/src/emScalarField.rs` — scalar change signal.
 - `crates/emcore/src/emFileSelectionBox.rs` — `selection_signal`.
-- `crates/emcore/src/emCoreConfigPanel.rs` — the largest cluster (~40 callback install sites). Each `on_xxx = Some(Box::new(move |args| ...))` migrates to `Box::new(move |args, sched| ...)` and captures fewer `Rc<RefCell<>>` clones (the config model becomes `Rc<emConfigModel<T>>` in Phase 4d; in Phase 3 leave the capture shape alone and only migrate the closure signature).
+- `crates/emcore/src/emCoreConfigPanel.rs` — the largest single-file cluster (19 callback install sites measured 2026-04-19; ~43 across all 5 widget files in this list). Each `on_xxx = Some(Box::new(move |args| ...))` migrates to `Box::new(move |args, sched| ...)` and captures fewer `Rc<RefCell<>>` clones (the config model becomes `Rc<emConfigModel<T>>` in Phase 4d; in Phase 3 leave the capture shape alone and only migrate the closure signature).
 - `crates/emcore/src/emFpPlugin.rs` — `CreateFilePanel`, `CreateFilePanelWithStat`, `TryCreateFilePanel`, `SearchPlugin` take `&mut impl ConstructCtx`. Plugin trait + every implementor updated.
 - `crates/emcore/src/emContext.rs` — delete clipboard field and accessors.
 - `crates/emcore/src/emGUIFramework.rs` — add `clipboard: RefCell<Option<Box<dyn emClipboard>>>` field per §3.1; `SchedCtx::clipboard_mut` delegates here.
