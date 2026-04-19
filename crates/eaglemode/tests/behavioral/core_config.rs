@@ -103,6 +103,20 @@ fn acquire_returns_singleton() {
 }
 
 #[test]
+fn core_config_is_singleton_across_sibling_contexts() {
+    let root = emContext::NewRoot();
+    let child_a = emContext::NewChild(&root);
+    let child_b = emContext::NewChild(&root);
+
+    let m_a = emCoreConfig::Acquire(&child_a);
+    let m_b = emCoreConfig::Acquire(&child_b);
+    let m_root = emCoreConfig::Acquire(&root);
+
+    assert!(std::rc::Rc::ptr_eq(&m_a, &m_b));
+    assert!(std::rc::Rc::ptr_eq(&m_a, &m_root));
+}
+
+#[test]
 fn set_to_default_restores_defaults() {
     let mut cfg = emCoreConfig {
         mouse_zoom_speed: 3.5,

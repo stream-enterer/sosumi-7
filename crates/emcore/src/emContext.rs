@@ -88,6 +88,18 @@ impl emContext {
         self.parent.as_ref().and_then(|w| w.upgrade())
     }
 
+    /// Walk the parent chain and return the root context.
+    ///
+    /// A root context (no parent) returns a clone of its own `Rc`.
+    /// Port of C++ `emContext::GetRootContext`.
+    pub fn GetRootContext(self: &Rc<emContext>) -> Rc<emContext> {
+        let mut cur = Rc::clone(self);
+        while let Some(parent) = cur.GetParentContext() {
+            cur = parent;
+        }
+        cur
+    }
+
     /// Get the scheduler by walking up the parent chain.
     ///
     /// Port of C++ `emRootContext::GetScheduler()`.
@@ -383,6 +395,17 @@ mod tests {
         let root = emContext::NewRootWithScheduler(Rc::clone(&sched));
         let child = emContext::NewChild(&root);
         assert!(child.GetScheduler().is_some());
+    }
+
+    #[test]
+    fn get_root_context_returns_root_from_deep_child() {
+        let root = emContext::NewRoot();
+        let child = emContext::NewChild(&root);
+        let grandchild = emContext::NewChild(&child);
+
+        assert!(Rc::ptr_eq(&root.GetRootContext(), &root));
+        assert!(Rc::ptr_eq(&child.GetRootContext(), &root));
+        assert!(Rc::ptr_eq(&grandchild.GetRootContext(), &root));
     }
 
     #[test]

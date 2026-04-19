@@ -212,8 +212,9 @@ impl emCoreConfig {
     ///
     /// Port of C++ `emCoreConfig::Acquire`. On first call, creates the model,
     /// registers it, and loads from disk (or installs defaults).
-    pub fn Acquire(ctx: &emContext) -> Rc<RefCell<emConfigModel<Self>>> {
-        ctx.acquire::<emConfigModel<Self>>("", || {
+    pub fn Acquire(ctx: &Rc<emContext>) -> Rc<RefCell<emConfigModel<Self>>> {
+        let root = ctx.GetRootContext();
+        root.acquire::<emConfigModel<Self>>("", || {
             let path = emGetInstallPath(InstallDirType::UserConfig, "emCore", Some("config.rec"))
                 .unwrap_or_else(|_| {
                     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
