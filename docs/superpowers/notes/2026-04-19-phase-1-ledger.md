@@ -257,3 +257,23 @@ Verdict: **PASS** with one carry-forward to Phase 3.
 - Invariant state unchanged from Chunk 2 report: I1/I1a/I1b/I1c/I1d all still UNSATISFIED (Chunks 3 and 4 close).
 
 Proceed to Chunk 3.
+
+## Chunk 3 (emView ctx threading + SchedOp deletion + App.scheduler re-narrow) — BLOCKED
+
+Fourth independent halt at the same structural boundary. See
+`docs/superpowers/notes/2026-04-19-phase-1-chunk-3-blocked.md` for full
+scope assessment and a concrete decomposition proposal (Chunk 3.1 →
+Chunk 3.Final, ~10 landable sub-chunks each touching one emView method's
+worth of surface).
+
+- No code changes shipped this session. Tree unchanged at f3710c4.
+- All invariants unchanged from end of Chunk 2: I1/I1a/I1b/I1d all
+  UNSAT. Tests 2455/0/9. Goldens 237/6. Clippy clean.
+- Escalation: BLOCKED. Decomposition issue, not capability issue —
+  Chunk 3's Parts A–F together exceed single-session capacity (same
+  conclusion as Tasks 4+5, Tasks 6+7+8+9, and Chunk 2/3 reassessment).
+- Two paths forward for the driver:
+  - R1: reissue Chunk 3 as sub-chunks 3.1–3.Final per halt note.
+  - R2: accept the Rc<RefCell<_>> shim through Phase 1 end; schedule
+    the ctx-threading cascade as a dedicated Phase 1.5 or Phase 2.
+
