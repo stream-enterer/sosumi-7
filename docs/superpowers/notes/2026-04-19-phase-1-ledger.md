@@ -38,3 +38,66 @@
 - Deferred to Task 9: SchedOp deletion, queue_or_apply_sched_op deletion, pending_sched_ops field deletion, close_signal_pending deletion, SVPUpdSlice try_borrow deletion, ctx threading through emView methods.
 - Invariants I1a (SchedOp=0), I1b (pending_sched_ops=0), I1d (try_borrow=0 in emView) REMAIN UNSATISFIED at end of Tasks 4+5; will be satisfied at end of Task 9.
 - Invariant I5 (IDIOM:=0) SATISFIED by this commit.
+
+## Tasks 6+7+8+9 mega-commit attempt (2026-04-19) — BLOCKED
+
+Implementer subagent dispatched to execute the combined Tasks 6/7/8/9 + SchedOp
+carryover as a single mega-commit. Attempt halted after scope assessment.
+
+### Scope assessment (empirical, from this tree)
+
+- `emView.rs` = 7012 lines with 57 SchedOp call sites.
+- `emPanelTree.rs` = 3869 lines with 33 SchedOp/pending-engines sites.
+- `emSubViewPanel.rs` = 677 lines; `sub_scheduler` field is structurally load-bearing for `DoTimeSlice` / `register_pending_engines` drive of sub-tree.
+- `PanelCtx` type (in `emPanelCtx.rs`) referenced in **326 sites across 53 files** (emcore + emmain + emfileman + emstocks + eaglemode tests). Deleting the file requires moving the type and updating every import.
+- `emView::attach_to_scheduler` takes `Rc<RefCell<EngineScheduler>>`. Task 2 made `App::scheduler` a plain value, so emmain's `Rc::clone(&app.scheduler)` call at `emMainWindow.rs:882` no longer typechecks and cannot be fixed without rewiring `attach_to_scheduler` itself — which in turn pulls in the full ctx-threading cascade through emView.
+- `emView` holds `scheduler: Option<Rc<RefCell<EngineScheduler>>>` internally; deleting it is the keystone that forces every method currently using `self.scheduler.as_ref()` to take ctx. That is ~100 method signatures plus ~150 unit tests constructing bare `emView::new(...)`.
+- Old `emEngine::EngineCtx` (cycle-context, with `tree`, `windows`, `scheduler: &mut EngineCtxInner`) and new `emEngineCtx::EngineCtx` (root_context + framework_actions + plain `EngineScheduler`) have incompatible shapes; flipping the trait forces a full migration of 5 engine impls + the dispatch loop in `EngineScheduler::DoTimeSlice`.
+
+### Why the mega-commit path fails
+
+Threading ctx through `emView` (Phase E of the driver prompt) is not additive —
+it's a fundamental re-architecture of ownership. The view's `scheduler`
+field IS the Rc<RefCell> that the rewrite aims to delete, and every ~57
+SchedOp site, every `attach_to_scheduler` caller, every `Rc::clone(&view.scheduler)`
+call in emSubViewPanel/emWindow, and every construction site in the ~150
+unit tests would need to migrate together. The prior blocked analysis
+(`2026-04-19-phase-1-task-4-5-blocked.md`) correctly diagnosed this; the
+consolidation of Tasks 4+5+6+7+8+9 into one commit does not shrink the
+surface area, only hides it.
+
+### What was tried and reverted
+
+- Attempted narrow `app.scheduler.borrow_mut()` → `app.scheduler.` cleanup in
+  `crates/emmain/src/emMainWindow.rs` (~23 single-line sites + 6 multi-line).
+  Hit the `attach_to_scheduler(Rc::clone(&app.scheduler), ...)` wall at line
+  882 — cannot remove `.borrow_mut()` without either re-wrapping
+  `App.scheduler` in `Rc<RefCell<...>>` (reverting Task 2) or migrating
+  `attach_to_scheduler` to the ctx model (which requires Phase E through F
+  of the driver prompt). Reverted to keep tree clean.
+
+### Recommendation (third time)
+
+Two prior halt notes independently reached the same conclusion that this
+phase's decomposition does not map onto the tree. Phase 1 has progressed
+to Task 3 + Tasks 4+5 minimal; further progress requires one of:
+
+- **R1: single mega-branch.** Accept weeks-long branch life, commit
+  `--no-verify` intermediate red states, land Tasks 6–9 + Phase E +
+  ~150-test rewire as one giant commit when the ship tests pass. This
+  is the path the current driver prompt prescribes; it failed in this
+  session because the surface is too large for one-shot execution
+  inside a context window.
+- **R2: interim shim phase.** Reintroduce `Rc<RefCell<EngineScheduler>>`
+  wrapping at `App` construction (undo Task 2's narrowing of `App.scheduler`),
+  keep `attach_to_scheduler`'s Rc signature, let emView continue owning
+  its scheduler Rc. Land Tasks 8 + 9 + SchedOp deletion on top of this
+  shim. Unwind the shim in Phase 2 alongside the `windows: HashMap<_, Rc<RefCell<emWindow>>>`
+  narrowing (also deferred by Task 2). This matches the prior blocked
+  note's R2 but applied one layer higher.
+
+Invariants I1a (SchedOp=0), I1b (pending_sched_ops=0), I1d (try_borrow=0
+in emView), and I6 (NewRootWithScheduler=0, GetScheduler=0,
+sub_scheduler=0, Rc&lt;RefCell&lt;EngineScheduler&gt;&gt;=0) REMAIN UNSATISFIED.
+emmain still red with 25 errors. emcore tests unchanged (887 pass +
+1 skipped, per Task 3). Goldens unchanged (237/6 baseline).
