@@ -501,18 +501,12 @@ impl ApplicationHandler for App {
             }
         }
 
-        // run_panel_cycles is a Rust-only construct (emPanel does not register
-        // per-view as an engine in the Rust port yet; SP4.5). Uses an arbitrary
-        // window's pixel_tallness — the same shortcut the notice path used before SP5.
-        let panel_cycle_pixel_tallness = self
-            .windows
-            .values()
-            .next()
-            .map(|rc| rc.borrow().view().GetCurrentPixelTallness())
-            .unwrap_or(1.0);
-
-        // Run per-frame panel cycles
-        self.tree.run_panel_cycles(panel_cycle_pixel_tallness);
+        // SP4.5: top-level panel cycling runs through the scheduler's normal
+        // engine loop (each emPanel registers a PanelCycleEngine at
+        // init_panel_view/create_child). emSubViewPanel still drives its
+        // sub-tree via PanelTree::run_panel_cycles synchronously inside Paint
+        // — that path is tied to the sub-view settlement divergence and will
+        // be resolved by its own sub-project (see closeout §8.0).
 
         // Notice dispatch now happens per-view inside emView::Update (SP5,
         // emView.cpp:1303-1314 parity). No global HandleNotice call here.
