@@ -356,9 +356,10 @@ impl PanelTree {
                 let v = &self.panels[id].View;
                 v.strong_count() > 0 || v.weak_count() == 0
             },
-            "emPanel::View must be either populated (strong > 0) or unset Weak::new(); \
-             dangling Weak indicates a dropped emView — panel name = {:?}",
-            self.panels[id].name
+            "emPanel::View is dangling (strong=0, weak={weak}): owning emView was dropped \
+             before this panel; panel = {name:?}",
+            weak = self.panels[id].View.weak_count(),
+            name = self.panels[id].name,
         );
         // Already linked?
         {
