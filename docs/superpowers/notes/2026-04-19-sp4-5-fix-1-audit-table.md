@@ -8,9 +8,9 @@
 | File:line | RefCell type | Borrow kind | Caller class | Verdict | Evidence |
 |---|---|---|---|---|---|
 | emPanelTree.rs:400 | view | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
-| emPanelTree.rs:574 | view | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emPanelTree.rs:577 | view | borrow | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emPanelTree.rs:588 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
+| emPanelTree.rs:623 | view | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emPanelTree.rs:3196 | view | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emPanelTree.rs:3209 | scheduler | borrow | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emPanelTree.rs:3214 | scheduler | borrow | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
@@ -25,7 +25,6 @@
 | emPanelTree.rs:3313 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emPanelTree.rs:3316 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emPanelTree.rs:3319 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
-| emPanelTree.rs:3326 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emPanelTree.rs:3350 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emPanelTree.rs:3357 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emPanelTree.rs:3381 | scheduler | borrow | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
@@ -78,7 +77,6 @@
 | emView.rs:312 | view | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emView.rs:660 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emView.rs:1832 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
-| emView.rs:2085 | scheduler | borrow | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emView.rs:3141 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emView.rs:3414 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
 | emView.rs:5017 | scheduler | borrow_mut | (TBD Task 2) | (TBD Task 2) | (TBD Task 2) |
