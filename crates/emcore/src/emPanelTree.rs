@@ -274,6 +274,7 @@ impl PanelData {
     /// the view is set at construction (should never be `None` after
     /// `create_root`/`create_child`).
     // DIVERGED: C++ `emPanel::GetView()` — renamed to `view()` for Rust snake_case convention.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn view(&self) -> Option<std::rc::Rc<std::cell::RefCell<crate::emView::emView>>> {
         self.View.upgrade()
     }
@@ -356,9 +357,18 @@ impl PanelTree {
     /// Link `id` into the notice ring at the tail.
     /// Port of C++ `emView::AddToNoticeList` (emView.cpp).
     pub(crate) fn add_to_notice_list(&mut self, id: PanelId) {
-        // DO NOT REMOVE: keeps `View` field live for `-D warnings` until Task 2.3
-        // replaces this with a real read (debug_assert on non-dangling upgrade).
-        let _view = self.panels[id].view();
+        // Guard: View must be either populated (strong > 0) or the unset sentinel
+        // Weak::new() (strong == 0 && weak == 0). A dangling Weak (strong == 0 &&
+        // weak > 0) means the owning emView was dropped — that is a real bug.
+        debug_assert!(
+            {
+                let v = &self.panels[id].View;
+                v.strong_count() > 0 || v.weak_count() == 0
+            },
+            "emPanel::View must be either populated (strong > 0) or unset Weak::new(); \
+             dangling Weak indicates a dropped emView — panel name = {:?}",
+            self.panels[id].name
+        );
         // Already linked?
         {
             let p = &self.panels[id];
@@ -506,7 +516,7 @@ impl PanelTree {
     /// before the view exists (chicken-and-egg).
     ///
     /// Not a C++ analogue — Rust ownership requires this two-phase init.
-    pub fn set_panel_view_internal(
+    pub fn init_panel_view(
         &mut self,
         id: PanelId,
         view: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
@@ -536,15 +546,17 @@ impl PanelTree {
         id: PanelId,
         view: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
     ) {
-        self.set_panel_view_internal(id, view);
+        self.init_panel_view(id, view);
     }
 
     /// Create a child panel under the given parent.
     pub fn create_child(&mut self, parent: PanelId, name: &str) -> PanelId {
         // C++ emPanel ctor: CreatedByAE = Parent->AECalling
         let created_by_ae = self.panels[parent].ae_calling;
+        let parent_view = self.panels[parent].View.clone();
 
         let id = self.panels.insert(PanelData::new(name.to_string()));
+        self.panels[id].View = parent_view;
         self.name_index.insert((parent, name.to_string()), id);
 
         // Link into parent's child list

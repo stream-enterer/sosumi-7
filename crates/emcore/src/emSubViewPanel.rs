@@ -62,7 +62,7 @@ impl emSubViewPanel {
             crate::emCoreConfig::emCoreConfig::default(),
         ));
         let sub_view = Rc::new(RefCell::new(emView::new(root, 1.0, 1.0, core_config)));
-        sub_tree.set_panel_view_internal(root, Rc::downgrade(&sub_view));
+        sub_tree.init_panel_view(root, Rc::downgrade(&sub_view));
 
         Self {
             sub_tree,

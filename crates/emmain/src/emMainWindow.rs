@@ -830,7 +830,7 @@ pub fn create_main_window(
     // Wire the owning view's Weak onto the root panel now that the window exists.
     if let Some(rc) = app.windows.get(&window_id) {
         let view_weak = Rc::downgrade(rc.borrow().view_rc());
-        app.tree.set_panel_view_internal(root_id, view_weak);
+        app.tree.init_panel_view(root_id, view_weak);
     }
 
     // Acquire bookmarks model.
@@ -1005,7 +1005,7 @@ pub fn create_control_window(
     // Wire the owning view's Weak onto the root panel now that the window exists.
     if let Some(rc) = app.windows.get(&window_id) {
         let view_weak = Rc::downgrade(rc.borrow().view_rc());
-        app.tree.set_panel_view_internal(root_id, view_weak);
+        app.tree.init_panel_view(root_id, view_weak);
     }
 
     // Store the control window ID for raise-if-existing logic.
