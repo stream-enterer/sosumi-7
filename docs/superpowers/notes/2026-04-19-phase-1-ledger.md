@@ -161,3 +161,28 @@ emmain still red with 25 errors. emcore tests unchanged (887 pass +
   `attach_to_scheduler` Rc-wrapping issues). No new breakages. Closed in Chunk 2.
 - Invariant established: `rg 'emEngine::EngineCtx\b' crates/` returns
   only the one doc-comment reference in `emEngineCtx.rs:28`. No code sites.
+
+### Chunk 1 review findings (2026-04-19)
+
+Rigorous review vs. spec §3.1/§3.7, plan, CLAUDE.md. Verdict: **PASS with one
+tracked workaround**. See agent report in conversation.
+
+- **C2 WORKAROUND to fix**: `framework_actions` currently owns on
+  `EngineScheduler` (`emScheduler.rs` field + `drain_framework_actions()` each
+  tick) rather than on `App` per spec §3.1. Rationale at commit time was
+  avoiding 30+ test call-site churn. **Must correct in Chunk 2 or 3**: move
+  field to `App.framework_actions`, pass as `&mut Vec<DeferredAction>`
+  parameter to `DoTimeSlice`, update affected test call sites, remove the
+  `std::mem::take/restore` swap in the Cycle loop.
+- **No new hacks, CLAUDE.md violations, or unannotated divergences**.
+- **No regressions**: emcore 887/887 pass unchanged, no new clippy warnings,
+  no new `#[allow]`, no `Arc`/`Mutex`/`Cow`/globs.
+- **Pre-existing Phase-1 debt still outstanding** (not Chunk 1 regressions):
+  `windows` plain-value narrowing (Task 2 deferral), SchedOp deletion
+  (Tasks 4+5 deferral), invariants I1a/I1b/I1d/I6. Chunks 2–4 must close.
+- **Spot-check**: engine impls behavior-preserving (verified on
+  `UpdateEngineClass`, `PanelCycleEngine`, `PriSchedEngine`).
+- C++ structural fidelity: `DoTimeSlice` loop shape matches
+  `emScheduler.cpp:118-124`; self-destruction-during-Cycle detection is a
+  pre-existing Rust-side gap (inherited from old `emEngine::EngineCtx`), not
+  new to Chunk 1.
