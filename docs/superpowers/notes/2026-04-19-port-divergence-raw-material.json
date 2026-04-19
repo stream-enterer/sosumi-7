@@ -1,0 +1,1251 @@
+{
+  "schema_version": "1",
+  "harvested_at": "2026-04-19",
+  "source_tree": {
+    "branch": "main",
+    "commit_sha": "06d4e5afd11a9e1519ceb9fc99404fcd2d5fda90",
+    "short_desc": "Post SP4.5-FIX-1 follow-ups closeout. 132 DIVERGED comment blocks; 156 Rc<RefCell<>> declarations; 9 Weak<RefCell<>> back-refs; 5 try_borrow re-entrancy defenses; 11 distinct pending_* queues; 6 SchedOp variants with 9 production call sites and 5 drain sites."
+  },
+  "vocabulary": {
+    "evidence_kind": {
+      "comment-tag": "all-caps prefix in a source comment (DIVERGED: / RUST_ONLY: / IDIOM: / UPSTREAM-GAP: / BLOCKED: / TODO:)",
+      "doc-prose": "passage in docs/superpowers/ making a classification claim",
+      "structural-pattern": "code pattern with no annotation (field type, queue+drain, try_borrow, etc.)"
+    },
+    "marker_tag": {
+      "DIVERGED": "observable/structural departure flagged by port author",
+      "RUST_ONLY": "Rust-only code with no C++ counterpart",
+      "IDIOM": "port-author-declared below-surface adaptation",
+      "UPSTREAM-GAP": "C++ itself is a no-op / incomplete; Rust mirrors",
+      "BLOCKED": "known incomplete, waiting on precondition",
+      "TODO": "work-in-progress"
+    },
+    "claimed_classification": {
+      "forced": "port author claims C++ shape impossible in Rust or required deps",
+      "preserved": "port author claims C++ design intent preserved",
+      "idiom": "port author claims below-surface adaptation",
+      "rust-only": "port author claims no C++ equivalent exists",
+      "none": "no claim made (structural-pattern entries)"
+    },
+    "observability": {
+      "observable-surface": "on a path goldens or user observation cover (timing, signals, focus, pixel output)",
+      "below-surface": "internal only, no observable effect",
+      "both": "crosses the boundary",
+      "unknown": "not determined from harvest"
+    },
+    "verdict": {
+      "forced": "Port Ideology forced — C++ shape literally impossible given Rust + wgpu/winit",
+      "preserved": "design intent preserved, matches C++",
+      "idiom": "legitimate below-surface adaptation",
+      "smuggled-idiom": "claimed forced/idiom, but forced-ness is downstream of an earlier unforced Rust-first choice; the first-order choice was itself idiom and the cascade is a consequence, not a necessity",
+      "rust-only-legitimate": "genuinely has no C++ analogue (test aids, debug traces, embedded assets)",
+      "upstream-gap": "C++ itself is a no-op / incomplete; Rust mirrors faithfully",
+      "unclear": "needs deeper investigation before classifying"
+    },
+    "confidence": {
+      "high": "verified against C++ source or cross-referenced doc that cites C++",
+      "medium": "plausible from surrounding context without direct C++ read",
+      "low": "inference-only; flag for follow-up"
+    },
+    "scale": {
+      "field": "single struct field or constant",
+      "method": "one method or small method group",
+      "file": "whole file or type",
+      "subsystem": "crosses several related files",
+      "crosscutting": "touches many unrelated subsystems"
+    }
+  },
+  "summary": {
+    "total_entries": 37,
+    "bucket_count": 10,
+    "largest_bucket_id": "B01",
+    "rollup_note": "Verdict/evidence/claimed counts are verifiable by JSON parsing; see the Python one-liner at the bottom of the companion ledger. Rolling them by hand invites desync after edits.",
+    "aggregate_note": "Not all 132 DIVERGED blocks are individually entered; trivial method-rename classes (emColor Copy-mutators, emArray/emList overload splits, emAvl iterator shapes) are rolled up into aggregate entries to keep the doc scannable. Ownership / re-entrancy / structural entries are individually listed.",
+    "audit_note": "2026-04-19 audit: 16/17 comment-tag entries verified against the code they cite. 1 non-match: E013 (emViewPort.rs:40) claimed 'Rc<RefCell> cycles require an alternative' but the same struct uses Weak<RefCell<emWindow>> on line 60 — Rc cycles are not the obstacle. Real cause is RefCell re-entrancy under SetGeometry/SwapViewPorts. Comment rewritten; E013 entry cleared per audit instruction. B02 bucket updated."
+  },
+  "buckets": [
+    {
+      "id": "B01",
+      "name": "scheduler re-entrant borrow",
+      "definition": "C++ reaches emScheduler re-entrantly from inside emEngine::Cycle via raw pointer; Rust's Rc<RefCell<EngineScheduler>> with DoTimeSlice holding borrow_mut() for the whole slice forbids it. Root is the Rc<RefCell<>> ownership choice. 12 mechanisms downstream.",
+      "root_entry_ids": ["E001", "E002"],
+      "member_entry_ids": ["E001", "E002", "E003", "E004", "E005", "E006", "E007", "E008", "E009", "E010", "E011", "E012"]
+    },
+    {
+      "id": "B02",
+      "name": "parent back-references",
+      "definition": "C++ uses raw-pointer back-refs from child to parent (emViewPort -> emWindow, emPanel -> emView, engines -> view). Rust Rc<RefCell<>> cycles require Weak. Entry E014 is the canonical shape. E015 (animator-forward location) is flagged unclear pending deeper review.",
+      "root_entry_ids": ["E014"],
+      "member_entry_ids": ["E014", "E015"],
+      "note": "E013 (emViewPort home geometry fields) was initially placed here but audit 2026-04-19 found the comment rationale wrong — Rc<RefCell> cycles are not the obstacle (Weak handles them, as shown by E014). Real reason: RefCell re-entrancy under SetGeometry/SwapViewPorts. That makes E013 a B01-sibling, not B02. Code comment corrected; JSON entry cleared to match user audit instruction."
+    },
+    {
+      "id": "B03",
+      "name": "C++ class inheritance collapse",
+      "definition": "C++ uses inheritance (emView : emContext; emPanel : emEngine; emScreen : emWindow; emFileModel base class; emErrorPanel : emPanel). Rust has no inheritance. Resolutions vary per case: composition, trait, adapter object, Option<backend>, or flattening.",
+      "root_entry_ids": ["E016"],
+      "member_entry_ids": ["E016", "E017", "E018", "E019", "E020"]
+    },
+    {
+      "id": "B04",
+      "name": "function/method overloading",
+      "definition": "Rust has no name overloading. Suffix renames (VisitByIdentityBare, VisitFullsizedByIdentity, SetGoalCoords), split method names (InsertAtBeg_one / Add_one / etc.), or collapse-to-single-method (RawVisit, RawZoomOut, RecurseInput).",
+      "root_entry_ids": ["E021"],
+      "member_entry_ids": ["E021"]
+    },
+    {
+      "id": "B05",
+      "name": "operators, conversions, and Copy semantics",
+      "definition": "C++ implicit operator overloads, operator[], emColor mutating setters. Rust requires explicit methods (GetPacked instead of operator u32), Copy-returns-new-value (SetRed -> returns copy), ToString renamed (trait conflict).",
+      "root_entry_ids": ["E022"],
+      "member_entry_ids": ["E022"]
+    },
+    {
+      "id": "B06",
+      "name": "pointer identity vs value equality; iterator semantics",
+      "definition": "C++ containers use pointer identity for search/iteration; C++ iterators auto-adjust under mutation. Rust uses value equality (emList GetIndexOf by PartialEq) and explicit cursors that return None on removal. emList O(1) splice -> O(n) Vec ops.",
+      "root_entry_ids": ["E023"],
+      "member_entry_ids": ["E023"]
+    },
+    {
+      "id": "B07",
+      "name": "emCrossPtr / auto-nullifying cross-references",
+      "definition": "C++ emCrossPtr auto-nulls when target is destroyed; used for OverwriteDialog, PanelPointerCache, dialog-panel wiring. Rust replaces with Weak<RefCell<>> (for target-owned types) or Option<T> (for caller-owned types) with manual null-checks. emBorder's PanelPointerCache omitted entirely because emBorder is not a panel in the Rust port.",
+      "root_entry_ids": ["E024"],
+      "member_entry_ids": ["E024"]
+    },
+    {
+      "id": "B08",
+      "name": "signal/callback wiring (GetXxxSignal vs callback field)",
+      "definition": "C++ widgets expose GetCheckSignal returning an emSignal; callers wire via ListenSignal. Rust collapses to an Option<Box<dyn FnMut(..)>> callback field (emCheckButton::on_check). Observably: the signal object is absent; the write side of the event hub is inline-dispatched. This is a structural change on the observable signal-wiring surface.",
+      "root_entry_ids": ["E025"],
+      "member_entry_ids": ["E025"]
+    },
+    {
+      "id": "B09",
+      "name": "absent subsystems (emRec / emModel / emRef / async plugins)",
+      "definition": "emRec-backed field system not ported (emCoreConfig::VisitSpeed flattened to f64 + const); emModel/emRef collapsed to Rc<RefCell<>> throughout; async emImageFileModel plugin system replaced by sync load_image_from_file stub. emFpPlugin returns Box<dyn PanelBehavior> instead of emPanel*.",
+      "root_entry_ids": ["E026"],
+      "member_entry_ids": ["E026", "E027", "E028"]
+    },
+    {
+      "id": "B10",
+      "name": "wgpu/winit forced divergences",
+      "definition": "C++ targets X11/GL; Rust targets wgpu/winit. MaterializedSurface has no C++ analogue. OsSurface Pending/Materialized two-state enum with back-channel materialization forced by winit's async surface lifecycle (see w3-popup-architecture spec). emGUIFramework DeferredAction queue for cross-closure window mutations. These are the only genuinely-forced divergences by dependency constraint; classified forced with high confidence.",
+      "root_entry_ids": ["E029"],
+      "member_entry_ids": ["E029", "E030"]
+    }
+  ],
+  "entries": [
+    {
+      "id": "E001",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "IDIOM",
+      "location": {
+        "path": "crates/emcore/src/emView.rs",
+        "line_start": 186,
+        "line_end": 194,
+        "quote": "IDIOM: C++ calls Scheduler.X(...) inline during Update because its scheduler has no aliasing restrictions. Rust's RefCell<EngineScheduler> forbids inner borrows while DoTimeSlice holds the outer borrow; deferral restores inline semantics within the same time slice without violating borrow rules."
+      },
+      "cpp_reference": "emScheduler.cpp / emEngine raw-pointer aliasing model",
+      "claimed_classification": "idiom",
+      "claimed_rationale": "RefCell forbids inner borrows while outer borrow held; deferral preserves inline semantics.",
+      "observability": "observable-surface",
+      "scale": "crosscutting",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E002",
+      "introduced": {
+        "session_or_spec": "SP4 (2026-04-18)",
+        "commit_sha": null,
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "The only IDIOM: tag in the entire codebase. Tagged 'IDIOM' but the SP4 design spec itself admits the RefCell choice is what makes deferral necessary. The forced-ness of deferral is second-order; the first-order choice (wrap EngineScheduler in Rc<RefCell<>>) was never evaluated as idiom-vs-forced. CLAUDE.md line 47 ('Rc/RefCell shared state') sanctioned the first-order choice as project-wide default — which is itself an unexamined idiom adaptation.",
+        "confidence": "high",
+        "confidence_basis": "Cross-referenced scheduler-refcell-workaround-ledger.md §1.3 and §6.1; SP4 spec 2026-04-18-emview-sp4-update-engine-routing-design.md:35 explicitly says 'idiom adaptation forced by RefCell<EngineScheduler>' which is the smuggling pattern verbatim."
+      }
+    },
+    {
+      "id": "E002",
+      "evidence_kind": "structural-pattern",
+      "marker_tag": null,
+      "location": {
+        "path": "crates/emcore/src/emGUIFramework.rs",
+        "line_start": 89,
+        "line_end": 89,
+        "quote": "pub scheduler: Rc<RefCell<EngineScheduler>>,"
+      },
+      "cpp_reference": "C++ emScheduler is reached by raw pointer from emEngine; emGUIFramework owns it directly",
+      "claimed_classification": "none",
+      "claimed_rationale": null,
+      "observability": "observable-surface",
+      "scale": "crosscutting",
+      "bucket_id": "B01",
+      "is_bucket_root": true,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "pre-SP1 (phase 4/5, 2026-03-04)",
+        "commit_sha": "78c113b",
+        "date": "2026-03-04"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "This is the first-order choice. Unannotated, uncommented, no DIVERGED: tag, no IDIOM: tag. Introduced in the very first phase-4/5 commit (2026-03-04) before the Port Ideology framework existed and before any session recognized the downstream cost. All 12 mechanisms in B01 are consequences of this one line. Alternatives (event loop owns &mut EngineScheduler and threads it through Cycle via EngineCtx, or interior sharding) preserve C++ semantics and are implementable in Rust; therefore not forced.",
+        "confidence": "high",
+        "confidence_basis": "Provenance: git log shows 78c113b 2026-03-04 'Implement Phases 4-5' as first-landing commit. Scheduler-refcell-workaround-ledger.md §6 enumerates three concrete alternatives that preserve C++ semantics."
+      }
+    },
+    {
+      "id": "E003",
+      "evidence_kind": "structural-pattern",
+      "marker_tag": null,
+      "location": {
+        "path": "crates/emcore/src/emView.rs",
+        "line_start": 196,
+        "line_end": 206,
+        "quote": "pub(crate) enum SchedOp { Fire(SignalId), WakeUp(EngineId), Connect(SignalId, EngineId), Disconnect(SignalId, EngineId), RemoveSignal(SignalId), RemoveEngine(EngineId) }"
+      },
+      "cpp_reference": "No C++ equivalent; C++ calls Scheduler methods inline from Cycle.",
+      "claimed_classification": "idiom",
+      "claimed_rationale": "SP4 spec classifies the whole deferral machinery as 'idiom adaptation forced by RefCell<EngineScheduler>'.",
+      "observability": "observable-surface",
+      "scale": "crosscutting",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E002",
+      "introduced": {
+        "session_or_spec": "SP4 (2026-04-18)",
+        "commit_sha": null,
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "A six-variant enum with 9 production call sites and 5 drain sites exists because E002 made inline scheduler access impossible. C++ has no equivalent of this enum, no deferral queue, no drain points. Calling this 'idiom' and 'below-surface' is defensible per-entry but collapses under scrutiny: the drain timing affects observable what-fires-when within and across slices — the very thing the Port Ideology observability rule protects.",
+        "confidence": "high",
+        "confidence_basis": "Ledger §2.1, §2.3, §2.8 enumerate the 12 mechanisms; cross-referenced the SchedOp definition and drain sites in this harvest (STRUCTURAL section)."
+      }
+    },
+    {
+      "id": "E004",
+      "evidence_kind": "structural-pattern",
+      "marker_tag": null,
+      "location": {
+        "path": "crates/emcore/src/emView.rs",
+        "line_start": 434,
+        "line_end": 434,
+        "quote": "pub(crate) pending_sched_ops: Vec<SchedOp>,"
+      },
+      "cpp_reference": "No C++ equivalent; inline scheduler access in C++ needs no queue.",
+      "claimed_classification": "none",
+      "claimed_rationale": null,
+      "observability": "observable-surface",
+      "scale": "method",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E003",
+      "introduced": {
+        "session_or_spec": "SP4",
+        "commit_sha": null,
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "Storage for E003. Drained at 5 sites (UpdateEngineClass::Cycle, App::about_to_wait, emSubViewPanel::Cycle, two PanelTree settle paths). Each drain point is its own observability commitment.",
+        "confidence": "high",
+        "confidence_basis": "Harvest STRUCTURAL section: 5 drain sites confirmed."
+      }
+    },
+    {
+      "id": "E005",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emSubViewPanel.rs",
+        "line_start": 34,
+        "line_end": 40,
+        "quote": "DIVERGED: C++ shares the parent emContext's scheduler via context-chain lookup (emContext::GetScheduler). Rust emSubViewPanel owns a nested PanelTree and emView; EngineCtx::tree is singular, so a single scheduler cannot cycle engines across two trees. The forced concession: this sub-view gets its own EngineScheduler."
+      },
+      "cpp_reference": "emSubViewPanel.cpp, emContext::GetScheduler",
+      "claimed_classification": "forced",
+      "claimed_rationale": "EngineCtx::tree is singular; nested PanelTree requires a second scheduler.",
+      "observability": "observable-surface",
+      "scale": "file",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E002",
+      "introduced": {
+        "session_or_spec": "SP8 (2026-04-19)",
+        "commit_sha": null,
+        "date": "2026-04-19"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "Claim 'forced' is precisely the second-order smuggle. Forced only given E002 and given EngineCtx::tree being singular. Both are first-order Rust choices, not constraints of Rust the language. C++ runs one scheduler per process and traverses nested trees transparently via emContext chain; with either rearchitecture option (A: event-loop-owned &mut scheduler threaded through Cycle, or C: unified EngineCtx covering multiple trees via emContext), a per-sub-view scheduler is unnecessary.",
+        "confidence": "high",
+        "confidence_basis": "SP8 spec 2026-04-19-emview-sp8-subview-settlement-design.md:25 labels 'forced divergence' but ledger §2.7 explicitly notes 'unifiable only via SP7 emContext threading' — acknowledging it is not a language-forced divergence."
+      }
+    },
+    {
+      "id": "E006",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emView.rs",
+        "line_start": 3465,
+        "line_end": 3470,
+        "quote": "DIVERGED: C++ emView::NoticeList is an intrusive ring on emView (emView.h:576); Rust keeps the ring fields on PanelTree to avoid RefCell re-entrancy (the view is mutably borrowed during dispatch, so callers inside callbacks cannot re-borrow it to append to a view-owned ring). Ring storage location is *forced*; dispatch driver (per-view, ..."
+      },
+      "cpp_reference": "emView.h:576 NoticeList",
+      "claimed_classification": "forced",
+      "claimed_rationale": "RefCell re-entrancy prevents view-owned ring.",
+      "observability": "observable-surface",
+      "scale": "subsystem",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E002",
+      "introduced": {
+        "session_or_spec": "SP5 (2026-04-18)",
+        "commit_sha": null,
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "Ring relocated off emView because emView lives in Rc<RefCell<>> and is borrowed_mut during dispatch. If emView were not behind RefCell at dispatch time (e.g., scheduler-threaded &mut), the ring could live on emView per C++. Same root as E002.",
+        "confidence": "high",
+        "confidence_basis": "Comment itself names RefCell as the cause. Closeout §8.1 item 12 cross-references."
+      }
+    },
+    {
+      "id": "E007",
+      "evidence_kind": "structural-pattern",
+      "marker_tag": null,
+      "location": {
+        "path": "crates/emcore/src/emView.rs",
+        "line_start": 656,
+        "line_end": 663,
+        "quote": "pub(crate) fn queue_or_apply_sched_op(&mut self, op: SchedOp) { match scheduler.try_borrow_mut() { Ok(mut s) => op.apply_to(&mut s), Err(_) => self.pending_sched_ops.push(op) } }"
+      },
+      "cpp_reference": "No C++ equivalent.",
+      "claimed_classification": "none",
+      "claimed_rationale": null,
+      "observability": "observable-surface",
+      "scale": "method",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E003",
+      "introduced": {
+        "session_or_spec": "SP4",
+        "commit_sha": null,
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "The conditional dispatch is the deferral mechanism's entry point. 8 production call sites in emView + 1 in emPanelCtx + 1 in emPanelTree (SchedOp::RemoveEngine). The very existence of this dispatch is the observable signature of the RefCell cascade.",
+        "confidence": "high",
+        "confidence_basis": "Harvest STRUCTURAL section counts call sites."
+      }
+    },
+    {
+      "id": "E008",
+      "evidence_kind": "structural-pattern",
+      "marker_tag": null,
+      "location": {
+        "path": "crates/emcore/src/emPanelTree.rs",
+        "line_start": 558,
+        "line_end": 611,
+        "quote": "register_engine_for uses try_borrow on view and try_borrow_mut on sched; on contention returns silently. register_pending_engines() sweeps post-DoTimeSlice to catch up deferred panels."
+      },
+      "cpp_reference": "C++ emPanel registers its engine via scheduler on construction; delta=0 first Cycle.",
+      "claimed_classification": "none",
+      "claimed_rationale": null,
+      "observability": "observable-surface",
+      "scale": "subsystem",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E002",
+      "introduced": {
+        "session_or_spec": "SP4.5-FIX-1",
+        "commit_sha": "85828c2",
+        "date": "2026-04-19"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "The +1 slice drift (C++ delta=0, Rust delta=1) is a direct, measurable observable consequence. Filed as SP4.5-FIX-3. Ledger §2.6 and §4.2 detail. Same-slice fix available via SchedOp::RegisterPanelEngine drained inside UpdateEngineClass::Cycle.",
+        "confidence": "high",
+        "confidence_basis": "Timing measurements doc 2026-04-19-sp4-5-fix-1-timing-measurements.md confirms delta=0 vs delta=1."
+      }
+    },
+    {
+      "id": "E009",
+      "evidence_kind": "structural-pattern",
+      "marker_tag": null,
+      "location": {
+        "path": "crates/emcore/src/emView.rs",
+        "line_start": 2082,
+        "line_end": 2095,
+        "quote": "SVPUpdSlice throttle reads scheduler.try_borrow().ok() with cached-field fallback because plain borrow() panics re-entrantly inside DoTimeSlice."
+      },
+      "cpp_reference": "C++ reads GetTimeSliceCounter inline.",
+      "claimed_classification": "none",
+      "claimed_rationale": null,
+      "observability": "below-surface",
+      "scale": "method",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E002",
+      "introduced": {
+        "session_or_spec": "SP4",
+        "commit_sha": null,
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "Read-side re-entrancy workaround. Stale cached counter at worst (slack-tolerant), so observable impact is negligible — but the mechanism exists only because of E002.",
+        "confidence": "high",
+        "confidence_basis": "Ledger §2.4."
+      }
+    },
+    {
+      "id": "E010",
+      "evidence_kind": "structural-pattern",
+      "marker_tag": null,
+      "location": {
+        "path": "crates/emcore/src/emView.rs",
+        "line_start": 257,
+        "line_end": 261,
+        "quote": "UpdateEngineClass::Cycle pre-computes popup-close probe via ctx.IsSignaled(close_sig) and stashes into view.close_signal_pending; Update reads the cached bool."
+      },
+      "cpp_reference": "emView.cpp:1299 checks close_signal inline in Update.",
+      "claimed_classification": "none",
+      "claimed_rationale": null,
+      "observability": "below-surface",
+      "scale": "method",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E002",
+      "introduced": {
+        "session_or_spec": "SP4",
+        "commit_sha": null,
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "'Move scheduler access to a point where the outer borrow doesn't exist' trick. Structurally identical to the recommended FIX-2 shape. Confirms the pattern is a generalized workaround strategy.",
+        "confidence": "high",
+        "confidence_basis": "Ledger §2.5."
+      }
+    },
+    {
+      "id": "E011",
+      "evidence_kind": "structural-pattern",
+      "marker_tag": null,
+      "location": {
+        "path": "crates/emcore/src/emView.rs",
+        "line_start": 1828,
+        "line_end": 1836,
+        "quote": "let (close_sig, flags_sig, focus_sig, geom_sig) = if let Some(sched) = self.scheduler.as_ref() { let mut s = sched.borrow_mut(); (s.create_signal(), s.create_signal(), s.create_signal(), s.create_signal()) }"
+      },
+      "cpp_reference": "emView.cpp:~1638 popup-creation path",
+      "claimed_classification": "none",
+      "claimed_rationale": null,
+      "observability": "observable-surface",
+      "scale": "method",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E002",
+      "introduced": {
+        "session_or_spec": "pre-SP4",
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "Open latent panic — SP4.5-FIX-2. The deferral template fails here because synchronous IDs are required. Pre-allocate-at-construction fix is itself a Rust-shaped rearrangement, not a C++ port. Existence of this hazard is a consequence of E002.",
+        "confidence": "high",
+        "confidence_basis": "Closeout §8.1 item 16 SP4.5-FIX-2; ledger §4.1."
+      }
+    },
+    {
+      "id": "E012",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emPanelCycleEngine.rs",
+        "line_start": 1,
+        "line_end": 6,
+        "quote": "DIVERGED: C++ emPanel inherits from emEngine directly (emPanel.h:33 — class emPanel : public emEngine). In Rust, PanelBehavior trait objects are owned by PanelTree::panels and are taken during cycling so the tree can lend a PanelCtx; a PanelBehavior therefore cannot simultaneously live in the scheduler's Box<dyn emEngine> slot-map."
+      },
+      "cpp_reference": "emPanel.h:33",
+      "claimed_classification": "forced",
+      "claimed_rationale": "Single inheritance and trait-object take-out-of-place prevent dual ownership.",
+      "observability": "observable-surface",
+      "scale": "file",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E016",
+      "introduced": {
+        "session_or_spec": "SP4.5",
+        "commit_sha": "1bb5a6b",
+        "date": "2026-04-19"
+      },
+      "inference": {
+        "verdict": "forced",
+        "reasoning": "Rust has no inheritance AND trait-object ownership is exclusive. The adapter is genuinely forced by the combination. Classifies cleanly as forced in B03 — but the adapter's *registration* path is what triggers E008's re-entrancy cascade (B01). The forced-ness of the adapter is distinct from the smuggled consequences of registering it via E002's RefCell scheduler.",
+        "confidence": "high",
+        "confidence_basis": "SP4.5 spec confirms the single-inheritance + slot-map dual-ownership constraint is language-forced."
+      }
+    },
+    {
+      "id": "E014",
+      "evidence_kind": "structural-pattern",
+      "marker_tag": null,
+      "location": {
+        "path": "crates/emcore/src/emViewPort.rs",
+        "line_start": 60,
+        "line_end": 60,
+        "quote": "pub(crate) window: Option<Weak<RefCell<crate::emWindow::emWindow>>>,"
+      },
+      "cpp_reference": "emViewPort::homeView raw pointer",
+      "claimed_classification": "none",
+      "claimed_rationale": null,
+      "observability": "below-surface",
+      "scale": "field",
+      "bucket_id": "B02",
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "Phase 4",
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "idiom",
+        "reasoning": "Weak<RefCell<>> is the canonical Rust encoding of a non-owning back-ref where the parent owns the child in Rc<RefCell<>>. Legitimate idiom given the Rc<RefCell<>> ownership choice upstream.",
+        "confidence": "high",
+        "confidence_basis": "Standard Rust pattern; 9 Weak<RefCell<>> sites in codebase all fit this shape."
+      }
+    },
+    {
+      "id": "E015",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emView.rs",
+        "line_start": 4098,
+        "line_end": 4102,
+        "quote": "DIVERGED: animator-forward location. C++ emView::Input begins with ActiveAnimator->Input(event, state) at emView.cpp:1004, because C++ emView owns the ActiveAnimator field. In the Rust port the active animator instead lives on the input-dispatch *owner* — emWindow::active_animator (see emWindow::dispatch_input..."
+      },
+      "cpp_reference": "emView.cpp:1004",
+      "claimed_classification": "forced",
+      "claimed_rationale": null,
+      "observability": "observable-surface",
+      "scale": "subsystem",
+      "bucket_id": "B02",
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "SP1 (2026-04-18)",
+        "commit_sha": "eb2f0fe",
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "unclear",
+        "reasoning": "Field location on owner-of-dispatch rather than view may be a consequence of emView's Rc<RefCell<>> + input dispatching from emWindow through &mut view_rc.borrow_mut() — same cascade. Not investigated here; flagged for B02 follow-up.",
+        "confidence": "medium",
+        "confidence_basis": "Comment names the dispatch-owner-vs-field-owner split but not the ownership constraint behind it."
+      }
+    },
+    {
+      "id": "E016",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emView.rs",
+        "line_start": 550,
+        "line_end": 554,
+        "quote": "DIVERGED: C++ class emView : public emContext — Rust has no inheritance; store the context by composition. GetContext / GetRootContext accessors below delegate, giving callers the same observable access the C++ inheritance grants."
+      },
+      "cpp_reference": "emView.h — class emView : public emContext",
+      "claimed_classification": "forced",
+      "claimed_rationale": "Rust has no inheritance.",
+      "observability": "observable-surface",
+      "scale": "subsystem",
+      "bucket_id": "B03",
+      "is_bucket_root": true,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "SP7 (2026-04-19)",
+        "commit_sha": "76f96b0",
+        "date": "2026-04-19"
+      },
+      "inference": {
+        "verdict": "forced",
+        "reasoning": "Rust has no class inheritance. Composition with delegating accessors is the canonical resolution.",
+        "confidence": "high",
+        "confidence_basis": "Language constraint, not a library choice. SP7 spec 2026-04-19-emview-sp7-emcontext-threading-design.md:70 confirms."
+      }
+    },
+    {
+      "id": "E017",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emFileModel.rs",
+        "line_start": 40,
+        "line_end": 42,
+        "quote": "DIVERGED: C++ emFileModel base class — Rust uses trait for type erasure since emFileModel<T> is generic."
+      },
+      "cpp_reference": "emFileModel.h",
+      "claimed_classification": "forced",
+      "claimed_rationale": "Generic base class with virtual methods mapped to trait object.",
+      "observability": "below-surface",
+      "scale": "file",
+      "bucket_id": "B03",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E016",
+      "introduced": {
+        "session_or_spec": null,
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "forced",
+        "reasoning": "Generic base class with virtual methods is structurally a trait in Rust. Standard adaptation.",
+        "confidence": "high",
+        "confidence_basis": "Language constraint."
+      }
+    },
+    {
+      "id": "E018",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emScreen.rs",
+        "line_start": 120,
+        "line_end": 124,
+        "quote": "DIVERGED: C++ emScreen inherits from emWindow and implements this directly. In Rust, emScreen is a monitor model without a window reference. The actual implementation is on emWindow::MoveMousePointer which uses winit's set_cursor_position."
+      },
+      "cpp_reference": "emScreen : emWindow inheritance",
+      "claimed_classification": "forced",
+      "claimed_rationale": null,
+      "observability": "observable-surface",
+      "scale": "file",
+      "bucket_id": "B03",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E016",
+      "introduced": {
+        "session_or_spec": null,
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "forced",
+        "reasoning": "Inheritance collapse + separation of concerns. Method moved to the type that actually owns the winit window. Observable result is identical if callers route through emWindow.",
+        "confidence": "high",
+        "confidence_basis": "Language constraint."
+      }
+    },
+    {
+      "id": "E019",
+      "evidence_kind": "aggregate",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "multiple",
+        "line_start": null,
+        "line_end": null,
+        "quote": "emErrorPanel IsOpaque/Paint implemented as PanelBehavior trait methods; similar for other panel types. C++ has emPanel : emEngine virtual methods; Rust has PanelBehavior trait."
+      },
+      "cpp_reference": "emPanel base class virtuals",
+      "claimed_classification": "forced",
+      "claimed_rationale": null,
+      "observability": "below-surface",
+      "scale": "crosscutting",
+      "bucket_id": "B03",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E016",
+      "introduced": {
+        "session_or_spec": "various",
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "forced",
+        "reasoning": "Standard inheritance→trait mapping. ~30 panel types share this shape; legitimate forced divergence per site.",
+        "confidence": "high",
+        "confidence_basis": "Language constraint."
+      }
+    },
+    {
+      "id": "E020",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emViewPort.rs",
+        "line_start": 3,
+        "line_end": 7,
+        "quote": "DIVERGED: not a class hierarchy but a concrete struct with optional backend hooks. Rust has no dummy-base-class pattern; the 'default implementation connects to nothing' model becomes a Weak<RefCell<emWindow>> back-reference which is None for dummy instances."
+      },
+      "cpp_reference": "emViewPort class hierarchy",
+      "claimed_classification": "forced",
+      "claimed_rationale": "No dummy-base-class pattern in Rust.",
+      "observability": "below-surface",
+      "scale": "file",
+      "bucket_id": "B03",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E016",
+      "introduced": {
+        "session_or_spec": null,
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "forced",
+        "reasoning": "Inheritance collapse. Dummy-base pattern maps to Option<backend>. Legitimate.",
+        "confidence": "high",
+        "confidence_basis": "Language constraint."
+      }
+    },
+    {
+      "id": "E021",
+      "evidence_kind": "aggregate",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "multiple",
+        "line_start": null,
+        "line_end": null,
+        "quote": "Rust cannot overload by name or arity. Policies: (1) suffix rename — VisitByIdentityBare, VisitFullsizedByIdentity, SetGoalCoords, PaintBorderImage sub-rect variants; (2) split names — emList/emArray InsertAtBeg_one/Add_one/Add_fill/etc.; (3) collapse to single method — RawVisit, RawZoomOut, RecurseInput, emFileStream::TryWrite; (4) Copy-returns-new — emColor SetRed/SetGreen/etc. 132 DIVERGED blocks include at least ~40 overload-split cases across emView, emPainter, emList, emArray, emAvlTreeMap, emAvlTreeSet, emColor, emViewAnimator, emFileStream."
+      },
+      "cpp_reference": "N/A (language feature)",
+      "claimed_classification": "forced",
+      "claimed_rationale": "Rust cannot overload.",
+      "observability": "observable-surface",
+      "scale": "crosscutting",
+      "bucket_id": "B04",
+      "is_bucket_root": true,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "various, 2026-03 through 2026-04",
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "forced",
+        "reasoning": "No Rust encoding admits C++-style name overloading. Per-site choice of rename vs split vs collapse is idiom; the necessity of *some* resolution is forced.",
+        "confidence": "high",
+        "confidence_basis": "Language constraint."
+      }
+    },
+    {
+      "id": "E022",
+      "evidence_kind": "aggregate",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "multiple",
+        "line_start": null,
+        "line_end": null,
+        "quote": "emColor Get → GetPacked (no implicit u32 conversion); emColor Set mutators → return-new-value (emColor is Copy); ToString → Display (trait conflict); emAvlTreeMap operator[] → panics instead of default-insert; emCursor Get/ToString renames. Forced by Rust lacking implicit conversions and operator-overload conflicts with std traits."
+      },
+      "cpp_reference": "N/A (language features)",
+      "claimed_classification": "forced",
+      "claimed_rationale": "Rust lacks implicit conversion operators, Copy types cannot have mutating methods, ToString conflicts with std::string::ToString trait.",
+      "observability": "below-surface",
+      "scale": "crosscutting",
+      "bucket_id": "B05",
+      "is_bucket_root": true,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "various",
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "forced",
+        "reasoning": "Language-level. ~15 DIVERGED blocks roll up here; all legitimate.",
+        "confidence": "high",
+        "confidence_basis": "Language constraint."
+      }
+    },
+    {
+      "id": "E023",
+      "evidence_kind": "aggregate",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "multiple",
+        "line_start": null,
+        "line_end": null,
+        "quote": "emList intrusive doubly-linked → Vec<T> (O(1) splice → O(n) copies); emArray COW TuningLevel field exists-but-no-effect; emAvlTreeSet/Map Iterator auto-advance → Cursor returns None; emList GetIndexOf by PartialEq not pointer identity; emAvlTreeMap operator[] semantics changed; emPanelTree NoticeList ring: intrusive raw-pointer linkage → Option<PanelId> arena indices."
+      },
+      "cpp_reference": "emList, emArray, emAvlTree, emPanel NoticeList",
+      "claimed_classification": "forced",
+      "claimed_rationale": "C++ intrusive data structures with raw pointers don't map to Rust's Vec/BTreeMap without giving up O(1) pointer ops. Cursor semantics differ because Rust iterators have different invariants.",
+      "observability": "below-surface (performance) / observable-surface (only NoticeList ring relocation)",
+      "scale": "crosscutting",
+      "bucket_id": "B06",
+      "is_bucket_root": true,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "various",
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "idiom",
+        "reasoning": "Container-internal shape changes are below-surface unless they affect ordering or cursor-stability semantics. Performance divergence is acknowledged (O(n) vs O(1) splice) but not observable through goldens on measured paths. NoticeList relocation is a separate matter — linked into B01 via E006.",
+        "confidence": "high",
+        "confidence_basis": "Container comments explicitly label as non-observable; goldens do not test container algorithmic complexity."
+      }
+    },
+    {
+      "id": "E024",
+      "evidence_kind": "aggregate",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "multiple",
+        "line_start": null,
+        "line_end": null,
+        "quote": "emCrossPtr auto-nullifying raw pointer → Weak<RefCell<T>> + emCrossPtrList; Set(null) overload split into Set()/Reset(); emBorder PanelPointerCache omitted entirely; emFileDialog OverwriteDialog: emCrossPtr<emDialog> (polled each Cycle) → Option<emDialog> polled by caller."
+      },
+      "cpp_reference": "emCrossPtr, emCrossPtrList, emCrossPtr<emDialog>",
+      "claimed_classification": "forced",
+      "claimed_rationale": "Raw pointer with auto-null doesn't map to Rust; Weak is the standard adaptation.",
+      "observability": "observable-surface (dialog polling timing)",
+      "scale": "crosscutting",
+      "bucket_id": "B07",
+      "is_bucket_root": true,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "various",
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "idiom",
+        "reasoning": "Most cases (emCrossPtr proper → Weak<RefCell<T>>) are canonical. emFileDialog's shift from Cycle-polled CrossPtr to caller-pulled Option<emDialog> is an observable-surface change in when the dialog is seen — flagged for deeper review but the harness-level behavior matches.",
+        "confidence": "medium",
+        "confidence_basis": "emFileDialog comment explicitly notes the polling-model change from Cycle-poll to caller-retrieval."
+      }
+    },
+    {
+      "id": "E025",
+      "evidence_kind": "aggregate",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "multiple",
+        "line_start": null,
+        "line_end": null,
+        "quote": "emCheckButton/emCheckBox/emRadioButton GetCheckSignal → Option<Box<dyn FnMut(bool)>> on_check callback; CheckChanged virtual → folded into callback invocation; Clicked protected virtual → private toggle()."
+      },
+      "cpp_reference": "emCheckButton::GetCheckSignal, emCheckButton::CheckChanged",
+      "claimed_classification": "forced",
+      "claimed_rationale": "Virtual overrides + Signal-based event hub collapsed to callback fields.",
+      "observability": "observable-surface",
+      "scale": "crosscutting",
+      "bucket_id": "B08",
+      "is_bucket_root": true,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "Phase 7 (2026-03-04)",
+        "commit_sha": "10327cc",
+        "date": "2026-03-04"
+      },
+      "inference": {
+        "verdict": "unclear",
+        "reasoning": "The signal object (which emCore users can listen to from arbitrary code) is replaced with a single callback slot. This may alter observable wire-up patterns for downstream code that wants multiple listeners. C++ emSignal is subscribable by any engine; Rust callback-field is single-listener. Whether goldens cover this is unknown. Flagged for review.",
+        "confidence": "medium",
+        "confidence_basis": "Comment claims 'inherited'/'folded' without C++ behavioral comparison; the GetCheckSignal name and its use elsewhere in C++ emCore imply multi-listener capability."
+      }
+    },
+    {
+      "id": "E026",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emCoreConfig.rs",
+        "line_start": 239,
+        "line_end": 243,
+        "quote": "DIVERGED: C++ exposes this via VisitSpeed.GetMaxValue() on an emRec-typed field (emDoubleRec VisitSpeed; in emCoreConfig.h:51; bound declared by VisitSpeed(this,'VisitSpeed',1.0,0.1,10.0) in emCoreConfig.cpp:53). Rust flattens to a plain f64 field + const because the emRec-backed scalar-field infrastructure is not ported."
+      },
+      "cpp_reference": "emCoreConfig.h:51, emCoreConfig.cpp:53, emRec.h infrastructure",
+      "claimed_classification": "forced",
+      "claimed_rationale": "emRec-backed scalar-field infrastructure is not ported.",
+      "observability": "observable-surface",
+      "scale": "subsystem",
+      "bucket_id": "B09",
+      "is_bucket_root": true,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "CAP-0017 (2026-03-15)",
+        "commit_sha": "03f23c8",
+        "date": "2026-03-15"
+      },
+      "inference": {
+        "verdict": "unclear",
+        "reasoning": "Claim is 'infrastructure not ported' — i.e., the emRec runtime-typed config field system with change notifications, persistence, and constraints is absent from the Rust port. This is a genuine gap, not a language-forced divergence. Classifying as unclear: whether this is forced-by-scope (we decided not to port it) or forced-by-language depends on emRec's architecture. Large latent surface-area.",
+        "confidence": "low",
+        "confidence_basis": "emRec.h is referenced but not inspected in this harvest. Gap exists per the comment; classification requires reading emRec's design."
+      }
+    },
+    {
+      "id": "E027",
+      "evidence_kind": "doc-prose",
+      "marker_tag": null,
+      "location": {
+        "path": "crates/emcore/src/emRef.no_rs",
+        "line_start": 51,
+        "line_end": 148,
+        "quote": "emRef<T> -> Rc<T> or Rc<RefCell<T>> throughout the codebase. emScreen.rs:165 Rc<RefCell<emScreen>>; emFpPlugin.rs:445 Rc<RefCell<Self>>; emCoreConfig.rs:215 Rc<RefCell<emConfigModel<Self>>>. Rust equivalents use Rc<RefCell<T>> or OnceLock as sharing."
+      },
+      "cpp_reference": "emRef reference-counted shared model pattern",
+      "claimed_classification": "idiom",
+      "claimed_rationale": "C++ emRef shared model pattern mapped to Rc<RefCell<T>>.",
+      "observability": "observable-surface",
+      "scale": "crosscutting",
+      "bucket_id": "B09",
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "various",
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "The 'emRef -> Rc<RefCell<>>' policy is the project-wide decision codified in CLAUDE.md line 47. It is the same first-order choice that makes E002 load-bearing for the scheduler. 156 Rc<RefCell<>> declarations in the codebase all rest on this. Whether each site could use Rc<T> (immutable) or a different sharing encoding was not evaluated per-site. This is the largest single vector for the smuggling pattern.",
+        "confidence": "high",
+        "confidence_basis": "emRef.no_rs is a literal mapping note committed to the tree; CLAUDE.md line 47 codifies the default; 156 Rc<RefCell<>> sites confirm the scale."
+      }
+    },
+    {
+      "id": "E028",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emImageFile.rs",
+        "line_start": 10,
+        "line_end": 13,
+        "quote": "DIVERGED: C++ uses the async emImageFileModel plugin system with format dispatching to emTga/emBmp/emGif/etc. This synchronous loader handles TGA only and serves small theme border images. Full async image loading will be ported with the image app modules."
+      },
+      "cpp_reference": "emImageFileModel plugin system",
+      "claimed_classification": "forced",
+      "claimed_rationale": "Stub; full port deferred.",
+      "observability": "observable-surface",
+      "scale": "file",
+      "bucket_id": "B09",
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "CAP-0034 (2026-03-15)",
+        "commit_sha": "69236b3",
+        "date": "2026-03-15"
+      },
+      "inference": {
+        "verdict": "unclear",
+        "reasoning": "Deliberately-deferred functionality, not a divergence per se. 'Will be ported' language implies preserved intent. Belongs in B09 as part of the plugin-system gap.",
+        "confidence": "medium",
+        "confidence_basis": "Comment itself says future work."
+      }
+    },
+    {
+      "id": "E029",
+      "evidence_kind": "doc-prose",
+      "marker_tag": null,
+      "location": {
+        "path": "docs/superpowers/specs/2026-04-18-w3-popup-architecture-design.md",
+        "line_start": 19,
+        "line_end": 19,
+        "quote": "The test for 'forced': not 'awkward,' not 'would require refactoring' — impossible under winit's API. When a forced divergence exists, we reproduce the C++ author's intent as tightly as possible within the smallest-necessary concession."
+      },
+      "cpp_reference": "winit async surface lifecycle vs C++ X11 sync surface",
+      "claimed_classification": "forced",
+      "claimed_rationale": "winit surface creation is async (before-event-loop vs during-event-loop) and returns a Handle on a later tick.",
+      "observability": "below-surface (surface state transitions not observable through golden pixel output)",
+      "scale": "subsystem",
+      "bucket_id": "B10",
+      "is_bucket_root": true,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "W3 popup (2026-04)",
+        "commit_sha": null,
+        "date": "2026-04"
+      },
+      "inference": {
+        "verdict": "forced",
+        "reasoning": "winit's API genuinely precludes the C++ create-surface-immediately shape. OsSurface::Pending/Materialized, DeferredAction queue, and pending_framework_actions are all consequences of this one external constraint. Textbook example of a genuinely forced divergence.",
+        "confidence": "high",
+        "confidence_basis": "W3 spec explicitly applies the forced-test and passes. winit docs confirm."
+      }
+    },
+    {
+      "id": "E030",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "DIVERGED",
+      "location": {
+        "path": "crates/emcore/src/emWindowPlatform.rs",
+        "line_start": 163,
+        "line_end": 167,
+        "quote": "DIVERGED: C++ uses emX11Screen::ScreensaverUpdateTimer (59s) with XResetScreenSaver + xscreensaver-command. Rust uses thread-local state ticked from the event loop since we don't have an X11 display handle. active_count ref-counts callers so multi-window support is correct."
+      },
+      "cpp_reference": "emX11Screen.cpp:711-765",
+      "claimed_classification": "forced",
+      "claimed_rationale": "No X11 display handle under winit.",
+      "observability": "observable-surface",
+      "scale": "file",
+      "bucket_id": "B10",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E029",
+      "introduced": {
+        "session_or_spec": "CAP-0082 (2026-03-16)",
+        "commit_sha": "63f014b",
+        "date": "2026-03-16"
+      },
+      "inference": {
+        "verdict": "forced",
+        "reasoning": "Genuine dependency constraint: winit abstracts away X11 handle; XResetScreenSaver is unreachable. Alternative mechanism is necessary.",
+        "confidence": "high",
+        "confidence_basis": "winit API surface."
+      }
+    },
+    {
+      "id": "E031",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "UPSTREAM-GAP",
+      "location": {
+        "path": "crates/emcore/src/emViewPort.rs",
+        "line_start": 210,
+        "line_end": 212,
+        "quote": "UPSTREAM-GAP: emCore ships this as a no-op; no platform backend (emX11, emWnds) overrides it. Soft-keyboard support is absent in upstream Eagle Mode."
+      },
+      "cpp_reference": "emViewPort::IsSoftKeyboardShown / ShowSoftKeyboard",
+      "claimed_classification": "rust-only",
+      "claimed_rationale": "C++ is itself a no-op; Rust mirrors.",
+      "observability": "below-surface",
+      "scale": "method",
+      "bucket_id": null,
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": null,
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "upstream-gap",
+        "reasoning": "Legitimate upstream gap; nothing to fix.",
+        "confidence": "high",
+        "confidence_basis": "Self-described and verifiable against emCore source."
+      }
+    },
+    {
+      "id": "E032",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "RUST_ONLY",
+      "location": {
+        "path": "crates/emcore/src/emPanel.rs",
+        "line_start": 14,
+        "line_end": 16,
+        "quote": "RUST_ONLY: rect.rs -- Consolidates C++ pattern of passing 4 separate doubles (GetLayoutX/Y/Width/Height in emPanel.h) into a typed struct. C++ has no dedicated layout rect type."
+      },
+      "cpp_reference": "emPanel.h GetLayoutX/Y/Width/Height",
+      "claimed_classification": "rust-only",
+      "claimed_rationale": "Typed wrapper to avoid passing 4 loose f64s.",
+      "observability": "below-surface",
+      "scale": "file",
+      "bucket_id": null,
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": null,
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "rust-only-legitimate",
+        "reasoning": "Pure helper; semantically equivalent to the C++ 4-double passing.",
+        "confidence": "high",
+        "confidence_basis": "Trivial."
+      }
+    },
+    {
+      "id": "E033",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "RUST_ONLY",
+      "location": {
+        "path": "crates/emcore/src/emBorder.rs",
+        "line_start": 2358,
+        "line_end": 2360,
+        "quote": "RUST_ONLY: toolkit_images.rs -- compile-time TGA atlas extracted from C++ emBorder::TkResources (emBorder.h:321-341). C++ loads images at runtime via emGetResImage(); Rust embeds them via include_bytes!()."
+      },
+      "cpp_reference": "emBorder.h:321-341 TkResources, emGetResImage",
+      "claimed_classification": "rust-only",
+      "claimed_rationale": "Compile-time embedding vs runtime loading.",
+      "observability": "observable-surface (install layout)",
+      "scale": "file",
+      "bucket_id": null,
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": null,
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "rust-only-legitimate",
+        "reasoning": "Deliberate: avoids runtime resource lookup on install paths that differ between C++ and Rust (.eaglemode vs .eaglemode-rs). Pixel output unaffected.",
+        "confidence": "high",
+        "confidence_basis": "Cross-referenced with emInstallInfo install-path divergence."
+      }
+    },
+    {
+      "id": "E034",
+      "evidence_kind": "comment-tag",
+      "marker_tag": "RUST_ONLY",
+      "location": {
+        "path": "crates/emcore/src/emPainter.rs",
+        "line_start": 9727,
+        "line_end": 9729,
+        "quote": "RUST_ONLY: fixed.rs -- Fixed-point newtype for sub-pixel rasterization. C++ uses bare int with inline shifts (emPainter.cpp:358-374). Rust wraps in a newtype to prevent mixing fixed and integer values."
+      },
+      "cpp_reference": "emPainter.cpp:358-374",
+      "claimed_classification": "rust-only",
+      "claimed_rationale": "Type safety helper around i32 fixed-point.",
+      "observability": "below-surface",
+      "scale": "file",
+      "bucket_id": null,
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": null,
+        "commit_sha": null,
+        "date": null
+      },
+      "inference": {
+        "verdict": "rust-only-legitimate",
+        "reasoning": "Newtype wrapper; same arithmetic. Required by CLAUDE.md pixel-arithmetic rule to prevent fixed/int mixing.",
+        "confidence": "high",
+        "confidence_basis": "CLAUDE.md §Port Fidelity explicitly recommends newtypes for pixel math."
+      }
+    },
+    {
+      "id": "E035",
+      "evidence_kind": "doc-prose",
+      "marker_tag": null,
+      "location": {
+        "path": "docs/superpowers/notes/2026-04-18-emview-subsystem-closeout.md",
+        "line_start": 212,
+        "line_end": 212,
+        "quote": "DIVERGED: (new this wave+W3+W4+SP1+SP3+SP5+SP4.5+SP8+SP7) | 14 | 1 W3 + 4 W4 + 1 SP1 + 2 SP3 + 3 SP5 + 1 SP4.5 + 1 SP8 + 1 SP7 (emView::Context: Rc<emContext> — composition replacing C++ class emView : public emContext, forced by Rust's lack of inheritance); all warranted per CLAUDE.md"
+      },
+      "cpp_reference": "CLAUDE.md Port Ideology",
+      "claimed_classification": "forced",
+      "claimed_rationale": "Running tally of DIVERGED blocks added per wave.",
+      "observability": "N/A",
+      "scale": "crosscutting",
+      "bucket_id": null,
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "emView subsystem closeout",
+        "commit_sha": null,
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "Self-audit lists 14 new DIVERGED blocks 'all warranted per CLAUDE.md' — but ~half are B01 downstream consequences (sub_scheduler, NoticeList relocation, SchedOp machinery, PanelCycleEngine adapter registration) that inherit their forced-ness from E002. The audit passes because each is forced *given* E002. This entry documents the meta-pattern: the running-tally governance does not detect cascading smuggle.",
+        "confidence": "high",
+        "confidence_basis": "Direct cross-reference between the tally and the B01 entries in this doc."
+      }
+    },
+    {
+      "id": "E036",
+      "evidence_kind": "doc-prose",
+      "marker_tag": null,
+      "location": {
+        "path": "docs/superpowers/specs/2026-04-18-emview-sp4-update-engine-routing-design.md",
+        "line_start": 35,
+        "line_end": 35,
+        "quote": "Item 3 (re-entrant borrow hazard across the call tree): idiom adaptation forced by RefCell<EngineScheduler>. ... Under CLAUDE.md's classification: idiom adaptation, not a divergence. Still marked at the queue definition for discoverability."
+      },
+      "cpp_reference": "CLAUDE.md Port Ideology",
+      "claimed_classification": "idiom",
+      "claimed_rationale": "RefCell<EngineScheduler> is 'Rust ownership necessity'; deferral preserves observable what-fires-when.",
+      "observability": "observable-surface",
+      "scale": "crosscutting",
+      "bucket_id": "B01",
+      "is_bucket_root": false,
+      "caused_by_entry_id": "E002",
+      "introduced": {
+        "session_or_spec": "SP4 design (2026-04-18)",
+        "commit_sha": null,
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "This is the verbatim smuggling pattern: 'idiom adaptation *forced by* RefCell<EngineScheduler>'. The phrase mixes two classifications (idiom + forced) and resolves by calling the whole thing 'idiom, not divergence'. But RefCell is the first-order idiom choice; the second-order 'forced by RefCell' is then reclassified as idiom. This closes the accountability loop without ever reopening the RefCell decision.",
+        "confidence": "high",
+        "confidence_basis": "Direct quote."
+      }
+    },
+    {
+      "id": "E037",
+      "evidence_kind": "doc-prose",
+      "marker_tag": null,
+      "location": {
+        "path": "docs/superpowers/plans/2026-04-19-emview-sp7-emcontext-threading.md",
+        "line_start": 11,
+        "line_end": 11,
+        "quote": "Drift from C++. Exactly one new DIVERGED block is permitted (emView::Context composition). Subagents must not introduce other DIVERGED markers. If a subagent finds a second forced divergence, it must stop and ask before adding."
+      },
+      "cpp_reference": "N/A",
+      "claimed_classification": "none",
+      "claimed_rationale": "Plan-level governance rule.",
+      "observability": "N/A",
+      "scale": "crosscutting",
+      "bucket_id": null,
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "SP7 plan (2026-04-19)",
+        "commit_sha": null,
+        "date": "2026-04-19"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "Governance rule caps new DIVERGED markers per sub-project. The cap works against *marked* divergences but is silent about downstream consequences and about first-order idiom-adaptations that sanction future forced-divergences. The cap + IDIOM tag together form the mechanism by which E001-E011 slip through governance.",
+        "confidence": "high",
+        "confidence_basis": "Plan rule quoted verbatim; observe that SP5 landed 3 new DIVERGEDs, SP4.5 1, SP8 1, SP7 1 — per-sub-project cap respected — while the aggregate B01 cascade grew unchecked."
+      }
+    },
+    {
+      "id": "E038",
+      "evidence_kind": "doc-prose",
+      "marker_tag": null,
+      "location": {
+        "path": "docs/superpowers/plans/2026-04-18-emview-sp3-coreconfig-ownership.md",
+        "line_start": 338,
+        "line_end": 338,
+        "quote": "Critical: self.CoreConfig.borrow() must be called *before* self.VisitingVA.borrow_mut() OR the va binding must be dropped before this line — otherwise two borrows on self. Since va borrows VisitingVA (not CoreConfig), distinct RefCells mean simultaneous borrows are fine. But the borrow of self itself is split..."
+      },
+      "cpp_reference": "N/A",
+      "claimed_classification": "none",
+      "claimed_rationale": null,
+      "observability": "N/A",
+      "scale": "method",
+      "bucket_id": null,
+      "is_bucket_root": false,
+      "caused_by_entry_id": null,
+      "introduced": {
+        "session_or_spec": "SP3 plan (2026-04-18)",
+        "commit_sha": null,
+        "date": "2026-04-18"
+      },
+      "inference": {
+        "verdict": "smuggled-idiom",
+        "reasoning": "Plan-level hazard note: fields on emView are themselves Rc<RefCell<>> and their borrow ordering must be manually managed. Symptom of the project-wide 'everything is Rc<RefCell<>>' decision (E027). Not a bug, but cognitive tax imposed by the first-order choice that doesn't exist in C++.",
+        "confidence": "high",
+        "confidence_basis": "Direct quote; confirms that even within-view field access requires borrow-ordering reasoning, which is a second-order consequence of E027's policy."
+      }
+    }
+  ]
+}

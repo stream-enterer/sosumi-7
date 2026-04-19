@@ -37,10 +37,16 @@ use std::rc::Weak;
 pub struct emViewPort {
     // === C++ private fields (emView.h:789-793) ===
     // HomeView pointer — in C++ a raw *emView.
-    // DIVERGED: Phase 4 stores the home geometry as plain f64 fields rather
-    // than holding a back-reference to the emView. The C++ design used raw
-    // pointer access; Rust Rc<RefCell> cycles require an alternative approach.
-    // emView reads/writes these fields directly via SwapViewPorts.
+    // DIVERGED: stores the home geometry on the port (plain f64 fields)
+    // rather than following a back-reference to the emView. C++ reads these
+    // through a raw `HomeView*` pointer (emViewPort reaches the view's
+    // HomeX/Y/Width/Height). A Rust `Weak<RefCell<emView>>` back-reference
+    // would not be a cycle-hazard (the `window` field below uses exactly
+    // that shape), but `upgrade().borrow()` cannot run while emView is
+    // already borrowed_mut — which is the common case inside `SetGeometry`
+    // and `SwapViewPorts`. Storing the geometry on the port avoids that
+    // re-entrancy and lets `SwapViewPorts` move it atomically when the
+    // Home and Current ports exchange identities.
     pub home_x: f64,
     pub home_y: f64,
     pub home_width: f64,
