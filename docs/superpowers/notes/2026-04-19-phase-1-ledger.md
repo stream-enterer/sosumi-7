@@ -29,3 +29,12 @@
 - Workspace compile state: emcore clean (1 expected dead_code warning on `framework_actions`/`pending_inputs`, Task 2 legacy). emmain still red — 25 errors, same shape as Task 2 left (missing `borrow_mut`/`borrow` on plain `EngineScheduler`). No new breakages outside emmain.
 - emcore tests: 887/887 pass, 1 skipped.
 - Committed with `--no-verify` per plan line 302 (intermediate-red on phase branch).
+
+## Tasks 4+5 (Option B — minimal)
+- @ d3a6643: Scope reduced per halt note 2026-04-19-phase-1-task-4-5-blocked.md. Actions:
+  - Deleted IDIOM: comment block (invariant I5 target now reachable).
+  - Added SchedCtx::is_signaled / EngineCtx::is_signaled (forwards to scheduler). Prerequisite for Task 9.
+  - Added TODO(phase-1 task-9) markers on SchedOp, queue_or_apply_sched_op, pending_sched_ops, close_signal_pending.
+- Deferred to Task 9: SchedOp deletion, queue_or_apply_sched_op deletion, pending_sched_ops field deletion, close_signal_pending deletion, SVPUpdSlice try_borrow deletion, ctx threading through emView methods.
+- Invariants I1a (SchedOp=0), I1b (pending_sched_ops=0), I1d (try_borrow=0 in emView) REMAIN UNSATISFIED at end of Tasks 4+5; will be satisfied at end of Task 9.
+- Invariant I5 (IDIOM:=0) SATISFIED by this commit.
