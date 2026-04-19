@@ -876,8 +876,9 @@ pub fn create_main_window(
     let cp_signal = app.scheduler.borrow_mut().create_signal();
     if let Some(rc) = app.windows.get(&window_id) {
         let mut win = rc.borrow_mut();
+        let view_weak = Rc::downgrade(win.view_rc());
         win.view_mut()
-            .attach_to_scheduler(Rc::clone(&app.scheduler), window_id);
+            .attach_to_scheduler(Rc::clone(&app.scheduler), view_weak);
         win.view_mut().set_control_panel_signal(cp_signal);
     }
     // SP4.5: init_panel_view ran before attach_to_scheduler above, so the

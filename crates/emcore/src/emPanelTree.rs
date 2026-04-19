@@ -3300,8 +3300,9 @@ mod tests {
 
         // Step 2: attach_to_scheduler.
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        let view_weak = Rc::downgrade(&view);
         view.borrow_mut()
-            .attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
+            .attach_to_scheduler(sched.clone(), view_weak);
 
         // Still no engine_id — register_engine_for was never re-invoked.
         assert!(

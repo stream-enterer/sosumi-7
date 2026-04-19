@@ -232,37 +232,29 @@ impl SchedOp {
     }
 }
 
-/// Port of C++ `emView::UpdateEngineClass` (emView.h:626-633).
+/// Scheduler-driven engine that calls `emView::Update` once per slice.
 ///
-/// Scheduler-driven engine: when awake, `Cycle()` drains the view's update
-/// loop. Holds the `WindowId` of the containing `emWindow` so it can locate
-/// both the view (via `ctx.windows`) and the panel tree (via `ctx.tree`).
+/// Ported from C++ `emView::UpdateEngineClass` (inner class of `emView`,
+/// holds direct pointer to view). Rust holds `Weak<RefCell<emView>>` since
+/// `emView` lives in `Rc<RefCell<>>`.
 pub struct UpdateEngineClass {
-    /// Identifier of the window whose view this engine updates.
-    pub window_id: winit::window::WindowId,
+    pub view: std::rc::Weak<std::cell::RefCell<emView>>,
 }
 
 impl UpdateEngineClass {
-    /// Create a new `UpdateEngineClass` bound to `window_id`.
-    /// Mirrors C++ ctor which sets HIGH_PRIORITY.
-    pub fn new(window_id: winit::window::WindowId) -> Self {
-        Self { window_id }
+    pub fn new(view: std::rc::Weak<std::cell::RefCell<emView>>) -> Self {
+        Self { view }
     }
 }
 
 impl super::emEngine::emEngine for UpdateEngineClass {
     fn Cycle(&mut self, ctx: &mut super::emEngine::EngineCtx<'_>) -> bool {
-        // C++ UpdateEngineClass::Cycle (emView.cpp:2521-2524).
-        let Some(win_rc) = ctx.windows.get(&self.window_id) else {
+        let Some(view_rc) = self.view.upgrade() else {
             return false;
         };
-        let win_rc = Rc::clone(win_rc);
-        let mut win = win_rc.borrow_mut();
-        let mut view = win.view_mut();
+        let mut view = view_rc.borrow_mut();
 
-        // SP4 Part A: pre-compute the popup-close probe here (C++ emView.cpp:1299;
-        // in C++ this is inside Update against emView's own engine clock, but
-        // Rust emView is not an emEngine so we use UpdateEngine's clock via ctx).
+        // SP4 Part A: pre-compute popup-close probe (C++ emView.cpp:1299).
         let popup_close_sig = view.PopupWindow.as_ref().map(|p| p.borrow().close_signal);
         if let Some(close_sig) = popup_close_sig {
             view.close_signal_pending = ctx.IsSignaled(close_sig);
@@ -291,18 +283,14 @@ impl super::emEngine::emEngine for UpdateEngineClass {
 /// animator is active — forwards to `emVisitingViewAnimator::animate`,
 /// which corresponds to C++ `CycleAnimation` (emViewAnimator.cpp:1194).
 pub struct VisitingVAEngineClass {
-    /// Identifier of the window whose view owns the animator to tick.
-    pub window_id: winit::window::WindowId,
-    /// Wall-clock timestamp of the previous `Cycle`, used to compute `dt`.
-    /// `None` before the first tick; the first tick uses a 16 ms fallback.
+    pub view: std::rc::Weak<std::cell::RefCell<emView>>,
     last_cycle: Option<Instant>,
 }
 
 impl VisitingVAEngineClass {
-    /// Create a new `VisitingVAEngineClass` bound to `window_id`.
-    pub fn new(window_id: winit::window::WindowId) -> Self {
+    pub fn new(view: std::rc::Weak<std::cell::RefCell<emView>>) -> Self {
         Self {
-            window_id,
+            view,
             last_cycle: None,
         }
     }
@@ -310,8 +298,6 @@ impl VisitingVAEngineClass {
 
 impl super::emEngine::emEngine for VisitingVAEngineClass {
     fn Cycle(&mut self, ctx: &mut super::emEngine::EngineCtx<'_>) -> bool {
-        // Compute dt from wall-clock, clamped to the same range emGUIFramework
-        // uses for animator ticks (emGUIFramework.rs:523-526).
         let now = Instant::now();
         let dt = self
             .last_cycle
@@ -320,14 +306,10 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
             .clamp(0.001, 0.1);
         self.last_cycle = Some(now);
 
-        let win_rc = match ctx.windows.get(&self.window_id) {
-            Some(w) => Rc::clone(w),
-            None => return false,
+        let Some(view_rc) = self.view.upgrade() else {
+            return false;
         };
-        let mut win = win_rc.borrow_mut();
-        let mut view = win.view_mut();
-        // Clone the animator Rc so we can mutably borrow it alongside &mut view.
-        // The animator's RefCell is independent of the view's storage.
+        let mut view = view_rc.borrow_mut();
         let va_rc = Rc::clone(&view.VisitingVA);
         let mut va = va_rc.borrow_mut();
         if !va.is_active() {
@@ -3133,13 +3115,13 @@ impl emView {
     pub fn attach_to_scheduler(
         &mut self,
         scheduler: Rc<RefCell<super::emScheduler::EngineScheduler>>,
-        window_id: winit::window::WindowId,
+        self_view_weak: std::rc::Weak<std::cell::RefCell<emView>>,
     ) {
         let (engine_id, eoi_signal, visiting_va_engine_id) = {
             let mut sched = scheduler.borrow_mut();
             let engine_id = sched.register_engine(
                 super::emEngine::Priority::High,
-                Box::new(UpdateEngineClass::new(window_id)),
+                Box::new(UpdateEngineClass::new(self_view_weak.clone())),
             );
             let eoi_signal = sched.create_signal();
             // W4 Task 1.3: register the VisitingVA engine. C++ equivalent:
@@ -3148,7 +3130,7 @@ impl emView {
             // C++ emViewAnimator base ctor sets HIGH_PRIORITY (emViewAnimator.cpp:39).
             let visiting_va_engine_id = sched.register_engine(
                 super::emEngine::Priority::High,
-                Box::new(VisitingVAEngineClass::new(window_id)),
+                Box::new(VisitingVAEngineClass::new(self_view_weak)),
             );
             (engine_id, eoi_signal, visiting_va_engine_id)
         };
@@ -6647,17 +6629,21 @@ mod tests {
         }
 
         let (mut tree, root, _, _) = setup_tree();
-        let mut v = emView::new(
+        let v_rc = Rc::new(RefCell::new(emView::new(
             root,
             640.0,
             480.0,
             std::rc::Rc::new(std::cell::RefCell::new(
                 crate::emCoreConfig::emCoreConfig::default(),
             )),
-        );
+        )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        v.attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
-        let eoi = v.EOISignal.expect("EOISignal installed by attach");
+        let v_weak = Rc::downgrade(&v_rc);
+        v_rc.borrow_mut().attach_to_scheduler(sched.clone(), v_weak);
+        let eoi = v_rc
+            .borrow()
+            .EOISignal
+            .expect("EOISignal installed by attach");
 
         // Register a listener that records when EOISignal fires.
         let fired = Rc::new(std::cell::Cell::new(false));
@@ -6670,7 +6656,7 @@ mod tests {
         );
         sched.borrow_mut().connect(eoi, listener_id);
 
-        v.SignalEOIDelayed();
+        v_rc.borrow_mut().SignalEOIDelayed();
         let mut windows = std::collections::HashMap::new();
         for _ in 0..10 {
             sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
@@ -6686,14 +6672,17 @@ mod tests {
         // Clean up scheduler state before drop asserts.
         sched.borrow_mut().disconnect(eoi, listener_id);
         sched.borrow_mut().remove_engine(listener_id);
-        if let Some(id) = v.update_engine_id.take() {
-            sched.borrow_mut().remove_engine(id);
-        }
-        if let Some(id) = v.eoi_engine_id.take() {
-            sched.borrow_mut().remove_engine(id);
-        }
-        if let Some(id) = v.visiting_va_engine_id.take() {
-            sched.borrow_mut().remove_engine(id);
+        {
+            let mut v = v_rc.borrow_mut();
+            if let Some(id) = v.update_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.eoi_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
+            if let Some(id) = v.visiting_va_engine_id.take() {
+                sched.borrow_mut().remove_engine(id);
+            }
         }
         sched.borrow_mut().remove_signal(eoi);
     }
@@ -6703,23 +6692,28 @@ mod tests {
     #[test]
     fn test_phase7_update_engine_wakeup_via_scheduler() {
         let (_tree, root, _, _) = setup_tree();
-        let mut v = emView::new(
+        let v_rc = Rc::new(RefCell::new(emView::new(
             root,
             640.0,
             480.0,
             std::rc::Rc::new(std::cell::RefCell::new(
                 crate::emCoreConfig::emCoreConfig::default(),
             )),
-        );
+        )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        v.attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
-        assert!(v.update_engine_id.is_some());
-        assert!(v.EOISignal.is_some());
+        let v_weak = Rc::downgrade(&v_rc);
+        v_rc.borrow_mut().attach_to_scheduler(sched.clone(), v_weak);
+        {
+            let v = v_rc.borrow();
+            assert!(v.update_engine_id.is_some());
+            assert!(v.EOISignal.is_some());
+        }
         // SP4: attach_to_scheduler wakes the update engine (C++ emView.cpp:84).
         // The explicit WakeUpUpdateEngine() below verifies the re-wake API.
-        v.WakeUpUpdateEngine();
+        v_rc.borrow_mut().WakeUpUpdateEngine();
         assert!(sched.borrow().has_awake_engines());
         // Clean up for Drop debug_asserts.
+        let mut v = v_rc.borrow_mut();
         let eng_id = v.update_engine_id.take().unwrap();
         sched.borrow_mut().remove_engine(eng_id);
         if let Some(id) = v.visiting_va_engine_id.take() {
@@ -6856,8 +6850,8 @@ mod tests {
         tree.set_panel_view(root, Rc::downgrade(&v_rc));
 
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        v_rc.borrow_mut()
-            .attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
+        let v_weak = Rc::downgrade(&v_rc);
+        v_rc.borrow_mut().attach_to_scheduler(sched.clone(), v_weak);
         v_rc.borrow_mut().Update(&mut tree);
         let eng_id = v_rc
             .borrow()
@@ -6956,9 +6950,11 @@ mod tests {
             w.borrow_mut()
                 .view_mut()
                 .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0);
+            let view_weak = Rc::downgrade(w.borrow().view_rc());
+            let _ = win_id;
             w.borrow_mut()
                 .view_mut()
-                .attach_to_scheduler(sched.clone(), win_id);
+                .attach_to_scheduler(sched.clone(), view_weak);
             w
         };
 
@@ -7091,9 +7087,11 @@ mod tests {
             w.borrow_mut()
                 .view_mut()
                 .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0);
+            let view_weak = Rc::downgrade(w.borrow().view_rc());
+            let _ = win_id;
             w.borrow_mut()
                 .view_mut()
-                .attach_to_scheduler(sched.clone(), win_id);
+                .attach_to_scheduler(sched.clone(), view_weak);
             w
         };
 
@@ -7166,51 +7164,51 @@ mod tests {
 
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        let mut view = emView::new(
+        let view_rc = Rc::new(RefCell::new(emView::new(
             root,
             800.0,
             600.0,
             std::rc::Rc::new(std::cell::RefCell::new(
                 crate::emCoreConfig::emCoreConfig::default(),
             )),
-        );
+        )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        view.attach_to_scheduler(sched.clone(), winit::window::WindowId::dummy());
+        let view_weak = Rc::downgrade(&view_rc);
+        view_rc
+            .borrow_mut()
+            .attach_to_scheduler(sched.clone(), view_weak);
 
         // Engine must be registered by attach_to_scheduler.
-        let visiting_id = view
+        let visiting_id = view_rc
+            .borrow()
             .visiting_va_engine_id
             .expect("attach_to_scheduler must register VisitingVAEngineClass");
 
         // Activate the animator — SetGoal + Activate, matching the
         // delegation shape Visit-family methods will use in Phase 3.
         {
+            let view = view_rc.borrow();
             let mut va = view.VisitingVA.borrow_mut();
             va.SetGoal("root", false, "");
             va.Activate();
         }
         assert!(
-            view.VisitingVA.borrow().is_active(),
+            view_rc.borrow().VisitingVA.borrow().is_active(),
             "animator should be active after SetGoal + Activate"
         );
 
-        // Tick the scheduler. With a dummy window id, the Cycle method
-        // hits the `ctx.windows.get() -> None` branch and no-ops — same
-        // fallback pattern as `UpdateEngineClass`. The animator state
-        // therefore must remain unchanged.
+        // Tick the scheduler. With view-direct weak (SP8 Phase 1), Cycle
+        // upgrades the weak successfully and calls va.animate. The animator
+        // either progresses (remaining active) or cleanly deactivates.
         sched.borrow_mut().wake_up(visiting_id);
         let mut windows = std::collections::HashMap::new();
         sched.borrow_mut().DoTimeSlice(&mut tree, &mut windows);
 
-        // Intent check from the plan: "after one tick, animator has either
-        // progressed or cleanly deactivated". Progress needs a real window;
-        // the dummy path leaves state untouched, which is a valid outcome.
-        assert!(
-            view.VisitingVA.borrow().is_active(),
-            "with dummy window, Cycle no-ops and animator remains active"
-        );
+        // Either outcome is valid — we only assert that Cycle ran without panic.
+        let _ = view_rc.borrow().VisitingVA.borrow().is_active();
 
         // Clean up scheduler resources before Drop asserts.
+        let mut view = view_rc.borrow_mut();
         if let Some(id) = view.update_engine_id.take() {
             sched.borrow_mut().remove_engine(id);
         }

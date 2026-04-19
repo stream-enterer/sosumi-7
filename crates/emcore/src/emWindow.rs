@@ -1793,9 +1793,14 @@ mod tests {
             geom_sig,
             crate::emColor::emColor::TRANSPARENT,
         );
+        let view_weak = {
+            let w = win.borrow();
+            std::rc::Rc::downgrade(w.view_rc())
+        };
+        let _ = win_id;
         win.borrow_mut()
             .view_mut()
-            .attach_to_scheduler(sched.clone(), win_id);
+            .attach_to_scheduler(sched.clone(), view_weak);
         assert!(win.borrow().view().update_engine_id.is_some());
 
         // Scheduler cleanup for Drop debug_asserts.
