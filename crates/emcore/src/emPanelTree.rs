@@ -269,15 +269,6 @@ impl PanelData {
             View: std::rc::Weak::new(),
         }
     }
-
-    /// Upgrades the weak ref to a strong `Rc`. Returns `None` only before
-    /// the view is set at construction (should never be `None` after
-    /// `create_root`/`create_child`).
-    // DIVERGED: C++ `emPanel::GetView()` — renamed to `view()` for Rust snake_case convention.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn view(&self) -> Option<std::rc::Rc<std::cell::RefCell<crate::emView::emView>>> {
-        self.View.upgrade()
-    }
 }
 
 /// Arena-based panel tree using SlotMap for stable handles.
@@ -3331,7 +3322,7 @@ mod tests {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
         assert!(
-            t.panels[root].view().is_none(),
+            t.panels[root].View.upgrade().is_none(),
             "View must be Weak::new() until populated by create_root (Task 2.2)"
         );
     }
