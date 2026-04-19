@@ -277,3 +277,43 @@ worth of surface).
   - R2: accept the Rc<RefCell<_>> shim through Phase 1 end; schedule
     the ctx-threading cascade as a dedicated Phase 1.5 or Phase 2.
 
+## Chunk 4 (sub_scheduler delete + register_engine_for ctx + emPanelCtx delete) — BLOCKED
+
+Fifth halt at same structural boundary. See
+`docs/superpowers/notes/2026-04-19-phase-1-chunk-4-blocked.md` for full
+per-part cascade analysis. State at entry: driver prompt specifies
+Chunk 3 deferred to Phase 1.5 (user R2); Chunk 4 to proceed on remaining
+sub_scheduler/register_engine_for/emPanelCtx work. Finding: all three
+Chunk 4 parts presume a post-Chunk-3 world (PanelBehavior::Cycle takes
+EngineCtx; PanelCtx carries ctx; PanelCtx has evaporated). None of that
+is true. Per-part:
+
+- **Part A (sub_scheduler delete)**: BLOCKED. The DIVERGED block at
+  `emSubViewPanel.rs:34-42` is a forced divergence: outer
+  scheduler's `EngineCtx.tree` points at the outer `PanelTree`, so
+  sub-tree engines cannot cycle on it without a tree-swap mechanism.
+  The plan's §3.3 sketch requires `PanelBehavior::Cycle(&mut self,
+  ectx, pctx)` but the current trait signature is `Cycle(&mut self,
+  &mut PanelCtx)`. Flipping it is the 53-file migration documented in
+  chunk-3-blocked.
+- **Part B (register_engine_for takes ctx)**: BLOCKED. The
+  `create_child` reentrant caller at `emPanelTree.rs:654` is invoked
+  from inside `PanelBehavior::Cycle` impls holding `&mut PanelCtx`,
+  not ctx. Supplying ctx requires PanelCtx to carry ctx — Chunk 3.
+- **Part C (delete emPanelCtx.rs)**: BLOCKED (semantic). PanelCtx is
+  live in ~60 sites and is the parameter type of every
+  `PanelBehavior::Cycle` impl. Absorbing 300 lines of panel-API code
+  into `emEngineCtx.rs` conflates scheduler-ctx with panel-API;
+  cosmetic rename; satisfies no real invariant beyond filesystem-path
+  absence; produces churn that must be undone when Chunk 3 lands.
+
+No code changes shipped. Tree still at f3710c4. Invariants: Chunk 4's
+own grep-targets (sub_scheduler=0, register_pending_engines=0,
+emPanelCtx=0) all UNSAT. All prior invariants unchanged
+(I5/I6/emContext::scheduler SAT, I1/I1a/I1b/I1d UNSAT). Tests 2455/0/9.
+Goldens 237/6. Clippy clean.
+
+Recommendation: accept R1 (reissue Chunks 3+4 as unified decomposed
+Phase 1.5) or close Phase 1 at current state with Chunk 3+4 invariants
+carried to Phase 1.5.
+
