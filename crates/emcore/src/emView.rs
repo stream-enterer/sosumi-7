@@ -470,7 +470,14 @@ pub struct emView {
     /// lifetime — `App::windows` deliberately does NOT hold the popup.
     /// Winit events destined for the popup's WindowId are currently not
     /// routed; full popup OS-event handling is Task 8 territory.
-    pub PopupWindow: Option<crate::emWindow::emWindow>,
+    // DIVERGED (Phase 2 Task 2): Box<emWindow> instead of emWindow. Now
+    // that emWindow::view is a plain emView (not Rc<RefCell>), storing
+    // emWindow inline here would create infinite-sized recursion
+    // (emView -> emWindow -> emView). Box breaks the cycle. This is a
+    // forced Rust divergence: C++ stores a raw `emWindow*` (heap-allocated
+    // pointer), so Box preserves the "heap-allocated, optionally-present"
+    // shape of the C++ field exactly.
+    pub PopupWindow: Option<Box<crate::emWindow::emWindow>>,
     /// DIVERGED: no C++ analogue — C++ reads the close-signal directly off
     /// `PopupWindow->GetCloseSignal()`. Rust mirrors it here so that
     /// `Update`'s close-signal probe and `RawVisitAbs` teardown avoid
@@ -1840,7 +1847,7 @@ impl emView {
                         geom_sig,
                         self.background_color,
                     );
-                    self.PopupWindow = Some(popup);
+                    self.PopupWindow = Some(Box::new(popup));
                     self.PopupCloseSignal = Some(close_sig);
                     // C++ (emView.cpp:1644): UpdateEngine->AddWakeUpSignal(PopupWindow->GetCloseSignal())
                     if let Some(eng_id) = self.update_engine_id {

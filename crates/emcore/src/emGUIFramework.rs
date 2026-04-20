@@ -318,7 +318,7 @@ impl App {
                 ..
             } = self;
             let home = windows.get_mut(&home_key).expect("home_key still present");
-            let mut view = home.view_mut();
+            let view = home.view_mut();
             let popup = view
                 .PopupWindow
                 .as_mut()

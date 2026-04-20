@@ -23,11 +23,19 @@ impl PanelScope {
     ) -> Option<R> {
         match self {
             PanelScope::Toplevel(wid) => {
-                let window = ctx.windows.get(&wid)?;
-                let view_rc = window.view_rc().clone();
-                let mut sched_ctx = ctx.as_sched_ctx();
-                let mut view = view_rc.borrow_mut();
-                Some(f(&mut view, &mut sched_ctx))
+                let window = ctx.windows.get_mut(&wid)?;
+                // Phase 2 Task 2: window.view is now a plain emView; borrow
+                // it directly. The split borrow (windows vs. scheduler) is
+                // OK because `as_sched_ctx` only touches fields other than
+                // `windows`.
+                let view: &mut crate::emView::emView = &mut window.view;
+                let mut sched_ctx = crate::emEngineCtx::SchedCtx {
+                    scheduler: ctx.scheduler,
+                    framework_actions: ctx.framework_actions,
+                    root_context: ctx.root_context,
+                    current_engine: Some(ctx.engine_id),
+                };
+                Some(f(view, &mut sched_ctx))
             }
             PanelScope::SubView(_pid) => {
                 // Sub-view resolution threads through the owning panel's sub_view.
