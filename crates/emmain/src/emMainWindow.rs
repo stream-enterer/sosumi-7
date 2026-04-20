@@ -778,16 +778,44 @@ pub fn create_main_window(
     // (emMainPanel.cpp:39-41): create control view, content view, and slider
     // children immediately at construction time. C++ has these as emView
     // members instantiated inline; in Rust the creator has tree access here.
-    let mut ctrl_svp = emSubViewPanel::new(Rc::clone(&app.context));
-    ctrl_svp.set_sub_view_flags(
-        ViewFlags::POPUP_ZOOM | ViewFlags::ROOT_SAME_TALLNESS | ViewFlags::NO_ACTIVE_HIGHLIGHT,
-    );
+    //
+    // Phase 1.75 Task 3: `emSubViewPanel::new` needs `outer_panel_id` + a
+    // SchedCtx on the outer scheduler to register the sub-view's engines on
+    // the outer scheduler with `SubView` location. So: create the outer child
+    // slot first, then build a SchedCtx, then construct the emSubViewPanel,
+    // then install it.
     let ctrl_id = app.tree.create_child(root_id, "control view", None);
+    let content_id = app.tree.create_child(root_id, "content view", None);
+    let ctrl_svp = {
+        let root_ctx = app.context.GetRootContext();
+        let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+        let mut sc = emcore::emEngineCtx::SchedCtx {
+            scheduler: &mut app.scheduler,
+            framework_actions: &mut fw,
+            root_context: &root_ctx,
+            current_engine: None,
+        };
+        let mut svp = emSubViewPanel::new(Rc::clone(&app.context), ctrl_id, &mut sc);
+        svp.set_sub_view_flags(
+            ViewFlags::POPUP_ZOOM | ViewFlags::ROOT_SAME_TALLNESS | ViewFlags::NO_ACTIVE_HIGHLIGHT,
+        );
+        svp
+    };
     app.tree.set_behavior(ctrl_id, Box::new(ctrl_svp));
 
-    let mut content_svp = emSubViewPanel::new(Rc::clone(&app.context));
-    content_svp.set_sub_view_flags(ViewFlags::ROOT_SAME_TALLNESS);
-    let content_id = app.tree.create_child(root_id, "content view", None);
+    let content_svp = {
+        let root_ctx = app.context.GetRootContext();
+        let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+        let mut sc = emcore::emEngineCtx::SchedCtx {
+            scheduler: &mut app.scheduler,
+            framework_actions: &mut fw,
+            root_context: &root_ctx,
+            current_engine: None,
+        };
+        let mut svp = emSubViewPanel::new(Rc::clone(&app.context), content_id, &mut sc);
+        svp.set_sub_view_flags(ViewFlags::ROOT_SAME_TALLNESS);
+        svp
+    };
     app.tree.set_behavior(content_id, Box::new(content_svp));
 
     let slider_id = app.tree.create_child(root_id, "slider", None);
@@ -882,7 +910,7 @@ pub fn create_main_window(
                 root_context: &root_ctx,
                 current_engine: None,
             };
-            v.RegisterEngines(&mut sc, view_weak);
+            v.RegisterEngines(&mut sc, view_weak, emcore::emEngine::TreeLocation::Outer);
         }
         win.view_mut().set_control_panel_signal(cp_signal);
     }

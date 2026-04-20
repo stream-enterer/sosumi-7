@@ -336,6 +336,13 @@ pub struct PanelTree {
     /// by `DoTimeSlice`) at the time `deregister_engine_for` ran.
     /// Drained at the start of each `DoTimeSlice` before the main loop.
     pub(crate) pending_engine_removals: Vec<crate::emEngine::EngineId>,
+    /// Phase 1.75 Task 3: where this tree sits relative to the outer scheduler.
+    /// The outer tree is `Outer`; an `emSubViewPanel::sub_tree` is
+    /// `SubView(outer_panel_id, Box::new(Outer))` (or nested deeper). Used by
+    /// `register_engine_for` so sub-tree `PanelCycleEngine` adapters are
+    /// registered with the correct `TreeLocation` on the single outer
+    /// scheduler and dispatch resolves through the sub-view chain.
+    pub(crate) tree_location: TreeLocation,
 }
 
 impl PanelTree {
@@ -352,7 +359,17 @@ impl PanelTree {
             notice_ring_head_prev: None,
             root_layout_changed: false,
             pending_engine_removals: Vec::new(),
+            tree_location: TreeLocation::Outer,
         }
+    }
+
+    /// Phase 1.75 Task 3: set this tree's `TreeLocation`. Called by
+    /// `emSubViewPanel::new` on its `sub_tree` to tag it `SubView(outer_id,
+    /// Outer)` so future `create_child` / `register_engine_for` calls register
+    /// their `PanelCycleEngine` adapters with the outer scheduler at the
+    /// correct nested location.
+    pub(crate) fn set_tree_location(&mut self, loc: TreeLocation) {
+        self.tree_location = loc;
     }
 
     /// Link `id` into the notice ring at the tail and wake the view's update
@@ -605,7 +622,11 @@ impl PanelTree {
             #[cfg(any(test, feature = "test-support"))]
             first_cycle_probe: None,
         };
-        let eid = sched.register_engine(Box::new(adapter), Priority::Medium, TreeLocation::Outer);
+        let eid = sched.register_engine(
+            Box::new(adapter),
+            Priority::Medium,
+            self.tree_location.clone(),
+        );
         self.panels[id].engine_id = Some(eid);
     }
 
@@ -3353,7 +3374,7 @@ mod tests {
                 root_context: &root_ctx,
                 current_engine: None,
             };
-            v.RegisterEngines(&mut sc, view_weak);
+            v.RegisterEngines(&mut sc, view_weak, crate::emEngine::TreeLocation::Outer);
         }
         // Still no engine_id — register_engine_for was never re-invoked.
         assert!(

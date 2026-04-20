@@ -3109,18 +3109,19 @@ impl emView {
         &mut self,
         ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
         self_view_weak: std::rc::Weak<std::cell::RefCell<emView>>,
+        tree_location: super::emEngine::TreeLocation,
     ) {
         let engine_id = ctx.scheduler.register_engine(
             Box::new(UpdateEngineClass::new(self_view_weak.clone())),
             super::emEngine::Priority::High,
-            super::emEngine::TreeLocation::Outer,
+            tree_location.clone(),
         );
         let eoi_signal = ctx.scheduler.create_signal();
         // C++ emViewAnimator base ctor sets HIGH_PRIORITY (emViewAnimator.cpp:39).
         let visiting_va_engine_id = ctx.scheduler.register_engine(
             Box::new(VisitingVAEngineClass::new(self_view_weak)),
             super::emEngine::Priority::High,
-            super::emEngine::TreeLocation::Outer,
+            tree_location,
         );
         self.update_engine_id = Some(engine_id);
         self.EOISignal = Some(eoi_signal);
@@ -6337,7 +6338,7 @@ mod tests {
                 root_context: &root,
                 current_engine: None,
             };
-            v.RegisterEngines(&mut sc, v_weak);
+            v.RegisterEngines(&mut sc, v_weak, crate::emEngine::TreeLocation::Outer);
         }
         let eoi = v_rc
             .borrow()
@@ -6426,7 +6427,7 @@ mod tests {
                 root_context: &root,
                 current_engine: None,
             };
-            v.RegisterEngines(&mut sc, v_weak);
+            v.RegisterEngines(&mut sc, v_weak, crate::emEngine::TreeLocation::Outer);
         }
         {
             let v = v_rc.borrow();
@@ -6576,7 +6577,7 @@ mod tests {
                 root_context: &root,
                 current_engine: None,
             };
-            v.RegisterEngines(&mut sc, v_weak);
+            v.RegisterEngines(&mut sc, v_weak, crate::emEngine::TreeLocation::Outer);
         }
         tree.register_pending_engines(&mut sched.borrow_mut());
         ts.with(|sc| v_rc.borrow_mut().Update(&mut tree, sc));
@@ -6706,7 +6707,7 @@ mod tests {
                     root_context: &root,
                     current_engine: None,
                 };
-                v.RegisterEngines(&mut sc, view_weak);
+                v.RegisterEngines(&mut sc, view_weak, crate::emEngine::TreeLocation::Outer);
             }
             w
         };
@@ -6866,7 +6867,7 @@ mod tests {
                     root_context: &root,
                     current_engine: None,
                 };
-                v.RegisterEngines(&mut sc, view_weak);
+                v.RegisterEngines(&mut sc, view_weak, crate::emEngine::TreeLocation::Outer);
             }
             w
         };
@@ -6960,7 +6961,7 @@ mod tests {
                 root_context: &root,
                 current_engine: None,
             };
-            v.RegisterEngines(&mut sc, view_weak);
+            v.RegisterEngines(&mut sc, view_weak, crate::emEngine::TreeLocation::Outer);
         }
 
         // Engine must be registered by RegisterEngines.

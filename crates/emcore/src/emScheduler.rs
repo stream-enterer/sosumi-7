@@ -121,7 +121,21 @@ const TIME_SLICE_DURATION: Duration = Duration::from_millis(50);
 /// over the `TreeLocation` chain rather than an explicit stack — the
 /// take/put pairing is naturally lexically scoped by each recursive call.
 ///
-/// Phase 1.75 Task 2.
+/// Invariants (tightened in Phase 1.75 Task 3 when `SubView` dispatch went
+/// live): every `TreeLocation::SubView { outer_panel_id, .. }` in the
+/// `engine_locations` map resolves to a live outer-tree panel whose behavior
+/// is an `emSubViewPanel`. Both `take_behavior` and `as_sub_view_panel_mut`
+/// are therefore required to succeed; failure is a hard bug (stale
+/// registration vs. tree mutation) and is reported via `panic!`/`expect`.
+///
+/// Phase 1.75 Task 2 (added); Task 3 (invariant tightened).
+///
+/// Known unaddressed concern (deferred to post-phase cleanup): if `f`
+/// itself panics, the `behavior` local is not restored to `outer_panel_id`
+/// before unwind — the panel is left behavior-less. The codebase treats
+/// engine `Cycle` panics as fatal, so this leak is benign in practice; a
+/// `scopeguard`-style RAII fix would make the helper unwind-safe but is
+/// orthogonal to the scheduler-dispatch rewrite and is filed in the ledger.
 fn dispatch_with_resolved_tree<R>(
     tree: &mut PanelTree,
     loc: &TreeLocation,
@@ -134,9 +148,9 @@ fn dispatch_with_resolved_tree<R>(
             rest,
         } => {
             // Take the owner's behavior — it must downcast to `emSubViewPanel`.
-            // If either step fails the engine's location is stale (panel gone
-            // or replaced), which should never happen in a correctly-wired
-            // tree but is tolerated defensively.
+            // Both steps are required invariants (see helper-level doc); a
+            // failure means `engine_locations` has a stale entry inconsistent
+            // with the outer tree, which is a hard bug.
             let Some(mut behavior) = tree.take_behavior(*outer_panel_id) else {
                 panic!(
                     "dispatch_with_resolved_tree: outer panel {:?} missing from outer tree",
@@ -530,12 +544,10 @@ impl EngineScheduler {
             //
             // Clone the TreeLocation (shallow chain of PanelId+Box) so we
             // don't alias `self.inner` during the walk.
-            let tree_location = self
-                .inner
-                .engine_locations
-                .get(engine_id)
-                .cloned()
-                .unwrap_or(TreeLocation::Outer);
+            let tree_location = self.inner.engine_locations.get(engine_id).cloned().expect(
+                "engine has no TreeLocation — register_engine always populates \
+                     engine_locations; missing entry indicates a scheduler bug",
+            );
 
             // Call Cycle with context. `behavior` has been detached from the
             // engine slot, so `self` is re-borrowable for ctx construction.
@@ -1128,17 +1140,34 @@ mod tests {
         let outer_root = tree.create_root("outer_root", std::rc::Weak::new());
         let outer_child = tree.create_child(outer_root, "outer_sv", None);
 
-        // Build two nested sub-views. Each `emSubViewPanel::new` registers
-        // a `UpdateEngineClass` (and friends) against its own `sub_scheduler`
-        // — this test does not drive those engines; only the outer scheduler
-        // dispatches the probe below.
-        let mut outer_sv = emSubViewPanel::new(root_context.clone());
+        // Phase 1.75 Task 3: `emSubViewPanel::new` needs outer_panel_id + a
+        // SchedCtx so it can register its sub-view engines on the OUTER
+        // scheduler with `SubView(outer_panel_id, Outer)`.
+        let mut outer_sv = {
+            let mut fw: Vec<DeferredAction> = Vec::new();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut sched,
+                framework_actions: &mut fw,
+                root_context: &root_context,
+                current_engine: None,
+            };
+            emSubViewPanel::new(root_context.clone(), outer_child, &mut sc)
+        };
         // Create the inner sub-view inside outer_sv.sub_tree.
         let outer_sub_root = outer_sv.sub_root();
         let inner_child = outer_sv
             .sub_tree_mut()
             .create_child(outer_sub_root, "inner_sv", None);
-        let inner_sv = emSubViewPanel::new(root_context.clone());
+        let inner_sv = {
+            let mut fw: Vec<DeferredAction> = Vec::new();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut sched,
+                framework_actions: &mut fw,
+                root_context: &root_context,
+                current_engine: None,
+            };
+            emSubViewPanel::new(root_context.clone(), inner_child, &mut sc)
+        };
         outer_sv
             .sub_tree_mut()
             .set_behavior(inner_child, Box::new(inner_sv));
@@ -1203,32 +1232,58 @@ mod tests {
         );
 
         // Teardown: remove the probe engine so the scheduler Drop assert is
-        // satisfied. The emSubViewPanel instances own their own sub_schedulers
-        // which clean up via their own Drop; we don't exercise their engines
-        // in this test.
+        // satisfied.
         sched.remove_engine(probe);
 
-        // The outer tree and its nested emSubViewPanel behaviors will drop
-        // along with `tree`; their sub_schedulers still contain registered
-        // engines (UpdateEngineClass etc.) and will hit the Drop debug_assert.
-        // Teardown them explicitly by walking the behaviors and asking each
-        // emSubViewPanel to drain its own scheduler.
-        //
-        // Phase 1.75 Task 3/4 will delete sub_scheduler; for now, short-circuit
-        // the Drop assert by removing the nested behaviors and dropping them
-        // via a dedicated teardown helper defined on emSubViewPanel tests.
-        // Here we just forget the behaviors to keep Task-2 scope minimal.
-        //
-        // Safe: the test process exits shortly; leaking the nested
-        // sub-schedulers has no observable effect, and Task 3/4 will remove
-        // this entire vestige. This is NOT a production pattern; it's a
-        // test-only concession for the Task-2 shape-only fixture.
+        // Phase 1.75 Task 3: nested sub-view engines (update_engine,
+        // visiting_va, PanelCycleEngine adapters for both sub_trees' root
+        // panels) all live on `sched` now. Walk the nested structure and
+        // deregister each: the outer sub-view's sub_tree and view engines,
+        // then the inner sub-view's. This replaces the Task-2
+        // `std::mem::forget` test-only concession.
         let mut outer_beh = tree.take_behavior(outer_child).unwrap();
-        let outer_sv_ref = outer_beh.as_sub_view_panel_mut().unwrap();
-        let inner_beh = outer_sv_ref.sub_tree_mut().take_behavior(inner_child);
-        if let Some(b) = inner_beh {
-            std::mem::forget(b);
+        {
+            let outer_sv_ref = outer_beh.as_sub_view_panel_mut().unwrap();
+            // Drain the inner sub-view first.
+            if let Some(mut inner_beh) = outer_sv_ref.sub_tree_mut().take_behavior(inner_child) {
+                {
+                    let inner_sv = inner_beh.as_sub_view_panel_mut().unwrap();
+                    let inner_sub_root = inner_sv.sub_root();
+                    inner_sv
+                        .sub_tree_mut()
+                        .remove(inner_sub_root, Some(&mut sched));
+                    let mut v = inner_sv.sub_view_mut();
+                    if let Some(eid) = v.update_engine_id.take() {
+                        sched.remove_engine(eid);
+                    }
+                    if let Some(eid) = v.visiting_va_engine_id.take() {
+                        sched.remove_engine(eid);
+                    }
+                    if let Some(sig) = v.EOISignal.take() {
+                        sched.remove_signal(sig);
+                    }
+                }
+                drop(inner_beh);
+            }
+            // Now drain the outer sub-view.
+            let outer_sub_root = outer_sv_ref.sub_root();
+            outer_sv_ref
+                .sub_tree_mut()
+                .remove(outer_sub_root, Some(&mut sched));
+            let mut v = outer_sv_ref.sub_view_mut();
+            if let Some(eid) = v.update_engine_id.take() {
+                sched.remove_engine(eid);
+            }
+            if let Some(eid) = v.visiting_va_engine_id.take() {
+                sched.remove_engine(eid);
+            }
+            if let Some(sig) = v.EOISignal.take() {
+                sched.remove_signal(sig);
+            }
         }
-        std::mem::forget(outer_beh);
+        drop(outer_beh);
+        // Remove outer panels' adapter engines.
+        tree.remove(outer_child, Some(&mut sched));
+        tree.remove(outer_root, Some(&mut sched));
     }
 }

@@ -50,8 +50,32 @@ impl emSubViewPanel {
     ///
     /// The sub-tree is initialized with a root panel. Use [`sub_root`],
     /// [`sub_tree_mut`], and [`sub_view_mut`] to populate the sub-view.
-    pub fn new(parent_context: Rc<crate::emContext::emContext>) -> Self {
+    ///
+    /// Phase 1.75 Task 3: `outer_panel_id` is the `PanelId` of the outer-tree
+    /// panel into which this `emSubViewPanel` will be installed. Caller MUST
+    /// `create_child` (or `create_root`) the outer slot first to obtain the
+    /// id, then pass it here — the sub_view's engines (`UpdateEngineClass`,
+    /// `VisitingVAEngineClass`) and the sub-tree's `PanelCycleEngine` adapters
+    /// register with the OUTER scheduler at `TreeLocation::SubView(outer_panel_id,
+    /// Outer)`, so dispatch resolves through this panel's `sub_tree` on the
+    /// single shared priority queue (spec §3.3). The legacy `sub_scheduler`
+    /// field remains (deletion in Task 4) but is created empty — no engines
+    /// register on it.
+    pub fn new(
+        parent_context: Rc<crate::emContext::emContext>,
+        outer_panel_id: PanelId,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) -> Self {
         let mut sub_tree = PanelTree::new();
+        // Tag the sub_tree's TreeLocation so `register_engine_for` tags every
+        // sub-tree `PanelCycleEngine` adapter with `SubView(outer_panel_id,
+        // Outer)` for dispatch through the outer scheduler.
+        let sub_location = crate::emEngine::TreeLocation::SubView {
+            outer_panel_id,
+            rest: Box::new(crate::emEngine::TreeLocation::Outer),
+        };
+        sub_tree.set_tree_location(sub_location.clone());
+
         // Deferred-view create: sub_view needs root, root needs view weak.
         // Resolve chicken-and-egg: create root with empty Weak, then wire
         // the view back after construction.
@@ -60,27 +84,27 @@ impl emSubViewPanel {
         sub_tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
         let sub_view = Rc::new(RefCell::new(emView::new(parent_context, root, 1.0, 1.0)));
-        sub_tree.init_panel_view(root, Rc::downgrade(&sub_view), None);
+        sub_tree.init_panel_view(root, Rc::downgrade(&sub_view), Some(ctx.scheduler));
 
+        // Phase 1.75 Task 3: register sub_view engines on the OUTER scheduler
+        // (via ctx) tagged with SubView location. No engines register on
+        // sub_scheduler anymore.
+        {
+            let mut v = sub_view.borrow_mut();
+            v.RegisterEngines(ctx, std::rc::Rc::downgrade(&sub_view), sub_location);
+        }
+
+        // Phase 1.75 Task 3 transitional: sub_scheduler still exists (Task 4
+        // deletes it) but holds no registered engines. Kept only so the
+        // transitional SchedCtxes built inside `Input` / `sync_geometry` /
+        // `raw_zoom_out` / `Cycle` still have a scheduler to point at — their
+        // `wake_up` calls for outer-registered engines are silent no-ops on
+        // this empty scheduler, which is acceptable transitional behavior for
+        // the brief lifetime of Task 3 (Task 4 rewires these paths to the
+        // outer scheduler and removes the field entirely).
         let sub_scheduler = std::rc::Rc::new(std::cell::RefCell::new(
             crate::emScheduler::EngineScheduler::new(),
         ));
-        // Register UpdateEngineClass + VisitingVAEngineClass against sub_scheduler.
-        {
-            let mut v = sub_view.borrow_mut();
-            let root_ctx = v.Context.GetRootContext();
-            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
-            let mut s = sub_scheduler.borrow_mut();
-            let mut sc = crate::emEngineCtx::SchedCtx {
-                scheduler: &mut s,
-                framework_actions: &mut fw,
-                root_context: &root_ctx,
-                current_engine: None,
-            };
-            v.RegisterEngines(&mut sc, std::rc::Rc::downgrade(&sub_view));
-        }
-        // Register PanelCycleEngine adapters for panels already in the sub-tree.
-        sub_tree.register_pending_engines(&mut sub_scheduler.borrow_mut());
 
         Self {
             sub_tree,
@@ -504,277 +528,147 @@ mod sp8_tests {
         }
     }
 
-    /// Deregister sub-view + sub-tree engines so sub_scheduler's Drop
-    /// debug_assert (engines empty) passes at end of test. Production
-    /// tears down via panel removal + view shutdown paths; tests construct
-    /// a bare emSubViewPanel and skip that, so clean up explicitly.
-    fn teardown(panel: &mut emSubViewPanel) {
-        let root = panel.sub_root();
-        panel
-            .sub_tree
-            .remove(root, Some(&mut panel.sub_scheduler.borrow_mut()));
-        let mut view = panel.sub_view.borrow_mut();
-        let mut sched = panel.sub_scheduler.borrow_mut();
-        if let Some(eid) = view.update_engine_id.take() {
-            sched.remove_engine(eid);
+    /// Phase 1.75 Task 3 harness: a bare outer tree + outer scheduler + a
+    /// child panel id, plus a constructed `emSubViewPanel` whose engines live
+    /// on the outer scheduler at `SubView(owner_id, Outer)`. Test-only helper;
+    /// Task 4 simplifies this further when `sub_scheduler` goes away.
+    struct SvpTestHarness {
+        outer_tree: crate::emPanelTree::PanelTree,
+        outer_sched: crate::emScheduler::EngineScheduler,
+        owner_id: crate::emPanelTree::PanelId,
+        panel: emSubViewPanel,
+    }
+
+    impl SvpTestHarness {
+        fn new() -> Self {
+            let mut outer_tree = crate::emPanelTree::PanelTree::new();
+            let _root = outer_tree.create_root("owner_root", std::rc::Weak::new());
+            let owner_id =
+                outer_tree.create_child(outer_tree.GetRootPanel().unwrap(), "owner_sv", None);
+            let mut outer_sched = crate::emScheduler::EngineScheduler::new();
+            let root_ctx = crate::emContext::emContext::NewRoot();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let panel = {
+                let mut sc = crate::emEngineCtx::SchedCtx {
+                    scheduler: &mut outer_sched,
+                    framework_actions: &mut fw,
+                    root_context: &root_ctx,
+                    current_engine: None,
+                };
+                emSubViewPanel::new(root_ctx.clone(), owner_id, &mut sc)
+            };
+            Self {
+                outer_tree,
+                outer_sched,
+                owner_id,
+                panel,
+            }
         }
-        if let Some(eid) = view.visiting_va_engine_id.take() {
-            sched.remove_engine(eid);
-        }
-        if let Some(sig) = view.EOISignal.take() {
-            sched.remove_signal(sig);
+
+        /// Deregister sub-view engines from the outer scheduler + remove
+        /// sub-tree panels so the outer scheduler's Drop debug_assert passes.
+        fn teardown(mut self) {
+            let sub_root = self.panel.sub_root();
+            self.panel
+                .sub_tree
+                .remove(sub_root, Some(&mut self.outer_sched));
+            let mut view = self.panel.sub_view.borrow_mut();
+            if let Some(eid) = view.update_engine_id.take() {
+                self.outer_sched.remove_engine(eid);
+            }
+            if let Some(eid) = view.visiting_va_engine_id.take() {
+                self.outer_sched.remove_engine(eid);
+            }
+            if let Some(sig) = view.EOISignal.take() {
+                self.outer_sched.remove_signal(sig);
+            }
+            drop(view);
+            // The panel's sub_scheduler is empty (Task 3 moved all engines to
+            // outer); it drops cleanly via its own Drop.
+            let _ = self.panel;
+            // Owner panel's adapter engine lives on outer_sched — drop via
+            // outer_tree.remove.
+            let owner = self.owner_id;
+            self.outer_tree.remove(owner, Some(&mut self.outer_sched));
         }
     }
 
     #[test]
     fn sp8_sub_view_update_engine_registered() {
-        let mut panel = emSubViewPanel::new(crate::emContext::emContext::NewRoot());
+        let h = SvpTestHarness::new();
         {
-            let sub_view = panel.GetSubView();
+            let sub_view = h.panel.GetSubView();
             assert!(
                 sub_view.update_engine_id.is_some(),
                 "sub_view must have update engine registered in new()"
             );
         }
-        teardown(&mut panel);
+        h.teardown();
     }
 
     #[test]
     fn sp8_sub_tree_root_panel_engine_registered() {
-        let mut panel = emSubViewPanel::new(crate::emContext::emContext::NewRoot());
-        let root = panel.sub_root();
-        let engine_id = panel.sub_tree().panel_engine_id(root);
+        let h = SvpTestHarness::new();
+        let sub_root = h.panel.sub_root();
+        let engine_id = h.panel.sub_tree().panel_engine_id(sub_root);
         assert!(
             engine_id.is_some(),
-            "sub-tree root panel must have PanelCycleEngine registered on sub_scheduler"
+            "sub-tree root panel must have PanelCycleEngine registered on outer scheduler"
         );
-        // sub_scheduler holds the engines; must have awake engines after
-        // RegisterEngines woke UpdateEngineClass.
+        // Phase 1.75 Task 3: after RegisterEngines the UpdateEngineClass is
+        // woken on the OUTER scheduler (not sub_scheduler).
         assert!(
-            panel.sub_scheduler.borrow().has_awake_engines(),
-            "sub_scheduler must have awake engines after construction"
+            h.outer_sched.has_awake_engines(),
+            "outer scheduler must have awake engines after sub-view construction"
         );
-        assert!(panel.last_cycle.is_none());
-        teardown(&mut panel);
+        assert!(h.panel.last_cycle.is_none());
+        h.teardown();
     }
 
     #[test]
     fn sp8_cycle_drives_sub_scheduler() {
-        // After emSubViewPanel::new, the sub_scheduler has awake engines
-        // (UpdateEngineClass woken in RegisterEngines).
-        let mut panel = emSubViewPanel::new(crate::emContext::emContext::NewRoot());
-        assert!(
-            panel.sub_scheduler.borrow().has_awake_engines(),
-            "sub_scheduler must have awake engines after construction"
-        );
+        // Phase 1.75 Task 3: sub_scheduler is empty; `emSubViewPanel::Cycle`
+        // still drives it transitionally (Task 4 strips this), but it runs
+        // no engines. The cycle should still call without panic and return
+        // `animator_active || has_awake_engines()` — with no animator and
+        // empty sub_scheduler, that's `false`.
+        let mut h = SvpTestHarness::new();
 
         // Drive Cycle via a fake PanelCtx — construct a throwaway owner tree
         // and id. We don't care about the PanelCtx internals, only that Cycle
-        // executes DoTimeSlice.
+        // executes.
         let mut owner_tree = crate::emPanelTree::PanelTree::new();
         let owner_id = owner_tree.create_root("owner", std::rc::Weak::new());
         let mut pctx = crate::emPanelCtx::PanelCtx::new(&mut owner_tree, owner_id, 1.0);
 
         // Harness supplies the EngineCtx scaffolding for the Cycle call.
-        let mut h = crate::test_view_harness::TestViewHarness::new();
-        let dummy_eid = h.scheduler.register_engine(
+        let mut th = crate::test_view_harness::TestViewHarness::new();
+        let dummy_eid = th.scheduler.register_engine(
             Box::new(NoopEngine),
             crate::emEngine::Priority::Medium,
             crate::emEngine::TreeLocation::Outer,
         );
 
         let stay_awake = {
-            let mut ectx = h.engine_ctx(dummy_eid);
-            <emSubViewPanel as PanelBehavior>::Cycle(&mut panel, &mut ectx, &mut pctx)
-        };
-        // UpdateEngine's Cycle always returns false (one-shot); after the slice
-        // there should be no more awake engines absent other activity.
-        let _ = stay_awake; // accept either — the contract is "match sub-scheduler state".
-
-        // Second cycle: nothing to do, must return false (or still matches
-        // sub-scheduler state if something re-woke).
-        let stay_awake_2 = {
-            let mut ectx = h.engine_ctx(dummy_eid);
-            <emSubViewPanel as PanelBehavior>::Cycle(&mut panel, &mut ectx, &mut pctx)
+            let mut ectx = th.engine_ctx(dummy_eid);
+            <emSubViewPanel as PanelBehavior>::Cycle(&mut h.panel, &mut ectx, &mut pctx)
         };
         assert!(
-            !stay_awake_2 || panel.sub_scheduler.borrow().has_awake_engines(),
-            "Cycle stay-awake must track sub_scheduler.has_awake_engines()"
+            !stay_awake,
+            "Cycle must return false when sub_scheduler is empty and no animator"
         );
-        h.scheduler.remove_engine(dummy_eid);
-        teardown(&mut panel);
+        th.scheduler.remove_engine(dummy_eid);
+        h.teardown();
     }
 }
 
-#[cfg(test)]
-mod sp4_5_fix_1_tests {
-    use super::*;
-    use std::cell::Cell;
-    use std::collections::HashMap;
-    use std::rc::Rc;
-
-    /// Reuse the same teardown logic as sp8_tests: deregister sub-view and
-    /// sub-tree engines so the sub_scheduler Drop debug_assert passes.
-    fn teardown(panel: &mut emSubViewPanel) {
-        let root = panel.sub_root();
-        panel
-            .sub_tree
-            .remove(root, Some(&mut panel.sub_scheduler.borrow_mut()));
-        let mut view = panel.sub_view.borrow_mut();
-        let mut sched = panel.sub_scheduler.borrow_mut();
-        if let Some(eid) = view.update_engine_id.take() {
-            sched.remove_engine(eid);
-        }
-        if let Some(eid) = view.visiting_va_engine_id.take() {
-            sched.remove_engine(eid);
-        }
-        if let Some(sig) = view.EOISignal.take() {
-            sched.remove_signal(sig);
-        }
-    }
-
-    /// SP4.5-FIX-1 Part B Path 3 — baseline slice delta for the sub-scheduler
-    /// path inside `emSubViewPanel`.
-    ///
-    /// Production shape: an engine running on the sub-scheduler calls
-    /// `ctx.tree.create_child(...)`. The spawned panel's `PanelCycleEngine` is
-    /// deferred because `sub_scheduler.borrow_mut()` is held during
-    /// `DoTimeSlice`. The catch-up fires via
-    /// `self.sub_tree.register_pending_engines()` after `DoTimeSlice` returns
-    /// (SP4.5-FIX-1 commit 85828c2).
-    ///
-    /// Delta is measured from the scheduler counter at the moment `create_child`
-    /// returns inside the spawn engine's `Cycle` to the counter when the spawned
-    /// panel's `PanelCycleEngine` fires its first `Cycle`.
-    #[test]
-    fn sp4_5_fix_1_timing_sub_scheduler_baseline_slices() {
-        let mut panel = emSubViewPanel::new(crate::emContext::emContext::NewRoot());
-        let sub_root = panel.sub_root();
-
-        // Captured inside SpawnShapeEngine::Cycle at the moment create_child
-        // returns.
-        let create_slice: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
-        let spawned_id: Rc<Cell<Option<crate::emPanelTree::PanelId>>> = Rc::new(Cell::new(None));
-
-        struct SpawnShapeEngine {
-            parent: crate::emPanelTree::PanelId,
-            spawned_out: Rc<Cell<Option<crate::emPanelTree::PanelId>>>,
-            create_slice_out: Rc<Cell<Option<u64>>>,
-            done: bool,
-        }
-        impl crate::emEngine::emEngine for SpawnShapeEngine {
-            fn Cycle(&mut self, ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
-                if !self.done {
-                    let child = ctx.tree.create_child(self.parent, "spawned", None);
-                    self.spawned_out.set(Some(child));
-                    self.create_slice_out.set(Some(ctx.time_slice_counter()));
-                    self.done = true;
-                }
-                false
-            }
-        }
-
-        // Register the spawn engine on the sub_scheduler.
-        let spawn_eid = panel.sub_scheduler.borrow_mut().register_engine(
-            Box::new(SpawnShapeEngine {
-                parent: sub_root,
-                spawned_out: spawned_id.clone(),
-                create_slice_out: create_slice.clone(),
-                done: false,
-            }),
-            crate::emEngine::Priority::Medium,
-            crate::emEngine::TreeLocation::Outer,
-        );
-        panel.sub_scheduler.borrow_mut().wake_up(spawn_eid);
-
-        let mut empty_windows: HashMap<
-            winit::window::WindowId,
-            std::rc::Rc<std::cell::RefCell<crate::emWindow::emWindow>>,
-        > = HashMap::new();
-
-        // Slice 1: SpawnShapeEngine::Cycle fires, calls create_child, captures
-        // create_slice. The spawned panel's PanelCycleEngine is not yet
-        // registered (deferred because sub_scheduler borrow_mut is held during
-        // DoTimeSlice).
-        let __root_ctx = crate::emContext::emContext::NewRoot();
-        let mut __fw: Vec<_> = Vec::new();
-        panel.sub_scheduler.borrow_mut().DoTimeSlice(
-            &mut panel.sub_tree,
-            &mut empty_windows,
-            &__root_ctx,
-            &mut __fw,
-        );
-        let create_at = create_slice
-            .get()
-            .expect("SpawnShapeEngine must have captured create_slice in slice 1");
-        let child = spawned_id
-            .get()
-            .expect("SpawnShapeEngine must have set spawned_id");
-
-        // Mirrors emSubViewPanel::Cycle (SP4.5-FIX-1 fix): register engines
-        // that were deferred because sub_scheduler.borrow_mut was held during
-        // DoTimeSlice.
-        panel
-            .sub_tree
-            .register_pending_engines(&mut panel.sub_scheduler.borrow_mut());
-
-        // Attach the first-cycle probe to the spawned panel's engine.
-        let child_eid = panel
-            .sub_tree
-            .GetRec(child)
-            .and_then(|p| p.engine_id)
-            .expect("spawned panel must have engine_id after register_pending_engines");
-        let cycled_at: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
-        {
-            let mut s = panel.sub_scheduler.borrow_mut();
-            s.attach_first_cycle_probe(child_eid, cycled_at.clone());
-            // Mirror C++ emPanel constructor: a freshly-created panel wakes
-            // itself immediately. In Rust the PanelCycleEngine adapter starts
-            // sleeping; wake it so it runs in the next slice.
-            s.wake_up(child_eid);
-        }
-
-        // Drive slices until the probe fires (or bail at 10 to prevent hang).
-        // Between slices, drain any pending view ops and call
-        // register_pending_engines (mirrors emSubViewPanel::Cycle production
-        // loop).
-        for _ in 0..10 {
-            if cycled_at.get().is_some() {
-                break;
-            }
-            // pending_engine_wakeups/removals are drained automatically at the
-            // start of each DoTimeSlice (SP1.5-1c).
-            let __root_ctx = crate::emContext::emContext::NewRoot();
-            let mut __fw: Vec<_> = Vec::new();
-            panel.sub_scheduler.borrow_mut().DoTimeSlice(
-                &mut panel.sub_tree,
-                &mut empty_windows,
-                &__root_ctx,
-                &mut __fw,
-            );
-            panel
-                .sub_tree
-                .register_pending_engines(&mut panel.sub_scheduler.borrow_mut());
-        }
-
-        let cycled_at_val = cycled_at
-            .get()
-            .expect("spawned panel's PanelCycleEngine must have cycled within 10 slices");
-
-        let delta = cycled_at_val - create_at;
-
-        // Cleanup before assertion so the scheduler Drop invariant holds even
-        // if the assert panics. Remove the spawn engine (already done its job);
-        // teardown handles root removal + view engine deregistration.
-        panel.sub_scheduler.borrow_mut().remove_engine(spawn_eid);
-        teardown(&mut panel);
-
-        // Baseline locked via first-run measurement. Re-run with
-        // `panic!("MEASURED_DELTA={}", delta);` to re-measure if the
-        // production scheduling shape changes.
-        assert_eq!(
-            delta, 1u64,
-            "SP4.5-FIX-1 sub-scheduler slice delta drifted; re-run Part B measurement"
-        );
-    }
-}
+// Phase 1.75 Task 3: the former `sp4_5_fix_1_tests::sp4_5_fix_1_timing_sub_scheduler_baseline_slices`
+// fixture measured slice delta through the transitional `sub_scheduler`
+// catch-up path inside `emSubViewPanel::Cycle`. With sub-view + sub-tree
+// engines now registered on the OUTER scheduler with
+// `TreeLocation::SubView(owner, Outer)`, the sub_scheduler is empty by
+// construction and that fixture tested a path that no longer exists. Phase
+// 1.75 Task 6 is scheduled to rewrite this against the unified outer
+// scheduler (asserting `delta == 0`). Until Task 6 runs, nextest count
+// drops by 1 (baseline 2456 → 2455); the other sp4_5_fix_1_timing_*
+// fixtures in `crates/emcore/tests/` continue to pass.

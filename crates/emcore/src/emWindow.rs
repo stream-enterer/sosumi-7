@@ -1827,7 +1827,7 @@ mod tests {
                 root_context: &root,
                 current_engine: None,
             };
-            v.RegisterEngines(&mut sc, view_weak);
+            v.RegisterEngines(&mut sc, view_weak, crate::emEngine::TreeLocation::Outer);
         }
         assert!(win.borrow().view().update_engine_id.is_some());
 
