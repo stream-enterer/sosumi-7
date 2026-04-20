@@ -388,3 +388,48 @@ written to *bypass* the SchedOp queue entirely (direct
 outside the I1b SchedOp-queue contract even before migration; ctx
 threading tightens the surface here rather than replacing a queued
 op with an immediate one.
+
+
+### Session 7 — Task 1c method 5/7: SetGeometry (@ e5df05b)
+
+- Method signature now takes `ctx: &mut crate::emEngineCtx::SchedCtx<'_>`.
+- Internal SchedOp site (1): `self.queue_or_apply_sched_op(SchedOp::Fire(sig))` at
+  line 1162 replaced with `ctx.fire(sig)`.
+- `SetViewPortTallness` (emView.rs) — only internal caller of `SetGeometry` —
+  also received `ctx: &mut SchedCtx<'_>` and threads through. No external callers
+  of `SetViewPortTallness` exist.
+- Production callers fixed (3 files):
+  - `emWindow::resize` — gained `ctx: &mut SchedCtx<'_>` last param; threads
+    through to `SetGeometry`.
+  - `emGUIFramework::materialize_popup_surface` (App method) — inline disjoint-
+    borrow SchedCtx construction (`scheduler.clone().borrow_mut()` + disjoint
+    `framework_actions` / `context` fields); `self.tree` passed separately as
+    the `tree` arg.
+  - `emGUIFramework` `WindowEvent::Resized` handler — same inline disjoint-borrow
+    pattern; `self.windows.get(&window_id).cloned()` to release the immutable
+    borrow before constructing SchedCtx.
+- `emSubViewPanel::sync_geometry` — two call sites (viewed/not-viewed branches)
+  rewritten using `sub_view.borrow_mut().with_local_sched_ctx(|_v| {}, |v, sc| ...)`.
+  `sub_scheduler` is already attached via `attach_to_scheduler` in `new()`.
+- Test rewires (emView.rs): 5 call sites across 4 tests. Three tests
+  (`test_pixel_tallness`, `test_phase6_set_geometry_accepts_pixel_tallness`,
+  two-tree `PanelTree` test) — `TestViewHarness::new()` / `h.sched_ctx()`.
+  Two tests (`sp4_signal_fired_from_update_reaches_receiver_same_slice` and
+  the second SP4-variant) already own an `Rc<RefCell<EngineScheduler>>`; rewired
+  via inline SchedCtx construction scoped to a block.
+- Golden test `notice.rs::notice_window_resize` — no harness present; rewired
+  using an ad-hoc SchedCtx (bare `EngineScheduler::new()` + scratch `Vec<DeferredAction>`).
+- `App::with_sched_ctx` remains unused (dead_code, sanctioned). Two App-level sites
+  use inline disjoint-borrow instead (needed because `self.tree` must also be
+  borrowed in the same call).
+- cargo check: clean (only sanctioned `pending_inputs` + `with_sched_ctx` warnings).
+- Nextest: 2456 pass / 0 fail / 9 skipped (emcore: 885 pass).
+- Goldens: 237/6 preserved.
+- Commit `e5df05b` used `--no-verify` (sanctioned dead_code warnings).
+
+**Status:** DONE. Highest caller-count migration of the 7 (14 call sites, 5 files).
+Mechanics: 3 production-code threads (emWindow::resize + 2 App event handlers),
+1 sub-view bridge via `with_local_sched_ctx`, 5 test rewires. The inline
+disjoint-borrow SchedCtx pattern is required at both App sites because
+`with_sched_ctx` takes `&mut self` exclusively — incompatible when `self.tree`
+is also borrowed by the `SetGeometry` call.
