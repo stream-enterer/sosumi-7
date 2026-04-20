@@ -1347,6 +1347,7 @@ impl PanelTree {
     ///
     /// Width and height are clamped to a minimum of `1e-100` to prevent
     /// division-by-zero when computing tallness.
+    #[allow(clippy::too_many_arguments)]
     pub fn Layout(
         &mut self,
         id: PanelId,

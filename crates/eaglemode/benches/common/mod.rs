@@ -4,6 +4,7 @@ pub mod scaled;
 use std::f64::consts::PI;
 
 use emcore::emColor::emColor;
+use emcore::test_view_harness::TestSched;
 
 use emcore::emImage::emImage;
 use emcore::emPanel::{PanelBehavior, PanelState};
@@ -759,7 +760,7 @@ pub fn setup_tree_and_view(vw: u32, vh: u32) -> (PanelTree, emView, PanelId) {
     let root = tree.create_root_deferred_view("bench_root");
     tree.set_behavior(root, Box::new(TestPanel::new()));
     let tallness = vh as f64 / vw as f64;
-    tree.Layout(root, 0.0, 0.0, 1.0, tallness, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, tallness, 1.0, None);
     tree.set_focusable(root, true);
 
     let mut view = emView::new(
@@ -770,7 +771,8 @@ pub fn setup_tree_and_view(vw: u32, vh: u32) -> (PanelTree, emView, PanelId) {
     );
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     // SP5: HandleNotice is now driven from emView::Update internally.
-    view.Update(&mut tree);
+    let mut ts = TestSched::new();
+    ts.with(|sc| view.Update(&mut tree, sc));
 
     (tree, view, root)
 }
@@ -787,11 +789,12 @@ pub fn run_one_frame(
 ) {
     let (cols, rows) = tile_cache.grid_size();
 
-    // 1. Scroll/zoom
-    view.RawScrollAndZoom(tree, fix_x, fix_y, scenario.dx, scenario.dy, scenario.dz);
-
-    // 2+3. emView::Update now drives HandleNotice internally (SP5).
-    view.Update(tree);
+    // 1. Scroll/zoom + Update
+    let mut ts = TestSched::new();
+    ts.with(|sc| {
+        view.RawScrollAndZoom(tree, fix_x, fix_y, scenario.dx, scenario.dy, scenario.dz, sc);
+        view.Update(tree, sc);
+    });
 
     // 4. Paint
     viewport_buf.fill(emColor::BLACK);
