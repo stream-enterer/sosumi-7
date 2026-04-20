@@ -3444,7 +3444,11 @@ mod tests {
             recorded: Rc<Cell<Option<f64>>>,
         }
         impl PanelBehavior for TallnessRecordingBehavior {
-            fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+            fn Cycle(
+                &mut self,
+                _ectx: &mut crate::emEngineCtx::EngineCtx<'_>,
+                ctx: &mut PanelCtx,
+            ) -> bool {
                 self.recorded.set(Some(ctx.current_pixel_tallness));
                 false // sleep after one cycle
             }
@@ -3546,7 +3550,11 @@ mod tests {
             cycles: Rc<Cell<u32>>,
         }
         impl PanelBehavior for WakerBehavior {
-            fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+            fn Cycle(
+                &mut self,
+                _ectx: &mut crate::emEngineCtx::EngineCtx<'_>,
+                ctx: &mut PanelCtx,
+            ) -> bool {
                 self.cycles.set(self.cycles.get() + 1);
                 if self.woke_called.get() == 0 {
                     ctx.wake_up_panel(self.sibling);
@@ -3561,7 +3569,11 @@ mod tests {
             cycles: Rc<Cell<u32>>,
         }
         impl PanelBehavior for CounterBehavior {
-            fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+            fn Cycle(
+                &mut self,
+                _ectx: &mut crate::emEngineCtx::EngineCtx<'_>,
+                ctx: &mut PanelCtx,
+            ) -> bool {
                 let _ = ctx;
                 self.cycles.set(self.cycles.get() + 1);
                 false

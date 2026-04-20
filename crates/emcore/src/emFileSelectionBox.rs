@@ -1429,7 +1429,8 @@ impl PanelBehavior for emFileSelectionBox {
         }
     }
 
-    fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+    fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        let _ = ectx;
         // Take all pending events.
         let events = {
             let mut e = self.events.borrow_mut();

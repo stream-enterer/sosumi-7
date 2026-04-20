@@ -9,6 +9,7 @@ use crate::emInputState::emInputState;
 use crate::emPainter::emPainter;
 
 use super::emPanelTree::{PanelId, PlaybackState};
+use crate::emEngineCtx::EngineCtx;
 use crate::emPanelCtx::PanelCtx;
 
 // RUST_ONLY: rect.rs -- Consolidates C++ pattern of passing 4 separate
@@ -333,7 +334,12 @@ pub trait PanelBehavior: AsAny {
     /// Corresponds to the C++ `emPanel::Cycle` protected virtual (inherited
     /// from `emEngine`). The default implementation does nothing and returns
     /// `false`.
-    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+    ///
+    /// Per spec §3.3, `Cycle` receives `EngineCtx` (scheduler/windows/framework
+    /// access) alongside `PanelCtx` (tree/panel access); the ctx split is
+    /// field-disjoint so both may be held simultaneously. Impls that don't
+    /// need scheduler access silence the unused binding with `let _ = ectx;`.
+    fn Cycle(&mut self, _ectx: &mut EngineCtx<'_>, _pctx: &mut PanelCtx) -> bool {
         false
     }
 

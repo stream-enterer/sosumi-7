@@ -814,7 +814,11 @@ impl PanelBehavior for emVirtualCosmosPanel {
         Some("Virtual Cosmos".to_string())
     }
 
-    fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        ctx: &mut PanelCtx,
+    ) -> bool {
         // C++ emVirtualCosmosPanel::Cycle polls model change signal and
         // calls UpdateChildren on change. We drain the notice flag here.
         if self.needs_update {

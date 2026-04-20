@@ -68,7 +68,11 @@ impl PanelBehavior for ColorFieldBehavior {
         self.color_field.LayoutChildren(ctx, rect.w, rect.h);
     }
 
-    fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        ctx: &mut PanelCtx,
+    ) -> bool {
         self.color_field.sync_from_children(ctx);
         self.color_field.Cycle()
     }

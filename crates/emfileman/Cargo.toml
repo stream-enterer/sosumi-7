@@ -12,3 +12,6 @@ emcore = { path = "../emcore" }
 libc = { workspace = true }
 log = { workspace = true }
 slotmap = { workspace = true }
+
+[dev-dependencies]
+emcore = { path = "../emcore", features = ["test-support"] }

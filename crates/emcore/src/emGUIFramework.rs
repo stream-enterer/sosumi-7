@@ -105,11 +105,15 @@ pub struct App {
     /// passed as `&mut Vec<DeferredAction>` into `EngineScheduler::DoTimeSlice`.
     pub(crate) framework_actions: Vec<FrameworkDeferredAction>,
     pub input_state: emInputState,
-    /// Input queue drained by `InputDispatchEngine` (Phase 3) — spec §3.1
-    /// + §4 D4.9. Produced by `window_event` on each winit input; consumed
-    /// once per slice. Restored in Phase 1.5 Task 1 step 1g after being
-    /// speculatively deleted by Chunk 2 (W2 drift).
-    // TODO(phase-3): consumed by InputDispatchEngine once it lands.
+    /// Input queue drained by `InputDispatchEngine` (Phase 3) per spec §3.1
+    /// and §4 D4.9. Produced by `window_event` on each winit input;
+    /// consumed once per slice. Restored in Phase 1.5 Task 1 step 1g after
+    /// being speculatively deleted by Chunk 2 (W2 drift).
+    ///
+    /// NOTE: unused at end of Phase 1.5; `dead_code` warning is spec-mandated
+    /// carry-forward — see `2026-04-19-phase-1-5-ledger.md`. Phase 3's
+    /// `InputDispatchEngine` consumes this; the warning disappears when it
+    /// lands.
     pub(crate) pending_inputs: Vec<(WindowId, emInputEvent)>,
     /// Deferred actions queued by input handlers that need `&ActiveEventLoop`
     /// (e.g., window creation for Duplicate/CreateControlWindow, popup

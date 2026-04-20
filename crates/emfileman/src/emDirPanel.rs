@@ -279,7 +279,11 @@ impl emDirPanel {
 }
 
 impl PanelBehavior for emDirPanel {
-    fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        ctx: &mut PanelCtx,
+    ) -> bool {
         let mut changed = false;
 
         if self.dir_model.is_none() {

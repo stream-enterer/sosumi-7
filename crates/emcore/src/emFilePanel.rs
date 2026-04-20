@@ -400,7 +400,11 @@ impl PanelBehavior for emFilePanel {
         Some("file.tga".to_string())
     }
 
-    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut crate::emEngineCtx::EngineCtx<'_>,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.cycle_inner()
     }
 

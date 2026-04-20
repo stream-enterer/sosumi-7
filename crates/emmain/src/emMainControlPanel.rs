@@ -244,7 +244,11 @@ impl PanelBehavior for emMainControlPanel {
         false
     }
 
-    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         // Poll click flags and dispatch to main window.
         // Port of C++ Cycle() signal handling.
         let flags = &self.click_flags;

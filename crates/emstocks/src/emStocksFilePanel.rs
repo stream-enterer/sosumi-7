@@ -338,7 +338,11 @@ impl PanelBehavior for emStocksFilePanel {
         }
     }
 
-    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         let old_state = self.file_panel.GetVirFileState();
         self.file_panel.refresh_vir_file_state();
         let new_state = self.file_panel.GetVirFileState();

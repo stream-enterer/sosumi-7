@@ -426,7 +426,11 @@ impl PanelBehavior for emDirEntryPanel {
         }
     }
 
-    fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        ctx: &mut PanelCtx,
+    ) -> bool {
         // C++ Cycle: update bg on selection signal; update panels on config change.
         // Rust models don't have IsSignaled() yet — always update bg (conservative).
         self.update_bg_color();

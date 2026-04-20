@@ -288,7 +288,11 @@ impl PanelBehavior for emSubViewPanel {
         false
     }
 
-    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut crate::emEngineCtx::EngineCtx<'_>,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         // Wall-clock dt for the active_animator tick (matching
         // VisitingVAEngineClass pattern).
         let now = std::time::Instant::now();
@@ -421,6 +425,13 @@ impl PanelBehavior for emSubViewPanel {
 mod sp8_tests {
     use super::*;
 
+    struct NoopEngine;
+    impl crate::emEngine::emEngine for NoopEngine {
+        fn Cycle(&mut self, _ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
+            false
+        }
+    }
+
     /// Deregister sub-view + sub-tree engines so sub_scheduler's Drop
     /// debug_assert (engines empty) passes at end of test. Production
     /// tears down via panel removal + view shutdown paths; tests construct
@@ -490,18 +501,31 @@ mod sp8_tests {
         let owner_id = owner_tree.create_root("owner", std::rc::Weak::new());
         let mut pctx = crate::emPanelCtx::PanelCtx::new(&mut owner_tree, owner_id, 1.0);
 
-        let stay_awake = <emSubViewPanel as PanelBehavior>::Cycle(&mut panel, &mut pctx);
+        // Harness supplies the EngineCtx scaffolding for the Cycle call.
+        let mut h = crate::test_view_harness::TestViewHarness::new();
+        let dummy_eid = h
+            .scheduler
+            .register_engine(Box::new(NoopEngine), crate::emEngine::Priority::Medium);
+
+        let stay_awake = {
+            let mut ectx = h.engine_ctx(dummy_eid);
+            <emSubViewPanel as PanelBehavior>::Cycle(&mut panel, &mut ectx, &mut pctx)
+        };
         // UpdateEngine's Cycle always returns false (one-shot); after the slice
         // there should be no more awake engines absent other activity.
         let _ = stay_awake; // accept either — the contract is "match sub-scheduler state".
 
         // Second cycle: nothing to do, must return false (or still matches
         // sub-scheduler state if something re-woke).
-        let stay_awake_2 = <emSubViewPanel as PanelBehavior>::Cycle(&mut panel, &mut pctx);
+        let stay_awake_2 = {
+            let mut ectx = h.engine_ctx(dummy_eid);
+            <emSubViewPanel as PanelBehavior>::Cycle(&mut panel, &mut ectx, &mut pctx)
+        };
         assert!(
             !stay_awake_2 || panel.sub_scheduler.borrow().has_awake_engines(),
             "Cycle stay-awake must track sub_scheduler.has_awake_engines()"
         );
+        h.scheduler.remove_engine(dummy_eid);
         teardown(&mut panel);
     }
 }

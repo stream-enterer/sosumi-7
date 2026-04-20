@@ -570,7 +570,11 @@ impl PanelBehavior for emBookmarkButton {
         }
     }
 
-    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         // Navigation is not wired yet — log intent for now.
         false
     }
@@ -629,7 +633,11 @@ impl PanelBehavior for emBookmarksPanel {
         painter.PaintRect(0.0, 0.0, w, h, GROUP_BG_DEFAULT, emColor::TRANSPARENT);
     }
 
-    fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        ctx: &mut PanelCtx,
+    ) -> bool {
         if self.model_changed() {
             self.sync_entries();
             self.children_created = false;
