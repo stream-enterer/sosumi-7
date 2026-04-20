@@ -298,3 +298,48 @@ Gate:
 PopupCloseSignal mirror retained (Path B keeps popup on emView;
 borrow-conflict rationale still applies). DIVERGED annotation
 remains accurate as-is.
+
+---
+
+### Task 9 — SwapViewPorts geometry exchange — DONE
+Commit: 65025efe
+
+**Shape chosen: Shape 2 (parent view ↔ popup view field swap).**
+
+C++ `emView::SwapViewPorts` (emView.cpp:1974-2001) swaps
+`CurrentViewPort` between `this` and `this->PopupWindow` — both live
+under a single `&mut emView` borrow (parent owns PopupWindow inline).
+`HashMap::get_disjoint_mut` is not applicable; the plan's Shape 1
+cross-window framing does not apply to this codebase structure.
+
+Two gaps vs C++ were fixed:
+
+1. **Popup's `Current*` not updated** (C++ emView.cpp:1991-1995).
+   After the swap, `w->CurrentX/Y/Width/Height/PixelTallness` are set
+   from `w->CurrentViewPort->HomeView->Home*`. Rust now reads those
+   values from the newly acquired port's `home_*` fields and writes
+   them to the popup view's `Current*`.
+
+2. **`CurrentPixelTallness` from wrong source** (C++ emView.cpp:1990).
+   Was using `self.HomePixelTallness` instead of the swapped port's
+   `HomeView->HomePixelTallness`. Fixed by:
+   - Adding `home_pixel_tallness: f64` to `emViewPort`.
+   - `emView::SetGeometry` now mirrors `Home*` (x, y, width, height,
+     pixel_tallness) onto `HomeViewPort` when `is_home` (no popup
+     active), so each port carries the correct geometry of its owning
+     view for the swap to read.
+   - `SwapViewPorts` now reads `vp.home_pixel_tallness` instead of
+     `self.HomePixelTallness`.
+
+`new_with_geometry` and `SetViewGeometry` on `emViewPort` updated to
+carry `home_pixel_tallness`; `SetViewPosSize` (stub) likewise.
+
+New test: `test_task9_swap_view_ports_geometry_exchange` — verifies
+port identity swap, parent `Current*` from popup geometry, and popup
+`Current*` from parent geometry (including non-trivial pixel tallness
+values 1.5 and 0.75).
+
+Gate:
+- cargo fmt / clippy -D warnings clean.
+- nextest: 2458 / 0 fail / 9 skipped (+1 new test).
+- goldens: 237 pass / 6 fail (unchanged baseline).
