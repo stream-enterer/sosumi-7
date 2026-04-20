@@ -90,6 +90,27 @@ Run at the *very first line* of every phase plan, before any task.
     git commit -m "phase-<N>: bootstrap — baseline captured, ledger opened"
     ```
 
+- [ ] **B11a. Disable pre-commit hook IF the phase plan contains stage-only tasks.**
+
+    Scan the phase plan for any task that says "stage only", "stage; no commit", "commit held for Task N", or equivalent — i.e., any task whose commit boundary is not its own step but deferred to a later keystone. If present, the pre-commit hook (which runs `cargo fmt` + `cargo clippy -D warnings` + `cargo-nextest ntr`) will block mid-cascade commits because the tree is red between stage-only tasks. Disable it:
+
+    ```bash
+    if [ -x .git/hooks/pre-commit ]; then
+      mv .git/hooks/pre-commit .git/hooks/pre-commit.disabled-for-phase-<N>-cascade
+    fi
+    ```
+
+    Record the disable in the ledger. The keystone task (the one that re-greens the tree) is responsible for re-enabling:
+
+    ```bash
+    mv .git/hooks/pre-commit.disabled-for-phase-<N>-cascade .git/hooks/pre-commit
+    chmod +x .git/hooks/pre-commit
+    ```
+
+    and making its final commit under the active hook. If the phase plan has NO stage-only tasks, skip this step and leave the hook in place throughout.
+
+    **Why:** Phase 2 discovered this mid-cascade and had to stop to disable the hook manually after Task 1 (user intervention required). Doing it at Bootstrap makes the stage-only pattern actually work as planned.
+
 - [ ] **B12. Announce phase start.** Output to the user (or log, in unattended mode):
 
     `Phase <N> bootstrap complete. Branch: port-rewrite/phase-<N>. Baseline: <nextest count>, <golden count>. Beginning Task 1.`
