@@ -27,7 +27,7 @@ use emcore::emRasterLayout::emRasterLayout;
 use emcore::emResTga::load_tga;
 use emcore::emTiling::{ChildConstraint, Orientation};
 
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 
 use emcore::emPanelTree::{PanelId, PanelTree, ViewConditionType};
 

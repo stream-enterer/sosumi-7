@@ -4,7 +4,7 @@ use emcore::emLinearGroup::emLinearGroup;
 use emcore::emPanel::{PanelBehavior, PanelState};
 use emcore::emTiling::Orientation;
 
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 
 use emcore::emPanelTree::{PanelTree, ViewConditionType};
 

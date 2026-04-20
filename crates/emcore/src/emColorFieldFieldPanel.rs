@@ -6,7 +6,7 @@ use crate::emInput::emInputEvent;
 use crate::emInputState::emInputState;
 use crate::emPainter::emPainter;
 use crate::emPanel::{NoticeFlags, PanelBehavior, PanelState};
-use crate::emPanelCtx::PanelCtx;
+use crate::emEngineCtx::PanelCtx;
 
 use super::emBorder::{InnerBorderType, OuterBorderType};
 use crate::emButton::emButton;

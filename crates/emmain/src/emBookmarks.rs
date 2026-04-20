@@ -7,7 +7,7 @@ use emcore::emContext::emContext;
 use emcore::emInstallInfo::{InstallDirType, emGetInstallPath};
 use emcore::emPainter::{TextAlignment, VAlign, emPainter};
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emRec::{RecError, RecStruct, RecValue};
 use emcore::emRecRecTypes::emColorRec;
 use emcore::emRecRecord::Record;

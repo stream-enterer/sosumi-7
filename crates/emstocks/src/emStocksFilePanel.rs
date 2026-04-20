@@ -8,7 +8,7 @@ use emcore::emInput::{emInputEvent, InputKey, InputVariant};
 use emcore::emInputState::emInputState;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{PanelBehavior, PanelState};
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 
 use super::emStocksConfig::{emStocksConfig, Sorting};
 use super::emStocksFetchPricesDialog::emStocksFetchPricesDialog;

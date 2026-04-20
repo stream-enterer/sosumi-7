@@ -16,7 +16,7 @@ use std::rc::Weak;
 
 use super::emEngine::emEngine;
 use super::emEngineCtx::EngineCtx;
-use super::emPanelCtx::PanelCtx;
+use super::emEngineCtx::PanelCtx;
 use super::emPanelTree::PanelId;
 use super::emScheduler::EngineScheduler;
 use super::emView::emView;

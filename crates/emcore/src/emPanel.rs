@@ -10,7 +10,7 @@ use crate::emPainter::emPainter;
 
 use super::emPanelTree::{PanelId, PlaybackState};
 use crate::emEngineCtx::EngineCtx;
-use crate::emPanelCtx::PanelCtx;
+use crate::emEngineCtx::PanelCtx;
 
 // RUST_ONLY: rect.rs -- Consolidates C++ pattern of passing 4 separate
 // doubles (GetLayoutX/Y/Width/Height in emPanel.h) into a typed struct.

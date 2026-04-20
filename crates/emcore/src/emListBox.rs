@@ -8,7 +8,7 @@ use crate::emInputState::emInputState;
 use crate::emPainter::emPainter;
 use crate::emPanel::Rect;
 use crate::emPanel::{PanelBehavior, PanelState};
-use crate::emPanelCtx::PanelCtx;
+use crate::emEngineCtx::PanelCtx;
 use crate::emRasterLayout::emRasterLayout;
 
 use super::emBorder::{emBorder, InnerBorderType, OuterBorderType};

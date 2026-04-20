@@ -14,7 +14,7 @@ use emcore::emInput::{emInputEvent, InputKey};
 use emcore::emInputState::emInputState;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emViewRenderer::SoftwareCompositor;
 
 use emcore::emListBox::{emListBox, SelectionMode};

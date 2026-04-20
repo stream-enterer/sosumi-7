@@ -11,7 +11,7 @@ use emcore::emEngineCtx::{DeferredAction, SchedCtx};
 use emcore::emInput::{emInputEvent, InputKey, InputVariant};
 use emcore::emInputState::emInputState;
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emPanelTree::{PanelId, PanelTree};
 use emcore::emScheduler::EngineScheduler;
 use emcore::emView::emView;

@@ -11,7 +11,7 @@ use super::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use super::emPanelCycleEngine::PanelCycleEngine;
 use crate::emColor::emColor;
 use crate::emPanel::Rect;
-use crate::emPanelCtx::PanelCtx;
+use crate::emEngineCtx::PanelCtx;
 use crate::emScheduler::EngineScheduler;
 
 // ── Autoplay handling flags ─────────────────────────────────────────
@@ -3536,7 +3536,7 @@ mod tests {
     #[test]
     fn sp4_5_panel_cycle_uses_per_view_pixel_tallness() {
         use crate::emPanel::PanelBehavior;
-        use crate::emPanelCtx::PanelCtx;
+        use crate::emEngineCtx::PanelCtx;
         use std::cell::Cell;
         use std::collections::HashMap;
 
@@ -3639,7 +3639,7 @@ mod tests {
     #[test]
     fn sp4_5_wake_up_panel_from_cycle_reaches_sibling() {
         use crate::emPanel::PanelBehavior;
-        use crate::emPanelCtx::PanelCtx;
+        use crate::emEngineCtx::PanelCtx;
         use std::cell::Cell;
         use std::collections::HashMap;
 

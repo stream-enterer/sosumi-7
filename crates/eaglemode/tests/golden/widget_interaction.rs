@@ -9,7 +9,7 @@ use emcore::emLinearGroup::emLinearGroup;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::Rect;
 use emcore::emPanel::{PanelBehavior, PanelState};
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emPanelTree::PanelTree;
 use emcore::emTiling::Orientation;
 use emcore::emView::{emView, ViewFlags};

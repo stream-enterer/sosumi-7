@@ -7,7 +7,7 @@ use crate::emColor::emColor;
 use crate::emPainter::emPainter;
 use crate::emPanel::NoticeFlags;
 use crate::emPanel::{PanelBehavior, PanelState};
-use crate::emPanelCtx::PanelCtx;
+use crate::emEngineCtx::PanelCtx;
 use crate::emPanelTree::PanelId;
 use crate::emStroke::emStroke;
 

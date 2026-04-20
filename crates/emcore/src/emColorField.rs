@@ -5,7 +5,7 @@ use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emPainter::{emPainter, TextAlignment, VAlign};
 use crate::emPanel::PanelState;
-use crate::emPanelCtx::PanelCtx;
+use crate::emEngineCtx::PanelCtx;
 use crate::emRasterLayout::emRasterLayout;
 use crate::emTiling::{AlignmentH, AlignmentV, Spacing};
 

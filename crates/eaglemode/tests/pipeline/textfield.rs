@@ -13,7 +13,7 @@ use emcore::emInputState::emInputState;
 use emcore::emLook::emLook;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emTextField::emTextField;
 use emcore::emViewRenderer::SoftwareCompositor;
 

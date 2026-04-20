@@ -8,7 +8,7 @@ use crate::emPainter::emPainter;
 use crate::emViewAnimator::emViewAnimator;
 
 use super::emPanel::{NoticeFlags, PanelBehavior, PanelState, ParentInvalidation};
-use super::emPanelCtx::PanelCtx;
+use super::emEngineCtx::PanelCtx;
 use super::emPanelTree::{PanelId, PanelTree};
 use super::emView::{emView, ViewFlags};
 
@@ -596,7 +596,7 @@ mod sp8_tests {
         // executes.
         let mut owner_tree = crate::emPanelTree::PanelTree::new();
         let owner_id = owner_tree.create_root("owner", std::rc::Weak::new());
-        let mut pctx = crate::emPanelCtx::PanelCtx::new(&mut owner_tree, owner_id, 1.0);
+        let mut pctx = crate::emEngineCtx::PanelCtx::new(&mut owner_tree, owner_id, 1.0);
 
         // Harness supplies the EngineCtx scaffolding for the Cycle call.
         let mut th = crate::test_view_harness::TestViewHarness::new();

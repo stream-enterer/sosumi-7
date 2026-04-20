@@ -8,7 +8,7 @@ use emcore::emInput::emInputEvent;
 use emcore::emInputState::emInputState;
 use emcore::emPainter::{TextAlignment, VAlign, emPainter};
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emPanelTree::ViewConditionType;
 use emcore::emResTga::load_tga;
 use emcore::emStroke::emStroke;

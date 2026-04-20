@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use emcore::emPanel::NoticeFlags;
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emPanelTree::PanelId;
 
 use crate::support::{MutatingBehavior, RecordingBehavior, TestHarness};

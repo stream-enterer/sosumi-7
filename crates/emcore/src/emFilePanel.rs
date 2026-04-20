@@ -5,7 +5,7 @@ use crate::emColor::emColor;
 use crate::emFileModel::{FileModelState, FileState};
 use crate::emPainter::{emPainter, TextAlignment, VAlign};
 use crate::emPanel::{NoticeFlags, PanelBehavior, PanelState};
-use crate::emPanelCtx::PanelCtx;
+use crate::emEngineCtx::PanelCtx;
 
 /// Extended file state for a file panel, adding custom error and no-model states.
 ///
@@ -670,7 +670,7 @@ mod tests {
         let mut state = PanelState::default_for_test();
         state.memory_limit = 2048;
         let (mut tree, id) = make_notice_ctx();
-        let mut ctx = crate::emPanelCtx::PanelCtx::new(&mut tree, id, 1.0);
+        let mut ctx = crate::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
         panel.notice(NoticeFlags::MEMORY_LIMIT_CHANGED, &state, &mut ctx);
         assert_eq!(panel.cached_memory_limit, 2048);
     }
@@ -681,7 +681,7 @@ mod tests {
         let mut state = PanelState::default_for_test();
         state.priority = 0.75;
         let (mut tree, id) = make_notice_ctx();
-        let mut ctx = crate::emPanelCtx::PanelCtx::new(&mut tree, id, 1.0);
+        let mut ctx = crate::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
         panel.notice(NoticeFlags::UPDATE_PRIORITY_CHANGED, &state, &mut ctx);
         assert!((panel.cached_priority - 0.75).abs() < f64::EPSILON);
     }
@@ -692,7 +692,7 @@ mod tests {
         let mut state = PanelState::default_for_test();
         state.in_active_path = true;
         let (mut tree, id) = make_notice_ctx();
-        let mut ctx = crate::emPanelCtx::PanelCtx::new(&mut tree, id, 1.0);
+        let mut ctx = crate::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
         panel.notice(NoticeFlags::ACTIVE_CHANGED, &state, &mut ctx);
         assert!(panel.cached_in_active_path);
     }

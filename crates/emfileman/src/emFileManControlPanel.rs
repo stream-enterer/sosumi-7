@@ -288,7 +288,7 @@ impl PanelBehavior for emFileManControlPanel {
     fn Cycle(
         &mut self,
         _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
-        _ctx: &mut emcore::emPanelCtx::PanelCtx,
+        _ctx: &mut emcore::emEngineCtx::PanelCtx,
     ) -> bool {
         let gen = self.config.borrow().GetChangeSignal();
         if gen != self.last_config_gen {
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn cycle_detects_config_change() {
-        use emcore::emPanelCtx::PanelCtx;
+        use emcore::emEngineCtx::PanelCtx;
         use emcore::emPanelTree::{PanelId, PanelTree};
         use slotmap::Key as _;
 

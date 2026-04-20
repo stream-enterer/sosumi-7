@@ -3,7 +3,7 @@ use emcore::emPanel::Rect;
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::test_view_harness::TestSched;
 
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 
 use emcore::emPanelTree::{PanelId, PanelTree};
 

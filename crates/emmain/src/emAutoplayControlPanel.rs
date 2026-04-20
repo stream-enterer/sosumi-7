@@ -21,7 +21,7 @@ use emcore::emLook::emLook;
 use emcore::emPackLayout::emPackLayout;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{PanelBehavior, PanelState};
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emScalarField::emScalarField;
 use emcore::emTiling::ChildConstraint;
 

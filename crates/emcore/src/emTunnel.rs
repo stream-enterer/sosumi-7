@@ -4,7 +4,7 @@ use crate::emColor::emColor;
 use crate::emPainter::emPainter;
 use crate::emPanel::Rect;
 use crate::emPanel::{NoticeFlags, PanelBehavior, PanelState};
-use crate::emPanelCtx::PanelCtx;
+use crate::emEngineCtx::PanelCtx;
 
 use super::emBorder::{emBorder, with_toolkit_images, OuterBorderType};
 use crate::emLook::emLook;

@@ -254,7 +254,7 @@ pub(crate) fn get_constraint<'a>(
 /// PanelId so the layout algorithm can exclude it from normal layout.
 /// Public for cross-crate layout usage by emmain widget panels.
 pub fn position_aux_panel(
-    ctx: &mut crate::emPanelCtx::PanelCtx,
+    ctx: &mut crate::emEngineCtx::PanelCtx,
     border: &crate::emBorder::emBorder,
 ) -> Option<PanelId> {
     let aux_name = border.GetAuxPanelName();

@@ -7,7 +7,7 @@ use emcore::emColor::emColor;
 use emcore::emContext::emContext;
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 
 use crate::emDirEntry::emDirEntry;
 use crate::emFileManModel::emFileManModel;

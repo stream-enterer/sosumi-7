@@ -13,7 +13,7 @@ use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::emRasterGroup::emRasterGroup;
 use emcore::emRasterLayout::emRasterLayout;
 
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 
 use emcore::emPanelTree::{PanelId, PanelTree, ViewConditionType};
 

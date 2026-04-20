@@ -2,7 +2,7 @@ use emcore::emLinearLayout::emLinearLayout;
 use emcore::emPackLayout::emPackLayout;
 use emcore::emPanel::PanelBehavior;
 use emcore::emPanel::Rect;
-use emcore::emPanelCtx::PanelCtx;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emPanelTree::{PanelId, PanelTree};
 use emcore::emRasterLayout::emRasterLayout;
 use emcore::emTiling::{AlignmentH, AlignmentV, ChildConstraint, Spacing};
