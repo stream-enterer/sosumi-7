@@ -53,7 +53,7 @@ impl PanelBehavior for emStocksFilePanel {
         event: &emInputEvent,
         _state: &PanelState,
         input_state: &emInputState,
-        _ctx: &mut PanelCtx,
+        ctx: &mut PanelCtx,
     ) -> bool {
         if !self.file_panel.GetVirFileState().is_good() || self.list_box.is_none() {
             return false;
@@ -166,7 +166,7 @@ impl PanelBehavior for emStocksFilePanel {
                         list_box, model, ..
                     } = self;
                     if let Some(lb) = list_box.as_mut() {
-                        lb.CutStocks(model.GetWritableRec(), false);
+                        lb.CutStocks(ctx, model.GetWritableRec(), false);
                     }
                     return true;
                 }
@@ -186,7 +186,7 @@ impl PanelBehavior for emStocksFilePanel {
                         ..
                     } = self;
                     if let Some(lb) = list_box.as_mut() {
-                        let _ = lb.PasteStocks(model.GetWritableRec(), config, false);
+                        let _ = lb.PasteStocks(ctx, model.GetWritableRec(), config, false);
                     }
                     return true;
                 }
@@ -281,7 +281,7 @@ impl PanelBehavior for emStocksFilePanel {
                 list_box, model, ..
             } = self;
             if let Some(lb) = list_box.as_mut() {
-                lb.DeleteStocks(model.GetWritableRec(), false);
+                lb.DeleteStocks(ctx, model.GetWritableRec(), false);
             }
             return true;
         }
@@ -295,7 +295,7 @@ impl PanelBehavior for emStocksFilePanel {
                         list_box, model, ..
                     } = self;
                     if let Some(lb) = list_box.as_mut() {
-                        lb.SetInterest(model.GetWritableRec(), Interest::High, false);
+                        lb.SetInterest(ctx, model.GetWritableRec(), Interest::High, false);
                     }
                     return true;
                 }
@@ -305,7 +305,7 @@ impl PanelBehavior for emStocksFilePanel {
                         list_box, model, ..
                     } = self;
                     if let Some(lb) = list_box.as_mut() {
-                        lb.SetInterest(model.GetWritableRec(), Interest::Medium, false);
+                        lb.SetInterest(ctx, model.GetWritableRec(), Interest::Medium, false);
                     }
                     return true;
                 }
@@ -315,7 +315,7 @@ impl PanelBehavior for emStocksFilePanel {
                         list_box, model, ..
                     } = self;
                     if let Some(lb) = list_box.as_mut() {
-                        lb.SetInterest(model.GetWritableRec(), Interest::Low, false);
+                        lb.SetInterest(ctx, model.GetWritableRec(), Interest::Low, false);
                     }
                     return true;
                 }
@@ -341,7 +341,7 @@ impl PanelBehavior for emStocksFilePanel {
 
     fn Cycle(
         &mut self,
-        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
         _ctx: &mut PanelCtx,
     ) -> bool {
         let old_state = self.file_panel.GetVirFileState();
@@ -370,7 +370,7 @@ impl PanelBehavior for emStocksFilePanel {
                 ..
             } = self;
             if let Some(lb) = list_box.as_mut() {
-                lb.Cycle(model.GetWritableRec(), config)
+                lb.Cycle(ectx, model.GetWritableRec(), config)
             } else {
                 false
             }

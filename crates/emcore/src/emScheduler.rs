@@ -447,12 +447,16 @@ impl EngineScheduler {
     /// 4. Run engines from highest to lowest priority
     /// 5. After each engine, process any signals it fired (instant chaining)
     /// 6. Priority re-ascent: higher-priority engines woken mid-slice run in the same slice
+    #[allow(clippy::too_many_arguments)]
     pub fn DoTimeSlice(
         &mut self,
         tree: &mut PanelTree,
         windows: &mut HashMap<WindowId, emWindow>,
         root_context: &Rc<crate::emContext::emContext>,
         framework_actions: &mut Vec<DeferredAction>,
+        pending_inputs: &mut Vec<(WindowId, crate::emInput::emInputEvent)>,
+        input_state: &mut crate::emInputState::emInputState,
+        framework_clipboard: &std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>>,
     ) {
         self.inner.time_slice_counter += 1;
         self.inner.deadline = Instant::now() + TIME_SLICE_DURATION;
@@ -560,6 +564,9 @@ impl EngineScheduler {
                     windows,
                     root_context,
                     framework_actions,
+                    pending_inputs,
+                    input_state,
+                    framework_clipboard,
                     engine_id,
                 };
                 behavior.Cycle(&mut ctx)
@@ -605,6 +612,11 @@ impl EngineScheduler {
         let mut windows = HashMap::new();
         let root_context = crate::emContext::emContext::NewRoot();
         let mut framework_actions: Vec<DeferredAction> = Vec::new();
+        let mut pending_inputs: Vec<(WindowId, crate::emInput::emInputEvent)> = Vec::new();
+        let mut input_state = crate::emInputState::emInputState::new();
+        let framework_clipboard: std::cell::RefCell<
+            Option<Box<dyn crate::emClipboard::emClipboard>>,
+        > = std::cell::RefCell::new(None);
         self.terminated = false;
         while !self.terminated {
             self.DoTimeSlice(
@@ -612,6 +624,9 @@ impl EngineScheduler {
                 &mut windows,
                 &root_context,
                 &mut framework_actions,
+                &mut pending_inputs,
+                &mut input_state,
+                &framework_clipboard,
             );
         }
     }
@@ -657,6 +672,19 @@ impl EngineScheduler {
 
 #[cfg(any(test, feature = "test-support"))]
 impl EngineScheduler {
+    /// Test helper: mark all pending signals as processed without waking
+    /// engines. Used by unit tests that fire signals but do not run a time
+    /// slice, so the Drop-time debug assert does not panic.
+    /// Phase-3 B3.4c.
+    pub fn clear_pending_for_tests(&mut self) {
+        let pending = std::mem::take(&mut self.inner.pending_signals);
+        for id in pending {
+            if let Some(sig) = self.inner.signals.get_mut(id) {
+                sig.pending = false;
+            }
+        }
+    }
+
     /// Attach a first-cycle slice probe to a registered `PanelCycleEngine`.
     /// Used by SP4.5-FIX-1 timing fixtures (Tasks 5-7).
     pub fn attach_first_cycle_probe(
@@ -710,11 +738,18 @@ mod tests {
         let mut windows = HashMap::new();
         let root_context = crate::emContext::emContext::NewRoot();
         let mut framework_actions: Vec<DeferredAction> = Vec::new();
+        let mut pending_inputs: Vec<(WindowId, crate::emInput::emInputEvent)> = Vec::new();
+        let mut input_state = crate::emInputState::emInputState::new();
+        let fc: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         sched.DoTimeSlice(
             &mut tree,
             &mut windows,
             &root_context,
             &mut framework_actions,
+            &mut pending_inputs,
+            &mut input_state,
+            &fc,
         );
     }
 
@@ -1135,6 +1170,9 @@ mod tests {
         let mut windows = HashMap::new();
         let root_context = crate::emContext::emContext::NewRoot();
         let mut framework_actions: Vec<DeferredAction> = Vec::new();
+        let framework_clipboard: std::cell::RefCell<
+            Option<Box<dyn crate::emClipboard::emClipboard>>,
+        > = std::cell::RefCell::new(None);
 
         let outer_root = tree.create_root("outer_root", false);
         let outer_child = tree.create_child(outer_root, "outer_sv", None);
@@ -1148,6 +1186,7 @@ mod tests {
                 scheduler: &mut sched,
                 framework_actions: &mut fw,
                 root_context: &root_context,
+                framework_clipboard: &framework_clipboard,
                 current_engine: None,
             };
             emSubViewPanel::new(root_context.clone(), outer_child, &mut sc)
@@ -1163,6 +1202,7 @@ mod tests {
                 scheduler: &mut sched,
                 framework_actions: &mut fw,
                 root_context: &root_context,
+                framework_clipboard: &framework_clipboard,
                 current_engine: None,
             };
             emSubViewPanel::new(root_context.clone(), inner_child, &mut sc)
@@ -1217,11 +1257,16 @@ mod tests {
         );
         sched.wake_up(probe);
 
+        let mut pending_inputs: Vec<(WindowId, crate::emInput::emInputEvent)> = Vec::new();
+        let mut input_state = crate::emInputState::emInputState::new();
         sched.DoTimeSlice(
             &mut tree,
             &mut windows,
             &root_context,
             &mut framework_actions,
+            &mut pending_inputs,
+            &mut input_state,
+            &framework_clipboard,
         );
 
         let got = captured.borrow().expect("probe ran");

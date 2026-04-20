@@ -22,6 +22,7 @@ pub struct PriSchedModel {
 struct AgentEntry {
     priority: f64,
     waiting: bool,
+    // Non-widget callback — scheduler bookkeeping (got_access); no scheduler reach required.
     callback: Option<Box<dyn FnMut()>>,
 }
 
@@ -99,6 +100,7 @@ impl PriSchedModel {
 
     /// Register a new agent with the given priority and callback.
     /// Returns an ID that can be used to interact with this agent.
+    // Non-widget callback — scheduler bookkeeping; no scheduler reach required.
     pub fn add_agent(&mut self, priority: f64, got_access: Box<dyn FnMut()>) -> PriSchedAgentId {
         let mut model = self.inner.borrow_mut();
         let id = PriSchedAgentId(model.agents.len());
@@ -190,7 +192,20 @@ mod tests {
         let mut windows: HashMap<WindowId, emWindow> = HashMap::new();
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
-        sched.DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
+        let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
+            Vec::new();
+        let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        sched.DoTimeSlice(
+            &mut tree,
+            &mut windows,
+            &__root_ctx,
+            &mut __fw,
+            &mut __pending_inputs,
+            &mut __input_state,
+            &__cb,
+        );
     }
 
     #[test]

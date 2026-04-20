@@ -1,10 +1,11 @@
 use crate::emCursor::emCursor;
-use crate::emEngineCtx::PanelCtx;
+use crate::emEngineCtx::{ConstructCtx, PanelCtx, WidgetCallback};
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emPainter::{emPainter, BORDER_EDGES_ONLY};
 use crate::emPanel::PanelState;
 use crate::emPanelTree::PanelId;
+use crate::emSignal::SignalId;
 use crate::emTiling::{Orientation, ResolvedOrientation};
 
 use crate::emBorder::{emBorder, with_toolkit_images};
@@ -32,11 +33,13 @@ pub struct emSplitter {
     /// Cached dimensions from the last paint call.
     last_w: f64,
     last_h: f64,
-    pub on_position: Option<Box<dyn FnMut(f64)>>,
+    pub on_position: Option<WidgetCallback<f64>>,
+    /// Allocated per C++ `emSplitter::GetPosSignal()`. B3.4b: alloc only.
+    pub pos_signal: SignalId,
 }
 
 impl emSplitter {
-    pub fn new(orientation: Orientation, look: Rc<emLook>) -> Self {
+    pub fn new<C: ConstructCtx>(ctx: &mut C, orientation: Orientation, look: Rc<emLook>) -> Self {
         Self {
             look,
             orientation,
@@ -51,6 +54,7 @@ impl emSplitter {
             last_w: 0.0,
             last_h: 0.0,
             on_position: None,
+            pos_signal: ctx.create_signal(),
         }
     }
 
@@ -86,12 +90,25 @@ impl emSplitter {
         self.orientation = orientation;
     }
 
-    pub fn SetPos(&mut self, pos: f64) {
+    /// Construction-time position assignment — no signal, no callback.
+    /// Used from widget constructor/config paths where no scheduler-reach
+    /// PanelCtx is available. C++ parity: `emSplitter` constructor sets
+    /// `Position` directly.
+    pub fn set_initial_position(&mut self, pos: f64) {
+        self.position = pos.clamp(self.min_position, self.max_position);
+    }
+
+    /// Mirrors C++ `emSplitter::SetPos` (emSplitter.cpp:82-91):
+    /// Signal(PosSignal) → InvalidatePainting → InvalidateChildrenLayout.
+    pub fn SetPos(&mut self, pos: f64, ctx: &mut PanelCtx<'_>) {
         let clamped = pos.clamp(self.min_position, self.max_position);
         if (self.position - clamped).abs() > f64::EPSILON {
             self.position = clamped;
-            if let Some(cb) = &mut self.on_position {
-                cb(self.position);
+            if let Some(mut sched) = ctx.as_sched_ctx() {
+                sched.fire(self.pos_signal);
+                if let Some(cb) = self.on_position.as_mut() {
+                    cb(self.position, &mut sched);
+                }
             }
         }
     }
@@ -110,7 +127,7 @@ impl emSplitter {
         }
         self.min_position = min;
         self.max_position = max;
-        self.SetPos(self.position);
+        self.set_initial_position(self.position);
     }
 
     pub fn PaintContent(&mut self, painter: &mut emPainter, w: f64, h: f64, enabled: bool) {
@@ -207,6 +224,7 @@ impl emSplitter {
         event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        ctx: &mut PanelCtx,
     ) -> bool {
         if self.last_w <= 0.0 || self.last_h <= 0.0 {
             return false;
@@ -265,7 +283,7 @@ impl emSplitter {
                         let travel = size - gs;
                         if travel > 0.0 {
                             let new_pos = (pos - self.drag_offset - gs * 0.5) / travel;
-                            self.SetPos(new_pos);
+                            self.SetPos(new_pos, ctx);
                         }
                         return true;
                     }
@@ -382,9 +400,17 @@ impl emSplitter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emEngineCtx::{DeferredAction, InitCtx};
     use crate::emPanel::Rect;
-    use crate::emPanelTree::PanelId;
+    use crate::emPanelTree::{PanelId, PanelTree};
+    use crate::emScheduler::EngineScheduler;
     use slotmap::Key as _;
+
+    fn test_tree() -> (PanelTree, PanelId) {
+        let mut tree = PanelTree::new();
+        let id = tree.create_root("t", false);
+        (tree, id)
+    }
 
     fn default_panel_state() -> PanelState {
         PanelState {
@@ -407,25 +433,58 @@ mod tests {
         emInputState::new()
     }
 
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl Drop for TestInit {
+        fn drop(&mut self) {
+            // B3.4c: clear pending signals accumulated during Input-path tests
+            self.sched.clear_pending_for_tests();
+        }
+    }
+
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
+
     #[test]
     fn splitter_position_clamping() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sp = emSplitter::new(Orientation::Horizontal, look);
-        sp.SetPos(0.3);
+        let mut sp = emSplitter::new(&mut __init.ctx(), Orientation::Horizontal, look);
+        sp.set_initial_position(0.3);
         assert!((sp.GetPos() - 0.3).abs() < 0.001);
 
-        sp.SetPos(-1.0);
+        sp.set_initial_position(-1.0);
         assert!((sp.GetPos() - 0.0).abs() < 0.001);
 
-        sp.SetPos(2.0);
+        sp.set_initial_position(2.0);
         assert!((sp.GetPos() - 1.0).abs() < 0.001);
     }
 
     #[test]
     fn splitter_drag() {
+        let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut sp = emSplitter::new(Orientation::Horizontal, look);
-        sp.SetPos(0.5);
+        let mut sp = emSplitter::new(&mut __init.ctx(), Orientation::Horizontal, look);
+        sp.set_initial_position(0.5);
         let ps = default_panel_state();
         let is = default_input_state();
 
@@ -437,7 +496,7 @@ mod tests {
         // Press at the divider center in normalized space (tallness = 0.5).
         // Grip center: gx = 0.5 * (1.0 - 0.015) + 0.015/2 ≈ 0.5.
         let press = emInputEvent::press(InputKey::MouseLeft).with_mouse(0.5, 0.1);
-        assert!(sp.Input(&press, &ps, &is));
+        assert!(sp.Input(&press, &ps, &is, &mut ctx));
         assert!(sp.dragging);
 
         // Drag to x = 0.7 in normalized space.
@@ -455,12 +514,57 @@ mod tests {
             meta: false,
             eaten: false,
         };
-        sp.Input(&drag, &ps, &is);
+        sp.Input(&drag, &ps, &is, &mut ctx);
         assert!((sp.GetPos() - 0.7).abs() < 0.01);
 
         // Release
         let release = emInputEvent::release(InputKey::MouseLeft);
-        sp.Input(&release, &ps, &is);
+        sp.Input(&release, &ps, &is, &mut ctx);
         assert!(!sp.dragging);
+    }
+
+    #[test]
+    fn splitter_fires_pos_signal_on_drag() {
+        let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let look = emLook::new();
+        let mut sp = emSplitter::new(&mut __init.ctx(), Orientation::Horizontal, look);
+        let sig = sp.pos_signal;
+        sp.set_initial_position(0.5);
+        sp.last_w = 100.0;
+        sp.last_h = 50.0;
+        let ps = default_panel_state();
+        let is = default_input_state();
+        let fw_cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        {
+            let mut ctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                tid,
+                1.0,
+                &mut __init.sched,
+                &mut __init.fw,
+                &__init.root,
+                &fw_cb,
+            );
+            let press = emInputEvent::press(InputKey::MouseLeft).with_mouse(0.5, 0.1);
+            sp.Input(&press, &ps, &is, &mut ctx);
+            let drag = emInputEvent {
+                key: InputKey::MouseLeft,
+                variant: InputVariant::Repeat,
+                chars: String::new(),
+                repeat: 0,
+                source_variant: 0,
+                mouse_x: 0.7,
+                mouse_y: 0.1,
+                shift: false,
+                ctrl: false,
+                alt: false,
+                meta: false,
+                eaten: false,
+            };
+            sp.Input(&drag, &ps, &is, &mut ctx);
+        }
+        assert!(__init.sched.is_pending(sig));
     }
 }

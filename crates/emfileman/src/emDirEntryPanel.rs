@@ -617,8 +617,15 @@ impl PanelBehavior for emDirEntryPanel {
             .parent()
             .and_then(|p| p.to_str())
             .unwrap_or("");
-        let mut panel =
-            crate::emFileManControlPanel::emFileManControlPanel::new(Rc::clone(&self.ctx));
+        let mut panel = {
+            let mut sched = parent_ctx
+                .as_sched_ctx()
+                .expect("CreateControlPanel requires scheduler-reach PanelCtx");
+            crate::emFileManControlPanel::emFileManControlPanel::new(
+                &mut sched,
+                Rc::clone(&self.ctx),
+            )
+        };
         if !parent_dir.is_empty() {
             panel = panel.with_dir_path(parent_dir);
         }

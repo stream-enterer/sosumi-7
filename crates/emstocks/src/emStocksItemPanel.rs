@@ -123,9 +123,9 @@ pub(crate) struct ItemWidgets {
 }
 
 impl ItemWidgets {
-    fn new(look: Rc<emLook>) -> Self {
+    fn new<C: emcore::emEngineCtx::ConstructCtx>(cc: &mut C, look: Rc<emLook>) -> Self {
         // Interest radio group (High / Medium / Low)
-        let interest_group = RadioGroup::new();
+        let interest_group = RadioGroup::new(cc);
         let interest_buttons: Vec<emRadioButton> = ["High", "Medium", "Low"]
             .iter()
             .enumerate()
@@ -135,44 +135,44 @@ impl ItemWidgets {
         Self {
             name_label: emLabel::new("", look.clone()),
             name_label_color: (240, 240, 240, 255),
-            name: emTextField::new(look.clone()),
-            symbol: emTextField::new(look.clone()),
-            wkn: emTextField::new(look.clone()),
-            isin: emTextField::new(look.clone()),
-            owning_shares: emCheckBox::new("Owning Shares", look.clone()),
-            own_shares: emTextField::new(look.clone()),
-            trade_price: emTextField::new(look.clone()),
-            trade_date: emTextField::new(look.clone()),
-            update_trade_date: emButton::new("Update Trade Date", look.clone()),
-            _fetch_share_price: emButton::new("Fetch", look.clone()),
+            name: emTextField::new(cc, look.clone()),
+            symbol: emTextField::new(cc, look.clone()),
+            wkn: emTextField::new(cc, look.clone()),
+            isin: emTextField::new(cc, look.clone()),
+            owning_shares: emCheckBox::new(cc, "Owning Shares", look.clone()),
+            own_shares: emTextField::new(cc, look.clone()),
+            trade_price: emTextField::new(cc, look.clone()),
+            trade_date: emTextField::new(cc, look.clone()),
+            update_trade_date: emButton::new(cc, "Update Trade Date", look.clone()),
+            _fetch_share_price: emButton::new(cc, "Fetch", look.clone()),
             fetch_share_price_enabled: false,
-            price: emTextField::new(look.clone()),
-            price_date: emTextField::new(look.clone()),
-            expected_dividend: emTextField::new(look.clone()),
-            desired_price: emTextField::new(look.clone()),
-            inquiry_date: emTextField::new(look.clone()),
-            _update_inquiry_date: emButton::new("Update Inquiry Date", look.clone()),
+            price: emTextField::new(cc, look.clone()),
+            price_date: emTextField::new(cc, look.clone()),
+            expected_dividend: emTextField::new(cc, look.clone()),
+            desired_price: emTextField::new(cc, look.clone()),
+            inquiry_date: emTextField::new(cc, look.clone()),
+            _update_inquiry_date: emButton::new(cc, "Update Inquiry Date", look.clone()),
             interest_group,
             _interest_buttons: interest_buttons,
             web_pages: [
-                emTextField::new(look.clone()),
-                emTextField::new(look.clone()),
-                emTextField::new(look.clone()),
-                emTextField::new(look.clone()),
+                emTextField::new(cc, look.clone()),
+                emTextField::new(cc, look.clone()),
+                emTextField::new(cc, look.clone()),
+                emTextField::new(cc, look.clone()),
             ],
             _show_web_page: [
-                emButton::new("Show", look.clone()),
-                emButton::new("Show", look.clone()),
-                emButton::new("Show", look.clone()),
-                emButton::new("Show", look.clone()),
+                emButton::new(cc, "Show", look.clone()),
+                emButton::new(cc, "Show", look.clone()),
+                emButton::new(cc, "Show", look.clone()),
+                emButton::new(cc, "Show", look.clone()),
             ],
             show_web_page_enabled: [false; NUM_WEB_PAGES],
-            _show_all_web_pages: emButton::new("Show All Web Pages", look.clone()),
+            _show_all_web_pages: emButton::new(cc, "Show All Web Pages", look.clone()),
             show_all_web_pages_enabled: false,
-            comment: emTextField::new(look.clone()),
-            trade_value: emTextField::new(look.clone()),
-            current_value: emTextField::new(look.clone()),
-            difference_value: emTextField::new(look),
+            comment: emTextField::new(cc, look.clone()),
+            trade_value: emTextField::new(cc, look.clone()),
+            current_value: emTextField::new(cc, look.clone()),
+            difference_value: emTextField::new(cc, look),
         }
     }
 }
@@ -242,9 +242,9 @@ impl emStocksItemPanel {
 
     /// Port of C++ AutoExpand — creates real widget tree.
     /// D44: Creates ItemWidgets with real emcore widget instances.
-    pub fn AutoExpand(&mut self) {
+    pub fn AutoExpand<C: emcore::emEngineCtx::ConstructCtx>(&mut self, cc: &mut C) {
         if self.widgets.is_none() {
-            self.widgets = Some(ItemWidgets::new(self.look.clone()));
+            self.widgets = Some(ItemWidgets::new(cc, self.look.clone()));
             self.update_controls_needed = true;
         }
     }
@@ -293,7 +293,12 @@ impl emStocksItemPanel {
     /// Port of C++ emStocksItemPanel::UpdateControls.
     /// Syncs stock record data to widget instances.
     // C++ reads stock/selected_date from owned FileModel/ListBox. Rust passes explicitly — avoids shared mutable state.
-    pub fn UpdateControls(&mut self, stock: &StockRec, selected_date: &str) {
+    pub fn UpdateControls(
+        &mut self,
+        stock: &StockRec,
+        selected_date: &str,
+        ctx: &mut emcore::emEngineCtx::PanelCtx<'_>,
+    ) {
         self.update_controls_needed = false;
 
         let w = match self.widgets.as_mut() {
@@ -327,7 +332,7 @@ impl emStocksItemPanel {
         w.isin.SetText(&stock.isin);
 
         // OwningShares
-        w.owning_shares.SetChecked(stock.owning_shares);
+        w.owning_shares.SetChecked(stock.owning_shares, ctx);
 
         // OwnShares
         w.own_shares.SetText(&stock.own_shares);
@@ -420,7 +425,7 @@ impl emStocksItemPanel {
             Interest::Medium => 1,
             Interest::Low => 2,
         };
-        w.interest_group.borrow_mut().SetChecked(interest_idx);
+        w.interest_group.borrow_mut().SetChecked(interest_idx, ctx);
 
         // WebPages
         for i in 0..NUM_WEB_PAGES {
@@ -576,13 +581,48 @@ impl emStocksItemPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use emcore::emEngineCtx::{DeferredAction, InitCtx};
+    use emcore::emScheduler::EngineScheduler;
+
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<emcore::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: emcore::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
 
     fn make_look() -> Rc<emLook> {
         emLook::new()
     }
 
+    /// Scratch `PanelCtx` for tests that call setters requiring a ctx param.
+    /// Returns a ctx with no scheduler reach — setters will update state but
+    /// callbacks will silently not fire (B3.3 semantics).
+    fn with_scratch_ctx<F: FnOnce(&mut emcore::emEngineCtx::PanelCtx<'_>)>(f: F) {
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let id = tree.create_root("t", false);
+        let mut ctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
+        f(&mut ctx);
+    }
+
     #[test]
     fn item_panel_new() {
+        let mut __init = TestInit::new();
         let panel = emStocksItemPanel::new(make_look());
         assert!(panel.GetStockRecIndex().is_none());
         assert!(panel.update_controls_needed);
@@ -590,6 +630,7 @@ mod tests {
 
     #[test]
     fn validate_number_valid() {
+        let mut __init = TestInit::new();
         assert!(emStocksItemPanel::ValidateNumber("123.45"));
         assert!(emStocksItemPanel::ValidateNumber("0"));
         assert!(emStocksItemPanel::ValidateNumber(""));
@@ -597,23 +638,27 @@ mod tests {
 
     #[test]
     fn validate_number_invalid() {
+        let mut __init = TestInit::new();
         assert!(!emStocksItemPanel::ValidateNumber("abc"));
         assert!(!emStocksItemPanel::ValidateNumber("12.34.56"));
     }
 
     #[test]
     fn validate_date_valid() {
+        let mut __init = TestInit::new();
         assert!(emStocksItemPanel::ValidateDate("2024-03-15"));
         assert!(emStocksItemPanel::ValidateDate(""));
     }
 
     #[test]
     fn validate_date_invalid() {
+        let mut __init = TestInit::new();
         assert!(!emStocksItemPanel::ValidateDate("not-a-date"));
     }
 
     #[test]
     fn category_panel_types() {
+        let mut __init = TestInit::new();
         let cp = CategoryPanel::new(CategoryType::Country);
         assert_eq!(cp.category_type, CategoryType::Country);
     }
@@ -622,27 +667,30 @@ mod tests {
 
     #[test]
     fn auto_expand_creates_widgets() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
         assert!(panel.widgets.is_none());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         assert!(panel.widgets.is_some());
         assert!(panel.update_controls_needed);
     }
 
     #[test]
     fn auto_shrink_destroys_widgets() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         panel.AutoShrink();
         assert!(panel.widgets.is_none());
     }
 
     #[test]
     fn auto_expand_idempotent() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         panel.update_controls_needed = false;
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         // Should not re-create or re-flag
         assert!(!panel.update_controls_needed);
     }
@@ -660,6 +708,7 @@ mod tests {
 
     #[test]
     fn toggle_owning_to_not_owning() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
         let mut stock = make_owning_stock();
 
@@ -680,6 +729,7 @@ mod tests {
 
     #[test]
     fn toggle_not_owning_to_owning() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
         // Pre-populate previous values (simulating earlier toggle)
         panel.prev_own_shares = "100".to_string();
@@ -706,6 +756,7 @@ mod tests {
 
     #[test]
     fn toggle_round_trip_preserves_data() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
         let mut stock = make_owning_stock();
 
@@ -722,6 +773,7 @@ mod tests {
 
     #[test]
     fn toggle_to_owning_with_nonempty_own_shares_is_noop_on_fields() {
+        let mut __init = TestInit::new();
         // C++ guard: if OwnShares is NOT empty when toggling to owning, skip restore
         let mut panel = emStocksItemPanel::new(make_look());
         let mut stock = StockRec::default();
@@ -741,6 +793,7 @@ mod tests {
 
     #[test]
     fn toggle_to_not_owning_with_empty_own_shares_is_noop_on_fields() {
+        let mut __init = TestInit::new();
         // C++ guard: if OwnShares IS empty when toggling to not-owning, skip save
         let mut panel = emStocksItemPanel::new(make_look());
         let mut stock = StockRec::default();
@@ -760,22 +813,24 @@ mod tests {
 
     #[test]
     fn update_controls_without_widgets_is_noop() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
         let stock = StockRec::default();
-        panel.UpdateControls(&stock, "2024-03-15");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "2024-03-15", ctx));
         assert!(!panel.update_controls_needed);
         assert!(panel.widgets.is_none());
     }
 
     #[test]
     fn update_controls_name_label_owning() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.name = "ACME Corp".to_string();
         stock.owning_shares = true;
 
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert_eq!(w.name_label.caption(), "ACME Corp");
@@ -784,11 +839,12 @@ mod tests {
 
     #[test]
     fn update_controls_name_label_not_owning() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let stock = StockRec::default(); // owning_shares = false by default
 
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert_eq!(w.name_label.caption(), "<unnamed>");
@@ -797,12 +853,13 @@ mod tests {
 
     #[test]
     fn update_controls_trade_captions_owning() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.owning_shares = true;
 
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert_eq!(w.trade_price.GetCaption(), "Purchase Price");
@@ -813,11 +870,12 @@ mod tests {
 
     #[test]
     fn update_controls_trade_captions_not_owning() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let stock = StockRec::default();
 
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert_eq!(w.trade_price.GetCaption(), "Sale Price");
@@ -828,8 +886,9 @@ mod tests {
 
     #[test]
     fn update_controls_computed_values_owning() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.owning_shares = true;
         stock.own_shares = "10".to_string();
@@ -838,7 +897,7 @@ mod tests {
         stock.last_price_date = "2024-03-15".to_string();
         stock.prices = "100.50".to_string();
 
-        panel.UpdateControls(&stock, "2024-03-15");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "2024-03-15", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert_eq!(w.trade_value.GetText(), "1500.00");
@@ -848,11 +907,12 @@ mod tests {
 
     #[test]
     fn update_controls_computed_values_not_owning() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let stock = StockRec::default();
 
-        panel.UpdateControls(&stock, "2024-03-15");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "2024-03-15", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert!(w.trade_value.GetText().is_empty());
@@ -862,8 +922,9 @@ mod tests {
 
     #[test]
     fn update_controls_text_fields() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.name = "Test Stock".to_string();
         stock.symbol = "TST".to_string();
@@ -878,7 +939,7 @@ mod tests {
         stock.interest = Interest::High;
         stock.comment = "Good stock".to_string();
 
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert_eq!(w.name.GetText(), "Test Stock");
@@ -900,15 +961,16 @@ mod tests {
 
     #[test]
     fn update_controls_web_pages() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.web_pages = vec![
             "http://example.com".to_string(),
             "http://test.com".to_string(),
         ];
 
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert_eq!(w.web_pages[0].GetText(), "http://example.com");
@@ -924,12 +986,13 @@ mod tests {
 
     #[test]
     fn update_controls_fetch_enabled_with_symbol() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.symbol = "TST".to_string();
 
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert!(w.fetch_share_price_enabled);
@@ -937,11 +1000,12 @@ mod tests {
 
     #[test]
     fn update_controls_fetch_disabled_without_symbol() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let stock = StockRec::default();
 
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert!(!w.fetch_share_price_enabled);
@@ -949,13 +1013,14 @@ mod tests {
 
     #[test]
     fn update_controls_price_and_price_date() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.last_price_date = "2024-03-15".to_string();
         stock.prices = "100.50".to_string();
 
-        panel.UpdateControls(&stock, "2024-03-15");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "2024-03-15", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert_eq!(w.price.GetText(), "100.50");
@@ -964,11 +1029,12 @@ mod tests {
 
     #[test]
     fn update_controls_empty_price_clears_date() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let stock = StockRec::default();
 
-        panel.UpdateControls(&stock, "2024-03-15");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "2024-03-15", ctx));
 
         let w = panel.widgets.as_ref().unwrap();
         assert!(w.price.GetText().is_empty());
@@ -977,12 +1043,13 @@ mod tests {
 
     #[test]
     fn update_controls_clears_flag() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         assert!(panel.update_controls_needed);
 
         let stock = StockRec::default();
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
         assert!(!panel.update_controls_needed);
     }
 
@@ -994,6 +1061,7 @@ mod tests {
 
     #[test]
     fn read_from_widgets_no_widgets_is_noop() {
+        let mut __init = TestInit::new();
         let panel = emStocksItemPanel::new(make_look());
         let mut stock = StockRec::default();
         stock.name = "Before".to_string();
@@ -1005,8 +1073,9 @@ mod tests {
 
     #[test]
     fn read_from_widgets_basic_text_fields() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
         // Set widget values directly
@@ -1043,8 +1112,9 @@ mod tests {
 
     #[test]
     fn read_from_widgets_symbol_change_clears_prices() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
         let mut stock = StockRec::default();
@@ -1052,7 +1122,7 @@ mod tests {
         stock.prices = "100.00|200.00".to_string();
 
         // UpdateControls pushes stock → widgets
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
 
         // Change symbol in widget
         panel.widgets.as_mut().unwrap().symbol.SetText("NEW");
@@ -1068,15 +1138,16 @@ mod tests {
 
     #[test]
     fn read_from_widgets_same_symbol_preserves_prices() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
         let mut stock = StockRec::default();
         stock.symbol = "SAME".to_string();
         stock.prices = "100.00".to_string();
 
-        panel.UpdateControls(&stock, "");
+        with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "", ctx));
         panel.ReadFromWidgets(&mut stock, &config);
 
         assert_eq!(stock.symbol, "SAME");
@@ -1085,18 +1156,21 @@ mod tests {
 
     #[test]
     fn read_from_widgets_interest_radio() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
         // Set radio to Medium (index 1)
-        panel
-            .widgets
-            .as_mut()
-            .unwrap()
-            .interest_group
-            .borrow_mut()
-            .SetChecked(1);
+        with_scratch_ctx(|ctx| {
+            panel
+                .widgets
+                .as_mut()
+                .unwrap()
+                .interest_group
+                .borrow_mut()
+                .SetChecked(1, ctx);
+        });
 
         let mut stock = StockRec::default();
         stock.interest = Interest::High;
@@ -1108,8 +1182,9 @@ mod tests {
 
     #[test]
     fn read_from_widgets_web_pages() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
         {
@@ -1129,16 +1204,19 @@ mod tests {
 
     #[test]
     fn read_from_widgets_owning_shares_flag_updated() {
+        let mut __init = TestInit::new();
         let mut panel = emStocksItemPanel::new(make_look());
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
-        panel
-            .widgets
-            .as_mut()
-            .unwrap()
-            .owning_shares
-            .SetChecked(true);
+        with_scratch_ctx(|ctx| {
+            panel
+                .widgets
+                .as_mut()
+                .unwrap()
+                .owning_shares
+                .SetChecked(true, ctx);
+        });
 
         let mut stock = StockRec::default();
         stock.owning_shares = false;

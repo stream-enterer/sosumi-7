@@ -245,8 +245,13 @@ fn parallel_border_small_tiles() {
 fn parallel_checkbox() {
     require_golden!();
     let look = emLook::new();
-    let mut cb = emCheckBox::new("Check Option", look);
-    cb.SetChecked(true);
+    let mut ts = TestSched::new();
+    let mut cb = emCheckBox::new(&mut ts.cc(), "Check Option", look);
+    // Scratch ctx — no scheduler reach; cb has no callback so SetChecked is pure state.
+    let mut tree = PanelTree::new();
+    let root = tree.create_root("t", false);
+    let mut ctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, root, 1.0);
+    cb.SetChecked(true, &mut ctx);
     assert_parallel_identical(
         "widget_checkbox_checked",
         Box::new(CheckBoxBehavior { check_box: cb }),
@@ -258,12 +263,13 @@ fn parallel_checkbox() {
 /// Verify parallel rendering of a scalar field (uses gradient, text, polygon).
 #[test]
 fn parallel_scalarfield() {
+    let mut ts = TestSched::new();
     require_golden!();
     let look = emLook::new();
-    let mut sf = emScalarField::new(0.0, 100.0, look);
+    let mut sf = emScalarField::new(&mut ts.cc(), 0.0, 100.0, look);
     sf.SetCaption("Value");
     sf.SetEditable(true);
-    sf.SetValue(50.0);
+    sf.set_initial_value(50.0);
     assert_parallel_identical(
         "widget_scalarfield",
         Box::new(ScalarFieldBehavior { scalar_field: sf }),

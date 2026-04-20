@@ -80,8 +80,12 @@ impl emStocksListBox {
 
     /// Attach an emListBox backed by the given look.
     /// After this call all selection operations delegate to it.
-    pub fn attach_list_box(&mut self, look: Rc<emLook>) {
-        self.list_box = Some(emListBox::new(look.clone()));
+    pub fn attach_list_box<C: emcore::emEngineCtx::ConstructCtx>(
+        &mut self,
+        cc: &mut C,
+        look: Rc<emLook>,
+    ) {
+        self.list_box = Some(emListBox::new(cc, look.clone()));
         self.look = Some(look);
         // Carry over any pre-existing local selection state is not attempted:
         // the attached list box starts empty and callers re-select as needed.
@@ -465,7 +469,12 @@ impl emStocksListBox {
     /// When `ask=false`, performs deletion immediately.
     /// C++ takes no arguments (reads from owned FileModel).
     /// Rust takes `rec` and `ask` parameters.
-    pub fn DeleteStocks(&mut self, rec: &mut emStocksRec, ask: bool) {
+    pub fn DeleteStocks<C: emcore::emEngineCtx::ConstructCtx>(
+        &mut self,
+        cc: &mut C,
+        rec: &mut emStocksRec,
+        ask: bool,
+    ) {
         if self.GetSelectionCount() == 0 {
             return;
         }
@@ -473,11 +482,14 @@ impl emStocksListBox {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
                 if let Some(ref mut d) = self.delete_stocks_dialog {
-                    d.Finish(DialogResult::Cancel);
+                    d.silent_cancel();
                 }
                 let count = self.GetSelectionCount();
-                let mut dialog =
-                    emDialog::new(&format!("Really delete {} stock(s)?", count), look.clone());
+                let mut dialog = emDialog::new(
+                    cc,
+                    &format!("Really delete {} stock(s)?", count),
+                    look.clone(),
+                );
                 dialog.AddCustomButton("Delete", DialogResult::Ok);
                 dialog.AddCustomButton("Cancel", DialogResult::Cancel);
                 self.delete_stocks_dialog = Some(dialog);
@@ -508,16 +520,21 @@ impl emStocksListBox {
     /// `cut_stocks_dialog` and returns early — Cycle() polls the result.
     /// When `ask=false`, performs copy+delete immediately.
     /// C++ takes no arguments. Rust takes `rec` and `ask` parameters.
-    pub fn CutStocks(&mut self, rec: &mut emStocksRec, ask: bool) {
+    pub fn CutStocks<C: emcore::emEngineCtx::ConstructCtx>(
+        &mut self,
+        cc: &mut C,
+        rec: &mut emStocksRec,
+        ask: bool,
+    ) {
         if ask {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
                 if let Some(ref mut d) = self.cut_stocks_dialog {
-                    d.Finish(DialogResult::Cancel);
+                    d.silent_cancel();
                 }
                 let count = self.GetSelectionCount();
                 let mut dialog =
-                    emDialog::new(&format!("Really cut {} stock(s)?", count), look.clone());
+                    emDialog::new(cc, &format!("Really cut {} stock(s)?", count), look.clone());
                 dialog.AddCustomButton("Cut", DialogResult::Ok);
                 dialog.AddCustomButton("Cancel", DialogResult::Cancel);
                 self.cut_stocks_dialog = Some(dialog);
@@ -528,7 +545,7 @@ impl emStocksListBox {
         // ask=false path: perform cut immediately.
         self.CopyStocks(rec);
         if self.GetSelectionCount() > 0 {
-            self.DeleteStocks(rec, false); // inner delete doesn't ask again
+            self.DeleteStocks(cc, rec, false); // inner delete doesn't ask again
         }
     }
 
@@ -540,8 +557,9 @@ impl emStocksListBox {
     /// Returns names of pasted stocks that are not visible due to filters,
     /// or an error if the clipboard data is invalid or clipboard is empty.
     /// C++ takes no arguments. Rust takes `rec`, `config`, and `ask` parameters.
-    pub fn PasteStocks(
+    pub fn PasteStocks<C: emcore::emEngineCtx::ConstructCtx>(
         &mut self,
+        cc: &mut C,
         rec: &mut emStocksRec,
         config: &emStocksConfig,
         ask: bool,
@@ -550,9 +568,9 @@ impl emStocksListBox {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
                 if let Some(ref mut d) = self.paste_stocks_dialog {
-                    d.Finish(DialogResult::Cancel);
+                    d.silent_cancel();
                 }
-                let mut dialog = emDialog::new("Really paste stocks?", look.clone());
+                let mut dialog = emDialog::new(cc, "Really paste stocks?", look.clone());
                 dialog.AddCustomButton("Paste", DialogResult::Ok);
                 dialog.AddCustomButton("Cancel", DialogResult::Cancel);
                 self.paste_stocks_dialog = Some(dialog);
@@ -629,14 +647,20 @@ impl emStocksListBox {
     /// polls the result.
     /// When `ask=false`, applies the interest change immediately.
     /// C++ takes no arguments beyond interest. Rust takes `rec` and `ask` parameters.
-    pub fn SetInterest(&mut self, rec: &mut emStocksRec, interest: Interest, ask: bool) {
+    pub fn SetInterest<C: emcore::emEngineCtx::ConstructCtx>(
+        &mut self,
+        cc: &mut C,
+        rec: &mut emStocksRec,
+        interest: Interest,
+        ask: bool,
+    ) {
         if ask {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
                 if let Some(ref mut d) = self.interest_dialog {
-                    d.Finish(DialogResult::Cancel);
+                    d.silent_cancel();
                 }
-                let mut dialog = emDialog::new("Really change interest?", look.clone());
+                let mut dialog = emDialog::new(cc, "Really change interest?", look.clone());
                 dialog.AddCustomButton("Change", DialogResult::Ok);
                 dialog.AddCustomButton("Cancel", DialogResult::Cancel);
                 self.interest_dialog = Some(dialog);
@@ -659,7 +683,12 @@ impl emStocksListBox {
     /// Polls persistent confirmation dialogs and executes deferred operations
     /// when the user confirms. Returns true while any dialog is still open
     /// (signals the parent panel to keep cycling).
-    pub fn Cycle(&mut self, rec: &mut emStocksRec, config: &emStocksConfig) -> bool {
+    pub fn Cycle<C: emcore::emEngineCtx::ConstructCtx>(
+        &mut self,
+        cc: &mut C,
+        rec: &mut emStocksRec,
+        config: &emStocksConfig,
+    ) -> bool {
         let mut busy = false;
 
         // Poll delete dialog.
@@ -671,7 +700,7 @@ impl emStocksListBox {
             let confirmed = *result == DialogResult::Ok;
             self.delete_stocks_dialog = None;
             if confirmed {
-                self.DeleteStocks(rec, false);
+                self.DeleteStocks(cc, rec, false);
             }
         } else if self.delete_stocks_dialog.is_some() {
             busy = true;
@@ -682,7 +711,7 @@ impl emStocksListBox {
             let confirmed = *result == DialogResult::Ok;
             self.cut_stocks_dialog = None;
             if confirmed {
-                self.CutStocks(rec, false);
+                self.CutStocks(cc, rec, false);
             }
         } else if self.cut_stocks_dialog.is_some() {
             busy = true;
@@ -697,7 +726,7 @@ impl emStocksListBox {
             let confirmed = *result == DialogResult::Ok;
             self.paste_stocks_dialog = None;
             if confirmed {
-                let _ = self.PasteStocks(rec, config, false);
+                let _ = self.PasteStocks(cc, rec, config, false);
             }
         } else if self.paste_stocks_dialog.is_some() {
             busy = true;
@@ -709,7 +738,7 @@ impl emStocksListBox {
             self.interest_dialog = None;
             if confirmed {
                 if let Some(interest) = self.interest_to_set.take() {
-                    self.SetInterest(rec, interest, false);
+                    self.SetInterest(cc, rec, interest, false);
                 }
             } else {
                 self.interest_to_set = None;
@@ -837,6 +866,30 @@ impl emStocksListBox {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use emcore::emEngineCtx::{DeferredAction, InitCtx};
+    use emcore::emScheduler::EngineScheduler;
+
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<emcore::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: emcore::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
 
     fn make_stock(id: &str, name: &str, interest: Interest) -> StockRec {
         let mut s = StockRec::default();
@@ -848,12 +901,14 @@ mod tests {
 
     #[test]
     fn listbox_new() {
+        let mut __init = TestInit::new();
         let lb = emStocksListBox::new();
         assert!(lb.visible_items.is_empty());
     }
 
     #[test]
     fn is_visible_stock_interest_filter() {
+        let mut __init = TestInit::new();
         let config = emStocksConfig {
             min_visible_interest: Interest::Medium,
             ..Default::default()
@@ -869,6 +924,7 @@ mod tests {
 
     #[test]
     fn is_visible_stock_category_filter() {
+        let mut __init = TestInit::new();
         let config = emStocksConfig {
             visible_countries: vec!["DE".to_string(), "US".to_string()],
             ..Default::default()
@@ -884,6 +940,7 @@ mod tests {
 
     #[test]
     fn is_visible_stock_empty_categories_means_all() {
+        let mut __init = TestInit::new();
         let config = emStocksConfig::default(); // empty visible_countries
         let mut stock = make_stock("1", "Any", Interest::High);
         stock.country = "Anywhere".to_string();
@@ -892,6 +949,7 @@ mod tests {
 
     #[test]
     fn update_items_filters_and_sorts() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks
             .push(make_stock("1", "Zebra Corp", Interest::High));
@@ -917,6 +975,7 @@ mod tests {
 
     #[test]
     fn compare_stocks_owned_first() {
+        let mut __init = TestInit::new();
         let mut s1 = make_stock("1", "A", Interest::High);
         s1.owning_shares = true;
         let s2 = make_stock("2", "B", Interest::High);
@@ -932,6 +991,7 @@ mod tests {
 
     #[test]
     fn selected_date_management() {
+        let mut __init = TestInit::new();
         let mut lb = emStocksListBox::new();
         lb.SetSelectedDate("2024-06-15");
         assert_eq!(lb.GetSelectedDate(), "2024-06-15");
@@ -939,6 +999,7 @@ mod tests {
 
     #[test]
     fn go_back_in_history() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         let mut stock = StockRec::default();
         stock.AddPrice("2024-06-14", "100");
@@ -955,6 +1016,7 @@ mod tests {
 
     #[test]
     fn paint_empty_message_when_no_items() {
+        let mut __init = TestInit::new();
         use emcore::emImage::emImage;
         let lb = emStocksListBox::new();
         let mut img = emImage::new(200, 50, 4);
@@ -965,6 +1027,7 @@ mod tests {
 
     #[test]
     fn paint_empty_message_no_op_when_items_exist() {
+        let mut __init = TestInit::new();
         use emcore::emImage::emImage;
         let mut lb = emStocksListBox::new();
         lb.visible_items.push(0);
@@ -976,6 +1039,7 @@ mod tests {
 
     #[test]
     fn new_stock_assigns_id_and_selects() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks.push(make_stock("1", "Existing", Interest::High));
         let config = emStocksConfig::default();
@@ -990,6 +1054,7 @@ mod tests {
 
     #[test]
     fn new_stock_inherits_config_categories() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         let config = emStocksConfig {
             visible_countries: vec!["DE".to_string()],
@@ -1008,6 +1073,7 @@ mod tests {
 
     #[test]
     fn new_stock_caps_interest_to_config() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         let config = emStocksConfig {
             min_visible_interest: Interest::High,
@@ -1024,6 +1090,7 @@ mod tests {
 
     #[test]
     fn copy_stocks_to_string_empty_selection_returns_none() {
+        let mut __init = TestInit::new();
         let rec = emStocksRec::default();
         let lb = emStocksListBox::new();
         assert!(lb.copy_stocks_to_string(&rec).is_none());
@@ -1031,6 +1098,7 @@ mod tests {
 
     #[test]
     fn copy_stocks_to_string_serializes_selected() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks.push(make_stock("1", "Alpha", Interest::High));
         rec.stocks.push(make_stock("2", "Beta", Interest::High));
@@ -1047,6 +1115,7 @@ mod tests {
 
     #[test]
     fn delete_stocks_removes_selected() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks.push(make_stock("1", "Alpha", Interest::High));
         rec.stocks.push(make_stock("2", "Beta", Interest::High));
@@ -1057,7 +1126,7 @@ mod tests {
         lb.UpdateItems(&rec, &config);
         lb.Select(1); // select second visible item (Beta)
 
-        lb.DeleteStocks(&mut rec, false);
+        lb.DeleteStocks(&mut __init.ctx(), &mut rec, false);
         assert_eq!(rec.stocks.len(), 2);
         assert_eq!(rec.stocks[0].name, "Alpha");
         assert_eq!(rec.stocks[1].name, "Gamma");
@@ -1066,16 +1135,18 @@ mod tests {
 
     #[test]
     fn delete_stocks_empty_selection_is_noop() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks.push(make_stock("1", "Alpha", Interest::High));
 
         let mut lb = emStocksListBox::new();
-        lb.DeleteStocks(&mut rec, false);
+        lb.DeleteStocks(&mut __init.ctx(), &mut rec, false);
         assert_eq!(rec.stocks.len(), 1);
     }
 
     #[test]
     fn cut_stocks_copies_then_deletes() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks.push(make_stock("1", "Alpha", Interest::High));
         rec.stocks.push(make_stock("2", "Beta", Interest::High));
@@ -1085,13 +1156,14 @@ mod tests {
         lb.UpdateItems(&rec, &config);
         lb.Select(0); // select Alpha
 
-        lb.CutStocks(&mut rec, false);
+        lb.CutStocks(&mut __init.ctx(), &mut rec, false);
         assert_eq!(rec.stocks.len(), 1);
         assert_eq!(rec.stocks[0].name, "Beta");
     }
 
     #[test]
     fn paste_stocks_round_trip() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks.push(make_stock("1", "Alpha", Interest::High));
 
@@ -1113,6 +1185,7 @@ mod tests {
 
     #[test]
     fn paste_stocks_reassigns_conflicting_ids() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks.push(make_stock("1", "Existing", Interest::High));
 
@@ -1137,6 +1210,7 @@ mod tests {
 
     #[test]
     fn paste_stocks_invalid_data_returns_error() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         let mut lb = emStocksListBox::new();
         let config = emStocksConfig::default();
@@ -1147,6 +1221,7 @@ mod tests {
 
     #[test]
     fn paste_stocks_reports_invisible() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         let config = emStocksConfig {
             min_visible_interest: Interest::High,
@@ -1170,6 +1245,7 @@ mod tests {
 
     #[test]
     fn delete_share_prices_clears_visible() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         let mut stock = make_stock("1", "Alpha", Interest::High);
         stock.AddPrice("2024-06-15", "100");
@@ -1187,6 +1263,7 @@ mod tests {
 
     #[test]
     fn set_interest_on_selected() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks.push(make_stock("1", "Alpha", Interest::Medium));
         rec.stocks.push(make_stock("2", "Beta", Interest::Medium));
@@ -1196,7 +1273,7 @@ mod tests {
         lb.UpdateItems(&rec, &config);
         lb.Select(0);
 
-        lb.SetInterest(&mut rec, Interest::High, false);
+        lb.SetInterest(&mut __init.ctx(), &mut rec, Interest::High, false);
         // Only the selected stock should change
         assert_eq!(rec.stocks[lb.visible_items[0]].interest, Interest::High);
         assert_eq!(rec.stocks[lb.visible_items[1]].interest, Interest::Medium);
@@ -1204,6 +1281,7 @@ mod tests {
 
     #[test]
     fn show_first_web_pages_empty_selection_is_noop() {
+        let mut __init = TestInit::new();
         // ShowFirstWebPages with no selection launches no browser and does not panic.
         let mut rec = emStocksRec::default();
         let mut stock = make_stock("1", "Alpha", Interest::High);
@@ -1219,6 +1297,7 @@ mod tests {
 
     #[test]
     fn show_all_web_pages_empty_selection_is_noop() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         let mut stock = make_stock("1", "Alpha", Interest::High);
         stock.web_pages = vec![
@@ -1236,6 +1315,7 @@ mod tests {
 
     #[test]
     fn get_visible_stock_ids() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks.push(make_stock("1", "Alpha", Interest::High));
         rec.stocks.push(make_stock("2", "Beta", Interest::High));
@@ -1250,6 +1330,7 @@ mod tests {
 
     #[test]
     fn find_next_wraps_around() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks
             .push(make_stock("1", "Alpha Corp", Interest::High));
@@ -1285,6 +1366,7 @@ mod tests {
 
     #[test]
     fn find_previous_wraps_around() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks
             .push(make_stock("1", "Alpha Corp", Interest::High));
@@ -1308,6 +1390,7 @@ mod tests {
 
     #[test]
     fn find_next_returns_none_when_no_match() {
+        let mut __init = TestInit::new();
         let mut rec = emStocksRec::default();
         rec.stocks.push(make_stock("1", "Alpha", Interest::High));
 
@@ -1323,6 +1406,7 @@ mod tests {
 
     #[test]
     fn find_next_returns_none_on_empty_list() {
+        let mut __init = TestInit::new();
         let rec = emStocksRec::default();
         let mut lb = emStocksListBox::new();
         let config = emStocksConfig::default();
@@ -1332,6 +1416,7 @@ mod tests {
 
     #[test]
     fn find_selected_uses_config_search_text_when_clipboard_unavailable() {
+        let mut __init = TestInit::new();
         // FindSelected reads clipboard; if clipboard is unavailable it falls
         // back to config.search_text.  Pre-set search_text so the fallback
         // exercises the FindNext path.
@@ -1355,6 +1440,7 @@ mod tests {
 
     #[test]
     fn find_selected_empty_fallback_returns_none() {
+        let mut __init = TestInit::new();
         // When both clipboard and config.search_text are empty, FindSelected
         // returns None.
         let rec = emStocksRec::default();
@@ -1368,6 +1454,7 @@ mod tests {
 
     #[test]
     fn selection_helpers() {
+        let mut __init = TestInit::new();
         let mut lb = emStocksListBox::new();
         lb.visible_items = vec![0, 1, 2];
 

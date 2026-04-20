@@ -3,17 +3,32 @@
 //! This module replaces the `Rc`-wrapped scheduler ownership model.
 //! See `docs/superpowers/specs/2026-04-19-port-ownership-rewrite-design.md` §3.1.
 
+use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::emClipboard::emClipboard;
 use crate::emColor::emColor;
 use crate::emContext::emContext;
 use crate::emEngine::{EngineId, Priority, TreeLocation};
+use crate::emInput::emInputEvent;
+use crate::emInputState::emInputState;
 use crate::emPanel::{PanelBehavior, Rect};
 use crate::emPanelTree::{PanelId, PanelTree};
 use crate::emScheduler::EngineScheduler;
 use crate::emSignal::SignalId;
 use crate::emWindow::emWindow;
+
+/// Widget callback carried by emCheckButton, emButton, etc. Takes the
+/// widget's event payload plus a `SchedCtx` so the callback can fire
+/// signals / register engines / access clipboard. Spec §3.5 D6.1.
+pub type WidgetCallback<Args> = Box<dyn for<'a, 'b> FnMut(Args, &'b mut SchedCtx<'a>)>;
+
+/// Widget callback taking a borrowed payload (e.g. `&str`, `&DialogResult`,
+/// `&[usize]`). Three-lifetime HRTB: `'c` payload, `'b` SchedCtx borrow,
+/// `'a` scheduler. `T: ?Sized` supports unsized types like `str` and
+/// `[usize]`. Spec §3.5 D6.1.
+pub type WidgetCallbackRef<T> = Box<dyn for<'a, 'b, 'c> FnMut(&'c T, &'b mut SchedCtx<'a>)>;
 
 pub enum DeferredAction {
     /// Close a winit window after the current time slice. Drained by the
@@ -37,6 +52,19 @@ pub struct EngineCtx<'a> {
     pub windows: &'a mut HashMap<winit::window::WindowId, emWindow>,
     pub root_context: &'a Rc<emContext>,
     pub framework_actions: &'a mut Vec<DeferredAction>,
+    /// Input-event queue drained by `InputDispatchEngine` (Phase 3,
+    /// spec §3.1 / §4 D4.9). Produced by the winit input callback,
+    /// consumed once per slice by the top-priority dispatch engine.
+    pub pending_inputs: &'a mut Vec<(winit::window::WindowId, emInputEvent)>,
+    /// Persistent input state (modifier keys, last mouse pos) maintained
+    /// across winit events. Threaded into Cycle so `InputDispatchEngine`
+    /// can pass it to `emWindow::dispatch_input` (C++ parity: emInputState
+    /// mutation on press/release/move + read during dispatch).
+    pub input_state: &'a mut emInputState,
+    /// Framework-level clipboard slot (spec §3.1, §3.6(a)). Borrowed from
+    /// `emGUIFramework::clipboard`; engines access through `clipboard_mut`.
+    /// Phase-3 Task-2 relocation from `emContext::clipboard`.
+    pub framework_clipboard: &'a RefCell<Option<Box<dyn emClipboard>>>,
     /// The ID of the engine currently being cycled. Populated by the
     /// scheduler at Cycle-dispatch time.
     pub engine_id: EngineId,
@@ -46,6 +74,10 @@ pub struct SchedCtx<'a> {
     pub scheduler: &'a mut EngineScheduler,
     pub framework_actions: &'a mut Vec<DeferredAction>,
     pub root_context: &'a Rc<emContext>,
+    /// Framework-level clipboard slot (spec §3.1, §3.6(a)). Borrowed from
+    /// `emGUIFramework::clipboard`; callers access through `clipboard_mut`.
+    /// Phase-3 Task-2 relocation from `emContext::clipboard`.
+    pub framework_clipboard: &'a RefCell<Option<Box<dyn emClipboard>>>,
     pub current_engine: Option<EngineId>,
 }
 
@@ -73,6 +105,12 @@ pub trait ConstructCtx {
 impl EngineCtx<'_> {
     pub fn framework_action(&mut self, action: DeferredAction) {
         self.framework_actions.push(action);
+    }
+
+    /// Take ownership of any pending input events, leaving the buffer empty.
+    /// Used by `InputDispatchEngine::Cycle` to drain per slice.
+    pub fn take_pending_inputs(&mut self) -> Vec<(winit::window::WindowId, emInputEvent)> {
+        std::mem::take(self.pending_inputs)
     }
 
     pub fn create_signal(&mut self) -> SignalId {
@@ -147,8 +185,15 @@ impl EngineCtx<'_> {
             scheduler: self.scheduler,
             framework_actions: self.framework_actions,
             root_context: self.root_context,
+            framework_clipboard: self.framework_clipboard,
             current_engine: Some(self.engine_id),
         }
+    }
+
+    /// Mutable access to the framework-level clipboard slot
+    /// (spec §3.1, §3.6(a)).
+    pub fn clipboard_mut(&self) -> RefMut<'_, Option<Box<dyn emClipboard>>> {
+        self.framework_clipboard.borrow_mut()
     }
 }
 
@@ -199,6 +244,12 @@ impl SchedCtx<'_> {
             Some(eid) => self.scheduler.is_signaled_for_engine(signal, eid),
             None => self.scheduler.is_pending(signal),
         }
+    }
+
+    /// Mutable access to the framework-level clipboard slot
+    /// (spec §3.1, §3.6(a)).
+    pub fn clipboard_mut(&self) -> RefMut<'_, Option<Box<dyn emClipboard>>> {
+        self.framework_clipboard.borrow_mut()
     }
 }
 
@@ -259,6 +310,38 @@ impl ConstructCtx for InitCtx<'_> {
     }
 }
 
+/// `ConstructCtx` for `PanelCtx` — uses whatever scheduler reach the ctx has.
+/// Panics if the ctx was constructed without a scheduler (layout-only tests).
+/// Phase-3 B3.4b: widget constructors in behavior `AutoExpand`/`LayoutChildren`
+/// paths flow through `PanelCtx`, which only carries scheduler (not the full
+/// four-handle bundle) when dispatched from `emView::Update`.
+impl ConstructCtx for PanelCtx<'_> {
+    fn create_signal(&mut self) -> SignalId {
+        self.scheduler
+            .as_deref_mut()
+            .expect("PanelCtx: scheduler required for ConstructCtx::create_signal")
+            .create_signal()
+    }
+
+    fn register_engine(
+        &mut self,
+        behavior: Box<dyn crate::emEngine::emEngine>,
+        pri: Priority,
+        tree_location: TreeLocation,
+    ) -> EngineId {
+        self.scheduler
+            .as_deref_mut()
+            .expect("PanelCtx: scheduler required for ConstructCtx::register_engine")
+            .register_engine(behavior, pri, tree_location)
+    }
+
+    fn wake_up(&mut self, eng: EngineId) {
+        if let Some(sched) = self.scheduler.as_deref_mut() {
+            sched.wake_up(eng);
+        }
+    }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // PanelCtx — absorbed from emPanelCtx.rs (Phase 1.75 Task 5).
 //
@@ -282,6 +365,21 @@ pub struct PanelCtx<'a> {
     /// Scheduler for engine wakeup. `None` in test-only contexts that do not
     /// need engine wakeup (layout-only tests, etc.).
     pub scheduler: Option<&'a mut EngineScheduler>,
+    /// Framework-level clipboard slot (spec §3.1, §3.6(a)). `None` in
+    /// layout-only / unit tests that don't need clipboard access. Set by
+    /// `PanelCycleEngine` before cycling behaviors so they can build
+    /// `SchedCtx`/`EngineCtx` while preserving the clipboard reference.
+    pub framework_clipboard: Option<&'a RefCell<Option<Box<dyn emClipboard>>>>,
+    /// Deferred-action drain (spec §3.1). `None` in layout-only / unit tests
+    /// that do not need to synthesize a `SchedCtx`. Set by `PanelCycleEngine`
+    /// (and other full-reach call sites) so behaviors can build a SchedCtx
+    /// via `as_sched_ctx()` without losing access to framework actions.
+    /// Phase-3 B3.1.
+    pub framework_actions: Option<&'a mut Vec<DeferredAction>>,
+    /// Root context (spec §3.1). `None` in layout-only / unit tests. Set by
+    /// `PanelCycleEngine` and other full-reach call sites so behaviors can
+    /// build a `SchedCtx` via `as_sched_ctx()`. Phase-3 B3.1.
+    pub root_context: Option<&'a Rc<emContext>>,
 }
 
 impl<'a> PanelCtx<'a> {
@@ -293,6 +391,9 @@ impl<'a> PanelCtx<'a> {
             id,
             current_pixel_tallness,
             scheduler: None,
+            framework_clipboard: None,
+            framework_actions: None,
+            root_context: None,
         }
     }
 
@@ -308,7 +409,66 @@ impl<'a> PanelCtx<'a> {
             id,
             current_pixel_tallness,
             scheduler: Some(scheduler),
+            framework_clipboard: None,
+            framework_actions: None,
+            root_context: None,
         }
+    }
+
+    /// Attach the framework-level clipboard slot. Builder-style config per
+    /// CLAUDE.md Code Rules (`with_*(self) -> Self`): chain after
+    /// `with_scheduler` so behaviors can build `SchedCtx` without losing
+    /// clipboard access.
+    pub fn with_clipboard(
+        mut self,
+        framework_clipboard: &'a RefCell<Option<Box<dyn emClipboard>>>,
+    ) -> Self {
+        self.framework_clipboard = Some(framework_clipboard);
+        self
+    }
+
+    /// Attach all four scheduler-reach handles at once (scheduler,
+    /// framework_actions, root_context, framework_clipboard). Production
+    /// call sites that cycle or input-dispatch a panel from inside an
+    /// `EngineCtx` context have all four available and should prefer this
+    /// over chaining individual builders. Phase-3 B3.1.
+    pub fn with_sched_reach(
+        tree: &'a mut PanelTree,
+        id: PanelId,
+        current_pixel_tallness: f64,
+        scheduler: &'a mut EngineScheduler,
+        framework_actions: &'a mut Vec<DeferredAction>,
+        root_context: &'a Rc<emContext>,
+        framework_clipboard: &'a RefCell<Option<Box<dyn emClipboard>>>,
+    ) -> Self {
+        Self {
+            tree,
+            id,
+            current_pixel_tallness,
+            scheduler: Some(scheduler),
+            framework_clipboard: Some(framework_clipboard),
+            framework_actions: Some(framework_actions),
+            root_context: Some(root_context),
+        }
+    }
+
+    /// Synthesize a `SchedCtx` from this `PanelCtx`'s scheduler-reach
+    /// handles. Returns `None` if any of the four required handles
+    /// (`scheduler`, `framework_actions`, `root_context`,
+    /// `framework_clipboard`) is absent. Callers must handle `None`
+    /// explicitly — there is no panic landmine. Phase-3 B3.1.
+    pub fn as_sched_ctx(&mut self) -> Option<SchedCtx<'_>> {
+        let scheduler = self.scheduler.as_deref_mut()?;
+        let framework_actions = self.framework_actions.as_deref_mut()?;
+        let root_context = self.root_context?;
+        let framework_clipboard = self.framework_clipboard?;
+        Some(SchedCtx {
+            scheduler,
+            framework_actions,
+            root_context,
+            framework_clipboard,
+            current_engine: None,
+        })
     }
 
     /// Wake this panel's scheduler engine.
@@ -622,10 +782,12 @@ mod tests {
         let mut sched = EngineScheduler::new();
         let mut actions = Vec::new();
         let ctx_root = crate::emContext::emContext::NewRoot();
+        let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
         let mut sc = SchedCtx {
             scheduler: &mut sched,
             framework_actions: &mut actions,
             root_context: &ctx_root,
+            framework_clipboard: &cb,
             current_engine: None,
         };
 
@@ -652,10 +814,12 @@ mod tests {
         let mut sched = EngineScheduler::new();
         let mut actions: Vec<DeferredAction> = Vec::new();
         let ctx_root = crate::emContext::emContext::NewRoot();
+        let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
         let mut sc = SchedCtx {
             scheduler: &mut sched,
             framework_actions: &mut actions,
             root_context: &ctx_root,
+            framework_clipboard: &cb,
             current_engine: None,
         };
 
@@ -702,10 +866,12 @@ mod tests {
         let mut sched = EngineScheduler::new();
         let mut actions: Vec<DeferredAction> = Vec::new();
         let ctx_root = crate::emContext::emContext::NewRoot();
+        let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
         let mut sc = SchedCtx {
             scheduler: &mut sched,
             framework_actions: &mut actions,
             root_context: &ctx_root,
+            framework_clipboard: &cb,
             current_engine: None,
         };
         let cc: &mut dyn ConstructCtx = &mut sc;
@@ -725,10 +891,12 @@ mod tests {
         let mut sched = EngineScheduler::new();
         let mut actions: Vec<DeferredAction> = Vec::new();
         let ctx_root = crate::emContext::emContext::NewRoot();
+        let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
         let mut sc = SchedCtx {
             scheduler: &mut sched,
             framework_actions: &mut actions,
             root_context: &ctx_root,
+            framework_clipboard: &cb,
             current_engine: None,
         };
 
@@ -738,6 +906,13 @@ mod tests {
         assert!(sc.is_signaled(sig));
         sc.remove_signal(sig);
         assert!(!sc.is_signaled(sig));
+    }
+
+    #[test]
+    fn widget_callback_ref_type_check() {
+        let _cb: WidgetCallbackRef<str> = Box::new(|_s: &str, _sched: &mut SchedCtx<'_>| {});
+        let _cb2: WidgetCallbackRef<[usize]> =
+            Box::new(|_s: &[usize], _sched: &mut SchedCtx<'_>| {});
     }
 
     #[test]

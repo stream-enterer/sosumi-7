@@ -102,7 +102,20 @@ mod linux {
         let mut windows: HashMap<WindowId, emWindow> = HashMap::new();
         let __root_ctx = emcore::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
-        sched.DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
+        let mut __pending_inputs: Vec<(winit::window::WindowId, emcore::emInput::emInputEvent)> =
+            Vec::new();
+        let mut __input_state = emcore::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        sched.DoTimeSlice(
+            &mut tree,
+            &mut windows,
+            &__root_ctx,
+            &mut __fw,
+            &mut __pending_inputs,
+            &mut __input_state,
+            &__cb,
+        );
     }
 
     static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);

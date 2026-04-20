@@ -47,10 +47,13 @@ fn vif_consumes_prevents_behavior() {
     // Set child as active
     h.set_active_panel(_child);
     {
+        let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         let mut sc = emcore::emEngineCtx::SchedCtx {
             scheduler: &mut h.scheduler,
             framework_actions: &mut h.framework_actions,
             root_context: &h.root_context,
+            framework_clipboard: &__cb,
             current_engine: None,
         };
 
@@ -102,10 +105,13 @@ fn focus_change_routes_keyboard() {
     // Activate A and type a key
     h.set_active_panel(a);
     {
+        let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         let mut sc = emcore::emEngineCtx::SchedCtx {
             scheduler: &mut h.scheduler,
             framework_actions: &mut h.framework_actions,
             root_context: &h.root_context,
+            framework_clipboard: &__cb,
             current_engine: None,
         };
 

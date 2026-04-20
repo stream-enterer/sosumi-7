@@ -1,29 +1,35 @@
 use std::cell::RefCell;
-use std::rc::Rc;
 
-use emcore::emClipboard::{emClipboard, emPrivateClipboard, LookupInherited};
-use emcore::emContext::emContext;
+use emcore::emClipboard::{emClipboard, emPrivateClipboard};
 
-#[test]
-fn clipboard_trait_exists_and_is_object_safe() {
-    let cb: Rc<RefCell<dyn emClipboard>> = Rc::new(RefCell::new(emPrivateClipboard::new()));
-    // Verify trait object works
-    cb.borrow_mut().PutText("test", false);
-    assert_eq!(cb.borrow().GetText(false), "test");
+/// Build a framework-style clipboard slot for testing.
+///
+/// DIVERGED (Phase-3 Task-2): C++ `emClipboard::LookupInherited(emContext&)` walks
+/// the `emContext` parent chain. Rust relocates clipboard onto `emGUIFramework`
+/// (spec §3.4 / §3.6(a)), so tests install into a standalone
+/// `RefCell<Option<Box<dyn emClipboard>>>` that mirrors the framework slot.
+fn make_slot() -> RefCell<Option<Box<dyn emClipboard>>> {
+    RefCell::new(None)
 }
 
 #[test]
-fn lookup_inherited_walks_parent_chain() {
-    let root = emContext::NewRoot();
-    emPrivateClipboard::Install(&root);
+fn clipboard_trait_exists_and_is_object_safe() {
+    let mut cb: Box<dyn emClipboard> = Box::new(emPrivateClipboard::new());
+    cb.PutText("test", false);
+    assert_eq!(cb.GetText(false), "test");
+}
 
-    let child = emContext::NewChild(&root);
-    let grandchild = emContext::NewChild(&child);
-
-    // LookupInherited from grandchild should find root's clipboard
-    let cb = LookupInherited(&grandchild).expect("should find clipboard");
-    cb.borrow_mut().PutText("inherited", false);
-    assert_eq!(cb.borrow().GetText(false), "inherited");
+#[test]
+fn install_populates_framework_slot() {
+    // Phase-3 Task-2: clipboard lives on the framework, not emContext. The
+    // "lookup" pattern becomes a direct borrow of the framework-owned slot.
+    let slot = make_slot();
+    emPrivateClipboard::Install(&mut slot.borrow_mut());
+    slot.borrow_mut()
+        .as_mut()
+        .expect("installed")
+        .PutText("inherited", false);
+    assert_eq!(slot.borrow().as_ref().unwrap().GetText(false), "inherited");
 }
 
 #[test]
@@ -85,11 +91,11 @@ fn get_text_independent_buffers() {
 }
 
 #[test]
-fn install_registers_clipboard_in_context() {
-    let ctx = emContext::NewRoot();
-    assert!(LookupInherited(&ctx).is_none());
-    emPrivateClipboard::Install(&ctx);
-    assert!(LookupInherited(&ctx).is_some());
+fn install_populates_empty_slot() {
+    let slot = make_slot();
+    assert!(slot.borrow().is_none());
+    emPrivateClipboard::Install(&mut slot.borrow_mut());
+    assert!(slot.borrow().is_some());
 }
 
 #[test]
@@ -108,17 +114,15 @@ fn private_clipboard_separate_buffers() {
 }
 
 #[test]
-fn private_clipboard_install_idempotent() {
-    let ctx = emContext::NewRoot();
-    emPrivateClipboard::Install(&ctx);
-    let cb1 = LookupInherited(&ctx).unwrap();
-    cb1.borrow_mut().PutText("test", false);
+fn private_clipboard_install_replaces() {
+    let slot = make_slot();
+    emPrivateClipboard::Install(&mut slot.borrow_mut());
+    slot.borrow_mut().as_mut().unwrap().PutText("test", false);
 
     // Re-Install replaces (matching C++ behavior where re-Install overwrites)
-    emPrivateClipboard::Install(&ctx);
-    let cb2 = LookupInherited(&ctx).unwrap();
+    emPrivateClipboard::Install(&mut slot.borrow_mut());
     // New clipboard has empty state
-    assert_eq!(cb2.borrow().GetText(false), "");
+    assert_eq!(slot.borrow().as_ref().unwrap().GetText(false), "");
 }
 
 #[test]

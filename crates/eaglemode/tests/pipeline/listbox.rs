@@ -43,7 +43,9 @@ impl PanelBehavior for SharedListBoxPanel {
         input_state: &emInputState,
         _ctx: &mut PanelCtx,
     ) -> bool {
-        self.inner.borrow_mut().Input(event, state, input_state)
+        self.inner
+            .borrow_mut()
+            .Input(event, state, input_state, _ctx)
     }
 
     fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
@@ -119,13 +121,14 @@ fn content_center_view_x(vr: &emcore::emPanel::Rect, pixel_tallness: f64) -> f64
 
 #[test]
 fn listbox_click_items_1x_and_2x() {
-    // 1. Create PipelineTestHarness (800x600 viewport).
     let mut h = PipelineTestHarness::new();
+
+    // 1. Create PipelineTestHarness (800x600 viewport).
     let root = h.get_root_panel();
 
     // 2. Create emListBox with 5 items, SelectionMode::Single.
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.SetSelectionType(SelectionMode::Single);
     lb.AddItem("item0".to_string(), "Alpha".to_string());
     lb.AddItem("item1".to_string(), "Beta".to_string());
@@ -241,7 +244,7 @@ fn setup_listbox_harness(
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.SetSelectionType(mode);
     lb.AddItem("i0".to_string(), "Alpha".to_string());
     lb.AddItem("i1".to_string(), "Beta".to_string());
@@ -554,9 +557,11 @@ fn listbox_single_mode_double_click_triggers() {
 
     let triggered = Rc::new(RefCell::new(None::<usize>));
     let trig_clone = triggered.clone();
-    lb.borrow_mut().on_trigger = Some(Box::new(move |idx| {
-        *trig_clone.borrow_mut() = Some(idx);
-    }));
+    lb.borrow_mut().on_trigger = Some(Box::new(
+        move |idx: usize, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
+            *trig_clone.borrow_mut() = Some(idx);
+        },
+    ));
 
     double_click(&mut h, cx, ys[2]);
     assert_eq!(lb.borrow().GetSelectedIndex(), Some(2));
@@ -574,9 +579,11 @@ fn listbox_multi_mode_double_click_triggers() {
 
     let triggered = Rc::new(RefCell::new(None::<usize>));
     let trig_clone = triggered.clone();
-    lb.borrow_mut().on_trigger = Some(Box::new(move |idx| {
-        *trig_clone.borrow_mut() = Some(idx);
-    }));
+    lb.borrow_mut().on_trigger = Some(Box::new(
+        move |idx: usize, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
+            *trig_clone.borrow_mut() = Some(idx);
+        },
+    ));
 
     double_click(&mut h, cx, ys[3]);
     assert_eq!(
@@ -593,9 +600,11 @@ fn listbox_toggle_mode_double_click_triggers() {
 
     let triggered = Rc::new(RefCell::new(None::<usize>));
     let trig_clone = triggered.clone();
-    lb.borrow_mut().on_trigger = Some(Box::new(move |idx| {
-        *trig_clone.borrow_mut() = Some(idx);
-    }));
+    lb.borrow_mut().on_trigger = Some(Box::new(
+        move |idx: usize, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
+            *trig_clone.borrow_mut() = Some(idx);
+        },
+    ));
 
     double_click(&mut h, cx, ys[1]);
     assert_eq!(
@@ -612,9 +621,11 @@ fn listbox_readonly_double_click_no_trigger() {
 
     let triggered = Rc::new(RefCell::new(None::<usize>));
     let trig_clone = triggered.clone();
-    lb.borrow_mut().on_trigger = Some(Box::new(move |idx| {
-        *trig_clone.borrow_mut() = Some(idx);
-    }));
+    lb.borrow_mut().on_trigger = Some(Box::new(
+        move |idx: usize, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
+            *trig_clone.borrow_mut() = Some(idx);
+        },
+    ));
 
     double_click(&mut h, cx, ys[2]);
     assert!(
@@ -637,9 +648,11 @@ fn listbox_single_mode_enter_triggers() {
 
     let triggered = Rc::new(RefCell::new(None::<usize>));
     let trig_clone = triggered.clone();
-    lb.borrow_mut().on_trigger = Some(Box::new(move |idx| {
-        *trig_clone.borrow_mut() = Some(idx);
-    }));
+    lb.borrow_mut().on_trigger = Some(Box::new(
+        move |idx: usize, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
+            *trig_clone.borrow_mut() = Some(idx);
+        },
+    ));
 
     // First Click to select and focus item 2.
     h.click(cx, ys[2]);
@@ -661,9 +674,11 @@ fn listbox_readonly_enter_no_trigger() {
 
     let triggered = Rc::new(RefCell::new(None::<usize>));
     let trig_clone = triggered.clone();
-    lb.borrow_mut().on_trigger = Some(Box::new(move |idx| {
-        *trig_clone.borrow_mut() = Some(idx);
-    }));
+    lb.borrow_mut().on_trigger = Some(Box::new(
+        move |idx: usize, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
+            *trig_clone.borrow_mut() = Some(idx);
+        },
+    ));
 
     h.press_key(InputKey::Enter);
     assert_eq!(
@@ -871,7 +886,7 @@ fn setup_keywalk_harness(
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.SetSelectionType(SelectionMode::Single);
     for (i, text) in items.iter().enumerate() {
         lb.AddItem(format!("item{}", i), text.to_string());
@@ -1134,13 +1149,14 @@ fn listbox_keywalk_ctrl_chars_rejected() {
 
 #[test]
 fn listbox_keywalk_readonly_no_selection_change() {
+    let mut h = PipelineTestHarness::new();
+
     // C++ ref: emListBox.cpp:912 — if (IsEnabled() && SelType != READ_ONLY_SELECTION)
     // In ReadOnly mode, keywalk finds the item but does NOT change selection.
-    let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.SetSelectionType(SelectionMode::ReadOnly);
     lb.AddItem("i0".to_string(), "Apple".to_string());
     lb.AddItem("i1".to_string(), "Banana".to_string());

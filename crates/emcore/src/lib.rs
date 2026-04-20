@@ -40,6 +40,7 @@ pub mod emImage;
 pub mod emImageFile;
 pub mod emImageFileImageFilePanel;
 pub mod emInput;
+pub mod emInputDispatchEngine;
 pub mod emInputHotkey;
 pub mod emInputState;
 pub mod emInstallInfo;

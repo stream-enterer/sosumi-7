@@ -33,6 +33,7 @@ impl PanelScope {
                     scheduler: ctx.scheduler,
                     framework_actions: ctx.framework_actions,
                     root_context: ctx.root_context,
+                    framework_clipboard: ctx.framework_clipboard,
                     current_engine: Some(ctx.engine_id),
                 };
                 Some(f(view, &mut sched_ctx))
@@ -78,6 +79,7 @@ impl PanelScope {
                     scheduler: unsafe { &mut *sched_ptr },
                     framework_actions: unsafe { &mut *fw_ptr },
                     root_context: ctx.root_context,
+                    framework_clipboard: ctx.framework_clipboard,
                     current_engine: Some(engine_id),
                 };
                 Some(f(&mut svp.sub_view, &mut sched_ctx))

@@ -23,7 +23,8 @@ pub(crate) struct ScalarFieldPanel {
 }
 
 impl ScalarFieldPanel {
-    pub fn new(
+    pub fn new<C: crate::emEngineCtx::ConstructCtx>(
+        ctx: &mut C,
         caption: &str,
         min: f64,
         max: f64,
@@ -31,9 +32,9 @@ impl ScalarFieldPanel {
         look: Rc<emLook>,
         editable: bool,
     ) -> Self {
-        let mut sf = emScalarField::new(min, max, look);
+        let mut sf = emScalarField::new(ctx, min, max, look);
         sf.SetCaption(caption);
-        sf.SetValue(value);
+        sf.set_initial_value(value);
         sf.SetEditable(editable);
         sf.border_mut().outer = OuterBorderType::Rect;
         sf.border_mut().inner = InnerBorderType::CustomRect;
@@ -56,7 +57,7 @@ impl PanelBehavior for ScalarFieldPanel {
         _input_state: &emInputState,
         _ctx: &mut PanelCtx,
     ) -> bool {
-        self.scalar_field.Input(event, _state, _input_state)
+        self.scalar_field.Input(event, _state, _input_state, _ctx)
     }
 
     fn GetCursor(&self) -> emCursor {
@@ -70,8 +71,14 @@ pub(crate) struct TextFieldPanel {
 }
 
 impl TextFieldPanel {
-    pub fn new(caption: &str, text: &str, look: Rc<emLook>, editable: bool) -> Self {
-        let mut tf = emTextField::new(look);
+    pub fn new<C: crate::emEngineCtx::ConstructCtx>(
+        ctx: &mut C,
+        caption: &str,
+        text: &str,
+        look: Rc<emLook>,
+        editable: bool,
+    ) -> Self {
+        let mut tf = emTextField::new(ctx, look);
         tf.SetCaption(caption);
         tf.SetText(text);
         tf.SetEditable(editable);
@@ -116,7 +123,7 @@ impl PanelBehavior for CheckBoxPanel {
         _input_state: &emInputState,
         _ctx: &mut PanelCtx,
     ) -> bool {
-        self.check_box.Input(event, _state, _input_state)
+        self.check_box.Input(event, _state, _input_state, _ctx)
     }
 
     fn GetCursor(&self) -> emCursor {
@@ -142,7 +149,7 @@ impl PanelBehavior for ListBoxPanel {
         _input_state: &emInputState,
         _ctx: &mut PanelCtx,
     ) -> bool {
-        self.list_box.Input(event, _state, _input_state)
+        self.list_box.Input(event, _state, _input_state, _ctx)
     }
 
     fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
@@ -194,7 +201,7 @@ impl PanelBehavior for ButtonPanel {
         _input_state: &emInputState,
         _ctx: &mut PanelCtx,
     ) -> bool {
-        self.button.Input(event, _state, _input_state)
+        self.button.Input(event, _state, _input_state, _ctx)
     }
 
     fn GetCursor(&self) -> emCursor {

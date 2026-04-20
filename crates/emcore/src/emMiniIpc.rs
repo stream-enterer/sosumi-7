@@ -84,6 +84,7 @@ pub fn decode_message(buf: &[u8]) -> Option<(Vec<String>, usize)> {
     Some((args, pos))
 }
 
+// Non-widget callback — IPC I/O invoked under Rc<RefCell<>> during poll(); no scheduler reach required.
 type MessageCallback = Box<dyn FnMut(&[String])>;
 
 // ── Platform-specific implementation ────────────────────────────────

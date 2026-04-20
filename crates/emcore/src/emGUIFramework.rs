@@ -9,6 +9,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
+use crate::emClipboard::emClipboard;
 use crate::emContext::emContext;
 use crate::emEngineCtx::DeferredAction as FrameworkDeferredAction;
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
@@ -104,14 +105,13 @@ pub struct App {
     pub input_state: emInputState,
     /// Input queue drained by `InputDispatchEngine` (Phase 3) per spec §3.1
     /// and §4 D4.9. Produced by `window_event` on each winit input;
-    /// consumed once per slice. Restored in Phase 1.5 Task 1 step 1g after
-    /// being speculatively deleted by Chunk 2 (W2 drift).
-    ///
-    /// NOTE: unused at end of Phase 1.5; `dead_code` warning is spec-mandated
-    /// carry-forward — see `2026-04-19-phase-1-5-ledger.md`. Phase 3's
-    /// `InputDispatchEngine` consumes this; the warning disappears when it
-    /// lands.
-    pub(crate) _pending_inputs: Vec<(WindowId, emInputEvent)>,
+    /// consumed once per slice by the framework-owned InputDispatchEngine
+    /// registered at top priority.
+    pub(crate) pending_inputs: Vec<(WindowId, emInputEvent)>,
+    /// EngineId of the `InputDispatchEngine` registered at framework init.
+    /// Winit callbacks wake this engine after enqueuing events so the
+    /// scheduler drains `pending_inputs` on the next tick.
+    pub(crate) input_dispatch_engine_id: crate::emEngine::EngineId,
     /// Deferred actions queued by input handlers that need `&ActiveEventLoop`
     /// (e.g., window creation for Duplicate/CreateControlWindow, popup
     /// surface materialization from `emView::RawVisitAbs`).
@@ -120,6 +120,16 @@ pub struct App {
     /// `Rc<RefCell<...>>` so `emView` can hold a handle and enqueue without
     /// a borrow of `App`.
     pub pending_actions: Rc<RefCell<Vec<DeferredAction>>>,
+    /// Chartered §3.6(a): mutated from winit text-event callbacks that lack &mut framework reach.
+    ///
+    /// Phase-3 Task-2 relocation: in C++, `emClipboard` is looked up via
+    /// `emRef<emClipboard>` on `emContext`; in Rust, winit text-event callbacks
+    /// need write access without `&mut framework` reach, so the clipboard is
+    /// chartered here instead of on `emContext`. Accessed through
+    /// `EngineCtx::clipboard_mut` / `SchedCtx::clipboard_mut` during engine
+    /// cycles, or directly via `framework.clipboard.borrow_mut()` from
+    /// winit-side callbacks.
+    pub clipboard: RefCell<Option<Box<dyn emClipboard>>>,
     /// Global file-update signal. Port of C++ `emFileModel::AcquireUpdateSignalModel`.
     /// When fired, all file models that listen to it will reload from disk.
     pub file_update_signal: SignalId,
@@ -132,6 +142,15 @@ impl App {
     pub fn new(setup: SetupFn) -> Self {
         let mut scheduler = EngineScheduler::new();
         let file_update_signal = scheduler.create_signal();
+        // Register the InputDispatchEngine at top priority (Phase 3 / spec
+        // §3.1 / §4 D4.9): winit input callbacks enqueue into
+        // `pending_inputs` and wake this engine; its `Cycle` drains the
+        // queue at the top of each slice before any other engine runs.
+        let input_dispatch_engine_id = scheduler.register_engine(
+            Box::new(crate::emInputDispatchEngine::InputDispatchEngine),
+            crate::emEngine::Priority::VeryHigh,
+            crate::emEngine::TreeLocation::Outer,
+        );
         let context = emContext::NewRoot();
         Self {
             gpu: None,
@@ -142,8 +161,10 @@ impl App {
             windows: HashMap::new(),
             framework_actions: Vec::new(),
             input_state: emInputState::new(),
-            _pending_inputs: Vec::new(),
+            pending_inputs: Vec::new(),
+            input_dispatch_engine_id,
             pending_actions: Rc::new(RefCell::new(Vec::new())),
+            clipboard: RefCell::new(None),
             file_update_signal,
             setup_fn: Some(setup),
             initialized: false,
@@ -170,51 +191,6 @@ impl App {
 
     pub fn screen(&self) -> &emScreen {
         self.screen.as_ref().expect("Screen not initialized yet")
-    }
-
-    /// Dispatch synthetic input events from the touch gesture machine.
-    /// Modifier keys are set/cleared on input_state to match C++ InputState
-    /// persistence: press events set modifiers, release events clear them.
-    fn dispatch_forward_events(
-        win: &mut emWindow,
-        tree: &mut PanelTree,
-        input_state: &mut emInputState,
-        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
-    ) {
-        let forward_events = win.touch_vif_mut().drain_forward_events();
-        if forward_events.is_empty() {
-            return;
-        }
-        for event in &forward_events {
-            // C++ parity: modifiers are SET on press and CLEARED on release.
-            // They persist across frames so real events also see them.
-            match event.variant {
-                InputVariant::Press => {
-                    if event.shift {
-                        input_state.press(InputKey::Shift);
-                    }
-                    if event.ctrl {
-                        input_state.press(InputKey::Ctrl);
-                    }
-                }
-                InputVariant::Release => {
-                    if event.shift {
-                        input_state.release(InputKey::Shift);
-                    }
-                    if event.ctrl {
-                        input_state.release(InputKey::Ctrl);
-                    }
-                }
-                _ => {}
-            }
-            input_state.set_mouse(event.mouse_x, event.mouse_y);
-            let mut ev = event.clone();
-            ev.mouse_x = input_state.mouse_x;
-            ev.mouse_y = input_state.mouse_y;
-            win.dispatch_input(tree, &ev, input_state, ctx);
-        }
-        win.invalidate();
-        win.request_redraw();
     }
 
     /// Resolve a winit `WindowId` to an `&mut emWindow`, searching both the
@@ -354,6 +330,7 @@ impl App {
                 tree,
                 framework_actions,
                 windows,
+                clipboard,
                 ..
             } = self;
             let home = windows.get_mut(&home_key).expect("home_key still present");
@@ -368,6 +345,7 @@ impl App {
                 scheduler,
                 framework_actions,
                 root_context: &root,
+                framework_clipboard: clipboard,
                 current_engine: None,
             };
             popup
@@ -376,6 +354,17 @@ impl App {
         }
 
         winit_window.request_redraw();
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        // Deregister the framework-owned InputDispatchEngine so the
+        // scheduler's drop-time invariant (no engines remaining) holds.
+        // `remove_engine` is idempotent on unknown ids so double-drop is
+        // safe; it is the only framework-owned engine registered in
+        // `App::new`.
+        self.scheduler.remove_engine(self.input_dispatch_engine_id);
     }
 }
 
@@ -446,6 +435,7 @@ impl ApplicationHandler for App {
                         scheduler: &mut self.scheduler,
                         framework_actions: &mut self.framework_actions,
                         root_context: &root,
+                        framework_clipboard: &self.clipboard,
                         current_engine: None,
                     };
                     win.resize(gpu, &mut self.tree, size.width, size.height, &mut sc);
@@ -475,20 +465,55 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Touch(ref touch) => {
-                if let Some(win) = Self::find_window_mut(&mut self.windows, window_id) {
+                let forward_events = {
+                    let Some(win) = Self::find_window_mut(&mut self.windows, window_id) else {
+                        return;
+                    };
                     let mut sc = crate::emEngineCtx::SchedCtx {
                         scheduler: &mut self.scheduler,
                         framework_actions: &mut self.framework_actions,
                         root_context: &self.context,
+                        framework_clipboard: &self.clipboard,
                         current_engine: None,
                     };
                     win.handle_touch(touch, &mut self.tree, &mut sc);
-                    Self::dispatch_forward_events(
-                        win,
-                        &mut self.tree,
-                        &mut self.input_state,
-                        &mut sc,
-                    );
+                    win.touch_vif_mut().drain_forward_events()
+                };
+                // Phase 3: enqueue forward events for the
+                // InputDispatchEngine rather than dispatching inline.
+                // Modifier-key bookkeeping stays here because it touches
+                // `input_state` directly at winit-callback granularity
+                // (press/release persistence across frames).
+                if !forward_events.is_empty() {
+                    for event in &forward_events {
+                        match event.variant {
+                            InputVariant::Press => {
+                                if event.shift {
+                                    self.input_state.press(InputKey::Shift);
+                                }
+                                if event.ctrl {
+                                    self.input_state.press(InputKey::Ctrl);
+                                }
+                            }
+                            InputVariant::Release => {
+                                if event.shift {
+                                    self.input_state.release(InputKey::Shift);
+                                }
+                                if event.ctrl {
+                                    self.input_state.release(InputKey::Ctrl);
+                                }
+                            }
+                            _ => {}
+                        }
+                        self.input_state.set_mouse(event.mouse_x, event.mouse_y);
+                        let mut ev = event.clone();
+                        ev.mouse_x = self.input_state.mouse_x;
+                        ev.mouse_y = self.input_state.mouse_y;
+                        self.pending_inputs.push((window_id, ev));
+                    }
+                    self.scheduler.wake_up(self.input_dispatch_engine_id);
+                }
+                if let Some(win) = Self::find_window_mut(&mut self.windows, window_id) {
                     win.invalidate();
                     win.request_redraw();
                 }
@@ -518,14 +543,15 @@ impl ApplicationHandler for App {
                         input.mouse_y = self.input_state.mouse_y;
                     }
 
-                    if let Some(win) = Self::find_window_mut(&mut self.windows, window_id) {
-                        let mut sc = crate::emEngineCtx::SchedCtx {
-                            scheduler: &mut self.scheduler,
-                            framework_actions: &mut self.framework_actions,
-                            root_context: &self.context,
-                            current_engine: None,
-                        };
-                        win.dispatch_input(&mut self.tree, &input, &mut self.input_state, &mut sc);
+                    // Phase 3 / spec §4 D4.9: enqueue for the
+                    // InputDispatchEngine to drain at top priority on the
+                    // next time slice. `find_window_mut` still scans so we
+                    // only enqueue for known (top-level or popup) windows —
+                    // unknown WindowIds are silently dropped, matching the
+                    // pre-migration `if let Some(win) = ...` gate.
+                    if Self::find_window_mut(&mut self.windows, window_id).is_some() {
+                        self.pending_inputs.push((window_id, input));
+                        self.scheduler.wake_up(self.input_dispatch_engine_id);
                     }
                 }
             }
@@ -599,9 +625,20 @@ impl ApplicationHandler for App {
                 ref mut windows,
                 ref context,
                 ref mut framework_actions,
+                ref mut pending_inputs,
+                ref mut input_state,
+                ref clipboard,
                 ..
             } = *self;
-            scheduler.DoTimeSlice(tree, windows, context, framework_actions);
+            scheduler.DoTimeSlice(
+                tree,
+                windows,
+                context,
+                framework_actions,
+                pending_inputs,
+                input_state,
+                clipboard,
+            );
         }
 
         // Phase 1.75 Task 5 (continuation): the former post-slice
@@ -646,10 +683,13 @@ impl ApplicationHandler for App {
             ref mut framework_actions,
             ref context,
             ref mut windows,
+            ref mut pending_inputs,
+            ref clipboard,
+            input_dispatch_engine_id,
             ..
         } = *self;
         let state = input_state;
-        for win in windows.values_mut() {
+        for (win_id, win) in windows.iter_mut() {
             // Notice dispatch (including mark_viewing_dirty) happens inside
             // emView::Update via emView::HandleNotice (SP5).
             let mut needs_full_repaint = false;
@@ -659,6 +699,7 @@ impl ApplicationHandler for App {
                 scheduler,
                 framework_actions,
                 root_context: context,
+                framework_clipboard: clipboard,
                 current_engine: None,
             };
 
@@ -677,6 +718,12 @@ impl ApplicationHandler for App {
 
             // Dispatch synthetic events from gesture timer transitions
             // (cycle_gesture may have fired 250ms timeouts → EmuMouse/Visit/Menu)
+            //
+            // Phase 3: enqueue for InputDispatchEngine instead of inline
+            // dispatch. Modifier-key state is updated here (winit-callback-
+            // granularity parity). The queued events will be drained on the
+            // next DoTimeSlice tick; `request_redraw` below keeps the event
+            // loop pumping so that tick happens immediately.
             let forward_events = win.touch_vif_mut().drain_forward_events();
             if !forward_events.is_empty() {
                 for event in &forward_events {
@@ -703,8 +750,9 @@ impl ApplicationHandler for App {
                     let mut ev = event.clone();
                     ev.mouse_x = state.mouse_x;
                     ev.mouse_y = state.mouse_y;
-                    win.dispatch_input(tree, &ev, state, &mut sc);
+                    pending_inputs.push((*win_id, ev));
                 }
+                scheduler.wake_up(input_dispatch_engine_id);
                 win.invalidate();
                 win.request_redraw();
             }

@@ -1030,11 +1030,14 @@ impl emWindow {
                 // `Update` via emSubViewPanel) propagate to the real scheduler.
                 consumed = {
                     let pixel_tallness = self.view.GetCurrentPixelTallness();
-                    let mut panel_ctx = crate::emEngineCtx::PanelCtx::with_scheduler(
+                    let mut panel_ctx = crate::emEngineCtx::PanelCtx::with_sched_reach(
                         tree,
                         panel_id,
                         pixel_tallness,
                         ctx.scheduler,
+                        ctx.framework_actions,
+                        ctx.root_context,
+                        ctx.framework_clipboard,
                     );
                     behavior.Input(&panel_ev, &panel_state, state, &mut panel_ctx)
                 };
@@ -1835,10 +1838,13 @@ mod tests {
             let root = v.Context.GetRootContext();
             let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
             let mut s = sched.borrow_mut();
+            let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root,
+                framework_clipboard: &__cb,
                 current_engine: None,
             };
             v.RegisterEngines(

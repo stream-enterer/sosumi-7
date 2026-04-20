@@ -1,12 +1,8 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::emContext::emContext;
-
 /// Abstract clipboard interface matching C++ emClipboard.
 ///
 /// Provides clipboard and selection buffer operations. Concrete
-/// implementations are installed into a emContext via `install`.
+/// implementations are installed into the framework-level slot
+/// (`emGUIFramework::clipboard`) via `emPrivateClipboard::Install`.
 pub trait emClipboard {
     /// Put text into the clipboard or selection buffer.
     /// If `selection` is true, returns a selection ID (incrementing counter).
@@ -39,11 +35,16 @@ impl emPrivateClipboard {
         }
     }
 
-    /// Install this clipboard into the given context.
-    /// Port of C++ emPrivateClipboard::Install(emContext&).
-    pub fn Install(context: &Rc<emContext>) {
-        let clipboard: Rc<RefCell<dyn emClipboard>> = Rc::new(RefCell::new(Self::new()));
-        context.set_clipboard(clipboard);
+    /// Install this clipboard into the framework's chartered clipboard slot.
+    ///
+    /// DIVERGED (Phase-3 Task-2): C++ `emPrivateClipboard::Install(emContext&)`
+    /// installs into `emContext` via `LookupInherited`. Rust relocates the
+    /// clipboard to `emGUIFramework::clipboard` (spec §3.4 / §3.6(a)), so
+    /// `Install` takes the framework-owned `Option<Box<dyn emClipboard>>` slot
+    /// directly by mutable reference. Callers borrow the framework's RefCell
+    /// once at the call site (e.g. `Install(&mut app.clipboard.borrow_mut())`).
+    pub fn Install(slot: &mut Option<Box<dyn emClipboard>>) {
+        *slot = Some(Box::new(Self::new()));
     }
 }
 
@@ -83,10 +84,4 @@ impl emClipboard for emPrivateClipboard {
             self.clip_text.clone()
         }
     }
-}
-
-/// emLook up the installed clipboard by walking the context hierarchy.
-/// Port of C++ emClipboard::LookupInherited(emContext&).
-pub fn LookupInherited(context: &Rc<emContext>) -> Option<Rc<RefCell<dyn emClipboard>>> {
-    context.LookupClipboard()
 }

@@ -48,7 +48,7 @@ impl PanelBehavior for RadioButtonBehavior {
         input_state: &emInputState,
         _ctx: &mut PanelCtx,
     ) -> bool {
-        self.widget.Input(event, state, input_state)
+        self.widget.Input(event, state, input_state, _ctx)
     }
 
     fn GetCursor(&self) -> emCursor {
@@ -64,8 +64,10 @@ impl PanelBehavior for RadioButtonBehavior {
 /// verifying the group selection state after each Click.
 #[test]
 fn radiobutton_select_1x_and_2x() {
+    let mut h = PipelineTestHarness::new();
+
     let look = emLook::new();
-    let group: Rc<RefCell<RadioGroup>> = RadioGroup::new();
+    let group: Rc<RefCell<RadioGroup>> = RadioGroup::new(&mut h.sched_ctx());
 
     // Create 3 RadioButtons sharing the same group.
     let rb0 = emRadioButton::new("Option A", look.clone(), group.clone(), 0);
@@ -76,7 +78,6 @@ fn radiobutton_select_1x_and_2x() {
     assert_eq!(group.borrow().GetChecked(), None);
 
     // ── Build pipeline harness (800x600 viewport) ────────────────────
-    let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
 
     // Each radio button gets its own child panel, stacked vertically:
@@ -189,8 +190,9 @@ struct RadioButtonHarness {
 
 impl RadioButtonHarness {
     fn new() -> Self {
+        let mut h = PipelineTestHarness::new();
         let look = emLook::new();
-        let group: Rc<RefCell<RadioGroup>> = RadioGroup::new();
+        let group: Rc<RefCell<RadioGroup>> = RadioGroup::new(&mut h.sched_ctx());
 
         let rb0 = emRadioButton::new("Option A", look.clone(), group.clone(), 0);
         let rb1 = emRadioButton::new("Option B", look.clone(), group.clone(), 1);
@@ -199,7 +201,6 @@ impl RadioButtonHarness {
         assert_eq!(group.borrow().GetCount(), 3);
         assert_eq!(group.borrow().GetChecked(), None);
 
-        let mut h = PipelineTestHarness::new();
         let root = h.get_root_panel();
 
         let panel0 = h.add_panel_with(root, "radio0", Box::new(RadioButtonBehavior::new(rb0)));
@@ -310,9 +311,11 @@ fn bp13_click_already_selected_no_change_no_callback() {
     // Install callback tracker AFTER initial selection
     let callbacks = Rc::new(RefCell::new(Vec::new()));
     let cb_clone = callbacks.clone();
-    t.group.borrow_mut().on_select = Some(Box::new(move |idx| {
-        cb_clone.borrow_mut().push(idx);
-    }));
+    t.group.borrow_mut().on_select = Some(Box::new(
+        move |idx, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
+            cb_clone.borrow_mut().push(idx);
+        },
+    ));
 
     // Click A again -- should be no-op, no callback
     t.click_option(0);
@@ -335,16 +338,21 @@ fn bp13_click_already_selected_no_change_no_callback() {
 /// C++ ref: emRadioButton::Mechanism::SetCheckIndex.
 #[test]
 fn bp13_programmatic_set_check_index_fires_callback() {
-    let t = RadioButtonHarness::new();
+    let mut t = RadioButtonHarness::new();
 
     let callbacks = Rc::new(RefCell::new(Vec::new()));
     let cb_clone = callbacks.clone();
-    t.group.borrow_mut().on_select = Some(Box::new(move |idx| {
-        cb_clone.borrow_mut().push(idx);
-    }));
+    t.group.borrow_mut().on_select = Some(Box::new(
+        move |idx, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
+            cb_clone.borrow_mut().push(idx);
+        },
+    ));
 
     // Programmatically select button 2
-    t.group.borrow_mut().SetCheckIndex(Some(2));
+    {
+        let mut __ctx = t.h.panel_ctx();
+        t.group.borrow_mut().SetCheckIndex(Some(2), &mut __ctx);
+    }
     assert_eq!(
         t.checked(),
         Some(2),
@@ -357,7 +365,10 @@ fn bp13_programmatic_set_check_index_fires_callback() {
     );
 
     // Now change to button 0
-    t.group.borrow_mut().SetCheckIndex(Some(0));
+    {
+        let mut __ctx = t.h.panel_ctx();
+        t.group.borrow_mut().SetCheckIndex(Some(0), &mut __ctx);
+    }
     assert_eq!(
         t.checked(),
         Some(0),
@@ -378,21 +389,29 @@ fn bp13_programmatic_set_check_index_fires_callback() {
 /// C++ ref: emRadioButton::Mechanism::SetCheckIndex — early return if CheckIndex==index.
 #[test]
 fn bp13_programmatic_set_check_index_same_value_no_callback() {
-    let t = RadioButtonHarness::new();
+    let mut t = RadioButtonHarness::new();
 
     // Select button 1
-    t.group.borrow_mut().SetCheckIndex(Some(1));
+    {
+        let mut __ctx = t.h.panel_ctx();
+        t.group.borrow_mut().SetCheckIndex(Some(1), &mut __ctx);
+    }
     assert_eq!(t.checked(), Some(1));
 
     // Install callback tracker AFTER initial selection
     let callbacks = Rc::new(RefCell::new(Vec::new()));
     let cb_clone = callbacks.clone();
-    t.group.borrow_mut().on_select = Some(Box::new(move |idx| {
-        cb_clone.borrow_mut().push(idx);
-    }));
+    t.group.borrow_mut().on_select = Some(Box::new(
+        move |idx, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
+            cb_clone.borrow_mut().push(idx);
+        },
+    ));
 
     // Set same index again -- no-op
-    t.group.borrow_mut().SetCheckIndex(Some(1));
+    {
+        let mut __ctx = t.h.panel_ctx();
+        t.group.borrow_mut().SetCheckIndex(Some(1), &mut __ctx);
+    }
     assert_eq!(t.checked(), Some(1));
     assert!(
         callbacks.borrow().is_empty(),
@@ -418,7 +437,10 @@ fn bp13_enter_key_selects_radio_button() {
     assert_eq!(t.checked(), Some(1));
 
     // Now HardResetFileState selection programmatically to test Enter independently
-    t.group.borrow_mut().SetCheckIndex(None);
+    {
+        let mut __ctx = t.h.panel_ctx();
+        t.group.borrow_mut().SetCheckIndex(None, &mut __ctx);
+    }
     assert_eq!(t.checked(), None);
 
     // Press Enter -- should select panel 1 (the active panel)

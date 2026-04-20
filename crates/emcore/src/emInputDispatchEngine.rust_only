@@ -1,0 +1,1 @@
+Rust-only: bridges winit's async-callback input model to emCore's cycle-driven dispatch.

@@ -1,3 +1,4 @@
+use super::support::TestHarness;
 use emcore::emListBox::{emListBox, DefaultItemPanel, ItemPanelInterface};
 use emcore::emLook::emLook;
 
@@ -86,16 +87,18 @@ fn default_item_panel_set_index() {
 
 #[test]
 fn get_item_panel_none_before_expand() {
+    let mut h = TestHarness::new();
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.AddItem("a".to_string(), "Item A".to_string());
     assert!(lb.GetItemPanel(0).is_none());
 }
 
 #[test]
 fn get_item_panel_some_after_expand() {
+    let mut h = TestHarness::new();
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.AddItem("a".to_string(), "Item A".to_string());
     lb.auto_expand_items();
     assert!(lb.GetItemPanel(0).is_some());
@@ -104,8 +107,9 @@ fn get_item_panel_some_after_expand() {
 
 #[test]
 fn get_item_panel_out_of_range() {
+    let mut h = TestHarness::new();
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.AddItem("a".to_string(), "Item A".to_string());
     lb.auto_expand_items();
     assert!(lb.GetItemPanel(99).is_none());
@@ -113,8 +117,9 @@ fn get_item_panel_out_of_range() {
 
 #[test]
 fn get_item_panel_interface_after_expand() {
+    let mut h = TestHarness::new();
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.AddItem("x".to_string(), "X".to_string());
     lb.auto_expand_items();
     let iface = lb.GetItemPanelInterface(0).unwrap();
@@ -123,8 +128,9 @@ fn get_item_panel_interface_after_expand() {
 
 #[test]
 fn get_item_panel_interface_text_sync() {
+    let mut h = TestHarness::new();
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.AddItem("x".to_string(), "Original".to_string());
     lb.auto_expand_items();
     lb.SetItemText(0, "Changed".to_string());
@@ -134,8 +140,9 @@ fn get_item_panel_interface_text_sync() {
 
 #[test]
 fn custom_factory_creates_custom_panels() {
+    let mut h = TestHarness::new();
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.set_item_panel_factory(|index, text, checked| {
         Box::new(CustomPanel {
             index,
@@ -151,8 +158,9 @@ fn custom_factory_creates_custom_panels() {
 
 #[test]
 fn default_factory_creates_default_panels() {
+    let mut h = TestHarness::new();
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.AddItem("a".to_string(), "Alpha".to_string());
     lb.auto_expand_items();
     let panel = lb.GetItemPanel(0).unwrap();

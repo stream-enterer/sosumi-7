@@ -91,21 +91,33 @@ impl emEngine for PanelCycleEngine {
             //   3. No two `&mut` operations on distinct subfields alias each
             //      other — all scheduler mutations go through the same handle.
             let sched_ptr: *mut EngineScheduler = &mut *ctx.scheduler;
+            let fw_ptr: *mut Vec<crate::emEngineCtx::DeferredAction> = &mut *ctx.framework_actions;
             let mut ectx = crate::emEngineCtx::EngineCtx {
                 // SAFETY: see above — aliased borrow of scheduler is sound here.
                 scheduler: unsafe { &mut *sched_ptr },
                 tree: &mut dummy_tree,
                 windows: &mut *ctx.windows,
                 root_context: ctx.root_context,
-                framework_actions: &mut *ctx.framework_actions,
+                // SAFETY: `framework_actions` is aliased with `pctx` below.
+                // Same justification as scheduler — single-threaded re-entrant
+                // access through distinct handles to the same Vec is sound;
+                // no concurrent mutation. Phase-3 B3.1 extension.
+                framework_actions: unsafe { &mut *fw_ptr },
+                pending_inputs: &mut *ctx.pending_inputs,
+                input_state: &mut *ctx.input_state,
+                framework_clipboard: ctx.framework_clipboard,
                 engine_id: ctx.engine_id,
             };
-            let mut pctx = PanelCtx::with_scheduler(
+            let mut pctx = PanelCtx::with_sched_reach(
                 ctx.tree,
                 self.panel_id,
                 tallness,
                 // SAFETY: see above — aliased borrow of scheduler is sound here.
                 unsafe { &mut *sched_ptr },
+                // SAFETY: see above — aliased borrow of framework_actions is sound here.
+                unsafe { &mut *fw_ptr },
+                ctx.root_context,
+                ctx.framework_clipboard,
             );
             behavior.Cycle(&mut ectx, &mut pctx)
         };

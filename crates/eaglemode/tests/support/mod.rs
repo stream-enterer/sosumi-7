@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use emcore::emClipboard::emClipboard;
 use emcore::emContext::emContext;
 use emcore::emEngineCtx::PanelCtx;
 use emcore::emEngineCtx::{DeferredAction, SchedCtx};
@@ -28,11 +29,20 @@ pub struct TestHarness {
     pub scheduler: EngineScheduler,
     pub framework_actions: Vec<DeferredAction>,
     pub root_context: Rc<emContext>,
+    pub framework_clipboard: RefCell<Option<Box<dyn emClipboard>>>,
     pub view: emView,
     pub vif_chain: Vec<Box<dyn emViewInputFilter>>,
     pub touch_vif: emDefaultTouchVIF,
     pub input_state: emInputState,
     root: PanelId,
+}
+
+impl Drop for TestHarness {
+    fn drop(&mut self) {
+        // Phase-3 B3.4c: fire latches on Input-path widgets accumulate into
+        // pending signals; clear them before scheduler Drop's debug_assert.
+        self.scheduler.clear_pending_for_tests();
+    }
 }
 
 impl TestHarness {
@@ -48,10 +58,12 @@ impl TestHarness {
         {
             let mut __sched = EngineScheduler::new();
             let mut __fw: Vec<DeferredAction> = Vec::new();
+            let __cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
             let mut sc = SchedCtx {
                 scheduler: &mut __sched,
                 framework_actions: &mut __fw,
                 root_context: &root_context,
+                framework_clipboard: &__cb,
                 current_engine: None,
             };
             view.Update(&mut tree, &mut sc);
@@ -73,6 +85,7 @@ impl TestHarness {
             scheduler: EngineScheduler::new(),
             framework_actions: Vec::new(),
             root_context,
+            framework_clipboard: RefCell::new(None),
             view,
             vif_chain,
             touch_vif: emDefaultTouchVIF::new(),
@@ -90,21 +103,48 @@ impl TestHarness {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.framework_actions,
             root_context: &self.root_context,
+            framework_clipboard: &self.framework_clipboard,
             current_engine: None,
         }
+    }
+
+    /// Scheduler-reach `PanelCtx` rooted at the harness's root panel.
+    /// Used by tests that call widget methods which now require `&mut PanelCtx`.
+    pub fn panel_ctx(&mut self) -> emcore::emEngineCtx::PanelCtx<'_> {
+        let root = self.root;
+        emcore::emEngineCtx::PanelCtx::with_sched_reach(
+            &mut self.tree,
+            root,
+            1.0,
+            &mut self.scheduler,
+            &mut self.framework_actions,
+            &self.root_context,
+            &self.framework_clipboard,
+        )
     }
 
     /// Run one frame: scheduler time slice → deliver notices → update viewing.
     pub fn tick(&mut self) {
         let mut windows: HashMap<WindowId, emWindow> = HashMap::new();
         let mut __fw: Vec<_> = Vec::new();
-        self.scheduler
-            .DoTimeSlice(&mut self.tree, &mut windows, &self.root_context, &mut __fw);
+        let mut __pending_inputs: Vec<(winit::window::WindowId, emcore::emInput::emInputEvent)> =
+            Vec::new();
+        let mut __input_state = emcore::emInputState::emInputState::new();
+        self.scheduler.DoTimeSlice(
+            &mut self.tree,
+            &mut windows,
+            &self.root_context,
+            &mut __fw,
+            &mut __pending_inputs,
+            &mut __input_state,
+            &self.framework_clipboard,
+        );
         self.view.HandleNotice(&mut self.tree, &mut self.scheduler);
         let mut sc = SchedCtx {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.framework_actions,
             root_context: &self.root_context,
+            framework_clipboard: &self.framework_clipboard,
             current_engine: None,
         };
         self.view.Update(&mut self.tree, &mut sc);
@@ -122,6 +162,7 @@ impl TestHarness {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.framework_actions,
             root_context: &self.root_context,
+            framework_clipboard: &self.framework_clipboard,
             current_engine: None,
         };
         self.view
@@ -158,6 +199,7 @@ impl TestHarness {
                 scheduler: &mut self.scheduler,
                 framework_actions: &mut self.framework_actions,
                 root_context: &self.root_context,
+                framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
             };
             if vif.filter(
@@ -186,6 +228,7 @@ impl TestHarness {
                 scheduler: &mut self.scheduler,
                 framework_actions: &mut self.framework_actions,
                 root_context: &self.root_context,
+                framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
             };
             self.view
@@ -205,11 +248,14 @@ impl TestHarness {
             if let Some(mut behavior) = self.tree.take_behavior(panel_id) {
                 let state = self.tree.build_panel_state(panel_id, wf, pixel_tallness);
                 let consumed = {
-                    let mut pctx = PanelCtx::with_scheduler(
+                    let mut pctx = PanelCtx::with_sched_reach(
                         &mut self.tree,
                         panel_id,
                         pixel_tallness,
                         &mut self.scheduler,
+                        &mut self.framework_actions,
+                        &self.root_context,
+                        &self.framework_clipboard,
                     );
                     behavior.Input(&ev, &state, &self.input_state, &mut pctx)
                 };
@@ -225,7 +271,9 @@ impl TestHarness {
 /// A behavior that records calls via shared log. Optional closures for custom actions.
 pub struct RecordingBehavior {
     pub log: Rc<RefCell<Vec<String>>>,
+    // Non-widget: test harness adapter.
     pub on_input: Option<Box<dyn FnMut(&emInputEvent) -> bool>>,
+    // Non-widget: test harness adapter.
     pub on_layout: Option<Box<dyn FnMut(&mut PanelCtx)>>,
 }
 
@@ -312,7 +360,9 @@ impl PanelBehavior for InputTrackingBehavior {
 
 /// Behavior that calls closures on notice/LayoutChildren for tree mutation tests.
 pub struct MutatingBehavior {
+    // Non-widget: test harness adapter.
     pub on_layout: Option<Box<dyn FnMut(&mut PanelCtx)>>,
+    // Non-widget: test harness adapter.
     pub on_notice: Option<Box<dyn FnMut(NoticeFlags)>>,
 }
 

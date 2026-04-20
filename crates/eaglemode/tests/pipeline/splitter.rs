@@ -42,7 +42,9 @@ impl PanelBehavior for SharedSplitterPanel {
         input_state: &emInputState,
         _ctx: &mut PanelCtx,
     ) -> bool {
-        self.inner.borrow_mut().Input(event, state, input_state)
+        self.inner
+            .borrow_mut()
+            .Input(event, state, input_state, _ctx)
     }
 
     fn GetCursor(&self) -> emCursor {
@@ -70,8 +72,8 @@ fn setup_splitter(
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let mut sp = emSplitter::new(orientation, look);
-    sp.SetPos(initial_pos);
+    let mut sp = emSplitter::new(&mut h.sched_ctx(), orientation, look);
+    sp.set_initial_position(initial_pos);
     let sp_ref = Rc::new(RefCell::new(sp));
 
     let _panel_id = h.add_panel_with(
@@ -119,7 +121,7 @@ fn splitter_drag_horizontal_1x_and_2x() {
     );
 
     // ── Reset GetPos to 0.5 ──────────────────────────────────────
-    sp_ref.borrow_mut().SetPos(0.5);
+    sp_ref.borrow_mut().set_initial_position(0.5);
 
     // ── At 2x zoom ─────────────────────────────────────────────────
     h.set_zoom(2.0);
@@ -177,7 +179,7 @@ fn splitter_drag_vertical_1x_and_2x() {
     );
 
     // ── Reset GetPos to 0.5 ──────────────────────────────────────
-    sp_ref.borrow_mut().SetPos(0.5);
+    sp_ref.borrow_mut().set_initial_position(0.5);
 
     // ── At 2x zoom ─────────────────────────────────────────────────
     h.set_zoom(2.0);
@@ -230,7 +232,7 @@ fn splitter_position_stable_across_zoom() {
     );
 
     // Programmatically change GetPos at 2x zoom.
-    sp_ref.borrow_mut().SetPos(0.75);
+    sp_ref.borrow_mut().set_initial_position(0.75);
     assert!(
         (sp_ref.borrow().GetPos() - 0.75).abs() < 0.001,
         "set_position(0.75) should set position to 0.75 at 2x"
@@ -266,7 +268,7 @@ fn splitter_limits_respected_across_zoom() {
     );
 
     // Try to set GetPos below minimum.
-    sp_ref.borrow_mut().SetPos(0.0);
+    sp_ref.borrow_mut().set_initial_position(0.0);
     assert!(
         (sp_ref.borrow().GetPos() - 0.2).abs() < 0.001,
         "Position should be clamped to min_position 0.2, got {}",
@@ -274,7 +276,7 @@ fn splitter_limits_respected_across_zoom() {
     );
 
     // Try to set GetPos above maximum.
-    sp_ref.borrow_mut().SetPos(1.0);
+    sp_ref.borrow_mut().set_initial_position(1.0);
     assert!(
         (sp_ref.borrow().GetPos() - 0.8).abs() < 0.001,
         "Position should be clamped to max_position 0.8, got {}",
@@ -293,14 +295,14 @@ fn splitter_limits_respected_across_zoom() {
     );
 
     // Verify limits still work at 2x.
-    sp_ref.borrow_mut().SetPos(0.0);
+    sp_ref.borrow_mut().set_initial_position(0.0);
     assert!(
         (sp_ref.borrow().GetPos() - 0.2).abs() < 0.001,
         "Position should be clamped to min 0.2 at 2x zoom, got {}",
         sp_ref.borrow().GetPos()
     );
 
-    sp_ref.borrow_mut().SetPos(1.0);
+    sp_ref.borrow_mut().set_initial_position(1.0);
     assert!(
         (sp_ref.borrow().GetPos() - 0.8).abs() < 0.001,
         "Position should be clamped to max 0.8 at 2x zoom, got {}",
@@ -326,8 +328,8 @@ fn setup_splitter_with_id(
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let mut sp = emSplitter::new(orientation, look);
-    sp.SetPos(initial_pos);
+    let mut sp = emSplitter::new(&mut h.sched_ctx(), orientation, look);
+    sp.set_initial_position(initial_pos);
     let sp_ref = Rc::new(RefCell::new(sp));
 
     let panel_id = h.add_panel_with(
@@ -513,7 +515,7 @@ fn splitter_drag_with_custom_limits() {
     h.dispatch(&release);
 
     // Reset to middle of range.
-    sp_ref.borrow_mut().SetPos(0.5);
+    sp_ref.borrow_mut().set_initial_position(0.5);
 
     // Re-render so PaintContent caches are updated.
     let mut compositor = SoftwareCompositor::new(800, 600);
@@ -541,9 +543,11 @@ fn splitter_on_position_callback_fires_during_drag() {
 
     let positions: Rc<RefCell<Vec<f64>>> = Rc::new(RefCell::new(Vec::new()));
     let positions_clone = positions.clone();
-    sp_ref.borrow_mut().on_position = Some(Box::new(move |pos| {
-        positions_clone.borrow_mut().push(pos);
-    }));
+    sp_ref.borrow_mut().on_position = Some(Box::new(
+        move |pos, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
+            positions_clone.borrow_mut().push(pos);
+        },
+    ));
 
     // Press at grip center.
     let press = emInputEvent::press(InputKey::MouseLeft).with_mouse(400.0, 300.0);

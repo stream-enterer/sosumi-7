@@ -89,14 +89,14 @@ pub struct emFileManControlPanel {
 }
 
 impl emFileManControlPanel {
-    pub fn new(ctx: Rc<emContext>) -> Self {
+    pub fn new<C: emcore::emEngineCtx::ConstructCtx>(cc: &mut C, ctx: Rc<emContext>) -> Self {
         let config = emFileManViewConfig::Acquire(&ctx);
         let file_man = emFileManModel::Acquire(&ctx);
         let theme_names = emFileManThemeNames::Acquire(&ctx);
         let look = emLook::new();
 
         // Build sort criterion radio group
-        let sort_group = RadioGroup::new();
+        let sort_group = RadioGroup::new(cc);
         let sort_radios: Vec<emRadioButton> = SORT_LABELS
             .iter()
             .enumerate()
@@ -106,7 +106,7 @@ impl emFileManControlPanel {
             .collect();
 
         // Build name sorting style radio group
-        let nss_group = RadioGroup::new();
+        let nss_group = RadioGroup::new(cc);
         let nss_radios: Vec<emRadioButton> = NSS_LABELS
             .iter()
             .enumerate()
@@ -114,7 +114,7 @@ impl emFileManControlPanel {
             .collect();
 
         // Build theme style radio group
-        let theme_style_group = RadioGroup::new();
+        let theme_style_group = RadioGroup::new(cc);
         let theme_style_radios: Vec<emRadioButton> = {
             let tn = theme_names.borrow();
             (0..tn.GetThemeStyleCount())
@@ -126,7 +126,7 @@ impl emFileManControlPanel {
         };
 
         // Build theme aspect ratio radio group (for first style initially)
-        let theme_ar_group = RadioGroup::new();
+        let theme_ar_group = RadioGroup::new(cc);
         let theme_ar_radios: Vec<emRadioButton> = {
             let tn = theme_names.borrow();
             let ar_count = if tn.GetThemeStyleCount() > 0 {
@@ -143,17 +143,17 @@ impl emFileManControlPanel {
         };
 
         // Checkboxes
-        let dirs_first_check = emCheckButton::new("Sort Directories First", Rc::clone(&look));
-        let show_hidden_check = emCheckButton::new("Show Hidden", Rc::clone(&look));
-        let autosave_check = emCheckButton::new("Autosave", Rc::clone(&look));
+        let dirs_first_check = emCheckButton::new(cc, "Sort Directories First", Rc::clone(&look));
+        let show_hidden_check = emCheckButton::new(cc, "Show Hidden", Rc::clone(&look));
+        let autosave_check = emCheckButton::new(cc, "Autosave", Rc::clone(&look));
 
         // Action buttons
-        let save_button = emButton::new("Save", Rc::clone(&look));
-        let select_all_button = emButton::new("Select All", Rc::clone(&look));
-        let clear_sel_button = emButton::new("Clear Selection", Rc::clone(&look));
-        let swap_sel_button = emButton::new("Swap Selection", Rc::clone(&look));
-        let paths_clip_button = emButton::new("Paths to Clipboard", Rc::clone(&look));
-        let names_clip_button = emButton::new("Names to Clipboard", Rc::clone(&look));
+        let save_button = emButton::new(cc, "Save", Rc::clone(&look));
+        let select_all_button = emButton::new(cc, "Select All", Rc::clone(&look));
+        let clear_sel_button = emButton::new(cc, "Clear Selection", Rc::clone(&look));
+        let swap_sel_button = emButton::new(cc, "Swap Selection", Rc::clone(&look));
+        let paths_clip_button = emButton::new(cc, "Paths to Clipboard", Rc::clone(&look));
+        let names_clip_button = emButton::new(cc, "Names to Clipboard", Rc::clone(&look));
 
         let last_config_gen = config.borrow().GetChangeSignal();
 
@@ -183,30 +183,42 @@ impl emFileManControlPanel {
             last_config_gen,
             dir_path: None,
         };
-        panel.sync_from_config();
+
+        // Initial sync at construction time with a scratch PanelCtx (no
+        // scheduler reach). State is updated; callbacks silently don't fire,
+        // which is exactly what we want during construction.
+        {
+            let mut tree = emcore::emPanelTree::PanelTree::new();
+            let id = tree.create_root("init", false);
+            let mut ctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
+            panel.sync_from_config(&mut ctx);
+        }
         panel
     }
 
     /// Read current config state into widget state.
-    fn sync_from_config(&mut self) {
+    fn sync_from_config(&mut self, ctx: &mut emcore::emEngineCtx::PanelCtx<'_>) {
         let cfg = self.config.borrow();
         self.sort_group
             .borrow_mut()
-            .SetChecked(cfg.GetSortCriterion() as usize);
+            .SetChecked(cfg.GetSortCriterion() as usize, ctx);
         self.nss_group
             .borrow_mut()
-            .SetChecked(cfg.GetNameSortingStyle() as usize);
+            .SetChecked(cfg.GetNameSortingStyle() as usize, ctx);
         self.dirs_first_check
-            .SetChecked(cfg.GetSortDirectoriesFirst());
-        self.show_hidden_check.SetChecked(cfg.GetShowHiddenFiles());
-        self.autosave_check.SetChecked(cfg.GetAutosave());
+            .SetChecked(cfg.GetSortDirectoriesFirst(), ctx);
+        self.show_hidden_check
+            .SetChecked(cfg.GetShowHiddenFiles(), ctx);
+        self.autosave_check.SetChecked(cfg.GetAutosave(), ctx);
 
         // Sync theme style and AR from current theme name
         let theme_name = cfg.GetThemeName().to_string();
         drop(cfg);
         let tn = self.theme_names.borrow();
         if let Some(style_idx) = tn.GetThemeStyleIndex(&theme_name) {
-            self.theme_style_group.borrow_mut().SetChecked(style_idx);
+            self.theme_style_group
+                .borrow_mut()
+                .SetChecked(style_idx, ctx);
             // Rebuild AR radios for the selected style
             let ar_count = tn.GetThemeAspectRatioCount(style_idx);
             self.theme_ar_radios.clear();
@@ -220,7 +232,7 @@ impl emFileManControlPanel {
                 ));
             }
             if let Some(ar_idx) = tn.GetThemeAspectRatioIndex(&theme_name) {
-                self.theme_ar_group.borrow_mut().SetChecked(ar_idx);
+                self.theme_ar_group.borrow_mut().SetChecked(ar_idx, ctx);
             }
         }
     }
@@ -293,7 +305,7 @@ impl PanelBehavior for emFileManControlPanel {
         let gen = self.config.borrow().GetChangeSignal();
         if gen != self.last_config_gen {
             self.last_config_gen = gen;
-            self.sync_from_config();
+            self.sync_from_config(_ctx);
             true
         } else {
             false
@@ -388,7 +400,7 @@ impl PanelBehavior for emFileManControlPanel {
     ) -> bool {
         // Delegate to sort criterion radios
         for radio in &mut self.sort_radios {
-            if radio.Input(event, state, input_state) {
+            if radio.Input(event, state, input_state, _ctx) {
                 if let Some(idx) = self.sort_group.borrow().GetChecked() {
                     let sc = match idx {
                         0 => SortCriterion::ByName,
@@ -407,7 +419,7 @@ impl PanelBehavior for emFileManControlPanel {
 
         // Delegate to name sorting style radios
         for radio in &mut self.nss_radios {
-            if radio.Input(event, state, input_state) {
+            if radio.Input(event, state, input_state, _ctx) {
                 if let Some(idx) = self.nss_group.borrow().GetChecked() {
                     let nss = match idx {
                         0 => NameSortingStyle::PerLocale,
@@ -423,7 +435,7 @@ impl PanelBehavior for emFileManControlPanel {
 
         // Delegate to theme style radios
         for radio in &mut self.theme_style_radios {
-            if radio.Input(event, state, input_state) {
+            if radio.Input(event, state, input_state, _ctx) {
                 let style_idx = self.theme_style_group.borrow().GetChecked();
                 if let Some(style_idx) = style_idx {
                     let ar_idx = self.theme_ar_group.borrow().GetChecked().unwrap_or(0);
@@ -435,7 +447,7 @@ impl PanelBehavior for emFileManControlPanel {
                     drop(tn);
                     if let Some(name) = name {
                         self.config.borrow_mut().SetThemeName(&name);
-                        self.sync_from_config();
+                        self.sync_from_config(_ctx);
                     }
                 }
                 return true;
@@ -444,7 +456,7 @@ impl PanelBehavior for emFileManControlPanel {
 
         // Delegate to theme AR radios
         for radio in &mut self.theme_ar_radios {
-            if radio.Input(event, state, input_state) {
+            if radio.Input(event, state, input_state, _ctx) {
                 if let Some(ar_idx) = self.theme_ar_group.borrow().GetChecked() {
                     let style_idx = self.theme_style_group.borrow().GetChecked().unwrap_or(0);
                     let tn = self.theme_names.borrow();
@@ -458,19 +470,22 @@ impl PanelBehavior for emFileManControlPanel {
         }
 
         // Delegate to checkboxes
-        if self.dirs_first_check.Input(event, state, input_state) {
+        if self.dirs_first_check.Input(event, state, input_state, _ctx) {
             self.config
                 .borrow_mut()
                 .SetSortDirectoriesFirst(self.dirs_first_check.IsChecked());
             return true;
         }
-        if self.show_hidden_check.Input(event, state, input_state) {
+        if self
+            .show_hidden_check
+            .Input(event, state, input_state, _ctx)
+        {
             self.config
                 .borrow_mut()
                 .SetShowHiddenFiles(self.show_hidden_check.IsChecked());
             return true;
         }
-        if self.autosave_check.Input(event, state, input_state) {
+        if self.autosave_check.Input(event, state, input_state, _ctx) {
             self.config
                 .borrow_mut()
                 .SetAutosave(self.autosave_check.IsChecked());
@@ -478,7 +493,7 @@ impl PanelBehavior for emFileManControlPanel {
         }
 
         // Delegate to action buttons
-        if self.save_button.Input(event, state, input_state) {
+        if self.save_button.Input(event, state, input_state, _ctx) {
             if self.save_button.IsPressed() {
                 // Press tracked; actual save on release via on_click
             } else {
@@ -486,23 +501,32 @@ impl PanelBehavior for emFileManControlPanel {
             }
             return true;
         }
-        if self.select_all_button.Input(event, state, input_state) {
+        if self
+            .select_all_button
+            .Input(event, state, input_state, _ctx)
+        {
             self.select_all();
             return true;
         }
-        if self.clear_sel_button.Input(event, state, input_state) {
+        if self.clear_sel_button.Input(event, state, input_state, _ctx) {
             self.file_man.borrow_mut().ClearTargetSelection();
             return true;
         }
-        if self.swap_sel_button.Input(event, state, input_state) {
+        if self.swap_sel_button.Input(event, state, input_state, _ctx) {
             self.file_man.borrow_mut().SwapSelection();
             return true;
         }
-        if self.paths_clip_button.Input(event, state, input_state) {
+        if self
+            .paths_clip_button
+            .Input(event, state, input_state, _ctx)
+        {
             let _text = self.file_man.borrow().SelectionToClipboard(false, false);
             return true;
         }
-        if self.names_clip_button.Input(event, state, input_state) {
+        if self
+            .names_clip_button
+            .Input(event, state, input_state, _ctx)
+        {
             let _text = self.file_man.borrow().SelectionToClipboard(false, true);
             return true;
         }
@@ -514,6 +538,30 @@ impl PanelBehavior for emFileManControlPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use emcore::emEngineCtx::{DeferredAction, InitCtx};
+    use emcore::emScheduler::EngineScheduler;
+
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: emcore::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
 
     struct NoopEngineForTest;
     impl emcore::emEngine::emEngine for NoopEngineForTest {
@@ -526,15 +574,17 @@ mod tests {
     fn panel_implements_panel_behavior() {
         use emcore::emPanel::PanelBehavior;
 
-        let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emFileManControlPanel::new(Rc::clone(&ctx));
+        let mut __init = TestInit::new();
+        let ctx = Rc::clone(&__init.root);
+        let panel = emFileManControlPanel::new(&mut __init.ctx(), Rc::clone(&ctx));
         let _: Box<dyn PanelBehavior> = Box::new(panel);
     }
 
     #[test]
     fn sync_from_config_initializes_widgets() {
-        let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emFileManControlPanel::new(Rc::clone(&ctx));
+        let mut __init = TestInit::new();
+        let ctx = Rc::clone(&__init.root);
+        let panel = emFileManControlPanel::new(&mut __init.ctx(), Rc::clone(&ctx));
         // Default config: ByName sort, PerLocale nss, dirs_first=false, hidden=false
         assert_eq!(panel.sort_group.borrow().GetChecked(), Some(0));
         assert_eq!(panel.nss_group.borrow().GetChecked(), Some(0));
@@ -548,8 +598,9 @@ mod tests {
         use emcore::emPanelTree::{PanelId, PanelTree};
         use slotmap::Key as _;
 
-        let ctx = emcore::emContext::emContext::NewRoot();
-        let mut panel = emFileManControlPanel::new(Rc::clone(&ctx));
+        let mut __init = TestInit::new();
+        let ctx = Rc::clone(&__init.root);
+        let mut panel = emFileManControlPanel::new(&mut __init.ctx(), Rc::clone(&ctx));
 
         // Mutate config externally
         panel
@@ -563,6 +614,9 @@ mod tests {
             id: PanelId::null(),
             current_pixel_tallness: 1.0,
             scheduler: None,
+            framework_clipboard: None,
+            framework_actions: None,
+            root_context: None,
         };
         let mut h = emcore::test_view_harness::TestViewHarness::new();
         let dummy_eid = h.scheduler.register_engine(
@@ -582,19 +636,24 @@ mod tests {
 
     #[test]
     fn widget_counts() {
-        let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emFileManControlPanel::new(Rc::clone(&ctx));
+        let mut __init = TestInit::new();
+        let ctx = Rc::clone(&__init.root);
+        let panel = emFileManControlPanel::new(&mut __init.ctx(), Rc::clone(&ctx));
         assert_eq!(panel.sort_radios.len(), 6);
         assert_eq!(panel.nss_radios.len(), 3);
     }
 
     #[test]
     fn sort_group_change_updates_config() {
-        let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emFileManControlPanel::new(Rc::clone(&ctx));
+        let mut __init = TestInit::new();
+        let root = Rc::clone(&__init.root);
+        let panel = emFileManControlPanel::new(&mut __init.ctx(), Rc::clone(&root));
 
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let tid = tree.create_root("t", false);
+        let mut ctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
         // Simulate changing sort group to ByDate (index 4)
-        panel.sort_group.borrow_mut().SetChecked(4);
+        panel.sort_group.borrow_mut().SetChecked(4, &mut ctx);
         // Apply via sync logic — normally this happens in Input handler,
         // but we test the config update path directly
         panel

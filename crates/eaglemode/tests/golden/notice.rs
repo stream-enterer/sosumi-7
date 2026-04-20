@@ -378,10 +378,13 @@ fn notice_window_resize() {
     let mut sched = emcore::emScheduler::EngineScheduler::new();
     let root_ctx = emcore::emContext::emContext::NewRoot();
     let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+    let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+        std::cell::RefCell::new(None);
     let mut sc = emcore::emEngineCtx::SchedCtx {
         scheduler: &mut sched,
         framework_actions: &mut fw,
         root_context: &root_ctx,
+        framework_clipboard: &__cb,
         current_engine: None,
     };
     view.SetGeometry(&mut tree, 0.0, 0.0, 1200.0, 800.0, 1.0, &mut sc);

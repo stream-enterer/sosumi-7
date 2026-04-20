@@ -466,6 +466,7 @@ pub struct emPainter<'a> {
     /// the DrawOp, the current nesting depth, and the painter state snapshot.
     /// This logs from the actual rendering path (not the recording painter),
     /// eliminating double-pass recording noise.
+    // Non-widget callback — diagnostic op-logger; no scheduler reach required.
     #[allow(clippy::type_complexity)]
     op_log_fn: Option<Box<dyn FnMut(&DrawOp, u32, RecordedState)>>,
 }

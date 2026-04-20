@@ -795,6 +795,7 @@ pub fn create_main_window(
             scheduler: &mut app.scheduler,
             framework_actions: &mut fw,
             root_context: &root_ctx,
+            framework_clipboard: &app.clipboard,
             current_engine: None,
         };
         let mut svp = emSubViewPanel::new(Rc::clone(&app.context), ctrl_id, &mut sc);
@@ -812,6 +813,7 @@ pub fn create_main_window(
             scheduler: &mut app.scheduler,
             framework_actions: &mut fw,
             root_context: &root_ctx,
+            framework_clipboard: &app.clipboard,
             current_engine: None,
         };
         let mut svp = emSubViewPanel::new(Rc::clone(&app.context), content_id, &mut sc);
@@ -901,6 +903,7 @@ pub fn create_main_window(
             ref mut scheduler,
             ref mut tree,
             ref mut windows,
+            ref clipboard,
             ..
         } = *app;
         if let Some(win) = windows.get_mut(&window_id) {
@@ -913,6 +916,7 @@ pub fn create_main_window(
                     scheduler,
                     framework_actions: &mut fw,
                     root_context: &root_ctx,
+                    framework_clipboard: clipboard,
                     current_engine: None,
                 };
                 v.RegisterEngines(&mut sc, tree, scope, emcore::emEngine::TreeLocation::Outer);

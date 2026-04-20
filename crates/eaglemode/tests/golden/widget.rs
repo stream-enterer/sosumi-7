@@ -320,13 +320,14 @@ fn widget_label() {
 
 #[test]
 fn widget_button_normal() {
+    let mut ts = TestSched::new();
     require_golden!();
     let look = emLook::new();
     // Residual diffs from text rendering and 9-slice boundary rounding (~0.9%)
     render_and_compare_tol(
         "widget_button_normal",
         Box::new(ButtonBehavior {
-            button: emButton::new("Click Me", look),
+            button: emButton::new(&mut ts.cc(), "Click Me", look),
         }),
         0,
         0.0,
@@ -339,11 +340,12 @@ fn widget_button_normal() {
 fn widget_checkbox_unchecked() {
     require_golden!();
     let look = emLook::new();
+    let mut ts = TestSched::new();
     // Residual from checkbox GetImage 9-slice section boundary rounding (~4.8%)
     render_and_compare_tol(
         "widget_checkbox_unchecked",
         Box::new(CheckBoxBehavior {
-            check_box: emCheckBox::new("Check Option", look),
+            check_box: emCheckBox::new(&mut ts.cc(), "Check Option", look),
         }),
         0,
         0.0,
@@ -356,8 +358,13 @@ fn widget_checkbox_unchecked() {
 fn widget_checkbox_checked() {
     require_golden!();
     let look = emLook::new();
-    let mut cb = emCheckBox::new("Check Option", look);
-    cb.SetChecked(true);
+    let mut ts = TestSched::new();
+    let mut cb = emCheckBox::new(&mut ts.cc(), "Check Option", look);
+    // Scratch ctx — no scheduler reach needed; cb has no callback installed.
+    let mut tree = emcore::emPanelTree::PanelTree::new();
+    let root = tree.create_root("t", false);
+    let mut ctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, root, 1.0);
+    cb.SetChecked(true, &mut ctx);
     // Residual from checkbox GetImage + text rendering diffs (~5.1%)
     render_and_compare_tol(
         "widget_checkbox_checked",
@@ -371,9 +378,10 @@ fn widget_checkbox_checked() {
 
 #[test]
 fn widget_textfield_empty() {
+    let mut ts = TestSched::new();
     require_golden!();
     let look = emLook::new();
-    let mut tf = emTextField::new(look);
+    let mut tf = emTextField::new(&mut ts.cc(), look);
     tf.SetCaption("Name");
     tf.SetEditable(true);
     render_and_compare_tol(
@@ -388,9 +396,10 @@ fn widget_textfield_empty() {
 
 #[test]
 fn widget_textfield_content() {
+    let mut ts = TestSched::new();
     require_golden!();
     let look = emLook::new();
-    let mut tf = emTextField::new(look);
+    let mut tf = emTextField::new(&mut ts.cc(), look);
     tf.SetCaption("Name");
     tf.SetEditable(true);
     tf.SetText("Hello");
@@ -407,12 +416,13 @@ fn widget_textfield_content() {
 
 #[test]
 fn widget_scalarfield() {
+    let mut ts = TestSched::new();
     require_golden!();
     let look = emLook::new();
-    let mut sf = emScalarField::new(0.0, 100.0, look);
+    let mut sf = emScalarField::new(&mut ts.cc(), 0.0, 100.0, look);
     sf.SetCaption("Value");
     sf.SetEditable(true);
-    sf.SetValue(50.0);
+    sf.set_initial_value(50.0);
     // Residual from 9-slice border interpolation + text rendering diffs (~4.7%)
     render_and_compare_tol(
         "widget_scalarfield",
@@ -472,9 +482,9 @@ fn widget_colorfield() {
     let (w, h, expected) = load_compositor_golden("widget_colorfield");
 
     let look = emLook::new();
-    let mut cf = emColorField::new(look);
+    let mut cf = emColorField::new(&mut ts.cc(), look);
     cf.SetCaption("Color");
-    cf.SetColor(emcore::emColor::emColor::rgba(255, 0, 0, 255));
+    cf.set_initial_color(emcore::emColor::emColor::rgba(255, 0, 0, 255));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -511,11 +521,17 @@ fn widget_colorfield() {
 
 #[test]
 fn widget_radiobutton() {
+    let mut ts = TestSched::new();
     require_golden!();
     let look = emLook::new();
-    let group = RadioGroup::new();
+    let group = RadioGroup::new(&mut ts.cc());
     let mut rb = emRadioButton::new("Radio Option", look, group, 0);
-    rb.set_checked(true);
+    {
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let tid = tree.create_root("t", false);
+        let mut ctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
+        rb.set_checked(true, &mut ctx);
+    }
     // Residual diffs from text rendering and 9-slice boundary rounding (~0.8%)
     render_and_compare_tol(
         "widget_radiobutton",
@@ -529,9 +545,10 @@ fn widget_radiobutton() {
 
 #[test]
 fn widget_listbox() {
+    let mut ts = TestSched::new();
     require_golden!();
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut ts.cc(), look);
     lb.SetCaption("Items");
     lb.AddItem("item0".to_string(), "Alpha".to_string());
     lb.AddItem("item1".to_string(), "Beta".to_string());
@@ -552,9 +569,10 @@ fn widget_listbox() {
 
 #[test]
 fn widget_splitter_h() {
+    let mut ts = TestSched::new();
     require_golden!();
     let look = emLook::new();
-    let sp = emSplitter::new(Orientation::Horizontal, look);
+    let sp = emSplitter::new(&mut ts.cc(), Orientation::Horizontal, look);
     // Residual from 9-slice interpolation rounding (~0.9%)
     render_and_compare_tol(
         "widget_splitter_h",
@@ -568,10 +586,11 @@ fn widget_splitter_h() {
 
 #[test]
 fn widget_splitter_v() {
+    let mut ts = TestSched::new();
     require_golden!();
     let look = emLook::new();
-    let mut sp = emSplitter::new(Orientation::Vertical, look);
-    sp.SetPos(0.3);
+    let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Vertical, look);
+    sp.set_initial_position(0.3);
     // Residual from 9-slice interpolation rounding + grip GetPos (~1.7%)
     render_and_compare_tol(
         "widget_splitter_v",
@@ -618,12 +637,12 @@ fn colorfield_expanded() {
     let (w, h, expected) = load_compositor_golden("colorfield_expanded");
 
     let look = emLook::new();
-    let mut cf = emColorField::new(look);
+    let mut cf = emColorField::new(&mut ts.cc(), look);
     cf.SetCaption("Color");
     cf.SetDescription("Test color field");
     cf.SetEditable(true);
-    cf.SetAlphaEnabled(true);
-    cf.SetColor(emcore::emColor::emColor::rgba(0xBB, 0x22, 0x22, 0xFF));
+    cf.set_initial_alpha_enabled(true);
+    cf.set_initial_color(emcore::emColor::emColor::rgba(0xBB, 0x22, 0x22, 0xFF));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -693,7 +712,7 @@ fn listbox_expanded() {
     let (w, h, expected) = load_compositor_golden("listbox_expanded");
 
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut ts.cc(), look);
     lb.SetCaption("Items");
     lb.SetSelectionType(emcore::emListBox::SelectionMode::Multi);
     lb.set_items(
@@ -1101,10 +1120,11 @@ fn widget_file_panel() {
 
 #[test]
 fn widget_file_selection_box() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_file_selection_box");
 
-    let mut fsb = emFileSelectionBox::new("Select File");
+    let mut fsb = emFileSelectionBox::new(&mut ts.cc(), "Select File");
     fsb.set_parent_directory(std::path::Path::new("/nonexistent_golden_test_dir"));
 
     let mut tree = PanelTree::new();
@@ -1137,11 +1157,12 @@ fn widget_file_selection_box() {
 
 #[test]
 fn golden_widget_textfield_empty_wide() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_textfield_empty_wide");
 
     let look = emLook::new();
-    let mut tf = emTextField::new(look);
+    let mut tf = emTextField::new(&mut ts.cc(), look);
     tf.SetCaption("Name");
     tf.SetEditable(true);
 
@@ -1183,11 +1204,12 @@ fn golden_widget_textfield_empty_wide() {
 
 #[test]
 fn golden_widget_textfield_single_char_square() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_textfield_single_char_square");
 
     let look = emLook::new();
-    let mut tf = emTextField::new(look);
+    let mut tf = emTextField::new(&mut ts.cc(), look);
     tf.SetCaption("Name");
     tf.SetEditable(true);
     tf.SetText("A");
@@ -1236,14 +1258,20 @@ fn golden_widget_textfield_single_char_square() {
 
 #[test]
 fn golden_widget_scalarfield_min_value() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_scalarfield_min_value");
 
     let look = emLook::new();
-    let mut sf = emScalarField::new(-1_000_000_000_000.0, 1_000_000_000_000.0, look);
+    let mut sf = emScalarField::new(
+        &mut ts.cc(),
+        -1_000_000_000_000.0,
+        1_000_000_000_000.0,
+        look,
+    );
     sf.SetCaption("Value");
     sf.SetEditable(true);
-    sf.SetValue(-1_000_000_000_000.0);
+    sf.set_initial_value(-1_000_000_000_000.0);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1283,14 +1311,20 @@ fn golden_widget_scalarfield_min_value() {
 
 #[test]
 fn golden_widget_scalarfield_max_value() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_scalarfield_max_value");
 
     let look = emLook::new();
-    let mut sf = emScalarField::new(-1_000_000_000_000.0, 1_000_000_000_000.0, look);
+    let mut sf = emScalarField::new(
+        &mut ts.cc(),
+        -1_000_000_000_000.0,
+        1_000_000_000_000.0,
+        look,
+    );
     sf.SetCaption("Value");
     sf.SetEditable(true);
-    sf.SetValue(1_000_000_000_000.0);
+    sf.set_initial_value(1_000_000_000_000.0);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1330,14 +1364,15 @@ fn golden_widget_scalarfield_max_value() {
 
 #[test]
 fn golden_widget_scalarfield_zero_range() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_scalarfield_zero_range");
 
     let look = emLook::new();
-    let mut sf = emScalarField::new(50.0, 50.0, look);
+    let mut sf = emScalarField::new(&mut ts.cc(), 50.0, 50.0, look);
     sf.SetCaption("Value");
     sf.SetEditable(true);
-    sf.SetValue(50.0);
+    sf.set_initial_value(50.0);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1377,11 +1412,12 @@ fn golden_widget_scalarfield_zero_range() {
 
 #[test]
 fn golden_widget_listbox_empty() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_listbox_empty");
 
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut ts.cc(), look);
     lb.SetCaption("Items");
 
     let mut tree = PanelTree::new();
@@ -1409,11 +1445,12 @@ fn golden_widget_listbox_empty() {
 
 #[test]
 fn golden_widget_listbox_single() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_listbox_single");
 
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut ts.cc(), look);
     lb.SetCaption("Items");
     lb.AddItem("item0".to_string(), "Solo".to_string());
 
@@ -1442,11 +1479,12 @@ fn golden_widget_listbox_single() {
 
 #[test]
 fn golden_widget_listbox_extreme_wide() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_listbox_extreme_wide");
 
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut ts.cc(), look);
     lb.SetCaption("Items");
     lb.AddItem("item0".to_string(), "Alpha".to_string());
     lb.AddItem("item1".to_string(), "Beta".to_string());
@@ -1490,12 +1528,13 @@ fn golden_widget_listbox_extreme_wide() {
 
 #[test]
 fn golden_widget_splitter_h_pos0() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_splitter_h_pos0");
 
     let look = emLook::new();
-    let mut sp = emSplitter::new(Orientation::Horizontal, look);
-    sp.SetPos(0.0);
+    let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Horizontal, look);
+    sp.set_initial_position(0.0);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1522,12 +1561,13 @@ fn golden_widget_splitter_h_pos0() {
 
 #[test]
 fn golden_widget_splitter_h_pos1() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_splitter_h_pos1");
 
     let look = emLook::new();
-    let mut sp = emSplitter::new(Orientation::Horizontal, look);
-    sp.SetPos(1.0);
+    let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Horizontal, look);
+    sp.set_initial_position(1.0);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1554,12 +1594,13 @@ fn golden_widget_splitter_h_pos1() {
 
 #[test]
 fn golden_widget_splitter_v_extreme_tall() {
+    let mut ts = TestSched::new();
     require_golden!();
     let (w, h, expected) = load_compositor_golden("widget_splitter_v_extreme_tall");
 
     let look = emLook::new();
-    let mut sp = emSplitter::new(Orientation::Vertical, look);
-    sp.SetPos(0.5);
+    let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Vertical, look);
+    sp.set_initial_position(0.5);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1608,7 +1649,8 @@ fn golden_widget_checkbox_extreme_tall() {
     let (w, h, expected) = load_compositor_golden("widget_checkbox_extreme_tall");
 
     let look = emLook::new();
-    let cb = emCheckBox::new("Check", look);
+    let mut ts = TestSched::new();
+    let cb = emCheckBox::new(&mut ts.cc(), "Check", look);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1699,9 +1741,9 @@ fn golden_widget_colorfield_alpha_zero() {
     let (w, h, expected) = load_compositor_golden("widget_colorfield_alpha_zero");
 
     let look = emLook::new();
-    let mut cf = emColorField::new(look);
+    let mut cf = emColorField::new(&mut ts.cc(), look);
     cf.SetCaption("Color");
-    cf.SetColor(emcore::emColor::emColor::rgba(255, 0, 0, 0));
+    cf.set_initial_color(emcore::emColor::emColor::rgba(255, 0, 0, 0));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1754,9 +1796,9 @@ fn golden_widget_colorfield_alpha_opaque() {
     let (w, h, expected) = load_compositor_golden("widget_colorfield_alpha_opaque");
 
     let look = emLook::new();
-    let mut cf = emColorField::new(look);
+    let mut cf = emColorField::new(&mut ts.cc(), look);
     cf.SetCaption("Color");
-    cf.SetColor(emcore::emColor::emColor::rgba(255, 0, 0, 255));
+    cf.set_initial_color(emcore::emColor::emColor::rgba(255, 0, 0, 255));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1809,9 +1851,9 @@ fn golden_widget_colorfield_alpha_near() {
     let (w, h, expected) = load_compositor_golden("widget_colorfield_alpha_near");
 
     let look = emLook::new();
-    let mut cf = emColorField::new(look);
+    let mut cf = emColorField::new(&mut ts.cc(), look);
     cf.SetCaption("Color");
-    cf.SetColor(emcore::emColor::emColor::rgba(255, 0, 0, 1));
+    cf.set_initial_color(emcore::emColor::emColor::rgba(255, 0, 0, 1));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1907,13 +1949,13 @@ fn composition_border_nest() {
     tree.set_behavior(
         button_id,
         Box::new(ButtonBehavior {
-            button: emButton::new("Test Button", look.clone()),
+            button: emButton::new(&mut ts.cc(), "Test Button", look.clone()),
         }),
     );
 
     // C++: new Testable<emTextField>(*inner, "textfield", "Field", "", emImage(), "Hello", true)
     let tf_id = tree.create_child(inner_id, "textfield", None);
-    let mut tf = emTextField::new(look.clone());
+    let mut tf = emTextField::new(&mut ts.cc(), look.clone());
     tf.SetCaption("Field");
     tf.SetEditable(true);
     tf.SetText("Hello");
@@ -1986,8 +2028,8 @@ fn composition_splitter_content() {
     let look = emLook::new();
 
     // Root: horizontal splitter, pos=0.5, no border (OBT_NONE/IBT_NONE)
-    let mut sp = emSplitter::new(Orientation::Horizontal, look.clone());
-    sp.SetPos(0.5);
+    let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Horizontal, look.clone());
+    sp.set_initial_position(0.5);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -2088,7 +2130,7 @@ fn composition_scrolled_listbox_in_border() {
 
     // emListBox child exists in tree but won't be visible (emBorder default positions).
     let lb_id = tree.create_child(root, "list", None);
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut ts.cc(), look);
     lb.SetCaption("Items");
     for i in 1..=50 {
         lb.AddItem(format!("item{}", i - 1), format!("Item {}", i));

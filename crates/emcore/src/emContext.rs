@@ -3,8 +3,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-use crate::emClipboard::emClipboard;
-
 /// Key for the model registry: (concrete type, name).
 ///
 /// In C++ Eagle Mode, models are identified by `(typeid(FinalClass), name)`.
@@ -29,17 +27,22 @@ struct ModelEntry {
 /// Models can be *registered* (common) so they are discoverable by
 /// `(TypeId, name)`. Unregistered (private) models are not stored here.
 ///
-/// Typed singletons (e.g. `emClipboard`, `emCoreConfig`) are added as
+/// Typed singletons (e.g. `emCoreConfig`) are added as
 /// `RefCell<Option<Rc<T>>>` fields with getter methods that walk the parent
 /// chain (inherited lookup). Dynamic resources use `ResourceCache<V>` stored
 /// as typed singletons.
 ///
 /// Children are stored as `Weak` references to avoid memory leaks.
 /// The child `Rc` is owned by whoever created it (typically a emView or Panel).
+///
+/// DIVERGED (Phase-3 Task-2): the C++ `emRef<emClipboard>
+/// emClipboard::LookupInherited(emContext&)` mirror used to live here.
+/// It has been relocated to the framework per spec §3.4 / §3.6(a) so
+/// winit text-event callbacks can access it without `&mut framework`
+/// reach. Access via `EngineCtx`/`SchedCtx` methods.
 pub struct emContext {
     parent: Option<Weak<emContext>>,
     children: RefCell<Vec<Weak<emContext>>>,
-    clipboard: RefCell<Option<Rc<RefCell<dyn emClipboard>>>>,
     /// Registry of common (named) models, keyed by `(TypeId, name)`.
     registry: RefCell<HashMap<ModelKey, ModelEntry>>,
 }
@@ -49,7 +52,6 @@ impl emContext {
         Rc::new(Self {
             parent: None,
             children: RefCell::new(Vec::new()),
-            clipboard: RefCell::new(None),
             registry: RefCell::new(HashMap::new()),
         })
     }
@@ -58,7 +60,6 @@ impl emContext {
         let child = Rc::new(Self {
             parent: Some(Rc::downgrade(parent)),
             children: RefCell::new(Vec::new()),
-            clipboard: RefCell::new(None),
             registry: RefCell::new(HashMap::new()),
         });
         parent.children.borrow_mut().push(Rc::downgrade(&child));
@@ -93,23 +94,6 @@ impl emContext {
     /// Purge expired weak references from the children list.
     pub fn purge_dead_children(&self) {
         self.children.borrow_mut().retain(|w| w.strong_count() > 0);
-    }
-
-    /// Install a clipboard into this context node.
-    pub fn set_clipboard(&self, clipboard: Rc<RefCell<dyn emClipboard>>) {
-        *self.clipboard.borrow_mut() = Some(clipboard);
-    }
-
-    /// emLook up the installed clipboard by walking the parent chain.
-    /// Port of C++ emClipboard::LookupInherited.
-    pub fn LookupClipboard(&self) -> Option<Rc<RefCell<dyn emClipboard>>> {
-        if let Some(cb) = self.clipboard.borrow().as_ref() {
-            return Some(Rc::clone(cb));
-        }
-        if let Some(parent) = self.GetParentContext() {
-            return parent.LookupClipboard();
-        }
-        None
     }
 
     // ------------------------------------------------------------------

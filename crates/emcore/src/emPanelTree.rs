@@ -1629,19 +1629,13 @@ impl PanelTree {
     ) {
         let state = self.build_panel_state(id, window_focused, pixel_tallness);
         if let Some(mut behavior) = self.take_behavior(id) {
-            // Phase 1.76 Task 2: `PanelBehavior::Input` now takes `&mut PanelCtx`.
-            // `emView::RecurseInput` (sole caller of this method) does not
-            // carry a scheduler, so the ctx's scheduler is `None` — the same
-            // observable behavior as the pre-1.76 throwaway. Calls that
-            // require a scheduler (e.g. emSubViewPanel::Input) will panic via
-            // `expect`; the production input path routes through
-            // `emWindow::dispatch_input` instead, which builds a ctx with a
-            // real scheduler.
-            //
-            // INVARIANT (Phase 1.76): no scheduler-requiring PanelBehavior::Input
-            // override may be dispatched via this path — emView::RecurseInput carries
-            // no scheduler (test-harness-only entry). Any future live caller must
-            // thread a scheduler through and switch to PanelCtx::with_scheduler.
+            // Phase 3 B3.2 supersedes Phase-1.76: SchedCtx (via PanelCtx) now
+            // threads through Input dispatch. Concrete widget `Input` free
+            // functions take `&mut PanelCtx` (B3.2 plumbing); B3.3 migrates
+            // their callback invocations to use the ctx's scheduler reach.
+            // This path still constructs a scheduler-less ctx — live input
+            // dispatch continues to flow through `emWindow::dispatch_input`
+            // with a full-reach ctx via `with_sched_reach`.
             {
                 let mut panel_ctx = super::emEngineCtx::PanelCtx::new(self, id, pixel_tallness);
                 behavior.Input(event, &state, input_state, &mut panel_ctx);
@@ -3357,10 +3351,13 @@ mod tests {
             let root_ctx = v.Context.GetRootContext();
             let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
             let mut s = sched.borrow_mut();
+            let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root_ctx,
+                framework_clipboard: &__cb,
                 current_engine: None,
             };
             v.RegisterEngines(
@@ -3444,9 +3441,20 @@ mod tests {
             HashMap::new();
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
-        sched
-            .borrow_mut()
-            .DoTimeSlice(&mut tree, &mut empty_windows, &__root_ctx, &mut __fw);
+        let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
+            Vec::new();
+        let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        sched.borrow_mut().DoTimeSlice(
+            &mut tree,
+            &mut empty_windows,
+            &__root_ctx,
+            &mut __fw,
+            &mut __pending_inputs,
+            &mut __input_state,
+            &__cb,
+        );
         let child = tree
             .GetRec(root)
             .and_then(|p| p.first_child)
@@ -3588,14 +3596,36 @@ mod tests {
         let mut windows = HashMap::new();
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
-        sched_a
-            .borrow_mut()
-            .DoTimeSlice(&mut tree_a, &mut windows, &__root_ctx, &mut __fw);
+        let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
+            Vec::new();
+        let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        sched_a.borrow_mut().DoTimeSlice(
+            &mut tree_a,
+            &mut windows,
+            &__root_ctx,
+            &mut __fw,
+            &mut __pending_inputs,
+            &mut __input_state,
+            &__cb,
+        );
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
-        sched_b
-            .borrow_mut()
-            .DoTimeSlice(&mut tree_b, &mut windows, &__root_ctx, &mut __fw);
+        let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
+            Vec::new();
+        let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        sched_b.borrow_mut().DoTimeSlice(
+            &mut tree_b,
+            &mut windows,
+            &__root_ctx,
+            &mut __fw,
+            &mut __pending_inputs,
+            &mut __input_state,
+            &__cb,
+        );
         assert_eq!(
             recorded_a.get(),
             Some(1.5),
@@ -3716,9 +3746,20 @@ mod tests {
         let mut windows = HashMap::new();
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
-        sched
-            .borrow_mut()
-            .DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
+        let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
+            Vec::new();
+        let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        sched.borrow_mut().DoTimeSlice(
+            &mut tree,
+            &mut windows,
+            &__root_ctx,
+            &mut __fw,
+            &mut __pending_inputs,
+            &mut __input_state,
+            &__cb,
+        );
         assert_eq!(a_cycles.get(), 1, "A must have cycled once");
         assert_eq!(woke.get(), 1, "A must have called wake_up_panel");
 
@@ -3726,9 +3767,20 @@ mod tests {
         if b_cycles.get() == 0 {
             let __root_ctx = crate::emContext::emContext::NewRoot();
             let mut __fw: Vec<_> = Vec::new();
-            sched
-                .borrow_mut()
-                .DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
+            let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
+                Vec::new();
+            let mut __input_state = crate::emInputState::emInputState::new();
+            let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
+            sched.borrow_mut().DoTimeSlice(
+                &mut tree,
+                &mut windows,
+                &__root_ctx,
+                &mut __fw,
+                &mut __pending_inputs,
+                &mut __input_state,
+                &__cb,
+            );
         }
         assert_eq!(
             b_cycles.get(),
@@ -3745,9 +3797,20 @@ mod tests {
         tree.remove(root, None);
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
-        sched
-            .borrow_mut()
-            .DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
+        let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
+            Vec::new();
+        let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        sched.borrow_mut().DoTimeSlice(
+            &mut tree,
+            &mut windows,
+            &__root_ctx,
+            &mut __fw,
+            &mut __pending_inputs,
+            &mut __input_state,
+            &__cb,
+        );
     }
 
     // Phase 1.75 Task 5 (continuation): deleted tests
@@ -3837,9 +3900,20 @@ mod tests {
             HashMap::new();
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
-        sched
-            .borrow_mut()
-            .DoTimeSlice(&mut tree, &mut empty_windows, &__root_ctx, &mut __fw);
+        let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
+            Vec::new();
+        let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        sched.borrow_mut().DoTimeSlice(
+            &mut tree,
+            &mut empty_windows,
+            &__root_ctx,
+            &mut __fw,
+            &mut __pending_inputs,
+            &mut __input_state,
+            &__cb,
+        );
 
         let create_at = create_slice
             .get()
