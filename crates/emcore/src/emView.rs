@@ -471,9 +471,12 @@ pub struct emView {
     /// Winit events destined for the popup's WindowId are currently not
     /// routed; full popup OS-event handling is Task 8 territory.
     pub PopupWindow: Option<crate::emWindow::emWindow>,
-    /// Close-signal of the popup (mirrored from `PopupWindow.close_signal`)
-    /// so that `Update`'s close-signal probe and `RawVisitAbs` teardown can
-    /// access it without borrowing the popup emWindow.
+    /// DIVERGED: no C++ analogue — C++ reads the close-signal directly off
+    /// `PopupWindow->GetCloseSignal()`. Rust mirrors it here so that
+    /// `Update`'s close-signal probe and `RawVisitAbs` teardown avoid
+    /// borrowing `PopupWindow: Option<emWindow>` (which would conflict with
+    /// the enclosing `&mut emView`). Kept in sync with the popup at
+    /// insertion (RawVisitAbs) and teardown.
     pub PopupCloseSignal: Option<super::emSignal::SignalId>,
     /// C++ HomeViewPort — the view-port that connects the emView to its
     /// *home* window (the original non-popup window).
