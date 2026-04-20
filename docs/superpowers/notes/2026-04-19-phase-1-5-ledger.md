@@ -608,3 +608,20 @@ The scheduler Rc moved from `emView` to `PanelTree`. This is closer to C++ where
 - Commit used `--no-verify`.
 
 **Status:** DONE.
+
+---
+
+## Task 1 substep 1e.1 (added post-1e-finish)
+
+### 2026-04-20 — SCHEDULED: delete `PanelTree::sched_rc`
+
+1e-finish (commit `d782332`) deleted `emView::scheduler` but **relocated** the `Rc<RefCell<EngineScheduler>>` to `PanelTree::sched_rc` (pub field) rather than eliminating the back-channel. Metrics confirm:
+
+- `rc_refcell_total`: baseline 284 → 286 (**+2**, wrong direction).
+- `try_borrow_total`: baseline 11 → 13 (**+2**, wrong direction).
+
+Phase 1.5's spec destination requires both to drop. The plan has been amended (see plans/ §1e.1) to make the deletion an explicit scheduled step rather than implicit debt.
+
+**Scope of 1e.1:** ctx-thread `PanelTree::add_to_notice_list`, `register_engine_for`, `deregister_engine_for`, `emPanelCtx::wake_up_panel`. Delete `PanelTree::sched_rc` field. Delete `pending_engine_wakeups` deferral (no longer needed once `ctx.scheduler` is always in hand). Cascade into all callers across `emView`, `emPanelTree`, `emPanelCtx`, `emSubViewPanel`, tests.
+
+**Status:** PENDING. Scheduled after substep 1f, before Task 2. User acknowledged the shuffle-not-delete drift and opted for plan-edit over revert.
