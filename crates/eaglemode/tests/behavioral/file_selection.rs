@@ -1,3 +1,4 @@
+use super::support::TestHarness;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -32,13 +33,14 @@ impl Drop for TempDir {
 
 #[test]
 fn lists_directory_contents() {
+    let mut h = TestHarness::new();
     let tmp = TempDir::new("lists_dir");
     fs::write(tmp.path().join("alpha.txt"), "a").unwrap();
     fs::write(tmp.path().join("bravo.txt"), "b").unwrap();
     fs::write(tmp.path().join("charlie.rs"), "c").unwrap();
     fs::create_dir(tmp.path().join("delta_dir")).unwrap();
 
-    let mut fsb = emFileSelectionBox::new("test");
+    let mut fsb = emFileSelectionBox::new(&mut h.sched_ctx(), "test");
     fsb.set_parent_directory(tmp.path());
     fsb.reload_listing();
 
@@ -71,12 +73,13 @@ fn lists_directory_contents() {
 
 #[test]
 fn filter_applies() {
+    let mut h = TestHarness::new();
     let tmp = TempDir::new("filter");
     fs::write(tmp.path().join("foo.txt"), "").unwrap();
     fs::write(tmp.path().join("bar.rs"), "").unwrap();
     fs::write(tmp.path().join("baz.txt"), "").unwrap();
 
-    let mut fsb = emFileSelectionBox::new("test");
+    let mut fsb = emFileSelectionBox::new(&mut h.sched_ctx(), "test");
     fsb.set_parent_directory(tmp.path());
     fsb.set_filters(&["Text (*.txt)".to_string()]);
     fsb.set_selected_filter_index(0);
@@ -95,9 +98,10 @@ fn filter_applies() {
 
 #[test]
 fn select_returns_path() {
+    let mut h = TestHarness::new();
     let tmp = TempDir::new("select_path");
 
-    let mut fsb = emFileSelectionBox::new("test");
+    let mut fsb = emFileSelectionBox::new(&mut h.sched_ctx(), "test");
     fsb.set_parent_directory(tmp.path());
     fsb.set_selected_name("foo.txt");
 
@@ -107,12 +111,13 @@ fn select_returns_path() {
 
 #[test]
 fn navigate_subdir() {
+    let mut h = TestHarness::new();
     let tmp = TempDir::new("nav_sub");
     let sub = tmp.path().join("sub");
     fs::create_dir(&sub).unwrap();
     fs::write(sub.join("inner.txt"), "").unwrap();
 
-    let mut fsb = emFileSelectionBox::new("test");
+    let mut fsb = emFileSelectionBox::new(&mut h.sched_ctx(), "test");
     fsb.set_parent_directory(tmp.path());
     fsb.enter_sub_dir("sub");
 
@@ -125,11 +130,12 @@ fn navigate_subdir() {
 
 #[test]
 fn navigate_parent() {
+    let mut h = TestHarness::new();
     let tmp = TempDir::new("nav_parent");
     let sub = tmp.path().join("sub");
     fs::create_dir(&sub).unwrap();
 
-    let mut fsb = emFileSelectionBox::new("test");
+    let mut fsb = emFileSelectionBox::new(&mut h.sched_ctx(), "test");
     fsb.set_parent_directory(&sub);
     fsb.enter_sub_dir("..");
 

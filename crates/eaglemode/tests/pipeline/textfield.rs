@@ -73,13 +73,13 @@ impl PanelBehavior for SharedTextFieldPanel {
 /// Create a PipelineTestHarness with an editable emTextField child panel
 /// filling the entire root. Returns the harness and the shared emTextField ref.
 fn setup_textfield_harness() -> (PipelineTestHarness, Rc<RefCell<emTextField>>) {
+    let mut h = PipelineTestHarness::new();
     let look = emLook::new();
-    let mut tf = emTextField::new(look);
+    let mut tf = emTextField::new(&mut h.sched_ctx(), look);
     tf.SetEditable(true);
 
     let tf_ref = Rc::new(RefCell::new(tf));
 
-    let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
     let _panel_id = h.add_panel_with(
         root,

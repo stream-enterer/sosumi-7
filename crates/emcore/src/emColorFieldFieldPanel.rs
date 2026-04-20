@@ -23,7 +23,8 @@ pub(crate) struct ScalarFieldPanel {
 }
 
 impl ScalarFieldPanel {
-    pub fn new(
+    pub fn new<C: crate::emEngineCtx::ConstructCtx>(
+        ctx: &mut C,
         caption: &str,
         min: f64,
         max: f64,
@@ -31,7 +32,7 @@ impl ScalarFieldPanel {
         look: Rc<emLook>,
         editable: bool,
     ) -> Self {
-        let mut sf = emScalarField::new(min, max, look);
+        let mut sf = emScalarField::new(ctx, min, max, look);
         sf.SetCaption(caption);
         sf.SetValue(value);
         sf.SetEditable(editable);
@@ -70,8 +71,14 @@ pub(crate) struct TextFieldPanel {
 }
 
 impl TextFieldPanel {
-    pub fn new(caption: &str, text: &str, look: Rc<emLook>, editable: bool) -> Self {
-        let mut tf = emTextField::new(look);
+    pub fn new<C: crate::emEngineCtx::ConstructCtx>(
+        ctx: &mut C,
+        caption: &str,
+        text: &str,
+        look: Rc<emLook>,
+        editable: bool,
+    ) -> Self {
+        let mut tf = emTextField::new(ctx, look);
         tf.SetCaption(caption);
         tf.SetText(text);
         tf.SetEditable(editable);

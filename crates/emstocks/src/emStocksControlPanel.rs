@@ -33,10 +33,14 @@ pub(crate) struct FileFieldPanel {
 }
 
 impl FileFieldPanel {
-    pub(crate) fn new(field_type: FileFieldType, caption: &str) -> Self {
+    pub(crate) fn new<C: emcore::emEngineCtx::ConstructCtx>(
+        cc: &mut C,
+        field_type: FileFieldType,
+        caption: &str,
+    ) -> Self {
         Self {
             field_type,
-            widget: emFileSelectionBox::new(caption),
+            widget: emFileSelectionBox::new(cc, caption),
             update_controls_needed: true,
         }
     }
@@ -218,9 +222,9 @@ pub(crate) struct ControlWidgets {
 }
 
 impl ControlWidgets {
-    fn new(look: Rc<emLook>) -> Self {
+    fn new<C: emcore::emEngineCtx::ConstructCtx>(cc: &mut C, look: Rc<emLook>) -> Self {
         // Build interest radio-button group (High / Medium / Low)
-        let interest_group = RadioGroup::new();
+        let interest_group = RadioGroup::new(cc);
         let interest_buttons: Vec<emRadioButton> = ["High", "Medium", "Low"]
             .iter()
             .enumerate()
@@ -228,7 +232,7 @@ impl ControlWidgets {
             .collect();
 
         // Build sorting radio-button group (11 variants)
-        let sorting_group = RadioGroup::new();
+        let sorting_group = RadioGroup::new(cc);
         let sorting_captions = [
             "By Name",
             "By Trade Date",
@@ -249,7 +253,7 @@ impl ControlWidgets {
             .collect();
 
         // Chart period scalar field: integer steps 0..9, default to Year1 (index 5)
-        let mut chart_period_field = emScalarField::new(0.0, 9.0, look.clone());
+        let mut chart_period_field = emScalarField::new(cc, 0.0, 9.0, look.clone());
         chart_period_field.SetValue(chart_period_to_index(ChartPeriod::default()));
         chart_period_field.SetTextOfValueFunc(Box::new(|v, _| {
             let period = match v {
@@ -269,13 +273,14 @@ impl ControlWidgets {
         }));
 
         Self {
-            api_script: FileFieldPanel::new(FileFieldType::Script, "API Script"),
+            api_script: FileFieldPanel::new(cc, FileFieldType::Script, "API Script"),
             api_script_interpreter: FileFieldPanel::new(
+                cc,
                 FileFieldType::Interpreter,
                 "API Script Interpreter",
             ),
-            api_key: emTextField::new(look.clone()),
-            web_browser: FileFieldPanel::new(FileFieldType::Browser, "Web Browser"),
+            api_key: emTextField::new(cc, look.clone()),
+            web_browser: FileFieldPanel::new(cc, FileFieldType::Browser, "Web Browser"),
             auto_update_dates: emCheckBox::new("Auto Update Dates", look.clone()),
             triggering_opens_web_page: emCheckBox::new("Triggering Opens Web Page", look.clone()),
             chart_period: chart_period_field,
@@ -315,7 +320,7 @@ impl ControlWidgets {
             show_first_web_pages_enabled: false,
             show_all_web_pages_enabled: false,
 
-            search_text: emTextField::new(look),
+            search_text: emTextField::new(cc, look),
             find_next_enabled: false,
             find_previous_enabled: false,
         }
@@ -472,9 +477,9 @@ impl emStocksControlPanel {
 
     /// Port of C++ AutoExpand.
     /// D23: Creates real widget instances using the stored `Rc<emLook>`.
-    pub fn AutoExpand(&mut self) {
+    pub fn AutoExpand<C: emcore::emEngineCtx::ConstructCtx>(&mut self, cc: &mut C) {
         let look = self.look.clone();
-        self.widgets = Some(ControlWidgets::new(look));
+        self.widgets = Some(ControlWidgets::new(cc, look));
         self.update_controls_needed = true;
     }
 
@@ -631,6 +636,31 @@ impl Default for emStocksControlPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use emcore::emEngineCtx::{DeferredAction, InitCtx};
+    use emcore::emScheduler::EngineScheduler;
+
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<emcore::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: emcore::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
+
     use crate::emStocksRec::StockRec;
 
     fn make_panel() -> emStocksControlPanel {
@@ -649,6 +679,7 @@ mod tests {
 
     #[test]
     fn control_panel_new() {
+        let mut __init = TestInit::new();
         let panel = make_panel();
         assert!(panel.update_controls_needed);
         assert!(!panel.IsAutoExpanded());
@@ -656,7 +687,8 @@ mod tests {
 
     #[test]
     fn file_field_panel_new() {
-        let panel = FileFieldPanel::new(FileFieldType::Script, "Script");
+        let mut __init = TestInit::new();
+        let panel = FileFieldPanel::new(&mut __init.ctx(), FileFieldType::Script, "Script");
         assert_eq!(panel.field_type, FileFieldType::Script);
         assert!(panel.update_controls_needed);
         // widget starts with no selection (empty path)
@@ -665,6 +697,7 @@ mod tests {
 
     #[test]
     fn category_panel_update_items() {
+        let mut __init = TestInit::new();
         let mut cp = ControlCategoryPanel::new("Countries", CategoryType::Country);
         let mut stocks = vec![
             StockRec::default(),
@@ -681,10 +714,11 @@ mod tests {
 
     #[test]
     fn auto_expand_creates_widgets() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
         assert!(!panel.IsAutoExpanded());
 
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         assert!(panel.IsAutoExpanded());
         assert!(panel.update_controls_needed);
 
@@ -708,8 +742,9 @@ mod tests {
 
     #[test]
     fn auto_shrink_destroys_widgets() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         assert!(panel.IsAutoExpanded());
 
         panel.AutoShrink();
@@ -719,10 +754,11 @@ mod tests {
 
     #[test]
     fn auto_expand_shrink_cycle() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
 
         // First expand
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         assert!(panel.IsAutoExpanded());
 
         // Shrink
@@ -730,13 +766,14 @@ mod tests {
         assert!(!panel.IsAutoExpanded());
 
         // Re-expand
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
         assert!(panel.IsAutoExpanded());
         assert!(panel.update_controls_needed);
     }
 
     #[test]
     fn chart_period_text_of_value_all_variants() {
+        let mut __init = TestInit::new();
         assert_eq!(ChartPeriodTextOfValue(ChartPeriod::Week1), "1\nweek");
         assert_eq!(ChartPeriodTextOfValue(ChartPeriod::Weeks2), "2\nweeks");
         assert_eq!(ChartPeriodTextOfValue(ChartPeriod::Month1), "1\nmonth");
@@ -751,6 +788,7 @@ mod tests {
 
     #[test]
     fn validate_date_filters_correctly() {
+        let mut __init = TestInit::new();
         assert_eq!(ValidateDate("2024-06-15"), "2024-06-15");
         assert_eq!(ValidateDate("abc"), "");
         assert_eq!(ValidateDate("2024--06-15"), "2024--0615"); // only 2 dashes
@@ -759,14 +797,16 @@ mod tests {
 
     #[test]
     fn validate_date_length_limit() {
+        let mut __init = TestInit::new();
         let long = "1".repeat(50);
         assert_eq!(ValidateDate(&long).len(), 32);
     }
 
     #[test]
     fn update_controls_syncs_config() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
 
         let config = emStocksConfig {
             api_key: "test-key".to_string(),
@@ -809,8 +849,9 @@ mod tests {
 
     #[test]
     fn update_controls_empty_search_disables_find() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
 
         let config = emStocksConfig::default(); // search_text is empty
         let rec = emStocksRec::default();
@@ -825,8 +866,9 @@ mod tests {
 
     #[test]
     fn update_controls_selection_enables_buttons() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
 
         let config = emStocksConfig::default();
         let rec = emStocksRec::default();
@@ -845,8 +887,9 @@ mod tests {
 
     #[test]
     fn update_controls_with_selection() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
 
         let config = emStocksConfig::default();
         let mut rec = emStocksRec::default();
@@ -875,8 +918,9 @@ mod tests {
 
     #[test]
     fn update_controls_all_selected_disables_select_all() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
 
         let config = emStocksConfig::default();
         let mut rec = emStocksRec::default();
@@ -894,8 +938,9 @@ mod tests {
 
     #[test]
     fn update_controls_total_values_with_owned_stocks() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
 
         let config = emStocksConfig::default();
         let mut rec = emStocksRec::default();
@@ -923,8 +968,9 @@ mod tests {
 
     #[test]
     fn update_controls_no_owned_stocks_zeros() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
 
         let config = emStocksConfig::default();
         let mut rec = emStocksRec::default();
@@ -947,6 +993,7 @@ mod tests {
 
     #[test]
     fn update_controls_not_expanded_is_noop() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
         // Don't call AutoExpand
 
@@ -962,6 +1009,7 @@ mod tests {
 
     #[test]
     fn file_field_panel_update_controls() {
+        let mut __init = TestInit::new();
         let config = emStocksConfig {
             api_script: "/path/to/script.pl".to_string(),
             api_script_interpreter: "python3".to_string(),
@@ -969,22 +1017,24 @@ mod tests {
             ..Default::default()
         };
 
-        let mut script = FileFieldPanel::new(FileFieldType::Script, "Script");
+        let mut script = FileFieldPanel::new(&mut __init.ctx(), FileFieldType::Script, "Script");
         script.UpdateControls(&config);
         // widget should reflect the path
         assert!(!script.update_controls_needed);
 
-        let mut interp = FileFieldPanel::new(FileFieldType::Interpreter, "Interpreter");
+        let mut interp =
+            FileFieldPanel::new(&mut __init.ctx(), FileFieldType::Interpreter, "Interpreter");
         interp.UpdateControls(&config);
         assert!(!interp.update_controls_needed);
 
-        let mut browser = FileFieldPanel::new(FileFieldType::Browser, "Browser");
+        let mut browser = FileFieldPanel::new(&mut __init.ctx(), FileFieldType::Browser, "Browser");
         browser.UpdateControls(&config);
         assert!(!browser.update_controls_needed);
     }
 
     #[test]
     fn category_panel_types() {
+        let mut __init = TestInit::new();
         let cp = ControlCategoryPanel::new("Countries", CategoryType::Country);
         assert_eq!(cp.category_type, CategoryType::Country);
         assert_eq!(cp.caption, "Countries");
@@ -993,6 +1043,7 @@ mod tests {
 
     #[test]
     fn category_panel_empty_strings_filtered() {
+        let mut __init = TestInit::new();
         let mut cp = ControlCategoryPanel::new("Sectors", CategoryType::Sector);
         let mut stocks = vec![StockRec::default(), StockRec::default()];
         stocks[0].sector = "Tech".to_string();
@@ -1004,6 +1055,7 @@ mod tests {
 
     #[test]
     fn read_from_widgets_not_expanded_is_noop() {
+        let mut __init = TestInit::new();
         let panel = make_panel();
         let mut config = emStocksConfig {
             api_key: "original".to_string(),
@@ -1016,8 +1068,9 @@ mod tests {
 
     #[test]
     fn read_from_widgets_reflects_update_controls() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
 
         let original = emStocksConfig {
             api_key: "my-key".to_string(),
@@ -1053,8 +1106,9 @@ mod tests {
 
     #[test]
     fn read_from_widgets_chart_period_all_indices() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
 
         let periods = [
             ChartPeriod::Week1,
@@ -1085,8 +1139,9 @@ mod tests {
 
     #[test]
     fn read_from_widgets_interest_and_sorting_roundtrip() {
+        let mut __init = TestInit::new();
         let mut panel = make_panel();
-        panel.AutoExpand();
+        panel.AutoExpand(&mut __init.ctx());
 
         let interests = [Interest::High, Interest::Medium, Interest::Low];
         for interest in interests {

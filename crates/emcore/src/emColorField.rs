@@ -1,12 +1,13 @@
 use std::rc::Rc;
 
 use crate::emColor::emColor;
-use crate::emEngineCtx::{PanelCtx, WidgetCallback};
+use crate::emEngineCtx::{ConstructCtx, PanelCtx, WidgetCallback};
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emPainter::{emPainter, TextAlignment, VAlign};
 use crate::emPanel::PanelState;
 use crate::emRasterLayout::emRasterLayout;
+use crate::emSignal::SignalId;
 use crate::emTiling::{AlignmentH, AlignmentV, Spacing};
 
 use super::emBorder::{emBorder, InnerBorderType, OuterBorderType};
@@ -86,12 +87,14 @@ pub struct emColorField {
     /// Port of C++ `emOwnPtr<Expansion> Exp`.
     expansion: Option<Box<Expansion>>,
     pub on_color: Option<WidgetCallback<emColor>>,
+    /// Allocated per C++ `emColorField::GetColorSignal()`. B3.4b: alloc only.
+    pub color_signal: SignalId,
 }
 
 const SWATCH_SIZE: f64 = 20.0;
 
 impl emColorField {
-    pub fn new(look: Rc<emLook>) -> Self {
+    pub fn new<C: ConstructCtx>(ctx: &mut C, look: Rc<emLook>) -> Self {
         Self {
             border: emBorder::new(OuterBorderType::Instrument)
                 .with_inner(InnerBorderType::OutputField)
@@ -105,6 +108,7 @@ impl emColorField {
             expanded: false,
             expansion: None,
             on_color: None,
+            color_signal: ctx.create_signal(),
         }
     }
 
@@ -544,13 +548,16 @@ impl emColorField {
         let hue_intervals: &[u64] = &[6000, 1500, 500, 100];
 
         // Helper: create a percent-valued emScalarField child.
-        let create_pct_sf = |tree: &mut crate::emPanelTree::PanelTree,
+        let create_pct_sf = |ctx: &mut PanelCtx<'_>,
                              parent: crate::emPanelTree::PanelId,
                              name: &str,
                              caption: &str,
                              value: i64| {
-            let child = tree.create_child(parent, name, None);
+            let child = ctx
+                .tree
+                .create_child(parent, name, ctx.scheduler.as_deref_mut());
             let mut panel = ScalarFieldPanel::new(
+                ctx,
                 caption,
                 0.0,
                 10000.0,
@@ -562,19 +569,20 @@ impl emColorField {
             panel
                 .scalar_field
                 .SetTextOfValueFunc(Box::new(|val, _iv| format!("{}%", val as f64 / 100.0)));
-            tree.set_behavior(child, Box::new(panel));
+            ctx.tree.set_behavior(child, Box::new(panel));
             child
         };
 
-        create_pct_sf(ctx.tree, layout_id, "r", "Red", exp.sf_red);
-        create_pct_sf(ctx.tree, layout_id, "g", "Green", exp.sf_green);
-        create_pct_sf(ctx.tree, layout_id, "b", "Blue", exp.sf_blue);
+        create_pct_sf(ctx, layout_id, "r", "Red", exp.sf_red);
+        create_pct_sf(ctx, layout_id, "g", "Green", exp.sf_green);
+        create_pct_sf(ctx, layout_id, "b", "Blue", exp.sf_blue);
         // Alpha field: C++ has description "The lower the more transparent."
         let alpha_id = {
             let child = ctx
                 .tree
                 .create_child(layout_id, "a", ctx.scheduler.as_deref_mut());
             let mut panel = ScalarFieldPanel::new(
+                ctx,
                 "Alpha",
                 0.0,
                 10000.0,
@@ -604,6 +612,7 @@ impl emColorField {
                 .tree
                 .create_child(layout_id, "h", ctx.scheduler.as_deref_mut());
             let mut panel = ScalarFieldPanel::new(
+                ctx,
                 "Hue",
                 0.0,
                 36000.0,
@@ -632,8 +641,8 @@ impl emColorField {
             ctx.tree.set_behavior(child, Box::new(panel));
         }
 
-        create_pct_sf(ctx.tree, layout_id, "s", "Saturation", exp.sf_sat);
-        create_pct_sf(ctx.tree, layout_id, "v", "Value (brightness)", exp.sf_val);
+        create_pct_sf(ctx, layout_id, "s", "Saturation", exp.sf_sat);
+        create_pct_sf(ctx, layout_id, "v", "Value (brightness)", exp.sf_val);
 
         // emTextField child for color name/hex.
         // C++ description: "Here you can enter a color name like 'powder blue',\n
@@ -641,7 +650,7 @@ impl emColorField {
         let tf_child = ctx
             .tree
             .create_child(layout_id, "n", ctx.scheduler.as_deref_mut());
-        let mut tf_panel = TextFieldPanel::new("Name", &exp.tf_name, child_look, editable);
+        let mut tf_panel = TextFieldPanel::new(ctx, "Name", &exp.tf_name, child_look, editable);
         tf_panel.text_field.border_mut().description =
             "Here you can enter a color name like 'powder blue',\n\
              or a hexadecimal RGB value like '#c88' or '#73c81D'."
@@ -726,11 +735,36 @@ const HOWTO_READ_ONLY: &str = "\n\n\
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emEngineCtx::{DeferredAction, InitCtx};
+    use crate::emScheduler::EngineScheduler;
+
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
 
     #[test]
     fn toggle_expanded() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut cf = emColorField::new(look);
+        let mut cf = emColorField::new(&mut __init.ctx(), look);
         assert!(!cf.is_expanded());
 
         // Use programmatic toggle since mouse needs paint for hit test
@@ -743,16 +777,18 @@ mod tests {
 
     #[test]
     fn set_and_get_color() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut cf = emColorField::new(look);
+        let mut cf = emColorField::new(&mut __init.ctx(), look);
         cf.SetColor(emColor::RED);
         assert_eq!(cf.GetColor(), emColor::RED);
     }
 
     #[test]
     fn expansion_created_on_expand() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut cf = emColorField::new(look);
+        let mut cf = emColorField::new(&mut __init.ctx(), look);
         assert!(cf.expansion().is_none());
         cf.set_expanded(true);
         assert!(cf.expansion().is_some());
@@ -760,8 +796,9 @@ mod tests {
 
     #[test]
     fn expansion_destroyed_on_shrink() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut cf = emColorField::new(look);
+        let mut cf = emColorField::new(&mut __init.ctx(), look);
         cf.set_expanded(true);
         cf.set_expanded(false);
         assert!(cf.expansion().is_none());
@@ -769,8 +806,9 @@ mod tests {
 
     #[test]
     fn expansion_rgba_values_match_color() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut cf = emColorField::new(look);
+        let mut cf = emColorField::new(&mut __init.ctx(), look);
         cf.SetColor(emColor::rgba(100, 150, 200, 255));
         cf.set_expanded(true);
         let exp = cf.expansion().expect("expanded");
@@ -783,8 +821,9 @@ mod tests {
 
     #[test]
     fn cycle_rgba_change() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut cf = emColorField::new(look);
+        let mut cf = emColorField::new(&mut __init.ctx(), look);
         cf.SetColor(emColor::BLACK);
         cf.set_expanded(true);
         // Modify red via expansion
@@ -797,8 +836,9 @@ mod tests {
 
     #[test]
     fn cycle_hsv_change() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut cf = emColorField::new(look);
+        let mut cf = emColorField::new(&mut __init.ctx(), look);
         cf.SetColor(emColor::BLACK);
         cf.set_expanded(true);
         // Set via HSV: hue=0 (red), sat=100%, val=100%
@@ -815,8 +855,9 @@ mod tests {
 
     #[test]
     fn cycle_text_change() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut cf = emColorField::new(look);
+        let mut cf = emColorField::new(&mut __init.ctx(), look);
         cf.set_expanded(true);
         cf.expansion_mut().unwrap().tf_name = "#FF0000".to_string();
         assert!(cf.Cycle());
@@ -825,8 +866,9 @@ mod tests {
 
     #[test]
     fn update_name_output_hex_format() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut cf = emColorField::new(look);
+        let mut cf = emColorField::new(&mut __init.ctx(), look);
         cf.SetColor(emColor::rgba(0xAB, 0xCD, 0xEF, 0xFF));
         cf.set_expanded(true);
         let exp = cf.expansion().unwrap();
@@ -835,8 +877,9 @@ mod tests {
 
     #[test]
     fn update_hsv_preserves_hue_at_black() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut cf = emColorField::new(look);
+        let mut cf = emColorField::new(&mut __init.ctx(), look);
         cf.SetColor(emColor::rgba(255, 0, 0, 255)); // Red
         cf.set_expanded(true);
         let hue_before = cf.expansion().unwrap().sf_hue;

@@ -52,13 +52,17 @@ pub struct emFileDialog {
 }
 
 impl emFileDialog {
-    pub fn new(mode: FileDialogMode, look: std::rc::Rc<emLook>) -> Self {
+    pub fn new<C: crate::emEngineCtx::ConstructCtx>(
+        ctx: &mut C,
+        mode: FileDialogMode,
+        look: std::rc::Rc<emLook>,
+    ) -> Self {
         let (title, ok_label) = mode_title_and_ok(mode);
-        let mut dialog = emDialog::new(title, look);
+        let mut dialog = emDialog::new(ctx, title, look);
         dialog.AddCustomButton(ok_label, DialogResult::Ok);
         dialog.AddCustomButton("Cancel", DialogResult::Cancel);
 
-        let mut fsb = emFileSelectionBox::new("");
+        let mut fsb = emFileSelectionBox::new(ctx, "");
         fsb.border_mut().outer = super::emBorder::OuterBorderType::None;
         fsb.border_mut().inner = super::emBorder::InnerBorderType::None;
 
@@ -190,7 +194,11 @@ impl emFileDialog {
     /// Port of C++ `emFileDialog::CheckFinish`. Validates the selection
     /// based on the dialog mode (Open checks existence, Save confirms
     /// overwrite).
-    pub fn CheckFinish(&mut self, result: &DialogResult) -> FileDialogCheckResult {
+    pub fn CheckFinish<C: crate::emEngineCtx::ConstructCtx>(
+        &mut self,
+        ctx: &mut C,
+        result: &DialogResult,
+    ) -> FileDialogCheckResult {
         if *result == DialogResult::Cancel {
             return FileDialogCheckResult::Allow;
         }
@@ -254,7 +262,7 @@ impl emFileDialog {
                         // Create the overwrite confirmation dialog, matching
                         // C++ CheckFinish lines 186-197 (new emDialog, set
                         // title, add OK/Cancel buttons).
-                        let mut dlg = emDialog::new("File Exists", self.dialog.look().clone());
+                        let mut dlg = emDialog::new(ctx, "File Exists", self.dialog.look().clone());
                         dlg.AddCustomButton("OK", DialogResult::Ok);
                         dlg.AddCustomButton("Cancel", DialogResult::Cancel);
                         self.overwrite_dialog = Some(dlg);
@@ -320,36 +328,64 @@ fn mode_title_and_ok(mode: FileDialogMode) -> (&'static str, &'static str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emEngineCtx::{DeferredAction, InitCtx};
+    use crate::emScheduler::EngineScheduler;
 
-    fn make_dialog(mode: FileDialogMode) -> emFileDialog {
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: std::rc::Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
+
+    fn make_dialog(init: &mut TestInit, mode: FileDialogMode) -> emFileDialog {
         let look = emLook::new();
-        emFileDialog::new(mode, look)
+        emFileDialog::new(&mut init.ctx(), mode, look)
     }
 
     #[test]
     fn dialog_mode() {
-        let dlg = make_dialog(FileDialogMode::Select);
+        let mut __init = TestInit::new();
+        let dlg = make_dialog(&mut __init, FileDialogMode::Select);
         assert_eq!(dlg.GetMode(), FileDialogMode::Select);
     }
 
     #[test]
     fn dialog_cancel_always_allowed() {
-        let mut dlg = make_dialog(FileDialogMode::Open);
-        let result = dlg.CheckFinish(&DialogResult::Cancel);
+        let mut __init = TestInit::new();
+        let mut dlg = make_dialog(&mut __init, FileDialogMode::Open);
+        let result = dlg.CheckFinish(&mut __init.ctx(), &DialogResult::Cancel);
         assert!(matches!(result, FileDialogCheckResult::Allow));
     }
 
     #[test]
     fn dialog_open_no_selection_error() {
-        let mut dlg = make_dialog(FileDialogMode::Open);
+        let mut __init = TestInit::new();
+        let mut dlg = make_dialog(&mut __init, FileDialogMode::Open);
         dlg.ClearSelection();
-        let result = dlg.CheckFinish(&DialogResult::Ok);
+        let result = dlg.CheckFinish(&mut __init.ctx(), &DialogResult::Ok);
         assert!(matches!(result, FileDialogCheckResult::Error(_)));
     }
 
     #[test]
     fn multi_selection_forwarded() {
-        let mut dlg = make_dialog(FileDialogMode::Select);
+        let mut __init = TestInit::new();
+        let mut dlg = make_dialog(&mut __init, FileDialogMode::Select);
         assert!(!dlg.is_multi_selection_enabled());
         dlg.set_multi_selection_enabled(true);
         assert!(dlg.is_multi_selection_enabled());
@@ -357,7 +393,8 @@ mod tests {
 
     #[test]
     fn filters_forwarded() {
-        let mut dlg = make_dialog(FileDialogMode::Open);
+        let mut __init = TestInit::new();
+        let mut dlg = make_dialog(&mut __init, FileDialogMode::Open);
         dlg.set_filters(&["All (*)".to_string()]);
         assert_eq!(dlg.GetFilters().len(), 1);
         assert_eq!(dlg.GetSelectedFilterIndex(), 0);
@@ -365,7 +402,8 @@ mod tests {
 
     #[test]
     fn hidden_files_forwarded() {
-        let mut dlg = make_dialog(FileDialogMode::Select);
+        let mut __init = TestInit::new();
+        let mut dlg = make_dialog(&mut __init, FileDialogMode::Select);
         assert!(!dlg.are_hidden_files_shown());
         dlg.set_hidden_files_shown(true);
         assert!(dlg.are_hidden_files_shown());
@@ -373,7 +411,8 @@ mod tests {
 
     #[test]
     fn dir_result_default_disallowed() {
-        let dlg = make_dialog(FileDialogMode::Select);
+        let mut __init = TestInit::new();
+        let dlg = make_dialog(&mut __init, FileDialogMode::Select);
         assert!(!dlg.is_directory_result_allowed());
     }
 }

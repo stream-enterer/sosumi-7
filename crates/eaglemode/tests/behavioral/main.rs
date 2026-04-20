@@ -1,3 +1,6 @@
+#[path = "../support/mod.rs"]
+mod support;
+
 mod array;
 mod avl_tree_map;
 mod avl_tree_set;

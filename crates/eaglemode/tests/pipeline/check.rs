@@ -100,13 +100,14 @@ impl PanelBehavior for SharedCheckBoxPanel {
 
 #[test]
 fn checkbutton_toggle_1x_and_2x() {
-    // 1. Create PipelineTestHarness (800x600 viewport).
     let mut h = PipelineTestHarness::new();
+
+    // 1. Create PipelineTestHarness (800x600 viewport).
     let root = h.get_root_panel();
 
     // 2. Create emCheckButton (initially unchecked).
     let look = emLook::new();
-    let cb = emCheckButton::new("Toggle Me", look);
+    let cb = emCheckButton::new(&mut h.sched_ctx(), "Toggle Me", look);
     let cb_ref = Rc::new(RefCell::new(cb));
 
     // 3. Wrap in PanelBehavior, add to tree, tick + render.
@@ -239,7 +240,7 @@ fn setup_checkbutton_harness() -> (
     let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
     let look = emLook::new();
-    let cb = emCheckButton::new("Test", look);
+    let cb = emCheckButton::new(&mut h.sched_ctx(), "Test", look);
     let cb_ref = Rc::new(RefCell::new(cb));
     let panel_id = h.add_panel_with(
         root,
@@ -265,7 +266,7 @@ fn setup_checkbutton_with_recorder() -> CheckButtonRecorder {
     let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
     let look = emLook::new();
-    let mut cb = emCheckButton::new("Test", look);
+    let mut cb = emCheckButton::new(&mut h.sched_ctx(), "Test", look);
     let states = Rc::new(RefCell::new(Vec::new()));
     let states_clone = states.clone();
     cb.on_check = Some(Box::new(
@@ -312,11 +313,13 @@ fn checkbutton_click_fires_on_check_callback() {
 
 #[test]
 fn checkbutton_set_checked_fires_callback() {
+    let mut h = PipelineTestHarness::new();
+
     let states = Rc::new(RefCell::new(Vec::new()));
     let states_clone = states.clone();
 
     let look = emLook::new();
-    let mut cb = emCheckButton::new("Test", look);
+    let mut cb = emCheckButton::new(&mut h.sched_ctx(), "Test", look);
     cb.on_check = Some(Box::new(
         move |checked, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
             states_clone.borrow_mut().push(checked);
@@ -324,7 +327,6 @@ fn checkbutton_set_checked_fires_callback() {
     ));
 
     // Build a sched-reach ctx via PipelineTestHarness so the callback can fire.
-    let mut h = PipelineTestHarness::new();
     h.with_panel_ctx_sched(|ctx| {
         cb.SetChecked(true, ctx);
     });
@@ -342,18 +344,18 @@ fn checkbutton_set_checked_fires_callback() {
 
 #[test]
 fn checkbutton_set_checked_noop_same_value() {
+    let mut h = PipelineTestHarness::new();
+
     let states = Rc::new(RefCell::new(Vec::new()));
     let states_clone = states.clone();
 
     let look = emLook::new();
-    let mut cb = emCheckButton::new("Test", look);
+    let mut cb = emCheckButton::new(&mut h.sched_ctx(), "Test", look);
     cb.on_check = Some(Box::new(
         move |checked, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
             states_clone.borrow_mut().push(checked);
         },
     ));
-
-    let mut h = PipelineTestHarness::new();
     h.with_panel_ctx_sched(|ctx| {
         // Setting to false when already false -> no callback
         cb.SetChecked(false, ctx);
@@ -691,8 +693,9 @@ fn checkbutton_press_inside_release_outside_no_toggle() {
 
 #[test]
 fn checkbutton_initial_state_unchecked() {
+    let mut h = PipelineTestHarness::new();
     let look = emLook::new();
-    let cb = emCheckButton::new("Test", look);
+    let cb = emCheckButton::new(&mut h.sched_ctx(), "Test", look);
     assert!(
         !cb.IsChecked(),
         "CheckButton should be unchecked on construction"

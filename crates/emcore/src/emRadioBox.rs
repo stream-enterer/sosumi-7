@@ -379,7 +379,31 @@ impl Drop for emRadioBox {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::emEngineCtx::PanelCtx;
+    use crate::emEngineCtx::{DeferredAction, InitCtx, PanelCtx};
+    use crate::emScheduler::EngineScheduler;
+    use std::rc::Rc;
+
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
     use crate::emPanel::Rect;
     use crate::emPanelTree::{PanelId, PanelTree};
     use slotmap::Key as _;
@@ -413,10 +437,11 @@ mod tests {
 
     #[test]
     fn radio_box_selection() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
 
         let mut rb0 = emRadioBox::new("X", look.clone(), group.clone(), 0);
         let mut rb1 = emRadioBox::new("Y", look, group.clone(), 1);
@@ -438,11 +463,12 @@ mod tests {
 
     #[test]
     fn pressed_state_tracks_press_release() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         // Enter is instant — no visual press state. Verify pressed stays false.
         let look = emLook::new();
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         let mut rb = emRadioBox::new("X", look, group.clone(), 0);
         let ps = default_panel_state();
         let is = default_input_state();

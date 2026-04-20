@@ -4,11 +4,12 @@ use std::rc::Rc;
 
 use crate::dlog;
 use crate::emColor::emColor;
-use crate::emEngineCtx::PanelCtx;
+use crate::emEngineCtx::{ConstructCtx, PanelCtx};
 use crate::emPainter::emPainter;
 use crate::emPanel::NoticeFlags;
 use crate::emPanel::{PanelBehavior, PanelState};
 use crate::emPanelTree::PanelId;
+use crate::emSignal::SignalId;
 use crate::emStroke::emStroke;
 
 use super::emBorder::{emBorder, with_toolkit_images, InnerBorderType, OuterBorderType};
@@ -733,10 +734,14 @@ pub struct emFileSelectionBox {
     pub on_selection: Option<SelectionChangedCb>,
     /// Consumer callback: file triggered (double-click / Enter on a file).
     pub on_trigger: Option<FileTriggerCb>,
+    /// Allocated per C++ `emFileSelectionBox::GetSelectionSignal()`. B3.4b: alloc only.
+    pub selection_signal: SignalId,
+    /// Allocated per C++ `emFileSelectionBox::GetFileTriggerSignal()`.
+    pub file_trigger_signal: SignalId,
 }
 
 impl emFileSelectionBox {
-    pub fn new(caption: &str) -> Self {
+    pub fn new<C: ConstructCtx>(ctx: &mut C, caption: &str) -> Self {
         let parent_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
         Self {
             border: emBorder::new(OuterBorderType::Group)
@@ -766,6 +771,8 @@ impl emFileSelectionBox {
             listing_data: Rc::new(RefCell::new(Vec::new())),
             on_selection: None,
             on_trigger: None,
+            selection_signal: ctx.create_signal(),
+            file_trigger_signal: ctx.create_signal(),
         }
     }
 
@@ -1074,7 +1081,10 @@ impl emFileSelectionBox {
 
         // 1. ParentDirField
         if !self.parent_dir_field_hidden {
-            let mut tf = emTextField::new(self.look.clone());
+            let mut tf = {
+                let mut sched = ctx.as_sched_ctx().expect("sched");
+                emTextField::new(&mut sched, self.look.clone())
+            };
             tf.SetCaption("Directory");
             tf.SetEditable(true);
             tf.SetText(&self.parent_dir.to_string_lossy());
@@ -1110,7 +1120,10 @@ impl emFileSelectionBox {
         // Matches C++ FilesListBox constructor: SetMinCellCount(4), SetChildTallness(0.6),
         // SetAlignment(EM_ALIGN_TOP_LEFT).
         {
-            let mut lb = emListBox::new(self.look.clone());
+            let mut lb = {
+                let mut sched = ctx.as_sched_ctx().expect("sched");
+                emListBox::new(&mut sched, self.look.clone())
+            };
             lb.SetCaption("Files");
             lb.SetMinCellCount(4);
             lb.SetChildTallness(0.6);
@@ -1167,7 +1180,10 @@ impl emFileSelectionBox {
 
         // 4. NameField
         if !self.name_field_hidden {
-            let mut tf = emTextField::new(self.look.clone());
+            let mut tf = {
+                let mut sched = ctx.as_sched_ctx().expect("sched");
+                emTextField::new(&mut sched, self.look.clone())
+            };
             tf.SetCaption("Name");
             tf.SetEditable(true);
             if let Some(name) = self.selected_names.first() {
@@ -1186,7 +1202,10 @@ impl emFileSelectionBox {
 
         // 5. FiltersLB
         if !self.filter_hidden {
-            let mut lb = emListBox::new(self.look.clone());
+            let mut lb = {
+                let mut sched = ctx.as_sched_ctx().expect("sched");
+                emListBox::new(&mut sched, self.look.clone())
+            };
             lb.SetMaxChildTallness(0.1); // C++ emFileSelectionBox.cpp:545
             lb.SetCaption("Filter");
             for (i, filter) in self.filters.iter().enumerate() {
@@ -1563,27 +1582,55 @@ fn strcoll_compare(a: &str, b: &str) -> std::cmp::Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emEngineCtx::{DeferredAction, InitCtx};
+    use crate::emScheduler::EngineScheduler;
+
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
 
     #[test]
     fn filter_matching_all_files() {
+        let mut __init = TestInit::new();
         assert!(match_file_name_filter("anything.txt", "All files (*)"));
         assert!(match_file_name_filter("", "All files (*)"));
     }
 
     #[test]
     fn filter_matching_extension() {
+        let mut __init = TestInit::new();
         assert!(match_file_name_filter("image.tga", "Targa files (*.tga)"));
         assert!(!match_file_name_filter("image.png", "Targa files (*.tga)"));
     }
 
     #[test]
     fn filter_matching_case_insensitive() {
+        let mut __init = TestInit::new();
         assert!(match_file_name_filter("FILE.TGA", "Targa files (*.tga)"));
         assert!(match_file_name_filter("file.Tga", "Targa files (*.tga)"));
     }
 
     #[test]
     fn filter_matching_multiple_patterns() {
+        let mut __init = TestInit::new();
         assert!(match_file_name_filter(
             "page.htm",
             "HTML files (*.htm *.html)"
@@ -1600,7 +1647,8 @@ mod tests {
 
     #[test]
     fn new_file_selection_box() {
-        let fsb = emFileSelectionBox::new("Files");
+        let mut __init = TestInit::new();
+        let fsb = emFileSelectionBox::new(&mut __init.ctx(), "Files");
         assert!(!fsb.is_multi_selection_enabled());
         assert!(fsb.GetSelectedNames().is_empty());
         assert_eq!(fsb.GetSelectedFilterIndex(), -1);
@@ -1609,7 +1657,8 @@ mod tests {
 
     #[test]
     fn set_selected_name() {
-        let mut fsb = emFileSelectionBox::new("Files");
+        let mut __init = TestInit::new();
+        let mut fsb = emFileSelectionBox::new(&mut __init.ctx(), "Files");
         fsb.set_selected_name("test.txt");
         assert_eq!(fsb.GetSelectedName(), Some("test.txt"));
 
@@ -1619,7 +1668,8 @@ mod tests {
 
     #[test]
     fn set_filters() {
-        let mut fsb = emFileSelectionBox::new("Files");
+        let mut __init = TestInit::new();
+        let mut fsb = emFileSelectionBox::new(&mut __init.ctx(), "Files");
         fsb.set_filters(&[
             "All files (*)".to_string(),
             "Images (*.png *.jpg)".to_string(),
@@ -1630,7 +1680,8 @@ mod tests {
 
     #[test]
     fn enter_parent_dir() {
-        let mut fsb = emFileSelectionBox::new("Files");
+        let mut __init = TestInit::new();
+        let mut fsb = emFileSelectionBox::new(&mut __init.ctx(), "Files");
         fsb.set_parent_directory(Path::new("/tmp"));
         fsb.set_selected_name("foo");
         fsb.enter_sub_dir("..");
@@ -1639,7 +1690,8 @@ mod tests {
 
     #[test]
     fn visibility_toggles() {
-        let mut fsb = emFileSelectionBox::new("Files");
+        let mut __init = TestInit::new();
+        let mut fsb = emFileSelectionBox::new(&mut __init.ctx(), "Files");
         assert!(!fsb.is_parent_dir_field_hidden());
         fsb.set_parent_dir_field_hidden(true);
         assert!(fsb.is_parent_dir_field_hidden());

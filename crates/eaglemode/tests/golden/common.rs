@@ -22,6 +22,16 @@ impl TestSched {
     pub fn sched_mut(&mut self) -> &mut emcore::emScheduler::EngineScheduler {
         &mut self.sched
     }
+    /// Return a construction-context bundle suitable for widget::new.
+    /// Phase-3 B3.4b: widget constructors now take `&mut impl ConstructCtx`.
+    pub fn cc(&mut self) -> emcore::emEngineCtx::InitCtx<'_> {
+        emcore::emEngineCtx::InitCtx {
+            scheduler: &mut self.sched,
+            framework_actions: &mut self.fw,
+            root_context: &self.ctx,
+        }
+    }
+
     pub fn with<R>(&mut self, f: impl FnOnce(&mut emcore::emEngineCtx::SchedCtx<'_>) -> R) -> R {
         let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
             std::cell::RefCell::new(None);

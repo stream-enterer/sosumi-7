@@ -118,7 +118,9 @@ fn upscale_text(value: i64, _mark_interval: u64) -> String {
 // Factory helper: build a ScalarFieldPanel with factor-field config
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn make_factor_field(
+    ctx: &mut PanelCtx<'_>,
     caption: &str,
     description: &str,
     look: Rc<emLook>,
@@ -127,7 +129,10 @@ fn make_factor_field(
     cfg_value: f64,
     minimum_means_disabled: bool,
 ) -> ScalarFieldPanel {
-    let mut sf = emScalarField::new(-200.0, 200.0, look);
+    let mut sched = ctx
+        .as_sched_ctx()
+        .expect("make_factor_field requires scheduler-reach PanelCtx");
+    let mut sf = emScalarField::new(&mut sched, -200.0, 200.0, look);
     sf.SetCaption(caption);
     sf.border_mut().description = description.to_string();
     sf.SetValue(factor_cfg_to_val(cfg_value, cfg_min, cfg_max));
@@ -187,6 +192,7 @@ impl KBGroup {
         let c = cfg.GetRec();
 
         let mut zoom = make_factor_field(
+            ctx,
             "Keyboard zoom speed",
             "Speed of zooming by keyboard",
             self.look.clone(),
@@ -207,6 +213,7 @@ impl KBGroup {
         ctx.create_child_with("zoom", Box::new(zoom));
 
         let mut scroll = make_factor_field(
+            ctx,
             "Keyboard scroll speed",
             "Speed of scrolling by keyboard",
             self.look.clone(),
@@ -441,6 +448,7 @@ impl KineticGroup {
 
         // KineticZoomingAndScrolling
         let mut kinetic = make_factor_field(
+            ctx,
             "Kinetic zooming and scrolling",
             "Whether and how much to have kinetic effects on zooming and scrolling",
             self.look.clone(),
@@ -462,6 +470,7 @@ impl KineticGroup {
 
         // MagnetismRadius
         let mut mag_radius = make_factor_field(
+            ctx,
             "Magnetism radius",
             "Maximum radius for magnetism to snap the focus to nearby panels",
             self.look.clone(),
@@ -483,6 +492,7 @@ impl KineticGroup {
 
         // MagnetismSpeed
         let mut mag_speed = make_factor_field(
+            ctx,
             "Magnetism speed",
             "Speed of the magnetism movement",
             self.look.clone(),
@@ -504,6 +514,7 @@ impl KineticGroup {
 
         // VisitSpeed
         let mut visit = make_factor_field(
+            ctx,
             "Visit speed",
             "Speed of the visit animation",
             self.look.clone(),
@@ -723,7 +734,10 @@ impl MemFieldLayoutPanel {
         // Memory field: log2 space, range 8..16384 → ~300..1400 in val space
         let min_val = mem_cfg_to_val(8);
         let max_val = mem_cfg_to_val(16384);
-        let mut sf = emScalarField::new(min_val, max_val, self.look.clone());
+        let mut sf = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emScalarField::new(&mut sched, min_val, max_val, self.look.clone())
+        };
         sf.SetCaption("Max megabytes per view");
         sf.SetValue(mem_cfg_to_val(c.max_megabytes_per_view));
         sf.SetScaleMarkIntervals(&[100, 10]);
@@ -934,7 +948,10 @@ impl CpuGroup {
         let c = cfg.GetRec();
 
         // MaxRenderThreads: range 1-32
-        let mut sf = emScalarField::new(1.0, 32.0, self.look.clone());
+        let mut sf = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emScalarField::new(&mut sched, 1.0, 32.0, self.look.clone())
+        };
         sf.SetCaption("Max render threads");
         sf.SetValue(c.max_render_threads as f64);
         sf.SetScaleMarkIntervals(&[1]);
@@ -1084,7 +1101,10 @@ impl PerformanceGroup {
         );
 
         // DownscaleQuality: range 2-6
-        let mut ds_sf = emScalarField::new(2.0, 6.0, self.look.clone());
+        let mut ds_sf = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emScalarField::new(&mut sched, 2.0, 6.0, self.look.clone())
+        };
         ds_sf.SetCaption("Downscale quality");
         ds_sf.border_mut().description =
             "Quality of image downscaling (antialiasing filter size)".to_string();
@@ -1110,7 +1130,10 @@ impl PerformanceGroup {
         );
 
         // UpscaleQuality: range 0-5 (0 = Nearest Pixel)
-        let mut us_sf = emScalarField::new(0.0, 5.0, self.look.clone());
+        let mut us_sf = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emScalarField::new(&mut sched, 0.0, 5.0, self.look.clone())
+        };
         us_sf.SetCaption("Upscale quality");
         us_sf.border_mut().description = "Quality of image upscaling (interpolation)".to_string();
         us_sf.SetValue(c.upscale_quality as f64);
@@ -1227,6 +1250,7 @@ impl MouseGroup {
 
         // wheelzoom
         let mut wz = make_factor_field(
+            ctx,
             "Mouse wheel zoom speed",
             "Speed of zooming by mouse wheel",
             self.look.clone(),
@@ -1248,6 +1272,7 @@ impl MouseGroup {
 
         // wheelaccel
         let mut wa = make_factor_field(
+            ctx,
             "Mouse wheel zoom acceleration",
             "Acceleration of zooming by mouse wheel",
             self.look.clone(),
@@ -1269,6 +1294,7 @@ impl MouseGroup {
 
         // zoom
         let mut zoom = make_factor_field(
+            ctx,
             "Mouse zoom speed",
             "Speed of zooming by mouse",
             self.look.clone(),
@@ -1290,6 +1316,7 @@ impl MouseGroup {
 
         // scroll
         let mut scroll = make_factor_field(
+            ctx,
             "Mouse scroll speed",
             "Speed of scrolling by mouse",
             self.look.clone(),
@@ -1396,7 +1423,10 @@ impl ButtonsPanel {
     }
 
     fn create_children(&self, ctx: &mut PanelCtx) {
-        let mut btn = emButton::new("Reset To Defaults", self.look.clone());
+        let mut btn = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emButton::new(&mut sched, "Reset To Defaults", self.look.clone())
+        };
         let config: Rc<RefCell<emConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
         let generation = Rc::clone(&self.generation);
         btn.on_click = Some(Box::new(

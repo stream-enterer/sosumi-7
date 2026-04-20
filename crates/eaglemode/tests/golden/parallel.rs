@@ -262,9 +262,10 @@ fn parallel_checkbox() {
 /// Verify parallel rendering of a scalar field (uses gradient, text, polygon).
 #[test]
 fn parallel_scalarfield() {
+    let mut ts = TestSched::new();
     require_golden!();
     let look = emLook::new();
-    let mut sf = emScalarField::new(0.0, 100.0, look);
+    let mut sf = emScalarField::new(&mut ts.cc(), 0.0, 100.0, look);
     sf.SetCaption("Value");
     sf.SetEditable(true);
     sf.SetValue(50.0);

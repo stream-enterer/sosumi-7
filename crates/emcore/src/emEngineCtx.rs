@@ -310,6 +310,38 @@ impl ConstructCtx for InitCtx<'_> {
     }
 }
 
+/// `ConstructCtx` for `PanelCtx` — uses whatever scheduler reach the ctx has.
+/// Panics if the ctx was constructed without a scheduler (layout-only tests).
+/// Phase-3 B3.4b: widget constructors in behavior `AutoExpand`/`LayoutChildren`
+/// paths flow through `PanelCtx`, which only carries scheduler (not the full
+/// four-handle bundle) when dispatched from `emView::Update`.
+impl ConstructCtx for PanelCtx<'_> {
+    fn create_signal(&mut self) -> SignalId {
+        self.scheduler
+            .as_deref_mut()
+            .expect("PanelCtx: scheduler required for ConstructCtx::create_signal")
+            .create_signal()
+    }
+
+    fn register_engine(
+        &mut self,
+        behavior: Box<dyn crate::emEngine::emEngine>,
+        pri: Priority,
+        tree_location: TreeLocation,
+    ) -> EngineId {
+        self.scheduler
+            .as_deref_mut()
+            .expect("PanelCtx: scheduler required for ConstructCtx::register_engine")
+            .register_engine(behavior, pri, tree_location)
+    }
+
+    fn wake_up(&mut self, eng: EngineId) {
+        if let Some(sched) = self.scheduler.as_deref_mut() {
+            sched.wake_up(eng);
+        }
+    }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // PanelCtx — absorbed from emPanelCtx.rs (Phase 1.75 Task 5).
 //

@@ -72,13 +72,14 @@ fn assert_approx(actual: f64, expected: f64, tolerance: f64, context: &str) {
 
 #[test]
 fn scalarfield_click_and_drag_1x_and_2x() {
-    // 1. Create PipelineTestHarness (800x600 viewport).
     let mut h = PipelineTestHarness::new();
+
+    // 1. Create PipelineTestHarness (800x600 viewport).
     let root = h.get_root_panel();
 
     // 2. Create emScalarField (range 0-100, value 50, editable).
     let look = emLook::new();
-    let mut sf = emScalarField::new(0.0, 100.0, look);
+    let mut sf = emScalarField::new(&mut h.sched_ctx(), 0.0, 100.0, look);
     sf.SetValue(50.0);
     sf.SetEditable(true);
 
@@ -196,7 +197,7 @@ fn setup_sf(
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let mut sf = emScalarField::new(min, max, look);
+    let mut sf = emScalarField::new(&mut h.sched_ctx(), min, max, look);
     sf.SetValue(initial);
     sf.SetEditable(editable);
     if !mark_intervals.is_empty() {

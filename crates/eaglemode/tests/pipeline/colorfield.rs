@@ -27,8 +27,8 @@ struct ColorFieldBehavior {
 }
 
 impl ColorFieldBehavior {
-    fn new(look: Rc<emLook>) -> Self {
-        let mut cf = emColorField::new(look);
+    fn new<C: emcore::emEngineCtx::ConstructCtx>(cc: &mut C, look: Rc<emLook>) -> Self {
+        let mut cf = emColorField::new(cc, look);
         cf.SetEditable(true);
         cf.SetAlphaEnabled(true);
         Self { color_field: cf }
@@ -117,7 +117,7 @@ fn colorfield_expanded_has_correct_child_structure() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     // Initial tick for layout.
@@ -177,7 +177,7 @@ fn colorfield_expanded_data_matches_initial_color() {
 
     let look = emLook::new();
     let color = emColor::rgba(100, 150, 200, 180);
-    let behavior = ColorFieldBehavior::new(look).with_color(color);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(color);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -284,7 +284,7 @@ fn colorfield_expanded_various_colors() {
         let root = h.get_root_panel();
 
         let look = emLook::new();
-        let behavior = ColorFieldBehavior::new(look).with_color(*color);
+        let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(*color);
         let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
         h.tick();
@@ -346,7 +346,7 @@ fn colorfield_no_children_before_expansion() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     // Set a very high threshold so the panel is NOT auto-expanded at 1x.
@@ -392,7 +392,7 @@ fn colorfield_expanded_name_field_initialized() {
 
     let look = emLook::new();
     let color = emColor::rgba(0xAB, 0xCD, 0xEF, 0xFF);
-    let behavior = ColorFieldBehavior::new(look).with_color(color);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(color);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -449,7 +449,7 @@ fn colorfield_cycle_red_slider_updates_color_and_syncs() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::BLACK);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::BLACK);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -508,7 +508,7 @@ fn colorfield_cycle_green_slider_updates_color() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::BLACK);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::BLACK);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -550,7 +550,7 @@ fn colorfield_cycle_blue_slider_updates_color() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::BLACK);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::BLACK);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -593,7 +593,7 @@ fn colorfield_cycle_hex_text_updates_color() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::BLACK);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::BLACK);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -649,7 +649,7 @@ fn colorfield_cycle_hsv_change_syncs_rgb_fields() {
 
     let look = emLook::new();
     // Start with black so any HSV change is detectable.
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::BLACK);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::BLACK);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -714,7 +714,7 @@ fn colorfield_cycle_rgb_change_syncs_hsv_fields() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::BLACK);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::BLACK);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -774,7 +774,7 @@ fn colorfield_cycle_fires_on_color_callback() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::BLACK);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::BLACK);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -826,7 +826,7 @@ fn colorfield_cycle_no_change_returns_false() {
 
     let look = emLook::new();
     let color = emColor::rgba(100, 150, 200, 255);
-    let behavior = ColorFieldBehavior::new(look).with_color(color);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(color);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -866,7 +866,7 @@ fn colorfield_cycle_invalid_hex_preserves_color() {
 
     let look = emLook::new();
     let original = emColor::rgba(100, 150, 200, 255);
-    let behavior = ColorFieldBehavior::new(look).with_color(original);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(original);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -927,7 +927,7 @@ fn colorfield_click_red_slider_updates_color_e2e() {
     let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::BLACK);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::BLACK);
     let _panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
     h.tick();
     h.expand_to(16.0);
@@ -947,7 +947,7 @@ fn colorfield_type_hex_in_text_field_updates_color_e2e() {
     let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::BLACK);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::BLACK);
     let _panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
     h.tick();
     h.expand_to(16.0);
@@ -967,7 +967,8 @@ fn colorfield_drag_hue_slider_updates_rgb_e2e() {
     let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::rgba(255, 0, 0, 255));
+    let behavior =
+        ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::rgba(255, 0, 0, 255));
     let _panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
     h.tick();
     h.expand_to(16.0);
@@ -986,7 +987,7 @@ fn colorfield_scalar_panels_paint() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::RED);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look).with_color(emColor::RED);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -1019,7 +1020,8 @@ fn colorfield_text_panel_hex() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look).with_color(emColor::rgba(0xFF, 0x00, 0x00, 0xFF));
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look)
+        .with_color(emColor::rgba(0xFF, 0x00, 0x00, 0xFF));
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();

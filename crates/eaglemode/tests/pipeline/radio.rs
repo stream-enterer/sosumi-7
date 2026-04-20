@@ -64,8 +64,10 @@ impl PanelBehavior for RadioButtonBehavior {
 /// verifying the group selection state after each Click.
 #[test]
 fn radiobutton_select_1x_and_2x() {
+    let mut h = PipelineTestHarness::new();
+
     let look = emLook::new();
-    let group: Rc<RefCell<RadioGroup>> = RadioGroup::new();
+    let group: Rc<RefCell<RadioGroup>> = RadioGroup::new(&mut h.sched_ctx());
 
     // Create 3 RadioButtons sharing the same group.
     let rb0 = emRadioButton::new("Option A", look.clone(), group.clone(), 0);
@@ -76,7 +78,6 @@ fn radiobutton_select_1x_and_2x() {
     assert_eq!(group.borrow().GetChecked(), None);
 
     // ── Build pipeline harness (800x600 viewport) ────────────────────
-    let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
 
     // Each radio button gets its own child panel, stacked vertically:
@@ -189,8 +190,9 @@ struct RadioButtonHarness {
 
 impl RadioButtonHarness {
     fn new() -> Self {
+        let mut h = PipelineTestHarness::new();
         let look = emLook::new();
-        let group: Rc<RefCell<RadioGroup>> = RadioGroup::new();
+        let group: Rc<RefCell<RadioGroup>> = RadioGroup::new(&mut h.sched_ctx());
 
         let rb0 = emRadioButton::new("Option A", look.clone(), group.clone(), 0);
         let rb1 = emRadioButton::new("Option B", look.clone(), group.clone(), 1);
@@ -199,7 +201,6 @@ impl RadioButtonHarness {
         assert_eq!(group.borrow().GetCount(), 3);
         assert_eq!(group.borrow().GetChecked(), None);
 
-        let mut h = PipelineTestHarness::new();
         let root = h.get_root_panel();
 
         let panel0 = h.add_panel_with(root, "radio0", Box::new(RadioButtonBehavior::new(rb0)));

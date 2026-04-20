@@ -8,8 +8,9 @@ use crate::emPainter::{emPainter, TextAlignment, VAlign};
 use crate::emPanel::PanelState;
 
 use super::emBorder::{emBorder, InnerBorderType, OuterBorderType};
-use crate::emEngineCtx::WidgetCallback;
+use crate::emEngineCtx::{ConstructCtx, WidgetCallback};
 use crate::emLook::emLook;
+use crate::emSignal::SignalId;
 
 /// Default text formatter: decimal representation of the value.
 /// The `mark_interval` parameter is ignored by the default.
@@ -110,10 +111,12 @@ pub struct emScalarField {
     kb_interval: u64,
 
     pub on_value: Option<WidgetCallback<f64>>,
+    /// Allocated per C++ `emScalarField::GetValueSignal()`. B3.4b: alloc only.
+    pub value_signal: SignalId,
 }
 
 impl emScalarField {
-    pub fn new(min: f64, max: f64, look: Rc<emLook>) -> Self {
+    pub fn new<C: ConstructCtx>(ctx: &mut C, min: f64, max: f64, look: Rc<emLook>) -> Self {
         let clamped_max = if max < min { min } else { max };
         let value = min;
         Self {
@@ -136,6 +139,7 @@ impl emScalarField {
             text_box_tallness: 0.5,
             kb_interval: 0,
             on_value: None,
+            value_signal: ctx.create_signal(),
         }
     }
 
@@ -763,9 +767,10 @@ impl emScalarField {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::emEngineCtx::PanelCtx;
+    use crate::emEngineCtx::{DeferredAction, InitCtx, PanelCtx};
     use crate::emPanel::Rect;
     use crate::emPanelTree::{PanelId, PanelTree};
+    use crate::emScheduler::EngineScheduler;
     use slotmap::Key as _;
     use std::cell::RefCell;
 
@@ -796,10 +801,33 @@ mod tests {
         emInputState::new()
     }
 
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
+
     #[test]
     fn value_clamping() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
 
         sf.SetValue(50.0);
         assert!((sf.GetValue() - 50.0).abs() < 0.001);
@@ -813,10 +841,11 @@ mod tests {
 
     #[test]
     fn arrow_key_stepping() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.SetEditable(true);
         sf.SetValue(50.0);
 
@@ -846,13 +875,14 @@ mod tests {
     #[test]
     #[ignore = "B3.3: callback requires scheduler reach; B3.4 restores dispatch"]
     fn callback_on_change() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let values = Rc::new(RefCell::new(Vec::new()));
         let val_clone = values.clone();
 
-        let mut sf = emScalarField::new(0.0, 10.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 10.0, look);
         sf.SetEditable(true);
         sf.SetValue(5.0);
         sf.last_w = 200.0;
@@ -875,10 +905,11 @@ mod tests {
 
     #[test]
     fn editable_toggle() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
 
         assert!(!sf.IsEditable());
         assert_eq!(sf.border.inner, InnerBorderType::OutputField);
@@ -911,8 +942,9 @@ mod tests {
 
     #[test]
     fn min_max_getters_setters() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
 
         assert!((sf.GetMinValue() - 0.0).abs() < f64::EPSILON);
         assert!((sf.GetMaxValue() - 100.0).abs() < f64::EPSILON);
@@ -936,8 +968,9 @@ mod tests {
 
     #[test]
     fn constructor_clamps_max() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let sf = emScalarField::new(50.0, 10.0, look);
+        let sf = emScalarField::new(&mut __init.ctx(), 50.0, 10.0, look);
         // max < min => max clamped to min
         assert!((sf.GetMaxValue() - 50.0).abs() < f64::EPSILON);
         assert!((sf.GetMinValue() - 50.0).abs() < f64::EPSILON);
@@ -945,8 +978,9 @@ mod tests {
 
     #[test]
     fn GetScaleMarkIntervals() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
 
         // Default is [1]
         assert_eq!(sf.GetScaleMarkIntervals(), &[1]);
@@ -958,31 +992,35 @@ mod tests {
     #[test]
     #[should_panic(expected = "strictly descending")]
     fn scale_mark_intervals_rejects_non_descending() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.SetScaleMarkIntervals(&[10, 50]); // ascending — invalid
     }
 
     #[test]
     #[should_panic(expected = "must be > 0")]
     fn scale_mark_intervals_rejects_zero() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.SetScaleMarkIntervals(&[0]);
     }
 
     #[test]
     fn scale_mark_intervals_empty_is_ok() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.SetScaleMarkIntervals(&[]);
         assert_eq!(sf.GetScaleMarkIntervals(), &[] as &[u64]);
     }
 
     #[test]
     fn never_hide_marks() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         assert!(!sf.IsNeverHidingMarks());
         sf.SetNeverHideMarks(true);
         assert!(sf.IsNeverHidingMarks());
@@ -990,8 +1028,9 @@ mod tests {
 
     #[test]
     fn GetTextBoxTallness() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         assert!((sf.GetTextBoxTallness() - 0.5).abs() < f64::EPSILON);
         sf.SetTextBoxTallness(0.75);
         assert!((sf.GetTextBoxTallness() - 0.75).abs() < f64::EPSILON);
@@ -999,8 +1038,9 @@ mod tests {
 
     #[test]
     fn GetKeyboardInterval() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         assert_eq!(sf.GetKeyboardInterval(), 0);
         sf.SetKeyboardInterval(5);
         assert_eq!(sf.GetKeyboardInterval(), 5);
@@ -1008,10 +1048,11 @@ mod tests {
 
     #[test]
     fn step_by_keyboard_with_explicit_interval() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.SetEditable(true);
         sf.SetKeyboardInterval(10);
         sf.SetValue(50.0);
@@ -1037,8 +1078,9 @@ mod tests {
 
     #[test]
     fn custom_text_of_value() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.SetTextOfValueFunc(Box::new(|val, _iv| format!("{}%", val)));
         // The function is stored and usable
         let text = (sf.text_of_value_fn)(50, 1);
@@ -1047,10 +1089,11 @@ mod tests {
 
     #[test]
     fn plus_minus_keys_work() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.SetEditable(true);
         sf.SetValue(50.0);
         sf.last_w = 200.0;
@@ -1068,9 +1111,10 @@ mod tests {
 
     #[test]
     fn cursor_is_always_normal() {
+        let mut __init = TestInit::new();
         // C++ doesn't override GetCursor — always default panel cursor.
         let look = emLook::new();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         assert_eq!(sf.GetCursor(), emCursor::Normal);
         sf.SetEditable(false);
         assert_eq!(sf.GetCursor(), emCursor::Normal);
@@ -1079,10 +1123,11 @@ mod tests {
     #[test]
     #[ignore = "B3.3: callback requires scheduler reach; B3.4 restores dispatch"]
     fn set_value_fires_callback() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
         let count = Rc::new(RefCell::new(0u32));
         let count_clone = count.clone();
-        let mut sf = emScalarField::new(0.0, 100.0, look);
+        let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.on_value = Some(Box::new(
             move |_v, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                 *count_clone.borrow_mut() += 1;

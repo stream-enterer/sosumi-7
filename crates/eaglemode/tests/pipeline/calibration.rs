@@ -69,8 +69,10 @@ impl PanelBehavior for ScalarFieldBehavior {
 /// positions and leaving the value unchanged.
 #[test]
 fn scalarfield_drag_changes_value() {
+    let mut h = PipelineTestHarness::new();
+
     let look = emLook::new();
-    let mut sf = emScalarField::new(0.0, 100.0, look);
+    let mut sf = emScalarField::new(&mut h.sched_ctx(), 0.0, 100.0, look);
     sf.SetValue(50.0);
     sf.SetEditable(true);
 
@@ -80,7 +82,6 @@ fn scalarfield_drag_changes_value() {
     let behavior = ScalarFieldBehavior::new(sf, value);
 
     // Set up the pipeline harness (800x600 viewport).
-    let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
 
     // Add the emScalarField as a child panel filling the entire root.
@@ -135,8 +136,8 @@ struct ColorFieldBehavior {
 }
 
 impl ColorFieldBehavior {
-    fn new(look: Rc<emLook>) -> Self {
-        let mut cf = emColorField::new(look);
+    fn new<C: emcore::emEngineCtx::ConstructCtx>(cc: &mut C, look: Rc<emLook>) -> Self {
+        let mut cf = emColorField::new(cc, look);
         cf.SetEditable(true);
         cf.SetAlphaEnabled(true);
         Self { color_field: cf }
@@ -185,7 +186,7 @@ fn colorfield_expansion_creates_child_sliders() {
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let behavior = ColorFieldBehavior::new(look);
+    let behavior = ColorFieldBehavior::new(&mut h.sched_ctx(), look);
     let panel_id = h.add_panel_with(root, "color_field", Box::new(behavior));
 
     h.tick();
@@ -246,11 +247,13 @@ fn colorfield_expansion_creates_child_sliders() {
 /// Actual:   passes at 1x (600x600), fails at 2x (1200x1200).
 #[test]
 fn button_click_works_after_zoom() {
+    let mut h = PipelineTestHarness::new();
+
     use emcore::emImage::emImage;
     use std::cell::Cell;
 
     let look = emLook::new();
-    let mut btn = emButton::new("Zoom Test", look.clone());
+    let mut btn = emButton::new(&mut h.sched_ctx(), "Zoom Test", look.clone());
 
     // ── Step 1: Paint at 1x dimensions (last_w = last_h = 600) ──────
     {
@@ -321,7 +324,7 @@ fn button_click_works_after_zoom() {
     let clicked = Rc::new(Cell::new(false));
     let clicked_clone = clicked.clone();
 
-    let mut btn2 = emButton::new("Pipeline Test", look);
+    let mut btn2 = emButton::new(&mut h.sched_ctx(), "Pipeline Test", look);
     btn2.on_click = Some(Box::new(
         move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
             clicked_clone.set(true);
@@ -353,8 +356,6 @@ fn button_click_works_after_zoom() {
             true
         }
     }
-
-    let mut h = PipelineTestHarness::new();
     let root = h.get_root_panel();
     let _panel_id = h.add_panel_with(root, "button", Box::new(BtnPanel { widget: btn2 }));
     h.tick_n(5);
@@ -449,12 +450,13 @@ impl PanelBehavior for SharedListBoxPanel {
 /// negative and `(rel_y / row_height) as usize` saturate to 0.
 #[test]
 fn listbox_click_selects_correct_item() {
+    let mut h = PipelineTestHarness::new();
     // ── 1. Build pipeline harness (800x600 viewport) ─────────────
     let mut harness = super::support::pipeline::PipelineTestHarness::new();
 
     // ── 2. Create a emListBox with 5 items ─────────────────────────
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut h.sched_ctx(), look);
     lb.SetSelectionType(SelectionMode::Single);
     lb.AddItem("item0".to_string(), "Alpha".to_string());
     lb.AddItem("item1".to_string(), "Beta".to_string());

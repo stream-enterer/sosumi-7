@@ -1,10 +1,11 @@
 use crate::emCursor::emCursor;
-use crate::emEngineCtx::{PanelCtx, WidgetCallback};
+use crate::emEngineCtx::{ConstructCtx, PanelCtx, WidgetCallback};
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emPainter::{emPainter, BORDER_EDGES_ONLY};
 use crate::emPanel::PanelState;
 use crate::emPanelTree::PanelId;
+use crate::emSignal::SignalId;
 use crate::emTiling::{Orientation, ResolvedOrientation};
 
 use crate::emBorder::{emBorder, with_toolkit_images};
@@ -33,10 +34,12 @@ pub struct emSplitter {
     last_w: f64,
     last_h: f64,
     pub on_position: Option<WidgetCallback<f64>>,
+    /// Allocated per C++ `emSplitter::GetPosSignal()`. B3.4b: alloc only.
+    pub pos_signal: SignalId,
 }
 
 impl emSplitter {
-    pub fn new(orientation: Orientation, look: Rc<emLook>) -> Self {
+    pub fn new<C: ConstructCtx>(ctx: &mut C, orientation: Orientation, look: Rc<emLook>) -> Self {
         Self {
             look,
             orientation,
@@ -51,6 +54,7 @@ impl emSplitter {
             last_w: 0.0,
             last_h: 0.0,
             on_position: None,
+            pos_signal: ctx.create_signal(),
         }
     }
 
@@ -384,8 +388,10 @@ impl emSplitter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emEngineCtx::{DeferredAction, InitCtx};
     use crate::emPanel::Rect;
     use crate::emPanelTree::{PanelId, PanelTree};
+    use crate::emScheduler::EngineScheduler;
     use slotmap::Key as _;
 
     fn test_tree() -> (PanelTree, PanelId) {
@@ -415,10 +421,33 @@ mod tests {
         emInputState::new()
     }
 
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
+
     #[test]
     fn splitter_position_clamping() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut sp = emSplitter::new(Orientation::Horizontal, look);
+        let mut sp = emSplitter::new(&mut __init.ctx(), Orientation::Horizontal, look);
         sp.SetPos(0.3);
         assert!((sp.GetPos() - 0.3).abs() < 0.001);
 
@@ -431,10 +460,11 @@ mod tests {
 
     #[test]
     fn splitter_drag() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut sp = emSplitter::new(Orientation::Horizontal, look);
+        let mut sp = emSplitter::new(&mut __init.ctx(), Orientation::Horizontal, look);
         sp.SetPos(0.5);
         let ps = default_panel_state();
         let is = default_input_state();

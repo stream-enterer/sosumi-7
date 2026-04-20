@@ -10,8 +10,9 @@ use crate::emPanel::Rect;
 
 use super::emBorder::{emBorder, OuterBorderType};
 use crate::emBorder::with_toolkit_images;
-use crate::emEngineCtx::{PanelCtx, WidgetCallback};
+use crate::emEngineCtx::{ConstructCtx, PanelCtx, WidgetCallback};
 use crate::emLook::emLook;
+use crate::emSignal::SignalId;
 
 /// Clickable button widget.
 pub struct emButton {
@@ -34,10 +35,15 @@ pub struct emButton {
     pub on_click: Option<WidgetCallback<()>>,
     pub on_press_state: Option<WidgetCallback<bool>>,
     pub on_eoi: Option<WidgetCallback<()>>,
+    /// Allocated at construction per C++ `emButton::GetClickSignal()`.
+    /// B3.4b allocates; B3.4c fires in Input.
+    pub click_signal: SignalId,
+    /// Allocated at construction per C++ `emButton::GetPressStateSignal()`.
+    pub press_state_signal: SignalId,
 }
 
 impl emButton {
-    pub fn new(caption: &str, look: Rc<emLook>) -> Self {
+    pub fn new<C: ConstructCtx>(ctx: &mut C, caption: &str, look: Rc<emLook>) -> Self {
         let mut border = emBorder::new(OuterBorderType::InstrumentMoreRound)
             .with_caption(caption)
             .with_label_in_border(false)
@@ -58,6 +64,8 @@ impl emButton {
             on_click: None,
             on_press_state: None,
             on_eoi: None,
+            click_signal: ctx.create_signal(),
+            press_state_signal: ctx.create_signal(),
         }
     }
 
@@ -485,9 +493,10 @@ pub(crate) const HOWTO_EOI_BUTTON: &str = "\n\n\
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::emEngineCtx::PanelCtx;
+    use crate::emEngineCtx::{DeferredAction, InitCtx, PanelCtx};
     use crate::emPanel::Rect;
     use crate::emPanelTree::{PanelId, PanelTree};
+    use crate::emScheduler::EngineScheduler;
     use slotmap::Key as _;
     use std::cell::RefCell;
 
@@ -495,6 +504,28 @@ mod tests {
         let mut tree = PanelTree::new();
         let id = tree.create_root("t", false);
         (tree, id)
+    }
+
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
     }
 
     fn default_panel_state() -> PanelState {
@@ -520,11 +551,12 @@ mod tests {
 
     #[test]
     fn button_press_release_fires_callback() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
         let fired = Rc::new(RefCell::new(false));
         let fired_clone = fired.clone();
 
-        let mut btn = emButton::new("Click", look);
+        let mut btn = emButton::new(&mut __init.ctx(), "Click", look);
         btn.on_click = Some(Box::new(
             move |(), _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                 *fired_clone.borrow_mut() = true;
@@ -544,11 +576,12 @@ mod tests {
 
     #[test]
     fn button_keyboard_activation() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
         let count = Rc::new(RefCell::new(0u32));
         let count_clone = count.clone();
 
-        let mut btn = emButton::new("OK", look);
+        let mut btn = emButton::new(&mut __init.ctx(), "OK", look);
         btn.on_click = Some(Box::new(
             move |(), _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                 *count_clone.borrow_mut() += 1;
@@ -569,18 +602,20 @@ mod tests {
 
     #[test]
     fn button_cursor_is_hand() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let btn = emButton::new("X", look);
+        let btn = emButton::new(&mut __init.ctx(), "X", look);
         assert_eq!(btn.GetCursor(), emCursor::Normal);
     }
 
     #[test]
     fn click_fires_callback() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
         let count = Rc::new(RefCell::new(0u32));
         let count_clone = count.clone();
 
-        let mut btn = emButton::new("Go", look);
+        let mut btn = emButton::new(&mut __init.ctx(), "Go", look);
         btn.on_click = Some(Box::new(
             move |(), _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                 *count_clone.borrow_mut() += 1;
@@ -598,8 +633,9 @@ mod tests {
 
     #[test]
     fn click_without_callback_is_noop() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut btn = emButton::new("Go", look);
+        let mut btn = emButton::new(&mut __init.ctx(), "Go", look);
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         btn.Click(&mut ctx); // should not panic
@@ -607,15 +643,17 @@ mod tests {
 
     #[test]
     fn no_eoi_default_false() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let btn = emButton::new("Test", look);
+        let btn = emButton::new(&mut __init.ctx(), "Test", look);
         assert!(!btn.IsNoEOI());
     }
 
     #[test]
     fn SetNoEOI() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut btn = emButton::new("Test", look);
+        let mut btn = emButton::new(&mut __init.ctx(), "Test", look);
         btn.SetNoEOI(true);
         assert!(btn.IsNoEOI());
         btn.SetNoEOI(false);
@@ -624,15 +662,17 @@ mod tests {
 
     #[test]
     fn has_howto_always_true() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let btn = emButton::new("OK", look);
+        let btn = emButton::new(&mut __init.ctx(), "OK", look);
         assert!(btn.HasHowTo());
     }
 
     #[test]
     fn howto_includes_eoi_by_default() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let btn = emButton::new("OK", look);
+        let btn = emButton::new(&mut __init.ctx(), "OK", look);
         let text = btn.GetHowTo(true, true);
         assert!(text.contains("BUTTON"));
         assert!(text.contains("EOI BUTTON"));
@@ -643,8 +683,9 @@ mod tests {
 
     #[test]
     fn howto_excludes_eoi_when_no_eoi() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut btn = emButton::new("OK", look);
+        let mut btn = emButton::new(&mut __init.ctx(), "OK", look);
         btn.SetNoEOI(true);
         let text = btn.GetHowTo(true, true);
         assert!(text.contains("BUTTON"));
@@ -653,8 +694,9 @@ mod tests {
 
     #[test]
     fn howto_includes_disabled_when_not_enabled() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let btn = emButton::new("OK", look);
+        let btn = emButton::new(&mut __init.ctx(), "OK", look);
         let text = btn.GetHowTo(false, false);
         assert!(text.contains("DISABLED"));
         assert!(!text.contains("FOCUS"));
@@ -662,10 +704,11 @@ mod tests {
 
     #[test]
     fn eoi_callback_fires() {
+        let mut __init = TestInit::new();
         let fired = Rc::new(std::cell::Cell::new(false));
         let fired_clone = fired.clone();
         let look = emLook::new();
-        let mut btn = emButton::new("test", look);
+        let mut btn = emButton::new(&mut __init.ctx(), "test", look);
         btn.on_eoi = Some(Box::new(
             move |(), _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                 fired_clone.set(true);
@@ -685,10 +728,11 @@ mod tests {
 
     #[test]
     fn eoi_callback_suppressed_when_no_eoi() {
+        let mut __init = TestInit::new();
         let fired = Rc::new(std::cell::Cell::new(false));
         let fired_clone = fired.clone();
         let look = emLook::new();
-        let mut btn = emButton::new("test", look);
+        let mut btn = emButton::new(&mut __init.ctx(), "test", look);
         btn.SetNoEOI(true);
         btn.on_eoi = Some(Box::new(
             move |(), _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
@@ -706,16 +750,18 @@ mod tests {
 
     #[test]
     fn check_mouse_zero_size_returns_false() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let btn = emButton::new("X", look);
+        let btn = emButton::new(&mut __init.ctx(), "X", look);
         assert!(!btn.CheckMouse(0.0, 0.0));
     }
 
     #[test]
     fn check_mouse_center_returns_true() {
+        let mut __init = TestInit::new();
         use crate::emImage::emImage;
         let look = emLook::new();
-        let mut btn = emButton::new("X", look);
+        let mut btn = emButton::new(&mut __init.ctx(), "X", look);
         // Simulate paint to cache dimensions
         let mut img = emImage::new(200, 100, 4);
         let mut painter = emPainter::new(&mut img);
@@ -726,9 +772,10 @@ mod tests {
 
     #[test]
     fn check_mouse_outside_returns_false() {
+        let mut __init = TestInit::new();
         use crate::emImage::emImage;
         let look = emLook::new();
-        let mut btn = emButton::new("X", look);
+        let mut btn = emButton::new(&mut __init.ctx(), "X", look);
         let mut img = emImage::new(200, 100, 4);
         let mut painter = emPainter::new(&mut img);
         btn.Paint(&mut painter, 200.0, 100.0, true, 1.0);

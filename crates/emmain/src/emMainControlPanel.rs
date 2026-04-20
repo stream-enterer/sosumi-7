@@ -688,7 +688,10 @@ impl CommandsPanel {
 
         // ── BtNewWindow ──
         let flag = Rc::clone(&flags);
-        let mut btn_nw = emButton::new("New Window", Rc::clone(&look));
+        let mut btn_nw = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emButton::new(&mut sched, "New Window", Rc::clone(&look))
+        };
         btn_nw.SetDescription("Create a new window showing the same location.\n\nHotkey: F4");
         btn_nw.on_click = Some(Box::new(
             move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
@@ -700,7 +703,10 @@ impl CommandsPanel {
 
         // ── BtFullscreen ──
         let flag = Rc::clone(&flags);
-        let mut btn_fs = emCheckButton::new("Fullscreen", Rc::clone(&look));
+        let mut btn_fs = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emCheckButton::new(&mut sched, "Fullscreen", Rc::clone(&look))
+        };
         btn_fs.on_check = Some(Box::new(
             move |_checked, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
                 flag.fullscreen.set(true);
@@ -715,7 +721,10 @@ impl CommandsPanel {
 
         // ── BtReload ──
         let flag = Rc::clone(&flags);
-        let mut btn_reload = emButton::new("Reload Files", Rc::clone(&look));
+        let mut btn_reload = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emButton::new(&mut sched, "Reload Files", Rc::clone(&look))
+        };
         btn_reload.SetDescription(
             "Reload files and directories which are currently shown by this program.\n\nHotkey: F5",
         );
@@ -736,7 +745,10 @@ impl CommandsPanel {
 
         // ── Close / Quit (lCloseQuit) ──
         let flag_close = Rc::clone(&flags);
-        let mut btn_close = emButton::new("Close", Rc::clone(&look));
+        let mut btn_close = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emButton::new(&mut sched, "Close", Rc::clone(&look))
+        };
         btn_close.SetDescription("Close this window.\n\nHotkey: Alt+F4");
         btn_close.on_click = Some(Box::new(
             move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
@@ -747,7 +759,10 @@ impl CommandsPanel {
             ctx.create_child_with("close", Box::new(MainButtonPanel { button: btn_close }));
 
         let flag_quit = Rc::clone(&flags);
-        let mut btn_quit = emButton::new("Quit", Rc::clone(&look));
+        let mut btn_quit = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emButton::new(&mut sched, "Quit", Rc::clone(&look))
+        };
         btn_quit.SetDescription(
             "Close all windows of this process (and terminate this process).\n\nHotkey: Shift+Alt+F4",
         );

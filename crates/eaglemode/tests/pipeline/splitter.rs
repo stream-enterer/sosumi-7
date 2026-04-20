@@ -72,7 +72,7 @@ fn setup_splitter(
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let mut sp = emSplitter::new(orientation, look);
+    let mut sp = emSplitter::new(&mut h.sched_ctx(), orientation, look);
     sp.SetPos(initial_pos);
     let sp_ref = Rc::new(RefCell::new(sp));
 
@@ -328,7 +328,7 @@ fn setup_splitter_with_id(
     let root = h.get_root_panel();
 
     let look = emLook::new();
-    let mut sp = emSplitter::new(orientation, look);
+    let mut sp = emSplitter::new(&mut h.sched_ctx(), orientation, look);
     sp.SetPos(initial_pos);
     let sp_ref = Rc::new(RefCell::new(sp));
 

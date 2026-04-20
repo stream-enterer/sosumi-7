@@ -148,6 +148,7 @@ fn widget_checkbox_toggle() {
 
 #[test]
 fn widget_checkbutton_toggle() {
+    let mut ts = TestSched::new();
     let (mut tree, tid) = test_tree();
     let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
     require_golden!();
@@ -155,7 +156,7 @@ fn widget_checkbutton_toggle() {
     assert_eq!(golden.len(), 3, "unexpected golden file size");
 
     let look = emLook::new();
-    let mut cb = emCheckButton::new("Toggle Option", look);
+    let mut cb = emCheckButton::new(&mut ts.cc(), "Toggle Option", look);
     let ps = default_panel_state();
     let is = default_input_state();
 
@@ -174,6 +175,7 @@ fn widget_checkbutton_toggle() {
 
 #[test]
 fn widget_radiobutton_switch() {
+    let mut ts = TestSched::new();
     let (mut tree, tid) = test_tree();
     let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
     require_golden!();
@@ -181,7 +183,7 @@ fn widget_radiobutton_switch() {
     assert_eq!(golden.len(), 8, "unexpected golden file size");
 
     let look = emLook::new();
-    let group = RadioGroup::new();
+    let group = RadioGroup::new(&mut ts.cc());
     let _rb_a = emRadioButton::new("Option A", look.clone(), group.clone(), 0);
     let mut rb_b = emRadioButton::new("Option B", look.clone(), group.clone(), 1);
     let _rb_c = emRadioButton::new("Option C", look, group.clone(), 2);
@@ -203,6 +205,7 @@ fn widget_radiobutton_switch() {
 
 #[test]
 fn widget_listbox_select() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_widget_state_golden("widget_listbox_select");
     assert_eq!(
@@ -212,7 +215,7 @@ fn widget_listbox_select() {
     );
 
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut ts.cc(), look);
     lb.SetSelectionType(SelectionMode::Single);
     lb.AddItem("item0".to_string(), "Alpha".to_string());
     lb.AddItem("item1".to_string(), "Beta".to_string());
@@ -239,12 +242,13 @@ fn widget_listbox_select() {
 
 #[test]
 fn widget_splitter_setpos() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_widget_state_golden("widget_splitter_setpos");
     assert_eq!(golden.len(), 24, "unexpected golden file size");
 
     let look = emLook::new();
-    let mut sp = emSplitter::new(Orientation::Horizontal, look);
+    let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Horizontal, look);
     sp.SetMinMaxPos(0.0, 1.0);
     let eps = 1e-9;
 
@@ -267,6 +271,7 @@ fn widget_splitter_setpos() {
 
 #[test]
 fn widget_textfield_type() {
+    let mut ts = TestSched::new();
     let (mut tree, tid) = test_tree();
     let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
     require_golden!();
@@ -274,7 +279,7 @@ fn widget_textfield_type() {
     assert!(golden.len() >= 8, "golden file too short");
 
     let look = emLook::new();
-    let mut tf = emTextField::new(look);
+    let mut tf = emTextField::new(&mut ts.cc(), look);
     tf.SetEditable(true);
     let ps = default_panel_state();
     let is = default_input_state();
@@ -299,6 +304,7 @@ fn widget_textfield_type() {
 
 #[test]
 fn widget_textfield_backspace() {
+    let mut ts = TestSched::new();
     let (mut tree, tid) = test_tree();
     let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
     require_golden!();
@@ -306,7 +312,7 @@ fn widget_textfield_backspace() {
     assert!(golden.len() >= 8, "golden file too short");
 
     let look = emLook::new();
-    let mut tf = emTextField::new(look);
+    let mut tf = emTextField::new(&mut ts.cc(), look);
     tf.SetEditable(true);
     let ps = default_panel_state();
     let is = default_input_state();
@@ -337,6 +343,7 @@ fn widget_textfield_backspace() {
 
 #[test]
 fn widget_textfield_select() {
+    let mut ts = TestSched::new();
     let (mut tree, tid) = test_tree();
     let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
     require_golden!();
@@ -344,7 +351,7 @@ fn widget_textfield_select() {
     assert_eq!(golden.len(), 12, "unexpected golden file size");
 
     let look = emLook::new();
-    let mut tf = emTextField::new(look);
+    let mut tf = emTextField::new(&mut ts.cc(), look);
     tf.SetEditable(true);
     let ps = default_panel_state();
     let is = default_input_state();
@@ -376,6 +383,7 @@ fn widget_textfield_select() {
 
 #[test]
 fn widget_scalarfield_inc() {
+    let mut ts = TestSched::new();
     let (mut tree, tid) = test_tree();
     let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
     require_golden!();
@@ -383,7 +391,7 @@ fn widget_scalarfield_inc() {
     assert_eq!(golden.len(), 16, "unexpected golden file size");
 
     let look = emLook::new();
-    let mut sf = emScalarField::new(0.0, 100.0, look);
+    let mut sf = emScalarField::new(&mut ts.cc(), 0.0, 100.0, look);
     sf.SetEditable(true);
     sf.SetValue(50.0);
     let ps = default_panel_state();
@@ -405,12 +413,13 @@ fn widget_scalarfield_inc() {
 
 #[test]
 fn widget_button_click() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_widget_state_golden("widget_button_click");
     assert_eq!(golden.len(), 3, "unexpected golden file size");
 
     let look = emLook::new();
-    let mut btn = emButton::new("Click Me", look);
+    let mut btn = emButton::new(&mut ts.cc(), "Click Me", look);
 
     let click_count = Rc::new(Cell::new(0u32));
     let cc = click_count.clone();
@@ -443,6 +452,7 @@ fn widget_button_click() {
 
 #[test]
 fn widget_listbox_multi() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_widget_state_golden("widget_listbox_multi");
     assert_eq!(
@@ -452,7 +462,7 @@ fn widget_listbox_multi() {
     );
 
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut ts.cc(), look);
     lb.SetSelectionType(SelectionMode::Multi);
     lb.AddItem("item0".to_string(), "Alpha".to_string());
     lb.AddItem("item1".to_string(), "Beta".to_string());
@@ -483,6 +493,7 @@ fn widget_listbox_multi() {
 
 #[test]
 fn widget_listbox_toggle() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_widget_state_golden("widget_listbox_toggle");
     assert_eq!(
@@ -492,7 +503,7 @@ fn widget_listbox_toggle() {
     );
 
     let look = emLook::new();
-    let mut lb = emListBox::new(look);
+    let mut lb = emListBox::new(&mut ts.cc(), look);
     lb.SetSelectionType(SelectionMode::Toggle);
     lb.AddItem("item0".to_string(), "Alpha".to_string());
     lb.AddItem("item1".to_string(), "Beta".to_string());
@@ -529,6 +540,7 @@ fn widget_listbox_toggle() {
 
 #[test]
 fn widget_textfield_cursor_nav() {
+    let mut ts = TestSched::new();
     let (mut tree, tid) = test_tree();
     let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
     require_golden!();
@@ -536,7 +548,7 @@ fn widget_textfield_cursor_nav() {
     assert_eq!(golden.len(), 8, "unexpected golden file size");
 
     let look = emLook::new();
-    let mut tf = emTextField::new(look);
+    let mut tf = emTextField::new(&mut ts.cc(), look);
     tf.SetEditable(true);
     tf.SetMultiLineMode(true);
     tf.SetText("abc\ndef");
@@ -558,12 +570,13 @@ fn widget_textfield_cursor_nav() {
 
 #[test]
 fn widget_splitter_drag() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_widget_state_golden("widget_splitter_drag");
     assert_eq!(golden.len(), 16, "unexpected golden file size");
 
     let look = emLook::new();
-    let mut sp = emSplitter::new(Orientation::Horizontal, look);
+    let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Horizontal, look);
     sp.SetMinMaxPos(0.0, 1.0);
     sp.SetPos(0.5);
     let eps = 1e-9;
@@ -620,8 +633,9 @@ fn run_splitter_layout_step(
     parent_rect: (f64, f64, f64, f64),
     pos: f64,
 ) -> [f64; 9] {
+    let mut ts = TestSched::new();
     let look = emLook::new();
-    let mut sp = emSplitter::new(orientation, look);
+    let mut sp = emSplitter::new(&mut ts.cc(), orientation, look);
     sp.SetMinMaxPos(0.0, 1.0);
     sp.SetPos(pos);
     let clamped_pos = sp.GetPos();
@@ -836,7 +850,7 @@ fn composition_click_through_tree() {
     tree.set_behavior(container_id, Box::new(container_group));
 
     let button_id = tree.create_child(container_id, "button", None);
-    let mut btn = emButton::new("Click Me", look);
+    let mut btn = emButton::new(&mut ts.cc(), "Click Me", look);
     btn.on_click = Some(Box::new(
         move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
             clicked_clone.set(clicked_clone.get() + 1);

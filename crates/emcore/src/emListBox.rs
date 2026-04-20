@@ -3,13 +3,14 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::emColor::emColor;
-use crate::emEngineCtx::PanelCtx;
+use crate::emEngineCtx::{ConstructCtx, PanelCtx};
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emPainter::emPainter;
 use crate::emPanel::Rect;
 use crate::emPanel::{PanelBehavior, PanelState};
 use crate::emRasterLayout::emRasterLayout;
+use crate::emSignal::SignalId;
 
 use super::emBorder::{emBorder, InnerBorderType, OuterBorderType};
 use crate::emLook::emLook;
@@ -299,10 +300,14 @@ pub struct emListBox {
     enabled: bool,
     /// Whether the list box is in the focused panel path.
     in_focused_path: bool,
+    /// Allocated per C++ `emListBox::GetSelectionSignal()`. B3.4b: alloc only.
+    pub selection_signal: SignalId,
+    /// Allocated per C++ `emListBox::GetItemTriggerSignal()`.
+    pub item_trigger_signal: SignalId,
 }
 
 impl emListBox {
-    pub fn new(look: Rc<emLook>) -> Self {
+    pub fn new<C: ConstructCtx>(ctx: &mut C, look: Rc<emLook>) -> Self {
         Self {
             border: emBorder::new(OuterBorderType::Instrument)
                 .with_inner(InnerBorderType::InputField)
@@ -331,6 +336,8 @@ impl emListBox {
             visible_height: 0.0,
             enabled: true,
             in_focused_path: false,
+            selection_signal: ctx.create_signal(),
+            item_trigger_signal: ctx.create_signal(),
         }
     }
 
@@ -1735,8 +1742,10 @@ const HOWTO_TOGGLE_SELECTION: &str = concat!(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emEngineCtx::{DeferredAction, InitCtx};
     use crate::emPanel::Rect;
     use crate::emPanelTree::{PanelId, PanelTree};
+    use crate::emScheduler::EngineScheduler;
     use slotmap::Key as _;
     use std::cell::RefCell;
 
@@ -1771,12 +1780,35 @@ mod tests {
         texts.iter().map(|s| s.to_string()).collect()
     }
 
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
+
     #[test]
     fn single_selection_arrow_keys() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         lb.set_items(make_items(&["A", "B", "C"]));
@@ -1817,10 +1849,11 @@ mod tests {
 
     #[test]
     fn multi_selection_toggle() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         lb.SetSelectionType(SelectionMode::Multi);
@@ -1875,13 +1908,14 @@ mod tests {
     #[test]
     #[ignore = "B3.4b: on_trigger deferred dispatch; B3.4c restores via signal"]
     fn trigger_callback() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let triggered = Rc::new(RefCell::new(None));
         let trig_clone = triggered.clone();
 
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         lb.set_items(make_items(&["A", "B"]));
@@ -1904,13 +1938,14 @@ mod tests {
     #[test]
     #[ignore = "B3.4b: on_selection deferred dispatch; B3.4c restores via signal"]
     fn selection_callback() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let selections = Rc::new(RefCell::new(Vec::new()));
         let sel_clone = selections.clone();
 
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         lb.set_items(make_items(&["A", "B", "C"]));
@@ -1948,8 +1983,9 @@ mod tests {
 
     #[test]
     fn add_and_insert_items() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
 
         lb.AddItem("a".into(), "Alpha".into());
         lb.AddItem("b".into(), "Beta".into());
@@ -1970,8 +2006,9 @@ mod tests {
 
     #[test]
     fn remove_item_adjusts_selection() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "A".into());
         lb.AddItem("b".into(), "B".into());
         lb.AddItem("c".into(), "C".into());
@@ -1989,8 +2026,9 @@ mod tests {
 
     #[test]
     fn move_item_reorders() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "A".into());
         lb.AddItem("b".into(), "B".into());
         lb.AddItem("c".into(), "C".into());
@@ -2006,8 +2044,9 @@ mod tests {
 
     #[test]
     fn sort_items_reorders() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("c".into(), "Cherry".into());
         lb.AddItem("a".into(), "Apple".into());
         lb.AddItem("b".into(), "Banana".into());
@@ -2026,8 +2065,9 @@ mod tests {
 
     #[test]
     fn clear_items_resets_all() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "A".into());
         lb.Select(0, true);
         assert_eq!(lb.GetChecked(), &[0]);
@@ -2039,8 +2079,9 @@ mod tests {
 
     #[test]
     fn selection_apis() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.SetSelectionType(SelectionMode::Multi);
         lb.AddItem("a".into(), "A".into());
         lb.AddItem("b".into(), "B".into());
@@ -2071,8 +2112,9 @@ mod tests {
 
     #[test]
     fn set_item_text_clears_keywalk() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "Alpha".into());
         lb.keywalk_chars = "al".into();
 
@@ -2083,10 +2125,11 @@ mod tests {
 
     #[test]
     fn read_only_mode_no_selection() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         lb.SetSelectionType(SelectionMode::ReadOnly);
@@ -2101,10 +2144,11 @@ mod tests {
 
     #[test]
     fn toggle_mode_selection() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         lb.SetSelectionType(SelectionMode::Toggle);
@@ -2121,10 +2165,11 @@ mod tests {
 
     #[test]
     fn ctrl_a_selects_all_in_multi_mode() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         lb.SetSelectionType(SelectionMode::Multi);
@@ -2154,11 +2199,12 @@ mod tests {
     #[test]
     #[ignore = "B3.4b: on_trigger deferred dispatch; B3.4c restores via signal"]
     fn trigger_item_fires_callback() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
         let triggered = Rc::new(RefCell::new(Vec::new()));
         let trig_clone = triggered.clone();
 
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "A".into());
         lb.AddItem("b".into(), "B".into());
         lb.on_trigger = Some(Box::new(
@@ -2174,8 +2220,9 @@ mod tests {
 
     #[test]
     fn insert_adjusts_selected_indices() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "A".into());
         lb.AddItem("b".into(), "B".into());
 
@@ -2192,10 +2239,11 @@ mod tests {
 
     #[test]
     fn keywalk_prefix_match() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         lb.AddItem("a".into(), "Apple".into());
@@ -2209,10 +2257,11 @@ mod tests {
 
     #[test]
     fn keywalk_substring_search() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         lb.AddItem("a".into(), "Apple".into());
@@ -2232,10 +2281,11 @@ mod tests {
 
     #[test]
     fn keywalk_fuzzy_match() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         lb.AddItem("a".into(), "Red-Apple".into());
@@ -2252,8 +2302,9 @@ mod tests {
 
     #[test]
     fn out_of_range_operations_are_noop() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "A".into());
 
         // Out of range accessors return defaults.
@@ -2272,16 +2323,18 @@ mod tests {
     #[test]
     #[should_panic(expected = "not unique")]
     fn duplicate_name_panics() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "A".into());
         lb.AddItem("a".into(), "Also A".into());
     }
 
     #[test]
     fn item_data_round_trip() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "A".into());
 
         lb.SetItemData(0, Some(Box::new(42_i32)));
@@ -2291,8 +2344,9 @@ mod tests {
 
     #[test]
     fn select_solely_out_of_range_clears() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "A".into());
         lb.AddItem("b".into(), "B".into());
         lb.Select(0, false);
@@ -2306,8 +2360,9 @@ mod tests {
 
     #[test]
     fn multi_shift_range_selection() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.SetSelectionType(SelectionMode::Multi);
         for i in 0..5 {
             lb.AddItem(format!("{}", i), format!("Item {}", i));
@@ -2326,8 +2381,9 @@ mod tests {
 
     #[test]
     fn toggle_mode_shift_range() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.SetSelectionType(SelectionMode::Toggle);
         for i in 0..5 {
             lb.AddItem(format!("{}", i), format!("Item {}", i));
@@ -2346,8 +2402,9 @@ mod tests {
 
     #[test]
     fn move_item_preserves_selection() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut lb = emListBox::new(look);
+        let mut lb = emListBox::new(&mut __init.ctx(), look);
         for i in 0..4 {
             lb.AddItem(format!("{}", i), format!("Item {}", i));
         }

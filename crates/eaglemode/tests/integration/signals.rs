@@ -5,7 +5,7 @@ use emcore::emEngine::{emEngine, Priority, TreeLocation};
 use emcore::emEngineCtx::EngineCtx;
 use emcore::emSignal::SignalId;
 
-use crate::support::TestHarness;
+use super::support::TestHarness;
 
 /// emEngine that fires a signal on first Cycle and logs its label.
 struct SignalFiringEngine {

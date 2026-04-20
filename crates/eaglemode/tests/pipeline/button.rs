@@ -49,8 +49,9 @@ impl PanelBehavior for ButtonPanel {
 
 #[test]
 fn button_click_1x_and_2x() {
-    // 1. Create PipelineTestHarness (800x600 viewport).
     let mut h = PipelineTestHarness::new();
+
+    // 1. Create PipelineTestHarness (800x600 viewport).
     let root = h.get_root_panel();
 
     // 2. Create emButton with on_click callback incrementing a shared counter.
@@ -58,7 +59,7 @@ fn button_click_1x_and_2x() {
     let counter_clone = counter.clone();
 
     let look = emLook::new();
-    let mut btn = emButton::new("Systematic Test", look);
+    let mut btn = emButton::new(&mut h.sched_ctx(), "Systematic Test", look);
     btn.on_click = Some(Box::new(
         move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
             counter_clone.set(counter_clone.get() + 1);
@@ -122,7 +123,7 @@ fn make_button_harness() -> ButtonHarness {
     let press_log_c = press_log.clone();
 
     let look = emLook::new();
-    let mut btn = emButton::new("BP9", look);
+    let mut btn = emButton::new(&mut h.sched_ctx(), "BP9", look);
     btn.on_click = Some(Box::new(
         move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
             counter_c.set(counter_c.get() + 1);
@@ -386,7 +387,7 @@ fn bp9_vct_min_ext_guard_mouse() {
     let counter_c = counter.clone();
 
     let look = emLook::new();
-    let mut btn = emButton::new("Tiny", look);
+    let mut btn = emButton::new(&mut h.sched_ctx(), "Tiny", look);
     btn.on_click = Some(Box::new(
         move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
             counter_c.set(counter_c.get() + 1);
@@ -426,7 +427,7 @@ fn bp9_vct_min_ext_guard_enter() {
     let counter_c = counter.clone();
 
     let look = emLook::new();
-    let mut btn = emButton::new("Tiny", look);
+    let mut btn = emButton::new(&mut h.sched_ctx(), "Tiny", look);
     btn.on_click = Some(Box::new(
         move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
             counter_c.set(counter_c.get() + 1);

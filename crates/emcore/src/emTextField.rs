@@ -7,7 +7,9 @@ use crate::emPainter::emPainter;
 use crate::emPanel::PanelState;
 
 use super::emBorder::{emBorder, InnerBorderType, OuterBorderType};
+use crate::emEngineCtx::ConstructCtx;
 use crate::emLook::emLook;
+use crate::emSignal::SignalId;
 
 const TEXT_PADDING: f64 = 2.0;
 const TEXT_SIZE: f64 = 13.0;
@@ -126,12 +128,18 @@ pub struct emTextField {
     ml_tx: f64,
     _ml_th: f64,
     ml_cell_h: f64,
+    /// Allocated per C++ `emTextField::GetTextSignal()`. B3.4b: alloc only.
+    pub text_signal: SignalId,
+    /// Allocated per C++ `emTextField::GetSelectionSignal()`.
+    pub selection_signal: SignalId,
+    /// Allocated per C++ `emTextField::GetCanUndoRedoSignal()`.
+    pub can_undo_redo_signal: SignalId,
 }
 
 const MAX_UNDO: usize = 100;
 
 impl emTextField {
-    pub fn new(look: Rc<emLook>) -> Self {
+    pub fn new<C: ConstructCtx>(ctx: &mut C, look: Rc<emLook>) -> Self {
         Self {
             border: emBorder::new(OuterBorderType::Instrument)
                 .with_inner(InnerBorderType::OutputField)
@@ -183,6 +191,9 @@ impl emTextField {
             ml_tx: 0.0,
             _ml_th: 0.0,
             ml_cell_h: 0.0,
+            text_signal: ctx.create_signal(),
+            selection_signal: ctx.create_signal(),
+            can_undo_redo_signal: ctx.create_signal(),
         }
     }
 
@@ -2423,9 +2434,10 @@ This text field is read-only. You cannot edit the text.\n";
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::emEngineCtx::PanelCtx;
+    use crate::emEngineCtx::{DeferredAction, InitCtx, PanelCtx};
     use crate::emPanel::Rect;
     use crate::emPanelTree::{PanelId, PanelTree};
+    use crate::emScheduler::EngineScheduler;
     use slotmap::Key as _;
     use std::cell::RefCell;
 
@@ -2480,12 +2492,35 @@ mod tests {
         emInputEvent::press(key).with_shift_ctrl()
     }
 
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
+
     #[test]
     fn insert_and_delete() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -2508,10 +2543,11 @@ mod tests {
 
     #[test]
     fn cursor_movement() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         tf.SetText("ABCD");
@@ -2532,10 +2568,11 @@ mod tests {
 
     #[test]
     fn max_length() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -2551,13 +2588,14 @@ mod tests {
     #[test]
     #[ignore = "B3.4b: on_text deferred dispatch; B3.4c restores via signal"]
     fn callback_fires_on_change() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let changes = Rc::new(RefCell::new(Vec::new()));
         let changes_clone = changes.clone();
 
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -2575,8 +2613,9 @@ mod tests {
 
     #[test]
     fn GetPasswordMode() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetPasswordMode(true);
         tf.SetText("secret");
         assert_eq!(tf.GetText(), "secret");
@@ -2585,18 +2624,20 @@ mod tests {
 
     #[test]
     fn cursor_type() {
+        let mut __init = TestInit::new();
         // C++ doesn't override GetCursor — always default panel cursor.
         let look = emLook::new();
-        let tf = emTextField::new(look);
+        let tf = emTextField::new(&mut __init.ctx(), look);
         assert_eq!(tf.GetCursor(), emCursor::Normal);
     }
 
     #[test]
     fn undo_redo() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -2625,10 +2666,11 @@ mod tests {
 
     #[test]
     fn undo_no_merge_across_types() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -2652,10 +2694,11 @@ mod tests {
 
     #[test]
     fn undo_merge_broken_by_cursor_move() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -2681,8 +2724,9 @@ mod tests {
 
     #[test]
     fn select_deselect_select_all() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("Hello World");
 
         tf.Select(0, 5);
@@ -2700,8 +2744,9 @@ mod tests {
 
     #[test]
     fn modify_selection_extend() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("ABCDEF");
         tf.SetCursorIndex(2);
 
@@ -2721,10 +2766,11 @@ mod tests {
 
     #[test]
     fn editable_toggle() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         assert!(!tf.IsEditable());
@@ -2742,10 +2788,11 @@ mod tests {
 
     #[test]
     fn can_undo_redo() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -2765,8 +2812,9 @@ mod tests {
 
     #[test]
     fn word_boundary_navigation() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello world_test foo");
 
         // Forward from start
@@ -2784,8 +2832,9 @@ mod tests {
 
     #[test]
     fn word_boundary_edge_cases() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
 
         // Empty string
         tf.SetText("");
@@ -2800,8 +2849,9 @@ mod tests {
 
     #[test]
     fn row_navigation_multi_line() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("abc\ndefgh\nij");
 
         assert_eq!(tf.row_start(5), 4); // 'd' is at 4
@@ -2816,8 +2866,9 @@ mod tests {
 
     #[test]
     fn row_nav_up_down() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("abc\ndefgh\nij");
 
         // From position 5 ("e" in row 1, col 1), go to row 0 col 1 = "b" at index 1
@@ -2837,10 +2888,11 @@ mod tests {
 
     #[test]
     fn ctrl_left_right_word_nav() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         tf.SetText("hello world");
@@ -2855,10 +2907,11 @@ mod tests {
 
     #[test]
     fn shift_selection() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         tf.SetText("ABCDEF");
@@ -2877,10 +2930,11 @@ mod tests {
 
     #[test]
     fn ctrl_shift_word_selection() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         tf.SetText("hello world");
@@ -2892,10 +2946,11 @@ mod tests {
 
     #[test]
     fn editable_false_blocks_editing_not_nav() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         tf.SetText("test");
@@ -2918,10 +2973,11 @@ mod tests {
 
     #[test]
     fn overwrite_mode() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -2939,10 +2995,11 @@ mod tests {
 
     #[test]
     fn ctrl_backspace_delete_word() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -2955,10 +3012,11 @@ mod tests {
 
     #[test]
     fn ctrl_delete_word() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -2971,10 +3029,11 @@ mod tests {
 
     #[test]
     fn select_all_ctrl_a() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         tf.SetText("test");
@@ -2994,10 +3053,11 @@ mod tests {
 
     #[test]
     fn validation_rejects_change() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -3015,10 +3075,11 @@ mod tests {
 
     #[test]
     fn magic_column_up_down() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         tf.SetMultiLineMode(true);
@@ -3037,10 +3098,11 @@ mod tests {
 
     #[test]
     fn enter_multi_line() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -3055,10 +3117,11 @@ mod tests {
 
     #[test]
     fn enter_single_line_noop() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -3073,10 +3136,11 @@ mod tests {
 
     #[test]
     fn clipboard_copy_paste() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -3105,10 +3169,11 @@ mod tests {
 
     #[test]
     fn clipboard_cut() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -3129,10 +3194,11 @@ mod tests {
 
     #[test]
     fn paste_respects_max_length() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -3148,8 +3214,9 @@ mod tests {
 
     #[test]
     fn password_mode_copies_asterisks() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetPasswordMode(true);
         let clipboard = Rc::new(RefCell::new(String::new()));
 
@@ -3168,8 +3235,9 @@ mod tests {
 
     #[test]
     fn double_click_selects_word() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello world");
 
         // Test word selection logic directly (double-click selects word
@@ -3184,8 +3252,9 @@ mod tests {
 
     #[test]
     fn move_mode_relocates_text() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("ABCDEF");
         tf.SetEditable(true);
 
@@ -3202,8 +3271,9 @@ mod tests {
 
     #[test]
     fn preferred_size_multi_line() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
 
         let (_w1, h1) = tf.preferred_size();
 
@@ -3215,8 +3285,9 @@ mod tests {
 
     #[test]
     fn CalcTotalColsRows() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("a\nb\nc");
         assert_eq!(tf.CalcTotalColsRows(), 3);
 
@@ -3226,10 +3297,11 @@ mod tests {
 
     #[test]
     fn insert_toggle() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         assert!(!tf.GetOverwriteMode());
@@ -3243,18 +3315,20 @@ mod tests {
 
     #[test]
     fn GetTextLen() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello");
         assert_eq!(tf.GetTextLen(), 5);
     }
 
     #[test]
     fn ctrl_shift_backspace_delete_to_row_start() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -3267,10 +3341,11 @@ mod tests {
 
     #[test]
     fn ctrl_shift_delete_to_row_end() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -3283,10 +3358,11 @@ mod tests {
 
     #[test]
     fn home_end_multi_line_row_vs_text() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let ps = default_panel_state();
         let is = default_input_state();
         tf.SetMultiLineMode(true);
@@ -3314,8 +3390,9 @@ mod tests {
 
     #[test]
     fn next_paragraph_single_line_returns_len() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello world");
         // single-line: returns text len
         assert_eq!(tf.next_paragraph_index(0), 11);
@@ -3323,8 +3400,9 @@ mod tests {
 
     #[test]
     fn next_paragraph_multi_line() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetMultiLineMode(true);
         tf.SetText("abc\n\ndef\nghi");
         // From 0: skip "abc", find newline at 3, another at 4, then "def" at 5
@@ -3337,8 +3415,9 @@ mod tests {
 
     #[test]
     fn prev_paragraph_multi_line() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetMultiLineMode(true);
         tf.SetText("abc\n\ndef\nghi");
         // From end: prev paragraph is "def" at 5 -> but actually our scan
@@ -3350,16 +3429,18 @@ mod tests {
 
     #[test]
     fn prev_paragraph_single_line_returns_zero() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello");
         assert_eq!(tf.prev_paragraph_index(3), 0);
     }
 
     #[test]
     fn next_word_index_skips_delimiters() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello  world");
         // From 0: skip word "hello", skip delimiters "  ", find word "world" at 7
         assert_eq!(tf.GetNextWordIndex(0), 7);
@@ -3371,8 +3452,9 @@ mod tests {
 
     #[test]
     fn prev_word_index_finds_word_start() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello  world");
         // prev_word_index(12) should find start of "world" at 7
         assert_eq!(tf.GetPrevWordIndex(12), 7);
@@ -3382,24 +3464,27 @@ mod tests {
 
     #[test]
     fn next_word_index_at_end() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello");
         assert_eq!(tf.GetNextWordIndex(5), 5);
     }
 
     #[test]
     fn prev_word_index_at_start() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello world");
         assert_eq!(tf.GetPrevWordIndex(0), 0);
     }
 
     #[test]
     fn publish_selection_basic() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let clipboard = Rc::new(RefCell::new(String::new()));
         let clip_w = clipboard.clone();
         tf.on_clipboard_copy = Some(Box::new(move |text| {
@@ -3421,8 +3506,9 @@ mod tests {
 
     #[test]
     fn publish_selection_password_mode() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let clipboard = Rc::new(RefCell::new(String::new()));
         let clip_w = clipboard.clone();
         tf.on_clipboard_copy = Some(Box::new(move |text| {
@@ -3438,8 +3524,9 @@ mod tests {
     #[test]
     #[ignore = "B3.3: callback requires scheduler reach; B3.4 restores dispatch"]
     fn selection_signal_fires() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         let count = Rc::new(RefCell::new(0usize));
         let count_c = count.clone();
         tf.on_selection_signal = Some(Box::new(
@@ -3457,10 +3544,11 @@ mod tests {
     #[test]
     #[ignore = "B3.3: callback requires scheduler reach; B3.4 restores dispatch"]
     fn can_undo_redo_signal_fires() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetEditable(true);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -3484,8 +3572,9 @@ mod tests {
 
     #[test]
     fn cursor_blink_cycle() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         assert!(tf.IsCursorBlinkOn());
         // Focused: returns busy=true
         let busy = tf.cycle_blink(true);
@@ -3499,8 +3588,9 @@ mod tests {
 
     #[test]
     fn restart_cursor_blinking_resets() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.cursor_blink_on = false; // simulate blink-off state
         tf.RestartCursorBlinking();
         assert!(tf.IsCursorBlinkOn());
@@ -3508,8 +3598,9 @@ mod tests {
 
     #[test]
     fn calc_total_cols_rows_single_line() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello");
         assert_eq!(tf.calc_total_cols_rows(), (5, 1));
         tf.SetText("");
@@ -3518,8 +3609,9 @@ mod tests {
 
     #[test]
     fn calc_total_cols_rows_multi_line() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetMultiLineMode(true);
         tf.SetText("ab\ncdef\ng");
         // Row 0: "ab" (2 cols), Row 1: "cdef" (4 cols), Row 2: "g" (1 col)
@@ -3529,8 +3621,9 @@ mod tests {
 
     #[test]
     fn calc_total_cols_rows_with_tabs() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetMultiLineMode(true);
         tf.SetText("a\tb");
         // Tab at col 1 -> next tab stop at 8, then 'b' at col 9
@@ -3540,8 +3633,9 @@ mod tests {
 
     #[test]
     fn check_mouse_single_line() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let mut tf = emTextField::new(look);
+        let mut tf = emTextField::new(&mut __init.ctx(), look);
         tf.SetText("hello world");
         tf.char_positions = vec![
             0.0, 8.0, 16.0, 24.0, 32.0, 40.0, 48.0, 56.0, 64.0, 72.0, 80.0, 88.0,

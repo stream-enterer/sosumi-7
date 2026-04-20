@@ -74,8 +74,9 @@ struct RadioBoxHarness {
 
 impl RadioBoxHarness {
     fn new() -> Self {
+        let mut h = PipelineTestHarness::new();
         let look = emLook::new();
-        let group: Rc<RefCell<RadioGroup>> = RadioGroup::new();
+        let group: Rc<RefCell<RadioGroup>> = RadioGroup::new(&mut h.sched_ctx());
 
         let rb0 = emRadioBox::new("Alpha", look.clone(), group.clone(), 0);
         let rb1 = emRadioBox::new("Beta", look.clone(), group.clone(), 1);
@@ -84,7 +85,6 @@ impl RadioBoxHarness {
         assert_eq!(group.borrow().GetCount(), 3);
         assert_eq!(group.borrow().GetChecked(), None);
 
-        let mut h = PipelineTestHarness::new();
         let root = h.get_root_panel();
 
         // Each radio box gets its own child panel, stacked vertically:

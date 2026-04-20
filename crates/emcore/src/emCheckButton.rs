@@ -11,8 +11,9 @@ use crate::emPanel::Rect;
 use super::emBorder::{emBorder, OuterBorderType};
 use crate::emBorder::with_toolkit_images;
 use crate::emButton::HOWTO_BUTTON;
-use crate::emEngineCtx::{PanelCtx, WidgetCallback};
+use crate::emEngineCtx::{ConstructCtx, PanelCtx, WidgetCallback};
 use crate::emLook::emLook;
+use crate::emSignal::SignalId;
 
 /// Toggle button widget — visually depressed when checked.
 pub struct emCheckButton {
@@ -27,10 +28,13 @@ pub struct emCheckButton {
     // DIVERGED: GetCheckSignal — replaced by callback field `on_check`
     // DIVERGED: CheckChanged — folded into `on_check` callback invocation
     pub on_check: Option<WidgetCallback<bool>>,
+    /// Allocated at construction per C++ `emCheckButton::GetCheckSignal()`.
+    /// B3.4b allocates; B3.4c fires in Input; B3.4d cleans up DIVERGED blocks.
+    pub check_signal: SignalId,
 }
 
 impl emCheckButton {
-    pub fn new(caption: &str, look: Rc<emLook>) -> Self {
+    pub fn new<C: ConstructCtx>(ctx: &mut C, caption: &str, look: Rc<emLook>) -> Self {
         let mut border = emBorder::new(OuterBorderType::InstrumentMoreRound)
             .with_caption(caption)
             .with_label_in_border(false)
@@ -46,6 +50,7 @@ impl emCheckButton {
             last_w: 0.0,
             last_h: 0.0,
             on_check: None,
+            check_signal: ctx.create_signal(),
         }
     }
 
@@ -359,9 +364,10 @@ const HOWTO_NOT_CHECKED: &str = "\n\n\
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::emEngineCtx::PanelCtx;
+    use crate::emEngineCtx::{DeferredAction, InitCtx, PanelCtx};
     use crate::emPanel::Rect;
     use crate::emPanelTree::{PanelId, PanelTree};
+    use crate::emScheduler::EngineScheduler;
     use slotmap::Key as _;
     use std::cell::RefCell;
 
@@ -369,6 +375,29 @@ mod tests {
         let mut tree = PanelTree::new();
         let id = tree.create_root("t", false);
         (tree, id)
+    }
+
+    /// Minimal construction-ctx bundle for widget unit tests.
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
     }
 
     fn default_panel_state() -> PanelState {
@@ -395,7 +424,8 @@ mod tests {
     #[test]
     fn toggle_state() {
         let look = emLook::new();
-        let mut btn = emCheckButton::new("Toggle", look);
+        let mut init = TestInit::new();
+        let mut btn = emCheckButton::new(&mut init.ctx(), "Toggle", look);
         let ps = default_panel_state();
         let is = default_input_state();
         let (mut tree, tid) = test_tree();
@@ -412,7 +442,8 @@ mod tests {
     fn pressed_state_tracks_press_release() {
         // Enter is instant — no visual press state. Verify pressed stays false.
         let look = emLook::new();
-        let mut btn = emCheckButton::new("CB", look);
+        let mut init = TestInit::new();
+        let mut btn = emCheckButton::new(&mut init.ctx(), "CB", look);
         let ps = default_panel_state();
         let is = default_input_state();
         let (mut tree, tid) = test_tree();
@@ -430,7 +461,8 @@ mod tests {
         let states = Rc::new(RefCell::new(Vec::new()));
         let states_clone = states.clone();
 
-        let mut btn = emCheckButton::new("CB", look);
+        let mut init = TestInit::new();
+        let mut btn = emCheckButton::new(&mut init.ctx(), "CB", look);
         btn.on_check = Some(Box::new(
             move |checked, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                 states_clone.borrow_mut().push(checked);

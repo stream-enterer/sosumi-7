@@ -14,8 +14,9 @@ use crate::emRasterLayout::emRasterLayout;
 use super::emBorder::{emBorder, OuterBorderType};
 use crate::emBorder::with_toolkit_images;
 use crate::emButton::{HOWTO_BUTTON, HOWTO_EOI_BUTTON};
-use crate::emEngineCtx::{PanelCtx, WidgetCallback};
+use crate::emEngineCtx::{ConstructCtx, PanelCtx, WidgetCallback};
 use crate::emLook::emLook;
+use crate::emSignal::SignalId;
 
 /// Shared state for a group of radio buttons enforcing mutual exclusion.
 ///
@@ -28,14 +29,18 @@ pub struct RadioGroup {
     /// Live index cells for each registered button, enabling re-indexing on removal.
     buttons: Vec<Rc<Cell<usize>>>,
     pub on_select: Option<WidgetCallback<Option<usize>>>,
+    /// Allocated at construction per C++ `emRadioButton::Mechanism::GetCheckSignal()`.
+    /// B3.4b allocates; B3.4c fires on selection change.
+    pub check_signal: SignalId,
 }
 
 impl RadioGroup {
-    pub fn new() -> Rc<RefCell<Self>> {
+    pub fn new<C: ConstructCtx>(ctx: &mut C) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Self {
             selected: None,
             buttons: Vec::new(),
             on_select: None,
+            check_signal: ctx.create_signal(),
         }))
     }
 
@@ -617,17 +622,17 @@ pub struct RadioLinearGroup {
 }
 
 impl RadioLinearGroup {
-    pub fn horizontal() -> Self {
+    pub fn horizontal<C: ConstructCtx>(ctx: &mut C) -> Self {
         Self {
             layout: emLinearLayout::horizontal(),
-            group: RadioGroup::new(),
+            group: RadioGroup::new(ctx),
         }
     }
 
-    pub fn vertical() -> Self {
+    pub fn vertical<C: ConstructCtx>(ctx: &mut C) -> Self {
         Self {
             layout: emLinearLayout::vertical(),
-            group: RadioGroup::new(),
+            group: RadioGroup::new(ctx),
         }
     }
 }
@@ -637,18 +642,12 @@ pub struct RadioRasterGroup {
     pub group: Rc<RefCell<RadioGroup>>,
 }
 
-impl Default for RadioRasterGroup {
-    fn default() -> Self {
+impl RadioRasterGroup {
+    pub fn new<C: ConstructCtx>(ctx: &mut C) -> Self {
         Self {
             layout: emRasterLayout::default(),
-            group: RadioGroup::new(),
+            group: RadioGroup::new(ctx),
         }
-    }
-}
-
-impl RadioRasterGroup {
-    pub fn new() -> Self {
-        Self::default()
     }
 }
 
@@ -661,9 +660,10 @@ impl Drop for emRadioButton {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::emEngineCtx::PanelCtx;
+    use crate::emEngineCtx::{DeferredAction, InitCtx, PanelCtx};
     use crate::emPanel::Rect;
     use crate::emPanelTree::{PanelId, PanelTree};
+    use crate::emScheduler::EngineScheduler;
     use slotmap::Key as _;
 
     fn test_tree() -> (PanelTree, PanelId) {
@@ -693,12 +693,35 @@ mod tests {
         emInputState::new()
     }
 
+    struct TestInit {
+        sched: EngineScheduler,
+        fw: Vec<DeferredAction>,
+        root: Rc<crate::emContext::emContext>,
+    }
+    impl TestInit {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                root: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn ctx(&mut self) -> InitCtx<'_> {
+            InitCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.root,
+            }
+        }
+    }
+
     #[test]
     fn radio_group_mutual_exclusion() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
 
         let mut r0 = emRadioButton::new("A", look.clone(), group.clone(), 0);
         let mut r1 = emRadioButton::new("B", look.clone(), group.clone(), 1);
@@ -727,11 +750,12 @@ mod tests {
 
     #[test]
     fn pressed_state_tracks_press_release() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         // Enter is instant -- no visual press state. Verify pressed stays false.
         let look = emLook::new();
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         let mut r0 = emRadioButton::new("A", look, group.clone(), 0);
         let ps = default_panel_state();
         let is = default_input_state();
@@ -744,9 +768,10 @@ mod tests {
     #[test]
     #[ignore = "B3.3: callback requires scheduler reach; B3.4 restores dispatch"]
     fn radio_group_callback() {
+        let mut __init = TestInit::new();
         let (mut tree, tid) = test_tree();
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         let selections = Rc::new(RefCell::new(Vec::new()));
         let sel_clone = selections.clone();
         group.borrow_mut().on_select = Some(Box::new(
@@ -769,8 +794,9 @@ mod tests {
 
     #[test]
     fn count_tracks_construction_and_drop() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         assert_eq!(group.borrow().GetCount(), 0);
 
         let r0 = emRadioButton::new("A", look.clone(), group.clone(), 0);
@@ -788,8 +814,9 @@ mod tests {
 
     #[test]
     fn index_returns_correct_value() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         let r0 = emRadioButton::new("A", look.clone(), group.clone(), 0);
         let r1 = emRadioButton::new("B", look, group.clone(), 1);
         assert_eq!(r0.index(), 0);
@@ -800,8 +827,9 @@ mod tests {
 
     #[test]
     fn set_checked_selects_in_group() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         let mut r0 = emRadioButton::new("A", look.clone(), group.clone(), 0);
         let mut r1 = emRadioButton::new("B", look, group.clone(), 1);
 
@@ -826,8 +854,9 @@ mod tests {
 
     #[test]
     fn set_checked_false_on_unselected_is_noop() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         let mut r0 = emRadioButton::new("A", look.clone(), group.clone(), 0);
         let mut r1 = emRadioButton::new("B", look, group.clone(), 1);
 
@@ -842,7 +871,8 @@ mod tests {
 
     #[test]
     fn remove_by_index_clears_checked() {
-        let group = RadioGroup::new();
+        let mut __init = TestInit::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         {
             let mut g = group.borrow_mut();
             g.AddAll(3);
@@ -857,7 +887,8 @@ mod tests {
 
     #[test]
     fn remove_by_index_decrements_checked() {
-        let group = RadioGroup::new();
+        let mut __init = TestInit::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         {
             let mut g = group.borrow_mut();
             g.AddAll(4);
@@ -873,7 +904,8 @@ mod tests {
 
     #[test]
     fn remove_by_index_no_change_when_checked_before() {
-        let group = RadioGroup::new();
+        let mut __init = TestInit::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         {
             let mut g = group.borrow_mut();
             g.AddAll(4);
@@ -888,7 +920,8 @@ mod tests {
 
     #[test]
     fn remove_by_index_out_of_bounds_is_noop() {
-        let group = RadioGroup::new();
+        let mut __init = TestInit::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         {
             let mut g = group.borrow_mut();
             g.AddAll(2);
@@ -902,7 +935,8 @@ mod tests {
     #[test]
     #[ignore = "B3.3: callback requires scheduler reach; B3.4 restores dispatch"]
     fn remove_by_index_fires_callback() {
-        let group = RadioGroup::new();
+        let mut __init = TestInit::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         let signals = Rc::new(RefCell::new(Vec::new()));
         let sig_clone = signals.clone();
         {
@@ -924,7 +958,8 @@ mod tests {
     #[test]
     #[ignore = "B3.3: callback requires scheduler reach; B3.4 restores dispatch"]
     fn remove_all_clears_everything() {
-        let group = RadioGroup::new();
+        let mut __init = TestInit::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         let signals = Rc::new(RefCell::new(Vec::new()));
         let sig_clone = signals.clone();
         {
@@ -946,7 +981,8 @@ mod tests {
 
     #[test]
     fn remove_all_no_signal_if_nothing_checked() {
-        let group = RadioGroup::new();
+        let mut __init = TestInit::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         let signals = Rc::new(RefCell::new(Vec::new()));
         let sig_clone = signals.clone();
         {
@@ -967,7 +1003,8 @@ mod tests {
 
     #[test]
     fn set_check_index_out_of_bounds_clears() {
-        let group = RadioGroup::new();
+        let mut __init = TestInit::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         {
             let mut g = group.borrow_mut();
             g.AddAll(2);
@@ -981,7 +1018,8 @@ mod tests {
 
     #[test]
     fn set_check_index_same_is_noop() {
-        let group = RadioGroup::new();
+        let mut __init = TestInit::new();
+        let group = RadioGroup::new(&mut __init.ctx());
         let signals = Rc::new(RefCell::new(Vec::new()));
         let sig_clone = signals.clone();
         {
@@ -1002,8 +1040,9 @@ mod tests {
 
     #[test]
     fn drop_middle_button_reindexes_remaining() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
 
         let r0 = emRadioButton::new("A", look.clone(), group.clone(), 0);
         let r1 = emRadioButton::new("B", look.clone(), group.clone(), 1);
@@ -1028,8 +1067,9 @@ mod tests {
 
     #[test]
     fn drop_selected_button_clears_selection() {
+        let mut __init = TestInit::new();
         let look = emLook::new();
-        let group = RadioGroup::new();
+        let group = RadioGroup::new(&mut __init.ctx());
 
         let r0 = emRadioButton::new("A", look.clone(), group.clone(), 0);
         let r1 = emRadioButton::new("B", look.clone(), group.clone(), 1);

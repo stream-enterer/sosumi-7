@@ -498,8 +498,16 @@ impl PanelBehavior for emDirPanel {
     }
 
     fn CreateControlPanel(&mut self, parent_ctx: &mut PanelCtx, name: &str) -> Option<PanelId> {
-        let panel = crate::emFileManControlPanel::emFileManControlPanel::new(Rc::clone(&self.ctx))
-            .with_dir_path(&self.path);
+        let panel = {
+            let mut sched = parent_ctx
+                .as_sched_ctx()
+                .expect("CreateControlPanel requires scheduler-reach PanelCtx");
+            crate::emFileManControlPanel::emFileManControlPanel::new(
+                &mut sched,
+                Rc::clone(&self.ctx),
+            )
+            .with_dir_path(&self.path)
+        };
         Some(parent_ctx.create_child_with(name, Box::new(panel)))
     }
 

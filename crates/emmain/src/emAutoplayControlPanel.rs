@@ -275,7 +275,10 @@ impl SettingsPanel {
         // ── SfDuration ──
         // C++ SetPrefChildTallness(0, 0.15), SetChildWeight(0, 1.0)
         let flags = Rc::clone(&self.flags);
-        let mut sf = emScalarField::new(0.0, 900.0, Rc::clone(&look));
+        let mut sf = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emScalarField::new(&mut sched, 0.0, 900.0, Rc::clone(&look))
+        };
         sf.SetCaption("Duration");
         sf.SetDescription(
             "Number of seconds autoplay shall show each\n\
@@ -421,7 +424,10 @@ impl PrevNextPanel {
 
         // ── BtPrev ──
         let flags = Rc::clone(&self.flags);
-        let mut btn_prev = emButton::new("Previous", Rc::clone(&look));
+        let mut btn_prev = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emButton::new(&mut sched, "Previous", Rc::clone(&look))
+        };
         btn_prev.SetDescription(
             "Skip to previous autoplay item. This also works\n\
              when autoplay is off, for a manual show.\n\n\
@@ -436,7 +442,10 @@ impl PrevNextPanel {
 
         // ── BtNext ──
         let flags = Rc::clone(&self.flags);
-        let mut btn_next = emButton::new("Next", Rc::clone(&look));
+        let mut btn_next = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emButton::new(&mut sched, "Next", Rc::clone(&look))
+        };
         btn_next.SetDescription(
             "Skip to next autoplay item. This also works\n\
              when autoplay is off, for a manual show.\n\n\
@@ -513,7 +522,10 @@ impl emAutoplayControlPanel {
         // ── child 0: BtAutoplay (emCheckButton) ──
         // C++ SetChildWeight(0, 1.0), SetPrefChildTallness(0, 0.7)
         let toggle_flags = Rc::clone(&flags);
-        let mut btn_autoplay = emCheckButton::new("Autoplay", Rc::clone(&look));
+        let mut btn_autoplay = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emCheckButton::new(&mut sched, "Autoplay", Rc::clone(&look))
+        };
         btn_autoplay.SetDescription(
             "Start or stop autoplay.\n\n\
              The autoplay function shows or plays things one after the other. This\n\
@@ -559,7 +571,10 @@ impl emAutoplayControlPanel {
         // ── child 2: BtContinueLast (emButton) ──
         // C++ SetChildWeight(2, 0.17), SetPrefChildTallness(2, 0.7)
         let cont_flags = Rc::clone(&flags);
-        let mut btn_cont = emButton::new("Continue Last Autoplay", Rc::clone(&look));
+        let mut btn_cont = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emButton::new(&mut sched, "Continue Last Autoplay", Rc::clone(&look))
+        };
         btn_cont.SetDescription(
             "Start autoplay where it has stopped for the last time.\n\n\
              Hotkey: Shift+Ctrl+F12",
