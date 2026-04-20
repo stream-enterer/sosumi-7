@@ -125,8 +125,8 @@ impl emMainWindow {
 
     /// Port of C++ `emMainWindow::ReloadFiles`.
     /// Fires the global file-update signal so all listening file models reload.
-    pub fn ReloadFiles(&self, app: &App) {
-        app.scheduler.borrow_mut().fire(app.file_update_signal);
+    pub fn ReloadFiles(&self, app: &mut App) {
+        app.scheduler.fire(app.file_update_signal);
     }
 
     /// Port of C++ `emMainWindow::ToggleControlView` (emMainWindow.cpp:144-158).
@@ -150,8 +150,8 @@ impl emMainWindow {
     }
 
     /// Port of C++ `emMainWindow::Quit`.
-    pub fn Quit(&self, app: &App) {
-        app.scheduler.borrow_mut().InitiateTermination();
+    pub fn Quit(&self, app: &mut App) {
+        app.scheduler.InitiateTermination();
     }
 
     /// Port of C++ `emMainWindow::GetTitle` (emMainWindow.cpp:87-95).
@@ -802,10 +802,10 @@ pub fn create_main_window(
         flags |= WindowFlags::FULLSCREEN;
     }
 
-    let close_signal = app.scheduler.borrow_mut().create_signal();
-    let flags_signal = app.scheduler.borrow_mut().create_signal();
-    let focus_signal = app.scheduler.borrow_mut().create_signal();
-    let geometry_signal = app.scheduler.borrow_mut().create_signal();
+    let close_signal = app.scheduler.create_signal();
+    let flags_signal = app.scheduler.create_signal();
+    let focus_signal = app.scheduler.create_signal();
+    let geometry_signal = app.scheduler.create_signal();
     mw._close_signal = Some(close_signal);
 
     // Create the window
@@ -838,14 +838,13 @@ pub fn create_main_window(
         StartupEngine::new(Rc::clone(&app.context), root_id, window_id, &mw.config);
     let engine_id = app
         .scheduler
-        .borrow_mut()
         .register_engine(Box::new(startup_engine), Priority::Low);
-    app.scheduler.borrow_mut().wake_up(engine_id);
+    app.scheduler.wake_up(engine_id);
     mw.startup_engine_id = Some(engine_id);
 
     // Register MainWindowEngine — wakes only on signals, no wake_up call
     // (C++ emMainWindow::Cycle, emMainWindow.cpp:174-190).
-    let title_signal = app.scheduler.borrow_mut().create_signal();
+    let title_signal = app.scheduler.create_signal();
     if let Some(rc) = app.windows.get(&window_id) {
         rc.borrow_mut().view_mut().set_title_signal(title_signal);
     }
@@ -858,29 +857,23 @@ pub fn create_main_window(
     };
     let mw_engine_id = app
         .scheduler
-        .borrow_mut()
         .register_engine(Box::new(mw_engine), Priority::Low);
-    app.scheduler
-        .borrow_mut()
-        .connect(close_signal, mw_engine_id);
-    app.scheduler
-        .borrow_mut()
-        .connect(title_signal, mw_engine_id);
+    app.scheduler.connect(close_signal, mw_engine_id);
+    app.scheduler.connect(title_signal, mw_engine_id);
 
     // Wire control panel signal + ControlPanelBridge.
     // The bridge reacts to control panel signal (active panel changes) and
     // will update the content control panel in the control sub-view.
-    let cp_signal = app.scheduler.borrow_mut().create_signal();
-    if let Some(rc) = app.windows.get(&window_id) {
+    let cp_signal = app.scheduler.create_signal();
+    if let Some(rc) = app.windows.get(&window_id).cloned() {
         let mut win = rc.borrow_mut();
         let view_weak = Rc::downgrade(win.view_rc());
         {
             let mut v = win.view_mut();
             let root_ctx = v.GetRootContext();
             let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
-            let mut s = app.scheduler.borrow_mut();
             let mut sc = emcore::emEngineCtx::SchedCtx {
-                scheduler: &mut s,
+                scheduler: &mut app.scheduler,
                 framework_actions: &mut fw,
                 root_context: &root_ctx,
                 current_engine: None,
@@ -903,9 +896,8 @@ pub fn create_main_window(
     };
     let bridge_id = app
         .scheduler
-        .borrow_mut()
         .register_engine(Box::new(bridge), Priority::Low);
-    app.scheduler.borrow_mut().connect(cp_signal, bridge_id);
+    app.scheduler.connect(cp_signal, bridge_id);
 
     // Register emWindowStateSaver engine — persists window geometry.
     // Port of C++ emWindowStateSaver construction in emMainWindow constructor.
@@ -916,7 +908,7 @@ pub fn create_main_window(
             Some("WinState.rec"),
         )
         .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/eaglemode-winstate.rec"));
-        let change_signal = app.scheduler.borrow_mut().create_signal();
+        let change_signal = app.scheduler.create_signal();
         let saver = emWindowStateSaver::new(
             window_id,
             state_path,
@@ -942,13 +934,10 @@ pub fn create_main_window(
 
         let saver_id = app
             .scheduler
-            .borrow_mut()
             .register_engine(Box::new(saver), Priority::Low);
-        app.scheduler.borrow_mut().connect(flags_signal, saver_id);
-        app.scheduler.borrow_mut().connect(focus_signal, saver_id);
-        app.scheduler
-            .borrow_mut()
-            .connect(geometry_signal, saver_id);
+        app.scheduler.connect(flags_signal, saver_id);
+        app.scheduler.connect(focus_signal, saver_id);
+        app.scheduler.connect(geometry_signal, saver_id);
     }
 
     mw.autoplay_view_model = Some(crate::emAutoplay::emAutoplayViewModel::new());
@@ -998,10 +987,10 @@ pub fn create_control_window(
     app.tree.set_behavior(root_id, Box::new(ctrl_panel));
 
     let flags = WindowFlags::AUTO_DELETE;
-    let close_signal = app.scheduler.borrow_mut().create_signal();
-    let flags_signal = app.scheduler.borrow_mut().create_signal();
-    let focus_signal = app.scheduler.borrow_mut().create_signal();
-    let geometry_signal = app.scheduler.borrow_mut().create_signal();
+    let close_signal = app.scheduler.create_signal();
+    let flags_signal = app.scheduler.create_signal();
+    let focus_signal = app.scheduler.create_signal();
+    let geometry_signal = app.scheduler.create_signal();
 
     let window = emWindow::create(
         event_loop,

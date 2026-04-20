@@ -87,13 +87,7 @@ pub type DeferredAction = Box<dyn FnOnce(&mut App, &ActiveEventLoop)>;
 pub struct App {
     pub gpu: Option<GpuContext>,
     pub screen: Option<emScreen>,
-    /// Scheduler handle.
-    ///
-    /// DIVERGED from spec §3.1/D4.1 (plain value): Chunk 2 carry-forward.
-    /// The view's `pub(crate) scheduler: Option<Rc<RefCell<_>>>` field still
-    /// requires a shared handle for `PanelTree` deferred-wakeup paths.
-    /// Substep 1f will narrow this back to plain `EngineScheduler`.
-    pub scheduler: Rc<RefCell<EngineScheduler>>,
+    pub scheduler: EngineScheduler,
     pub context: Rc<emContext>,
     pub tree: PanelTree,
     // NOTE (Phase 1 Task 2): plan calls for `HashMap<WindowId, emWindow>` (plain
@@ -136,7 +130,6 @@ impl App {
         let mut scheduler = EngineScheduler::new();
         let file_update_signal = scheduler.create_signal();
         let context = emContext::NewRoot();
-        let scheduler = Rc::new(RefCell::new(scheduler));
         Self {
             gpu: None,
             screen: None,
@@ -291,11 +284,9 @@ impl App {
         {
             let mut w_mut = win_rc.borrow_mut();
             w_mut.os_surface = OsSurface::Materialized(Box::new(materialized));
-            let sched_rc = self.scheduler.clone();
-            let mut sched = sched_rc.borrow_mut();
             let root = self.context.clone();
             let mut sc = crate::emEngineCtx::SchedCtx {
-                scheduler: &mut sched,
+                scheduler: &mut self.scheduler,
                 framework_actions: &mut self.framework_actions,
                 root_context: &root,
                 current_engine: None,
@@ -322,8 +313,8 @@ impl ApplicationHandler for App {
         self.gpu = Some(GpuContext::new());
 
         // Scan monitors — allocate signal IDs for geometry/window-list changes.
-        let geom_sig = self.scheduler.borrow_mut().create_signal();
-        let win_sig = self.scheduler.borrow_mut().create_signal();
+        let geom_sig = self.scheduler.create_signal();
+        let win_sig = self.scheduler.create_signal();
         self.screen = Some(emScreen::from_event_loop(event_loop, geom_sig, win_sig));
 
         // Call user setup
@@ -347,7 +338,8 @@ impl ApplicationHandler for App {
                     .unwrap_or(true);
 
                 if let Some(rc) = self.windows.get(&window_id) {
-                    self.scheduler.borrow_mut().fire(rc.borrow().close_signal);
+                    let sig = rc.borrow().close_signal;
+                    self.scheduler.fire(sig);
                 }
 
                 if auto_delete {
@@ -361,11 +353,9 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(size) => {
                 if let Some(rc) = self.windows.get(&window_id).cloned() {
                     let gpu = self.gpu.as_ref().unwrap();
-                    let sched_rc = self.scheduler.clone();
-                    let mut sched = sched_rc.borrow_mut();
                     let root = self.context.clone();
                     let mut sc = crate::emEngineCtx::SchedCtx {
-                        scheduler: &mut sched,
+                        scheduler: &mut self.scheduler,
                         framework_actions: &mut self.framework_actions,
                         root_context: &root,
                         current_engine: None,
@@ -400,12 +390,10 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Touch(ref touch) => {
-                if let Some(rc) = self.windows.get(&window_id) {
+                if let Some(rc) = self.windows.get(&window_id).cloned() {
                     let mut win = rc.borrow_mut();
-                    let sched_rc = self.scheduler.clone();
-                    let mut sched = sched_rc.borrow_mut();
                     let mut sc = crate::emEngineCtx::SchedCtx {
-                        scheduler: &mut sched,
+                        scheduler: &mut self.scheduler,
                         framework_actions: &mut self.framework_actions,
                         root_context: &self.context,
                         current_engine: None,
@@ -446,11 +434,9 @@ impl ApplicationHandler for App {
                         input.mouse_y = self.input_state.mouse_y;
                     }
 
-                    if let Some(rc) = self.windows.get(&window_id) {
-                        let sched_rc = self.scheduler.clone();
-                        let mut sched = sched_rc.borrow_mut();
+                    if let Some(rc) = self.windows.get(&window_id).cloned() {
                         let mut sc = crate::emEngineCtx::SchedCtx {
-                            scheduler: &mut sched,
+                            scheduler: &mut self.scheduler,
                             framework_actions: &mut self.framework_actions,
                             root_context: &self.context,
                             current_engine: None,
@@ -515,7 +501,7 @@ impl ApplicationHandler for App {
             })
             .collect();
         for sig in changed_signals {
-            self.scheduler.borrow_mut().fire(sig);
+            self.scheduler.fire(sig);
         }
 
         // Run one scheduler time slice. `framework_actions` is now owned by
@@ -527,19 +513,15 @@ impl ApplicationHandler for App {
         // context, and framework_actions can all be borrowed simultaneously.
         {
             let App {
-                ref scheduler,
+                ref mut scheduler,
                 ref mut tree,
                 ref mut windows,
                 ref context,
                 ref mut framework_actions,
                 ..
             } = *self;
-            scheduler
-                .borrow_mut()
-                .DoTimeSlice(tree, windows, context, framework_actions);
+            scheduler.DoTimeSlice(tree, windows, context, framework_actions);
         }
-        // Chunk 2+ will extend this pump to emit real window operations;
-        // for now `framework_actions` accumulates for visibility.
 
         // SP4.5 fix: register any panels created via `create_child` from
         // inside an engine's `Cycle` (e.g. `StartupEngine`). Their
@@ -553,7 +535,7 @@ impl ApplicationHandler for App {
         // ControlFlow::Wait which only fires about_to_wait on OS events.
         // Requesting redraws ensures continuous cycling during startup,
         // animations, and any other engine activity.
-        if self.scheduler.borrow().has_awake_engines() {
+        if self.scheduler.has_awake_engines() {
             for rc in self.windows.values() {
                 rc.borrow().request_redraw();
             }
@@ -575,21 +557,27 @@ impl ApplicationHandler for App {
             .as_secs_f64()
             .clamp(0.001, 0.1);
         self.last_frame_time = now;
-        let tree = &mut self.tree;
-        let state = &mut self.input_state;
-        let sched_rc_outer = self.scheduler.clone();
-        for rc in self.windows.values() {
+        let App {
+            ref mut scheduler,
+            ref mut tree,
+            ref mut input_state,
+            ref mut framework_actions,
+            ref context,
+            ref windows,
+            ..
+        } = *self;
+        let state = input_state;
+        for rc in windows.values() {
             let mut win = rc.borrow_mut();
             // Notice dispatch (including mark_viewing_dirty) happens inside
             // emView::Update via emView::HandleNotice (SP5).
             let mut needs_full_repaint = false;
 
             // Build SchedCtx for this window's VIF and animator ticks.
-            let mut sched_outer = sched_rc_outer.borrow_mut();
             let mut sc = crate::emEngineCtx::SchedCtx {
-                scheduler: &mut sched_outer,
-                framework_actions: &mut self.framework_actions,
-                root_context: &self.context,
+                scheduler,
+                framework_actions,
+                root_context: context,
                 current_engine: None,
             };
 
@@ -702,13 +690,10 @@ impl ApplicationHandler for App {
 mod tests {
     use super::*;
 
-    /// Phase 1 Chunk 2: `App` owns `framework_actions` (spec §3.1); scheduler
-    /// stays `Rc<RefCell<_>>` as a carry-forward until substep 1f narrows it
-    /// to plain `EngineScheduler`.
     #[test]
     fn framework_scheduler_shape() {
         let framework = App::new(Box::new(|_app, _el| {}));
-        let _: &Rc<RefCell<EngineScheduler>> = &framework.scheduler;
+        let _: &EngineScheduler = &framework.scheduler;
         assert!(framework.framework_actions.is_empty());
     }
 }

@@ -210,10 +210,10 @@ fn popup_surface_materializes_on_about_to_wait() {
         app.tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
         captured_for_setup.borrow_mut().popup_trigger_child = Some(child);
 
-        let close = app.scheduler.borrow_mut().create_signal();
-        let flags_sig = app.scheduler.borrow_mut().create_signal();
-        let focus_sig = app.scheduler.borrow_mut().create_signal();
-        let geom_sig = app.scheduler.borrow_mut().create_signal();
+        let close = app.scheduler.create_signal();
+        let flags_sig = app.scheduler.create_signal();
+        let focus_sig = app.scheduler.create_signal();
+        let geom_sig = app.scheduler.create_signal();
 
         let home = emWindow::create(
             event_loop,
