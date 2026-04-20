@@ -424,6 +424,7 @@ impl emWindow {
         tree: &mut crate::emPanelTree::PanelTree,
         width: u32,
         height: u32,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
         let w = width.max(1);
         let h = height.max(1);
@@ -440,7 +441,7 @@ impl emWindow {
         }
         self.view
             .borrow_mut()
-            .SetGeometry(tree, 0.0, 0.0, w as f64, h as f64, 1.0);
+            .SetGeometry(tree, 0.0, 0.0, w as f64, h as f64, 1.0, ctx);
     }
 
     /// Update the render thread pool from emCoreConfig.

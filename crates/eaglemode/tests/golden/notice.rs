@@ -368,7 +368,16 @@ fn notice_window_resize() {
     hard_reset_file_state(&acc_child2);
 
     // Action: resize viewport (triggers root layout update via ROOT_SAME_TALLNESS)
-    view.SetGeometry(&mut tree, 0.0, 0.0, 1200.0, 800.0, 1.0);
+    let mut sched = emcore::emScheduler::EngineScheduler::new();
+    let root_ctx = emcore::emContext::emContext::NewRoot();
+    let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+    let mut sc = emcore::emEngineCtx::SchedCtx {
+        scheduler: &mut sched,
+        framework_actions: &mut fw,
+        root_context: &root_ctx,
+        current_engine: None,
+    };
+    view.SetGeometry(&mut tree, 0.0, 0.0, 1200.0, 800.0, 1.0, &mut sc);
 
     // Deliver new notices
     settle(&mut tree, &mut view);

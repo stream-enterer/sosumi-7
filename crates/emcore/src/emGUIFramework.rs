@@ -314,9 +314,18 @@ impl App {
         {
             let mut w_mut = win_rc.borrow_mut();
             w_mut.os_surface = OsSurface::Materialized(Box::new(materialized));
+            let sched_rc = self.scheduler.clone();
+            let mut sched = sched_rc.borrow_mut();
+            let root = self.context.clone();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut *sched,
+                framework_actions: &mut self.framework_actions,
+                root_context: &root,
+                current_engine: None,
+            };
             w_mut
                 .view_mut()
-                .SetGeometry(&mut self.tree, 0.0, 0.0, w as f64, h as f64, 1.0);
+                .SetGeometry(&mut self.tree, 0.0, 0.0, w as f64, h as f64, 1.0, &mut sc);
         }
 
         let window_id = winit_window.id();
@@ -373,10 +382,19 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Resized(size) => {
-                if let Some(rc) = self.windows.get(&window_id) {
-                    let mut win = rc.borrow_mut();
+                if let Some(rc) = self.windows.get(&window_id).cloned() {
                     let gpu = self.gpu.as_ref().unwrap();
-                    win.resize(gpu, &mut self.tree, size.width, size.height);
+                    let sched_rc = self.scheduler.clone();
+                    let mut sched = sched_rc.borrow_mut();
+                    let root = self.context.clone();
+                    let mut sc = crate::emEngineCtx::SchedCtx {
+                        scheduler: &mut *sched,
+                        framework_actions: &mut self.framework_actions,
+                        root_context: &root,
+                        current_engine: None,
+                    };
+                    let mut win = rc.borrow_mut();
+                    win.resize(gpu, &mut self.tree, size.width, size.height, &mut sc);
                     win.set_geometry_changed();
                     // Don't request_redraw here — about_to_wait will detect the
                     // layout change from the new tallness and issue a single

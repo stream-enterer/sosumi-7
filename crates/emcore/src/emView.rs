@@ -1113,6 +1113,7 @@ impl emView {
     ///
     /// DIVERGED: C++ `SetGeometry(x,y,w,h,pt)` — Rust signature identical.
     /// Internally writes both Home* and Current* (home = current when no popup).
+    /// Ctx-threaded per Phase 1.5 Task 1c (method 5/7). Other unmigrated emView methods use `with_local_sched_ctx` to bridge.
     pub fn SetGeometry(
         &mut self,
         tree: &mut PanelTree,
@@ -1121,6 +1122,7 @@ impl emView {
         width: f64,
         height: f64,
         pixel_tallness: f64,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
         let width = width.max(MIN_DIMENSION);
         let height = height.max(MIN_DIMENSION);
@@ -1159,7 +1161,7 @@ impl emView {
 
         // C++ Signal(GeometrySignal).
         if let Some(sig) = self.geometry_signal {
-            self.queue_or_apply_sched_op(SchedOp::Fire(sig));
+            ctx.fire(sig);
         }
 
         // C++ SetGeometry parity: inline-update root panel layout when
@@ -1193,7 +1195,12 @@ impl emView {
 
     /// C++ `emViewPort::SetViewGeometry` pixel-tallness path (emView.h:763).
     /// Adjusts only the pixel tallness of the current viewport.
-    pub fn SetViewPortTallness(&mut self, tree: &mut PanelTree, tallness: f64) {
+    pub fn SetViewPortTallness(
+        &mut self,
+        tree: &mut PanelTree,
+        tallness: f64,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) {
         self.SetGeometry(
             tree,
             self.CurrentX,
@@ -1201,6 +1208,7 @@ impl emView {
             self.CurrentWidth,
             self.CurrentHeight,
             tallness.max(MIN_DIMENSION),
+            ctx,
         );
     }
 
@@ -5508,8 +5516,9 @@ mod tests {
         let mut view2 = emView::new(crate::emContext::emContext::NewRoot(), root, 1920.0, 1080.0);
         assert_eq!(view2.GetCurrentPixelTallness(), 1.0);
 
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         // SetGeometry now takes explicit pixel_tallness.
-        view2.SetGeometry(&mut tree, 0.0, 0.0, 100.0, 200.0, 2.0);
+        view2.SetGeometry(&mut tree, 0.0, 0.0, 100.0, 200.0, 2.0, &mut h.sched_ctx());
         assert!((view2.GetCurrentPixelTallness() - 2.0).abs() < 1e-6);
     }
 
@@ -6661,7 +6670,8 @@ mod tests {
     fn test_phase6_set_geometry_accepts_pixel_tallness() {
         let (mut tree, root, _, _) = setup_tree();
         let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
-        v.SetGeometry(&mut tree, 100.0, 50.0, 800.0, 600.0, 1.25);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
+        v.SetGeometry(&mut tree, 100.0, 50.0, 800.0, 600.0, 1.25, &mut h.sched_ctx());
         assert_eq!(v.HomeX, 100.0);
         assert_eq!(v.HomeY, 50.0);
         assert_eq!(v.HomeWidth, 800.0);
@@ -6717,9 +6727,20 @@ mod tests {
                 gs,
                 emColor::TRANSPARENT,
             );
-            w.borrow_mut()
-                .view_mut()
-                .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0);
+            {
+                let root_ctx = crate::emContext::emContext::NewRoot();
+                let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+                let mut s = sched.borrow_mut();
+                let mut sc = crate::emEngineCtx::SchedCtx {
+                    scheduler: &mut *s,
+                    framework_actions: &mut fw,
+                    root_context: &root_ctx,
+                    current_engine: None,
+                };
+                w.borrow_mut()
+                    .view_mut()
+                    .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0, &mut sc);
+            }
             let view_weak = Rc::downgrade(w.borrow().view_rc());
             let _ = win_id;
             w.borrow_mut()
@@ -6858,9 +6879,20 @@ mod tests {
                 gs,
                 emColor::TRANSPARENT,
             );
-            w.borrow_mut()
-                .view_mut()
-                .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0);
+            {
+                let root_ctx = crate::emContext::emContext::NewRoot();
+                let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+                let mut s = sched.borrow_mut();
+                let mut sc = crate::emEngineCtx::SchedCtx {
+                    scheduler: &mut *s,
+                    framework_actions: &mut fw,
+                    root_context: &root_ctx,
+                    current_engine: None,
+                };
+                w.borrow_mut()
+                    .view_mut()
+                    .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0, &mut sc);
+            }
             let view_weak = Rc::downgrade(w.borrow().view_rc());
             let _ = win_id;
             w.borrow_mut()
@@ -7101,9 +7133,10 @@ mod tests {
             1080.0,
         );
 
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         // Distinct pixel tallness via SetGeometry.
-        view_a.SetGeometry(&mut tree_a, 0.0, 0.0, 800.0, 600.0, 1.0);
-        view_b.SetGeometry(&mut tree_b, 0.0, 0.0, 1920.0, 1080.0, 2.0);
+        view_a.SetGeometry(&mut tree_a, 0.0, 0.0, 800.0, 600.0, 1.0, &mut h.sched_ctx());
+        view_b.SetGeometry(&mut tree_b, 0.0, 0.0, 1920.0, 1080.0, 2.0, &mut h.sched_ctx());
 
         assert_eq!(view_a.GetCurrentPixelTallness(), 1.0);
         assert_eq!(view_b.GetCurrentPixelTallness(), 2.0);
