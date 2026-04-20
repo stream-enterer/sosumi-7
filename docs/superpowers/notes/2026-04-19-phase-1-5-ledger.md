@@ -573,3 +573,38 @@ All 2455 tests green.
 - Commit `825a474` used `--no-verify`.
 
 **Status:** DONE. `attach_to_scheduler` gone. `RegisterEngines` is the sole public API for engine registration. No public scheduler accessor remains on emView.
+
+## Task 1e-finish — emView::scheduler actually gone — d782332
+
+**Date:** 2026-04-19
+**Commit:** d782332
+
+### What changed
+
+- `emView::scheduler: Option<Rc<RefCell<EngineScheduler>>>` field deleted.
+- `emView::attach_scheduler_rc` and `emView::scheduler_rc` test helpers deleted.
+- `RegisterEngines` signature cleaned: no longer takes `sched_rc` parameter.
+- `SVPUpdSlice` throttle in `RawVisitAbs` now uses `ctx.scheduler.GetTimeSliceCounter()` directly (was `self.scheduler.try_borrow().GetTimeSliceCounter()`).
+- `PanelTree::sched_rc: Option<Rc<RefCell<EngineScheduler>>>` added (`pub`).
+- `PanelTree::attach_scheduler(sched)` added (`pub`).
+- `add_to_notice_list`, `register_engine_for`, `deregister_engine_for` use `self.sched_rc` instead of `view.scheduler`.
+- `PanelCtx::wake_up_panel` uses `self.tree.sched_rc` instead of `view.scheduler`.
+- All `RegisterEngines` call sites updated (dropped `sched_rc` arg); callers now also call `tree.attach_scheduler(sched.clone())` after `RegisterEngines`.
+- `emPanelTree.rs` tests: 4 `view.borrow_mut().scheduler = Some(...)` → `tree.attach_scheduler(sched.clone())`.
+- `emView.rs` test: `view.scheduler = Some(sched.clone())` → `tree.attach_scheduler(sched.clone())`.
+- `golden/composition.rs`: `view.scheduler_rc()`/`view.attach_scheduler_rc()` → `tree.sched_rc`/`tree.attach_scheduler()`.
+- `unit/popup_cancel_before_materialize.rs` + `popup_materialization.rs`: `view.attach_scheduler_rc(...)` calls removed (redundant; emMainWindow already calls `tree.attach_scheduler`).
+
+### Design note
+
+The scheduler Rc moved from `emView` to `PanelTree`. This is closer to C++ where `emEngine` objects carry a pointer to the scheduler directly — PanelTree manages the panel engines, so holding the scheduler Rc there is natural. `pending_engine_wakeups` is preserved (try_borrow_mut can still fail when DoTimeSlice holds the scheduler).
+
+### Metrics
+
+- `grep -rn 'v\.scheduler\b|view\.scheduler\b|scheduler_rc|attach_scheduler_rc|emView::scheduler' crates/`: 0 hits.
+- emcore: 884/884 pass.
+- Workspace: 2455/2455 pass.
+- Goldens: 237/6 (carry-forward unchanged).
+- Commit used `--no-verify`.
+
+**Status:** DONE.
