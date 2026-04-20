@@ -9,9 +9,8 @@
 //!   - cargo build -p emstocks (to produce libemStocks.so)
 
 use emcore::emContext::emContext;
-use emcore::emEngineCtx::{DeferredAction, InitCtx};
 use emcore::emFpPlugin::{emFpPluginList, FileStatMode, PanelParentArg};
-use emcore::emScheduler::EngineScheduler;
+use emcore::test_view_harness::InitHarness;
 
 #[test]
 fn load_emstocks_plugin_end_to_end() {
@@ -26,14 +25,8 @@ fn load_emstocks_plugin_end_to_end() {
     let tmp_file = tmp_dir.join("test_plugin_e2e.emStocks");
     std::fs::write(&tmp_file, "#%rec:emStocksRec%#\n").expect("write test file");
 
-    let mut sched = EngineScheduler::new();
-    let mut actions: Vec<DeferredAction> = Vec::new();
-    let root = emContext::NewRoot();
-    let mut ic = InitCtx {
-        scheduler: &mut sched,
-        framework_actions: &mut actions,
-        root_context: &root,
-    };
+    let mut h = InitHarness::new();
+    let mut ic = h.ctx();
     let panel = list.CreateFilePanelWithStat(
         &mut ic,
         &parent,

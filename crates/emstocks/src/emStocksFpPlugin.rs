@@ -54,14 +54,8 @@ mod tests {
                 value: "prop".to_string(),
             });
         let mut err = String::new();
-        let mut sched = emcore::emScheduler::EngineScheduler::new();
-        let mut actions: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
-        let root = emcore::emContext::emContext::NewRoot();
-        let mut ic = emcore::emEngineCtx::InitCtx {
-            scheduler: &mut sched,
-            framework_actions: &mut actions,
-            root_context: &root,
-        };
+        let mut h = emcore::test_view_harness::InitHarness::new();
+        let mut ic = h.ctx();
         let result = emStocksFpPluginFunc(
             &mut ic,
             &parent,
@@ -80,14 +74,8 @@ mod tests {
         let parent = PanelParentArg::new(ctx);
         let plugin = emFpPlugin::new();
         let mut err = String::new();
-        let mut sched = emcore::emScheduler::EngineScheduler::new();
-        let mut actions: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
-        let root = emcore::emContext::emContext::NewRoot();
-        let mut ic = emcore::emEngineCtx::InitCtx {
-            scheduler: &mut sched,
-            framework_actions: &mut actions,
-            root_context: &root,
-        };
+        let mut h = emcore::test_view_harness::InitHarness::new();
+        let mut ic = h.ctx();
         let result = emStocksFpPluginFunc(
             &mut ic,
             &parent,

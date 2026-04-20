@@ -9,9 +9,8 @@
 //!   - cargo build (to produce .so files)
 
 use emcore::emContext::emContext;
-use emcore::emEngineCtx::{DeferredAction, InitCtx};
 use emcore::emFpPlugin::{emFpPlugin, PanelParentArg};
-use emcore::emScheduler::EngineScheduler;
+use emcore::test_view_harness::InitHarness;
 
 /// Helper: create a plugin pointing at a specific library/function.
 fn plugin_for(library: &str, function: &str) -> emFpPlugin {
@@ -19,29 +18,6 @@ fn plugin_for(library: &str, function: &str) -> emFpPlugin {
     p.library = library.to_string();
     p.function = function.to_string();
     p
-}
-
-struct InitHarness {
-    sched: EngineScheduler,
-    actions: Vec<DeferredAction>,
-    root: std::rc::Rc<emContext>,
-}
-
-impl InitHarness {
-    fn new() -> Self {
-        Self {
-            sched: EngineScheduler::new(),
-            actions: Vec::new(),
-            root: emContext::NewRoot(),
-        }
-    }
-    fn ctx(&mut self) -> InitCtx<'_> {
-        InitCtx {
-            scheduler: &mut self.sched,
-            framework_actions: &mut self.actions,
-            root_context: &self.root,
-        }
-    }
 }
 
 #[test]

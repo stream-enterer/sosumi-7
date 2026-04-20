@@ -26,7 +26,11 @@ use crate::emRecRecord::Record;
 /// (I3d). C++ constructs widgets under the implicit scheduler singleton; the
 /// Rust ownership rewrite (spec §4 D4.9 / §6 D6.1) threads the
 /// scheduler/signal/engine surface through ConstructCtx so plugin-created
-/// widgets can allocate SignalIds at construction.
+/// widgets can allocate SignalIds at construction. Current plugin
+/// implementations prefix the arg `_ctx` because existing file-panel
+/// constructors allocate signals lazily at Input time; Phase-4+ widget
+/// migrations will drop the underscore as widgets adopt construction-time
+/// signal allocation per spec §6 D6.1.
 pub type emFpPluginFunc = fn(
     ctx: &mut dyn ConstructCtx,
     parent: &PanelParentArg,
@@ -39,7 +43,11 @@ pub type emFpPluginFunc = fn(
 /// Type of the plugin model function for acquiring file models.
 /// Port of C++ `emFpPluginModelFunc`.
 /// DIVERGED: added `ctx: &mut dyn ConstructCtx` first parameter — see
-/// `emFpPluginFunc` above for rationale (Phase-3 Task 5 / I3d).
+/// `emFpPluginFunc` above for rationale (Phase-3 Task 5 / I3d). Current
+/// model-function implementations prefix the arg `_ctx` for the same
+/// reason: model constructors do not yet allocate signals at construction
+/// time; Phase-4+ migrations will drop the underscore as they adopt
+/// construction-time signal allocation per spec §6 D6.1.
 pub type emFpPluginModelFunc = fn(
     ctx: &mut dyn ConstructCtx,
     context: &Rc<emContext>,

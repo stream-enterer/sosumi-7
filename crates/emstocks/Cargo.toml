@@ -18,4 +18,5 @@ arboard = { workspace = true }
 open = { workspace = true }
 
 [dev-dependencies]
+emcore = { workspace = true, features = ["test-support"] }
 gungraun = { workspace = true }
