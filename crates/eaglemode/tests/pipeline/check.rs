@@ -10,6 +10,7 @@ use std::rc::Rc;
 use emcore::emCheckBox::emCheckBox;
 use emcore::emCheckButton::emCheckButton;
 use emcore::emCursor::emCursor;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emInput::emInputEvent;
 use emcore::emInputState::emInputState;
 use emcore::emLook::emLook;
@@ -40,6 +41,7 @@ impl PanelBehavior for SharedCheckButtonPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.inner.borrow_mut().Input(event, state, input_state)
     }
@@ -74,6 +76,7 @@ impl PanelBehavior for SharedCheckBoxPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.inner.borrow_mut().Input(event, state, input_state)
     }

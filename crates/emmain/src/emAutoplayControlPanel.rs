@@ -138,6 +138,7 @@ impl PanelBehavior for AutoplayButtonPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.button.Input(event, state, input_state)
     }
@@ -179,6 +180,7 @@ impl PanelBehavior for AutoplayCheckButtonPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.check_button.Input(event, state, input_state)
     }
@@ -205,6 +207,7 @@ impl PanelBehavior for AutoplayCheckBoxPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.check_box.Input(event, state, input_state)
     }
@@ -231,6 +234,7 @@ impl PanelBehavior for AutoplayScalarFieldPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.scalar_field.Input(event, state, input_state)
     }

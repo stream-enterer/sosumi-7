@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use emcore::emCursor::emCursor;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emInput::{emInputEvent, InputKey};
 use emcore::emInputState::emInputState;
 use emcore::emLook::emLook;
@@ -39,6 +40,7 @@ impl PanelBehavior for SharedSplitterPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.inner.borrow_mut().Input(event, state, input_state)
     }

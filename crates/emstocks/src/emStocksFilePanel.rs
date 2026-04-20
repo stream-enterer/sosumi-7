@@ -53,6 +53,7 @@ impl PanelBehavior for emStocksFilePanel {
         event: &emInputEvent,
         _state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         if !self.file_panel.GetVirFileState().is_good() || self.list_box.is_none() {
             return false;
@@ -424,6 +425,17 @@ impl emStocksFilePanel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use emcore::emPanelTree::{PanelId, PanelTree};
+
+    fn make_test_pctx<'a>(tree: &'a mut PanelTree, id: PanelId) -> PanelCtx<'a> {
+        PanelCtx::new(tree, id, 1.0)
+    }
+
+    fn make_test_tree() -> (PanelTree, PanelId) {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("test", std::rc::Weak::new());
+        (tree, root)
+    }
 
     #[test]
     fn file_panel_new() {
@@ -445,6 +457,7 @@ mod tests {
 
     #[test]
     fn input_returns_false_when_vfs_not_good() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = emStocksFilePanel::new();
         panel.list_box = Some(emStocksListBox::new());
         let mut input_state = emInputState::new();
@@ -452,11 +465,17 @@ mod tests {
         input_state.press(InputKey::Alt);
         let event = emInputEvent::press(InputKey::Key('H'));
         let state = PanelState::default_for_test();
-        assert!(!panel.Input(&event, &state, &input_state));
+        assert!(!panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
     }
 
     #[test]
     fn input_returns_false_when_no_listbox() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = emStocksFilePanel::new();
         panel.set_vfs_good_for_test();
         panel.list_box = None;
@@ -465,7 +484,12 @@ mod tests {
         input_state.press(InputKey::Alt);
         let event = emInputEvent::press(InputKey::Key('H'));
         let state = PanelState::default_for_test();
-        assert!(!panel.Input(&event, &state, &input_state));
+        assert!(!panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
     }
 
     fn make_active_panel() -> emStocksFilePanel {
@@ -477,42 +501,61 @@ mod tests {
 
     #[test]
     fn shift_alt_h_sets_high_interest_filter() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
         let mut input_state = emInputState::new();
         input_state.press(InputKey::Shift);
         input_state.press(InputKey::Alt);
         let event = emInputEvent::press(InputKey::Key('H'));
         let state = PanelState::default_for_test();
-        assert!(panel.Input(&event, &state, &input_state));
+        assert!(panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
         assert_eq!(panel.config.min_visible_interest, Interest::High);
     }
 
     #[test]
     fn shift_alt_m_sets_medium_interest_filter() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
         let mut input_state = emInputState::new();
         input_state.press(InputKey::Shift);
         input_state.press(InputKey::Alt);
         let event = emInputEvent::press(InputKey::Key('M'));
         let state = PanelState::default_for_test();
-        assert!(panel.Input(&event, &state, &input_state));
+        assert!(panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
         assert_eq!(panel.config.min_visible_interest, Interest::Medium);
     }
 
     #[test]
     fn shift_alt_l_sets_low_interest_filter() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
         let mut input_state = emInputState::new();
         input_state.press(InputKey::Shift);
         input_state.press(InputKey::Alt);
         let event = emInputEvent::press(InputKey::Key('L'));
         let state = PanelState::default_for_test();
-        assert!(panel.Input(&event, &state, &input_state));
+        assert!(panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
         assert_eq!(panel.config.min_visible_interest, Interest::Low);
     }
 
     #[test]
     fn shift_alt_n_sets_sort_by_name() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
         panel.config.sorting = Sorting::ByValue; // set non-default
         let mut input_state = emInputState::new();
@@ -520,12 +563,18 @@ mod tests {
         input_state.press(InputKey::Alt);
         let event = emInputEvent::press(InputKey::Key('N'));
         let state = PanelState::default_for_test();
-        assert!(panel.Input(&event, &state, &input_state));
+        assert!(panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
         assert_eq!(panel.config.sorting, Sorting::ByName);
     }
 
     #[test]
     fn shift_alt_sorting_keys() {
+        let (mut tree, root) = make_test_tree();
         let cases: Vec<(char, Sorting)> = vec![
             ('T', Sorting::ByTradeDate),
             ('I', Sorting::ByInquiryDate),
@@ -546,7 +595,12 @@ mod tests {
             let event = emInputEvent::press(InputKey::Key(key));
             let state = PanelState::default_for_test();
             assert!(
-                panel.Input(&event, &state, &input_state),
+                panel.Input(
+                    &event,
+                    &state,
+                    &input_state,
+                    &mut make_test_pctx(&mut tree, root)
+                ),
                 "Shift+Alt+{key} should consume"
             );
             assert_eq!(
@@ -558,6 +612,7 @@ mod tests {
 
     #[test]
     fn shift_alt_o_toggles_owned_shares_first() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
         assert!(!panel.config.owned_shares_first);
         let mut input_state = emInputState::new();
@@ -565,15 +620,26 @@ mod tests {
         input_state.press(InputKey::Alt);
         let event = emInputEvent::press(InputKey::Key('O'));
         let state = PanelState::default_for_test();
-        assert!(panel.Input(&event, &state, &input_state));
+        assert!(panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
         assert!(panel.config.owned_shares_first);
         // Toggle back
-        assert!(panel.Input(&event, &state, &input_state));
+        assert!(panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
         assert!(!panel.config.owned_shares_first);
     }
 
     #[test]
     fn ctrl_j_goes_back_in_history() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
         // Set up rec with dates so GoBackInHistory works
         let mut stock = crate::emStocksRec::StockRec::default();
@@ -590,7 +656,12 @@ mod tests {
         input_state.press(InputKey::Ctrl);
         let event = emInputEvent::press(InputKey::Key('J'));
         let state = PanelState::default_for_test();
-        assert!(panel.Input(&event, &state, &input_state));
+        assert!(panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
         assert_eq!(
             panel.list_box.as_ref().unwrap().GetSelectedDate(),
             "2024-06-14"
@@ -599,6 +670,7 @@ mod tests {
 
     #[test]
     fn ctrl_k_goes_forward_in_history() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
         let mut stock = crate::emStocksRec::StockRec::default();
         stock.AddPrice("2024-06-14", "100");
@@ -614,7 +686,12 @@ mod tests {
         input_state.press(InputKey::Ctrl);
         let event = emInputEvent::press(InputKey::Key('K'));
         let state = PanelState::default_for_test();
-        assert!(panel.Input(&event, &state, &input_state));
+        assert!(panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
         assert_eq!(
             panel.list_box.as_ref().unwrap().GetSelectedDate(),
             "2024-06-15"
@@ -623,6 +700,7 @@ mod tests {
 
     #[test]
     fn ctrl_shortcuts_consume_events() {
+        let (mut tree, root) = make_test_tree();
         let ctrl_keys = ['N', 'X', 'C', 'V', 'P', 'W', 'H', 'G'];
         for key in ctrl_keys {
             let mut panel = make_active_panel();
@@ -631,7 +709,12 @@ mod tests {
             let event = emInputEvent::press(InputKey::Key(key));
             let state = PanelState::default_for_test();
             assert!(
-                panel.Input(&event, &state, &input_state),
+                panel.Input(
+                    &event,
+                    &state,
+                    &input_state,
+                    &mut make_test_pctx(&mut tree, root)
+                ),
                 "Ctrl+{key} should consume"
             );
         }
@@ -639,6 +722,7 @@ mod tests {
 
     #[test]
     fn shift_ctrl_shortcuts_consume_events() {
+        let (mut tree, root) = make_test_tree();
         let keys = ['W', 'G'];
         for key in keys {
             let mut panel = make_active_panel();
@@ -648,7 +732,12 @@ mod tests {
             let event = emInputEvent::press(InputKey::Key(key));
             let state = PanelState::default_for_test();
             assert!(
-                panel.Input(&event, &state, &input_state),
+                panel.Input(
+                    &event,
+                    &state,
+                    &input_state,
+                    &mut make_test_pctx(&mut tree, root)
+                ),
                 "Shift+Ctrl+{key} should consume"
             );
         }
@@ -656,15 +745,22 @@ mod tests {
 
     #[test]
     fn delete_consumes_event() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
         let input_state = emInputState::new();
         let event = emInputEvent::press(InputKey::Delete);
         let state = PanelState::default_for_test();
-        assert!(panel.Input(&event, &state, &input_state));
+        assert!(panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
     }
 
     #[test]
     fn alt_interest_shortcuts_consume_events() {
+        let (mut tree, root) = make_test_tree();
         let keys = ['H', 'M', 'L'];
         for key in keys {
             let mut panel = make_active_panel();
@@ -673,7 +769,12 @@ mod tests {
             let event = emInputEvent::press(InputKey::Key(key));
             let state = PanelState::default_for_test();
             assert!(
-                panel.Input(&event, &state, &input_state),
+                panel.Input(
+                    &event,
+                    &state,
+                    &input_state,
+                    &mut make_test_pctx(&mut tree, root)
+                ),
                 "Alt+{key} should consume"
             );
         }
@@ -681,21 +782,33 @@ mod tests {
 
     #[test]
     fn unrecognized_key_not_consumed() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
         let input_state = emInputState::new();
         let event = emInputEvent::press(InputKey::Key('Z'));
         let state = PanelState::default_for_test();
-        assert!(!panel.Input(&event, &state, &input_state));
+        assert!(!panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
     }
 
     #[test]
     fn release_events_not_consumed() {
+        let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
         let mut input_state = emInputState::new();
         input_state.press(InputKey::Shift);
         input_state.press(InputKey::Alt);
         let event = emInputEvent::release(InputKey::Key('H'));
         let state = PanelState::default_for_test();
-        assert!(!panel.Input(&event, &state, &input_state));
+        assert!(!panel.Input(
+            &event,
+            &state,
+            &input_state,
+            &mut make_test_pctx(&mut tree, root)
+        ));
     }
 }

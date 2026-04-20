@@ -46,6 +46,7 @@ impl PanelBehavior for ScalarFieldBehavior {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         let consumed = self.sf.Input(event, state, input_state);
         // Sync the shared value so the test can observe it.
@@ -153,6 +154,7 @@ impl PanelBehavior for ColorFieldBehavior {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.color_field.Input(event, state, input_state)
     }
@@ -338,6 +340,7 @@ fn button_click_works_after_zoom() {
             event: &emInputEvent,
             state: &PanelState,
             input_state: &emInputState,
+            _ctx: &mut PanelCtx,
         ) -> bool {
             self.widget.Input(event, state, input_state)
         }
@@ -406,6 +409,7 @@ impl PanelBehavior for SharedListBoxPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.inner.borrow_mut().Input(event, state, input_state)
     }

@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 use emcore::emButton::emButton;
 use emcore::emCursor::emCursor;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emInput::{emInputEvent, InputKey};
 use emcore::emInputState::emInputState;
 use emcore::emLook::emLook;
@@ -32,6 +33,7 @@ impl PanelBehavior for ButtonPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.widget.Input(event, state, input_state)
     }

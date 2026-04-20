@@ -201,12 +201,19 @@ impl TestHarness {
         // If any returns true (consumed), propagation stops.
         let wf = self.view.IsFocused();
         let viewed = self.tree.viewed_panels_dfs();
+        let pixel_tallness = self.view.GetCurrentPixelTallness();
         for panel_id in viewed {
             if let Some(mut behavior) = self.tree.take_behavior(panel_id) {
-                let state =
-                    self.tree
-                        .build_panel_state(panel_id, wf, self.view.GetCurrentPixelTallness());
-                let consumed = behavior.Input(&ev, &state, &self.input_state);
+                let state = self.tree.build_panel_state(panel_id, wf, pixel_tallness);
+                let consumed = {
+                    let mut pctx = PanelCtx::with_scheduler(
+                        &mut self.tree,
+                        panel_id,
+                        pixel_tallness,
+                        &mut self.scheduler,
+                    );
+                    behavior.Input(&ev, &state, &self.input_state, &mut pctx)
+                };
                 self.tree.put_behavior(panel_id, behavior);
                 if consumed {
                     break;
@@ -243,6 +250,7 @@ impl PanelBehavior for RecordingBehavior {
         event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.log
             .borrow_mut()
@@ -296,6 +304,7 @@ impl PanelBehavior for InputTrackingBehavior {
         _event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         *self.input_received.borrow_mut() = true;
         false // don't consume — let default behavior handle activation

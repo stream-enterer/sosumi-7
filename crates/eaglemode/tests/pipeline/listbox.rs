@@ -41,6 +41,7 @@ impl PanelBehavior for SharedListBoxPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.inner.borrow_mut().Input(event, state, input_state)
     }

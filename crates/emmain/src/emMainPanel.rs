@@ -106,6 +106,7 @@ impl PanelBehavior for SliderPanel {
         event: &emInputEvent,
         _state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         let mx = event.mouse_x;
         let my = event.mouse_y;
@@ -252,6 +253,7 @@ impl PanelBehavior for StartupOverlayPanel {
         _event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         // Eat all input events during startup.
         true
@@ -813,6 +815,7 @@ impl PanelBehavior for emMainPanel {
         _event: &emInputEvent,
         _state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         // Port of C++ emMainPanel::Input (emMainPanel.cpp:143-158) —
         // detect mouse movement for slider hiding.
@@ -1273,14 +1276,17 @@ mod tests {
         press_event.mouse_y = 0.1;
         let state = PanelState::default_for_test();
         let input_state = emInputState::default();
-        panel.Input(&press_event, &state, &input_state);
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let root = tree.create_root("test", std::rc::Weak::new());
+        let mut pctx = PanelCtx::new(&mut tree, root, 1.0);
+        panel.Input(&press_event, &state, &input_state, &mut pctx);
         assert!(panel.pressed);
         // Double-click (repeat=1).
         let mut dbl_event = emInputEvent::press(InputKey::MouseLeft);
         dbl_event.mouse_x = 0.5;
         dbl_event.mouse_y = 0.1;
         dbl_event.repeat = 1;
-        panel.Input(&dbl_event, &state, &input_state);
+        panel.Input(&dbl_event, &state, &input_state, &mut pctx);
         assert!(panel.double_clicked);
         assert!(!panel.pressed);
     }
@@ -1296,7 +1302,10 @@ mod tests {
         press_event.mouse_y = 0.2;
         let state = PanelState::default_for_test();
         let input_state = emInputState::default();
-        panel.Input(&press_event, &state, &input_state);
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let root = tree.create_root("test", std::rc::Weak::new());
+        let mut pctx = PanelCtx::new(&mut tree, root, 1.0);
+        panel.Input(&press_event, &state, &input_state, &mut pctx);
         assert!(panel.pressed);
         assert!((panel.press_slider_y - 0.42).abs() < 1e-10);
         assert!((panel.press_my - 0.2).abs() < 1e-10);

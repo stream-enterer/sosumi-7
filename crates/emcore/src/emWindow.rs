@@ -1033,7 +1033,20 @@ impl emWindow {
                     tree.put_behavior(panel_id, behavior);
                     continue;
                 }
-                consumed = behavior.Input(&panel_ev, &panel_state, state);
+                // Phase 1.76 Task 2: construct a fresh per-panel PanelCtx
+                // carrying the outer dispatch scheduler so wakes emitted by
+                // `behavior.Input` (including sub-view `set_active_panel` /
+                // `Update` via emSubViewPanel) propagate to the real scheduler.
+                consumed = {
+                    let pixel_tallness = self.view.borrow().GetCurrentPixelTallness();
+                    let mut panel_ctx = crate::emEngineCtx::PanelCtx::with_scheduler(
+                        tree,
+                        panel_id,
+                        pixel_tallness,
+                        ctx.scheduler,
+                    );
+                    behavior.Input(&panel_ev, &panel_state, state, &mut panel_ctx)
+                };
                 if trace && is_press_release {
                     let name = tree
                         .GetRec(panel_id)

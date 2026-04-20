@@ -203,6 +203,7 @@ pub trait PanelBehavior: AsAny {
         _event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         false
     }

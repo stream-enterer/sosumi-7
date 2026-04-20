@@ -364,6 +364,7 @@ impl PanelBehavior for emDirPanel {
         event: &emInputEvent,
         _state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         // Alt+A: SelectAll
         if event.is_key(InputKey::Key('a')) && input_state.IsAltMod() {

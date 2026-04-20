@@ -214,6 +214,7 @@ impl PanelBehavior for emDirEntryAltPanel {
         _event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         // Mouse events in alt content area: content panel receives
         // the event via panel tree propagation. Nothing to handle here.

@@ -279,8 +279,6 @@ The Rust-side mechanism that makes one-queue cross-tree dispatch work under stri
 
 **Nested sub-views (sub-view inside sub-view).** Admissible by the same recursive walk: a `TreeLocation::SubView { outer_panel_id, rest: Box::new(SubView { outer_panel_id: inner_id, rest: Box::new(Outer) }) }` resolves two take/put levels deep. Depth bounded by actual nesting in the panel tree (typically ≤3 in practice; no architectural limit). Confirmed against C++ `emSubViewPanel::Cycle` which uses an equivalent nested-Cycle pattern.
 
-**Phase-1.76 known departure — `PanelBehavior::Input`.** Task 5 found that threading the scheduler through `PanelBehavior::Input` cascades into >100 impls (every widget forwarding input to child widgets, test panels, etc.) — out of scope for Phase 1.75. As a result, the inner sub-view-panel mouse/touch dispatch path at `emSubViewPanel::Input` (`crates/emcore/src/emSubViewPanel.rs` around line 301) currently constructs a throwaway local `EngineScheduler` whose `wake_up` calls land on a dropped value (observationally no-ops). Observable impact is narrow: it only affects signal-driven reactions to sub-view input events that fire *solely* during input dispatch (not during the post-frame ctx), and the goldens held 237/6 across Tasks 3–6 with this silent-drop in place. Phase 1.76 will widen `PanelBehavior::Input` to receive a scheduler (or introduce an `InputWithCtx` sibling) and retire the throwaway.
-
 ### 3.4 Contexts
 
 Contexts are a tree of `Rc<emContext>`. Each emContext has three pieces of interior mutable state, each with a distinct, narrow justification:

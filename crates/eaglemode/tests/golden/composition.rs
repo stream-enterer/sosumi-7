@@ -166,7 +166,13 @@ impl PanelBehavior for ButtonPanel {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(p, w, h, s.enabled, pixel_scale);
     }
-    fn Input(&mut self, e: &emInputEvent, _s: &PanelState, _is: &emInputState) -> bool {
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        _s: &PanelState,
+        _is: &emInputState,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.widget.Input(e, _s, _is)
     }
     fn GetCursor(&self) -> emCursor {
@@ -185,7 +191,13 @@ impl PanelBehavior for CheckButtonPanel {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(p, w, h, s.enabled, pixel_scale);
     }
-    fn Input(&mut self, e: &emInputEvent, _s: &PanelState, _is: &emInputState) -> bool {
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        _s: &PanelState,
+        _is: &emInputState,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.widget.Input(e, _s, _is)
     }
     fn GetCursor(&self) -> emCursor {
@@ -204,7 +216,13 @@ impl PanelBehavior for CheckBoxPanel {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(p, w, h, s.enabled, pixel_scale);
     }
-    fn Input(&mut self, e: &emInputEvent, _s: &PanelState, _is: &emInputState) -> bool {
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        _s: &PanelState,
+        _is: &emInputState,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.widget.Input(e, _s, _is)
     }
     fn GetCursor(&self) -> emCursor {
@@ -223,7 +241,13 @@ impl PanelBehavior for RadioButtonPanel {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(p, w, h, s.enabled, pixel_scale);
     }
-    fn Input(&mut self, e: &emInputEvent, _s: &PanelState, _is: &emInputState) -> bool {
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        _s: &PanelState,
+        _is: &emInputState,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.widget.Input(e, _s, _is)
     }
     fn GetCursor(&self) -> emCursor {
@@ -242,7 +266,13 @@ impl PanelBehavior for RadioBoxPanel {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(p, w, h, s.enabled, pixel_scale);
     }
-    fn Input(&mut self, e: &emInputEvent, _s: &PanelState, _is: &emInputState) -> bool {
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        _s: &PanelState,
+        _is: &emInputState,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.widget.Input(e, _s, _is)
     }
     fn GetCursor(&self) -> emCursor {
@@ -262,7 +292,13 @@ impl PanelBehavior for TextFieldPanel {
         self.widget.cycle_blink(s.in_focused_path());
         self.widget.Paint(p, w, h, s.enabled, pixel_scale);
     }
-    fn Input(&mut self, e: &emInputEvent, _s: &PanelState, _is: &emInputState) -> bool {
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        _s: &PanelState,
+        _is: &emInputState,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.widget.Input(e, _s, _is)
     }
     fn GetCursor(&self) -> emCursor {
@@ -286,7 +322,13 @@ impl PanelBehavior for ScalarFieldPanel {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(p, w, h, s.enabled, pixel_scale);
     }
-    fn Input(&mut self, e: &emInputEvent, _s: &PanelState, _is: &emInputState) -> bool {
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        _s: &PanelState,
+        _is: &emInputState,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.widget.Input(e, _s, _is)
     }
     fn GetCursor(&self) -> emCursor {
@@ -305,7 +347,13 @@ impl PanelBehavior for ColorFieldPanel {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(p, w, h, pixel_scale);
     }
-    fn Input(&mut self, e: &emInputEvent, _s: &PanelState, _is: &emInputState) -> bool {
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        _s: &PanelState,
+        _is: &emInputState,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.widget.Input(e, _s, _is)
     }
     fn IsOpaque(&self) -> bool {
@@ -331,7 +379,13 @@ impl PanelBehavior for ListBoxPanel {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(p, w, h, pixel_scale);
     }
-    fn Input(&mut self, e: &emInputEvent, _s: &PanelState, _is: &emInputState) -> bool {
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        _s: &PanelState,
+        _is: &emInputState,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.widget.Input(e, _s, _is)
     }
     fn IsOpaque(&self) -> bool {

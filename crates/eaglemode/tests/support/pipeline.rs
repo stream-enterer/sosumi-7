@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use emcore::emContext::emContext;
-use emcore::emEngineCtx::{DeferredAction, SchedCtx};
+use emcore::emEngineCtx::{DeferredAction, PanelCtx, SchedCtx};
 use emcore::emInput::{emInputEvent, InputKey, InputVariant};
 use emcore::emInputState::emInputState;
 use emcore::emPanel::PanelBehavior;
@@ -326,7 +326,16 @@ impl PipelineTestHarness {
                     continue;
                 }
 
-                consumed = behavior.Input(&panel_ev, &panel_state, &self.input_state);
+                let pixel_tallness = self.view.GetCurrentPixelTallness();
+                consumed = {
+                    let mut pctx = PanelCtx::with_scheduler(
+                        &mut self.tree,
+                        panel_id,
+                        pixel_tallness,
+                        &mut self.scheduler,
+                    );
+                    behavior.Input(&panel_ev, &panel_state, &self.input_state, &mut pctx)
+                };
                 self.tree.put_behavior(panel_id, behavior);
                 if consumed {
                     self.view.InvalidatePainting(&self.tree, panel_id);

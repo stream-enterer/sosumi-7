@@ -384,6 +384,7 @@ impl PanelBehavior for emFileManControlPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut emcore::emEngineCtx::PanelCtx,
     ) -> bool {
         // Delegate to sort criterion radios
         for radio in &mut self.sort_radios {

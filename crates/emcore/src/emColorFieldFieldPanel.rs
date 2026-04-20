@@ -54,6 +54,7 @@ impl PanelBehavior for ScalarFieldPanel {
         event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.scalar_field.Input(event, _state, _input_state)
     }
@@ -113,6 +114,7 @@ impl PanelBehavior for CheckBoxPanel {
         event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.check_box.Input(event, _state, _input_state)
     }
@@ -138,6 +140,7 @@ impl PanelBehavior for ListBoxPanel {
         event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.list_box.Input(event, _state, _input_state)
     }
@@ -189,6 +192,7 @@ impl PanelBehavior for ButtonPanel {
         event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.button.Input(event, _state, _input_state)
     }

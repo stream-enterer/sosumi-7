@@ -488,6 +488,7 @@ impl PanelBehavior for TicTacToePanel {
         event: &emInputEvent,
         _state: &PanelState,
         _input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         let mx = event.mouse_x;
         let my = event.mouse_y;

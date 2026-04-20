@@ -1670,7 +1670,23 @@ impl PanelTree {
     ) {
         let state = self.build_panel_state(id, window_focused, pixel_tallness);
         if let Some(mut behavior) = self.take_behavior(id) {
-            behavior.Input(event, &state, input_state);
+            // Phase 1.76 Task 2: `PanelBehavior::Input` now takes `&mut PanelCtx`.
+            // `emView::RecurseInput` (sole caller of this method) does not
+            // carry a scheduler, so the ctx's scheduler is `None` — the same
+            // observable behavior as the pre-1.76 throwaway. Calls that
+            // require a scheduler (e.g. emSubViewPanel::Input) will panic via
+            // `expect`; the production input path routes through
+            // `emWindow::dispatch_input` instead, which builds a ctx with a
+            // real scheduler.
+            //
+            // INVARIANT (Phase 1.76): no scheduler-requiring PanelBehavior::Input
+            // override may be dispatched via this path — emView::RecurseInput carries
+            // no scheduler (test-harness-only entry). Any future live caller must
+            // thread a scheduler through and switch to PanelCtx::with_scheduler.
+            {
+                let mut panel_ctx = super::emEngineCtx::PanelCtx::new(self, id, pixel_tallness);
+                behavior.Input(event, &state, input_state, &mut panel_ctx);
+            }
             if self.panels.contains_key(id) {
                 self.put_behavior(id, behavior);
             }

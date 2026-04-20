@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use emcore::emCursor::emCursor;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emInput::{emInputEvent, InputKey};
 use emcore::emInputState::emInputState;
 use emcore::emLook::emLook;
@@ -45,6 +46,7 @@ impl PanelBehavior for ScalarFieldPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         let consumed = self.sf.Input(event, state, input_state);
         *self.value.borrow_mut() = self.sf.GetValue();

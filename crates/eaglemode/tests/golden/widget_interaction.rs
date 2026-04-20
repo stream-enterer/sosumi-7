@@ -700,7 +700,13 @@ impl PanelBehavior for ClickableButtonPanel {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(p, w, h, s.enabled, pixel_scale);
     }
-    fn Input(&mut self, e: &emInputEvent, s: &PanelState, is: &emInputState) -> bool {
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        s: &PanelState,
+        is: &emInputState,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.widget.Input(e, s, is)
     }
     fn GetCursor(&self) -> emCursor {
@@ -745,7 +751,11 @@ fn dispatch_event(
                 tree.put_behavior(panel_id, behavior);
                 continue;
             }
-            let consumed = behavior.Input(&panel_ev, &panel_state, input_state);
+            let pixel_tallness = view.GetCurrentPixelTallness();
+            let consumed = {
+                let mut pctx = PanelCtx::new(tree, panel_id, pixel_tallness);
+                behavior.Input(&panel_ev, &panel_state, input_state, &mut pctx)
+            };
             tree.put_behavior(panel_id, behavior);
             if consumed {
                 view.InvalidatePainting(tree, panel_id);

@@ -451,6 +451,7 @@ impl PanelBehavior for emDirEntryPanel {
         event: &emInputEvent,
         _state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         match event.key {
             InputKey::MouseLeft => {

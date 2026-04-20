@@ -64,6 +64,7 @@ impl PanelBehavior for MainButtonPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.button.Input(event, state, input_state)
     }
@@ -96,6 +97,7 @@ impl PanelBehavior for MainCheckButtonPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.check_button.Input(event, state, input_state)
     }
@@ -230,6 +232,7 @@ impl PanelBehavior for emMainControlPanel {
         event: &emInputEvent,
         _state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         use emcore::emInput::InputKey;
         // Escape no-modifier: toggle control view (C++ emMainWindow.cpp:230-237).

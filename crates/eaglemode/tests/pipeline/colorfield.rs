@@ -51,6 +51,7 @@ impl PanelBehavior for ColorFieldBehavior {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        _ctx: &mut PanelCtx,
     ) -> bool {
         self.color_field.Input(event, state, input_state)
     }

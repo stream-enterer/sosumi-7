@@ -233,6 +233,7 @@ impl PanelBehavior for emSubViewPanel {
         event: &emInputEvent,
         state: &PanelState,
         input_state: &emInputState,
+        ctx: &mut PanelCtx,
     ) -> bool {
         // C++ emView.cpp:1004 via emSubViewPanel.cpp:77: forward input to
         // the sub-view's ActiveAnimator first. Rust stores the sub-view's
@@ -286,19 +287,12 @@ impl PanelBehavior for emSubViewPanel {
         let root_ctx_for_input = self.sub_view.borrow().GetRootContext();
         let mut fw_input: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
 
-        // Phase 1.75 Task 5 BLOCKED scope-fork: `PanelBehavior::Input` signature
-        // change to thread a scheduler cascades into >100 Input impls (widgets
-        // forwarding to inner widgets, test panels, etc.) — far beyond the
-        // "8-10 non-mechanical adjustments" escalation threshold stated in
-        // Task 5 prompt. The notice path (sync_geometry) was successfully
-        // de-throwaway'd in Task 5 via `emView::HandleNotice(tree, sched)`
-        // threading; the Input path requires a separate plan task widening
-        // `PanelBehavior::Input` (or providing an `InputWithCtx` sibling).
-        // Until then: wakes emitted by `set_active_panel`/`Update` here land
-        // on a dropped local scheduler (observationally no-op). Goldens held
-        // 237/6 through Tasks 3, 4, and 5 with this silent-drop; reopening
-        // it requires a dedicated task.
-        let mut throwaway_sched_input = crate::emScheduler::EngineScheduler::new();
+        // Phase 1.76 Task 2: the `throwaway_sched_input` of Phase 1.75 is gone.
+        // `PanelBehavior::Input` now carries `ctx: &mut PanelCtx`; wakes emitted
+        // by `set_active_panel`/`Update` below propagate to the real outer
+        // scheduler via `ctx.scheduler.as_deref_mut()`. Scoped re-borrows are
+        // required because `Option<&mut EngineScheduler>` admits only one live
+        // mutable borrow at a time.
 
         // Hit-test and set active panel on mouse press (mirrors parent window logic).
         if event.is_mouse_event() && event.variant == crate::emInput::InputVariant::Press {
@@ -308,7 +302,9 @@ impl PanelBehavior for emSubViewPanel {
                 .GetFocusablePanelAt(&self.sub_tree, sub_vx, sub_vy)
                 .unwrap_or_else(|| self.sub_view.borrow().GetRootPanel());
             let mut sc = crate::emEngineCtx::SchedCtx {
-                scheduler: &mut throwaway_sched_input,
+                scheduler: ctx.scheduler.as_deref_mut().expect(
+                    "emSubViewPanel::Input requires PanelCtx with a scheduler (Phase 1.76)",
+                ),
                 framework_actions: &mut fw_input,
                 root_context: &root_ctx_for_input,
                 current_engine: None,
@@ -321,7 +317,9 @@ impl PanelBehavior for emSubViewPanel {
         // Ensure sub-view viewing state is current for coordinate transforms.
         {
             let mut sc = crate::emEngineCtx::SchedCtx {
-                scheduler: &mut throwaway_sched_input,
+                scheduler: ctx.scheduler.as_deref_mut().expect(
+                    "emSubViewPanel::Input requires PanelCtx with a scheduler (Phase 1.76)",
+                ),
                 framework_actions: &mut fw_input,
                 root_context: &root_ctx_for_input,
                 current_engine: None,
@@ -348,7 +346,26 @@ impl PanelBehavior for emSubViewPanel {
                     self.sub_tree.put_behavior(panel_id, behavior);
                     continue;
                 }
-                let consumed = behavior.Input(&panel_ev, &panel_state, input_state);
+                // Phase 1.76 Task 2: build a fresh per-sub-panel PanelCtx.
+                // PanelCtx is panel-specific (tree + id); we re-borrow the
+                // outer scheduler into a ctx scoped to this sub-panel's
+                // sub_tree + id.
+                let consumed = {
+                    let mut panel_ctx = match ctx.scheduler.as_deref_mut() {
+                        Some(sched) => crate::emEngineCtx::PanelCtx::with_scheduler(
+                            &mut self.sub_tree,
+                            panel_id,
+                            pixel_tallness,
+                            sched,
+                        ),
+                        None => crate::emEngineCtx::PanelCtx::new(
+                            &mut self.sub_tree,
+                            panel_id,
+                            pixel_tallness,
+                        ),
+                    };
+                    behavior.Input(&panel_ev, &panel_state, input_state, &mut panel_ctx)
+                };
                 self.sub_tree.put_behavior(panel_id, behavior);
                 if consumed {
                     self.sub_view
