@@ -103,7 +103,7 @@ Notes:
   `&win.view` — compiles iff the field is plain.
 
 ### Task 3 — STAGED (tree red, Task 7 will green)
-Commit: <sha>
+Commit: 5278cbf5
 Files: 1 (emSubViewPanel.rs)
 Notes:
 - `emSubViewPanel::sub_view` narrowed from `Rc<RefCell<emView>>` to plain
