@@ -46,3 +46,57 @@
 - Metric deltas: nextest 2472/0/9 → 2476/0/9 (+4 new Cycle tests). DIVERGED in emcore −2 (removed field + accessor). goldens 237/6 preserved. rc_refcell_total unchanged. No new unsafe, no new `#[allow]`, no new Rc<RefCell<>>.
 - Gates: cargo check --all-targets clean, clippy -D warnings clean, nextest 2476/2476 pass, `rg 'fn poll|fn overwrite_dialog\b|fn confirm_overwrite|fn cancel_overwrite|fn handle_file_trigger' crates/emcore/src/emFileDialog.rs` → 0 matches. Note: original gate listed `rg 'DIVERGED:' crates/emcore/src/emFileDialog.rs` → 0; correction commit (see below) adds one DIVERGED block on `Cycle`, so that gate now correctly reads → 1.
 - E024 status (corrected): Task 6 **prepares** E024 for closure — it is not a closure. What changed: the four caller-pulled polling methods replaced by a single `Cycle` method; signal accessors added; four regression tests added. What did NOT change: `emFileDialog` remains a plain struct whose `Cycle` is caller-invoked, not scheduler-dispatched. The observable-surface property named by E024 — "the scheduler dispatches Cycle when subscribed signals fire, rather than when the caller decides to observe" — is still divergent. Full closure requires `emDialog` to become an `emEngine` with wake-up-signal subscription, which is out of scope for Phase 3. At Closeout C5/C6, E024 stays `open` with a `phase_3_progress` note citing `44e4aa9b` (API cleanup) and this correction commit. The `Cycle` method carries a `DIVERGED:` block (added in the correction commit) documenting the remaining dispatch-timing divergence per the File and Name Correspondence rule.
+
+## Task 7 — Full gate + invariant sweep (phase-final)
+
+**Commit:** (this commit)
+**Date:** 2026-04-20
+
+### Gate results
+
+| Step | Result |
+|------|--------|
+| `cargo fmt --check` | PASS |
+| `cargo clippy --all-targets --all-features -- -D warnings` | PASS |
+| `cargo-nextest ntr` | PASS — 2476 passed, 9 skipped, 0 failed |
+| `cargo test --test golden -- --test-threads=1` | PASS (baseline) — 237 passed, 6 failed (same 6 pre-existing failures; no regression) |
+
+### Invariant table
+
+| Invariant | Widget / Item | Result | Notes |
+|-----------|--------------|--------|-------|
+| I3a | emCheckButton | PASS | `check_signal: SignalId` |
+| I3a | emCheckBox | PASS | `check_signal: SignalId` |
+| I3a | emButton | PASS | `click_signal: SignalId`, `press_state_signal: SignalId` |
+| I3a | emRadioButton | PASS | `check_signal: SignalId` |
+| I3a | emTextField | PASS | `text_signal`, `selection_signal`, `can_undo_redo_signal` |
+| I3a | emColorField | PASS | `color_signal: SignalId` |
+| I3a | emScalarField | PASS | `value_signal: SignalId` |
+| I3a | emFileSelectionBox | PASS | `selection_signal`, `file_trigger_signal` |
+| I3a | emCoreConfigPanel | SPEC-ERROR (see note) | C++ `emCoreConfigPanel` exposes no `GetXxxSignal` methods (confirmed: `grep Signal ~/git/eaglemode-0.96.4/include/emCore/emCoreConfigPanel.h` → 0 matches). The invariant spec erroneously included this widget. No code defect. |
+| I3b | (see exclusion inventory below) | PASS | 6 hits, 0 raw `Box<dyn FnMut>` on widget callbacks, all documented |
+| I3c | `emContext.rs` | PASS | 0 matches for "clipboard" |
+| I3c | `emGUIFramework.rs` | PASS | clipboard field present |
+| I3d | `CreateFilePanel` | PASS | takes `&mut dyn ConstructCtx` |
+| I3d | `TryCreateFilePanel` | PASS | takes `&mut dyn ConstructCtx` |
+| I3d | `CreateFilePanelWithStat` | PASS | takes `&mut dyn ConstructCtx` |
+| I3d | `TryAcquireModel` | PASS | takes `&mut dyn ConstructCtx` |
+| I3d | `TryAcquireModelFromPlugin` | PASS | takes `&mut dyn ConstructCtx` |
+| I3e | `struct InputDispatchEngine` | PASS | `crates/emcore/src/emInputDispatchEngine.rs:16` |
+| I3e | `impl emEngine for InputDispatchEngine` | PASS | `crates/emcore/src/emInputDispatchEngine.rs:18` |
+| I3e | registered at framework init | PASS | `emGUIFramework.rs:150` — `scheduler.register_engine(Box::new(InputDispatchEngine), Priority::VeryHigh, TreeLocation::Outer)` |
+
+### I3b exclusion inventory
+
+Total raw `Box<dyn FnMut(` hits in `crates/emcore/src/`: **6**. All are documented exclusions. Widget callbacks use `WidgetCallback<Args>` / `WidgetCallbackRef<T>` aliases which expand to the `Box<dyn FnMut>` form internally but carry `SchedCtx` in their signature — these do NOT appear as bare `Box<dyn FnMut(` in source.
+
+| File | Line | Shape | Exclusion reason |
+|------|------|-------|-----------------|
+| `emTextField.rs` | 25 | `type ValidateCb = Box<dyn FnMut(&str) -> bool>` | Returns `bool` (veto semantics). Structurally incompatible with both `WidgetCallback<Args>` and `WidgetCallbackRef<T>` (both return `()`). DIVERGED: comment present. Not a widget event callback — it is a filter/validator side-channel. |
+| `emDialog.rs` | 27 | `type DialogCheckFinishCb = Box<dyn FnMut(&DialogResult) -> bool>` | Same return-value veto reason as `ValidateCb`. DIVERGED: comment present. |
+| `emMiniIpc.rs` | 88 | `type MessageCallback = Box<dyn FnMut(&[String]))` | IPC message handler. Not a widget. `emMiniIpc` is a low-level process-communication primitive with no C++ `GetXxxSignal`; the callback fires in the IPC receive path, not in a widget Input handler. No `SchedCtx` available at the fire site. |
+| `emPainter.rs` | 471 | `op_log_fn: Option<Box<dyn FnMut(&DrawOp, u32, RecordedState)>>` | Test/debug draw-op logger. Field is `cfg(test)` or `test-support`-gated. Not a widget callback. Used only in golden-test harness to capture draw ops. |
+| `emPriSchedAgent.rs` | 26 | `callback: Option<Box<dyn FnMut()>>` | Scheduler priority-access callback. `emPriSchedAgent` is a scheduler primitive, not a widget. The callback fires from the scheduler loop, not from a widget Input handler. No SchedCtx thread possible at that call site. |
+| `emPriSchedAgent.rs` | 104 | `pub fn add_agent(&mut self, priority: f64, got_access: Box<dyn FnMut()>)` | Same: scheduler primitive install-site signature for the above field. |
+
+**PASS — zero widget-path `Box<dyn FnMut(` outside the WidgetCallback/WidgetCallbackRef alias family.**
