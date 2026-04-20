@@ -1149,6 +1149,21 @@ impl emView {
             self.HomeWidth = width;
             self.HomeHeight = height;
             self.HomePixelTallness = pixel_tallness;
+            // Keep port home geometry in sync so SwapViewPorts reads the
+            // correct values. C++ emView.cpp:1986-1990 reads geometry as
+            // `CurrentViewPort->HomeView->HomeX` etc., resolving through the
+            // `HomeView*` back-reference. Rust stores geometry directly on
+            // the port; we mirror the view's Home* onto the HomeViewPort here
+            // so that after a swap, the peer view reads the right geometry
+            // from the exchanged port.
+            {
+                let mut vp = self.HomeViewPort.borrow_mut();
+                vp.home_x = x;
+                vp.home_y = y;
+                vp.home_width = width;
+                vp.home_height = height;
+                vp.home_pixel_tallness = pixel_tallness;
+            }
         }
         self.CurrentX = x;
         self.CurrentY = y;
@@ -3385,21 +3400,38 @@ impl emView {
 
     /// Port of C++ `emView::SwapViewPorts(bool swapFocus)` (emView.cpp:1974).
     ///
-    /// Swaps the view's `HomeViewPort` and `CurrentViewPort`. Called by the
-    /// popup branch in `RawVisitAbs` to exchange the home-window port with
-    /// the popup-window port.
+    /// Exchanges `CurrentViewPort` between `this` and `PopupWindow`, then
+    /// updates both views' `Current*` geometry fields from the swapped ports.
+    /// Called by the popup branch in `RawVisitAbs` to exchange the home-window
+    /// port with the popup-window port.
     ///
-    /// DIVERGED: C++ swaps raw pointers between `this` and `PopupWindow`,
-    /// then updates `CurrentX/Y/Width/Height/PixelTallness` from the new
-    /// `CurrentViewPort->HomeView->Home*` fields. Phase 4 approximates this
-    /// by reading the geometry from the exchanged `emViewPort` directly
-    /// (since the stub port stores home_* instead of a HomeView back-ref).
+    /// Shape: Path B — parent view owns `PopupWindow: Option<Box<emWindow>>`.
+    /// No cross-`HashMap` lookup; the swap is between two fields of `this`
+    /// (`self.CurrentViewPort`) and `self.PopupWindow.view.CurrentViewPort`.
+    /// `HashMap::get_disjoint_mut` is not applicable here; both targets live
+    /// under a single `&mut emView` borrow.
+    ///
+    /// DIVERGED: C++ stores `HomeView*` back-refs on `emViewPort` and reads
+    /// geometry as `CurrentViewPort->HomeView->HomeX` etc. Rust stores the
+    /// geometry directly on the port (`home_x`, `home_y`, `home_width`,
+    /// `home_height`, `home_pixel_tallness`) to avoid re-entrancy: the
+    /// `upgrade().borrow()` path cannot run while `emView` is borrowed_mut,
+    /// which is the common case during `SetGeometry` and `SwapViewPorts`.
+    /// `SetGeometry` keeps `home_pixel_tallness` on the `HomeViewPort` in
+    /// sync so the swap reads the correct value.
+    ///
+    /// DIVERGED: C++ `emViewPort::CurrentView` pointers (emView.cpp:1984-1985)
+    /// are updated to point to the new owning view after the swap. Rust does
+    /// not have `CurrentView` on `emViewPort` (it uses `WindowId` instead);
+    /// this per-port update is not needed.
     pub fn SwapViewPorts(&mut self, swap_focus: bool, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
-        // Swap the popup window's current_view_port with our CurrentViewPort.
-        // This mirrors C++:
-        //   vp = PopupWindow->CurrentViewPort;
-        //   PopupWindow->CurrentViewPort = CurrentViewPort;
+        // C++ (emView.cpp:1980-1985):
+        //   w = PopupWindow;
+        //   vp = w->CurrentViewPort;
+        //   w->CurrentViewPort = CurrentViewPort;
         //   CurrentViewPort = vp;
+        //   CurrentViewPort->CurrentView = this;    // (no Rust equivalent)
+        //   w->CurrentViewPort->CurrentView = w;    // (no Rust equivalent)
         if let Some(popup) = self.PopupWindow.as_mut() {
             let popup_vp = Rc::clone(&popup.view().CurrentViewPort);
             let our_vp = Rc::clone(&self.CurrentViewPort);
@@ -3411,20 +3443,43 @@ impl emView {
             std::mem::swap(&mut self.HomeViewPort, &mut self.CurrentViewPort);
         }
 
-        // Update Current* from the new CurrentViewPort's stored geometry.
-        // C++ (emView.cpp:1984-1989):
+        // C++ (emView.cpp:1986-1990): update this view's Current* from the
+        // newly acquired CurrentViewPort's stored geometry.
         //   CurrentX = CurrentViewPort->HomeView->HomeX;  etc.
+        // `home_pixel_tallness` mirrors `HomeView->HomePixelTallness`; kept in
+        // sync by `SetGeometry` whenever `is_home` is true.
         {
             let vp = self.CurrentViewPort.borrow();
             self.CurrentX = vp.home_x;
             self.CurrentY = vp.home_y;
             self.CurrentWidth = vp.home_width;
             self.CurrentHeight = vp.home_height;
-            self.CurrentPixelTallness = self.HomePixelTallness;
+            self.CurrentPixelTallness = vp.home_pixel_tallness;
+        }
+
+        // C++ (emView.cpp:1991-1995): update popup view's Current* from its
+        // newly acquired CurrentViewPort's stored geometry.
+        //   w->CurrentX = w->CurrentViewPort->HomeView->HomeX;  etc.
+        if let Some(ref mut popup) = self.PopupWindow {
+            let vp = popup.view().CurrentViewPort.borrow();
+            let (cx, cy, cw, ch, cpt) = (
+                vp.home_x,
+                vp.home_y,
+                vp.home_width,
+                vp.home_height,
+                vp.home_pixel_tallness,
+            );
+            drop(vp);
+            let pv = popup.view_mut();
+            pv.CurrentX = cx;
+            pv.CurrentY = cy;
+            pv.CurrentWidth = cw;
+            pv.CurrentHeight = ch;
+            pv.CurrentPixelTallness = cpt;
         }
 
         if swap_focus {
-            // C++ (emView.cpp:1990-1994):
+            // C++ (emView.cpp:1996-2000):
             //   fcs = Focused; SetFocused(w->Focused); w->SetFocused(fcs);
             // Swap window_focused between this view and the popup view.
             // Full SetFocused (with panel-tree notification) is Phase-5;
@@ -3438,8 +3493,10 @@ impl emView {
             }
         }
 
-        // C++ emView.cpp:1995: Signal(GeometrySignal) — viewport swap changes
-        // the current geometry, so wake listeners (e.g. emWindowStateSaver).
+        // C++ emView.cpp fires GeometrySignal inside SetFocused when swapping
+        // focus, and also as a consequence of geometry changes. Rust fires it
+        // unconditionally here (geometry always changes on port swap) to keep
+        // listeners (e.g. emWindowStateSaver) current.
         if let Some(sig) = self.geometry_signal {
             ctx.fire(sig);
         }
@@ -7471,6 +7528,121 @@ mod tests {
         // Pixel tallness must remain distinct (HandleNotice did not perturb).
         assert_eq!(view_a.GetCurrentPixelTallness(), 1.0);
         assert_eq!(view_b.GetCurrentPixelTallness(), 2.0);
+    }
+
+    /// Task 9: `SwapViewPorts` correctness — Shape 2 (parent view ↔ popup view).
+    ///
+    /// Verifies that after `SwapViewPorts(false)`:
+    ///   - `this->CurrentViewPort` is the popup's original port,
+    ///   - `popup->CurrentViewPort` is the parent's original port,
+    ///   - `this->Current*` are updated from the swapped-in port's home geometry,
+    ///   - `popup->Current*` are updated from the swapped-in port's home geometry.
+    ///
+    /// Matches C++ emView.cpp:1974-2001 (Shape 2).
+    ///
+    /// Note: `HashMap::get_disjoint_mut` is not applicable — both ports live
+    /// under a single `&mut emView` borrow (parent owns `PopupWindow`
+    /// inline). The plan's Shape 1 framing does not apply here.
+    #[test]
+    fn test_task9_swap_view_ports_geometry_exchange() {
+        use crate::emColor::emColor;
+        use crate::emWindow::{emWindow, WindowFlags};
+        use std::rc::Rc;
+
+        let mut ts = TestSched::new();
+        let (mut tree, root, _child_a, _child_b) = setup_tree();
+
+        // Build a parent emView with a known pixel tallness.
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        // Set geometry with a non-1.0 pixel tallness on the parent view so
+        // we can distinguish parent vs popup tallness after the swap.
+        ts.with(|sc| view.SetGeometry(&mut tree, 0.0, 0.0, 800.0, 600.0, 1.5, sc));
+        assert_eq!(view.HomePixelTallness, 1.5);
+        // Home port's home_pixel_tallness must match (kept in sync by SetGeometry).
+        assert_eq!(
+            view.HomeViewPort.borrow().home_pixel_tallness,
+            1.5,
+            "HomeViewPort.home_pixel_tallness must mirror HomePixelTallness after SetGeometry"
+        );
+
+        // Create a popup emWindow with a different geometry.
+        let cs = ts.sched.create_signal();
+        let fs = ts.sched.create_signal();
+        let fos = ts.sched.create_signal();
+        let gs = ts.sched.create_signal();
+        let mut popup = emWindow::new_popup_pending(
+            Rc::clone(&view.Context),
+            root,
+            WindowFlags::POPUP,
+            "test_popup".to_string(),
+            cs,
+            fs,
+            fos,
+            gs,
+            emColor::TRANSPARENT,
+        );
+        // Give the popup view its own distinct geometry (pixel tallness 0.75).
+        ts.with(|sc| {
+            popup
+                .view_mut()
+                .SetGeometry(&mut tree, 100.0, 50.0, 400.0, 300.0, 0.75, sc)
+        });
+        assert_eq!(popup.view().HomePixelTallness, 0.75);
+        assert_eq!(
+            popup.view().HomeViewPort.borrow().home_pixel_tallness,
+            0.75,
+            "popup HomeViewPort.home_pixel_tallness must mirror popup HomePixelTallness"
+        );
+
+        // Capture the Rc identities before the swap.
+        let parent_port_ptr = Rc::as_ptr(&view.CurrentViewPort);
+        let popup_port_ptr = Rc::as_ptr(&popup.view().CurrentViewPort);
+
+        // Install the popup on the view.
+        view.PopupWindow = Some(Box::new(popup));
+
+        // Execute the swap (swapFocus = false).
+        ts.with(|sc| view.SwapViewPorts(false, sc));
+
+        // After the swap, parent's CurrentViewPort must be the popup's original port.
+        assert_eq!(
+            Rc::as_ptr(&view.CurrentViewPort),
+            popup_port_ptr,
+            "parent's CurrentViewPort must be the popup's original port after swap"
+        );
+
+        // Popup's CurrentViewPort must be the parent's original port.
+        let popup_current_port_ptr =
+            Rc::as_ptr(&view.PopupWindow.as_ref().unwrap().view().CurrentViewPort);
+        assert_eq!(
+            popup_current_port_ptr, parent_port_ptr,
+            "popup's CurrentViewPort must be the parent's original port after swap"
+        );
+
+        // Parent's Current* must reflect the popup's original home geometry.
+        // C++ emView.cpp:1986-1990: CurrentX/Y/Width/Height/PixelTallness =
+        //   CurrentViewPort->HomeView->Home*  (popup's Home* after swap).
+        assert_eq!(view.CurrentX, 100.0, "parent CurrentX after swap");
+        assert_eq!(view.CurrentY, 50.0, "parent CurrentY after swap");
+        assert_eq!(view.CurrentWidth, 400.0, "parent CurrentWidth after swap");
+        assert_eq!(view.CurrentHeight, 300.0, "parent CurrentHeight after swap");
+        assert_eq!(
+            view.CurrentPixelTallness,
+            0.75,
+            "parent CurrentPixelTallness must come from popup's port (0.75), not parent HomePixelTallness (1.5)"
+        );
+
+        // Popup's Current* must reflect the parent's original home geometry.
+        // C++ emView.cpp:1991-1995: w->Current* = w->CurrentViewPort->HomeView->Home*.
+        let pv = view.PopupWindow.as_ref().unwrap().view();
+        assert_eq!(pv.CurrentX, 0.0, "popup CurrentX after swap");
+        assert_eq!(pv.CurrentY, 0.0, "popup CurrentY after swap");
+        assert_eq!(pv.CurrentWidth, 800.0, "popup CurrentWidth after swap");
+        assert_eq!(pv.CurrentHeight, 600.0, "popup CurrentHeight after swap");
+        assert_eq!(
+            pv.CurrentPixelTallness, 1.5,
+            "popup CurrentPixelTallness must come from parent's port (1.5)"
+        );
     }
 }
 

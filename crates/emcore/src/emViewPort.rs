@@ -43,17 +43,21 @@ pub struct emViewPort {
     // DIVERGED: stores the home geometry on the port (plain f64 fields)
     // rather than following a back-reference to the emView. C++ reads these
     // through a raw `HomeView*` pointer (emViewPort reaches the view's
-    // HomeX/Y/Width/Height). A Rust `Weak<RefCell<emView>>` back-reference
-    // would not be a cycle-hazard (the `window` field below uses exactly
-    // that shape), but `upgrade().borrow()` cannot run while emView is
-    // already borrowed_mut — which is the common case inside `SetGeometry`
-    // and `SwapViewPorts`. Storing the geometry on the port avoids that
-    // re-entrancy and lets `SwapViewPorts` move it atomically when the
-    // Home and Current ports exchange identities.
+    // HomeX/Y/Width/Height/HomePixelTallness). A Rust `Weak<RefCell<emView>>`
+    // back-reference would not be a cycle-hazard (the `window` field below
+    // uses exactly that shape), but `upgrade().borrow()` cannot run while
+    // emView is already borrowed_mut — which is the common case inside
+    // `SetGeometry` and `SwapViewPorts`. Storing the geometry on the port
+    // avoids that re-entrancy and lets `SwapViewPorts` move it atomically
+    // when the Home and Current ports exchange identities.
     pub home_x: f64,
     pub home_y: f64,
     pub home_width: f64,
     pub home_height: f64,
+    /// C++ `HomeView->HomePixelTallness` — pixel shape ratio of the home view
+    /// owning this port. Used by `SwapViewPorts` to update `CurrentPixelTallness`
+    /// from the correct view after the port exchange, matching C++ emView.cpp:1990.
+    pub home_pixel_tallness: f64,
 
     /// Back-reference to the owning emWindow by WindowId. Used by
     /// `PaintView` / `InvalidatePainting` to dispatch to backend machinery.
@@ -91,6 +95,7 @@ impl emViewPort {
             home_y: 0.0,
             home_width: 0.0,
             home_height: 0.0,
+            home_pixel_tallness: 1.0,
             window_id: None,
             cursor: crate::emCursor::emCursor::Normal,
             cursor_dirty: false,
@@ -106,12 +111,19 @@ impl emViewPort {
     ///
     /// DIVERGED: registration side-effect moved to call site; geometry
     /// passed explicitly instead of read from homeView on construction.
-    pub fn new_with_geometry(home_x: f64, home_y: f64, home_width: f64, home_height: f64) -> Self {
+    pub fn new_with_geometry(
+        home_x: f64,
+        home_y: f64,
+        home_width: f64,
+        home_height: f64,
+        home_pixel_tallness: f64,
+    ) -> Self {
         Self {
             home_x,
             home_y,
             home_width,
             home_height,
+            home_pixel_tallness,
             window_id: None,
             cursor: crate::emCursor::emCursor::Normal,
             cursor_dirty: false,
@@ -181,14 +193,17 @@ impl emViewPort {
 
     // === Protected methods (emView.h:763-778) ===
 
-    /// Port of C++ `emViewPort::SetViewGeometry(x, y, w, h, pixelTallness)`.
-    /// Updates the stored home geometry. Called by `SetViewPosSize` and the
-    /// backend geometry callback.
-    pub fn SetViewGeometry(&mut self, x: f64, y: f64, w: f64, h: f64) {
+    /// Port of C++ `emViewPort::SetViewGeometry(x, y, w, h, pixelTallness)`
+    /// (emView.h:1025-1030).
+    ///
+    /// Updates the stored home geometry including pixel tallness. Called by
+    /// `SetViewPosSize` and the backend geometry callback.
+    pub fn SetViewGeometry(&mut self, x: f64, y: f64, w: f64, h: f64, pixel_tallness: f64) {
         self.home_x = x;
         self.home_y = y;
         self.home_width = w;
         self.home_height = h;
+        self.home_pixel_tallness = pixel_tallness;
     }
 
     /// Port of C++ `emViewPort::SetViewFocused(bool focused)`.
@@ -298,11 +313,11 @@ impl emViewPort {
     /// the equivalent in C++ is the `emWindowPort` override of
     /// `SetViewGeometry` triggered by the windowing system. Phase 4
     /// implements this as a direct setter on the stub.
-    pub fn SetViewPosSize(&mut self, x: f64, y: f64, w: f64, h: f64) {
+    pub fn SetViewPosSize(&mut self, x: f64, y: f64, w: f64, h: f64, pixel_tallness: f64) {
         self.home_x = x;
         self.home_y = y;
         self.home_width = w;
         self.home_height = h;
-        // pixel_tallness unchanged — popup inherits home pixel tallness
+        self.home_pixel_tallness = pixel_tallness;
     }
 }
