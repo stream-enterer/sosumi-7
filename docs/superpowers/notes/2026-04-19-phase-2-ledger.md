@@ -74,3 +74,30 @@ Notes:
 Commit: 0158b060da1d6e8ca2192cc168eb9d804f2c2aa5
 Files: emPanelScope.rs (new), emPanelScope.rust_only (new), lib.rs
 Notes: SubView branch is a Task-5 stub (returns None); Toplevel branch resolves via ctx.windows.get(&wid) + window.view_rc(). Plan's ctx.with_view_mut() does not exist on EngineCtx; implemented inline instead. WindowId::dummy() used in test (winit 0.30 has it); PanelId::null() requires `use slotmap::Key as _` in test scope.
+
+### Task 2 — STAGED (tree red, Task 7 will green)
+Commit: 9179be6c
+Files: 4 (emWindow.rs, emView.rs, emPanelScope.rs, emGUIFramework.rs)
+Notes:
+- `emWindow::view` narrowed from `Rc<RefCell<emView>>` to plain `emView`.
+  All in-file `.view.borrow()` / `.view.borrow_mut()` sites replaced
+  with direct `self.view` / `&mut self.view`.
+- `view_rc()` accessor deleted. `view()` / `view_mut()` kept as thin
+  wrappers returning `&emView` / `&mut emView` to minimize downstream
+  breakage.
+- DIVERGED (Phase 2 Task 2): `emView::PopupWindow` boxed as
+  `Option<Box<emWindow>>` to break the inline recursion
+  `emView -> emWindow -> emView`. This is a forced Rust divergence —
+  C++ stores a raw `emWindow*` pointer, so Box preserves the shape.
+- PanelScope::Toplevel updated: `ctx.windows.get_mut(&wid)` +
+  `&mut window.view`. `as_sched_ctx()` inlined because the split
+  borrow (windows vs. scheduler) can't be reconstructed through the
+  existing `&mut EngineCtx` accessor while `window: &mut emWindow`
+  is held.
+- `cargo check -p emcore`: clean. `cargo check --workspace`: red —
+  emmain has 3 `win.view_rc()` call sites used for
+  `Rc::downgrade(...)` into the view's Weak self-reference
+  (RegisterEngines). Those require Tasks 5/6/7 (sub_view + NoticeList)
+  to eliminate the emView self-Weak. Left broken per plan.
+- Added Task 2 test `window_view_is_plain` that binds `&emView` to
+  `&win.view` — compiles iff the field is plain.
