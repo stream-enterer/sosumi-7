@@ -1365,8 +1365,8 @@ impl PanelBehavior for TestPanel {
         let bg_for_cf = bg_shared.clone();
         let mut cf = emColorField::new(&mut ctx.as_sched_ctx().expect("sched"), emLook::new());
         cf.SetEditable(true);
-        cf.SetAlphaEnabled(true);
-        cf.SetColor(bg_shared.get());
+        cf.set_initial_alpha_enabled(true);
+        cf.set_initial_color(bg_shared.get());
         cf.on_color = Some(Box::new(
             move |color, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
                 bg_for_cf.set(color);
@@ -1435,7 +1435,7 @@ impl PanelBehavior for TkTestGrpPanel {
                 Orientation::Horizontal,
                 look.clone(),
             );
-            sp.SetPos(0.8);
+            sp.set_initial_position(0.8);
             let sp_id = ctx.create_child_with("sp", Box::new(SplitterPanel { widget: sp }));
 
             // sp1: vertical splitter, child of sp, pos=0.8
@@ -1444,7 +1444,7 @@ impl PanelBehavior for TkTestGrpPanel {
                 Orientation::Vertical,
                 look.clone(),
             );
-            sp1.SetPos(0.8);
+            sp1.set_initial_position(0.8);
             let sp1_id = ctx.tree.create_child(sp_id, "sp1", None);
             ctx.tree
                 .set_behavior(sp1_id, Box::new(SplitterPanel { widget: sp1 }));
@@ -1463,7 +1463,7 @@ impl PanelBehavior for TkTestGrpPanel {
                 Orientation::Vertical,
                 look.clone(),
             );
-            sp2.SetPos(0.8);
+            sp2.set_initial_position(0.8);
             let sp2_id = ctx.tree.create_child(sp_id, "sp2", None);
             ctx.tree
                 .set_behavior(sp2_id, Box::new(SplitterPanel { widget: sp2 }));
@@ -1750,7 +1750,7 @@ impl TkTestPanel {
                 look.clone(),
             );
             sf3.SetEditable(true);
-            sf3.SetValue(0.0);
+            sf3.set_initial_value(0.0);
             sf3.SetScaleMarkIntervals(&[1000, 100, 10, 5, 1]);
             let id = ctx.tree.create_child(gid, "sf3", None);
             ctx.tree
@@ -1765,7 +1765,7 @@ impl TkTestPanel {
             );
             sf4.SetCaption("Level");
             sf4.SetEditable(true);
-            sf4.SetValue(3.0);
+            sf4.set_initial_value(3.0);
             sf4.SetTextBoxTallness(0.25);
             sf4.SetTextOfValueFunc(Box::new(|val, _interval| format!("Level {val}")));
             let id = ctx.tree.create_child(gid, "sf4", None);
@@ -1781,7 +1781,7 @@ impl TkTestPanel {
             );
             sf5.SetCaption("Play Length");
             sf5.SetEditable(true);
-            sf5.SetValue(14400000.0);
+            sf5.set_initial_value(14400000.0);
             // C++ emTestPanel.cpp:636
             sf5.SetScaleMarkIntervals(&[3600000, 900000, 300000, 60000, 10000, 1000, 100, 10, 1]);
             sf5.SetTextOfValueFunc(Box::new(|val, mark_interval| {
@@ -1852,7 +1852,7 @@ impl TkTestPanel {
         {
             let mut cf1 = emColorField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             cf1.SetCaption("Read-Only");
-            cf1.SetColor(emColor::rgba(0xBB, 0x22, 0x22, 0xFF));
+            cf1.set_initial_color(emColor::rgba(0xBB, 0x22, 0x22, 0xFF));
             let id = ctx.tree.create_child(gid, "cf1", None);
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf1 }));
@@ -1866,7 +1866,7 @@ impl TkTestPanel {
             let mut cf2 = emColorField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             cf2.SetCaption("Editable");
             cf2.SetEditable(true);
-            cf2.SetColor(emColor::rgba(0x22, 0xBB, 0x22, 0xFF));
+            cf2.set_initial_color(emColor::rgba(0x22, 0xBB, 0x22, 0xFF));
             let id = ctx.tree.create_child(gid, "cf2", None);
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf2 }));
@@ -1880,8 +1880,8 @@ impl TkTestPanel {
             let mut cf3 = emColorField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             cf3.SetCaption("Editable, Alpha Enabled");
             cf3.SetEditable(true);
-            cf3.SetAlphaEnabled(true);
-            cf3.SetColor(emColor::rgba(0x22, 0x22, 0xBB, 0xFF));
+            cf3.set_initial_alpha_enabled(true);
+            cf3.set_initial_color(emColor::rgba(0x22, 0x22, 0xBB, 0xFF));
             let id = ctx.tree.create_child(gid, "cf3", None);
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf3 }));
@@ -2372,8 +2372,8 @@ impl PolyDrawPanel {
                     widget: {
                         let mut cf = emColorField::new(&mut __ts.cc(), look.clone());
                         cf.SetEditable(true);
-                        cf.SetAlphaEnabled(true);
-                        cf.SetColor(emColor::WHITE);
+                        cf.set_initial_alpha_enabled(true);
+                        cf.set_initial_color(emColor::WHITE);
                         cf
                     },
                 }),
@@ -2423,8 +2423,8 @@ impl PolyDrawPanel {
         let __stroke_color_cf = {
             let mut cf = emColorField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             cf.SetEditable(true);
-            cf.SetAlphaEnabled(true);
-            cf.SetColor(emColor::rgba(0, 0, 0, 0xFF));
+            cf.set_initial_alpha_enabled(true);
+            cf.set_initial_color(emColor::rgba(0, 0, 0, 0xFF));
             cf
         };
         ctx.tree.set_behavior(
@@ -2510,8 +2510,8 @@ impl PolyDrawPanel {
         let __ss_color_cf = {
             let mut cf = emColorField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             cf.SetEditable(true);
-            cf.SetAlphaEnabled(true);
-            cf.SetColor(emColor::rgba(0xEE, 0xEE, 0xEE, 0xFF));
+            cf.set_initial_alpha_enabled(true);
+            cf.set_initial_color(emColor::rgba(0xEE, 0xEE, 0xEE, 0xFF));
             cf
         };
         ctx.tree.set_behavior(
@@ -2580,8 +2580,8 @@ impl PolyDrawPanel {
         let __se_color_cf = {
             let mut cf = emColorField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             cf.SetEditable(true);
-            cf.SetAlphaEnabled(true);
-            cf.SetColor(emColor::rgba(0xEE, 0xEE, 0xEE, 0xFF));
+            cf.set_initial_alpha_enabled(true);
+            cf.set_initial_color(emColor::rgba(0xEE, 0xEE, 0xEE, 0xFF));
             cf
         };
         ctx.tree.set_behavior(

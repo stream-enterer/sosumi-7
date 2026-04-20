@@ -269,7 +269,7 @@ fn parallel_scalarfield() {
     let mut sf = emScalarField::new(&mut ts.cc(), 0.0, 100.0, look);
     sf.SetCaption("Value");
     sf.SetEditable(true);
-    sf.SetValue(50.0);
+    sf.set_initial_value(50.0);
     assert_parallel_identical(
         "widget_scalarfield",
         Box::new(ScalarFieldBehavior { scalar_field: sf }),

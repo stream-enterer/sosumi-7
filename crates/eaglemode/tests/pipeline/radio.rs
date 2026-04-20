@@ -337,9 +337,8 @@ fn bp13_click_already_selected_no_change_no_callback() {
 /// Programmatic SetCheckIndex selects the correct button and fires the callback.
 /// C++ ref: emRadioButton::Mechanism::SetCheckIndex.
 #[test]
-#[ignore = "B3.4d: SetCheckIndex non-ctx setter path; B3.4d setter-path migration restores dispatch"]
 fn bp13_programmatic_set_check_index_fires_callback() {
-    let t = RadioButtonHarness::new();
+    let mut t = RadioButtonHarness::new();
 
     let callbacks = Rc::new(RefCell::new(Vec::new()));
     let cb_clone = callbacks.clone();
@@ -350,7 +349,10 @@ fn bp13_programmatic_set_check_index_fires_callback() {
     ));
 
     // Programmatically select button 2
-    t.group.borrow_mut().SetCheckIndex(Some(2));
+    {
+        let mut __ctx = t.h.panel_ctx();
+        t.group.borrow_mut().SetCheckIndex(Some(2), &mut __ctx);
+    }
     assert_eq!(
         t.checked(),
         Some(2),
@@ -363,7 +365,10 @@ fn bp13_programmatic_set_check_index_fires_callback() {
     );
 
     // Now change to button 0
-    t.group.borrow_mut().SetCheckIndex(Some(0));
+    {
+        let mut __ctx = t.h.panel_ctx();
+        t.group.borrow_mut().SetCheckIndex(Some(0), &mut __ctx);
+    }
     assert_eq!(
         t.checked(),
         Some(0),
@@ -384,10 +389,13 @@ fn bp13_programmatic_set_check_index_fires_callback() {
 /// C++ ref: emRadioButton::Mechanism::SetCheckIndex — early return if CheckIndex==index.
 #[test]
 fn bp13_programmatic_set_check_index_same_value_no_callback() {
-    let t = RadioButtonHarness::new();
+    let mut t = RadioButtonHarness::new();
 
     // Select button 1
-    t.group.borrow_mut().SetCheckIndex(Some(1));
+    {
+        let mut __ctx = t.h.panel_ctx();
+        t.group.borrow_mut().SetCheckIndex(Some(1), &mut __ctx);
+    }
     assert_eq!(t.checked(), Some(1));
 
     // Install callback tracker AFTER initial selection
@@ -400,7 +408,10 @@ fn bp13_programmatic_set_check_index_same_value_no_callback() {
     ));
 
     // Set same index again -- no-op
-    t.group.borrow_mut().SetCheckIndex(Some(1));
+    {
+        let mut __ctx = t.h.panel_ctx();
+        t.group.borrow_mut().SetCheckIndex(Some(1), &mut __ctx);
+    }
     assert_eq!(t.checked(), Some(1));
     assert!(
         callbacks.borrow().is_empty(),
@@ -426,7 +437,10 @@ fn bp13_enter_key_selects_radio_button() {
     assert_eq!(t.checked(), Some(1));
 
     // Now HardResetFileState selection programmatically to test Enter independently
-    t.group.borrow_mut().SetCheckIndex(None);
+    {
+        let mut __ctx = t.h.panel_ctx();
+        t.group.borrow_mut().SetCheckIndex(None, &mut __ctx);
+    }
     assert_eq!(t.checked(), None);
 
     // Press Enter -- should select panel 1 (the active panel)

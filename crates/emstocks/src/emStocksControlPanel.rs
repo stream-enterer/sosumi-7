@@ -254,7 +254,7 @@ impl ControlWidgets {
 
         // Chart period scalar field: integer steps 0..9, default to Year1 (index 5)
         let mut chart_period_field = emScalarField::new(cc, 0.0, 9.0, look.clone());
-        chart_period_field.SetValue(chart_period_to_index(ChartPeriod::default()));
+        chart_period_field.set_initial_value(chart_period_to_index(ChartPeriod::default()));
         chart_period_field.SetTextOfValueFunc(Box::new(|v, _| {
             let period = match v {
                 0 => "1\nweek",
@@ -527,14 +527,14 @@ impl emStocksControlPanel {
             .triggering_opens_web_page
             .SetChecked(config.triggering_opens_web_page, ctx);
         let cp_idx = chart_period_to_index(config.chart_period);
-        widgets.chart_period.SetValue(cp_idx);
+        widgets.chart_period.SetValue(cp_idx, ctx);
         widgets.chart_period_text = ChartPeriodTextOfValue(config.chart_period);
 
         let interest_idx = interest_to_index(config.min_visible_interest);
         widgets
             .min_visible_interest_group
             .borrow_mut()
-            .SetChecked(interest_idx);
+            .SetChecked(interest_idx, ctx);
 
         // Update category panels with current stock data
         let countries_ext = widgets.visible_countries.extractor();
@@ -551,7 +551,10 @@ impl emStocksControlPanel {
             .UpdateItems(&rec.stocks, collections_ext);
 
         let sorting_idx = sorting_to_index(config.sorting);
-        widgets.sorting_group.borrow_mut().SetChecked(sorting_idx);
+        widgets
+            .sorting_group
+            .borrow_mut()
+            .SetChecked(sorting_idx, ctx);
         widgets
             .owned_shares_first
             .SetChecked(config.owned_shares_first, ctx);

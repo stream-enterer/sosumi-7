@@ -39,7 +39,10 @@ fn add_all_preserves_selection() {
     let mut h = TestHarness::new();
     let group = RadioGroup::new(&mut h.sched_ctx());
     group.borrow_mut().AddAll(3);
-    group.borrow_mut().SetChecked(1);
+    {
+        let mut __ctx = h.panel_ctx();
+        group.borrow_mut().SetChecked(1, &mut __ctx);
+    }
     assert_eq!(group.borrow().GetChecked(), Some(1));
 
     // Adding more doesn't change selection

@@ -20,7 +20,7 @@ pub enum DialogResult {
 }
 
 type DialogFinishCb = crate::emEngineCtx::WidgetCallbackRef<DialogResult>;
-// DIVERGED-B3.3: `DialogCheckFinishCb` returns `bool` (veto semantics),
+// DIVERGED: `DialogCheckFinishCb` returns `bool` (veto semantics),
 // which is structurally incompatible with both `WidgetCallback<Args>` and
 // `WidgetCallbackRef<T>` (both return `()`). The divergence is the return
 // value, not the payload lifetime. Remains a plain `Box<dyn FnMut>`.
@@ -82,23 +82,9 @@ impl emDialog {
         self.result.as_ref()
     }
 
-    pub fn Finish(&mut self, result: DialogResult) {
-        if let Some(cb) = &mut self.on_check_finish {
-            if !cb(&result) {
-                return;
-            }
-        }
-        self.result = Some(result.clone());
-        // DIVERGED-B3.4d: non-ctx setter path; signal/callback fire deferred
-        // to B3.4d setter-path migration.
-        let _ = &self.on_finish;
-    }
-
-    /// Ctx-bearing variant of `Finish` that fires the finish signal and the
-    /// `on_finish` callback. Mirrors C++ `emDialog::PrivateEngine::Cycle`
-    /// finishing branch (emDialog.cpp:200-206): Signal(FinishSignal) →
-    /// Finished(Result). Called from the Input-driven Enter/Escape path.
-    pub fn FinishCtx(&mut self, result: DialogResult, ctx: &mut PanelCtx<'_>) {
+    /// Mirrors C++ `emDialog::PrivateEngine::Cycle` finishing branch
+    /// (emDialog.cpp:200-206): CheckFinish → Signal(FinishSignal) → Finished.
+    pub fn Finish(&mut self, result: DialogResult, ctx: &mut PanelCtx<'_>) {
         if let Some(cb) = &mut self.on_check_finish {
             if !cb(&result) {
                 return;
@@ -111,6 +97,17 @@ impl emDialog {
                 cb(&result, &mut sched);
             }
         }
+    }
+
+    /// Silently cancel an in-flight dialog without firing the finish signal
+    /// or invoking any callback. Used by emStocksListBox when it replaces
+    /// an in-flight confirmation dialog with a freshly created one —
+    /// there is no observer to notify, and firing would create a spurious
+    /// Finished(Cancel) signal that no UI consumer is watching. C++ parity:
+    /// the emStocksListBox code path simply `delete`s the old dialog
+    /// without calling `Finish` on it (emStocksListBox.cpp).
+    pub fn silent_cancel(&mut self) {
+        self.result = Some(DialogResult::Cancel);
     }
 
     pub fn Paint(&self, painter: &mut emPainter, w: f64, h: f64, pixel_scale: f64) {
@@ -230,11 +227,11 @@ impl emDialog {
         }
         match event.key {
             InputKey::Enter => {
-                self.FinishCtx(DialogResult::Ok, ctx);
+                self.Finish(DialogResult::Ok, ctx);
                 true
             }
             InputKey::Escape => {
-                self.FinishCtx(DialogResult::Cancel, ctx);
+                self.Finish(DialogResult::Cancel, ctx);
                 true
             }
             _ => false,
@@ -344,9 +341,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "B3.4d: Finish non-ctx setter path; B3.4d setter-path migration restores dispatch"]
     fn dialog_finish_fires_callback() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
         let look = emLook::new();
         let results = Rc::new(RefCell::new(Vec::new()));
         let res_clone = results.clone();
@@ -360,8 +357,18 @@ mod tests {
             },
         ));
 
+        let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        let mut ctx = PanelCtx::with_sched_reach(
+            &mut tree,
+            tid,
+            1.0,
+            &mut __init.sched,
+            &mut __init.fw,
+            &__init.root,
+            &fw_cb,
+        );
         assert!(dlg.GetResult().is_none());
-        dlg.Finish(DialogResult::Ok);
+        dlg.Finish(DialogResult::Ok, &mut ctx);
         assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
         assert_eq!(*results.borrow(), vec![DialogResult::Ok]);
     }
@@ -369,24 +376,28 @@ mod tests {
     #[test]
     fn check_finish_can_veto() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let mut dlg = emDialog::new(&mut __init.ctx(), "Veto", look);
         dlg.on_check_finish = Some(Box::new(|r| *r != DialogResult::Cancel));
 
-        dlg.Finish(DialogResult::Cancel);
+        dlg.Finish(DialogResult::Cancel, &mut ctx);
         assert!(dlg.GetResult().is_none(), "veto should prevent finish");
 
-        dlg.Finish(DialogResult::Ok);
+        dlg.Finish(DialogResult::Ok, &mut ctx);
         assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
     }
 
     #[test]
     fn dialog_custom_result() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let mut dlg = emDialog::new(&mut __init.ctx(), "Custom", look);
         dlg.AddCustomButton("Retry", DialogResult::Custom(42));
-        dlg.Finish(DialogResult::Custom(42));
+        dlg.Finish(DialogResult::Custom(42), &mut ctx);
         assert_eq!(dlg.GetResult(), Some(&DialogResult::Custom(42)));
     }
 
@@ -491,21 +502,25 @@ mod tests {
     #[test]
     fn check_finish_lifecycle() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
         assert!(!dlg.CheckFinish());
-        dlg.Finish(DialogResult::Ok);
+        dlg.Finish(DialogResult::Ok, &mut ctx);
         assert!(dlg.CheckFinish());
     }
 
     #[test]
     fn set_root_title() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let mut dlg = emDialog::new(&mut __init.ctx(), "Old Title", look);
         dlg.SetRootTitle("New Title");
         // Verify the dialog still functions after title change.
-        dlg.Finish(DialogResult::Ok);
+        dlg.Finish(DialogResult::Ok, &mut ctx);
         assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
     }
 }

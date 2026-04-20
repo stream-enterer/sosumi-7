@@ -30,12 +30,12 @@ impl ColorFieldBehavior {
     fn new<C: emcore::emEngineCtx::ConstructCtx>(cc: &mut C, look: Rc<emLook>) -> Self {
         let mut cf = emColorField::new(cc, look);
         cf.SetEditable(true);
-        cf.SetAlphaEnabled(true);
+        cf.set_initial_alpha_enabled(true);
         Self { color_field: cf }
     }
 
     fn with_color(mut self, color: emColor) -> Self {
-        self.color_field.SetColor(color);
+        self.color_field.set_initial_color(color);
         self
     }
 }

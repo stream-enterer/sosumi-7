@@ -182,19 +182,17 @@ impl emScalarField {
         self.value
     }
 
-    pub fn SetValue(&mut self, val: f64) {
-        let clamped = val.clamp(self.min, self.max);
-        if (clamped - self.value).abs() > f64::EPSILON {
-            self.value = clamped;
-            self.fire_change();
-        }
+    /// Construction-time value assignment — no signal fires, no callback.
+    /// Used from widget constructors where no scheduler reach exists.
+    /// C++ parity: `emScalarField` constructor sets `Value` directly without
+    /// calling `SetValue` (emScalarField.cpp:44).
+    pub fn set_initial_value(&mut self, val: f64) {
+        self.value = val.clamp(self.min, self.max);
     }
 
-    /// Ctx-bearing variant of `SetValue` that fires the value signal and the
-    /// `on_value` callback. Mirrors C++ `emScalarField::SetValue`
-    /// (emScalarField.cpp:102-111): InvalidatePainting → Signal(ValueSignal)
-    /// → ValueChanged. Called from Input-driven paths (drag, keyboard step).
-    pub fn SetValueCtx(&mut self, val: f64, ctx: &mut PanelCtx<'_>) {
+    /// Mirrors C++ `emScalarField::SetValue` (emScalarField.cpp:102-111):
+    /// InvalidatePainting → Signal(ValueSignal) → ValueChanged.
+    pub fn SetValue(&mut self, val: f64, ctx: &mut PanelCtx<'_>) {
         let clamped = val.clamp(self.min, self.max);
         if (clamped - self.value).abs() > f64::EPSILON {
             self.value = clamped;
@@ -221,7 +219,7 @@ impl emScalarField {
         self.max
     }
 
-    pub fn SetMinValue(&mut self, min: f64) {
+    pub fn SetMinValue(&mut self, min: f64, ctx: &mut PanelCtx<'_>) {
         if (self.min - min).abs() < f64::EPSILON {
             return;
         }
@@ -230,11 +228,11 @@ impl emScalarField {
             self.max = self.min;
         }
         if self.value < self.min {
-            self.SetValue(self.min);
+            self.SetValue(self.min, ctx);
         }
     }
 
-    pub fn SetMaxValue(&mut self, max: f64) {
+    pub fn SetMaxValue(&mut self, max: f64, ctx: &mut PanelCtx<'_>) {
         if (self.max - max).abs() < f64::EPSILON {
             return;
         }
@@ -243,13 +241,13 @@ impl emScalarField {
             self.min = self.max;
         }
         if self.value > self.max {
-            self.SetValue(self.max);
+            self.SetValue(self.max, ctx);
         }
     }
 
-    pub fn SetMinMaxValues(&mut self, min: f64, max: f64) {
-        self.SetMinValue(min);
-        self.SetMaxValue(max);
+    pub fn SetMinMaxValues(&mut self, min: f64, max: f64, ctx: &mut PanelCtx<'_>) {
+        self.SetMinValue(min, ctx);
+        self.SetMaxValue(max, ctx);
     }
 
     // --- Scale mark configuration ---
@@ -544,7 +542,7 @@ impl emScalarField {
         // C++ absolute drag model: pressed state continuously sets value
         // to wherever the mouse points on the scale.
         if self.dragging && (mv - self.value).abs() > f64::EPSILON {
-            self.SetValueCtx(mv, ctx);
+            self.SetValue(mv, ctx);
         }
 
         match event.key {
@@ -557,7 +555,7 @@ impl emScalarField {
                     self.dragging = true;
                     // Immediately position needle at click location.
                     if (mv - self.value).abs() > f64::EPSILON {
-                        self.SetValueCtx(mv, ctx);
+                        self.SetValue(mv, ctx);
                     }
                     true
                 }
@@ -769,15 +767,7 @@ impl emScalarField {
             }
         };
 
-        self.SetValueCtx(v as f64, ctx);
-    }
-
-    fn fire_change(&mut self) {
-        // DIVERGED-B3.3: callback invocation requires a `PanelCtx` with
-        // scheduler reach. `fire_change` is called from non-ctx contexts
-        // (setters, internal helpers). B3.4 will restore callback dispatch
-        // via async signal routing. For now callbacks do not fire from here.
-        let _ = &self.on_value;
+        self.SetValue(v as f64, ctx);
     }
 }
 
@@ -853,13 +843,13 @@ mod tests {
         let look = emLook::new();
         let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
 
-        sf.SetValue(50.0);
+        sf.set_initial_value(50.0);
         assert!((sf.GetValue() - 50.0).abs() < 0.001);
 
-        sf.SetValue(-10.0);
+        sf.set_initial_value(-10.0);
         assert!((sf.GetValue() - 0.0).abs() < 0.001);
 
-        sf.SetValue(200.0);
+        sf.set_initial_value(200.0);
         assert!((sf.GetValue() - 100.0).abs() < 0.001);
     }
 
@@ -871,7 +861,7 @@ mod tests {
         let look = emLook::new();
         let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.SetEditable(true);
-        sf.SetValue(50.0);
+        sf.set_initial_value(50.0);
 
         // Cache dimensions (paint would do this in real usage)
         sf.last_w = 200.0;
@@ -906,7 +896,7 @@ mod tests {
 
         let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 10.0, look);
         sf.SetEditable(true);
-        sf.SetValue(5.0);
+        sf.set_initial_value(5.0);
         sf.last_w = 200.0;
         sf.last_h = 40.0;
         sf.on_value = Some(Box::new(
@@ -944,7 +934,7 @@ mod tests {
         let look = emLook::new();
         let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 10.0, look);
         sf.SetEditable(true);
-        sf.SetValue(5.0);
+        sf.set_initial_value(5.0);
         sf.last_w = 200.0;
         sf.last_h = 40.0;
         let sig = sf.value_signal;
@@ -989,7 +979,7 @@ mod tests {
         assert_eq!(sf.border.inner, InnerBorderType::OutputField);
 
         // Input should be disabled when not editable
-        sf.SetValue(50.0);
+        sf.set_initial_value(50.0);
         sf.last_w = 200.0;
         sf.last_h = 40.0;
         let handled = sf.Input(
@@ -1009,6 +999,8 @@ mod tests {
     #[test]
     fn min_max_getters_setters() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
 
@@ -1016,18 +1008,18 @@ mod tests {
         assert!((sf.GetMaxValue() - 100.0).abs() < f64::EPSILON);
 
         // Setting min above max clamps max up
-        sf.SetMinValue(200.0);
+        sf.SetMinValue(200.0, &mut ctx);
         assert!((sf.GetMinValue() - 200.0).abs() < f64::EPSILON);
         assert!((sf.GetMaxValue() - 200.0).abs() < f64::EPSILON);
         assert!((sf.GetValue() - 200.0).abs() < f64::EPSILON);
 
         // Setting max below min clamps min down
-        sf.SetMaxValue(50.0);
+        sf.SetMaxValue(50.0, &mut ctx);
         assert!((sf.GetMaxValue() - 50.0).abs() < f64::EPSILON);
         assert!((sf.GetMinValue() - 50.0).abs() < f64::EPSILON);
 
         // set_min_max_values
-        sf.SetMinMaxValues(10.0, 90.0);
+        sf.SetMinMaxValues(10.0, 90.0, &mut ctx);
         assert!((sf.GetMinValue() - 10.0).abs() < f64::EPSILON);
         assert!((sf.GetMaxValue() - 90.0).abs() < f64::EPSILON);
     }
@@ -1121,7 +1113,7 @@ mod tests {
         let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.SetEditable(true);
         sf.SetKeyboardInterval(10);
-        sf.SetValue(50.0);
+        sf.set_initial_value(50.0);
         sf.last_w = 200.0;
         sf.last_h = 40.0;
 
@@ -1161,7 +1153,7 @@ mod tests {
         let look = emLook::new();
         let mut sf = emScalarField::new(&mut __init.ctx(), 0.0, 100.0, look);
         sf.SetEditable(true);
-        sf.SetValue(50.0);
+        sf.set_initial_value(50.0);
         sf.last_w = 200.0;
         sf.last_h = 40.0;
 
@@ -1187,9 +1179,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "B3.4d: SetValue non-ctx setter path; B3.4d setter-path migration restores dispatch"]
     fn set_value_fires_callback() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
         let look = emLook::new();
         let count = Rc::new(RefCell::new(0u32));
         let count_clone = count.clone();
@@ -1200,11 +1192,21 @@ mod tests {
             },
         ));
 
-        sf.SetValue(50.0);
+        let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        let mut ctx = PanelCtx::with_sched_reach(
+            &mut tree,
+            tid,
+            1.0,
+            &mut __init.sched,
+            &mut __init.fw,
+            &__init.root,
+            &fw_cb,
+        );
+        sf.SetValue(50.0, &mut ctx);
         assert_eq!(*count.borrow(), 1);
 
         // Setting same value should not fire
-        sf.SetValue(50.0);
+        sf.SetValue(50.0, &mut ctx);
         assert_eq!(*count.borrow(), 1);
     }
 }

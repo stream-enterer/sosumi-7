@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use super::emDialog::{emDialog, DialogResult};
+use crate::emEngineCtx::PanelCtx;
 use crate::emFileSelectionBox::emFileSelectionBox;
 use crate::emLook::emLook;
 
@@ -181,8 +182,8 @@ impl emFileDialog {
         &mut self.fsb
     }
 
-    pub fn Finish(&mut self, result: DialogResult) {
-        self.dialog.Finish(result);
+    pub fn Finish(&mut self, result: DialogResult, ctx: &mut PanelCtx<'_>) {
+        self.dialog.Finish(result, ctx);
     }
 
     pub fn GetResult(&self) -> Option<&DialogResult> {

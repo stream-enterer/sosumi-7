@@ -34,7 +34,7 @@ impl ScalarFieldPanel {
     ) -> Self {
         let mut sf = emScalarField::new(ctx, min, max, look);
         sf.SetCaption(caption);
-        sf.SetValue(value);
+        sf.set_initial_value(value);
         sf.SetEditable(editable);
         sf.border_mut().outer = OuterBorderType::Rect;
         sf.border_mut().inner = InnerBorderType::CustomRect;

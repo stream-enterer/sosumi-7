@@ -482,7 +482,7 @@ impl emStocksListBox {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
                 if let Some(ref mut d) = self.delete_stocks_dialog {
-                    d.Finish(DialogResult::Cancel);
+                    d.silent_cancel();
                 }
                 let count = self.GetSelectionCount();
                 let mut dialog = emDialog::new(
@@ -530,7 +530,7 @@ impl emStocksListBox {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
                 if let Some(ref mut d) = self.cut_stocks_dialog {
-                    d.Finish(DialogResult::Cancel);
+                    d.silent_cancel();
                 }
                 let count = self.GetSelectionCount();
                 let mut dialog =
@@ -568,7 +568,7 @@ impl emStocksListBox {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
                 if let Some(ref mut d) = self.paste_stocks_dialog {
-                    d.Finish(DialogResult::Cancel);
+                    d.silent_cancel();
                 }
                 let mut dialog = emDialog::new(cc, "Really paste stocks?", look.clone());
                 dialog.AddCustomButton("Paste", DialogResult::Ok);
@@ -658,7 +658,7 @@ impl emStocksListBox {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
                 if let Some(ref mut d) = self.interest_dialog {
-                    d.Finish(DialogResult::Cancel);
+                    d.silent_cancel();
                 }
                 let mut dialog = emDialog::new(cc, "Really change interest?", look.clone());
                 dialog.AddCustomButton("Change", DialogResult::Ok);

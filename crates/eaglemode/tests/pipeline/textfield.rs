@@ -444,7 +444,10 @@ fn setup_nav_harness(
     // After Click, cursor may have moved to Click GetPos; restore it.
     tf_ref.borrow_mut().SetCursorIndex(cursor_pos);
     // Clear any selection that the Click may have created.
-    tf_ref.borrow_mut().EmptySelection();
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().EmptySelection(&mut __ctx);
+    }
 
     (h, tf_ref)
 }
@@ -463,7 +466,10 @@ fn setup_multiline_nav_harness(
     h.click(400.0, 300.0);
 
     tf_ref.borrow_mut().SetCursorIndex(cursor_pos);
-    tf_ref.borrow_mut().EmptySelection();
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().EmptySelection(&mut __ctx);
+    }
 
     (h, tf_ref)
 }
@@ -742,7 +748,10 @@ fn textfield_left_clears_selection() {
     // Pre-select [2,5) in "Hello World", then Left without Shift → selection cleared
     let (mut h, tf_ref) = setup_nav_harness("Hello World", 5);
     // Create selection first
-    tf_ref.borrow_mut().Select(2, 5);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(2, 5, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(5);
 
     h.press_key(InputKey::ArrowLeft);
@@ -759,7 +768,10 @@ fn textfield_left_clears_selection() {
 #[test]
 fn textfield_right_clears_selection() {
     let (mut h, tf_ref) = setup_nav_harness("Hello World", 2);
-    tf_ref.borrow_mut().Select(2, 5);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(2, 5, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(2);
 
     h.press_key(InputKey::ArrowRight);
@@ -1173,7 +1185,10 @@ fn textfield_shift_ctrl_delete_multiline_deletes_to_row_end() {
 fn textfield_backspace_with_selection_deletes_selection() {
     // "abcdef" with selection [2,4) → Backspace → "abef", cursor at 2
     let (mut h, tf_ref) = setup_nav_harness("abcdef", 4);
-    tf_ref.borrow_mut().Select(2, 4);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(2, 4, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(4);
 
     h.press_key(InputKey::Backspace);
@@ -1198,7 +1213,10 @@ fn textfield_backspace_with_selection_deletes_selection() {
 fn textfield_delete_with_selection_deletes_selection() {
     // "abcdef" with selection [1,3) → Delete → "adef", cursor at 1
     let (mut h, tf_ref) = setup_nav_harness("abcdef", 3);
-    tf_ref.borrow_mut().Select(1, 3);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(1, 3, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(3);
 
     h.press_key(InputKey::Delete);
@@ -1223,7 +1241,10 @@ fn textfield_delete_with_selection_deletes_selection() {
 fn textfield_typing_with_selection_replaces_selection() {
     // "abcdef" with selection [2,5) → type 'X' → "abXf", cursor at 3
     let (mut h, tf_ref) = setup_nav_harness("abcdef", 5);
-    tf_ref.borrow_mut().Select(2, 5);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(2, 5, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(5);
 
     h.press_char('X');
@@ -1391,7 +1412,10 @@ fn textfield_non_editable_allows_insert_toggle() {
 fn textfield_ctrl_backspace_with_selection_deletes_selection() {
     // "foo bar baz" with selection [4,7) → Ctrl+Backspace → "foo baz"
     let (mut h, tf_ref) = setup_nav_harness("foo bar baz", 7);
-    tf_ref.borrow_mut().Select(4, 7);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(4, 7, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(7);
 
     h.input_state.press(InputKey::Ctrl);
@@ -1419,7 +1443,10 @@ fn textfield_ctrl_backspace_with_selection_deletes_selection() {
 fn textfield_ctrl_delete_with_selection_deletes_selection() {
     // "foo bar baz" with selection [0,3) → Ctrl+Delete → " bar baz"
     let (mut h, tf_ref) = setup_nav_harness("foo bar baz", 3);
-    tf_ref.borrow_mut().Select(0, 3);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(0, 3, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(3);
 
     h.input_state.press(InputKey::Ctrl);
@@ -1486,7 +1513,10 @@ fn textfield_single_click_clears_selection() {
     render(&mut h, 800, 600);
 
     // Create a selection via API.
-    tf_ref.borrow_mut().Select(0, 5);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(0, 5, &mut __ctx);
+    }
     assert!(!tf_ref.borrow().IsSelectionEmpty());
 
     // First Click on this widget instance — guaranteed single Click.
@@ -1739,7 +1769,10 @@ fn textfield_shift_ctrl_a_deselects() {
     let (mut h, tf_ref) = setup_nav_harness("Hello World", 5);
 
     // First select all.
-    tf_ref.borrow_mut().SelectAll();
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().SelectAll(&mut __ctx);
+    }
     assert!(!tf_ref.borrow().IsSelectionEmpty());
 
     // Shift+Ctrl+A to Deselect.
@@ -1934,7 +1967,10 @@ fn setup_clipboard_harness(text: &str, cursor_pos: usize, paste_content: &str) -
 
     // Restore cursor GetPos and Clear any selection the Click created.
     tf_ref.borrow_mut().SetCursorIndex(cursor_pos);
-    tf_ref.borrow_mut().EmptySelection();
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().EmptySelection(&mut __ctx);
+    }
 
     (h, tf_ref, copy_recorder)
 }
@@ -1949,7 +1985,10 @@ fn textfield_ctrl_c_with_selection_copies_text() {
     let (mut h, tf_ref, copy_recorder) = setup_clipboard_harness("Hello World", 5, "");
 
     // Select "Hello" (indices 0..5)
-    tf_ref.borrow_mut().Select(0, 5);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(0, 5, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(5);
 
     h.input_state.press(InputKey::Ctrl);
@@ -1998,7 +2037,10 @@ fn textfield_ctrl_x_with_selection_cuts_text() {
     let (mut h, tf_ref, copy_recorder) = setup_clipboard_harness("ABCDEF", 4, "");
 
     // Select "CD" (indices 2..4)
-    tf_ref.borrow_mut().Select(2, 4);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(2, 4, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(4);
 
     h.input_state.press(InputKey::Ctrl);
@@ -2088,7 +2130,10 @@ fn textfield_ctrl_v_with_selection_replaces_selection() {
     let (mut h, tf_ref, _copy_recorder) = setup_clipboard_harness("ABCDEF", 4, "XY");
 
     // Select "CD" (indices 2..4)
-    tf_ref.borrow_mut().Select(2, 4);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(2, 4, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(4);
 
     h.input_state.press(InputKey::Ctrl);
@@ -2142,7 +2187,10 @@ fn textfield_ctrl_v_inserts_at_mid_cursor() {
 fn textfield_ctrl_insert_copies_text() {
     let (mut h, tf_ref, copy_recorder) = setup_clipboard_harness("Hello World", 5, "");
 
-    tf_ref.borrow_mut().Select(0, 5);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(0, 5, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(5);
 
     h.input_state.press(InputKey::Ctrl);
@@ -2189,7 +2237,10 @@ fn textfield_shift_insert_pastes_text() {
 fn textfield_shift_delete_cuts_text() {
     let (mut h, tf_ref, copy_recorder) = setup_clipboard_harness("ABCDEF", 4, "");
 
-    tf_ref.borrow_mut().Select(2, 4);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(2, 4, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(4);
 
     h.input_state.press(InputKey::Shift);
@@ -2252,7 +2303,10 @@ fn textfield_ctrl_c_works_when_non_editable() {
     let (mut h, tf_ref, copy_recorder) = setup_clipboard_harness("Hello World", 5, "");
     tf_ref.borrow_mut().SetEditable(false);
 
-    tf_ref.borrow_mut().Select(0, 5);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(0, 5, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(5);
 
     h.input_state.press(InputKey::Ctrl);
@@ -2280,7 +2334,10 @@ fn textfield_ctrl_x_noop_when_non_editable() {
     let (mut h, tf_ref, copy_recorder) = setup_clipboard_harness("Hello World", 5, "");
     tf_ref.borrow_mut().SetEditable(false);
 
-    tf_ref.borrow_mut().Select(0, 5);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(0, 5, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(5);
 
     h.input_state.press(InputKey::Ctrl);
@@ -2366,7 +2423,10 @@ fn textfield_drag_move_selected_text_moves() {
     h.click(400.0, 300.0);
 
     // Select "bar" (indices 4..7) via API.
-    tf_ref.borrow_mut().Select(4, 7);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(4, 7, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(7);
 
     let before_text = tf_ref.borrow().GetText().to_string();
@@ -2449,7 +2509,10 @@ fn textfield_drag_move_outside_widget_no_effect() {
     h.click(400.0, 300.0);
 
     // Select "World" (indices 6..11).
-    tf_ref.borrow_mut().Select(6, 11);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(6, 11, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(11);
 
     let text_before = tf_ref.borrow().GetText().to_string();
@@ -2487,7 +2550,10 @@ fn textfield_drag_move_no_selection_no_move() {
     h.click(400.0, 300.0);
 
     // Ensure no selection.
-    tf_ref.borrow_mut().EmptySelection();
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().EmptySelection(&mut __ctx);
+    }
     assert!(tf_ref.borrow().IsSelectionEmpty());
 
     let text_before = tf_ref.borrow().GetText().to_string();
@@ -2524,7 +2590,10 @@ fn textfield_drag_move_non_editable_no_effect() {
     h.click(400.0, 300.0);
 
     // Select "World" (indices 6..11).
-    tf_ref.borrow_mut().Select(6, 11);
+    {
+        let mut __ctx = h.panel_ctx();
+        tf_ref.borrow_mut().Select(6, 11, &mut __ctx);
+    }
     tf_ref.borrow_mut().SetCursorIndex(11);
 
     // Now make it non-editable.

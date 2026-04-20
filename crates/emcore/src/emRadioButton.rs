@@ -59,28 +59,13 @@ impl RadioGroup {
 
     /// Select the button at `index`, unchecking any previously selected button.
     /// No-op if already selected (matches C++ recursion guard / no-change check).
-    ///
-    /// B3.3: callback invocation requires a scheduler-reach `PanelCtx`. Without
-    /// one, state is updated but the callback silently does not fire. B3.4 will
-    /// restore async signal-based dispatch.
-    pub fn SetChecked(&mut self, index: usize) {
+    /// Mirrors C++ `Mechanism::SetCheckIndex` (emRadioButton.cpp:112-115):
+    /// `CheckSignal.Signal(*scheduler)` → `CheckChanged`.
+    pub fn SetChecked(&mut self, index: usize, ctx: &mut PanelCtx<'_>) {
         if self.selected == Some(index) {
             return;
         }
         self.selected = Some(index);
-        // DIVERGED-B3.3: RadioGroup has many non-ctx-bearing call sites
-        // (config sync, drop, tests); callback invocation deferred to
-        // ctx-bearing `SetCheckedCtx` / B3.4 signal dispatch. No-op here.
-    }
-
-    /// Ctx-bearing variant that fires the `on_select` callback.
-    pub fn SetCheckedCtx(&mut self, index: usize, ctx: &mut PanelCtx<'_>) {
-        if self.selected == Some(index) {
-            return;
-        }
-        self.selected = Some(index);
-        // C++ emRadioButton::Mechanism::SetCheckIndex (emRadioButton.cpp:112-115):
-        // CheckSignal.Signal(*scheduler) → CheckChanged.
         if let Some(mut sched) = ctx.as_sched_ctx() {
             sched.fire(self.check_signal);
             if let Some(cb) = self.on_select.as_mut() {
@@ -90,10 +75,9 @@ impl RadioGroup {
     }
 
     /// Set the check index directly, or clear the selection with `None`.
-    ///
     /// Matches C++ `Mechanism::SetCheckIndex`. When index is out of bounds
     /// (>= count), the selection is cleared.
-    pub fn SetCheckIndex(&mut self, index: Option<usize>) {
+    pub fn SetCheckIndex(&mut self, index: Option<usize>, ctx: &mut PanelCtx<'_>) {
         let normalized = match index {
             Some(i) if i < self.buttons.len() => Some(i),
             _ => None,
@@ -102,21 +86,6 @@ impl RadioGroup {
             return;
         }
         self.selected = normalized;
-        // DIVERGED-B3.3: callback deferred (see SetChecked).
-    }
-
-    /// Ctx-bearing variant that fires the `on_select` callback.
-    pub fn SetCheckIndexCtx(&mut self, index: Option<usize>, ctx: &mut PanelCtx<'_>) {
-        let normalized = match index {
-            Some(i) if i < self.buttons.len() => Some(i),
-            _ => None,
-        };
-        if self.selected == normalized {
-            return;
-        }
-        self.selected = normalized;
-        // C++ emRadioButton::Mechanism::SetCheckIndex (emRadioButton.cpp:112-115):
-        // CheckSignal.Signal(*scheduler) → CheckChanged.
         if let Some(mut sched) = ctx.as_sched_ctx() {
             sched.fire(self.check_signal);
             if let Some(cb) = self.on_select.as_mut() {
@@ -132,8 +101,9 @@ impl RadioGroup {
     /// clears the selection. If the checked button had a higher index, its
     /// index is decremented to match the new layout.
     ///
-    /// Matches C++ `Mechanism::RemoveByIndex`.
-    pub fn RemoveByIndex(&mut self, index: usize) {
+    /// Matches C++ `Mechanism::RemoveByIndex`. Fires CheckSignal + on_select
+    /// callback if the selection changed as a result of the removal.
+    pub fn RemoveByIndex(&mut self, index: usize, ctx: &mut PanelCtx<'_>) {
         if index >= self.buttons.len() {
             return;
         }
@@ -146,26 +116,28 @@ impl RadioGroup {
             }
         }
 
-        let selection_changed = if let Some(check_idx) = self.selected {
+        let (selection_changed, new_selection) = if let Some(check_idx) = self.selected {
             if check_idx == index {
-                // Removed the checked button
                 self.selected = None;
-                true
+                (true, None)
             } else if check_idx > index {
-                // Checked button shifted down
                 self.selected = Some(check_idx - 1);
-                true
+                (true, self.selected)
             } else {
-                false
+                (false, self.selected)
             }
         } else {
-            false
+            (false, None)
         };
 
-        // DIVERGED-B3.3: non-ctx call site; callback fire deferred to B3.4
-        // signal dispatch. RemoveByIndex is called during mutation flows that
-        // do not carry a scheduler-reach PanelCtx.
-        let _ = selection_changed;
+        if selection_changed {
+            if let Some(mut sched) = ctx.as_sched_ctx() {
+                sched.fire(self.check_signal);
+                if let Some(cb) = self.on_select.as_mut() {
+                    cb(new_selection, &mut sched);
+                }
+            }
+        }
     }
 
     /// Register a new button in the group, returning a shared index cell.
@@ -194,8 +166,14 @@ impl RadioGroup {
         match self.selected {
             Some(s) if s == removed_index => {
                 self.selected = None;
-                // DIVERGED-B3.3: deregister runs from Drop; no ctx available.
-                // Callback fire deferred to B3.4 signal dispatch.
+                // C++ parity: `Mechanism::RemoveByIndex` fires CheckSignal
+                // when a checked button is removed, but Rust's `deregister`
+                // is invoked from the emRadioButton `Drop` impl which has
+                // no scheduler reach — matching C++ destructor flow, where
+                // `delete emRadioButton` path does not invoke the signal
+                // (buttons are destroyed during panel teardown). Callers
+                // that need a signal fire on explicit removal use the
+                // ctx-bearing `RemoveByIndex` instead.
             }
             Some(s) if s > removed_index => {
                 self.selected = Some(s - 1);
@@ -251,12 +229,17 @@ impl RadioGroup {
     /// If a button was checked, clears the selection and fires the signal.
     /// Individual buttons' checked states are NOT modified (matching C++
     /// `Mechanism::RemoveAll`).
-    pub fn RemoveAll(&mut self) {
+    pub fn RemoveAll(&mut self, ctx: &mut PanelCtx<'_>) {
         let had_selection = self.selected.is_some();
         self.buttons.clear();
         if had_selection {
             self.selected = None;
-            // DIVERGED-B3.3: non-ctx call site; callback deferred to B3.4.
+            if let Some(mut sched) = ctx.as_sched_ctx() {
+                sched.fire(self.check_signal);
+                if let Some(cb) = self.on_select.as_mut() {
+                    cb(None, &mut sched);
+                }
+            }
         }
     }
 }
@@ -322,11 +305,13 @@ impl emRadioButton {
     ///   (unchecking any previously selected button).
     /// - If `checked` is false and this button is currently selected in the
     ///   mechanism, clears the mechanism's selection.
-    pub fn set_checked(&mut self, checked: bool) {
+    pub fn set_checked(&mut self, checked: bool, ctx: &mut PanelCtx<'_>) {
         if checked {
-            self.group.borrow_mut().SetChecked(self.index_cell.get());
+            self.group
+                .borrow_mut()
+                .SetChecked(self.index_cell.get(), ctx);
         } else if self.IsSelected() {
-            self.group.borrow_mut().SetCheckIndex(None);
+            self.group.borrow_mut().SetCheckIndex(None, ctx);
         }
     }
 
@@ -539,7 +524,7 @@ impl emRadioButton {
                     if hit {
                         self.group
                             .borrow_mut()
-                            .SetCheckedCtx(self.index_cell.get(), ctx);
+                            .SetChecked(self.index_cell.get(), ctx);
                     }
                     true
                 }
@@ -556,7 +541,7 @@ impl emRadioButton {
             {
                 self.group
                     .borrow_mut()
-                    .SetCheckedCtx(self.index_cell.get(), ctx);
+                    .SetChecked(self.index_cell.get(), ctx);
                 true
             }
             _ => false,
@@ -877,25 +862,27 @@ mod tests {
     #[test]
     fn set_checked_selects_in_group() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let group = RadioGroup::new(&mut __init.ctx());
         let mut r0 = emRadioButton::new("A", look.clone(), group.clone(), 0);
         let mut r1 = emRadioButton::new("B", look, group.clone(), 1);
 
         // set_checked(true) selects this button
-        r0.set_checked(true);
+        r0.set_checked(true, &mut ctx);
         assert!(r0.IsSelected());
         assert!(!r1.IsSelected());
         assert_eq!(group.borrow().GetChecked(), Some(0));
 
         // set_checked(true) on another button switches selection
-        r1.set_checked(true);
+        r1.set_checked(true, &mut ctx);
         assert!(!r0.IsSelected());
         assert!(r1.IsSelected());
         assert_eq!(group.borrow().GetChecked(), Some(1));
 
         // set_checked(false) on the selected button clears selection
-        r1.set_checked(false);
+        r1.set_checked(false, &mut ctx);
         assert!(!r0.IsSelected());
         assert!(!r1.IsSelected());
         assert_eq!(group.borrow().GetChecked(), None);
@@ -904,16 +891,18 @@ mod tests {
     #[test]
     fn set_checked_false_on_unselected_is_noop() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let group = RadioGroup::new(&mut __init.ctx());
         let mut r0 = emRadioButton::new("A", look.clone(), group.clone(), 0);
         let mut r1 = emRadioButton::new("B", look, group.clone(), 1);
 
-        r0.set_checked(true);
+        r0.set_checked(true, &mut ctx);
         assert_eq!(group.borrow().GetChecked(), Some(0));
 
         // set_checked(false) on a non-selected button does nothing
-        r1.set_checked(false);
+        r1.set_checked(false, &mut ctx);
         assert_eq!(group.borrow().GetChecked(), Some(0));
         assert!(r0.IsSelected());
     }
@@ -921,15 +910,17 @@ mod tests {
     #[test]
     fn remove_by_index_clears_checked() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let group = RadioGroup::new(&mut __init.ctx());
         {
             let mut g = group.borrow_mut();
             g.AddAll(3);
-            g.SetChecked(1); // button at index 1 is checked
+            g.SetChecked(1, &mut ctx); // button at index 1 is checked
         }
 
         // Remove the checked button
-        group.borrow_mut().RemoveByIndex(1);
+        group.borrow_mut().RemoveByIndex(1, &mut ctx);
         assert_eq!(group.borrow().GetCount(), 2);
         assert_eq!(group.borrow().GetChecked(), None);
     }
@@ -937,15 +928,17 @@ mod tests {
     #[test]
     fn remove_by_index_decrements_checked() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let group = RadioGroup::new(&mut __init.ctx());
         {
             let mut g = group.borrow_mut();
             g.AddAll(4);
-            g.SetChecked(3); // button at index 3 is checked
+            g.SetChecked(3, &mut ctx); // button at index 3 is checked
         }
 
         // Remove button at index 1 (before the checked one)
-        group.borrow_mut().RemoveByIndex(1);
+        group.borrow_mut().RemoveByIndex(1, &mut ctx);
         assert_eq!(group.borrow().GetCount(), 3);
         // Checked index should have decremented from 3 to 2
         assert_eq!(group.borrow().GetChecked(), Some(2));
@@ -954,15 +947,17 @@ mod tests {
     #[test]
     fn remove_by_index_no_change_when_checked_before() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let group = RadioGroup::new(&mut __init.ctx());
         {
             let mut g = group.borrow_mut();
             g.AddAll(4);
-            g.SetChecked(0); // button at index 0 is checked
+            g.SetChecked(0, &mut ctx); // button at index 0 is checked
         }
 
         // Remove button at index 2 (after the checked one)
-        group.borrow_mut().RemoveByIndex(2);
+        group.borrow_mut().RemoveByIndex(2, &mut ctx);
         assert_eq!(group.borrow().GetCount(), 3);
         assert_eq!(group.borrow().GetChecked(), Some(0));
     }
@@ -970,28 +965,40 @@ mod tests {
     #[test]
     fn remove_by_index_out_of_bounds_is_noop() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let group = RadioGroup::new(&mut __init.ctx());
         {
             let mut g = group.borrow_mut();
             g.AddAll(2);
-            g.SetChecked(0);
+            g.SetChecked(0, &mut ctx);
         }
-        group.borrow_mut().RemoveByIndex(5);
+        group.borrow_mut().RemoveByIndex(5, &mut ctx);
         assert_eq!(group.borrow().GetCount(), 2);
         assert_eq!(group.borrow().GetChecked(), Some(0));
     }
 
     #[test]
-    #[ignore = "B3.4d: RadioGroup non-ctx setter path (RemoveByIndex/RemoveAll); B3.4d setter-path migration restores dispatch"]
     fn remove_by_index_fires_callback() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
         let group = RadioGroup::new(&mut __init.ctx());
         let signals = Rc::new(RefCell::new(Vec::new()));
         let sig_clone = signals.clone();
+        let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        let mut ctx = PanelCtx::with_sched_reach(
+            &mut tree,
+            tid,
+            1.0,
+            &mut __init.sched,
+            &mut __init.fw,
+            &__init.root,
+            &fw_cb,
+        );
         {
             let mut g = group.borrow_mut();
             g.AddAll(3);
-            g.SetChecked(1);
+            g.SetChecked(1, &mut ctx);
             g.on_select = Some(Box::new(
                 move |idx, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                     sig_clone.borrow_mut().push(idx);
@@ -1000,21 +1007,31 @@ mod tests {
         }
 
         // Remove checked button -- should fire callback with None
-        group.borrow_mut().RemoveByIndex(1);
+        group.borrow_mut().RemoveByIndex(1, &mut ctx);
         assert_eq!(*signals.borrow(), vec![None]);
     }
 
     #[test]
-    #[ignore = "B3.4d: RadioGroup non-ctx setter path (RemoveByIndex/RemoveAll); B3.4d setter-path migration restores dispatch"]
     fn remove_all_clears_everything() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
         let group = RadioGroup::new(&mut __init.ctx());
         let signals = Rc::new(RefCell::new(Vec::new()));
         let sig_clone = signals.clone();
+        let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        let mut ctx = PanelCtx::with_sched_reach(
+            &mut tree,
+            tid,
+            1.0,
+            &mut __init.sched,
+            &mut __init.fw,
+            &__init.root,
+            &fw_cb,
+        );
         {
             let mut g = group.borrow_mut();
             g.AddAll(3);
-            g.SetChecked(1);
+            g.SetChecked(1, &mut ctx);
             g.on_select = Some(Box::new(
                 move |idx, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                     sig_clone.borrow_mut().push(idx);
@@ -1022,7 +1039,7 @@ mod tests {
             ));
         }
 
-        group.borrow_mut().RemoveAll();
+        group.borrow_mut().RemoveAll(&mut ctx);
         assert_eq!(group.borrow().GetCount(), 0);
         assert_eq!(group.borrow().GetChecked(), None);
         assert_eq!(*signals.borrow(), vec![None]);
@@ -1031,6 +1048,8 @@ mod tests {
     #[test]
     fn remove_all_no_signal_if_nothing_checked() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let group = RadioGroup::new(&mut __init.ctx());
         let signals = Rc::new(RefCell::new(Vec::new()));
         let sig_clone = signals.clone();
@@ -1045,7 +1064,7 @@ mod tests {
             ));
         }
 
-        group.borrow_mut().RemoveAll();
+        group.borrow_mut().RemoveAll(&mut ctx);
         assert_eq!(group.borrow().GetCount(), 0);
         assert!(signals.borrow().is_empty());
     }
@@ -1053,28 +1072,32 @@ mod tests {
     #[test]
     fn set_check_index_out_of_bounds_clears() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let group = RadioGroup::new(&mut __init.ctx());
         {
             let mut g = group.borrow_mut();
             g.AddAll(2);
-            g.SetChecked(0);
+            g.SetChecked(0, &mut ctx);
         }
 
         // Out of bounds normalizes to None
-        group.borrow_mut().SetCheckIndex(Some(5));
+        group.borrow_mut().SetCheckIndex(Some(5), &mut ctx);
         assert_eq!(group.borrow().GetChecked(), None);
     }
 
     #[test]
     fn set_check_index_same_is_noop() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let group = RadioGroup::new(&mut __init.ctx());
         let signals = Rc::new(RefCell::new(Vec::new()));
         let sig_clone = signals.clone();
         {
             let mut g = group.borrow_mut();
             g.AddAll(3);
-            g.SetChecked(1);
+            g.SetChecked(1, &mut ctx);
             g.on_select = Some(Box::new(
                 move |idx, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                     sig_clone.borrow_mut().push(idx);
@@ -1083,13 +1106,15 @@ mod tests {
         }
 
         // Setting same index is a no-op
-        group.borrow_mut().SetCheckIndex(Some(1));
+        group.borrow_mut().SetCheckIndex(Some(1), &mut ctx);
         assert!(signals.borrow().is_empty());
     }
 
     #[test]
     fn drop_middle_button_reindexes_remaining() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let group = RadioGroup::new(&mut __init.ctx());
 
@@ -1098,7 +1123,7 @@ mod tests {
         let r2 = emRadioButton::new("C", look, group.clone(), 2);
 
         // Select the last button
-        group.borrow_mut().SetChecked(2);
+        group.borrow_mut().SetChecked(2, &mut ctx);
         assert!(r2.IsSelected());
         assert_eq!(r2.index(), 2);
 
@@ -1117,6 +1142,8 @@ mod tests {
     #[test]
     fn drop_selected_button_clears_selection() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let group = RadioGroup::new(&mut __init.ctx());
 
@@ -1124,7 +1151,7 @@ mod tests {
         let r1 = emRadioButton::new("B", look.clone(), group.clone(), 1);
         let r2 = emRadioButton::new("C", look, group.clone(), 2);
 
-        group.borrow_mut().SetChecked(1);
+        group.borrow_mut().SetChecked(1, &mut ctx);
         assert!(r1.IsSelected());
 
         drop(r1);

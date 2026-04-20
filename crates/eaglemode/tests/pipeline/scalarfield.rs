@@ -80,7 +80,7 @@ fn scalarfield_click_and_drag_1x_and_2x() {
     // 2. Create emScalarField (range 0-100, value 50, editable).
     let look = emLook::new();
     let mut sf = emScalarField::new(&mut h.sched_ctx(), 0.0, 100.0, look);
-    sf.SetValue(50.0);
+    sf.set_initial_value(50.0);
     sf.SetEditable(true);
 
     let value = Rc::new(RefCell::new(50.0));
@@ -198,7 +198,7 @@ fn setup_sf(
 
     let look = emLook::new();
     let mut sf = emScalarField::new(&mut h.sched_ctx(), min, max, look);
-    sf.SetValue(initial);
+    sf.set_initial_value(initial);
     sf.SetEditable(editable);
     if !mark_intervals.is_empty() {
         sf.SetScaleMarkIntervals(mark_intervals);

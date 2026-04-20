@@ -201,10 +201,10 @@ impl emFileManControlPanel {
         let cfg = self.config.borrow();
         self.sort_group
             .borrow_mut()
-            .SetChecked(cfg.GetSortCriterion() as usize);
+            .SetChecked(cfg.GetSortCriterion() as usize, ctx);
         self.nss_group
             .borrow_mut()
-            .SetChecked(cfg.GetNameSortingStyle() as usize);
+            .SetChecked(cfg.GetNameSortingStyle() as usize, ctx);
         self.dirs_first_check
             .SetChecked(cfg.GetSortDirectoriesFirst(), ctx);
         self.show_hidden_check
@@ -216,7 +216,9 @@ impl emFileManControlPanel {
         drop(cfg);
         let tn = self.theme_names.borrow();
         if let Some(style_idx) = tn.GetThemeStyleIndex(&theme_name) {
-            self.theme_style_group.borrow_mut().SetChecked(style_idx);
+            self.theme_style_group
+                .borrow_mut()
+                .SetChecked(style_idx, ctx);
             // Rebuild AR radios for the selected style
             let ar_count = tn.GetThemeAspectRatioCount(style_idx);
             self.theme_ar_radios.clear();
@@ -230,7 +232,7 @@ impl emFileManControlPanel {
                 ));
             }
             if let Some(ar_idx) = tn.GetThemeAspectRatioIndex(&theme_name) {
-                self.theme_ar_group.borrow_mut().SetChecked(ar_idx);
+                self.theme_ar_group.borrow_mut().SetChecked(ar_idx, ctx);
             }
         }
     }
@@ -644,11 +646,14 @@ mod tests {
     #[test]
     fn sort_group_change_updates_config() {
         let mut __init = TestInit::new();
-        let ctx = Rc::clone(&__init.root);
-        let panel = emFileManControlPanel::new(&mut __init.ctx(), Rc::clone(&ctx));
+        let root = Rc::clone(&__init.root);
+        let panel = emFileManControlPanel::new(&mut __init.ctx(), Rc::clone(&root));
 
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let tid = tree.create_root("t", false);
+        let mut ctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
         // Simulate changing sort group to ByDate (index 4)
-        panel.sort_group.borrow_mut().SetChecked(4);
+        panel.sort_group.borrow_mut().SetChecked(4, &mut ctx);
         // Apply via sync logic — normally this happens in Input handler,
         // but we test the config update path directly
         panel

@@ -90,21 +90,17 @@ impl emSplitter {
         self.orientation = orientation;
     }
 
-    pub fn SetPos(&mut self, pos: f64) {
-        let clamped = pos.clamp(self.min_position, self.max_position);
-        if (self.position - clamped).abs() > f64::EPSILON {
-            self.position = clamped;
-            // DIVERGED-B3.4d: non-ctx setter path; signal/callback fire
-            // deferred to B3.4d setter-path migration.
-            let _ = &self.on_position;
-        }
+    /// Construction-time position assignment — no signal, no callback.
+    /// Used from widget constructor/config paths where no scheduler-reach
+    /// PanelCtx is available. C++ parity: `emSplitter` constructor sets
+    /// `Position` directly.
+    pub fn set_initial_position(&mut self, pos: f64) {
+        self.position = pos.clamp(self.min_position, self.max_position);
     }
 
-    /// Ctx-bearing variant of `SetPos` that fires the pos signal and
-    /// `on_position` callback. Mirrors C++ `emSplitter::SetPos`
-    /// (emSplitter.cpp:82-91): Signal(PosSignal) → InvalidatePainting →
-    /// InvalidateChildrenLayout. Called from the Input-driven drag path.
-    pub fn SetPosCtx(&mut self, pos: f64, ctx: &mut PanelCtx<'_>) {
+    /// Mirrors C++ `emSplitter::SetPos` (emSplitter.cpp:82-91):
+    /// Signal(PosSignal) → InvalidatePainting → InvalidateChildrenLayout.
+    pub fn SetPos(&mut self, pos: f64, ctx: &mut PanelCtx<'_>) {
         let clamped = pos.clamp(self.min_position, self.max_position);
         if (self.position - clamped).abs() > f64::EPSILON {
             self.position = clamped;
@@ -131,7 +127,7 @@ impl emSplitter {
         }
         self.min_position = min;
         self.max_position = max;
-        self.SetPos(self.position);
+        self.set_initial_position(self.position);
     }
 
     pub fn PaintContent(&mut self, painter: &mut emPainter, w: f64, h: f64, enabled: bool) {
@@ -287,7 +283,7 @@ impl emSplitter {
                         let travel = size - gs;
                         if travel > 0.0 {
                             let new_pos = (pos - self.drag_offset - gs * 0.5) / travel;
-                            self.SetPosCtx(new_pos, ctx);
+                            self.SetPos(new_pos, ctx);
                         }
                         return true;
                     }
@@ -471,13 +467,13 @@ mod tests {
         let mut __init = TestInit::new();
         let look = emLook::new();
         let mut sp = emSplitter::new(&mut __init.ctx(), Orientation::Horizontal, look);
-        sp.SetPos(0.3);
+        sp.set_initial_position(0.3);
         assert!((sp.GetPos() - 0.3).abs() < 0.001);
 
-        sp.SetPos(-1.0);
+        sp.set_initial_position(-1.0);
         assert!((sp.GetPos() - 0.0).abs() < 0.001);
 
-        sp.SetPos(2.0);
+        sp.set_initial_position(2.0);
         assert!((sp.GetPos() - 1.0).abs() < 0.001);
     }
 
@@ -488,7 +484,7 @@ mod tests {
         let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let mut sp = emSplitter::new(&mut __init.ctx(), Orientation::Horizontal, look);
-        sp.SetPos(0.5);
+        sp.set_initial_position(0.5);
         let ps = default_panel_state();
         let is = default_input_state();
 
@@ -534,7 +530,7 @@ mod tests {
         let look = emLook::new();
         let mut sp = emSplitter::new(&mut __init.ctx(), Orientation::Horizontal, look);
         let sig = sp.pos_signal;
-        sp.SetPos(0.5);
+        sp.set_initial_position(0.5);
         sp.last_w = 100.0;
         sp.last_h = 50.0;
         let ps = default_panel_state();

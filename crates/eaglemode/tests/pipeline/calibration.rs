@@ -73,7 +73,7 @@ fn scalarfield_drag_changes_value() {
 
     let look = emLook::new();
     let mut sf = emScalarField::new(&mut h.sched_ctx(), 0.0, 100.0, look);
-    sf.SetValue(50.0);
+    sf.set_initial_value(50.0);
     sf.SetEditable(true);
 
     let value = Rc::new(RefCell::new(50.0));
@@ -139,7 +139,7 @@ impl ColorFieldBehavior {
     fn new<C: emcore::emEngineCtx::ConstructCtx>(cc: &mut C, look: Rc<emLook>) -> Self {
         let mut cf = emColorField::new(cc, look);
         cf.SetEditable(true);
-        cf.SetAlphaEnabled(true);
+        cf.set_initial_alpha_enabled(true);
         Self { color_field: cf }
     }
 }

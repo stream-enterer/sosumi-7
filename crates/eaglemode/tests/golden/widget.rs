@@ -422,7 +422,7 @@ fn widget_scalarfield() {
     let mut sf = emScalarField::new(&mut ts.cc(), 0.0, 100.0, look);
     sf.SetCaption("Value");
     sf.SetEditable(true);
-    sf.SetValue(50.0);
+    sf.set_initial_value(50.0);
     // Residual from 9-slice border interpolation + text rendering diffs (~4.7%)
     render_and_compare_tol(
         "widget_scalarfield",
@@ -484,7 +484,7 @@ fn widget_colorfield() {
     let look = emLook::new();
     let mut cf = emColorField::new(&mut ts.cc(), look);
     cf.SetCaption("Color");
-    cf.SetColor(emcore::emColor::emColor::rgba(255, 0, 0, 255));
+    cf.set_initial_color(emcore::emColor::emColor::rgba(255, 0, 0, 255));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -526,7 +526,12 @@ fn widget_radiobutton() {
     let look = emLook::new();
     let group = RadioGroup::new(&mut ts.cc());
     let mut rb = emRadioButton::new("Radio Option", look, group, 0);
-    rb.set_checked(true);
+    {
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let tid = tree.create_root("t", false);
+        let mut ctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
+        rb.set_checked(true, &mut ctx);
+    }
     // Residual diffs from text rendering and 9-slice boundary rounding (~0.8%)
     render_and_compare_tol(
         "widget_radiobutton",
@@ -585,7 +590,7 @@ fn widget_splitter_v() {
     require_golden!();
     let look = emLook::new();
     let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Vertical, look);
-    sp.SetPos(0.3);
+    sp.set_initial_position(0.3);
     // Residual from 9-slice interpolation rounding + grip GetPos (~1.7%)
     render_and_compare_tol(
         "widget_splitter_v",
@@ -636,8 +641,8 @@ fn colorfield_expanded() {
     cf.SetCaption("Color");
     cf.SetDescription("Test color field");
     cf.SetEditable(true);
-    cf.SetAlphaEnabled(true);
-    cf.SetColor(emcore::emColor::emColor::rgba(0xBB, 0x22, 0x22, 0xFF));
+    cf.set_initial_alpha_enabled(true);
+    cf.set_initial_color(emcore::emColor::emColor::rgba(0xBB, 0x22, 0x22, 0xFF));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1266,7 +1271,7 @@ fn golden_widget_scalarfield_min_value() {
     );
     sf.SetCaption("Value");
     sf.SetEditable(true);
-    sf.SetValue(-1_000_000_000_000.0);
+    sf.set_initial_value(-1_000_000_000_000.0);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1319,7 +1324,7 @@ fn golden_widget_scalarfield_max_value() {
     );
     sf.SetCaption("Value");
     sf.SetEditable(true);
-    sf.SetValue(1_000_000_000_000.0);
+    sf.set_initial_value(1_000_000_000_000.0);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1367,7 +1372,7 @@ fn golden_widget_scalarfield_zero_range() {
     let mut sf = emScalarField::new(&mut ts.cc(), 50.0, 50.0, look);
     sf.SetCaption("Value");
     sf.SetEditable(true);
-    sf.SetValue(50.0);
+    sf.set_initial_value(50.0);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1529,7 +1534,7 @@ fn golden_widget_splitter_h_pos0() {
 
     let look = emLook::new();
     let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Horizontal, look);
-    sp.SetPos(0.0);
+    sp.set_initial_position(0.0);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1562,7 +1567,7 @@ fn golden_widget_splitter_h_pos1() {
 
     let look = emLook::new();
     let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Horizontal, look);
-    sp.SetPos(1.0);
+    sp.set_initial_position(1.0);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1595,7 +1600,7 @@ fn golden_widget_splitter_v_extreme_tall() {
 
     let look = emLook::new();
     let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Vertical, look);
-    sp.SetPos(0.5);
+    sp.set_initial_position(0.5);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1738,7 +1743,7 @@ fn golden_widget_colorfield_alpha_zero() {
     let look = emLook::new();
     let mut cf = emColorField::new(&mut ts.cc(), look);
     cf.SetCaption("Color");
-    cf.SetColor(emcore::emColor::emColor::rgba(255, 0, 0, 0));
+    cf.set_initial_color(emcore::emColor::emColor::rgba(255, 0, 0, 0));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1793,7 +1798,7 @@ fn golden_widget_colorfield_alpha_opaque() {
     let look = emLook::new();
     let mut cf = emColorField::new(&mut ts.cc(), look);
     cf.SetCaption("Color");
-    cf.SetColor(emcore::emColor::emColor::rgba(255, 0, 0, 255));
+    cf.set_initial_color(emcore::emColor::emColor::rgba(255, 0, 0, 255));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -1848,7 +1853,7 @@ fn golden_widget_colorfield_alpha_near() {
     let look = emLook::new();
     let mut cf = emColorField::new(&mut ts.cc(), look);
     cf.SetCaption("Color");
-    cf.SetColor(emcore::emColor::emColor::rgba(255, 0, 0, 1));
+    cf.set_initial_color(emcore::emColor::emColor::rgba(255, 0, 0, 1));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
@@ -2024,7 +2029,7 @@ fn composition_splitter_content() {
 
     // Root: horizontal splitter, pos=0.5, no border (OBT_NONE/IBT_NONE)
     let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Horizontal, look.clone());
-    sp.SetPos(0.5);
+    sp.set_initial_position(0.5);
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");

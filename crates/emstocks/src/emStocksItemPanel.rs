@@ -425,7 +425,7 @@ impl emStocksItemPanel {
             Interest::Medium => 1,
             Interest::Low => 2,
         };
-        w.interest_group.borrow_mut().SetChecked(interest_idx);
+        w.interest_group.borrow_mut().SetChecked(interest_idx, ctx);
 
         // WebPages
         for i in 0..NUM_WEB_PAGES {
@@ -1162,13 +1162,15 @@ mod tests {
         let config = make_config();
 
         // Set radio to Medium (index 1)
-        panel
-            .widgets
-            .as_mut()
-            .unwrap()
-            .interest_group
-            .borrow_mut()
-            .SetChecked(1);
+        with_scratch_ctx(|ctx| {
+            panel
+                .widgets
+                .as_mut()
+                .unwrap()
+                .interest_group
+                .borrow_mut()
+                .SetChecked(1, ctx);
+        });
 
         let mut stock = StockRec::default();
         stock.interest = Interest::High;

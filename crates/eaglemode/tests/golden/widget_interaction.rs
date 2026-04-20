@@ -189,7 +189,7 @@ fn widget_radiobutton_switch() {
     let mut rb_b = emRadioButton::new("Option B", look.clone(), group.clone(), 1);
     let _rb_c = emRadioButton::new("Option C", look, group.clone(), 2);
 
-    group.borrow_mut().SetChecked(0);
+    group.borrow_mut().SetChecked(0, &mut ctx);
     let initial = u32::from_le_bytes(golden[0..4].try_into().unwrap()) as usize;
     let c0 = check_option_usize("initial", group.borrow().GetChecked(), initial);
 
@@ -253,15 +253,15 @@ fn widget_splitter_setpos() {
     sp.SetMinMaxPos(0.0, 1.0);
     let eps = 1e-9;
 
-    sp.SetPos(0.7);
+    sp.set_initial_position(0.7);
     let expected_1 = f64::from_le_bytes(golden[0..8].try_into().unwrap());
     let c0 = check_f64("pos_0.7", sp.GetPos(), expected_1, eps);
 
-    sp.SetPos(1.5);
+    sp.set_initial_position(1.5);
     let expected_2 = f64::from_le_bytes(golden[8..16].try_into().unwrap());
     let c1 = check_f64("pos_1.5_clamped", sp.GetPos(), expected_2, eps);
 
-    sp.SetPos(-0.5);
+    sp.set_initial_position(-0.5);
     let expected_3 = f64::from_le_bytes(golden[16..24].try_into().unwrap());
     let c2 = check_f64("pos_-0.5_clamped", sp.GetPos(), expected_3, eps);
 
@@ -394,7 +394,7 @@ fn widget_scalarfield_inc() {
     let look = emLook::new();
     let mut sf = emScalarField::new(&mut ts.cc(), 0.0, 100.0, look);
     sf.SetEditable(true);
-    sf.SetValue(50.0);
+    sf.set_initial_value(50.0);
     let ps = default_panel_state();
     let is = default_input_state();
     let eps = 1e-9;
@@ -579,13 +579,13 @@ fn widget_splitter_drag() {
     let look = emLook::new();
     let mut sp = emSplitter::new(&mut ts.cc(), Orientation::Horizontal, look);
     sp.SetMinMaxPos(0.0, 1.0);
-    sp.SetPos(0.5);
+    sp.set_initial_position(0.5);
     let eps = 1e-9;
 
     let expected_before = f64::from_le_bytes(golden[0..8].try_into().unwrap());
     let c0 = check_f64("pos_before", sp.GetPos(), expected_before, eps);
 
-    sp.SetPos(0.7);
+    sp.set_initial_position(0.7);
     let expected_after = f64::from_le_bytes(golden[8..16].try_into().unwrap());
     let c1 = check_f64("pos_after", sp.GetPos(), expected_after, eps);
 
@@ -638,7 +638,7 @@ fn run_splitter_layout_step(
     let look = emLook::new();
     let mut sp = emSplitter::new(&mut ts.cc(), orientation, look);
     sp.SetMinMaxPos(0.0, 1.0);
-    sp.SetPos(pos);
+    sp.set_initial_position(pos);
     let clamped_pos = sp.GetPos();
 
     let mut tree = PanelTree::new();

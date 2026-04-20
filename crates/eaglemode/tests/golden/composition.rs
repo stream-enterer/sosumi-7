@@ -743,7 +743,7 @@ impl TkTestPanel {
                 look.clone(),
             );
             sf3.SetEditable(true);
-            sf3.SetValue(0.0);
+            sf3.set_initial_value(0.0);
             sf3.SetScaleMarkIntervals(&[1000, 100, 10, 5, 1]);
             let id = ctx.tree.create_child(gid, "sf3", None);
             ctx.tree
@@ -757,7 +757,7 @@ impl TkTestPanel {
             );
             sf4.SetCaption("Level");
             sf4.SetEditable(true);
-            sf4.SetValue(3.0);
+            sf4.set_initial_value(3.0);
             sf4.SetTextBoxTallness(0.25);
             sf4.SetTextOfValueFunc(Box::new(|val, _interval| format!("Level {val}")));
             let id = ctx.tree.create_child(gid, "sf4", None);
@@ -772,7 +772,7 @@ impl TkTestPanel {
             );
             sf5.SetCaption("Play Length");
             sf5.SetEditable(true);
-            sf5.SetValue(14400000.0);
+            sf5.set_initial_value(14400000.0);
             // C++ emTestPanel.cpp:636
             sf5.SetScaleMarkIntervals(&[3600000, 900000, 300000, 60000, 10000, 1000, 100, 10, 1]);
             sf5.SetTextOfValueFunc(Box::new(|val, mark_interval| {
@@ -842,7 +842,7 @@ impl TkTestPanel {
         {
             let mut cf1 = emColorField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             cf1.SetCaption("Read-Only");
-            cf1.SetColor(emColor::rgba(0xBB, 0x22, 0x22, 0xFF));
+            cf1.set_initial_color(emColor::rgba(0xBB, 0x22, 0x22, 0xFF));
             let id = ctx.tree.create_child(gid, "cf1", None);
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf1 }));
@@ -853,7 +853,7 @@ impl TkTestPanel {
             let mut cf2 = emColorField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             cf2.SetCaption("Editable");
             cf2.SetEditable(true);
-            cf2.SetColor(emColor::rgba(0x22, 0xBB, 0x22, 0xFF));
+            cf2.set_initial_color(emColor::rgba(0x22, 0xBB, 0x22, 0xFF));
             let id = ctx.tree.create_child(gid, "cf2", None);
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf2 }));
@@ -863,8 +863,8 @@ impl TkTestPanel {
             let mut cf3 = emColorField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             cf3.SetCaption("Editable, Alpha Enabled");
             cf3.SetEditable(true);
-            cf3.SetAlphaEnabled(true);
-            cf3.SetColor(emColor::rgba(0x22, 0x22, 0xBB, 0xFF));
+            cf3.set_initial_alpha_enabled(true);
+            cf3.set_initial_color(emColor::rgba(0x22, 0x22, 0xBB, 0xFF));
             let id = ctx.tree.create_child(gid, "cf3", None);
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf3 }));

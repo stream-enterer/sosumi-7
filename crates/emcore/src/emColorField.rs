@@ -124,7 +124,23 @@ impl emColorField {
         self.color
     }
 
-    pub fn SetColor(&mut self, color: emColor) {
+    /// Construction-time color assignment — no signal, no callback. Used by
+    /// test harnesses and constructor-like setup paths where no scheduler
+    /// reach exists. C++ parity: ctor sets color directly.
+    pub fn set_initial_color(&mut self, color: emColor) {
+        if self.color != color {
+            self.color = color;
+            if self.expansion.is_some() {
+                self.UpdateRGBAOutput();
+                self.UpdateHSVOutput(false);
+                self.UpdateNameOutput();
+            }
+        }
+    }
+
+    /// Mirrors C++ `emColorField::SetColor` (emColorField.cpp): updates color,
+    /// syncs sub-widget displays, fires ColorSignal + on_color callback.
+    pub fn SetColor(&mut self, color: emColor, ctx: &mut PanelCtx<'_>) {
         if self.color != color {
             self.color = color;
             // Sync expansion if present.
@@ -133,9 +149,12 @@ impl emColorField {
                 self.UpdateHSVOutput(false);
                 self.UpdateNameOutput();
             }
-            // DIVERGED-B3.4d: non-ctx setter path; signal/callback fire
-            // deferred to B3.4d setter-path migration.
-            let _ = &self.on_color;
+            if let Some(mut sched) = ctx.as_sched_ctx() {
+                sched.fire(self.color_signal);
+                if let Some(cb) = self.on_color.as_mut() {
+                    cb(self.color, &mut sched);
+                }
+            }
         }
     }
 
@@ -160,14 +179,27 @@ impl emColorField {
         self.alpha_enabled
     }
 
-    pub fn SetAlphaEnabled(&mut self, alpha_enabled: bool) {
+    /// Construction-time variant — toggles alpha without firing signals.
+    pub fn set_initial_alpha_enabled(&mut self, alpha_enabled: bool) {
         if self.alpha_enabled != alpha_enabled {
             self.alpha_enabled = alpha_enabled;
             if !alpha_enabled && self.color.GetAlpha() != 255 {
                 self.color = self.color.SetAlpha(255);
-                // DIVERGED-B3.4d: non-ctx setter path; signal/callback fire
-                // deferred to B3.4d setter-path migration.
-                let _ = &self.on_color;
+            }
+        }
+    }
+
+    pub fn SetAlphaEnabled(&mut self, alpha_enabled: bool, ctx: &mut PanelCtx<'_>) {
+        if self.alpha_enabled != alpha_enabled {
+            self.alpha_enabled = alpha_enabled;
+            if !alpha_enabled && self.color.GetAlpha() != 255 {
+                self.color = self.color.SetAlpha(255);
+                if let Some(mut sched) = ctx.as_sched_ctx() {
+                    sched.fire(self.color_signal);
+                    if let Some(cb) = self.on_color.as_mut() {
+                        cb(self.color, &mut sched);
+                    }
+                }
             }
         }
     }
@@ -802,7 +834,7 @@ mod tests {
         let mut __init = TestInit::new();
         let look = emLook::new();
         let mut cf = emColorField::new(&mut __init.ctx(), look);
-        cf.SetColor(emColor::RED);
+        cf.set_initial_color(emColor::RED);
         assert_eq!(cf.GetColor(), emColor::RED);
     }
 
@@ -831,7 +863,7 @@ mod tests {
         let mut __init = TestInit::new();
         let look = emLook::new();
         let mut cf = emColorField::new(&mut __init.ctx(), look);
-        cf.SetColor(emColor::rgba(100, 150, 200, 255));
+        cf.set_initial_color(emColor::rgba(100, 150, 200, 255));
         cf.set_expanded(true);
         let exp = cf.expansion().expect("expanded");
         // r=100 → (100 * 10000 + 127) / 255 = 3922
@@ -846,7 +878,7 @@ mod tests {
         let mut __init = TestInit::new();
         let look = emLook::new();
         let mut cf = emColorField::new(&mut __init.ctx(), look);
-        cf.SetColor(emColor::BLACK);
+        cf.set_initial_color(emColor::BLACK);
         cf.set_expanded(true);
         // Modify red via expansion
         cf.expansion_mut().unwrap().sf_red = 5000; // ~50% = 127
@@ -866,7 +898,7 @@ mod tests {
         let mut __init = TestInit::new();
         let look = emLook::new();
         let mut cf = emColorField::new(&mut __init.ctx(), look);
-        cf.SetColor(emColor::BLACK);
+        cf.set_initial_color(emColor::BLACK);
         cf.set_expanded(true);
         // Set via HSV: hue=0 (red), sat=100%, val=100%
         let exp = cf.expansion_mut().unwrap();
@@ -900,7 +932,7 @@ mod tests {
         let mut __init = TestInit::new();
         let look = emLook::new();
         let mut cf = emColorField::new(&mut __init.ctx(), look);
-        cf.SetColor(emColor::rgba(0xAB, 0xCD, 0xEF, 0xFF));
+        cf.set_initial_color(emColor::rgba(0xAB, 0xCD, 0xEF, 0xFF));
         cf.set_expanded(true);
         let exp = cf.expansion().unwrap();
         assert_eq!(exp.tf_name, "#ABCDEF");
@@ -911,7 +943,7 @@ mod tests {
         let mut __init = TestInit::new();
         let look = emLook::new();
         let mut cf = emColorField::new(&mut __init.ctx(), look);
-        cf.SetColor(emColor::BLACK);
+        cf.set_initial_color(emColor::BLACK);
         cf.set_expanded(true);
         cf.expansion_mut().unwrap().sf_red = 5000;
         let sig = cf.color_signal;
@@ -938,11 +970,11 @@ mod tests {
         let mut __init = TestInit::new();
         let look = emLook::new();
         let mut cf = emColorField::new(&mut __init.ctx(), look);
-        cf.SetColor(emColor::rgba(255, 0, 0, 255)); // Red
+        cf.set_initial_color(emColor::rgba(255, 0, 0, 255)); // Red
         cf.set_expanded(true);
         let hue_before = cf.expansion().unwrap().sf_hue;
         // Now set to black via RGBA
-        cf.SetColor(emColor::BLACK);
+        cf.set_initial_color(emColor::BLACK);
         // Hue should be preserved (not reset to 0) because v=0
         let hue_after = cf.expansion().unwrap().sf_hue;
         assert_eq!(hue_before, hue_after);

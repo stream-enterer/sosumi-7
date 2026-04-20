@@ -914,13 +914,18 @@ impl emListBox {
 
     // ── Trigger ─────────────────────────────────────────────────────
 
-    /// Trigger an item (fires the on_trigger callback). No-op if out of range.
-    pub fn TriggerItem(&mut self, index: usize) {
+    /// Trigger an item. Mirrors C++ `emListBox::TriggerItem`: updates state,
+    /// fires `ItemTriggerSignal` + `on_trigger` callback.
+    pub fn TriggerItem(&mut self, index: usize, ctx: &mut PanelCtx<'_>) {
+        self.trigger_item_internal(index);
+        self.drain_pending_fires(ctx);
+    }
+
+    /// Internal trigger update that only latches — used by input-path helpers
+    /// whose surrounding `Input` call will drain the latches.
+    fn trigger_item_internal(&mut self, index: usize) {
         if index < self.items.len() {
             self.triggered_index = Some(index);
-            // B3.4c: latch for `drain_pending_fires` to fire with ctx at
-            // end of Input. Setter-path callers leave the latch set until
-            // B3.4d's setter-path migration drains them.
             self.pending_item_trigger_fire = true;
             self.pending_trigger_index = Some(index);
         }
@@ -1438,13 +1443,11 @@ impl emListBox {
     // ── Private helpers ─────────────────────────────────────────────
 
     fn fire_selection(&mut self) {
+        // B3.4c/d latch: snapshot current selection; `drain_pending_fires`
+        // invokes `on_selection` once per snapshot at end of Input (or from
+        // ctx-bearing setter paths).
         self.pending_selection_snapshots
             .push(self.selected_indices.clone());
-        // DIVERGED-B3.4b: `on_selection` is now `WidgetCallbackRef<[usize]>`
-        // requiring a `SchedCtx`, but `fire_selection` is called from many
-        // non-sched-reach setter/input paths. B3.4b/c restore dispatch via
-        // async signal.
-        let _ = &self.on_selection;
     }
 
     /// Rebuild the name_index HashMap from `from` onward.
@@ -1471,7 +1474,7 @@ impl emListBox {
             SelectionMode::Single => {
                 self.Select(item_index, true);
                 if trigger {
-                    self.TriggerItem(item_index);
+                    self.trigger_item_internal(item_index);
                 }
             }
             SelectionMode::Multi => {
@@ -1513,7 +1516,7 @@ impl emListBox {
                     self.Select(item_index, true);
                 }
                 if trigger {
-                    self.TriggerItem(item_index);
+                    self.trigger_item_internal(item_index);
                 }
             }
             SelectionMode::Toggle => {
@@ -1539,7 +1542,7 @@ impl emListBox {
                     self.ToggleSelection(item_index);
                 }
                 if trigger {
-                    self.TriggerItem(item_index);
+                    self.trigger_item_internal(item_index);
                 }
             }
         }
@@ -2339,9 +2342,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "B3.4d: TriggerItem non-ctx setter path; B3.4d setter-path migration restores dispatch"]
     fn trigger_item_fires_callback() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
         let look = emLook::new();
         let triggered = Rc::new(RefCell::new(Vec::new()));
         let trig_clone = triggered.clone();
@@ -2355,7 +2358,17 @@ mod tests {
             },
         ));
 
-        lb.TriggerItem(1);
+        let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        let mut ctx = PanelCtx::with_sched_reach(
+            &mut tree,
+            tid,
+            1.0,
+            &mut __init.sched,
+            &mut __init.fw,
+            &__init.root,
+            &fw_cb,
+        );
+        lb.TriggerItem(1, &mut ctx);
         assert_eq!(*triggered.borrow(), vec![1]);
         assert_eq!(lb.GetTriggeredItemIndex(), Some(1));
     }
@@ -2445,6 +2458,8 @@ mod tests {
     #[test]
     fn out_of_range_operations_are_noop() {
         let mut __init = TestInit::new();
+        let (mut tree, tid) = test_tree();
+        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
         let look = emLook::new();
         let mut lb = emListBox::new(&mut __init.ctx(), look);
         lb.AddItem("a".into(), "A".into());
@@ -2457,7 +2472,7 @@ mod tests {
         // Out of range operations are no-ops.
         lb.RemoveItem(99);
         lb.MoveItem(99, 0);
-        lb.TriggerItem(99);
+        lb.TriggerItem(99, &mut ctx);
         lb.Deselect(99);
         assert_eq!(lb.GetItemCount(), 1);
     }

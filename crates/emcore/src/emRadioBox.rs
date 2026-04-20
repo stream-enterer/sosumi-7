@@ -11,6 +11,7 @@ use crate::emPanel::Rect;
 
 use super::emBorder::{emBorder, OuterBorderType};
 use crate::emBorder::with_toolkit_images;
+use crate::emEngineCtx::PanelCtx;
 use crate::emLook::emLook;
 use crate::emRadioButton::RadioGroup;
 
@@ -72,11 +73,13 @@ impl emRadioBox {
         self.group.borrow().GetChecked() == Some(self.index_cell.get())
     }
 
-    pub fn set_checked(&mut self, checked: bool) {
+    pub fn set_checked(&mut self, checked: bool, ctx: &mut PanelCtx<'_>) {
         if checked {
-            self.group.borrow_mut().SetChecked(self.index_cell.get());
+            self.group
+                .borrow_mut()
+                .SetChecked(self.index_cell.get(), ctx);
         } else if self.IsSelected() {
-            self.group.borrow_mut().SetCheckIndex(None);
+            self.group.borrow_mut().SetCheckIndex(None, ctx);
         }
     }
 
@@ -280,7 +283,7 @@ impl emRadioBox {
         event: &emInputEvent,
         state: &PanelState,
         _input_state: &emInputState,
-        _ctx: &mut crate::emEngineCtx::PanelCtx,
+        ctx: &mut crate::emEngineCtx::PanelCtx,
     ) -> bool {
         if !self.enabled {
             return false;
@@ -337,7 +340,9 @@ impl emRadioBox {
                     self.pressed = false;
                     self.box_pressed = false;
                     if hit {
-                        self.group.borrow_mut().SetChecked(self.index_cell.get());
+                        self.group
+                            .borrow_mut()
+                            .SetChecked(self.index_cell.get(), ctx);
                     }
                     true
                 }
@@ -352,7 +357,9 @@ impl emRadioBox {
                     && !event.ctrl
                     && state.viewed_rect.w.min(state.viewed_rect.h) >= 8.0 =>
             {
-                self.group.borrow_mut().SetChecked(self.index_cell.get());
+                self.group
+                    .borrow_mut()
+                    .SetChecked(self.index_cell.get(), ctx);
                 true
             }
             _ => false,

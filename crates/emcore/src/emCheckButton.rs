@@ -25,11 +25,9 @@ pub struct emCheckButton {
     enabled: bool,
     last_w: f64,
     last_h: f64,
-    // DIVERGED: GetCheckSignal — replaced by callback field `on_check`
-    // DIVERGED: CheckChanged — folded into `on_check` callback invocation
     pub on_check: Option<WidgetCallback<bool>>,
-    /// Allocated at construction per C++ `emCheckButton::GetCheckSignal()`.
-    /// B3.4b allocates; B3.4c fires in Input; B3.4d cleans up DIVERGED blocks.
+    /// Allocated at construction; fired from `SetChecked` / Input toggle.
+    /// Mirrors C++ `emCheckButton::GetCheckSignal()`.
     pub check_signal: SignalId,
 }
 
@@ -337,7 +335,9 @@ impl emCheckButton {
         text
     }
 
-    // DIVERGED: Clicked — renamed to toggle (private); C++ Clicked is protected virtual
+    /// Internal toggle helper (private). Implements the action C++ does in
+    /// its protected virtual `Clicked()` override: flips state and fires
+    /// CheckSignal + on_check callback via `SetChecked` semantics.
     fn toggle(&mut self, ctx: &mut PanelCtx<'_>) {
         self.checked = !self.checked;
         // C++ emCheckButton::SetChecked (emCheckButton.cpp:39-48):

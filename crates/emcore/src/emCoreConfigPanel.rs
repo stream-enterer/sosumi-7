@@ -135,7 +135,7 @@ fn make_factor_field(
     let mut sf = emScalarField::new(&mut sched, -200.0, 200.0, look);
     sf.SetCaption(caption);
     sf.border_mut().description = description.to_string();
-    sf.SetValue(factor_cfg_to_val(cfg_value, cfg_min, cfg_max));
+    sf.set_initial_value(factor_cfg_to_val(cfg_value, cfg_min, cfg_max));
     sf.SetScaleMarkIntervals(&[100, 10]);
     sf.SetTextBoxTallness(0.3);
     sf.border_mut().SetBorderScaling(1.5);
@@ -752,7 +752,7 @@ impl MemFieldLayoutPanel {
             emScalarField::new(&mut sched, min_val, max_val, self.look.clone())
         };
         sf.SetCaption("Max megabytes per view");
-        sf.SetValue(mem_cfg_to_val(c.max_megabytes_per_view));
+        sf.set_initial_value(mem_cfg_to_val(c.max_megabytes_per_view));
         sf.SetScaleMarkIntervals(&[100, 10]);
         sf.SetTextBoxTallness(0.3);
         sf.border_mut().SetBorderScaling(1.5);
@@ -966,7 +966,7 @@ impl CpuGroup {
             emScalarField::new(&mut sched, 1.0, 32.0, self.look.clone())
         };
         sf.SetCaption("Max render threads");
-        sf.SetValue(c.max_render_threads as f64);
+        sf.set_initial_value(c.max_render_threads as f64);
         sf.SetScaleMarkIntervals(&[1]);
         sf.border_mut().outer = OuterBorderType::None;
         sf.border_mut().inner = InnerBorderType::InputField;
@@ -1124,7 +1124,7 @@ impl PerformanceGroup {
         ds_sf.SetCaption("Downscale quality");
         ds_sf.border_mut().description =
             "Quality of image downscaling (antialiasing filter size)".to_string();
-        ds_sf.SetValue(c.downscale_quality as f64);
+        ds_sf.set_initial_value(c.downscale_quality as f64);
         ds_sf.SetScaleMarkIntervals(&[1]);
         ds_sf.SetTextBoxTallness(0.3);
         ds_sf.border_mut().SetBorderScaling(1.5);
@@ -1152,7 +1152,7 @@ impl PerformanceGroup {
         };
         us_sf.SetCaption("Upscale quality");
         us_sf.border_mut().description = "Quality of image upscaling (interpolation)".to_string();
-        us_sf.SetValue(c.upscale_quality as f64);
+        us_sf.set_initial_value(c.upscale_quality as f64);
         us_sf.SetScaleMarkIntervals(&[1]);
         us_sf.SetTextBoxTallness(0.3);
         us_sf.border_mut().SetBorderScaling(1.5);
