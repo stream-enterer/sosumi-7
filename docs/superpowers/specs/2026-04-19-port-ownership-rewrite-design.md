@@ -234,16 +234,52 @@ pub struct PanelCtx<'a> {
 
 Engines that touch only the scheduler (`UpdateEngineClass`, `VisitingVAEngine`, `StartupEngine`, plugin loader engines, image-loader engines) take only `&mut EngineCtx`. Engines that walk a panel tree (`PanelCycleEngine`, callbacks reached through panel behaviors) take both. The split is field-disjoint so both can be held simultaneously; `PanelCtx::tree` is re-borrowed from a `&mut PanelTree` handed in separately from the scheduler.
 
-**Sub-tree recursion.** When an outer `PanelCycleEngine::Cycle` drives a panel whose behavior is an `emSubViewPanel`, the following sequence runs:
+The `PanelCtx` struct lives in `emEngineCtx.rs` (Phase 1.75 Task 5 absorbed the previously-separate `emPanelCtx.rs` module into `emEngineCtx.rs`; `emPanelCtx.rs` is deleted).
 
-1. Outer scheduler has taken the panel's `behavior: Option<Box<dyn PanelBehavior>>` via `.take()`. The slot is empty; the outer `PanelCtx.tree` is still mutably borrowed but the taken-out `Box<dyn PanelBehavior>` is owned by the stack frame.
-2. Inside the taken behavior (`emSubViewPanel::Cycle`), `self.sub_tree` is accessed via `&mut self`. The outer `pctx.tree` remains borrowed but does not alias `self.sub_tree` (distinct owned PanelTree on the heap).
-3. `emSubViewPanel::Cycle` constructs an inner `PanelCtx { tree: &mut self.sub_tree, current_panel: sub_root }` and runs sub-tree cycling using the *same* outer `ectx` (scheduler, windows, framework_actions). The shared `ectx` means the outer and inner cycles share the scheduler's clock, priority queues, and signal table.
-4. After sub-tree cycling returns, the outer pctx's tree is still validly borrowed. The outer scheduler puts the taken behavior back into the slot.
+**Unified cross-tree dispatch (Phase 1.75).** There is a single `EngineScheduler` in the process (owned by `emGUIFramework`). Every engine — outer-tree and sub-tree alike — registers with that scheduler, and `EngineScheduler::DoTimeSlice` walks one priority queue containing all awake engines, regardless of which tree they live in.
 
-**Observational argument.** C++ has one process-wide `emScheduler` and — in terms of panel tree structure — a single root tree with sub-views represented as `emSubViewPanel` children whose inner panels are part of a separate logical tree but share the scheduler via context chain (`emContext::GetScheduler()`). Rust's ownership forces structural separation of sub-trees (two `PanelTree` values) but the scheduler is logically one. SP8's per-sub-view scheduler was a structural divergence: it gave sub-views their own clock, so outer and inner timing invariants could drift. Deleting it restores C++'s single-clock observability. The test for this: any invariant C++ has about "outer and sub-view engines at priority P interleave in priority order within a slice" must now hold in Rust too — and it will, because they share the scheduler.
+The observable invariant this preserves: **any invariant C++ has about "outer and sub-view engines at priority P interleave in priority order within a slice" holds in Rust too — because they share the scheduler.** (SP8's per-sub-view scheduler, now deleted in Phase 1.75 Task 4, was the structural divergence that violated this; before its deletion, sub-views had their own clock and the interleave observability was lost.)
 
-**Nested sub-views (sub-view inside sub-view).** Admissible via the same recursive pattern: the inner `emSubViewPanel::Cycle` takes the nested emSubViewPanel's behavior out of its own `sub_tree.panels`, runs its Cycle with a *doubly-inner* `PanelCtx`. Borrow chain: outer tree → outer sub-view → inner sub-view. No aliasing. Depth bounded by actual nesting in the panel tree (typically ≤3 in practice; no architectural limit). Confirmed against C++ `emSubViewPanel::Cycle` which uses the same nested pattern.
+The Rust-side mechanism that makes one-queue cross-tree dispatch work under strict-ownership `PanelTree`s:
+
+1. Each engine carries a `TreeLocation` stored in `EngineScheduler::engine_locations: SecondaryMap<EngineId, TreeLocation>`, populated at registration time:
+
+   ```rust
+   pub enum TreeLocation {
+       Outer,
+       SubView { outer_panel_id: PanelId, rest: Box<TreeLocation> },
+   }
+   ```
+
+   `TreeLocation::Outer` tags engines living in the outer `PanelTree`. `TreeLocation::SubView { outer_panel_id, rest }` tags engines living inside the sub-tree of the `emSubViewPanel` at `outer_panel_id` in the outer tree; `rest` is the location *within* that sub-tree (`Outer` for a direct child, nested `SubView` for sub-views-inside-sub-views).
+
+2. `PanelBehavior` gains one trait method with a `None` default:
+
+   ```rust
+   fn as_sub_view_panel_mut(&mut self) -> Option<&mut emSubViewPanel> { None }
+   ```
+
+   Only `emSubViewPanel` overrides it (returns `Some(self)`). No `Any`, no downcasting, no per-impl boilerplate for the ~50 non-sub-view `PanelBehavior` impls.
+
+3. Per-dispatch, `DoTimeSlice` resolves an engine's home tree by walking its `TreeLocation` through a nested take/put of outer-tree panel behaviors (`dispatch_with_resolved_tree` in `emScheduler.rs`):
+
+   ```text
+   TreeLocation::Outer
+       → f(outer_tree)
+   TreeLocation::SubView { outer_panel_id, rest }
+       → take_behavior(outer_panel_id)
+       → behavior.as_sub_view_panel_mut().sub_tree_mut()  // reach inner tree
+       → recurse with rest
+       → put_behavior(outer_panel_id)
+   ```
+
+   The dispatcher `take`s the outer `emSubViewPanel`'s behavior from its slot (same mechanism the outer scheduler already uses when driving any panel's `Cycle`), downcasts via `as_sub_view_panel_mut` to reach `emSubViewPanel::sub_tree`, and continues the walk. Cost per sub-tree engine dispatch: one behavior-slot swap per `SubView` nesting level — identical to the take/put profile the outer scheduler already pays for outer panels.
+
+4. With the home tree resolved to a concrete `&mut PanelTree`, `EngineCtx::tree` is populated and the engine's `Cycle` runs exactly as it would for an outer engine. Outer and sub-view engines at the same priority P fire in the order `DoTimeSlice` drains the priority-P queue — the interleave is literal, not simulated.
+
+**Nested sub-views (sub-view inside sub-view).** Admissible by the same recursive walk: a `TreeLocation::SubView { outer_panel_id, rest: Box::new(SubView { outer_panel_id: inner_id, rest: Box::new(Outer) }) }` resolves two take/put levels deep. Depth bounded by actual nesting in the panel tree (typically ≤3 in practice; no architectural limit). Confirmed against C++ `emSubViewPanel::Cycle` which uses an equivalent nested-Cycle pattern.
+
+**Phase-1.76 known departure — `PanelBehavior::Input`.** Task 5 found that threading the scheduler through `PanelBehavior::Input` cascades into >100 impls (every widget forwarding input to child widgets, test panels, etc.) — out of scope for Phase 1.75. As a result, the inner sub-view-panel mouse/touch dispatch path at `emSubViewPanel::Input` (`crates/emcore/src/emSubViewPanel.rs` around line 301) currently constructs a throwaway local `EngineScheduler` whose `wake_up` calls land on a dropped value (observationally no-ops). Observable impact is narrow: it only affects signal-driven reactions to sub-view input events that fire *solely* during input dispatch (not during the post-frame ctx), and the goldens held 237/6 across Tasks 3–6 with this silent-drop in place. Phase 1.76 will widen `PanelBehavior::Input` to receive a scheduler (or introduce an `InputWithCtx` sibling) and retire the throwaway.
 
 ### 3.4 Contexts
 
@@ -372,11 +408,11 @@ pub fn DoTimeSlice(
 
 **D4.5.** `close_signal_pending: bool` on emView is deleted. `UpdateEngineClass::Cycle`'s pre-compute at `emView.rs:257-261` becomes an inline `ctx.IsSignaled(close_sig)` check at the top of `emView::Update`, after which emView reads the probe directly.
 
-**D4.6.** `register_engine_for`'s silent-return on `try_borrow_mut` failure (SP4.5-FIX-1) is deleted along with `register_pending_engines`. Engine registration runs inline during panel construction via ctx. SP4.5-FIX-3's +1 slice drift becomes delta=0 by construction; the three timing fixtures (`sp4_5_fix_1_timing_*_baseline_slices`) are updated to assert `delta == 0`.
+**D4.6.** `register_engine_for`'s silent-return on `try_borrow_mut` failure (SP4.5-FIX-1) is deleted along with `register_pending_engines`. Engine registration runs inline during panel construction via ctx. SP4.5-FIX-3's +1 slice drift becomes delta=0 by construction. **Delivered in Phase 1.75 Task 5 (continuation)**: `register_pending_engines` and the `try_borrow_mut` deferral are gone; Phase 1.75 Task 6 encodes the post-migration synchronous-registration contract as `phase_1_75_task6_spawn_and_wake_child_in_same_slice_delta_zero` in `emPanelTree.rs`, asserting `delta == 0`. The three originally-planned `sp4_5_fix_1_timing_*_baseline_slices` fixtures were deleted (obsolete under synchronous registration) rather than re-asserted; see Phase-1.75 ledger for the rationale.
 
-**D4.7.** `SP4.5-FIX-2`: popup-creation signal allocation inside `RawVisitAbs` becomes an inline `ctx.create_signal() × 4`. The `RefCell` re-entrancy hazard that required the pre-allocate-at-construction recommendation is absent. No pre-allocation needed; no latent panic.
+**D4.7.** `SP4.5-FIX-2`: popup-creation signal allocation inside `RawVisitAbs` is an inline `ctx.create_signal() × 4`. The `RefCell` re-entrancy hazard that required the pre-allocate-at-construction recommendation is absent. No pre-allocation needed; no latent panic. (Phase 1.75 Task 6 audit confirmed the four inline sites in `emView.rs` `RawVisitAbs`; no pre-allocation block exists anywhere in the file.)
 
-**D4.8.** Per-sub-view scheduler (E005, SP8) is deleted. `emSubViewPanel::sub_scheduler` field removed; the outer scheduler drives both trees via the nested-Cycle pattern from §3.3. The SP8 `DIVERGED:` block is removed.
+**D4.8.** Per-sub-view scheduler (E005, SP8) is deleted. `emSubViewPanel::sub_scheduler` field removed; the outer scheduler drives both trees via the unified cross-tree dispatch walk described in §3.3 (`TreeLocation` + `as_sub_view_panel_mut`). The SP8 `DIVERGED:` block is removed. **Delivered in Phase 1.75 Task 4** (keystone step of the phase).
 
 **D4.9. Input dispatch as an engine.** The current input-dispatch path (`App::window_event` → `emWindow::dispatch_input`) runs outside any `DoTimeSlice`, so ctx is not in scope. Under the new model, input handlers must have ctx access (for `ctx.fire`, `ctx.create_signal`, etc.) to enable widget signals (§3.5) and popup creation (D4.7).
 
@@ -417,7 +453,7 @@ impl emCheckButton {
 
 Tests that construct widgets pass an `InitCtx` built from the test's scheduler. Production framework init passes `InitCtx`. Panel-tree creation during Cycle passes `SchedCtx`.
 
-**D4.11.** `register_engine_for` (`emPanelTree.rs:558-598`) becomes a function on `PanelTree` that takes `&mut SchedCtx` (or generic `&mut impl ConstructCtx`). Called inline during panel construction. `register_pending_engines` (the catch-up sweep) is deleted. Engines register and are woken in the same call — `register_engine_for` calls `ctx.register_engine(adapter, Priority::Medium)` and then `ctx.wake_up(eid)`. This closes SP4.5-FIX-3 (E008): delta=0 by construction, because register-and-wake-up happen in the same Cycle and priority re-ascent fires the new engine within that slice.
+**D4.11.** `register_engine_for` (`emPanelTree.rs:558-598`) becomes a function on `PanelTree` that takes `&mut SchedCtx` (or generic `&mut impl ConstructCtx`). Called inline during panel construction. `register_pending_engines` (the catch-up sweep) is deleted. Engines register and are woken in the same call — `register_engine_for` calls `ctx.register_engine(adapter, Priority::Medium)` and then `ctx.wake_up(eid)`. This closes SP4.5-FIX-3 (E008): delta=0 by construction, because register-and-wake-up happen in the same Cycle and priority re-ascent fires the new engine within that slice. **Delivered in Phase 1.75 Task 5 (continuation)**; the `register_engine_for` signature now threads a `TreeLocation` alongside the ctx so the outer scheduler's `engine_locations` map is populated synchronously at registration (see §3.3).
 
 ---
 
@@ -606,9 +642,13 @@ Implements §3.1, §4 in full. Scope:
 - Rewrite `EngineScheduler` owner from `Rc<RefCell<>>` to plain value at `emGUIFramework`.
 - Rewrite `EngineCtx` to expose the full scheduler API.
 - Migrate 9 `queue_or_apply_sched_op` call sites to `ctx.fire/wake_up/connect/disconnect/remove_signal/remove_engine` inline.
-- Delete SchedOp enum, pending_sched_ops field, queue_or_apply_sched_op helper, all 5 drain sites, register_pending_engines, close_signal_pending, SVPUpdSlice try_borrow fallback.
+- Delete SchedOp enum, pending_sched_ops field, queue_or_apply_sched_op helper, all 5 drain sites, close_signal_pending, SVPUpdSlice try_borrow fallback.
 - Migrate 5 scheduler-touching engine types: `UpdateEngineClass`, `VisitingVAEngine`, `StartupEngine`, `PanelCycleEngine`, `PriSchedAgent`.
-- Delete per-sub-view scheduler (SP8); reroute via extended-ctx.
+- Delete `register_pending_engines` and the `try_borrow_mut`-deferral pathway; synchronous registration via ctx at construction time. **Delivered in Phase 1.75 Task 5 (continuation)** (see ledger; commit `eb5ed94b` and surrounding Task 5 commits).
+- Delete per-sub-view scheduler (SP8) and route all sub-tree engines through the single outer `EngineScheduler` via the `TreeLocation` + `as_sub_view_panel_mut` walk described in §3.3. **Delivered in Phase 1.75 Tasks 2–4** (keystone: Task 4).
+- Delete `emPanelCtx.rs`; absorb `PanelCtx` into `emEngineCtx.rs`. **Delivered in Phase 1.75 Task 5.**
+
+**Split with Phase 1.75.** Phase 1 originally planned to land all of the above as one cliff. In practice, the scheduler/ctx core landed in Phase 1 proper, and the sub-view unification + `register_pending_engines` / `emPanelCtx.rs` deletions landed in **Phase 1.75** (`port-rewrite/phase-1-75`) because the Phase 1.5 keystone migration had to ship PARTIAL. Phase 1.75 closes Phase 1.5's deferred Tasks 2–5 under the same observational invariants; there is no hybrid state remaining at the Phase 1.75 closeout.
 
 **JSON entries closed:** E001, E002, E003, E004, E005, E007, E008, E009, E010, E011, E036 (framing rejected).
 
