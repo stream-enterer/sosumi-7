@@ -874,11 +874,22 @@ pub fn create_main_window(
     if let Some(rc) = app.windows.get(&window_id) {
         let mut win = rc.borrow_mut();
         let view_weak = Rc::downgrade(win.view_rc());
-        win.view_mut()
-            .attach_to_scheduler(Rc::clone(&app.scheduler), view_weak);
+        {
+            let mut v = win.view_mut();
+            let root_ctx = v.GetRootContext();
+            let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = app.scheduler.borrow_mut();
+            let mut sc = emcore::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, Rc::clone(&app.scheduler), view_weak);
+        }
         win.view_mut().set_control_panel_signal(cp_signal);
     }
-    // SP4.5: init_panel_view ran before attach_to_scheduler above, so the
+    // SP4.5: init_panel_view ran before RegisterEngines above, so the
     // root panel (and any children already created) missed the in-line
     // register_engine_for pass. Catch them up now.
     app.tree.register_pending_engines();

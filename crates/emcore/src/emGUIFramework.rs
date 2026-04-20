@@ -90,9 +90,9 @@ pub struct App {
     /// Scheduler handle.
     ///
     /// DIVERGED from spec §3.1/D4.1 (plain value): Chunk 2 carry-forward.
-    /// `emView::attach_to_scheduler` and the view's `self.scheduler: Option<Rc<RefCell<_>>>`
-    /// field still require a shared handle. Chunk 3 deletes SchedOp + the view's
-    /// scheduler field, at which point this narrows back to `EngineScheduler`.
+    /// The view's `pub(crate) scheduler: Option<Rc<RefCell<_>>>` field still
+    /// requires a shared handle for `PanelTree` deferred-wakeup paths.
+    /// Substep 1f will narrow this back to plain `EngineScheduler`.
     pub scheduler: Rc<RefCell<EngineScheduler>>,
     pub context: Rc<emContext>,
     pub tree: PanelTree,
@@ -703,8 +703,8 @@ mod tests {
     use super::*;
 
     /// Phase 1 Chunk 2: `App` owns `framework_actions` (spec §3.1); scheduler
-    /// stays `Rc<RefCell<_>>` as a Chunk 2 carry-forward until Chunk 3 deletes
-    /// `emView::attach_to_scheduler` and the view-side scheduler field.
+    /// stays `Rc<RefCell<_>>` as a carry-forward until substep 1f narrows it
+    /// to plain `EngineScheduler`.
     #[test]
     fn framework_scheduler_shape() {
         let framework = App::new(Box::new(|_app, _el| {}));

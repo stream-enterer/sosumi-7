@@ -79,11 +79,11 @@ fn settle(tree: &mut PanelTree, view: &mut emView, rounds: usize) {
     // Update is driven explicitly in the loop below (SP5 per-view HandleNotice
     // drains there). No UpdateEngineClass/VisitingVAEngineClass are registered
     // in this harness.
-    if view.scheduler_ref().is_none() {
+    if view.scheduler_rc().is_none() {
         let sched = Rc::new(RefCell::new(emcore::emScheduler::EngineScheduler::new()));
-        view.set_scheduler(sched);
+        view.attach_scheduler_rc(sched);
     }
-    let sched = view.scheduler_ref().unwrap().clone();
+    let sched = view.scheduler_rc().unwrap().clone();
     tree.register_pending_engines();
     let mut empty_windows = std::collections::HashMap::new();
     for _ in 0..rounds {

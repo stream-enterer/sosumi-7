@@ -408,7 +408,7 @@ impl PanelTree {
         // with a mutable borrow held by the view's own engine cycle.
         if let Some(view_rc) = self.panels[id].View.upgrade() {
             if let Ok(view) = view_rc.try_borrow() {
-                if let Some(sched_rc) = view.scheduler_ref().cloned() {
+                if let Some(sched_rc) = view.scheduler.clone() {
                     if let Some(eng_id) = view.update_engine_id {
                         drop(view); // release immutable borrow before mutably borrowing sched
                         match sched_rc.try_borrow_mut() {
@@ -600,7 +600,7 @@ impl PanelTree {
         let Ok(view_borrow) = view_rc.try_borrow() else {
             return;
         };
-        let Some(sched_rc) = view_borrow.scheduler_ref().cloned() else {
+        let Some(sched_rc) = view_borrow.scheduler.clone() else {
             return; // unit-test bare view with no scheduler
         };
         drop(view_borrow);
@@ -655,7 +655,7 @@ impl PanelTree {
                 self.pending_engine_removals.push(eid);
                 return;
             };
-            view.scheduler_ref().cloned()
+            view.scheduler.clone()
         };
         let Some(sched_rc) = sched_rc_opt else {
             return; // unit-test bare view with no scheduler
@@ -3212,8 +3212,7 @@ mod tests {
     // `set_panel_view` so that `PanelTree::register_engine_for` sees a
     // live scheduler and registers a `PanelCycleEngine` adapter.
     // Scheduler `Drop` asserts "no dangling engines"; tests clean up by
-    // removing panels (which enqueues `SchedOp::RemoveEngine`) before
-    // dropping the scheduler.
+    // removing panels before dropping the scheduler.
 
     use crate::emEngine::EngineId as _EngineId;
     use crate::emScheduler::EngineScheduler;
@@ -3239,7 +3238,7 @@ mod tests {
             600.0,
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        view.borrow_mut().set_scheduler(sched.clone());
+        view.borrow_mut().scheduler = Some(sched.clone());
         tree.set_panel_view(root, Rc::downgrade(&view));
         (tree, view, sched, root)
     }
@@ -3300,7 +3299,7 @@ mod tests {
     fn sp4_5_register_pending_engines_catches_late_scheduler_attach() {
         // Reproduces the production ordering in emMainWindow.rs:
         //   1. init_panel_view (view exists but has no scheduler yet)
-        //   2. attach_to_scheduler (view now has a scheduler)
+        //   2. RegisterEngines (view now has a scheduler)
         //   3. register_pending_engines (catch-up pass)
         // After step 3, the root panel must have an engine_id.
         let mut tree = PanelTree::new();
@@ -3311,7 +3310,7 @@ mod tests {
             800.0,
             600.0,
         )));
-        // Step 1: init_panel_view BEFORE attach_to_scheduler. The helper
+        // Step 1: init_panel_view BEFORE RegisterEngines. The helper
         // early-returns with no engine_id because the view has no scheduler.
         tree.init_panel_view(root, Rc::downgrade(&view));
         assert!(
@@ -3319,16 +3318,27 @@ mod tests {
             "without a scheduler attached, init_panel_view must leave engine_id=None"
         );
 
-        // Step 2: attach_to_scheduler.
+        // Step 2: RegisterEngines.
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let view_weak = Rc::downgrade(&view);
-        view.borrow_mut()
-            .attach_to_scheduler(sched.clone(), view_weak);
+        {
+            let mut v = view.borrow_mut();
+            let root_ctx = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, sched.clone(), view_weak);
+        }
 
         // Still no engine_id — register_engine_for was never re-invoked.
         assert!(
             tree.GetRec(root).and_then(|p| p.engine_id).is_none(),
-            "attach_to_scheduler alone must not retroactively register panel engines"
+            "RegisterEngines alone must not retroactively register panel engines"
         );
 
         // Step 3: catch-up pass.
@@ -3349,7 +3359,7 @@ mod tests {
         // Cleanup.
         tree.remove(root);
         assert!(sched.borrow().get_engine_priority(eid).is_none());
-        // Drop attach_to_scheduler's engines so scheduler Drop passes.
+        // Drop RegisterEngines' engines so scheduler Drop passes.
         {
             let mut v = view.borrow_mut();
             if let Some(id) = v.update_engine_id.take() {
@@ -3508,7 +3518,7 @@ mod tests {
             600.0,
         )));
         let sched_a = Rc::new(RefCell::new(EngineScheduler::new()));
-        view_a.borrow_mut().set_scheduler(sched_a.clone());
+        view_a.borrow_mut().scheduler = Some(sched_a.clone());
         view_a.borrow_mut().CurrentPixelTallness = 1.5;
         tree_a.set_panel_view(root_a, Rc::downgrade(&view_a));
         let recorded_a = Rc::new(Cell::new(None));
@@ -3530,7 +3540,7 @@ mod tests {
             600.0,
         )));
         let sched_b = Rc::new(RefCell::new(EngineScheduler::new()));
-        view_b.borrow_mut().set_scheduler(sched_b.clone());
+        view_b.borrow_mut().scheduler = Some(sched_b.clone());
         view_b.borrow_mut().CurrentPixelTallness = 0.5;
         tree_b.set_panel_view(root_b, Rc::downgrade(&view_b));
         let recorded_b = Rc::new(Cell::new(None));
@@ -3634,7 +3644,7 @@ mod tests {
             600.0,
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        view.borrow_mut().set_scheduler(sched.clone());
+        view.borrow_mut().scheduler = Some(sched.clone());
         tree.set_panel_view(root, Rc::downgrade(&view));
 
         let a = tree.create_child(root, "a");

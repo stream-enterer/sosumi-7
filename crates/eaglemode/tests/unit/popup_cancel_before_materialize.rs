@@ -126,7 +126,7 @@ impl ApplicationHandler for Harness {
                     let mut home = home_rc.borrow_mut();
                     let tree = &mut self.app.tree;
                     let mut view = home.view_mut();
-                    view.set_scheduler(Rc::clone(&self.app.scheduler));
+                    view.attach_scheduler_rc(Rc::clone(&self.app.scheduler));
                     // Clear zoomed_out_before_sg so RawVisit doesn't
                     // zoom-out-and-tear-down; mirrors popup_materialization.
                     ts.with(|sc| view.Update(tree, sc));

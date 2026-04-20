@@ -52,7 +52,7 @@ impl<'a> PanelCtx<'a> {
         // be visited on the next notice cycle anyway.
         // C++ equivalent: panel->GetView().UpdateEngine->WakeUp().
         let sched_rc_opt: Option<std::rc::Rc<std::cell::RefCell<crate::emScheduler::EngineScheduler>>> =
-            view_rc.try_borrow().ok().and_then(|v| v.scheduler_ref().cloned());
+            view_rc.try_borrow().ok().and_then(|v| v.scheduler.clone());
         // view_rc borrow is released above (temporary dropped before this line)
         if let Some(sched_rc) = sched_rc_opt {
             match sched_rc.try_borrow_mut() {

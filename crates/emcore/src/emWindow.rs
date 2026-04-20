@@ -386,13 +386,6 @@ impl emWindow {
         window
     }
 
-    /// Construct a fully headless `emWindow` for integration tests that need
-    /// to drive the scheduler through `UpdateEngineClass::Cycle` end-to-end,
-    /// without a real winit window or wgpu surface. Registers the view's
-    /// engines (`UpdateEngineClass`, `VisitingVAEngineClass`) with the
-    /// scheduler and wakes the update engine (matching
-    /// `attach_to_scheduler` / C++ `emView` ctor parity).
-    ///
     // DIVERGED: Plan listed `materialized()`/`materialized_mut()` returning 6-tuple borrows; inlined as match in callers because the multi-borrow signature is awkward in Rust.
     /// Public accessor for the materialized winit window.
     ///
@@ -1793,11 +1786,10 @@ mod tests {
     use crate::emScheduler::EngineScheduler;
 
     /// Verify that a headless window constructed via `new_popup_pending` +
-    /// `attach_to_scheduler` (the SP5-native pattern) registers engines
-    /// correctly — same observable postcondition previously checked by the
-    /// deleted `new_for_test` constructor.
+    /// `RegisterEngines` registers engines correctly — same observable
+    /// postcondition previously checked by the deleted `new_for_test` constructor.
     #[test]
-    fn headless_window_attach_to_scheduler_registers_engines() {
+    fn headless_window_register_engines_registers_engines() {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
@@ -1823,9 +1815,20 @@ mod tests {
             std::rc::Rc::downgrade(w.view_rc())
         };
         let _ = win_id;
-        win.borrow_mut()
-            .view_mut()
-            .attach_to_scheduler(sched.clone(), view_weak);
+        {
+            let mut w = win.borrow_mut();
+            let mut v = w.view_mut();
+            let root = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, sched.clone(), view_weak);
+        }
         assert!(win.borrow().view().update_engine_id.is_some());
 
         // Scheduler cleanup for Drop debug_asserts.

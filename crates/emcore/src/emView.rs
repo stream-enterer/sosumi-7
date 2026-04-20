@@ -335,8 +335,15 @@ pub struct emView {
     control_panel_signal: Option<super::emSignal::SignalId>,
     /// Signal fired when the view title changes (C++ TitleSignal).
     title_signal: Option<super::emSignal::SignalId>,
-    /// Scheduler reference for firing signals.
-    scheduler: Option<Rc<RefCell<super::emScheduler::EngineScheduler>>>,
+    /// Scheduler reference for deferred wakeup/registration paths in
+    /// `emPanelTree` and `emPanelCtx`. Analogous to C++ `emEngine::Scheduler`
+    /// pointer which allows engines to self-wake outside `Cycle`.
+    ///
+    /// DIVERGED: C++ stores the scheduler on `emEngine` objects; Rust stores it
+    /// here so `PanelTree::register_engine_for` / `add_to_notice_list` can reach
+    /// the `Rc` for `try_borrow_mut` without a `SchedCtx` in scope.  Set by
+    /// callers immediately before `RegisterEngines`; never exposed publicly.
+    pub(crate) scheduler: Option<Rc<RefCell<super::emScheduler::EngineScheduler>>>,
     /// Whether the current activation is adherent (indirect, via a descendant).
     activation_adherent: bool,
     /// Set by scroll/zoom/navigate operations that change the viewport and need
@@ -346,21 +353,19 @@ pub struct emView {
     /// aborted. Consumers (window loop) should check and clear this flag.
     needs_animator_abort: bool,
     /// C++ `EOISignal` — fired by `EOIEngineClass::Cycle` when the countdown
-    /// reaches zero. Created when the view is attached to the scheduler.
+    /// reaches zero. Created by `RegisterEngines`.
     /// Mirrors C++ `emSignal EOISignal` (emView.h).
     pub EOISignal: Option<super::emSignal::SignalId>,
     /// Scheduler handle for the registered `UpdateEngineClass`.
-    /// Set by `attach_to_scheduler`; used by all call sites that previously
-    /// called `UpdateEngine->WakeUp()` to wake the update engine.
+    /// Set by `RegisterEngines`. Mirrors C++ `emView::UpdateEngine` field.
     pub update_engine_id: Option<super::emEngine::EngineId>,
     /// Scheduler handle for the most recently registered `EOIEngineClass`.
     /// `SignalEOIDelayed` removes any previous instance before registering
     /// a fresh one; the engine self-parks after firing `EOISignal`.
     pub eoi_engine_id: Option<super::emEngine::EngineId>,
     /// Scheduler handle for the registered `VisitingVAEngineClass`.
-    /// Set by `attach_to_scheduler`; woken when the animator has pending
-    /// work. Mirrors C++ behavior where `emVisitingViewAnimator` self-
-    /// registers with the scheduler via its `emEngine` base ctor.
+    /// Set by `RegisterEngines`. Mirrors C++ behavior where
+    /// `emVisitingViewAnimator` self-registers via its `emEngine` base ctor.
     pub visiting_va_engine_id: Option<super::emEngine::EngineId>,
     /// Handle into `App::pending_actions` for enqueuing deferred framework
     /// actions (popup surface materialization, popup-exit cleanup). Wired
@@ -1004,7 +1009,6 @@ impl emView {
     ///
     /// DIVERGED: C++ `SetGeometry(x,y,w,h,pt)` — Rust signature identical.
     /// Internally writes both Home* and Current* (home = current when no popup).
-    /// Ctx-threaded per Phase 1.5 Task 1c (method 5/7). Other unmigrated emView methods use `with_local_sched_ctx` to bridge.
     #[allow(clippy::too_many_arguments)]
     pub fn SetGeometry(
         &mut self,
@@ -1487,7 +1491,6 @@ impl emView {
 
     // --- Active Panel Management ---
 
-    /// Ctx-threaded per Phase 1.5 Task 1c (method 6/7). Other unmigrated emView methods use `with_local_sched_ctx` to bridge.
     pub fn set_active_panel(
         &mut self,
         tree: &mut PanelTree,
@@ -1566,7 +1569,6 @@ impl emView {
     /// max-area. Starts at SVP and descends into the deepest focusable child
     /// whose clip rect contains the viewport center, stopping when children
     /// are too small (< 99% view width AND height, AND < 33% view area).
-    /// Ctx-threaded per Phase 1.5 Task 1c (method 6/7). Other unmigrated emView methods use `with_local_sched_ctx` to bridge.
     pub fn SetActivePanelBestPossible(
         &mut self,
         tree: &mut PanelTree,
@@ -3022,9 +3024,6 @@ impl emView {
     /// when the panel is in the active path.
     ///
     /// Corresponds to `emPanel::InvalidateControlPanel`.
-    ///
-    /// Phase 1.5 Task 1c (method 3/7): ctx-threaded. Callers inside yet-
-    /// unmigrated emView methods use `with_local_sched_ctx` to bridge.
     pub fn InvalidateControlPanel(
         &mut self,
         tree: &PanelTree,
@@ -3094,19 +3093,6 @@ impl emView {
         self.title_signal
     }
 
-    pub fn set_scheduler(&mut self, scheduler: Rc<RefCell<super::emScheduler::EngineScheduler>>) {
-        self.scheduler = Some(scheduler);
-    }
-
-    /// Access the attached scheduler (if any).
-    ///
-    /// SP4.5: `PanelTree::register_engine_for` reads this to register a
-    /// `PanelCycleEngine` adapter for each panel that has a live view.
-    /// Returns `None` for unit-test bare views without a scheduler.
-    pub fn scheduler_ref(&self) -> Option<&Rc<RefCell<super::emScheduler::EngineScheduler>>> {
-        self.scheduler.as_ref()
-    }
-
     /// Wire the back-channel into `App::pending_actions` so that
     /// `RawVisitAbs`'s popup-entry branch can enqueue deferred popup-surface
     /// materialization. Called by `App::about_to_wait` each frame (idempotent).
@@ -3117,56 +3103,64 @@ impl emView {
         self.pending_framework_actions = Some(actions);
     }
 
-    /// Attach the view to a scheduler and register its `UpdateEngineClass`.
+    /// Attach a scheduler `Rc` so `PanelTree`/`PanelCtx` deferred-wakeup paths
+    /// can reach the `Rc` without a `SchedCtx` in scope.  Golden tests that hold
+    /// `emView` by `&mut` (not `Rc`) call this before `tree.register_pending_engines()`
+    /// instead of `RegisterEngines`.
     ///
-    /// Mirrors the C++ `emView` constructor, which creates and registers the
-    /// `UpdateEngine` (HIGH_PRIORITY) + `EOISignal`. After this call, engines
-    /// can be woken via `WakeUpUpdateEngine()` and `SignalEOIDelayed()`.
-    pub fn attach_to_scheduler(
+    /// DIVERGED: Test-only helper; production code uses `RegisterEngines`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn attach_scheduler_rc(
         &mut self,
-        scheduler: Rc<RefCell<super::emScheduler::EngineScheduler>>,
+        sched: Rc<RefCell<super::emScheduler::EngineScheduler>>,
+    ) {
+        self.scheduler = Some(sched);
+    }
+
+    /// Get the attached scheduler `Rc` if any (test-support only).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn scheduler_rc(&self) -> Option<&Rc<RefCell<super::emScheduler::EngineScheduler>>> {
+        self.scheduler.as_ref()
+    }
+
+    /// Register `UpdateEngineClass`, `EOISignal`, and `VisitingVAEngineClass`
+    /// with the scheduler and wake `UpdateEngineClass`.
+    ///
+    /// DIVERGED: C++ performs this work inline in `emView::emView` (emView.cpp:75–84).
+    /// Rust separates it into a named method because construction happens before the
+    /// caller owns the `Rc<RefCell<emView>>` needed for `Weak` engine references.
+    /// Stores `sched_rc` so `PanelTree`/`PanelCtx` deferred-wakeup paths can reach the
+    /// `Rc` without a `SchedCtx` in scope (analogous to C++ `emEngine::Scheduler` pointer).
+    ///
+    /// Corresponds to C++ `emView` constructor engine-registration block
+    /// (emView.cpp:75–84): `UpdateEngine` HIGH_PRIORITY + `EOISignal` +
+    /// `VisitingVAEngineClass` HIGH_PRIORITY + `UpdateEngine->WakeUp()`.
+    pub fn RegisterEngines(
+        &mut self,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+        sched_rc: Rc<RefCell<super::emScheduler::EngineScheduler>>,
         self_view_weak: std::rc::Weak<std::cell::RefCell<emView>>,
     ) {
-        let (engine_id, eoi_signal, visiting_va_engine_id) = {
-            let mut sched = scheduler.borrow_mut();
-            let engine_id = sched.register_engine(
-                Box::new(UpdateEngineClass::new(self_view_weak.clone())),
-                super::emEngine::Priority::High,
-            );
-            let eoi_signal = sched.create_signal();
-            // W4 Task 1.3: register the VisitingVA engine. C++ equivalent:
-            // emVisitingViewAnimator's emEngine base ctor auto-registers
-            // (see emViewAnimator.cpp:930 + emEngine ctor chain).
-            // C++ emViewAnimator base ctor sets HIGH_PRIORITY (emViewAnimator.cpp:39).
-            let visiting_va_engine_id = sched.register_engine(
-                Box::new(VisitingVAEngineClass::new(self_view_weak)),
-                super::emEngine::Priority::High,
-            );
-            (engine_id, eoi_signal, visiting_va_engine_id)
-        };
-        self.scheduler = Some(scheduler.clone());
+        self.scheduler = Some(sched_rc);
+        let engine_id = ctx.scheduler.register_engine(
+            Box::new(UpdateEngineClass::new(self_view_weak.clone())),
+            super::emEngine::Priority::High,
+        );
+        let eoi_signal = ctx.scheduler.create_signal();
+        // C++ emViewAnimator base ctor sets HIGH_PRIORITY (emViewAnimator.cpp:39).
+        let visiting_va_engine_id = ctx.scheduler.register_engine(
+            Box::new(VisitingVAEngineClass::new(self_view_weak)),
+            super::emEngine::Priority::High,
+        );
         self.update_engine_id = Some(engine_id);
         self.EOISignal = Some(eoi_signal);
         self.visiting_va_engine_id = Some(visiting_va_engine_id);
         // C++ emView::emView at emView.cpp:84: UpdateEngine->WakeUp().
-        // At attach time the scheduler borrow was released above, so we can borrow again.
-        let root = self.Context.GetRootContext();
-        let mut scratch: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
-        let mut sched = scheduler.borrow_mut();
-        let mut sc = crate::emEngineCtx::SchedCtx {
-            scheduler: &mut sched,
-            framework_actions: &mut scratch,
-            root_context: &root,
-            current_engine: None,
-        };
-        self.WakeUpUpdateEngine(&mut sc);
+        self.WakeUpUpdateEngine(ctx);
     }
 
     /// Wake the scheduler-registered `UpdateEngineClass` so `Update()` runs
     /// in the current time slice. Mirrors C++ `UpdateEngine->WakeUp()`.
-    ///
-    /// Phase 1.5 Task 1c (method 2/7): ctx-threaded. Callers inside yet-
-    /// unmigrated emView methods use `with_local_sched_ctx` to bridge.
     pub fn WakeUpUpdateEngine(&mut self, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
         if let Some(id) = self.update_engine_id {
             ctx.wake_up(id);
@@ -3420,9 +3414,6 @@ impl emView {
     /// it cycles each slice until its countdown reaches zero, at which point
     /// it fires `EOISignal`. Matches C++ `emView::SignalEOIDelayed`
     /// (emView.cpp:940-943).
-    ///
-    /// Phase 1.5 Task 1c (method 4/7): ctx-threaded. Callers inside yet-
-    /// unmigrated emView methods use `with_local_sched_ctx` to bridge.
     pub fn SignalEOIDelayed(&mut self, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
         let Some(sig) = self.EOISignal else {
             return;
@@ -5995,7 +5986,7 @@ mod tests {
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let cp_sig = sched.borrow_mut().create_signal();
         let title_sig = sched.borrow_mut().create_signal();
-        view.set_scheduler(sched.clone());
+        view.scheduler = Some(sched.clone());
         view.set_control_panel_signal(cp_sig);
         view.set_title_signal(title_sig);
 
@@ -6353,11 +6344,23 @@ mod tests {
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let v_weak = Rc::downgrade(&v_rc);
-        v_rc.borrow_mut().attach_to_scheduler(sched.clone(), v_weak);
+        {
+            let mut v = v_rc.borrow_mut();
+            let root = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, sched.clone(), v_weak);
+        }
         let eoi = v_rc
             .borrow()
             .EOISignal
-            .expect("EOISignal installed by attach");
+            .expect("EOISignal installed by RegisterEngines");
 
         // Register a listener that records when EOISignal fires.
         let fired = Rc::new(std::cell::Cell::new(false));
@@ -6416,7 +6419,7 @@ mod tests {
         sched.borrow_mut().remove_signal(eoi);
     }
 
-    /// Phase 7: attach_to_scheduler registers UpdateEngineClass and installs
+    /// Phase 7: RegisterEngines registers UpdateEngineClass and installs
     /// EOISignal. WakeUpUpdateEngine wakes the registered engine.
     #[test]
     fn test_phase7_update_engine_wakeup_via_scheduler() {
@@ -6429,13 +6432,25 @@ mod tests {
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let v_weak = Rc::downgrade(&v_rc);
-        v_rc.borrow_mut().attach_to_scheduler(sched.clone(), v_weak);
+        {
+            let mut v = v_rc.borrow_mut();
+            let root = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, sched.clone(), v_weak);
+        }
         {
             let v = v_rc.borrow();
             assert!(v.update_engine_id.is_some());
             assert!(v.EOISignal.is_some());
         }
-        // SP4: attach_to_scheduler wakes the update engine (C++ emView.cpp:84).
+        // RegisterEngines wakes the update engine (C++ emView.cpp:84).
         // The explicit WakeUpUpdateEngine() below verifies the re-wake API.
         {
             let mut sched_borrow = sched.borrow_mut();
@@ -6567,7 +6582,19 @@ mod tests {
 
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let v_weak = Rc::downgrade(&v_rc);
-        v_rc.borrow_mut().attach_to_scheduler(sched.clone(), v_weak);
+        {
+            let mut v = v_rc.borrow_mut();
+            let root = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, sched.clone(), v_weak);
+        }
         ts.with(|sc| v_rc.borrow_mut().Update(&mut tree, sc));
         let eng_id = v_rc
             .borrow()
@@ -6613,23 +6640,17 @@ mod tests {
         assert_eq!(v.CurrentPixelTallness, 1.25);
     }
 
-    /// SP4 Task 5.2: a signal fired from inside Update via
-    /// `queue_or_apply_sched_op` must still wake a receiver engine that is
-    /// connected to that signal and is at a lower priority than
-    /// `UpdateEngineClass` — all in the same `DoTimeSlice`. Guards against
-    /// "drain-too-late" bugs where queued Fire ops would be delivered past
-    /// the current slice.
+    /// SP4 Task 5.2: a signal fired from inside Update must still wake a
+    /// receiver engine connected to that signal at a lower priority than
+    /// `UpdateEngineClass` — all in the same `DoTimeSlice`.
     ///
     /// Trigger path: create a popup via `RawVisit` under `POPUP_ZOOM`, wire
     /// a Low-priority `Receiver` to the view's `geometry_signal`, fire the
     /// popup's `close_signal`, then run one `DoTimeSlice`:
     ///   - `UpdateEngineClass::Cycle` (High) pre-probes `close_signal` and
-    ///     sets `close_signal_pending`, then calls `Update`.
-    ///   - `Update` → `ZoomOut` → `RawVisitAbs` popup-teardown path
-    ///     enqueues `SchedOp::Fire(geometry_signal)` via
-    ///     `queue_or_apply_sched_op` (line 1970).
-    ///   - `UpdateEngineClass::Cycle` drains pending ops via `apply_via_ctx`,
-    ///     marking `geometry_signal` pending in the scheduler.
+    ///     calls `Update`.
+    ///   - `Update` → `ZoomOut` → `RawVisitAbs` popup-teardown fires
+    ///     `geometry_signal` via `ctx.fire(...)`.
     ///   - The same `DoTimeSlice` processes the pending signal, which wakes
     ///     the Low-priority `Receiver` and cycles it before exiting.
     #[test]
@@ -6665,7 +6686,7 @@ mod tests {
                 let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
                 let mut s = sched.borrow_mut();
                 let mut sc = crate::emEngineCtx::SchedCtx {
-                    scheduler: &mut *s,
+                    scheduler: &mut s,
                     framework_actions: &mut fw,
                     root_context: &root_ctx,
                     current_engine: None,
@@ -6676,9 +6697,20 @@ mod tests {
             }
             let view_weak = Rc::downgrade(w.borrow().view_rc());
             let _ = win_id;
-            w.borrow_mut()
-                .view_mut()
-                .attach_to_scheduler(sched.clone(), view_weak);
+            {
+                let mut win_borrow = w.borrow_mut();
+                let mut v = win_borrow.view_mut();
+                let root = v.Context.GetRootContext();
+                let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+                let mut s = sched.borrow_mut();
+                let mut sc = crate::emEngineCtx::SchedCtx {
+                    scheduler: &mut s,
+                    framework_actions: &mut fw,
+                    root_context: &root,
+                    current_engine: None,
+                };
+                v.RegisterEngines(&mut sc, sched.clone(), view_weak);
+            }
             w
         };
 
@@ -6779,14 +6811,9 @@ mod tests {
 
     /// SP4 Phase-8: popup's close_signal, when fired and processed through
     /// the scheduler, wakes `UpdateEngineClass`, which invokes
-    /// `emView::Update`, which reads `close_signal_pending` and calls
-    /// `ZoomOut`. ZoomOut's popup teardown enqueues a Disconnect +
-    /// RemoveSignal + Fire(geometry_signal), drained at end of Cycle. The
-    /// entire sequence runs in one `DoTimeSlice`.
-    ///
-    /// Supersedes the previous two-engine harness (dormant-engine swap +
-    /// direct `v.Update()` call), which was a compromise against the
-    /// now-fixed (SP4 Phases 2–5) scheduler re-entrant borrow.
+    /// `emView::Update`, which calls `ZoomOut`. ZoomOut's popup teardown
+    /// fires `geometry_signal` via `ctx.fire(...)`. The entire sequence
+    /// runs in one `DoTimeSlice`.
     #[test]
     fn test_phase8_popup_close_signal_zooms_out() {
         let mut ts = TestSched::new();
@@ -6818,7 +6845,7 @@ mod tests {
                 let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
                 let mut s = sched.borrow_mut();
                 let mut sc = crate::emEngineCtx::SchedCtx {
-                    scheduler: &mut *s,
+                    scheduler: &mut s,
                     framework_actions: &mut fw,
                     root_context: &root_ctx,
                     current_engine: None,
@@ -6829,9 +6856,20 @@ mod tests {
             }
             let view_weak = Rc::downgrade(w.borrow().view_rc());
             let _ = win_id;
-            w.borrow_mut()
-                .view_mut()
-                .attach_to_scheduler(sched.clone(), view_weak);
+            {
+                let mut win_borrow = w.borrow_mut();
+                let mut v = win_borrow.view_mut();
+                let root = v.Context.GetRootContext();
+                let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+                let mut s = sched.borrow_mut();
+                let mut sc = crate::emEngineCtx::SchedCtx {
+                    scheduler: &mut s,
+                    framework_actions: &mut fw,
+                    root_context: &root,
+                    current_engine: None,
+                };
+                v.RegisterEngines(&mut sc, sched.clone(), view_weak);
+            }
             w
         };
 
@@ -6857,10 +6895,8 @@ mod tests {
             .close_signal;
         sched.borrow_mut().fire(close_sig);
 
-        // One DoTimeSlice: signal processing advances sig.clock; Cycle
-        // observes ctx.IsSignaled(close_sig) = true, stores
-        // close_signal_pending, calls Update → ZoomOut → RawVisitAbs (popup
-        // teardown); drains queued Disconnect/RemoveSignal/Fire ops; exits.
+        // One DoTimeSlice: Cycle observes close_sig, calls Update → ZoomOut →
+        // RawVisitAbs popup teardown.
         let mut windows: HashMap<_, _> = HashMap::new();
         windows.insert(win_id, Rc::clone(&win));
         let __root_ctx = crate::emContext::emContext::NewRoot();
@@ -6896,7 +6932,7 @@ mod tests {
         }
     }
 
-    /// W4 Phase 1 Task 1.3: `attach_to_scheduler` registers a
+    /// W4 Phase 1 Task 1.3: `RegisterEngines` registers a
     /// `VisitingVAEngineClass` so that activating `VisitingVA` results in
     /// per-slice cycling. Mirrors the C++ behavior where
     /// `emVisitingViewAnimator` self-registers as an engine via its
@@ -6915,15 +6951,25 @@ mod tests {
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let view_weak = Rc::downgrade(&view_rc);
-        view_rc
-            .borrow_mut()
-            .attach_to_scheduler(sched.clone(), view_weak);
+        {
+            let mut v = view_rc.borrow_mut();
+            let root = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, sched.clone(), view_weak);
+        }
 
-        // Engine must be registered by attach_to_scheduler.
+        // Engine must be registered by RegisterEngines.
         let visiting_id = view_rc
             .borrow()
             .visiting_va_engine_id
-            .expect("attach_to_scheduler must register VisitingVAEngineClass");
+            .expect("RegisterEngines must register VisitingVAEngineClass");
 
         // Activate the animator — SetGoal + Activate, matching the
         // delegation shape Visit-family methods will use in Phase 3.

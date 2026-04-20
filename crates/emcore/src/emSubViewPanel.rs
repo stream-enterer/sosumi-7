@@ -65,11 +65,20 @@ impl emSubViewPanel {
         let sub_scheduler = std::rc::Rc::new(std::cell::RefCell::new(
             crate::emScheduler::EngineScheduler::new(),
         ));
-        // Attach sub-view: registers UpdateEngineClass + VisitingVAEngineClass
-        // against sub_scheduler using view-direct weak (Phase 1).
-        sub_view
-            .borrow_mut()
-            .attach_to_scheduler(sub_scheduler.clone(), std::rc::Rc::downgrade(&sub_view));
+        // Register UpdateEngineClass + VisitingVAEngineClass against sub_scheduler.
+        {
+            let mut v = sub_view.borrow_mut();
+            let root_ctx = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sub_scheduler.borrow_mut();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, sub_scheduler.clone(), std::rc::Rc::downgrade(&sub_view));
+        }
         // Now sub_tree panels have a view with a scheduler — register
         // PanelCycleEngine adapters for any panels already in the sub-tree.
         sub_tree.register_pending_engines();
@@ -513,8 +522,8 @@ mod sp8_tests {
         {
             let sub_view = panel.GetSubView();
             assert!(
-                sub_view.scheduler_ref().is_some(),
-                "sub_view must be attached to sub_scheduler in new()"
+                sub_view.update_engine_id.is_some(),
+                "sub_view must have update engine registered in new()"
             );
         }
         teardown(&mut panel);
@@ -530,7 +539,7 @@ mod sp8_tests {
             "sub-tree root panel must have PanelCycleEngine registered on sub_scheduler"
         );
         // sub_scheduler holds the engines; must have awake engines after
-        // attach_to_scheduler woke UpdateEngineClass.
+        // RegisterEngines woke UpdateEngineClass.
         assert!(
             panel.sub_scheduler.borrow().has_awake_engines(),
             "sub_scheduler must have awake engines after construction"
@@ -542,7 +551,7 @@ mod sp8_tests {
     #[test]
     fn sp8_cycle_drives_sub_scheduler() {
         // After emSubViewPanel::new, the sub_scheduler has awake engines
-        // (UpdateEngineClass woken in attach_to_scheduler).
+        // (UpdateEngineClass woken in RegisterEngines).
         let mut panel = emSubViewPanel::new(crate::emContext::emContext::NewRoot());
         assert!(
             panel.sub_scheduler.borrow().has_awake_engines(),
