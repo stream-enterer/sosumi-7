@@ -676,12 +676,18 @@ impl emEngine for StartupEngine {
                 // Clean up animator and zoom out on content sub-view.
                 // C++: VisitingVA.Reset(); ContentView.RawZoomOut();
                 if let Some(svp_id) = self.content_svp_id {
-                    ctx.tree
-                        .with_behavior_as::<emSubViewPanel, _>(svp_id, |svp| {
+                    // `with_behavior_as` borrows `ctx.tree`, so we can't build
+                    // a SchedCtx from `ctx` inside the closure. Pull the
+                    // behavior out explicitly, build the SchedCtx, then put
+                    // it back — matches the take/put pattern used elsewhere.
+                    if let Some(mut behavior) = ctx.tree.take_behavior(svp_id) {
+                        if let Some(svp) = behavior.as_any_mut().downcast_mut::<emSubViewPanel>() {
                             svp.active_animator = None;
-                            // C++: VisitingVA.Reset(); ContentView.RawZoomOut();
-                            svp.raw_zoom_out(false);
-                        });
+                            let mut sc = ctx.as_sched_ctx();
+                            svp.raw_zoom_out(false, &mut sc);
+                        }
+                        ctx.tree.put_behavior(svp_id, behavior);
+                    }
                 }
                 let overlay_id = ctx
                     .tree

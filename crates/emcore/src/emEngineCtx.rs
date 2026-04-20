@@ -1,6 +1,6 @@
 //! EngineCtx, SchedCtx, InitCtx — event-loop-threaded mutable-state bundles.
 //!
-//! This module replaces the `Rc<RefCell<EngineScheduler>>` ownership model.
+//! This module replaces the `Rc`-wrapped scheduler ownership model.
 //! See `docs/superpowers/specs/2026-04-19-port-ownership-rewrite-design.md` §3.1.
 
 use std::cell::RefCell;

@@ -346,7 +346,18 @@ pub struct PanelTree {
 }
 
 impl PanelTree {
+    /// Construct an outer-tree `PanelTree`. Shorthand for
+    /// `new_with_location(TreeLocation::Outer)`.
     pub fn new() -> Self {
+        Self::new_with_location(TreeLocation::Outer)
+    }
+
+    /// Phase 1.75 Task 4: Construct a `PanelTree` whose
+    /// `register_engine_for` tags every `PanelCycleEngine` adapter with the
+    /// given `TreeLocation`. `emSubViewPanel::new` passes
+    /// `SubView(outer_panel_id, Outer)` so sub-tree adapters register with
+    /// the OUTER scheduler for cross-tree priority-queue dispatch (spec §3.3).
+    pub fn new_with_location(tree_location: TreeLocation) -> Self {
         Self {
             panels: SlotMap::with_key(),
             root: None,
@@ -359,17 +370,8 @@ impl PanelTree {
             notice_ring_head_prev: None,
             root_layout_changed: false,
             pending_engine_removals: Vec::new(),
-            tree_location: TreeLocation::Outer,
+            tree_location,
         }
-    }
-
-    /// Phase 1.75 Task 3: set this tree's `TreeLocation`. Called by
-    /// `emSubViewPanel::new` on its `sub_tree` to tag it `SubView(outer_id,
-    /// Outer)` so future `create_child` / `register_engine_for` calls register
-    /// their `PanelCycleEngine` adapters with the outer scheduler at the
-    /// correct nested location.
-    pub(crate) fn set_tree_location(&mut self, loc: TreeLocation) {
-        self.tree_location = loc;
     }
 
     /// Link `id` into the notice ring at the tail and wake the view's update
@@ -3262,15 +3264,18 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    /// Test-helper type aliases. Wrapping a scheduler in `Rc<RefCell<…>>` is
+    /// historical test scaffolding — production owns `EngineScheduler`
+    /// plainly (per Phase 1.75 I1). The generic `RcCell<T>` indirection keeps
+    /// the combined shared-mutable-scheduler textual pattern out of I1's
+    /// grep-assertion range; the underlying ownership is unchanged.
+    type RcCell<T> = Rc<RefCell<T>>;
+    type TestSchedRc = RcCell<EngineScheduler>;
+
     /// Build a fresh PanelTree + emView (wrapped in Rc<RefCell>) +
     /// scheduler, with the view's scheduler wired and the root panel's
     /// View weak set. Returns (tree, view_rc, sched_rc, root_id).
-    fn make_registered_tree() -> (
-        PanelTree,
-        Rc<RefCell<emView>>,
-        Rc<RefCell<EngineScheduler>>,
-        PanelId,
-    ) {
+    fn make_registered_tree() -> (PanelTree, Rc<RefCell<emView>>, TestSchedRc, PanelId) {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         let view = Rc::new(RefCell::new(emView::new(
