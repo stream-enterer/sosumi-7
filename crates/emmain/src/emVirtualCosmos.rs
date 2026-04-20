@@ -611,6 +611,7 @@ impl PanelBehavior for emVirtualCosmosItemPanel {
         let fppl = fppl.borrow();
         let parent_arg = PanelParentArg::new(Rc::clone(&self.ctx));
         let behavior = fppl.CreateFilePanelWithStat(
+            ctx,
             &parent_arg,
             "content",
             &self.path,

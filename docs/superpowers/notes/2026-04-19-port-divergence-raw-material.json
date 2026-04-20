@@ -918,7 +918,8 @@
         "reasoning": "Most cases (emCrossPtr proper \u2192 Weak<RefCell<T>>) are canonical. emFileDialog's shift from Cycle-polled CrossPtr to caller-pulled Option<emDialog> is an observable-surface change in when the dialog is seen \u2014 flagged for deeper review but the harness-level behavior matches.",
         "confidence": "medium",
         "confidence_basis": "emFileDialog comment explicitly notes the polling-model change from Cycle-poll to caller-retrieval."
-      }
+      },
+      "phase_3_progress": "44e4aa9b \u2014 overwrite-dialog polling methods deleted; Cycle method added; scheduler-driven dispatch deferred to emDialog\u2192emEngine port. DIVERGED block at 8a9154f4."
     },
     {
       "id": "E025",
@@ -943,6 +944,8 @@
         "commit_sha": "10327cc",
         "date": "2026-03-04"
       },
+      "status": "resolved-phase-3",
+      "resolution_commit": "33d25c72",
       "inference": {
         "verdict": "unclear",
         "reasoning": "The signal object (which emCore users can listen to from arbitrary code) is replaced with a single callback slot. This may alter observable wire-up patterns for downstream code that wants multiple listeners. C++ emSignal is subscribable by any engine; Rust callback-field is single-listener. Whether goldens cover this is unknown. Flagged for review.",

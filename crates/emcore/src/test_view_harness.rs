@@ -106,6 +106,47 @@ impl TestViewHarness {
     }
 }
 
+/// Lightweight test helper: owns the three buffers needed to construct an
+/// `InitCtx`. Use `new()` to build the harness, then `ctx()` to borrow a
+/// short-lived `InitCtx<'_>` from it.
+///
+/// This is the canonical shared fixture for plugin-invocation tests across
+/// `emcore`, `eaglemode`, and `emstocks` (Phase-3 Task-5 cleanup). Tests
+/// that also need a panel tree or windows should use `TestViewHarness`
+/// (and its `init_ctx()` method) instead.
+///
+/// Introduced by Phase-3 Task-5 cleanup to eliminate four near-identical
+/// local definitions.
+pub struct InitHarness {
+    pub scheduler: EngineScheduler,
+    pub actions: Vec<DeferredAction>,
+    pub root: Rc<emContext>,
+}
+
+impl Default for InitHarness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl InitHarness {
+    pub fn new() -> Self {
+        Self {
+            scheduler: EngineScheduler::new(),
+            actions: Vec::new(),
+            root: emContext::NewRoot(),
+        }
+    }
+
+    pub fn ctx(&mut self) -> InitCtx<'_> {
+        InitCtx {
+            scheduler: &mut self.scheduler,
+            framework_actions: &mut self.actions,
+            root_context: &self.root,
+        }
+    }
+}
+
 /// Lightweight test helper: owns the data needed to construct a `SchedCtx`.
 /// Use `.with(|sc| ...)` to call ctx-taking emView / emViewAnimator methods in
 /// tests that don't need a full `TestViewHarness`.

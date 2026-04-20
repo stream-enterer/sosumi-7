@@ -7,6 +7,7 @@
 
 use emcore::emContext::emContext;
 use emcore::emFpPlugin::{emFpPlugin, emFpPluginList, FileStatMode, FpPluginError, PanelParentArg};
+use emcore::test_view_harness::InitHarness;
 
 fn make_test_plugin() -> emFpPlugin {
     let mut p = emFpPlugin::new();
@@ -22,7 +23,9 @@ fn try_create_file_panel_loads_plugin() {
     let ctx = emContext::NewRoot();
     let parent = PanelParentArg::new(ctx);
     let plugin = make_test_plugin();
-    let result = plugin.TryCreateFilePanel(&parent, "test", "/tmp/test.test");
+    let mut h = InitHarness::new();
+    let mut ic = h.ctx();
+    let result = plugin.TryCreateFilePanel(&mut ic, &parent, "test", "/tmp/test.test");
     assert!(
         result.is_ok(),
         "TryCreateFilePanel failed: {:?}",
@@ -36,7 +39,9 @@ fn try_create_file_panel_empty_function_errors() {
     plugin.function = String::new();
     let ctx = emContext::NewRoot();
     let parent = PanelParentArg::new(ctx);
-    let result = plugin.TryCreateFilePanel(&parent, "test", "/tmp/test.test");
+    let mut h = InitHarness::new();
+    let mut ic = h.ctx();
+    let result = plugin.TryCreateFilePanel(&mut ic, &parent, "test", "/tmp/test.test");
     assert!(matches!(result, Err(FpPluginError::EmptyFunctionName)));
 }
 
@@ -46,7 +51,9 @@ fn try_create_file_panel_missing_library_errors() {
     plugin.library = "nonexistent_library_xyz".to_string();
     let ctx = emContext::NewRoot();
     let parent = PanelParentArg::new(ctx);
-    let result = plugin.TryCreateFilePanel(&parent, "test", "/tmp/test.test");
+    let mut h = InitHarness::new();
+    let mut ic = h.ctx();
+    let result = plugin.TryCreateFilePanel(&mut ic, &parent, "test", "/tmp/test.test");
     assert!(matches!(result, Err(FpPluginError::LibraryLoad { .. })));
 }
 
@@ -56,7 +63,9 @@ fn try_create_file_panel_missing_symbol_errors() {
     plugin.function = "nonexistent_function_xyz".to_string();
     let ctx = emContext::NewRoot();
     let parent = PanelParentArg::new(ctx);
-    let result = plugin.TryCreateFilePanel(&parent, "test", "/tmp/test.test");
+    let mut h = InitHarness::new();
+    let mut ic = h.ctx();
+    let result = plugin.TryCreateFilePanel(&mut ic, &parent, "test", "/tmp/test.test");
     assert!(matches!(result, Err(FpPluginError::SymbolResolve { .. })));
 }
 
@@ -65,7 +74,10 @@ fn plugin_list_no_matching_plugin_returns_error_panel() {
     let list = emFpPluginList::from_plugins(vec![]);
     let ctx = emContext::NewRoot();
     let parent = PanelParentArg::new(ctx);
+    let mut h = InitHarness::new();
+    let mut ic = h.ctx();
     let _panel = list.CreateFilePanelWithStat(
+        &mut ic,
         &parent,
         "test",
         "/tmp/data.unknown",

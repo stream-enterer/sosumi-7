@@ -1,3 +1,4 @@
+use emcore::emEngineCtx::ConstructCtx;
 use emcore::emErrorPanel::emErrorPanel;
 use emcore::emFpPlugin::{emFpPlugin, PanelParentArg};
 use emcore::emPanel::PanelBehavior;
@@ -6,6 +7,7 @@ use emcore::emPanel::PanelBehavior;
 /// Used by behavioral tests to validate the full dlopen -> resolve -> call path.
 #[no_mangle]
 pub fn test_plugin_func(
+    _ctx: &mut dyn ConstructCtx,
     _parent: &PanelParentArg,
     _name: &str,
     path: &str,

@@ -90,6 +90,7 @@ impl emDirEntryAltPanel {
             let fppl = fppl.borrow();
             let parent_arg = emcore::emFpPlugin::PanelParentArg::new(Rc::clone(&self.ctx));
             let behavior = fppl.CreateFilePanelWithStat(
+                ctx,
                 &parent_arg,
                 crate::emDirEntryPanel::CONTENT_NAME,
                 self.data.dir_entry.GetPath(),

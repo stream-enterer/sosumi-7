@@ -3,6 +3,7 @@
 //! Port of C++ `emStocksFpPlugin.cpp`. Exports `emStocksFpPluginFunc`
 //! which is resolved via dlsym when the plugin manager loads this library.
 
+use emcore::emEngineCtx::ConstructCtx;
 use emcore::emFpPlugin::{emFpPlugin, PanelParentArg};
 use emcore::emPanel::PanelBehavior;
 
@@ -14,6 +15,7 @@ use crate::emStocksFilePanel::emStocksFilePanel;
 /// Called by the plugin manager when a .emStocks file needs to be displayed.
 #[no_mangle]
 pub fn emStocksFpPluginFunc(
+    _ctx: &mut dyn ConstructCtx,
     _parent: &PanelParentArg,
     _name: &str,
     _path: &str,
@@ -52,7 +54,16 @@ mod tests {
                 value: "prop".to_string(),
             });
         let mut err = String::new();
-        let result = emStocksFpPluginFunc(&parent, "test", "/tmp/test.emStocks", &plugin, &mut err);
+        let mut h = emcore::test_view_harness::InitHarness::new();
+        let mut ic = h.ctx();
+        let result = emStocksFpPluginFunc(
+            &mut ic,
+            &parent,
+            "test",
+            "/tmp/test.emStocks",
+            &plugin,
+            &mut err,
+        );
         assert!(result.is_none());
         assert!(err.contains("No properties allowed"));
     }
@@ -63,7 +74,16 @@ mod tests {
         let parent = PanelParentArg::new(ctx);
         let plugin = emFpPlugin::new();
         let mut err = String::new();
-        let result = emStocksFpPluginFunc(&parent, "test", "/tmp/test.emStocks", &plugin, &mut err);
+        let mut h = emcore::test_view_harness::InitHarness::new();
+        let mut ic = h.ctx();
+        let result = emStocksFpPluginFunc(
+            &mut ic,
+            &parent,
+            "test",
+            "/tmp/test.emStocks",
+            &plugin,
+            &mut err,
+        );
         assert!(result.is_some());
         assert!(err.is_empty());
     }

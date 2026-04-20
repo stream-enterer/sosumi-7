@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use emcore::emEngineCtx::ConstructCtx;
 use emcore::emFpPlugin::{emFpPlugin, PanelParentArg};
 use emcore::emPanel::PanelBehavior;
 
@@ -10,6 +11,7 @@ use crate::emFileLinkPanel::emFileLinkPanel;
 /// Loaded via `emFileLink.emFpPlugin` config file.
 #[no_mangle]
 pub fn emFileLinkFpPluginFunc(
+    _ctx: &mut dyn ConstructCtx,
     parent: &PanelParentArg,
     _name: &str,
     path: &str,

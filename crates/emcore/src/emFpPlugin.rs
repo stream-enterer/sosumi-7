@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::emContext::emContext;
+use crate::emEngineCtx::ConstructCtx;
 use crate::emInstallInfo::emGetConfigDirOverloadable;
 use crate::emPanel::PanelBehavior;
 use crate::emPanelTree::PanelId;
@@ -21,7 +22,17 @@ use crate::emRecRecord::Record;
 /// DIVERGED: C++ returns emPanel* (raw pointer to Rc-managed panel). Rust returns
 /// Box<dyn PanelBehavior> — ownership transfers to caller who installs it in the
 /// panel tree via set_behavior.
+/// DIVERGED: added `ctx: &mut dyn ConstructCtx` first parameter — Phase-3 Task 5
+/// (I3d). C++ constructs widgets under the implicit scheduler singleton; the
+/// Rust ownership rewrite (spec §4 D4.9 / §6 D6.1) threads the
+/// scheduler/signal/engine surface through ConstructCtx so plugin-created
+/// widgets can allocate SignalIds at construction. Current plugin
+/// implementations prefix the arg `_ctx` because existing file-panel
+/// constructors allocate signals lazily at Input time; Phase-4+ widget
+/// migrations will drop the underscore as widgets adopt construction-time
+/// signal allocation per spec §6 D6.1.
 pub type emFpPluginFunc = fn(
+    ctx: &mut dyn ConstructCtx,
     parent: &PanelParentArg,
     name: &str,
     path: &str,
@@ -31,7 +42,14 @@ pub type emFpPluginFunc = fn(
 
 /// Type of the plugin model function for acquiring file models.
 /// Port of C++ `emFpPluginModelFunc`.
+/// DIVERGED: added `ctx: &mut dyn ConstructCtx` first parameter — see
+/// `emFpPluginFunc` above for rationale (Phase-3 Task 5 / I3d). Current
+/// model-function implementations prefix the arg `_ctx` for the same
+/// reason: model constructors do not yet allocate signals at construction
+/// time; Phase-4+ migrations will drop the underscore as they adopt
+/// construction-time signal allocation per spec §6 D6.1.
 pub type emFpPluginModelFunc = fn(
+    ctx: &mut dyn ConstructCtx,
     context: &Rc<emContext>,
     class_name: &str,
     name: &str,
@@ -201,6 +219,7 @@ impl emFpPlugin {
     /// Port of C++ `emFpPlugin::TryCreateFilePanel`.
     pub fn TryCreateFilePanel(
         &self,
+        ctx: &mut dyn ConstructCtx,
         parent: &PanelParentArg,
         name: &str,
         path: &str,
@@ -246,7 +265,7 @@ impl emFpPlugin {
         drop(cached); // release borrow before calling plugin function
 
         let mut error_buf = String::new();
-        match func(parent, name, path, self, &mut error_buf) {
+        match func(ctx, parent, name, path, self, &mut error_buf) {
             Some(panel) => Ok(panel),
             None => Err(FpPluginError::PluginFunctionFailed {
                 function: self.function.clone(),
@@ -266,6 +285,7 @@ impl emFpPlugin {
     /// Port of C++ `emFpPlugin::TryAcquireModelImpl`.
     pub fn TryAcquireModel(
         &self,
+        ctx: &mut dyn ConstructCtx,
         context: &Rc<emContext>,
         class_name: &str,
         name: &str,
@@ -310,7 +330,7 @@ impl emFpPlugin {
         drop(cached);
 
         let mut error_buf = String::new();
-        match func(context, class_name, name, common, self, &mut error_buf) {
+        match func(ctx, context, class_name, name, common, self, &mut error_buf) {
             Some(model) => Ok(model),
             None => Err(FpPluginError::PluginFunctionFailed {
                 function: self.model_function.clone(),
@@ -715,6 +735,7 @@ impl emFpPluginList {
     /// Calls the appropriate plugin. On failure, returns an emErrorPanel.
     pub fn CreateFilePanel(
         &self,
+        ctx: &mut dyn ConstructCtx,
         parent: &PanelParentArg,
         name: &str,
         path: &str,
@@ -737,15 +758,25 @@ impl emFpPluginList {
                 } else {
                     FileStatMode::Regular
                 };
-                self.CreateFilePanelWithStat(parent, name, &abs_path, None, stat_mode, alternative)
+                self.CreateFilePanelWithStat(
+                    ctx,
+                    parent,
+                    name,
+                    &abs_path,
+                    None,
+                    stat_mode,
+                    alternative,
+                )
             }
         }
     }
 
     /// Create a panel with pre-computed stat information.
     /// Port of C++ `emFpPluginList::CreateFilePanel` (stat overload).
+    #[allow(clippy::too_many_arguments)]
     pub fn CreateFilePanelWithStat(
         &self,
+        ctx: &mut dyn ConstructCtx,
         parent: &PanelParentArg,
         name: &str,
         absolute_path: &str,
@@ -767,7 +798,7 @@ impl emFpPluginList {
                 };
                 Box::new(crate::emErrorPanel::emErrorPanel::new(msg))
             }
-            Some(plugin) => match plugin.TryCreateFilePanel(parent, name, absolute_path) {
+            Some(plugin) => match plugin.TryCreateFilePanel(ctx, parent, name, absolute_path) {
                 Ok(panel) => panel,
                 Err(e) => Box::new(crate::emErrorPanel::emErrorPanel::new(&e.to_string())),
             },
@@ -779,6 +810,7 @@ impl emFpPluginList {
     #[allow(clippy::too_many_arguments)]
     pub fn TryAcquireModelFromPlugin(
         &self,
+        ctx: &mut dyn ConstructCtx,
         context: &Rc<emContext>,
         class_name: &str,
         name: &str,
@@ -792,7 +824,7 @@ impl emFpPluginList {
 
         match plugin {
             None => Err(FpPluginError::NoPluginFound),
-            Some(plugin) => plugin.TryAcquireModel(context, class_name, name, common),
+            Some(plugin) => plugin.TryAcquireModel(ctx, context, class_name, name, common),
         }
     }
 }

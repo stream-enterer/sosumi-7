@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use emcore::emEngineCtx::ConstructCtx;
 use emcore::emFpPlugin::{emFpPlugin, PanelParentArg};
 use emcore::emPanel::PanelBehavior;
 
@@ -9,6 +10,7 @@ use crate::emDirPanel::emDirPanel;
 /// Loaded via `emDir.emFpPlugin` config file.
 #[no_mangle]
 pub fn emDirFpPluginFunc(
+    _ctx: &mut dyn ConstructCtx,
     parent: &PanelParentArg,
     _name: &str,
     path: &str,
