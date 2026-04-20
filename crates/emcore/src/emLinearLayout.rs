@@ -501,10 +501,10 @@ mod tests {
     fn setup_tree(n: usize) -> (PanelTree, PanelId, Vec<PanelId>) {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 600.0, 200.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 600.0, 200.0, 1.0, None);
         let mut children = Vec::new();
         for i in 0..n {
-            let c = tree.create_child(root, &format!("child_{i}"));
+            let c = tree.create_child(root, &format!("child_{i}"), None);
             children.push(c);
         }
         (tree, root, children)
@@ -536,7 +536,7 @@ mod tests {
         // 2 children in 300x400, vertical, no spacing. Normalized: w=1.0, h=4/3.
         // Each child 1.0 x 2/3 in normalized coords.
         let (mut tree, root, children) = setup_tree(2);
-        tree.Layout(root, 0.0, 0.0, 300.0, 400.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 300.0, 400.0, 1.0, None);
         let mut layout = emLinearLayout::vertical();
         layout.do_layout(&mut PanelCtx::new(&mut tree, root, 1.0));
 
@@ -557,7 +557,7 @@ mod tests {
         // 3 children in 300x100, weights [1,2,1], no spacing. Normalized: w=1.0, h=1/3.
         // total_weight=4. Widths: 0.25, 0.5, 0.25 in normalized coords.
         let (mut tree, root, children) = setup_tree(3);
-        tree.Layout(root, 0.0, 0.0, 300.0, 100.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 300.0, 100.0, 1.0, None);
         let mut layout = emLinearLayout::horizontal();
         layout.set_child_constraint(
             children[0],
@@ -595,7 +595,7 @@ mod tests {
         // C++ spacing model: margin_left=0.5, margin_right=0.5, inner_h=1.0
         // Normalized: w=1.0, h=0.5. All positions in normalized coords.
         let (mut tree, root, children) = setup_tree(2);
-        tree.Layout(root, 0.0, 0.0, 200.0, 100.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 200.0, 100.0, 1.0, None);
         let mut layout = emLinearLayout::horizontal().with_spacing(Spacing {
             inner_h: 1.0,
             inner_v: 0.0,
@@ -620,7 +620,7 @@ mod tests {
         // 2 children in 600x100. Normalized: w=1.0, h=1/6.
         // Child 0 min_tallness=0.5 compresses to w=1/3. Child 1 gets remaining 2/3.
         let (mut tree, root, children) = setup_tree(2);
-        tree.Layout(root, 0.0, 0.0, 600.0, 100.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 600.0, 100.0, 1.0, None);
         let mut layout = emLinearLayout::horizontal();
         layout.set_child_constraint(
             children[0],
@@ -645,7 +645,7 @@ mod tests {
         // Child 0 min_tallness=0.5, child 1 max_tallness=0.2.
         // D-LAYOUT-04 conflict resolution. Result: 2/9, 5/9, 2/9 in normalized coords.
         let (mut tree, root, children) = setup_tree(3);
-        tree.Layout(root, 0.0, 0.0, 900.0, 100.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 900.0, 100.0, 1.0, None);
         let mut layout = emLinearLayout::horizontal();
         layout.set_child_constraint(
             children[0],

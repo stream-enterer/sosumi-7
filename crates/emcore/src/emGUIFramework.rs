@@ -528,7 +528,7 @@ impl ApplicationHandler for App {
         // `register_engine_for` call deferred when it found the scheduler
         // already `borrow_mut`'d by `DoTimeSlice`. Now that the borrow has
         // been released, walk the tree and register pending engines.
-        self.tree.register_pending_engines();
+        self.tree.register_pending_engines(&mut self.scheduler);
 
         // Keep event loop pumping while engines are active.
         // C++ runs a tight 10ms loop; Rust uses event-driven winit with

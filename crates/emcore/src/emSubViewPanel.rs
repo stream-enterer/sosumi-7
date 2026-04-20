@@ -57,10 +57,10 @@ impl emSubViewPanel {
         // the view back after construction.
         let root = sub_tree.create_root("", std::rc::Weak::new());
         // Last arg is pixel tallness; sub_view.CurrentPixelTallness starts at 1.0.
-        sub_tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        sub_tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
         let sub_view = Rc::new(RefCell::new(emView::new(parent_context, root, 1.0, 1.0)));
-        sub_tree.init_panel_view(root, Rc::downgrade(&sub_view));
+        sub_tree.init_panel_view(root, Rc::downgrade(&sub_view), None);
 
         let sub_scheduler = std::rc::Rc::new(std::cell::RefCell::new(
             crate::emScheduler::EngineScheduler::new(),
@@ -79,10 +79,8 @@ impl emSubViewPanel {
             };
             v.RegisterEngines(&mut sc, std::rc::Rc::downgrade(&sub_view));
         }
-        sub_tree.attach_scheduler(sub_scheduler.clone());
-        // Now sub_tree panels have a view with a scheduler — register
-        // PanelCycleEngine adapters for any panels already in the sub-tree.
-        sub_tree.register_pending_engines();
+        // Register PanelCycleEngine adapters for panels already in the sub-tree.
+        sub_tree.register_pending_engines(&mut sub_scheduler.borrow_mut());
 
         Self {
             sub_tree,
@@ -401,7 +399,8 @@ impl PanelBehavior for emSubViewPanel {
         // from inside a sub-scheduler engine's `Cycle`. Their
         // `register_engine_for` deferred while the sub-scheduler was
         // `borrow_mut`'d by `DoTimeSlice`; now it's released.
-        self.sub_tree.register_pending_engines();
+        self.sub_tree
+            .register_pending_engines(&mut self.sub_scheduler.borrow_mut());
 
         // 3) Stay awake iff the sub-scheduler or active_animator still has work.
         animator_active || self.sub_scheduler.borrow().has_awake_engines()
@@ -503,7 +502,7 @@ mod sp8_tests {
     /// a bare emSubViewPanel and skip that, so clean up explicitly.
     fn teardown(panel: &mut emSubViewPanel) {
         let root = panel.sub_root();
-        panel.sub_tree.remove(root);
+        panel.sub_tree.remove(root, Some(&mut panel.sub_scheduler.borrow_mut()));
         let mut view = panel.sub_view.borrow_mut();
         let mut sched = panel.sub_scheduler.borrow_mut();
         if let Some(eid) = view.update_engine_id.take() {
@@ -606,7 +605,7 @@ mod sp4_5_fix_1_tests {
     /// sub-tree engines so the sub_scheduler Drop debug_assert passes.
     fn teardown(panel: &mut emSubViewPanel) {
         let root = panel.sub_root();
-        panel.sub_tree.remove(root);
+        panel.sub_tree.remove(root, Some(&mut panel.sub_scheduler.borrow_mut()));
         let mut view = panel.sub_view.borrow_mut();
         let mut sched = panel.sub_scheduler.borrow_mut();
         if let Some(eid) = view.update_engine_id.take() {
@@ -652,7 +651,7 @@ mod sp4_5_fix_1_tests {
         impl crate::emEngine::emEngine for SpawnShapeEngine {
             fn Cycle(&mut self, ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
                 if !self.done {
-                    let child = ctx.tree.create_child(self.parent, "spawned");
+                    let child = ctx.tree.create_child(self.parent, "spawned", None);
                     self.spawned_out.set(Some(child));
                     self.create_slice_out.set(Some(ctx.time_slice_counter()));
                     self.done = true;
@@ -700,7 +699,8 @@ mod sp4_5_fix_1_tests {
         // Mirrors emSubViewPanel::Cycle (SP4.5-FIX-1 fix): register engines
         // that were deferred because sub_scheduler.borrow_mut was held during
         // DoTimeSlice.
-        panel.sub_tree.register_pending_engines();
+        panel.sub_tree
+            .register_pending_engines(&mut panel.sub_scheduler.borrow_mut());
 
         // Attach the first-cycle probe to the spawned panel's engine.
         let child_eid = panel
@@ -736,7 +736,8 @@ mod sp4_5_fix_1_tests {
                 &__root_ctx,
                 &mut __fw,
             );
-            panel.sub_tree.register_pending_engines();
+            panel.sub_tree
+                .register_pending_engines(&mut panel.sub_scheduler.borrow_mut());
         }
 
         let cycled_at_val = cycled_at

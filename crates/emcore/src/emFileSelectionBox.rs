@@ -1244,7 +1244,7 @@ impl emFileSelectionBox {
             // so it creates/updates item panels. C++ does this implicitly via
             // CreateItemPanel() in InsertItem() when IsAutoExpanded().
             ctx.tree
-                .queue_notice(lb_id, super::emPanel::NoticeFlags::LAYOUT_CHANGED);
+                .queue_notice(lb_id, super::emPanel::NoticeFlags::LAYOUT_CHANGED, ctx.scheduler.as_deref_mut());
         }
     }
 
@@ -1411,7 +1411,11 @@ impl PanelBehavior for emFileSelectionBox {
                 // Border scaling changes the content rect, so the list box
                 // must re-layout its children (C++ triggers InvalidateLayout).
                 if changed {
-                    ctx.tree.queue_notice(fl_id, NoticeFlags::LAYOUT_CHANGED);
+                    ctx.tree.queue_notice(
+                        fl_id,
+                        NoticeFlags::LAYOUT_CHANGED,
+                        ctx.scheduler.as_deref_mut(),
+                    );
                 }
             }
         }

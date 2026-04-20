@@ -468,7 +468,9 @@ impl emEngine for StartupEngine {
             // child directly on the main panel. In Rust the engine has tree
             // access, so we create the child here and hand its id to emMainPanel.
             3 => {
-                let overlay_id = ctx.tree.create_child(self.main_panel_id, "startupOverlay");
+                let overlay_id =
+                    ctx.tree
+                        .create_child(self.main_panel_id, "startupOverlay", Some(&mut *ctx.scheduler));
                 ctx.tree
                     .set_behavior(overlay_id, Box::new(StartupOverlayPanel));
                 ctx.tree
@@ -518,7 +520,7 @@ impl emEngine for StartupEngine {
                         .with_behavior_as::<emSubViewPanel, _>(ctrl_id, |svp| {
                             let sub_tree = svp.sub_tree_mut();
                             let sub_root = sub_tree.GetRootPanel().expect("sub-view has root");
-                            let child_id = sub_tree.create_child(sub_root, "ctrl");
+                            let child_id = sub_tree.create_child(sub_root, "ctrl", None);
                             sub_tree.set_behavior(
                                 child_id,
                                 Box::new(emMainControlPanel::new(ctrl_ctx, content_view_id)),
@@ -526,7 +528,7 @@ impl emEngine for StartupEngine {
                             // C++ control tallness matches the parent's control_tallness
                             // C++ control panel fills the control view; tallness matches
                             // ControlTallness (0.0538) set on emMainPanel.
-                            sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 0.0538, 1.0);
+                            sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 0.0538, 1.0, None);
                         });
                 }
 
@@ -564,7 +566,7 @@ impl emEngine for StartupEngine {
                             // the same here so the cosmos is permanent
                             // (not marked created_by_ae) and won't be deleted
                             // by AutoShrink.
-                            let cosmos_id = sub_tree.create_child(sub_root, "");
+                            let cosmos_id = sub_tree.create_child(sub_root, "", None);
                             sub_tree.set_behavior(
                                 cosmos_id,
                                 Box::new(crate::emVirtualCosmos::emVirtualCosmosPanel::new(
@@ -576,7 +578,7 @@ impl emEngine for StartupEngine {
                             });
                             // Re-fire init notices so the new behavior gets
                             // notice + LayoutChildren calls.
-                            sub_tree.fire_init_notices(sub_root);
+                            sub_tree.fire_init_notices(sub_root, None);
                         });
                 }
 
@@ -687,7 +689,7 @@ impl emEngine for StartupEngine {
                     .flatten();
                 // C++ does `delete StartupOverlay` — remove from tree.
                 if let Some(id) = overlay_id {
-                    ctx.tree.remove(id);
+                    ctx.tree.remove(id, Some(&mut *ctx.scheduler));
                 }
                 self.clock = std::time::Instant::now();
                 self.state += 1;
@@ -778,15 +780,15 @@ pub fn create_main_window(
     ctrl_svp.set_sub_view_flags(
         ViewFlags::POPUP_ZOOM | ViewFlags::ROOT_SAME_TALLNESS | ViewFlags::NO_ACTIVE_HIGHLIGHT,
     );
-    let ctrl_id = app.tree.create_child(root_id, "control view");
+    let ctrl_id = app.tree.create_child(root_id, "control view", None);
     app.tree.set_behavior(ctrl_id, Box::new(ctrl_svp));
 
     let mut content_svp = emSubViewPanel::new(Rc::clone(&app.context));
     content_svp.set_sub_view_flags(ViewFlags::ROOT_SAME_TALLNESS);
-    let content_id = app.tree.create_child(root_id, "content view");
+    let content_id = app.tree.create_child(root_id, "content view", None);
     app.tree.set_behavior(content_id, Box::new(content_svp));
 
-    let slider_id = app.tree.create_child(root_id, "slider");
+    let slider_id = app.tree.create_child(root_id, "slider", None);
     app.tree
         .set_behavior(slider_id, Box::new(SliderPanel::new()));
 
@@ -827,7 +829,7 @@ pub fn create_main_window(
     // Wire the owning view's Weak onto the root panel now that the window exists.
     if let Some(rc) = app.windows.get(&window_id) {
         let view_weak = Rc::downgrade(rc.borrow().view_rc());
-        app.tree.init_panel_view(root_id, view_weak);
+        app.tree.init_panel_view(root_id, view_weak, None);
     }
 
     // Acquire bookmarks model.
@@ -880,13 +882,12 @@ pub fn create_main_window(
             };
             v.RegisterEngines(&mut sc, view_weak);
         }
-        app.tree.attach_scheduler(Rc::clone(&app.scheduler));
         win.view_mut().set_control_panel_signal(cp_signal);
     }
     // SP4.5: init_panel_view ran before RegisterEngines above, so the
     // root panel (and any children already created) missed the in-line
     // register_engine_for pass. Catch them up now.
-    app.tree.register_pending_engines();
+    app.tree.register_pending_engines(&mut app.scheduler);
     // We don't yet have the sub-view panel IDs (created during LayoutChildren),
     // so use a dummy PanelId(0) for now — the bridge only uses the signal.
     let bridge = ControlPanelBridge {
@@ -1009,7 +1010,7 @@ pub fn create_control_window(
     // Wire the owning view's Weak onto the root panel now that the window exists.
     if let Some(rc) = app.windows.get(&window_id) {
         let view_weak = Rc::downgrade(rc.borrow().view_rc());
-        app.tree.init_panel_view(root_id, view_weak);
+        app.tree.init_panel_view(root_id, view_weak, None);
     }
 
     // Store the control window ID for raise-if-existing logic.
@@ -1087,14 +1088,14 @@ fn RecreateContentPanels(app: &mut App) {
             let sub_root = svp.sub_root();
             let children: Vec<PanelId> = svp.sub_tree().children(sub_root).collect();
             for child in children {
-                svp.sub_tree_mut().remove(child);
+                svp.sub_tree_mut().remove(child, None);
             }
 
             // Create new content panel (C++ emMainWindow.cpp:303).
             let sub_tree = svp.sub_tree_mut();
-            let child_id = sub_tree.create_child(sub_root, "");
+            let child_id = sub_tree.create_child(sub_root, "", None);
             sub_tree.set_behavior(child_id, Box::new(emMainContentPanel::new(ctx)));
-            sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 1.0, 1.0);
+            sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
             // Restore visit (C++ emMainWindow.cpp:304).
             svp.visit_by_identity(&identity, rel_x, rel_y, rel_a, adherent, &title);

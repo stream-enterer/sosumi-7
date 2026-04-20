@@ -26,7 +26,7 @@ fn setup_anim_view() -> (PanelTree, emView) {
     let mut ts = TestSched::new();
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
@@ -349,7 +349,7 @@ fn setup_anim_view_square_panel() -> (PanelTree, emView) {
     let mut ts = TestSched::new();
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0); // square panel
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None); // square panel
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
@@ -399,7 +399,7 @@ fn run_magnetic_trajectory(steps: usize) -> Vec<TrajectoryStep> {
     let mut ts = TestSched::new();
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_focusable(root, true);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);

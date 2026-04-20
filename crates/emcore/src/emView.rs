@@ -649,7 +649,7 @@ impl emView {
             })
             .collect();
         for (id, flags) in notice_list {
-            tree.queue_notice(id, flags);
+            tree.queue_notice(id, flags, None);
         }
     }
 
@@ -685,7 +685,7 @@ impl emView {
         if self.seek_pos_panel != panel {
             // Notify old panel that sought name is cleared
             if let Some(old_id) = self.seek_pos_panel {
-                tree.queue_notice(old_id, super::emPanel::NoticeFlags::SOUGHT_NAME_CHANGED);
+                tree.queue_notice(old_id, super::emPanel::NoticeFlags::SOUGHT_NAME_CHANGED, None);
             }
 
             self.seek_pos_panel = panel;
@@ -699,7 +699,7 @@ impl emView {
             // checks if this panel should now expand (C++ AutoExpand
             // triggers when View.SeekPosPanel==this).
             if let Some(new_id) = self.seek_pos_panel {
-                tree.queue_notice(new_id, super::emPanel::NoticeFlags::SOUGHT_NAME_CHANGED);
+                tree.queue_notice(new_id, super::emPanel::NoticeFlags::SOUGHT_NAME_CHANGED, None);
                 if let Some(p) = tree.get_mut(new_id) {
                     p.ae_decision_invalid = true;
                 }
@@ -708,7 +708,7 @@ impl emView {
             self.seek_pos_child_name = child_name.to_string();
             tree.seek_pos_child_name = child_name.to_string();
             if let Some(id) = self.seek_pos_panel {
-                tree.queue_notice(id, super::emPanel::NoticeFlags::SOUGHT_NAME_CHANGED);
+                tree.queue_notice(id, super::emPanel::NoticeFlags::SOUGHT_NAME_CHANGED, None);
             }
         }
     }
@@ -1064,6 +1064,7 @@ impl emView {
                 1.0,
                 self.GetHomeTallness(),
                 self.CurrentPixelTallness,
+                None,
             );
         }
 
@@ -1478,6 +1479,7 @@ impl emView {
                 1.0,
                 self.GetHomeTallness(),
                 self.CurrentPixelTallness,
+                None,
             );
             self.RawZoomOut(tree, false, ctx);
         }
@@ -1553,7 +1555,7 @@ impl emView {
             ctx.fire(sig);
         }
         for id in notice_ids {
-            tree.queue_notice(id, flags);
+            tree.queue_notice(id, flags, None);
         }
     }
 
@@ -2068,8 +2070,9 @@ impl emView {
                     super::emPanel::NoticeFlags::VIEWING_CHANGED
                         | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
                         | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
+                    None,
                 );
-                tree.UpdateChildrenViewing(osvp, self.CurrentPixelTallness);
+                tree.UpdateChildrenViewing(osvp, self.CurrentPixelTallness, None);
                 let mut cur = tree.GetRec(osvp).and_then(|p| p.parent);
                 while let Some(pid) = cur {
                     let parent_of = tree.get_mut(pid).map(|p| {
@@ -2081,6 +2084,7 @@ impl emView {
                         super::emPanel::NoticeFlags::VIEWING_CHANGED
                             | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
                             | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
+                        None,
                     );
                     cur = parent_of.unwrap_or(None);
                 }
@@ -2124,8 +2128,9 @@ impl emView {
             super::emPanel::NoticeFlags::VIEWING_CHANGED
                 | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
                 | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
+            None,
         );
-        tree.UpdateChildrenViewing(vp, self.CurrentPixelTallness);
+        tree.UpdateChildrenViewing(vp, self.CurrentPixelTallness, None);
         let mut cur = tree.GetRec(vp).and_then(|p| p.parent);
         while let Some(pid) = cur {
             let parent_of = tree.get_mut(pid).map(|p| {
@@ -2137,6 +2142,7 @@ impl emView {
                 super::emPanel::NoticeFlags::VIEWING_CHANGED
                     | super::emPanel::NoticeFlags::UPDATE_PRIORITY_CHANGED
                     | super::emPanel::NoticeFlags::MEMORY_LIMIT_CHANGED,
+                None,
             );
             cur = parent_of.unwrap_or(None);
         }
@@ -2831,7 +2837,7 @@ impl emView {
                 self.active = None;
             }
         }
-        tree.remove(id);
+        tree.remove(id, None);
     }
 
     // --- Panel-level wrappers ---
@@ -3453,7 +3459,7 @@ impl emView {
                     && p.notice_next_in_ring.is_none()
                     && tree.notice_ring_head_next != Some(id)
                 {
-                    tree.add_to_notice_list(id);
+                    tree.add_to_notice_list(id, None);
                 }
             }
         }
@@ -3563,7 +3569,7 @@ impl emView {
             }
             // Re-add to ring if still work to do (C++ emPanel.cpp:1416-1418).
             if new_ae_di || new_cli {
-                tree.add_to_notice_list(id);
+                tree.add_to_notice_list(id, None);
             }
 
             // Deliver notice (C++ emPanel.cpp:1419-1421).
@@ -4976,15 +4982,15 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.get_mut(root).unwrap().focusable = true;
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
-        let child1 = tree.create_child(root, "child1");
+        let child1 = tree.create_child(root, "child1", None);
         tree.get_mut(child1).unwrap().focusable = true;
-        tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
+        tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0, None);
 
-        let child2 = tree.create_child(root, "child2");
+        let child2 = tree.create_child(root, "child2", None);
         tree.get_mut(child2).unwrap().focusable = true;
-        tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
+        tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0, None);
 
         (tree, root, child1, child2)
     }
@@ -5024,10 +5030,10 @@ mod tests {
         let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
-        let offscreen = tree.create_child(root, "offscreen");
-        tree.Layout(offscreen, 5.0, 5.0, 0.1, 0.1, 1.0);
+        let offscreen = tree.create_child(root, "offscreen", None);
+        tree.Layout(offscreen, 5.0, 5.0, 0.1, 0.1, 1.0, None);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 100.0, 100.0);
         ts.with(|sc| view.Update(&mut tree, sc));
@@ -5096,9 +5102,9 @@ mod tests {
     fn test_visit_in_out() {
         let mut ts = TestSched::new();
         let (mut tree, root, child1, _child2) = setup_tree();
-        let grandchild = tree.create_child(child1, "gc");
+        let grandchild = tree.create_child(child1, "gc", None);
         tree.get_mut(grandchild).unwrap().focusable = true;
-        tree.Layout(grandchild, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(grandchild, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         let mut h = crate::test_view_harness::TestViewHarness::new();
@@ -5412,12 +5418,12 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.get_mut(root).unwrap().focusable = true;
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
-        let child = tree.create_child(root, "child");
+        let child = tree.create_child(root, "child", None);
         tree.get_mut(child).unwrap().focusable = true;
         // Non-square child: w=0.5, h=0.25 → tallness = 0.5
-        tree.Layout(child, 0.1, 0.1, 0.5, 0.25, 1.0);
+        tree.Layout(child, 0.1, 0.1, 0.5, 0.25, 1.0, None);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         let mut h = crate::test_view_harness::TestViewHarness::new();
@@ -5453,7 +5459,7 @@ mod tests {
         let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         ts.with(|sc| view.RawZoomOut(&mut tree, false, sc));
@@ -5480,7 +5486,7 @@ mod tests {
         let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         ts.with(|sc| view.RawZoomOut(&mut tree, false, sc));
@@ -5496,7 +5502,7 @@ mod tests {
         let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0); // starts square
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None); // starts square
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         // pixel_tallness = 600/800 = 0.75
@@ -5836,7 +5842,7 @@ mod tests {
         // rel coords.
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         ts.with(|sc| view.Update(&mut tree, sc));
@@ -5876,7 +5882,7 @@ mod tests {
         // check is stable across zoom levels.
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         ts.with(|sc| view.Update(&mut tree, sc));
 
@@ -5931,10 +5937,10 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.get_mut(root).unwrap().focusable = true;
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
-        let child = tree.create_child(root, "child");
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
+        let child = tree.create_child(root, "child", None);
         tree.get_mut(child).unwrap().focusable = true;
-        tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
+        tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0, None);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
 
@@ -5946,7 +5952,6 @@ mod tests {
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let cp_sig = sched.borrow_mut().create_signal();
         let title_sig = sched.borrow_mut().create_signal();
-        tree.attach_scheduler(sched.clone());
         view.set_control_panel_signal(cp_sig);
         view.set_title_signal(title_sig);
 
@@ -5998,9 +6003,9 @@ mod tests {
         // on VisitingVA and activate it, matching C++ emView.cpp:492-510.
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
-        let child = tree.create_child(root, "child");
-        tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
+        let child = tree.create_child(root, "child", None);
+        tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0, None);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         assert!(
@@ -6024,7 +6029,7 @@ mod tests {
         // via VisitByIdentityBare, matching C++ emView.cpp:511-523.
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         assert!(
@@ -6155,7 +6160,7 @@ mod tests {
         // Root-only tree: square panel (layout h == layout w → height=1.0).
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
         // HomeWidth=640, HomeHeight=480 (default from emView::new).
         let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
@@ -6555,7 +6560,7 @@ mod tests {
             };
             v.RegisterEngines(&mut sc, v_weak);
         }
-        tree.attach_scheduler(sched.clone());
+        tree.register_pending_engines(&mut sched.borrow_mut());
         ts.with(|sc| v_rc.borrow_mut().Update(&mut tree, sc));
         let eng_id = v_rc
             .borrow()
@@ -6567,7 +6572,10 @@ mod tests {
         assert!(!sched.borrow().has_awake_engines());
 
         // Queueing a notice via tree.add_to_notice_list should wake the engine.
-        tree.add_to_notice_list(child1);
+        {
+            let mut s = sched.borrow_mut();
+            tree.add_to_notice_list(child1, Some(&mut *s));
+        }
         assert!(
             sched.borrow().has_awake_engines(),
             "add_to_notice_list should wake the update engine via the panel's View"
@@ -6583,6 +6591,8 @@ mod tests {
                 sched.borrow_mut().remove_engine(id);
             }
         }
+        // Remove panel tree engines (registered via register_pending_engines above).
+        tree.remove(root, Some(&mut sched.borrow_mut()));
     }
 
     /// Phase 6: SetGeometry accepts explicit (x, y, width, height, pixel_tallness).
@@ -6996,7 +7006,7 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.get_mut(root).unwrap().focusable = true;
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         ts.with(|sc| view.Update(&mut tree, sc));
 
@@ -7036,7 +7046,7 @@ mod tests {
     fn sp3_visit_uses_view_corecfg() {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("");
-        tree.Layout(root, 0.0, 0.0, 800.0, 600.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 800.0, 600.0, 1.0, None);
 
         let ctx = crate::emContext::emContext::NewRoot();
         let mut view = emView::new(Rc::clone(&ctx), root, 800.0, 600.0);
@@ -7084,8 +7094,8 @@ mod tests {
         assert_eq!(view_b.GetCurrentPixelTallness(), 2.0);
 
         // Enqueue a notice on each root panel.
-        tree_a.queue_notice(root_a, NoticeFlags::SOUGHT_NAME_CHANGED);
-        tree_b.queue_notice(root_b, NoticeFlags::SOUGHT_NAME_CHANGED);
+        tree_a.queue_notice(root_a, NoticeFlags::SOUGHT_NAME_CHANGED, None);
+        tree_b.queue_notice(root_b, NoticeFlags::SOUGHT_NAME_CHANGED, None);
 
         // Both trees should now report pending notices.
         assert!(

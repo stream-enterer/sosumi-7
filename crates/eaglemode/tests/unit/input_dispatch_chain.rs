@@ -20,7 +20,7 @@ fn input_routes_through_viewport() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
     tree.set_focusable(root, true);
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     ts.with(|sc| view.Update(&mut tree, sc));
@@ -50,7 +50,7 @@ fn input_to_view_updates_last_mouse_position() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
     tree.set_focusable(root, true);
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     ts.with(|sc| view.Update(&mut tree, sc));

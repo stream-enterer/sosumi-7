@@ -551,7 +551,7 @@ impl emColorField {
                              name: &str,
                              caption: &str,
                              value: i64| {
-            let child = tree.create_child(parent, name);
+            let child = tree.create_child(parent, name, None);
             let mut panel = ScalarFieldPanel::new(
                 caption,
                 0.0,
@@ -573,7 +573,7 @@ impl emColorField {
         create_pct_sf(ctx.tree, layout_id, "b", "Blue", exp.sf_blue);
         // Alpha field: C++ has description "The lower the more transparent."
         let alpha_id = {
-            let child = ctx.tree.create_child(layout_id, "a");
+            let child = ctx.tree.create_child(layout_id, "a", ctx.scheduler.as_deref_mut());
             let mut panel = ScalarFieldPanel::new(
                 "Alpha",
                 0.0,
@@ -594,12 +594,13 @@ impl emColorField {
 
         // C++ UpdateExpAppearance: SfAlpha->SetEnableSwitch(AlphaEnabled)
         if !self.alpha_enabled {
-            ctx.tree.SetEnableSwitch(alpha_id, false);
+            ctx.tree
+                .SetEnableSwitch(alpha_id, false, ctx.scheduler.as_deref_mut());
         }
 
         // Hue field: different intervals, text formatter, and tallness.
         {
-            let child = ctx.tree.create_child(layout_id, "h");
+            let child = ctx.tree.create_child(layout_id, "h", ctx.scheduler.as_deref_mut());
             let mut panel = ScalarFieldPanel::new(
                 "Hue",
                 0.0,
@@ -635,7 +636,7 @@ impl emColorField {
         // emTextField child for color name/hex.
         // C++ description: "Here you can enter a color name like 'powder blue',\n
         //                    or a hexadecimal RGB value like '#c88' or '#73c81D'."
-        let tf_child = ctx.tree.create_child(layout_id, "n");
+        let tf_child = ctx.tree.create_child(layout_id, "n", ctx.scheduler.as_deref_mut());
         let mut tf_panel = TextFieldPanel::new("Name", &exp.tf_name, child_look, editable);
         tf_panel.text_field.border_mut().description =
             "Here you can enter a color name like 'powder blue',\n\

@@ -18,6 +18,7 @@ use super::emEngine::emEngine;
 use super::emEngineCtx::EngineCtx;
 use super::emPanelCtx::PanelCtx;
 use super::emPanelTree::PanelId;
+use super::emScheduler::EngineScheduler;
 use super::emView::emView;
 
 /// Probe attached to a `PanelCycleEngine` in test/test-support builds.
@@ -75,15 +76,32 @@ impl emEngine for PanelCycleEngine {
         // matches the pre-Phase-1.5 path's per-cycle take/put cost profile.
         let mut dummy_tree = crate::emPanelTree::PanelTree::new();
         let stay_awake = {
+            // SAFETY: `ectx.scheduler` and `pctx.scheduler` alias the same
+            // `EngineScheduler`. This is sound because:
+            //   1. The event loop is single-threaded — no concurrent access.
+            //   2. `EngineScheduler` methods (wake_up, register_engine, etc.)
+            //      are safe to call re-entrantly from within a Cycle callback;
+            //      this mirrors C++ where emEngine::Cycle receives a raw pointer
+            //      to the scheduler and may call scheduler methods freely.
+            //   3. No two `&mut` operations on distinct subfields alias each
+            //      other — all scheduler mutations go through the same handle.
+            let sched_ptr: *mut EngineScheduler = &mut *ctx.scheduler;
             let mut ectx = crate::emEngineCtx::EngineCtx {
-                scheduler: &mut *ctx.scheduler,
+                // SAFETY: see above — aliased borrow of scheduler is sound here.
+                scheduler: unsafe { &mut *sched_ptr },
                 tree: &mut dummy_tree,
                 windows: &mut *ctx.windows,
                 root_context: ctx.root_context,
                 framework_actions: &mut *ctx.framework_actions,
                 engine_id: ctx.engine_id,
             };
-            let mut pctx = PanelCtx::new(ctx.tree, self.panel_id, tallness);
+            let mut pctx = PanelCtx::with_scheduler(
+                ctx.tree,
+                self.panel_id,
+                tallness,
+                // SAFETY: see above — aliased borrow of scheduler is sound here.
+                unsafe { &mut *sched_ptr },
+            );
             behavior.Cycle(&mut ectx, &mut pctx)
         };
         drop(dummy_tree);

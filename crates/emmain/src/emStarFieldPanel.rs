@@ -285,8 +285,12 @@ impl PanelBehavior for emStarFieldPanel {
         // This is idempotent and ensures the correct threshold is set after the first
         // expansion (the very first call may use the default Area threshold, but once
         // LayoutChildren runs, Width threshold is recorded for subsequent checks).
-        ctx.tree
-            .SetAutoExpansionThreshold(ctx.id, 2.0 * MIN_PANEL_SIZE, ViewConditionType::Width);
+        ctx.tree.SetAutoExpansionThreshold(
+            ctx.id,
+            2.0 * MIN_PANEL_SIZE,
+            ViewConditionType::Width,
+            ctx.scheduler.as_deref_mut(),
+        );
 
         let children = ctx.children();
         let bg = emColor::from_packed(BG_COLOR);
@@ -303,6 +307,7 @@ impl PanelBehavior for emStarFieldPanel {
                     child_id,
                     2.0 * MIN_PANEL_SIZE,
                     ViewConditionType::Width,
+                    ctx.scheduler.as_deref_mut(),
                 );
                 // Position child in its quadrant.
                 let (cx, cy, cw, ch) = Self::CHILD_RECTS[i];

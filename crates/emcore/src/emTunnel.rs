@@ -295,8 +295,10 @@ impl PanelBehavior for emTunnel {
         // also causes a full repaint, matching InvalidatePainting().
         if self.layout_invalid {
             self.layout_invalid = false;
-            ctx.tree.InvalidateChildrenLayout(ctx.id);
-            ctx.tree.queue_notice(ctx.id, NoticeFlags::LAYOUT_CHANGED);
+            ctx.tree
+                .InvalidateChildrenLayout(ctx.id, ctx.scheduler.as_deref_mut());
+            ctx.tree
+                .queue_notice(ctx.id, NoticeFlags::LAYOUT_CHANGED, ctx.scheduler.as_deref_mut());
         }
 
         let rect = ctx.layout_rect();
@@ -304,7 +306,8 @@ impl PanelBehavior for emTunnel {
 
         if let Some(&child) = ctx.children().first() {
             ctx.layout_child(child, cr.x, cr.y, cr.w, cr.h);
-            ctx.tree.SetCanvasColor(child, cr.canvas_color);
+            ctx.tree
+                .SetCanvasColor(child, cr.canvas_color, ctx.scheduler.as_deref_mut());
         }
     }
 }

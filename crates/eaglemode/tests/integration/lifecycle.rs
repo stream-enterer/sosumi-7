@@ -13,8 +13,8 @@ fn create_tree_tick_destroy() {
     h.tick();
 
     // Remove all children
-    h.tree.remove(a);
-    h.tree.remove(b);
+    h.tree.remove(a, None);
+    h.tree.remove(b, None);
     assert_eq!(h.tree.len(), 1);
 
     // No stale state — another tick works fine
@@ -30,9 +30,9 @@ fn remove_active_panel_reselects() {
     let root = h.get_root_panel();
 
     let a = h.add_panel(root, "a");
-    h.tree.Layout(a, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(a, 0.0, 0.0, 0.5, 1.0, 1.0, None);
     let b = h.add_panel(root, "b");
-    h.tree.Layout(b, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(b, 0.5, 0.0, 0.5, 1.0, 1.0, None);
     h.tick();
 
     // Make A active
@@ -47,7 +47,7 @@ fn remove_active_panel_reselects() {
     assert_eq!(h.view.GetActivePanel(), Some(a));
 
     // Remove A
-    h.tree.remove(a);
+    h.tree.remove(a, None);
     h.tick();
 
     // emView should auto-select a new active panel (set_active_panel_best_possible).
@@ -92,7 +92,7 @@ fn remove_panel_with_engine() {
     h.tick();
 
     // Remove panel and its engine
-    h.tree.remove(child);
+    h.tree.remove(child, None);
     h.scheduler.remove_engine(eng);
 
     // Tick should not crash
@@ -108,7 +108,7 @@ fn rapid_create_remove() {
     for i in 0..100 {
         let name = format!("panel_{i}");
         let id = h.add_panel(root, &name);
-        h.tree.remove(id);
+        h.tree.remove(id, None);
     }
     h.tick();
 
@@ -123,7 +123,7 @@ fn stale_panel_id_after_remove() {
     let root = h.get_root_panel();
 
     let child = h.add_panel(root, "child");
-    h.tree.remove(child);
+    h.tree.remove(child, None);
 
     assert!(!h.tree.contains(child));
     assert_eq!(h.tree.name(child), None);

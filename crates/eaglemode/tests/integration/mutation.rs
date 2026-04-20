@@ -75,7 +75,7 @@ fn child_iter_snapshot_safety() {
     assert_eq!(children.len(), 3);
 
     for id in &children {
-        h.tree.remove(*id);
+        h.tree.remove(*id, None);
     }
 
     assert_eq!(h.tree.child_count(root), 0);
@@ -94,8 +94,8 @@ fn deliver_notices_with_new_panels() {
 
     // Pre-create a child (C++ pattern: children created outside LayoutChildren).
     let parent = h.add_panel(root, "parent");
-    let child_id = h.tree.create_child(parent, "late_child");
-    h.tree.Layout(child_id, 0.0, 0.0, 1.0, 1.0, 1.0);
+    let child_id = h.tree.create_child(parent, "late_child", None);
+    h.tree.Layout(child_id, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     h.tick(); // First tick: process initial notices for parent and child.
 
@@ -108,7 +108,7 @@ fn deliver_notices_with_new_panels() {
     );
 
     // Trigger a layout change on the child.
-    h.tree.Layout(child_id, 0.0, 0.0, 0.9, 0.9, 1.0);
+    h.tree.Layout(child_id, 0.0, 0.0, 0.9, 0.9, 1.0, None);
     h.tick(); // Second tick: child receives LAYOUT_CHANGED notice.
 
     let entries = new_panel_log.borrow();
@@ -132,8 +132,8 @@ fn delete_all_children_during_layout() {
     let _b = h.add_panel(root, "pre_b");
 
     let parent = h.add_panel(root, "parent");
-    let _c1 = h.tree.create_child(parent, "c1");
-    let _c2 = h.tree.create_child(parent, "c2");
+    let _c1 = h.tree.create_child(parent, "c1", None);
+    let _c2 = h.tree.create_child(parent, "c2", None);
 
     let mut behavior = MutatingBehavior::new();
     behavior.on_layout = Some(Box::new(move |ctx: &mut PanelCtx| {

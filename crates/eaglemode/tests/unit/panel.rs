@@ -46,11 +46,11 @@ fn create_and_remove_panels() {
     assert!(tree.contains(root));
     assert_eq!(tree.len(), 1);
 
-    let child = tree.create_child(root, "child");
+    let child = tree.create_child(root, "child", None);
     assert_eq!(tree.len(), 2);
     assert_eq!(tree.GetParentContext(child), Some(root));
 
-    tree.remove(child);
+    tree.remove(child, None);
     assert!(!tree.contains(child));
     assert_eq!(tree.len(), 1);
 }
@@ -59,9 +59,9 @@ fn create_and_remove_panels() {
 fn child_iteration() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    let a = tree.create_child(root, "a");
-    let b = tree.create_child(root, "b");
-    let c = tree.create_child(root, "c");
+    let a = tree.create_child(root, "a", None);
+    let b = tree.create_child(root, "b", None);
+    let c = tree.create_child(root, "c", None);
 
     let children: Vec<PanelId> = tree.children(root).collect();
     assert_eq!(children, vec![a, b, c]);
@@ -72,12 +72,12 @@ fn child_iteration() {
 fn name_lookup() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    let child = tree.create_child(root, "my_panel");
+    let child = tree.create_child(root, "my_panel", None);
 
     assert_eq!(tree.find_by_name("my_panel"), Some(child));
     assert_eq!(tree.find_by_name("nonexistent"), None);
 
-    tree.remove(child);
+    tree.remove(child, None);
     assert_eq!(tree.find_by_name("my_panel"), None);
 }
 
@@ -107,7 +107,7 @@ fn notice_flag_propagation() {
     tree.set_behavior(root, Box::new(TestBehavior::new()));
 
     // Creating a child should set CHILDREN_CHANGED on GetParentContext
-    let _child = tree.create_child(root, "child");
+    let _child = tree.create_child(root, "child", None);
 
     // Verify notice is pending before delivery
     assert!(tree
@@ -127,14 +127,14 @@ fn notice_flag_propagation() {
 fn remove_subtree() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    let parent = tree.create_child(root, "parent");
-    let child1 = tree.create_child(parent, "child1");
-    let child2 = tree.create_child(parent, "child2");
-    let grandchild = tree.create_child(child1, "grandchild");
+    let parent = tree.create_child(root, "parent", None);
+    let child1 = tree.create_child(parent, "child1", None);
+    let child2 = tree.create_child(parent, "child2", None);
+    let grandchild = tree.create_child(child1, "grandchild", None);
     assert_eq!(tree.len(), 5);
 
     // Remove GetParentContext and all descendants
-    tree.remove(parent);
+    tree.remove(parent, None);
     assert_eq!(tree.len(), 1);
     assert!(!tree.contains(parent));
     assert!(!tree.contains(child1));
@@ -147,7 +147,7 @@ fn view_zoom_and_scroll() {
     let mut ts = TestSched::new();
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     ts.with(|sc| view.Update(&mut tree, sc)); // required: sets viewed_* on root so Scroll/Zoom work
@@ -215,8 +215,8 @@ fn layout_rect_and_canvas_color() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
 
-    tree.Layout(root, 10.0, 20.0, 300.0, 200.0, 1.0);
-    tree.SetCanvasColor(root, emColor::rgb(128, 128, 128));
+    tree.Layout(root, 10.0, 20.0, 300.0, 200.0, 1.0, None);
+    tree.SetCanvasColor(root, emColor::rgb(128, 128, 128), None);
 
     assert_eq!(
         tree.layout_rect(root).unwrap(),

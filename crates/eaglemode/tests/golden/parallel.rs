@@ -60,7 +60,7 @@ fn assert_parallel_identical(
     // Build the scene.
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, behavior);
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
@@ -302,7 +302,7 @@ fn parallel_benchmark() {
     let single_elapsed = {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("bench");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
         tree.set_behavior(
             root,
             Box::new(BorderBehavior {
@@ -328,7 +328,7 @@ fn parallel_benchmark() {
     let multi_elapsed = {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("bench");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
         tree.set_behavior(
             root,
             Box::new(BorderBehavior {
@@ -372,7 +372,7 @@ fn parallel_benchmark() {
     let single_pixels = {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("verify");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
         tree.set_behavior(
             root,
             Box::new(BorderBehavior {
@@ -393,7 +393,7 @@ fn parallel_benchmark() {
     let multi_pixels = {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("verify");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
         tree.set_behavior(
             root,
             Box::new(BorderBehavior {

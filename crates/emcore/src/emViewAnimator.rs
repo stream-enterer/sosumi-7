@@ -2834,7 +2834,7 @@ mod tests {
     fn setup() -> (PanelTree, emView) {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         (tree, view)
     }
@@ -3193,7 +3193,7 @@ mod tests {
         let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
         tree.set_focusable(root, true);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -3356,20 +3356,20 @@ mod tests {
         let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         tree.set_focusable(root, true);
 
         // 3 child panels at different positions
-        let left = tree.create_child(root, "left");
-        tree.Layout(left, 0.0, 0.0, 0.3, 1.0, 1.0);
+        let left = tree.create_child(root, "left", None);
+        tree.Layout(left, 0.0, 0.0, 0.3, 1.0, 1.0, None);
         tree.set_focusable(left, true);
 
-        let center = tree.create_child(root, "center");
-        tree.Layout(center, 0.35, 0.0, 0.3, 1.0, 1.0);
+        let center = tree.create_child(root, "center", None);
+        tree.Layout(center, 0.35, 0.0, 0.3, 1.0, 1.0, None);
         tree.set_focusable(center, true);
 
-        let right = tree.create_child(root, "right");
-        tree.Layout(right, 0.7, 0.0, 0.3, 1.0, 1.0);
+        let right = tree.create_child(root, "right", None);
+        tree.Layout(right, 0.7, 0.0, 0.3, 1.0, 1.0, None);
         tree.set_focusable(right, true);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -3395,7 +3395,7 @@ mod tests {
         let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         tree.set_focusable(root, true);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -3472,7 +3472,7 @@ mod tests {
         let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
         ts.with(|sc| view.Update(&mut tree, sc));
@@ -3570,10 +3570,10 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.get_mut(root).unwrap().focusable = true;
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
-        let child = tree.create_child(root, "child");
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
+        let child = tree.create_child(root, "child", None);
         tree.get_mut(child).unwrap().focusable = true;
-        tree.Layout(child, 0.1, 0.1, 0.4, 0.5, 1.0);
+        tree.Layout(child, 0.1, 0.1, 0.4, 0.5, 1.0, None);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);

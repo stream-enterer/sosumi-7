@@ -19,7 +19,7 @@ fn control_panel_layout_children() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("ctrl_root");
     // Give root a 1:1 layout so normalized coordinates are [0,1] x [0,1].
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     // Call LayoutChildren — this creates children AND positions them.
     {
@@ -53,7 +53,7 @@ fn control_panel_child_names() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("ctrl_root");
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     {
         let mut pctx = PanelCtx::new(&mut tree, root, 1.0);

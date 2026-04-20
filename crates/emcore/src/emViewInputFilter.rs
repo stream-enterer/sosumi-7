@@ -2601,7 +2601,7 @@ mod tests {
     fn setup() -> (PanelTree, emView) {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         (tree, view)
     }
@@ -3507,9 +3507,9 @@ mod tests {
 
         // Trigger a known dlog call site: set_active_panel logs
         // "active panel changed to ..."
-        let child = tree.create_child(root, "dlog_test_child");
+        let child = tree.create_child(root, "dlog_test_child", None);
         tree.set_focusable(child, true);
-        tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
+        tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0, None);
         ts.with(|sc| view.Update(&mut tree, sc));
         let mut h = crate::test_view_harness::TestViewHarness::new();
         view.set_active_panel(&mut tree, child, false, &mut h.sched_ctx());

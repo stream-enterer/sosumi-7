@@ -599,9 +599,10 @@ fn run_splitter_layout_step(
         parent_rect.2,
         parent_rect.3,
         1.0,
+        None,
     );
-    let c0 = tree.create_child(root, "left");
-    let c1 = tree.create_child(root, "right");
+    let c0 = tree.create_child(root, "left", None);
+    let c1 = tree.create_child(root, "right", None);
 
     tree.set_behavior(root, Box::new(SplitterLayoutBehavior { splitter: sp }));
     let mut behavior = tree.take_behavior(root).unwrap();
@@ -770,9 +771,9 @@ fn composition_click_through_tree() {
         .with_inner(InnerBorderType::None)
         .with_caption("Root");
     root_group.border.label_in_border = true;
-    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0, None);
 
-    let container_id = tree.create_child(root, "container");
+    let container_id = tree.create_child(root, "container", None);
     let mut container_group = emLinearGroup::vertical();
     container_group.border = emBorder::new(OuterBorderType::Rect)
         .with_inner(InnerBorderType::None)
@@ -780,7 +781,7 @@ fn composition_click_through_tree() {
     container_group.border.label_in_border = true;
     tree.set_behavior(container_id, Box::new(container_group));
 
-    let button_id = tree.create_child(container_id, "button");
+    let button_id = tree.create_child(container_id, "button", None);
     let mut btn = emButton::new("Click Me", look);
     btn.on_click = Some(Box::new(move || {
         clicked_clone.set(clicked_clone.get() + 1);

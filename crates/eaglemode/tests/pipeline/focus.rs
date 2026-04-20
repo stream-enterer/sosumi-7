@@ -49,19 +49,19 @@ fn two_branch_tree() -> (
 
     // branch_a occupies left half: layout (0, 0, 0.5, 1)
     let branch_a = h.add_panel(root, "branch_a");
-    h.tree.Layout(branch_a, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(branch_a, 0.0, 0.0, 0.5, 1.0, 1.0, None);
 
     // branch_b occupies right half: layout (0.5, 0, 0.5, 1)
     let branch_b = h.add_panel(root, "branch_b");
-    h.tree.Layout(branch_b, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(branch_b, 0.5, 0.0, 0.5, 1.0, 1.0, None);
 
     // leaf_a fills branch_a entirely: layout (0, 0, 1, 1) within branch_a
     let leaf_a = h.add_panel(branch_a, "leaf_a");
-    h.tree.Layout(leaf_a, 0.0, 0.0, 1.0, 1.0, 1.0);
+    h.tree.Layout(leaf_a, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     // leaf_b fills branch_b entirely: layout (0, 0, 1, 1) within branch_b
     let leaf_b = h.add_panel(branch_b, "leaf_b");
-    h.tree.Layout(leaf_b, 0.0, 0.0, 1.0, 1.0, 1.0);
+    h.tree.Layout(leaf_b, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     // Update viewing so panels have computed screen rects for hit testing.
     {
@@ -366,11 +366,11 @@ fn deep_tree_activation_propagates_in_active_path() {
 
     // Build: root → mid → deep → leaf
     let mid = h.add_panel(root, "mid");
-    h.tree.Layout(mid, 0.0, 0.0, 1.0, 1.0, 1.0);
+    h.tree.Layout(mid, 0.0, 0.0, 1.0, 1.0, 1.0, None);
     let deep = h.add_panel(mid, "deep");
-    h.tree.Layout(deep, 0.0, 0.0, 1.0, 1.0, 1.0);
+    h.tree.Layout(deep, 0.0, 0.0, 1.0, 1.0, 1.0, None);
     let leaf = h.add_panel(deep, "leaf");
-    h.tree.Layout(leaf, 0.0, 0.0, 1.0, 1.0, 1.0);
+    h.tree.Layout(leaf, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     {
 
@@ -450,7 +450,7 @@ fn tab_skips_disabled_and_unfocusable_panels() {
 
     // Mark p2 as unfocusable and p4 as disabled
     h.tree.set_focusable(p2_unfocusable, false);
-    h.tree.SetEnableSwitch(p4_disabled, false);
+    h.tree.SetEnableSwitch(p4_disabled, false, None);
     h.tick();
 
     // Activate p1 via the view
@@ -484,11 +484,11 @@ fn arrow_right_moves_focus_to_right_sibling() {
 
     // Three children laid out left-to-right: [p1 | p2 | p3]
     let p1 = h.add_panel(root, "p1");
-    h.tree.Layout(p1, 0.0, 0.0, 0.333, 1.0, 1.0);
+    h.tree.Layout(p1, 0.0, 0.0, 0.333, 1.0, 1.0, None);
     let p2 = h.add_panel(root, "p2");
-    h.tree.Layout(p2, 0.333, 0.0, 0.334, 1.0, 1.0);
+    h.tree.Layout(p2, 0.333, 0.0, 0.334, 1.0, 1.0, None);
     let p3 = h.add_panel(root, "p3");
-    h.tree.Layout(p3, 0.667, 0.0, 0.333, 1.0, 1.0);
+    h.tree.Layout(p3, 0.667, 0.0, 0.333, 1.0, 1.0, None);
     h.tick();
 
     // Start focus on p1
@@ -522,11 +522,11 @@ fn arrow_left_moves_focus_to_left_sibling() {
 
     // Three children laid out left-to-right: [p1 | p2 | p3]
     let p1 = h.add_panel(root, "p1");
-    h.tree.Layout(p1, 0.0, 0.0, 0.333, 1.0, 1.0);
+    h.tree.Layout(p1, 0.0, 0.0, 0.333, 1.0, 1.0, None);
     let p2 = h.add_panel(root, "p2");
-    h.tree.Layout(p2, 0.333, 0.0, 0.334, 1.0, 1.0);
+    h.tree.Layout(p2, 0.333, 0.0, 0.334, 1.0, 1.0, None);
     let p3 = h.add_panel(root, "p3");
-    h.tree.Layout(p3, 0.667, 0.0, 0.333, 1.0, 1.0);
+    h.tree.Layout(p3, 0.667, 0.0, 0.333, 1.0, 1.0, None);
     h.tick();
 
     // Start focus on p3
@@ -562,11 +562,11 @@ fn arrow_down_moves_focus_to_lower_sibling() {
 
     // Three children laid out top-to-bottom (tall, narrow panels):
     let p1 = h.add_panel(root, "p1");
-    h.tree.Layout(p1, 0.0, 0.0, 1.0, 0.333, 1.0);
+    h.tree.Layout(p1, 0.0, 0.0, 1.0, 0.333, 1.0, None);
     let p2 = h.add_panel(root, "p2");
-    h.tree.Layout(p2, 0.0, 0.333, 1.0, 0.334, 1.0);
+    h.tree.Layout(p2, 0.0, 0.333, 1.0, 0.334, 1.0, None);
     let p3 = h.add_panel(root, "p3");
-    h.tree.Layout(p3, 0.0, 0.667, 1.0, 0.333, 1.0);
+    h.tree.Layout(p3, 0.0, 0.667, 1.0, 0.333, 1.0, None);
     h.tick();
 
     h.set_active_panel(p1);
@@ -596,11 +596,11 @@ fn arrow_up_moves_focus_to_upper_sibling() {
     let root = h.get_root_panel();
 
     let p1 = h.add_panel(root, "p1");
-    h.tree.Layout(p1, 0.0, 0.0, 1.0, 0.333, 1.0);
+    h.tree.Layout(p1, 0.0, 0.0, 1.0, 0.333, 1.0, None);
     let p2 = h.add_panel(root, "p2");
-    h.tree.Layout(p2, 0.0, 0.333, 1.0, 0.334, 1.0);
+    h.tree.Layout(p2, 0.0, 0.333, 1.0, 0.334, 1.0, None);
     let p3 = h.add_panel(root, "p3");
-    h.tree.Layout(p3, 0.0, 0.667, 1.0, 0.333, 1.0);
+    h.tree.Layout(p3, 0.0, 0.667, 1.0, 0.333, 1.0, None);
     h.tick();
 
     h.set_active_panel(p3);
@@ -632,9 +632,9 @@ fn arrow_up_down_no_effect_on_horizontal_layout() {
     let root = h.get_root_panel();
 
     let p1 = h.add_panel(root, "p1");
-    h.tree.Layout(p1, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(p1, 0.0, 0.0, 0.5, 1.0, 1.0, None);
     let _p2 = h.add_panel(root, "p2");
-    h.tree.Layout(_p2, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(_p2, 0.5, 0.0, 0.5, 1.0, 1.0, None);
     h.tick();
 
     h.set_active_panel(p1);
@@ -663,9 +663,9 @@ fn arrow_left_right_no_effect_on_vertical_layout() {
     let root = h.get_root_panel();
 
     let p1 = h.add_panel(root, "p1");
-    h.tree.Layout(p1, 0.0, 0.0, 1.0, 0.5, 1.0);
+    h.tree.Layout(p1, 0.0, 0.0, 1.0, 0.5, 1.0, None);
     let _p2 = h.add_panel(root, "p2");
-    h.tree.Layout(_p2, 0.0, 0.5, 1.0, 0.5, 1.0);
+    h.tree.Layout(_p2, 0.0, 0.5, 1.0, 0.5, 1.0, None);
     h.tick();
 
     h.set_active_panel(p1);
@@ -696,11 +696,11 @@ fn arrow_at_boundary_stays_on_current_panel() {
     let root = h.get_root_panel();
 
     let p1 = h.add_panel(root, "p1");
-    h.tree.Layout(p1, 0.0, 0.0, 0.333, 1.0, 1.0);
+    h.tree.Layout(p1, 0.0, 0.0, 0.333, 1.0, 1.0, None);
     let _p2 = h.add_panel(root, "p2");
-    h.tree.Layout(_p2, 0.333, 0.0, 0.334, 1.0, 1.0);
+    h.tree.Layout(_p2, 0.333, 0.0, 0.334, 1.0, 1.0, None);
     let p3 = h.add_panel(root, "p3");
-    h.tree.Layout(p3, 0.667, 0.0, 0.333, 1.0, 1.0);
+    h.tree.Layout(p3, 0.667, 0.0, 0.333, 1.0, 1.0, None);
     h.tick();
 
     // At leftmost panel, ArrowLeft should not change focus
@@ -734,9 +734,9 @@ fn arrow_with_modifier_does_not_navigate() {
     let root = h.get_root_panel();
 
     let p1 = h.add_panel(root, "p1");
-    h.tree.Layout(p1, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(p1, 0.0, 0.0, 0.5, 1.0, 1.0, None);
     let _p2 = h.add_panel(root, "p2");
-    h.tree.Layout(_p2, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(_p2, 0.5, 0.0, 0.5, 1.0, 1.0, None);
     h.tick();
 
     h.set_active_panel(p1);
@@ -782,11 +782,11 @@ fn home_end_pageup_pagedown_route_through_animator() {
     // Three children side-by-side so VisitFirst/VisitLast have somewhere to go.
     // Layout: [p1 | p2 | p3] left-to-right, all equal-width.
     let p1 = h.add_panel(root, "p1");
-    h.tree.Layout(p1, 0.0, 0.0, 0.333, 1.0, 1.0);
+    h.tree.Layout(p1, 0.0, 0.0, 0.333, 1.0, 1.0, None);
     let p2 = h.add_panel(root, "p2");
-    h.tree.Layout(p2, 0.333, 0.0, 0.334, 1.0, 1.0);
+    h.tree.Layout(p2, 0.333, 0.0, 0.334, 1.0, 1.0, None);
     let p3 = h.add_panel(root, "p3");
-    h.tree.Layout(p3, 0.667, 0.0, 0.333, 1.0, 1.0);
+    h.tree.Layout(p3, 0.667, 0.0, 0.333, 1.0, 1.0, None);
     h.tick();
 
     // ── Home (no mod) → VisitFirst → first focusable sibling ─────────
@@ -849,9 +849,9 @@ fn home_with_modifier_does_not_navigate_siblings() {
     let root = h.get_root_panel();
 
     let p1 = h.add_panel(root, "p1");
-    h.tree.Layout(p1, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(p1, 0.0, 0.0, 0.5, 1.0, 1.0, None);
     let _p2 = h.add_panel(root, "p2");
-    h.tree.Layout(_p2, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(_p2, 0.5, 0.0, 0.5, 1.0, 1.0, None);
     h.tick();
 
     h.set_active_panel(_p2);

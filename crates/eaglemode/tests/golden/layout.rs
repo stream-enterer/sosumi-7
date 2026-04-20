@@ -34,10 +34,11 @@ fn run_layout(
         parent_rect.2,
         parent_rect.3,
         1.0,
+        None,
     );
 
     let child_ids: Vec<PanelId> = (0..n_children)
-        .map(|i| tree.create_child(root, &format!("c{i}")))
+        .map(|i| tree.create_child(root, &format!("c{i}"), None))
         .collect();
 
     tree.set_behavior(root, behavior);
@@ -77,6 +78,7 @@ fn run_linear_layout(
         parent_rect.2,
         parent_rect.3,
         1.0,
+        None,
     );
 
     let mut layout = if orientation_horizontal {
@@ -86,7 +88,7 @@ fn run_linear_layout(
     };
 
     let child_ids: Vec<PanelId> = (0..n)
-        .map(|i| tree.create_child(root, &format!("c{i}")))
+        .map(|i| tree.create_child(root, &format!("c{i}"), None))
         .collect();
 
     for (i, &id) in child_ids.iter().enumerate() {
@@ -279,7 +281,7 @@ fn layout_pack_weighted() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0);
+    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0, None);
 
     let mut layout = emPackLayout::new();
 
@@ -297,7 +299,7 @@ fn layout_pack_weighted() {
 
     let child_ids: Vec<PanelId> = (0..10)
         .map(|i| {
-            let id = tree.create_child(root, &format!("c{i}"));
+            let id = tree.create_child(root, &format!("c{i}"), None);
             layout.set_child_constraint(
                 id,
                 ChildConstraint {
@@ -341,14 +343,14 @@ fn layout_pack_extreme() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0);
+    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0, None);
 
     let mut layout = emPackLayout::new();
     let tallnesses = [0.01, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 100.0];
 
     let child_ids: Vec<PanelId> = (0..8)
         .map(|i| {
-            let id = tree.create_child(root, &format!("c{i}"));
+            let id = tree.create_child(root, &format!("c{i}"), None);
             layout.set_child_constraint(
                 id,
                 ChildConstraint {
@@ -524,13 +526,13 @@ fn layout_linear_min_cell_count() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0);
+    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0, None);
 
     let mut layout = emLinearLayout::horizontal();
     layout.min_cell_count = 6;
 
     let child_ids: Vec<PanelId> = (0..3)
-        .map(|i| tree.create_child(root, &format!("c{i}")))
+        .map(|i| tree.create_child(root, &format!("c{i}"), None))
         .collect();
 
     for &id in &child_ids {
@@ -574,12 +576,12 @@ fn layout_linear_min_max_tallness() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0);
+    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0, None);
 
     let mut layout = emLinearLayout::horizontal();
 
     let child_ids: Vec<PanelId> = (0..4)
-        .map(|i| tree.create_child(root, &format!("c{i}")))
+        .map(|i| tree.create_child(root, &format!("c{i}"), None))
         .collect();
 
     // Child 0: unconstrained (default)
@@ -758,13 +760,13 @@ fn layout_pack_min_cell_count() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0);
+    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0, None);
 
     let mut layout = emPackLayout::new().with_min_cell_count(8);
 
     let child_ids: Vec<PanelId> = (0..4)
         .map(|i| {
-            let id = tree.create_child(root, &format!("c{i}"));
+            let id = tree.create_child(root, &format!("c{i}"), None);
             layout.set_child_constraint(
                 id,
                 ChildConstraint {
@@ -809,10 +811,10 @@ fn layout_pack_single() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0);
+    tree.Layout(root, PARENT.0, PARENT.1, PARENT.2, PARENT.3, 1.0, None);
 
     let mut layout = emPackLayout::new();
-    let id = tree.create_child(root, "c0");
+    let id = tree.create_child(root, "c0", None);
     layout.set_child_constraint(
         id,
         ChildConstraint {
@@ -861,6 +863,7 @@ fn run_linear_layout_with_spacing(
         parent_rect.2,
         parent_rect.3,
         1.0,
+        None,
     );
 
     let mut layout = if orientation_horizontal {
@@ -870,7 +873,7 @@ fn run_linear_layout_with_spacing(
     };
 
     let child_ids: Vec<PanelId> = (0..n)
-        .map(|i| tree.create_child(root, &format!("c{i}")))
+        .map(|i| tree.create_child(root, &format!("c{i}"), None))
         .collect();
 
     for (i, &id) in child_ids.iter().enumerate() {
@@ -929,6 +932,7 @@ fn run_linear_layout_aligned(
         parent_rect.2,
         parent_rect.3,
         1.0,
+        None,
     );
 
     let mut layout = if orientation_horizontal {
@@ -942,7 +946,7 @@ fn run_linear_layout_aligned(
     };
 
     let child_ids: Vec<PanelId> = (0..n)
-        .map(|i| tree.create_child(root, &format!("c{i}")))
+        .map(|i| tree.create_child(root, &format!("c{i}"), None))
         .collect();
 
     for (i, &id) in child_ids.iter().enumerate() {
@@ -998,12 +1002,13 @@ fn run_linear_layout_adaptive(
         parent_rect.2,
         parent_rect.3,
         1.0,
+        None,
     );
 
     let mut layout = emLinearLayout::adaptive(threshold);
 
     let child_ids: Vec<PanelId> = (0..n)
-        .map(|i| tree.create_child(root, &format!("c{i}")))
+        .map(|i| tree.create_child(root, &format!("c{i}"), None))
         .collect();
 
     for (i, &id) in child_ids.iter().enumerate() {

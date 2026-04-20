@@ -1279,7 +1279,7 @@ impl PanelBehavior for TestPanel {
         let tktest_id = ctx.create_child_with("tktest", Box::new(TkTestGrpPanel::new()));
         // C++ TkTestGrp constructor: SetAutoExpansionThreshold(900.0)
         ctx.tree
-            .SetAutoExpansionThreshold(tktest_id, 900.0, ViewConditionType::Area);
+            .SetAutoExpansionThreshold(tktest_id, 900.0, ViewConditionType::Area, ctx.scheduler.as_deref_mut());
 
         if self.depth < MAX_DEPTH {
             for i in 1..=4 {
@@ -1289,7 +1289,7 @@ impl PanelBehavior for TestPanel {
                     Box::new(TestPanel::new(self.depth + 1, child_bg)),
                 );
                 ctx.tree
-                    .SetAutoExpansionThreshold(tp_id, 900.0, ViewConditionType::Area);
+                    .SetAutoExpansionThreshold(tp_id, 900.0, ViewConditionType::Area, ctx.scheduler.as_deref_mut());
             }
         }
 
@@ -1366,37 +1366,37 @@ impl PanelBehavior for TkTestGrpPanel {
             // sp1: vertical splitter, child of sp, pos=0.8
             let mut sp1 = emSplitter::new(Orientation::Vertical, look.clone());
             sp1.SetPos(0.8);
-            let sp1_id = ctx.tree.create_child(sp_id, "sp1");
+            let sp1_id = ctx.tree.create_child(sp_id, "sp1", None);
             ctx.tree
                 .set_behavior(sp1_id, Box::new(SplitterPanel { widget: sp1 }));
 
             // t1a, t1b: children of sp1
-            let t1a_id = ctx.tree.create_child(sp1_id, "t1a");
+            let t1a_id = ctx.tree.create_child(sp1_id, "t1a", None);
             ctx.tree
                 .set_behavior(t1a_id, Box::new(TkTestPanel::new(look.clone())));
-            let t1b_id = ctx.tree.create_child(sp1_id, "t1b");
+            let t1b_id = ctx.tree.create_child(sp1_id, "t1b", None);
             ctx.tree
                 .set_behavior(t1b_id, Box::new(TkTestPanel::new(look.clone())));
 
             // sp2: vertical splitter, child of sp, pos=0.8
             let mut sp2 = emSplitter::new(Orientation::Vertical, look.clone());
             sp2.SetPos(0.8);
-            let sp2_id = ctx.tree.create_child(sp_id, "sp2");
+            let sp2_id = ctx.tree.create_child(sp_id, "sp2", None);
             ctx.tree
                 .set_behavior(sp2_id, Box::new(SplitterPanel { widget: sp2 }));
 
             // t2a: child of sp2
-            let t2a_id = ctx.tree.create_child(sp2_id, "t2a");
+            let t2a_id = ctx.tree.create_child(sp2_id, "t2a", None);
             ctx.tree
                 .set_behavior(t2a_id, Box::new(TkTestPanel::new(look.clone())));
 
             // t2b: child of sp2, disabled, caption="Disabled"
-            let t2b_id = ctx.tree.create_child(sp2_id, "t2b");
+            let t2b_id = ctx.tree.create_child(sp2_id, "t2b", None);
             ctx.tree.set_behavior(
                 t2b_id,
                 Box::new(TkTestPanel::new_with_caption(look, "Disabled")),
             );
-            ctx.tree.SetEnableSwitch(t2b_id, false);
+            ctx.tree.SetEnableSwitch(t2b_id, false, None);
         }
 
         // Position sp in border content rect
@@ -1469,7 +1469,7 @@ impl TkTestPanel {
         if let Some(c) = fixed_cols {
             rg.layout.fixed_columns = Some(c);
         }
-        let id = tree.create_child(parent_context, name);
+        let id = tree.create_child(parent_context, name, None);
         tree.set_behavior(id, Box::new(rg));
         id
     }
@@ -1481,7 +1481,7 @@ impl TkTestPanel {
         // 1. Buttons (C++ emTestPanel.cpp:558-576)
         let gid = Self::make_category(ctx.tree, grid_id, "buttons", "Buttons", None, None);
         {
-            let id = ctx.tree.create_child(gid, "b1");
+            let id = ctx.tree.create_child(gid, "b1", None);
             ctx.tree.set_behavior(
                 id,
                 Box::new(ButtonPanel {
@@ -1497,13 +1497,13 @@ impl TkTestPanel {
                 }
                 b2.SetDescription(&desc);
             }
-            let id = ctx.tree.create_child(gid, "b2");
+            let id = ctx.tree.create_child(gid, "b2", None);
             ctx.tree
                 .set_behavior(id, Box::new(ButtonPanel { widget: b2 }));
 
             let mut b3 = emButton::new("NoEOI", look.clone());
             b3.SetNoEOI(true);
-            let id = ctx.tree.create_child(gid, "b3");
+            let id = ctx.tree.create_child(gid, "b3", None);
             ctx.tree
                 .set_behavior(id, Box::new(ButtonPanel { widget: b3 }));
         }
@@ -1519,7 +1519,7 @@ impl TkTestPanel {
         );
         {
             for i in 1..=3 {
-                let id = ctx.tree.create_child(gid, &format!("c{i}"));
+                let id = ctx.tree.create_child(gid, &format!("c{i}"), None);
                 ctx.tree.set_behavior(
                     id,
                     Box::new(CheckButtonPanel {
@@ -1528,7 +1528,7 @@ impl TkTestPanel {
                 );
             }
             for i in 4..=6 {
-                let id = ctx.tree.create_child(gid, &format!("c{i}"));
+                let id = ctx.tree.create_child(gid, &format!("c{i}"), None);
                 ctx.tree.set_behavior(
                     id,
                     Box::new(CheckBoxPanel {
@@ -1550,7 +1550,7 @@ impl TkTestPanel {
         {
             let rg = RadioGroup::new();
             for i in 1..=3 {
-                let id = ctx.tree.create_child(gid, &format!("r{i}"));
+                let id = ctx.tree.create_child(gid, &format!("r{i}"), None);
                 ctx.tree.set_behavior(
                     id,
                     Box::new(RadioButtonPanel {
@@ -1560,7 +1560,7 @@ impl TkTestPanel {
             }
             let rg2 = RadioGroup::new();
             for i in 4..=6 {
-                let id = ctx.tree.create_child(gid, &format!("r{i}"));
+                let id = ctx.tree.create_child(gid, &format!("r{i}"), None);
                 ctx.tree.set_behavior(
                     id,
                     Box::new(RadioBoxPanel {
@@ -1577,7 +1577,7 @@ impl TkTestPanel {
             tf1.SetCaption("Read-Only");
             tf1.SetDescription("This is a read-only text field.");
             tf1.SetText("Read-Only");
-            let id = ctx.tree.create_child(gid, "tf1");
+            let id = ctx.tree.create_child(gid, "tf1", None);
             ctx.tree
                 .set_behavior(id, Box::new(TextFieldPanel { widget: tf1 }));
 
@@ -1586,7 +1586,7 @@ impl TkTestPanel {
             tf2.SetDescription("This is an editable text field.");
             tf2.SetEditable(true);
             tf2.SetText("Editable");
-            let id = ctx.tree.create_child(gid, "tf2");
+            let id = ctx.tree.create_child(gid, "tf2", None);
             ctx.tree
                 .set_behavior(id, Box::new(TextFieldPanel { widget: tf2 }));
 
@@ -1596,7 +1596,7 @@ impl TkTestPanel {
             tf3.SetEditable(true);
             tf3.SetText("Password");
             tf3.SetPasswordMode(true);
-            let id = ctx.tree.create_child(gid, "tf3");
+            let id = ctx.tree.create_child(gid, "tf3", None);
             ctx.tree
                 .set_behavior(id, Box::new(TextFieldPanel { widget: tf3 }));
 
@@ -1606,7 +1606,7 @@ impl TkTestPanel {
             mltf1.SetEditable(true);
             mltf1.SetMultiLineMode(true);
             mltf1.SetText("first line\nsecond line\n...");
-            let id = ctx.tree.create_child(gid, "mltf1");
+            let id = ctx.tree.create_child(gid, "mltf1", None);
             ctx.tree
                 .set_behavior(id, Box::new(TextFieldPanel { widget: mltf1 }));
         }
@@ -1625,7 +1625,7 @@ impl TkTestPanel {
             // → minValue=0, maxValue=10 (C++ header defaults).
             let mut sf1 = emScalarField::new(0.0, 10.0, look.clone());
             sf1.SetCaption("Read-Only");
-            let id = ctx.tree.create_child(gid, "sf1");
+            let id = ctx.tree.create_child(gid, "sf1", None);
             ctx.tree
                 .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf1 }));
 
@@ -1634,7 +1634,7 @@ impl TkTestPanel {
             let mut sf2 = emScalarField::new(0.0, 10.0, look.clone());
             sf2.SetCaption("Editable");
             sf2.SetEditable(true);
-            let id = ctx.tree.create_child(gid, "sf2");
+            let id = ctx.tree.create_child(gid, "sf2", None);
             ctx.tree
                 .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf2 }));
 
@@ -1646,7 +1646,7 @@ impl TkTestPanel {
             sf3.SetEditable(true);
             sf3.SetValue(0.0);
             sf3.SetScaleMarkIntervals(&[1000, 100, 10, 5, 1]);
-            let id = ctx.tree.create_child(gid, "sf3");
+            let id = ctx.tree.create_child(gid, "sf3", None);
             ctx.tree
                 .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf3 }));
 
@@ -1657,7 +1657,7 @@ impl TkTestPanel {
             sf4.SetValue(3.0);
             sf4.SetTextBoxTallness(0.25);
             sf4.SetTextOfValueFunc(Box::new(|val, _interval| format!("Level {val}")));
-            let id = ctx.tree.create_child(gid, "sf4");
+            let id = ctx.tree.create_child(gid, "sf4", None);
             ctx.tree
                 .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf4 }));
 
@@ -1686,7 +1686,7 @@ impl TkTestPanel {
                     format!("{h:02}:{m:02}")
                 }
             }));
-            let id = ctx.tree.create_child(gid, "sf5");
+            let id = ctx.tree.create_child(gid, "sf5", None);
             ctx.tree
                 .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf5 }));
 
@@ -1714,7 +1714,7 @@ impl TkTestPanel {
                     format!("{h:02}:{m:02}")
                 }
             }));
-            let id = ctx.tree.create_child(gid, "sf6");
+            let id = ctx.tree.create_child(gid, "sf6", None);
             ctx.tree
                 .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf6 }));
         }
@@ -1732,41 +1732,41 @@ impl TkTestPanel {
             let mut cf1 = emColorField::new(look.clone());
             cf1.SetCaption("Read-Only");
             cf1.SetColor(emColor::rgba(0xBB, 0x22, 0x22, 0xFF));
-            let id = ctx.tree.create_child(gid, "cf1");
+            let id = ctx.tree.create_child(gid, "cf1", None);
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf1 }));
             ctx.tree
-                .SetAutoExpansionThreshold(id, 9.0, ViewConditionType::MinExt);
+                .SetAutoExpansionThreshold(id, 9.0, ViewConditionType::MinExt, ctx.scheduler.as_deref_mut());
 
             let mut cf2 = emColorField::new(look.clone());
             cf2.SetCaption("Editable");
             cf2.SetEditable(true);
             cf2.SetColor(emColor::rgba(0x22, 0xBB, 0x22, 0xFF));
-            let id = ctx.tree.create_child(gid, "cf2");
+            let id = ctx.tree.create_child(gid, "cf2", None);
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf2 }));
             ctx.tree
-                .SetAutoExpansionThreshold(id, 9.0, ViewConditionType::MinExt);
+                .SetAutoExpansionThreshold(id, 9.0, ViewConditionType::MinExt, ctx.scheduler.as_deref_mut());
 
             let mut cf3 = emColorField::new(look.clone());
             cf3.SetCaption("Editable, Alpha Enabled");
             cf3.SetEditable(true);
             cf3.SetAlphaEnabled(true);
             cf3.SetColor(emColor::rgba(0x22, 0x22, 0xBB, 0xFF));
-            let id = ctx.tree.create_child(gid, "cf3");
+            let id = ctx.tree.create_child(gid, "cf3", None);
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf3 }));
             ctx.tree
-                .SetAutoExpansionThreshold(id, 9.0, ViewConditionType::MinExt);
+                .SetAutoExpansionThreshold(id, 9.0, ViewConditionType::MinExt, ctx.scheduler.as_deref_mut());
         }
 
         // 7. Tunnels (C++ emTestPanel.cpp:662-680)
         let gid = Self::make_category(ctx.tree, grid_id, "tunnels", "Tunnels", Some(0.4), None);
         {
-            let tid = ctx.tree.create_child(gid, "t1");
+            let tid = ctx.tree.create_child(gid, "t1", None);
             let t1 = emTunnel::new(look.clone()).with_caption("Tunnel");
             ctx.tree.set_behavior(tid, Box::new(t1));
-            let child = ctx.tree.create_child(tid, "e");
+            let child = ctx.tree.create_child(tid, "e", None);
             ctx.tree.set_behavior(
                 child,
                 Box::new(ButtonPanel {
@@ -1774,34 +1774,34 @@ impl TkTestPanel {
                 }),
             );
 
-            let tid = ctx.tree.create_child(gid, "t2");
+            let tid = ctx.tree.create_child(gid, "t2", None);
             let mut t2 = emTunnel::new(look.clone()).with_caption("Deeper Tunnel");
             t2.SetDepth(30.0);
             ctx.tree.set_behavior(tid, Box::new(t2));
-            let child = ctx.tree.create_child(tid, "e");
+            let child = ctx.tree.create_child(tid, "e", None);
             {
                 let mut rg = emRasterGroup::new();
                 rg.border.caption = "End Of Tunnel".to_string();
                 ctx.tree.set_behavior(child, Box::new(rg));
             }
 
-            let tid = ctx.tree.create_child(gid, "t3");
+            let tid = ctx.tree.create_child(gid, "t3", None);
             let mut t3 = emTunnel::new(look.clone()).with_caption("Square End");
             t3.SetChildTallness(1.0);
             ctx.tree.set_behavior(tid, Box::new(t3));
-            let child = ctx.tree.create_child(tid, "e");
+            let child = ctx.tree.create_child(tid, "e", None);
             {
                 let mut rg = emRasterGroup::new();
                 rg.border.caption = "End Of Tunnel".to_string();
                 ctx.tree.set_behavior(child, Box::new(rg));
             }
 
-            let tid = ctx.tree.create_child(gid, "t4");
+            let tid = ctx.tree.create_child(gid, "t4", None);
             let mut t4 = emTunnel::new(look.clone()).with_caption("Square End, Zero Depth");
             t4.SetChildTallness(1.0);
             t4.SetDepth(0.0);
             ctx.tree.set_behavior(tid, Box::new(t4));
-            let child = ctx.tree.create_child(tid, "e");
+            let child = ctx.tree.create_child(tid, "e", None);
             {
                 let mut rg = emRasterGroup::new();
                 rg.border.caption = "End Of Tunnel".to_string();
@@ -1829,7 +1829,7 @@ impl TkTestPanel {
 
             let mut lb1 = emListBox::new(look.clone());
             lb1.SetCaption("Empty");
-            let id = ctx.tree.create_child(gid, "l1");
+            let id = ctx.tree.create_child(gid, "l1", None);
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb1 }));
 
@@ -1838,7 +1838,7 @@ impl TkTestPanel {
             lb2.SetSelectionType(SelectionMode::Single);
             add_items_1_to_7(&mut lb2);
             lb2.SetSelectedIndex(0);
-            let id = ctx.tree.create_child(gid, "l2");
+            let id = ctx.tree.create_child(gid, "l2", None);
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb2 }));
 
@@ -1847,7 +1847,7 @@ impl TkTestPanel {
             lb3.SetSelectionType(SelectionMode::ReadOnly);
             add_items_1_to_7(&mut lb3);
             lb3.SetSelectedIndex(2);
-            let id = ctx.tree.create_child(gid, "l3");
+            let id = ctx.tree.create_child(gid, "l3", None);
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb3 }));
 
@@ -1859,7 +1859,7 @@ impl TkTestPanel {
             lb4.Select(2, false);
             lb4.Select(3, false);
             lb4.Select(4, false);
-            let id = ctx.tree.create_child(gid, "l4");
+            let id = ctx.tree.create_child(gid, "l4", None);
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb4 }));
 
@@ -1869,7 +1869,7 @@ impl TkTestPanel {
             add_items_1_to_7(&mut lb5);
             lb5.Select(2, false);
             lb5.Select(4, false);
-            let id = ctx.tree.create_child(gid, "l5");
+            let id = ctx.tree.create_child(gid, "l5", None);
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb5 }));
 
@@ -1880,7 +1880,7 @@ impl TkTestPanel {
             add_items_1_to_7(&mut lb6);
             lb6.set_fixed_column_count(Some(1));
             lb6.SetSelectedIndex(0);
-            let id = ctx.tree.create_child(gid, "l6");
+            let id = ctx.tree.create_child(gid, "l6", None);
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb6 }));
 
@@ -1905,7 +1905,7 @@ impl TkTestPanel {
                     look,
                 ))
             });
-            let id = ctx.tree.create_child(gid, "l7");
+            let id = ctx.tree.create_child(gid, "l7", None);
             ctx.tree
                 .set_behavior(id, Box::new(ListBoxPanel { widget: lb7 }));
         }
@@ -1916,7 +1916,7 @@ impl TkTestPanel {
             // emRasterLayout with checkboxes
             let mut rl = emRasterLayout::new();
             rl.preferred_child_tallness = 0.1;
-            let rl_id = ctx.tree.create_child(gid, "rl");
+            let rl_id = ctx.tree.create_child(gid, "rl", None);
 
             // C++ emTestPanel.cpp:738-747
             let cb_items: &[(&str, &str, bool)] = &[
@@ -1929,7 +1929,7 @@ impl TkTestPanel {
                 ("WF_FULLSCREEN", "WF_FULLSCREEN", false),
             ];
             for &(name, caption, checked) in cb_items {
-                let id = ctx.tree.create_child(rl_id, name);
+                let id = ctx.tree.create_child(rl_id, name, None);
                 let mut cb = emCheckBox::new(caption, look.clone());
                 if checked {
                     cb.SetChecked(true);
@@ -1939,7 +1939,7 @@ impl TkTestPanel {
             }
             ctx.tree.set_behavior(rl_id, Box::new(rl));
 
-            let id = ctx.tree.create_child(gid, "bt");
+            let id = ctx.tree.create_child(gid, "bt", None);
             ctx.tree.set_behavior(
                 id,
                 Box::new(ButtonPanel {
@@ -1958,7 +1958,7 @@ impl TkTestPanel {
             None,
         );
         {
-            let id = ctx.tree.create_child(gid, "l8");
+            let id = ctx.tree.create_child(gid, "l8", None);
             let mut fsb = emFileSelectionBox::new("File Selection Box");
             fsb.set_filters(&[
                 "All Files (*)".to_string(),
@@ -1969,7 +1969,7 @@ impl TkTestPanel {
             fsb.set_parent_directory(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
             ctx.tree.set_behavior(id, Box::new(fsb));
 
-            let id = ctx.tree.create_child(gid, "openFile");
+            let id = ctx.tree.create_child(gid, "openFile", None);
             ctx.tree.set_behavior(
                 id,
                 Box::new(ButtonPanel {
@@ -1977,7 +1977,7 @@ impl TkTestPanel {
                 }),
             );
 
-            let id = ctx.tree.create_child(gid, "openFiles");
+            let id = ctx.tree.create_child(gid, "openFiles", None);
             ctx.tree.set_behavior(
                 id,
                 Box::new(ButtonPanel {
@@ -1985,7 +1985,7 @@ impl TkTestPanel {
                 }),
             );
 
-            let id = ctx.tree.create_child(gid, "saveFile");
+            let id = ctx.tree.create_child(gid, "saveFile", None);
             ctx.tree.set_behavior(
                 id,
                 Box::new(ButtonPanel {
@@ -2068,7 +2068,7 @@ impl PolyDrawPanel {
         rg.border.SetBorderScaling(1.5);
         rg.border.caption = "Method".to_string();
         rg.layout.preferred_child_tallness = 0.07;
-        let mid = tree.create_child(parent_context, "Method");
+        let mid = tree.create_child(parent_context, "Method", None);
 
         let method_group = RadioGroup::new();
         let names = [
@@ -2090,7 +2090,7 @@ impl PolyDrawPanel {
             "PaintRoundRectOutline",
         ];
         for (i, name) in names.iter().enumerate() {
-            let id = tree.create_child(mid, name);
+            let id = tree.create_child(mid, name, None);
             tree.set_behavior(
                 id,
                 Box::new(RadioBoxPanel {
@@ -2112,12 +2112,12 @@ impl PolyDrawPanel {
         rg.border.SetBorderScaling(1.5);
         rg.border.caption = "Dash Type".to_string();
         rg.layout.preferred_child_tallness = 0.08;
-        let did = tree.create_child(parent_context, "StrokeDashType");
+        let did = tree.create_child(parent_context, "StrokeDashType", None);
 
         let dash_group = RadioGroup::new();
         let names = ["Solid", "Dashed", "Dotted", "DashDotted"];
         for (i, name) in names.iter().enumerate() {
-            let id = tree.create_child(did, name);
+            let id = tree.create_child(did, name, None);
             tree.set_behavior(
                 id,
                 Box::new(RadioBoxPanel {
@@ -2141,7 +2141,7 @@ impl PolyDrawPanel {
         rg.border.SetBorderScaling(1.5);
         rg.border.caption = caption.to_string();
         rg.layout.preferred_child_tallness = 0.08;
-        let sid = tree.create_child(parent_context, name);
+        let sid = tree.create_child(parent_context, name, None);
 
         let group = RadioGroup::new();
         let names = [
@@ -2164,7 +2164,7 @@ impl PolyDrawPanel {
             "Stroke",
         ];
         for (i, n) in names.iter().enumerate() {
-            let id = tree.create_child(sid, n);
+            let id = tree.create_child(sid, n, None);
             tree.set_behavior(
                 id,
                 Box::new(RadioBoxPanel {
@@ -2186,10 +2186,10 @@ impl PolyDrawPanel {
         child2_name: &str,
         child2: Box<dyn PanelBehavior>,
     ) -> PanelId {
-        let ll_id = tree.create_child(parent_context, name);
-        let c1 = tree.create_child(ll_id, child1_name);
+        let ll_id = tree.create_child(parent_context, name, None);
+        let c1 = tree.create_child(ll_id, child1_name, None);
         tree.set_behavior(c1, child1);
-        let c2 = tree.create_child(ll_id, child2_name);
+        let c2 = tree.create_child(ll_id, child2_name, None);
         tree.set_behavior(c2, child2);
         tree.set_behavior(ll_id, Box::new(emLinearLayout::horizontal()));
         ll_id
@@ -2199,10 +2199,10 @@ impl PolyDrawPanel {
         let look = self.look.clone();
 
         // Controls: emRasterLayout with PCT=0.6
-        let ctrl_id = ctx.tree.create_child(layout_id, "Controls");
+        let ctrl_id = ctx.tree.create_child(layout_id, "Controls", None);
 
         // ── general section ──
-        let gen_id = ctx.tree.create_child(ctrl_id, "general");
+        let gen_id = ctx.tree.create_child(ctrl_id, "general", None);
 
         let method_id = Self::create_method_radio(ctx.tree, gen_id, &look);
 
@@ -2264,9 +2264,9 @@ impl PolyDrawPanel {
         ctx.tree.set_behavior(gen_id, Box::new(gen_group));
 
         // ── stroke section ──
-        let stroke_id = ctx.tree.create_child(ctrl_id, "stroke");
+        let stroke_id = ctx.tree.create_child(ctrl_id, "stroke", None);
 
-        let stroke_color_id = ctx.tree.create_child(stroke_id, "StrokeColor");
+        let stroke_color_id = ctx.tree.create_child(stroke_id, "StrokeColor", None);
         ctx.tree.set_behavior(
             stroke_color_id,
             Box::new(ColorFieldPanel {
@@ -2280,7 +2280,7 @@ impl PolyDrawPanel {
             }),
         );
 
-        let rounded_id = ctx.tree.create_child(stroke_id, "StrokeRounded");
+        let rounded_id = ctx.tree.create_child(stroke_id, "StrokeRounded", None);
         ctx.tree.set_behavior(
             rounded_id,
             Box::new(CheckBoxPanel {
@@ -2327,12 +2327,12 @@ impl PolyDrawPanel {
         ctx.tree.set_behavior(stroke_id, Box::new(stroke_group));
 
         // ── strokeStart section ──
-        let ss_id = ctx.tree.create_child(ctrl_id, "strokeStart");
+        let ss_id = ctx.tree.create_child(ctrl_id, "strokeStart", None);
 
         let ss_type_id =
             Self::create_stroke_end_radio(ctx.tree, ss_id, "StrokeStartType", "Type", &look);
 
-        let ss_color_id = ctx.tree.create_child(ss_id, "StrokeStartInnerColor");
+        let ss_color_id = ctx.tree.create_child(ss_id, "StrokeStartInnerColor", None);
         ctx.tree.set_behavior(
             ss_color_id,
             Box::new(ColorFieldPanel {
@@ -2383,12 +2383,12 @@ impl PolyDrawPanel {
         ctx.tree.set_behavior(ss_id, Box::new(ss_group));
 
         // ── strokeEnd section ──
-        let se_id = ctx.tree.create_child(ctrl_id, "strokeEnd");
+        let se_id = ctx.tree.create_child(ctrl_id, "strokeEnd", None);
 
         let se_type_id =
             Self::create_stroke_end_radio(ctx.tree, se_id, "StrokeEndType", "Type", &look);
 
-        let se_color_id = ctx.tree.create_child(se_id, "StrokeEndInnerColor");
+        let se_color_id = ctx.tree.create_child(se_id, "StrokeEndInnerColor", None);
         ctx.tree.set_behavior(
             se_color_id,
             Box::new(ColorFieldPanel {
@@ -2444,7 +2444,7 @@ impl PolyDrawPanel {
         ctx.tree.set_behavior(ctrl_id, Box::new(ctrl_layout));
 
         // ── CanvasPanel ──
-        let canvas_id = ctx.tree.create_child(layout_id, "CanvasPanel");
+        let canvas_id = ctx.tree.create_child(layout_id, "CanvasPanel", None);
         ctx.tree
             .set_behavior(canvas_id, Box::new(CanvasPanel::new()));
     }
@@ -2549,9 +2549,9 @@ fn testpanel_root() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
     tree.set_behavior(root, Box::new(TestPanel::new(0, bg_color)));
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
     // Very high threshold prevents auto-expansion (Match C++ gen)
-    tree.SetAutoExpansionThreshold(root, 1e9, ViewConditionType::Area);
+    tree.SetAutoExpansionThreshold(root, 1e9, ViewConditionType::Area, None);
 
     let mut view = emView::new(
         emcore::emContext::emContext::NewRoot(),
@@ -2587,9 +2587,9 @@ fn testpanel_expanded() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
     tree.set_behavior(root, Box::new(TestPanel::new(0, bg_color)));
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
     // C++ default threshold: 900 (VCT_AREA). At 1000x1000, vc=1e6 > 900 → expands.
-    tree.SetAutoExpansionThreshold(root, 900.0, ViewConditionType::Area);
+    tree.SetAutoExpansionThreshold(root, 900.0, ViewConditionType::Area, None);
 
     let mut view = emView::new(
         emcore::emContext::emContext::NewRoot(),

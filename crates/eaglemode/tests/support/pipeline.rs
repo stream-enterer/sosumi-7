@@ -46,7 +46,7 @@ impl PipelineTestHarness {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.set_focusable(root, true);
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
         let root_context = emcore::emContext::emContext::NewRoot();
         let mut view = emView::new(Rc::clone(&root_context), root, 800.0, 600.0);
@@ -145,9 +145,9 @@ impl PipelineTestHarness {
 
     /// Create a focusable child panel with a layout rect.
     pub fn add_panel(&mut self, parent_context: PanelId, name: &str) -> PanelId {
-        let id = self.tree.create_child(parent_context, name);
+        let id = self.tree.create_child(parent_context, name, None);
         self.tree.set_focusable(id, true);
-        self.tree.Layout(id, 0.0, 0.0, 1.0, 1.0, 1.0);
+        self.tree.Layout(id, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         id
     }
 

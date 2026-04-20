@@ -192,7 +192,7 @@ fn render_and_compare_tol(
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, behavior);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -478,9 +478,9 @@ fn widget_colorfield() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     // C++ emColorField.cpp:36 — SetAutoExpansionThreshold(9, VCT_MIN_EXT)
-    tree.SetAutoExpansionThreshold(root, 9.0, ViewConditionType::MinExt);
+    tree.SetAutoExpansionThreshold(root, 9.0, ViewConditionType::MinExt, None);
     tree.set_behavior(
         root,
         Box::new(ColorFieldExpandedBehavior { color_field: cf }),
@@ -627,9 +627,9 @@ fn colorfield_expanded() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
     // C++ emColorField uses AE threshold 9 (VCT_MIN_EXT)
-    tree.SetAutoExpansionThreshold(root, 9.0, ViewConditionType::MinExt);
+    tree.SetAutoExpansionThreshold(root, 9.0, ViewConditionType::MinExt, None);
     tree.set_behavior(
         root,
         Box::new(ColorFieldExpandedBehavior { color_field: cf }),
@@ -709,7 +709,7 @@ fn listbox_expanded() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
     tree.set_behavior(root, Box::new(ListBoxExpandedBehavior { list_box: lb }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 800.0);
@@ -746,7 +746,7 @@ fn golden_widget_border_rect_extreme_tall() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 8.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 8.0, 1.0, None);
     tree.set_behavior(root, Box::new(behavior));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -790,7 +790,7 @@ fn golden_widget_border_rect_extreme_wide() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.05, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.05, 1.0, None);
     tree.set_behavior(root, Box::new(behavior));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -839,7 +839,7 @@ fn golden_widget_border_roundrect_thin() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.002, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.002, 1.0, None);
     tree.set_behavior(root, Box::new(behavior));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -889,7 +889,7 @@ fn golden_widget_border_instrument_cramped() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.15, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.15, 1.0, None);
     tree.set_behavior(root, Box::new(behavior));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -933,7 +933,7 @@ fn golden_widget_label_single_char() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.1, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.1, 1.0, None);
     tree.set_behavior(root, Box::new(LabelBehavior { label }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -969,7 +969,7 @@ fn golden_widget_label_empty() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, Box::new(LabelBehavior { label }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1003,7 +1003,7 @@ fn golden_widget_label_long_narrow() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 4.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 4.0, 1.0, None);
     tree.set_behavior(root, Box::new(LabelBehavior { label }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1067,7 +1067,7 @@ fn widget_tunnel() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, Box::new(TunnelBehavior { tunnel }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1109,7 +1109,7 @@ fn widget_file_selection_box() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, Box::new(fsb));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1147,7 +1147,7 @@ fn golden_widget_textfield_empty_wide() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.05, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.05, 1.0, None);
     tree.set_behavior(root, Box::new(TextFieldBehavior { text_field: tf }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1194,7 +1194,7 @@ fn golden_widget_textfield_single_char_square() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
     tree.set_behavior(root, Box::new(TextFieldBehavior { text_field: tf }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1247,7 +1247,7 @@ fn golden_widget_scalarfield_min_value() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, Box::new(ScalarFieldBehavior { scalar_field: sf }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1294,7 +1294,7 @@ fn golden_widget_scalarfield_max_value() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, Box::new(ScalarFieldBehavior { scalar_field: sf }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1341,7 +1341,7 @@ fn golden_widget_scalarfield_zero_range() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, Box::new(ScalarFieldBehavior { scalar_field: sf }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1386,7 +1386,7 @@ fn golden_widget_listbox_empty() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, Box::new(ListBoxBehavior { list_box: lb }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1419,7 +1419,7 @@ fn golden_widget_listbox_single() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, Box::new(ListBoxBehavior { list_box: lb }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1454,7 +1454,7 @@ fn golden_widget_listbox_extreme_wide() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.05, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.05, 1.0, None);
     tree.set_behavior(root, Box::new(ListBoxBehavior { list_box: lb }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1499,7 +1499,7 @@ fn golden_widget_splitter_h_pos0() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, Box::new(SplitterBehavior { splitter: sp }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1531,7 +1531,7 @@ fn golden_widget_splitter_h_pos1() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_behavior(root, Box::new(SplitterBehavior { splitter: sp }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1563,7 +1563,7 @@ fn golden_widget_splitter_v_extreme_tall() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 8.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 8.0, 1.0, None);
     tree.set_behavior(root, Box::new(SplitterBehavior { splitter: sp }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1612,7 +1612,7 @@ fn golden_widget_checkbox_extreme_tall() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 4.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 4.0, 1.0, None);
     tree.set_behavior(root, Box::new(CheckBoxBehavior { check_box: cb }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1658,7 +1658,7 @@ fn golden_widget_tunnel_extreme_wide() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.02, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.02, 1.0, None);
     tree.set_behavior(root, Box::new(TunnelBehavior { tunnel }));
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
@@ -1705,8 +1705,8 @@ fn golden_widget_colorfield_alpha_zero() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
-    tree.SetAutoExpansionThreshold(root, 9.0, ViewConditionType::MinExt);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
+    tree.SetAutoExpansionThreshold(root, 9.0, ViewConditionType::MinExt, None);
     tree.set_behavior(
         root,
         Box::new(ColorFieldExpandedBehavior { color_field: cf }),
@@ -1760,8 +1760,8 @@ fn golden_widget_colorfield_alpha_opaque() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
-    tree.SetAutoExpansionThreshold(root, 9.0, ViewConditionType::MinExt);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
+    tree.SetAutoExpansionThreshold(root, 9.0, ViewConditionType::MinExt, None);
     tree.set_behavior(
         root,
         Box::new(ColorFieldExpandedBehavior { color_field: cf }),
@@ -1815,8 +1815,8 @@ fn golden_widget_colorfield_alpha_near() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
-    tree.SetAutoExpansionThreshold(root, 9.0, ViewConditionType::MinExt);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
+    tree.SetAutoExpansionThreshold(root, 9.0, ViewConditionType::MinExt, None);
     tree.set_behavior(
         root,
         Box::new(ColorFieldExpandedBehavior { color_field: cf }),
@@ -1879,12 +1879,12 @@ fn composition_border_nest() {
         .with_caption("Outer");
     outer.border.label_in_border = true;
     // C++: outer->DoLayout(0, 0, 800.0/600.0, 1.0);
-    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0, None);
 
     // Inner: emLinearGroup vertical, OBT_RECT / IBT_GROUP, caption "Inner"
     // C++: inner = new Testable<emLinearLayout>(*outer, "inner", "Inner");
     //      inner->SetBorderType(OBT_RECT, IBT_GROUP); inner->SetVertical();
-    let inner_id = tree.create_child(root, "inner");
+    let inner_id = tree.create_child(root, "inner", None);
     let mut inner = emLinearGroup::vertical();
     inner.border = emBorder::new(OuterBorderType::Rect)
         .with_inner(InnerBorderType::Group)
@@ -1894,7 +1894,7 @@ fn composition_border_nest() {
 
     // Children of inner
     // C++: new Testable<emLabel>(*inner, "label", "Test Label")
-    let label_id = tree.create_child(inner_id, "label");
+    let label_id = tree.create_child(inner_id, "label", None);
     tree.set_behavior(
         label_id,
         Box::new(LabelBehavior {
@@ -1903,7 +1903,7 @@ fn composition_border_nest() {
     );
 
     // C++: new Testable<emButton>(*inner, "button", "Test Button")
-    let button_id = tree.create_child(inner_id, "button");
+    let button_id = tree.create_child(inner_id, "button", None);
     tree.set_behavior(
         button_id,
         Box::new(ButtonBehavior {
@@ -1912,7 +1912,7 @@ fn composition_border_nest() {
     );
 
     // C++: new Testable<emTextField>(*inner, "textfield", "Field", "", emImage(), "Hello", true)
-    let tf_id = tree.create_child(inner_id, "textfield");
+    let tf_id = tree.create_child(inner_id, "textfield", None);
     let mut tf = emTextField::new(look.clone());
     tf.SetCaption("Field");
     tf.SetEditable(true);
@@ -1992,13 +1992,13 @@ fn composition_splitter_content() {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
     // C++ DoLayout(0, 0, 800/600, 1.0)
-    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0, None);
     tree.set_behavior(root, Box::new(SplitterCompositionBehavior { splitter: sp }));
 
     // Left child: emBorder with OBT_Rect/IBT_None, caption "Left".
     // In C++, emBorder positions children at default off-screen — so they're invisible.
     // We use BorderBehavior (PaintContent-only, no child layout) to match.
-    let left_id = tree.create_child(root, "left");
+    let left_id = tree.create_child(root, "left", None);
     tree.set_behavior(
         left_id,
         Box::new(BorderBehavior::new(
@@ -2011,11 +2011,11 @@ fn composition_splitter_content() {
 
     // C++ children exist in the tree but are never positioned/visible.
     // Create them so the tree structure Match, but they'll remain off-screen.
-    let _cf_id = tree.create_child(left_id, "color");
-    let _lb_id = tree.create_child(left_id, "list");
+    let _cf_id = tree.create_child(left_id, "color", None);
+    let _lb_id = tree.create_child(left_id, "list", None);
 
     // Right child: emBorder with OBT_Rect/IBT_None, caption "Right".
-    let right_id = tree.create_child(root, "right");
+    let right_id = tree.create_child(root, "right", None);
     tree.set_behavior(
         right_id,
         Box::new(BorderBehavior::new(
@@ -2026,8 +2026,8 @@ fn composition_splitter_content() {
         )),
     );
 
-    let _cf_id = tree.create_child(right_id, "color");
-    let _lb_id = tree.create_child(right_id, "list");
+    let _cf_id = tree.create_child(right_id, "color", None);
+    let _lb_id = tree.create_child(right_id, "list", None);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
@@ -2075,7 +2075,7 @@ fn composition_scrolled_listbox_in_border() {
 
     // C++: emBorder with OBT_ROUND_RECT/IBT_NONE, caption "Scrolled List"
     // emBorder does not layout children — use PaintContent-only BorderBehavior.
-    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0, None);
     tree.set_behavior(
         root,
         Box::new(BorderBehavior::new(
@@ -2087,7 +2087,7 @@ fn composition_scrolled_listbox_in_border() {
     );
 
     // emListBox child exists in tree but won't be visible (emBorder default positions).
-    let lb_id = tree.create_child(root, "list");
+    let lb_id = tree.create_child(root, "list", None);
     let mut lb = emListBox::new(look);
     lb.SetCaption("Items");
     for i in 1..=50 {
@@ -2142,7 +2142,7 @@ fn composition_colorfield_expansion_wide() {
 
     // C++: border->SetBorderType(OBT_ROUND_RECT, IBT_GROUP);
     // C++: border->DoLayout(0, 0, 800.0/400.0, 1.0);
-    tree.Layout(root, 0.0, 0.0, 800.0 / 400.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 800.0 / 400.0, 1.0, 1.0, None);
     tree.set_behavior(
         root,
         Box::new(BorderBehavior::new(
@@ -2154,7 +2154,7 @@ fn composition_colorfield_expansion_wide() {
     );
 
     // C++ child: emColorField — exists in tree but not positioned by emBorder
-    let _cf_id = tree.create_child(root, "color");
+    let _cf_id = tree.create_child(root, "color", None);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 400.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
@@ -2201,7 +2201,7 @@ fn composition_colorfield_expansion_tall() {
 
     // C++: border->SetBorderType(OBT_ROUND_RECT, IBT_GROUP);
     // C++: border->DoLayout(0, 0, 400.0/800.0, 1.0);
-    tree.Layout(root, 0.0, 0.0, 400.0 / 800.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 400.0 / 800.0, 1.0, 1.0, None);
     tree.set_behavior(
         root,
         Box::new(BorderBehavior::new(
@@ -2213,7 +2213,7 @@ fn composition_colorfield_expansion_tall() {
     );
 
     // C++ child: emColorField — exists in tree but not positioned by emBorder
-    let _cf_id = tree.create_child(root, "color");
+    let _cf_id = tree.create_child(root, "color", None);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 400.0, 800.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
@@ -2255,7 +2255,7 @@ fn stress_test_overlay_golden() {
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("test");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
 
     // Render baseline (no stress test)
     let mut view = emView::new(

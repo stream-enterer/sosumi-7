@@ -1792,7 +1792,7 @@ mod tests {
     fn headless_window_register_engines_registers_engines() {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         let win_id = winit::window::WindowId::dummy();
         let sched = std::rc::Rc::new(std::cell::RefCell::new(EngineScheduler::new()));
         let close_sig = sched.borrow_mut().create_signal();
