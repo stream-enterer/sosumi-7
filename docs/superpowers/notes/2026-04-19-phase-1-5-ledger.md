@@ -707,3 +707,31 @@ earlier commit (part of the 1c/7 cascade).
 The "~150 unit test rewire" bullet of substep 1h (plan text) was
 already absorbed into each method-migration commit of 1c/1-7; no
 discrete test-rewire commit needed.
+
+---
+
+## Task 1 substep 1i: final invariants check
+
+### 2026-04-20 — DONE
+
+Gate green end-to-end, no further code changes needed. Verification run:
+
+| Invariant | Target | Actual |
+|---|---|---|
+| `emView::scheduler` field | deleted | ✓ gone |
+| `App.scheduler` shape | plain `EngineScheduler` | ✓ `pub scheduler: EngineScheduler` at emGUIFramework.rs:90 |
+| `PanelTree::sched_rc` field | deleted | ✓ gone from live code |
+| `SchedOp` enum | deleted | ✓ zero live hits |
+| `queue_or_apply_sched_op` | deleted | ✓ zero live hits |
+| `pending_sched_ops` field | deleted | ✓ zero live hits |
+| `close_signal_pending` field | deleted | ✓ zero live hits |
+| `with_local_sched_ctx` helper | deleted | ✓ zero live hits |
+| `rc_refcell_total` vs Phase 1.5 baseline | ↓ | 284 → **282** (−2) |
+| `try_borrow_total` vs Phase 1.5 baseline | ↓ | 11 → **5** (−6) |
+
+Full gate:
+- `cargo clippy --all-targets --all-features -- -D warnings`: PASS
+- `cargo-nextest ntr`: 2455 / 2455 pass, 9 skipped
+- Goldens: 237 / 6 preserved
+
+**Status:** Task 1 (keystone migration) COMPLETE. All I1/I1a/I1b/I1d invariants SAT. I1c (sub_scheduler) still UNSAT — Task 2.
