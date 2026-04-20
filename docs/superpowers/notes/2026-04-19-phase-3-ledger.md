@@ -13,4 +13,4 @@
 
 ## Task log
 
-<empty — tasks append here as they complete>
+- **Task 1 (InputDispatchEngine):** commit c7ca9971. Framework-owned engine at `Priority::VeryHigh` drains `pending_inputs` each slice; three winit callback sites migrated from immediate `win.dispatch_input(...)` to enqueue-and-wake. `EngineCtx` gained `pending_inputs` + `input_state` (latter needed by `emWindow::dispatch_input`); `DoTimeSlice` signature + ~20 call sites updated. Gate green. Baseline deltas: nextest +1 (new test → 2459 passed, 9 skipped), goldens 237/6 preserved, rc_refcell_total unchanged, rust_only_total +1 (emInputDispatchEngine.rust_only).
