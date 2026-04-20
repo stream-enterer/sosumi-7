@@ -198,6 +198,24 @@ impl SchedCtx<'_> {
     }
 }
 
+impl ConstructCtx for EngineCtx<'_> {
+    fn create_signal(&mut self) -> SignalId {
+        self.scheduler.create_signal()
+    }
+
+    fn register_engine(
+        &mut self,
+        behavior: Box<dyn crate::emEngine::emEngine>,
+        pri: Priority,
+    ) -> EngineId {
+        self.scheduler.register_engine(behavior, pri)
+    }
+
+    fn wake_up(&mut self, eng: EngineId) {
+        self.scheduler.wake_up(eng);
+    }
+}
+
 impl ConstructCtx for SchedCtx<'_> {
     fn create_signal(&mut self) -> SignalId {
         self.scheduler.create_signal()

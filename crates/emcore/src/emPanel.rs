@@ -360,4 +360,14 @@ pub trait PanelBehavior: AsAny {
     fn type_name(&self) -> &str {
         std::any::type_name_of_val(self)
     }
+
+    /// Downcast to `emSubViewPanel` without `Any`. Phase 1.75 uses this in
+    /// the scheduler dispatch walk to reach a sub-view's `sub_tree` when
+    /// resolving a `TreeLocation::SubView` owner.
+    ///
+    /// The default returns `None`; only [`emSubViewPanel`](super::emSubViewPanel::emSubViewPanel)
+    /// overrides this to return `Some(self)`.
+    fn as_sub_view_panel_mut(&mut self) -> Option<&mut crate::emSubViewPanel::emSubViewPanel> {
+        None
+    }
 }

@@ -1,8 +1,32 @@
 use slotmap::new_key_type;
 
+use crate::emPanelTree::PanelId;
+
 new_key_type! {
     /// Handle to an engine in the scheduler.
     pub struct EngineId;
+}
+
+/// Location of an engine relative to the outer `PanelTree`.
+///
+/// Phase 1.75 unifies engine dispatch across outer and sub-view trees by
+/// tagging every registered engine with a `TreeLocation` that tells the
+/// scheduler how to reach the engine's tree from the outer tree.
+///
+/// `Outer` means the engine belongs to the outer tree directly.
+/// `SubView { outer_panel_id, rest }` means: walk to `outer_panel_id` in the
+/// outer tree, take its behavior, access the `emSubViewPanel::sub_tree`
+/// through `as_sub_view_panel_mut`, and resolve the remaining location
+/// within that sub-tree. Supports arbitrary nesting via `rest`.
+///
+/// See the Phase 1.75 plan §Architecture for the dispatch walk.
+#[derive(Clone, Debug)]
+pub enum TreeLocation {
+    Outer,
+    SubView {
+        outer_panel_id: PanelId,
+        rest: Box<TreeLocation>,
+    },
 }
 
 /// A unit of cooperative work executed by the scheduler.

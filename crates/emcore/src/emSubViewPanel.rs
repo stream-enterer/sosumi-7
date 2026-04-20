@@ -219,6 +219,10 @@ impl PanelBehavior for emSubViewPanel {
         true
     }
 
+    fn as_sub_view_panel_mut(&mut self) -> Option<&mut emSubViewPanel> {
+        Some(self)
+    }
+
     fn Input(
         &mut self,
         event: &emInputEvent,
