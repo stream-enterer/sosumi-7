@@ -497,3 +497,50 @@ is also borrowed by the `SetGeometry` call.
 
 **Status:** DONE. Largest single migration in the 7-method series (~95 test + 6
 production call sites). No scope leakage into method 7/7 territory.
+
+
+### Session 9 — Task 1c method 7/7: Update, ZoomOut, SetViewFlags, RawVisit, RawScrollAndZoom, SetGeometry, remove_panel, focus_panel, ZoomOut (@ 91dcb9f)
+
+- **Methods migrated (all remaining emView methods that carry SchedOp/ctx work):**
+  - `Update(&mut self, tree, ctx: &mut SchedCtx<'_>)`
+  - `ZoomOut(&mut self, tree, ctx: &mut SchedCtx<'_>)`
+  - `SetViewFlags(&mut self, flags, tree, ctx: &mut SchedCtx<'_>)`
+  - `RawVisit(&mut self, tree, panel, rx, ry, ra, adherent, ctx: &mut SchedCtx<'_>)`
+  - `RawScrollAndZoom(&mut self, tree, dx, dy, factor, cx, cy, ctx: &mut SchedCtx<'_>)`
+  - `SetGeometry` / `SetViewPortTallness` (ctx already added in method 5; call sites completed here)
+  - `remove_panel`, `focus_panel` public wrappers — moved from `with_local_sched_ctx` to ctx-threaded
+
+- **`emSubViewPanel::raw_zoom_out` wrapper added:**
+  - `emmain` crate cannot access `sub_scheduler` (`pub(crate)`); added
+    `raw_zoom_out(force_viewing_update: bool)` on `emSubViewPanel` that builds
+    an internal SchedCtx from `self.sub_scheduler` and calls `RawZoomOut`.
+
+- **test_view_harness: `TestSched` struct added as public type:**
+  - Mirrors golden `common.rs::TestSched`; provides `new()` + `with(|sc| ...)` closure pattern.
+  - Required because unit tests in `eaglemode/tests/unit/` link against emcore's
+    `test-support` feature and need the same helper struct.
+
+- **`test_signal_fields_and_visit_by_identity` regression fixed:**
+  - Migration script replaced `view.with_local_sched_ctx(...)` with `h.sched_ctx()` (wrong scheduler).
+  - Fix: build SchedCtx from the test's own `sched` (the scheduler that owns `cp_sig`).
+
+- **Test rewires (~228 call sites across 34 files):**
+  - emcore internal tests (emView.rs ~60 sites, emViewInputFilter.rs ~50 sites, emViewAnimator.rs ~25 sites, emPanelTree.rs ~10 sites, emSubViewPanel.rs ~5 sites)
+  - eaglemode golden tests (animator.rs, composition.rs, compositor.rs, input.rs, input_filter.rs, interaction.rs, notice.rs, parallel.rs, test_panel.rs, widget.rs, widget_interaction.rs)
+  - eaglemode unit tests (input_dispatch_chain.rs, panel.rs, popup_cancel_before_materialize.rs, popup_materialization.rs)
+  - integration/pipeline tests (input.rs, lifecycle.rs, pipeline/focus.rs)
+  - support harness (mod.rs, pipeline.rs)
+
+- **TestSched pattern:** `let mut ts = TestSched::new(); ts.with(|sc| method(..., sc))` — avoids lifetime issues with returning SchedCtx from a function.
+
+- **Bulk migration methodology:** Python regex scripts for call-site substitution + manual fixup of edge cases (mangled `if !anim.animate(...)`, greedy `dt_for_frame(i, sc)`, extra `)` at line 3254, missing `let mut ts` declarations in helper functions).
+
+- cargo check: clean.
+- clippy -D warnings: clean.
+- Nextest: 2455 pass / 0 fail / 9 skipped.
+- Goldens: unchanged from baseline.
+- Commit `91dcb9f` used `--no-verify` (sanctioned intermediate-red branch policy).
+
+**Status:** DONE. Task 1c (7/7 methods) complete. Full SchedCtx threading through emView
+and all callers. `with_local_sched_ctx` bridge no longer needed for any of the 7 methods.
+All 2455 tests green.
