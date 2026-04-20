@@ -303,6 +303,22 @@ impl emFileDialog {
     ///    - On NEGATIVE: `OverwriteAsked.Clear(); delete OverwriteDialog;`
     ///
     /// Returns `true` if either branch executed (caller may wish to re-cycle).
+    ///
+    /// DIVERGED: C++ `emFileDialog::Cycle` (emFileDialog.cpp:80) is
+    /// scheduler-dispatched automatically — the constructor calls
+    /// `AddWakeUpSignal(Fsb->GetFileTriggerSignal())` and
+    /// `AddWakeUpSignal(OverwriteDialog->GetFinishSignal())`, so the engine
+    /// scheduler invokes `Cycle` as soon as either signal fires. Rust requires
+    /// caller-driven invocation because `emFileDialog` is not registered as an
+    /// `emEngine` — which in turn requires `emDialog` to become an `emEngine`
+    /// first (it currently is not). Observable surface: the caller, not the
+    /// scheduler, controls when signal-driven state transitions become visible.
+    /// The signal-firing *beats* inside Cycle already match C++, so observers
+    /// that connect to `finish_signal` see the result at the correct logical
+    /// moment once Cycle is invoked — but the scheduler-versus-caller dispatch
+    /// timing is not reproduced. Port plan: closure of this divergence is
+    /// deferred to the phase that ports `emDialog` → `emEngine` with proper
+    /// wake-up-signal subscription plumbing. Tracked by raw-material entry E024.
     pub fn Cycle(&mut self, ctx: &mut PanelCtx<'_>) -> bool {
         // Decide what transition to execute based on currently-pending
         // signals, then drop the SchedCtx borrow before mutating ctx via
