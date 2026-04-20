@@ -1356,8 +1356,8 @@
       "caused_by_entry_id": "E005",
       "introduced": "phase-1-75 (surfaced by sub_scheduler deletion in Task 4)",
       "inference": "Phase 1.75 Tasks 3/4 removed the per-sub-view scheduler but left Input dispatch synthesizing a local EngineScheduler to satisfy SchedCtx lifetimes. This is not a forced divergence — the trait signature is malleable — but is out of Phase 1.75 scope.",
-      "status": "deferred-phase-1-76",
-      "resolution_commit": null
+      "status": "resolved-phase-1-76",
+      "resolution_commit": "48466f41"
     }
   ]
 }
