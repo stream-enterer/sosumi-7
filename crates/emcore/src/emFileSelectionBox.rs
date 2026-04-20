@@ -678,13 +678,8 @@ impl PanelBehavior for TextFilePanel {
     }
 }
 
-// DIVERGED-B3.3: FileTriggerCb takes `&str` which cannot be expressed as a
-// lifetime-parametric `WidgetCallback<T>`. SelectionChangedCb is zero-arg
-// but is paired with FileTriggerCb on the same widget and fires from the
-// same cycle context, so it keeps the plain form for symmetry. Both remain
-// plain `Box<dyn FnMut>` and fire without scheduler reach until B3.4.
-type SelectionChangedCb = Box<dyn FnMut()>;
-type FileTriggerCb = Box<dyn FnMut(&str)>;
+type SelectionChangedCb = crate::emEngineCtx::WidgetCallback<()>;
+type FileTriggerCb = crate::emEngineCtx::WidgetCallbackRef<str>;
 
 /// Shared event state collected by child-panel callbacks and drained in `cycle()`.
 #[derive(Default)]
@@ -1084,10 +1079,12 @@ impl emFileSelectionBox {
             tf.SetEditable(true);
             tf.SetText(&self.parent_dir.to_string_lossy());
             let events = self.events.clone();
-            tf.on_text = Some(Box::new(move |text: &str| {
-                let mut e = events.borrow_mut();
-                e.dir_text_changed = Some(text.to_string());
-            }));
+            tf.on_text = Some(Box::new(
+                move |text: &str, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
+                    let mut e = events.borrow_mut();
+                    e.dir_text_changed = Some(text.to_string());
+                },
+            ));
             let id =
                 ctx.create_child_with("directory", Box::new(TextFieldPanel { text_field: tf }));
             self.dir_field_id = Some(id);
@@ -1130,16 +1127,20 @@ impl emFileSelectionBox {
                 lb.border_mut().SetBorderScaling(hs / h2);
             }
             let events = self.events.clone();
-            lb.on_selection = Some(Box::new(move |indices: &[usize]| {
-                let mut e = events.borrow_mut();
-                e.selection_changed = true;
-                e.selection_indices = indices.to_vec();
-            }));
+            lb.on_selection = Some(Box::new(
+                move |indices: &[usize], _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
+                    let mut e = events.borrow_mut();
+                    e.selection_changed = true;
+                    e.selection_indices = indices.to_vec();
+                },
+            ));
             let events = self.events.clone();
-            lb.on_trigger = Some(Box::new(move |index: usize| {
-                let mut e = events.borrow_mut();
-                e.triggered_index = Some(index);
-            }));
+            lb.on_trigger = Some(Box::new(
+                move |index: usize, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
+                    let mut e = events.borrow_mut();
+                    e.triggered_index = Some(index);
+                },
+            ));
             // Set custom item behavior factory for FileItemPanel rendering.
             let listing_data = self.listing_data.clone();
             let parent_dir = self.parent_dir.clone();
@@ -1173,10 +1174,12 @@ impl emFileSelectionBox {
                 tf.SetText(name);
             }
             let events = self.events.clone();
-            tf.on_text = Some(Box::new(move |text: &str| {
-                let mut e = events.borrow_mut();
-                e.name_text_changed = Some(text.to_string());
-            }));
+            tf.on_text = Some(Box::new(
+                move |text: &str, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
+                    let mut e = events.borrow_mut();
+                    e.name_text_changed = Some(text.to_string());
+                },
+            ));
             let id = ctx.create_child_with("name", Box::new(TextFieldPanel { text_field: tf }));
             self.name_field_id = Some(id);
         }
@@ -1193,10 +1196,12 @@ impl emFileSelectionBox {
                 lb.SetSelectedIndex(self.selected_filter_index as usize);
             }
             let events = self.events.clone();
-            lb.on_selection = Some(Box::new(move |indices: &[usize]| {
-                let mut e = events.borrow_mut();
-                e.filter_index_changed = indices.first().copied();
-            }));
+            lb.on_selection = Some(Box::new(
+                move |indices: &[usize], _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
+                    let mut e = events.borrow_mut();
+                    e.filter_index_changed = indices.first().copied();
+                },
+            ));
             let id = ctx.create_child_with("filter", Box::new(ListBoxPanel { list_box: lb }));
             self.filter_lb_id = Some(id);
         }
@@ -1444,7 +1449,6 @@ impl PanelBehavior for emFileSelectionBox {
     }
 
     fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
-        let _ = ectx;
         // Take all pending events.
         let events = {
             let mut e = self.events.borrow_mut();
@@ -1459,7 +1463,8 @@ impl PanelBehavior for emFileSelectionBox {
                 self.triggered_file_name.clear();
                 self.invalidate_listing();
                 if let Some(ref mut cb) = self.on_selection {
-                    cb();
+                    let mut sched = ectx.as_sched_ctx();
+                    cb((), &mut sched);
                 }
             }
         }
@@ -1482,7 +1487,8 @@ impl PanelBehavior for emFileSelectionBox {
             // Update name field.
             self.sync_name_field(ctx);
             if let Some(ref mut cb) = self.on_selection {
-                cb();
+                let mut sched = ectx.as_sched_ctx();
+                cb((), &mut sched);
             }
         }
 
@@ -1502,7 +1508,8 @@ impl PanelBehavior for emFileSelectionBox {
                     } else {
                         self.triggered_file_name = name.clone();
                         if let Some(ref mut cb) = self.on_trigger {
-                            cb(&name);
+                            let mut sched = ectx.as_sched_ctx();
+                            cb(&name, &mut sched);
                         }
                     }
                 }
@@ -1527,7 +1534,8 @@ impl PanelBehavior for emFileSelectionBox {
                 self.sync_name_field(ctx);
                 self.sync_dir_field(ctx);
                 if let Some(ref mut cb) = self.on_selection {
-                    cb();
+                    let mut sched = ectx.as_sched_ctx();
+                    cb((), &mut sched);
                 }
             } else {
                 self.set_selected_name(&name_text);

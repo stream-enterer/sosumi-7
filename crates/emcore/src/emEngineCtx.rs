@@ -24,6 +24,12 @@ use crate::emWindow::emWindow;
 /// signals / register engines / access clipboard. Spec §3.5 D6.1.
 pub type WidgetCallback<Args> = Box<dyn for<'a, 'b> FnMut(Args, &'b mut SchedCtx<'a>)>;
 
+/// Widget callback taking a borrowed payload (e.g. `&str`, `&DialogResult`,
+/// `&[usize]`). Three-lifetime HRTB: `'c` payload, `'b` SchedCtx borrow,
+/// `'a` scheduler. `T: ?Sized` supports unsized types like `str` and
+/// `[usize]`. Spec §3.5 D6.1.
+pub type WidgetCallbackRef<T> = Box<dyn for<'a, 'b, 'c> FnMut(&'c T, &'b mut SchedCtx<'a>)>;
+
 pub enum DeferredAction {
     /// Close a winit window after the current time slice. Drained by the
     /// framework's post-cycle action pump so that window teardown does not
@@ -868,6 +874,13 @@ mod tests {
         assert!(sc.is_signaled(sig));
         sc.remove_signal(sig);
         assert!(!sc.is_signaled(sig));
+    }
+
+    #[test]
+    fn widget_callback_ref_type_check() {
+        let _cb: WidgetCallbackRef<str> = Box::new(|_s: &str, _sched: &mut SchedCtx<'_>| {});
+        let _cb2: WidgetCallbackRef<[usize]> =
+            Box::new(|_s: &[usize], _sched: &mut SchedCtx<'_>| {});
     }
 
     #[test]
