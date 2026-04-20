@@ -8,7 +8,7 @@
 
 ## Bootstrap decisions
 
-- **B11a (stage-only scan):** Phase 3 plan has NO stage-only tasks — every Task 1–7 has its own commit at step end. Pre-commit hook left in place. B11a skipped.
+- **B11a (stage-only scan):** Phase 3 plan has NO stage-only tasks — every Task 1–7 has its own commit at step end. Pre-commit hook left in place initially. **Revisited 2026-04-20 mid-phase:** Task 3 dispatched BLOCKED on a Phase-2-style coupling issue — widget `PanelBehavior::Input` signatures don't carry `SchedCtx`, and the Phase-1.76 invariant in `emPanelTree::dispatch_input` forbids threading one through. Per handoff pre-authorization, bundled Task 3 + Task 4 into one unit (plumbing extension + callback sig migration + signal allocation + DIVERGED deletions + tests). Disabled pre-commit hook for the bundle cascade: `mv .git/hooks/pre-commit .git/hooks/pre-commit.disabled-for-phase-3-cascade`. The bundle keystone re-enables the hook and makes its final commit under it.
 - **Phase-1.5 precondition deviation:** `_pending_inputs` field exists with underscore prefix (unused marker). Phase 3 Task 1 Step 5 wires it and drops the underscore. User approved proceeding (Option A) on 2026-04-20.
 
 ## Task log
