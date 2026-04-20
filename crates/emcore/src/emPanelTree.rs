@@ -216,9 +216,9 @@ pub(crate) struct PanelData {
     pub(crate) pending_input: bool,
 
     // Notice ring linkage (C++ emPanel::NoticeNode.Prev/Next).
-    // Panels with queued notices form a doubly-linked circular ring
-    // rooted on PanelTree.notice_ring_head_*. When neither prev nor next
-    // is set, the panel is NOT in the ring.
+    // Panels with queued notices form a doubly-linked list.  The ring
+    // head/tail sentinel is stored on `emView` (notice_ring_head_next/prev).
+    // When neither prev nor next is set, the panel is NOT in the ring.
     pub(crate) notice_prev_in_ring: Option<PanelId>,
     pub(crate) notice_next_in_ring: Option<PanelId>,
 
@@ -302,31 +302,13 @@ pub struct PanelTree {
     pub(crate) seek_pos_panel: Option<PanelId>,
     /// Mirror of `emView::seek_pos_child_name`.
     pub(crate) seek_pos_child_name: String,
-    /// Head of the notice-delivery ring.
-    ///
-    /// DIVERGED: C++ uses a `PanelRingNode* NoticeList` sentinel with raw
-    /// pointer linkage (emView.h:576, emPanel.h:823). Rust uses two
-    /// `Option<PanelId>` fields to point at the first and last queued
-    /// panels (arena indices replace raw pointers). Semantics: panels
-    /// with queued notices form a doubly-linked list; `add_to_notice_list`
-    /// links at the tail; `emView::HandleNotice` drains from the head.
-    ///
-    /// Divergence classification per the Port Ideology (CLAUDE.md):
-    /// - **Storage shape** (global `PanelTree` owns NoticeList vs C++
-    ///   per-view `emView::NoticeList`): *Forced.* Rust RefCell borrow rules
-    ///   prevent per-view ring ownership — `emView::HandleNotice` is called
-    ///   with `&mut self` (view mutably borrowed), so callbacks inside
-    ///   dispatch that call `tree.add_to_notice_list` cannot re-borrow
-    ///   the same view to append to a view-owned ring. Ring storage stays
-    ///   on `PanelTree`; dispatch driver is per-view (SP5, emView.cpp:1312
-    ///   parity). The remaining storage divergence is *forced*.
-    /// - **Data structure** (`Option<PanelId>` arena-index vs `PanelRingNode*`
-    ///   sentinel): *Idiom adaptation.* Below the observable surface.
-    /// - **Dispatch driver**: SP5 resolved this — `emView::HandleNotice`
-    ///   is called from `emView::Update` using the view's own
-    ///   `CurrentPixelTallness` and `window_focused` (emView.cpp:1312 parity).
-    pub(crate) notice_ring_head_next: Option<PanelId>,
-    pub(crate) notice_ring_head_prev: Option<PanelId>,
+    /// Pending ring-cleanup entries from `remove()` calls that lacked a
+    /// view reference.  Each tuple is `(prev_in_ring, next_in_ring)` for
+    /// the panel that was removed.  `emView::HandleNotice` drains this at
+    /// the top of each drain cycle, updating `notice_ring_head_next/prev`
+    /// as needed.  Filled only when `remove()` is called without an
+    /// `emView` (e.g. from `PanelCtx` or test code).
+    pub(crate) pending_ring_cleanup: Vec<(Option<PanelId>, Option<PanelId>)>,
     /// Set by `Layout()` on the root panel (no parent). Matches C++
     /// `emPanel::Layout` `!Parent` branch which sets `View.SVPChoiceInvalid`
     /// and calls `View.RawZoomOut(true)` when zoomed out. `emView::Update`
@@ -343,12 +325,10 @@ pub struct PanelTree {
     /// registered with the correct `TreeLocation` on the single outer
     /// scheduler and dispatch resolves through the sub-view chain.
     pub(crate) tree_location: TreeLocation,
-    /// Phase 1.75 Task 5 (continuation): cached copy of the owning view's
-    /// `update_engine_id`. Populated by `emView::RegisterEngines` via
-    /// [`PanelTree::set_update_engine_id`]; cleared on view detach. Read by
-    /// `add_to_notice_list` to wake the update engine WITHOUT borrowing the
-    /// view (which may be mutably borrowed by `UpdateEngineClass::Cycle`
-    /// while notice drain runs).
+    /// Cached copy of the owning view's `update_engine_id`.
+    /// Populated by `emView::RegisterEngines` via [`PanelTree::set_update_engine_id`];
+    /// cleared on view detach.  Read by `add_to_notice_list` to wake the
+    /// update engine without borrowing the view.
     pub(crate) update_engine_id: Option<crate::emEngine::EngineId>,
 }
 
@@ -373,8 +353,7 @@ impl PanelTree {
             navigation_requests: Vec::new(),
             seek_pos_panel: None,
             seek_pos_child_name: String::new(),
-            notice_ring_head_next: None,
-            notice_ring_head_prev: None,
+            pending_ring_cleanup: Vec::new(),
             root_layout_changed: false,
             pending_engine_removals: Vec::new(),
             tree_location,
@@ -382,99 +361,67 @@ impl PanelTree {
         }
     }
 
-    /// Phase 1.75 Task 5 (continuation): set the cached update-engine id used
-    /// by `add_to_notice_list` to wake the view's update engine without
-    /// borrowing the view. Called by `emView::RegisterEngines` right after
-    /// the engine is registered; cleared by view detach paths.
+    /// Set the cached update-engine id so `add_to_notice_list` can wake the
+    /// view's update engine without a scheduler call through the view.
+    /// Called by `emView::RegisterEngines`; cleared on view detach.
     pub fn set_update_engine_id(&mut self, id: Option<crate::emEngine::EngineId>) {
         self.update_engine_id = id;
     }
 
-    /// Link `id` into the notice ring at the tail and wake the view's update
-    /// engine if a scheduler is provided.
-    /// Port of C++ `emView::AddToNoticeList` (emView.cpp).
-    pub(crate) fn add_to_notice_list(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
-        // Guard: View must be either populated (strong > 0) or the unset sentinel
-        // Weak::new() (strong == 0 && weak == 0). A dangling Weak (strong == 0 &&
-        // weak > 0) means the owning emView was dropped — that is a real bug.
-        debug_assert!(
-            {
-                let v = &self.panels[id].View;
-                v.strong_count() > 0 || v.weak_count() == 0
-            },
-            "emPanel::View is dangling (strong=0, weak={weak}): owning emView was dropped \
-             before this panel; panel = {name:?}",
-            weak = self.panels[id].View.weak_count(),
-            name = self.panels[id].name,
-        );
-        // Already linked?
-        {
-            let p = &self.panels[id];
-            if p.notice_prev_in_ring.is_some() || p.notice_next_in_ring.is_some() {
-                return;
-            }
-            // Or currently the single head?
-            if self.notice_ring_head_next == Some(id) {
-                return;
-            }
-        }
-        match self.notice_ring_head_prev {
-            Some(old_tail) => {
-                // Link new node after old tail.
-                self.panels[old_tail].notice_next_in_ring = Some(id);
-                self.panels[id].notice_prev_in_ring = Some(old_tail);
-                self.panels[id].notice_next_in_ring = None;
-                self.notice_ring_head_prev = Some(id);
-            }
-            None => {
-                // Ring was empty.
-                self.panels[id].notice_prev_in_ring = None;
-                self.panels[id].notice_next_in_ring = None;
-                self.notice_ring_head_next = Some(id);
-                self.notice_ring_head_prev = Some(id);
-            }
-        }
+    /// Mark pending notices and wake the update engine.
+    ///
+    /// Phase 2 Task 6 (E006): ring linking is now on `emView::AddToNoticeList`.
+    /// `PanelTree::add_to_notice_list` remains as the call site for tree-internal
+    /// paths that do not have an `&mut emView` available.  It sets the
+    /// `has_pending_notices` flag (picked up by `emView::HandleNotice`'s safety-net
+    /// scan) and wakes the update engine so the drain runs on the next cycle.
+    ///
+    /// Call sites that DO have `&mut emView` should call
+    /// `view.AddToNoticeList(id, tree)` directly instead.
+    pub(crate) fn add_to_notice_list(&mut self, _id: PanelId, sched: Option<&mut EngineScheduler>) {
+        self.has_pending_notices = true;
+        // Wake the update engine so HandleNotice runs this cycle.
         // C++ emView::AddToNoticeList (emView.cpp:1288) calls UpdateEngine->WakeUp().
-        // Phase 1.75 Task 5 (continuation): wake via cached
-        // `self.update_engine_id` (populated by `emView::RegisterEngines`)
-        // instead of borrowing the view. Wake is idempotent; always safe to
-        // issue (matches C++ unconditional `UpdateEngine->WakeUp()`).
         if let (Some(sched), Some(eng_id)) = (sched, self.update_engine_id) {
             sched.wake_up(eng_id);
         }
     }
 
-    /// Unlink `id` from the notice ring (no-op if not linked).
-    /// `pub(crate)` so `emView::HandleNotice` can call it directly.
+    /// Unlink `id` from the notice ring (neighbor-pointer cleanup only).
+    ///
+    /// Removes `id` from its neighbors' `notice_next/prev_in_ring` pointers and
+    /// snapshots the ring slot into `pending_ring_cleanup` so that
+    /// `emView::HandleNotice` can update the emView-owned head/tail pointers on
+    /// the next drain.  No-op if `id` is not in the ring.
+    ///
+    /// Must be called BEFORE `id` is removed from the arena (while
+    /// `panels[id]` is still valid).
     pub(crate) fn remove_from_notice_list(&mut self, id: PanelId) {
         if !self.panels.contains_key(id) {
-            // Panel has been deleted; nothing to unlink.
-            // (Caller should have updated ring pointers before remove()
-            // anyway; this is defensive.)
             return;
         }
         let (prev, next) = {
             let p = &self.panels[id];
             (p.notice_prev_in_ring, p.notice_next_in_ring)
         };
-        // If not linked and not the sole head, nothing to do.
-        if prev.is_none()
-            && next.is_none()
-            && self.notice_ring_head_next != Some(id)
-            && self.notice_ring_head_prev != Some(id)
-        {
-            return;
+        // Update neighbor-panel pointers (the parts we can do without emView).
+        if let Some(p) = prev {
+            if self.panels.contains_key(p) {
+                self.panels[p].notice_next_in_ring = next;
+            }
         }
-        match prev {
-            Some(p) => self.panels[p].notice_next_in_ring = next,
-            None => self.notice_ring_head_next = next,
-        }
-        match next {
-            Some(n) => self.panels[n].notice_prev_in_ring = prev,
-            None => self.notice_ring_head_prev = prev,
+        if let Some(n) = next {
+            if self.panels.contains_key(n) {
+                self.panels[n].notice_prev_in_ring = prev;
+            }
         }
         self.panels[id].notice_prev_in_ring = None;
         self.panels[id].notice_next_in_ring = None;
+        // Push a cleanup entry so emView::HandleNotice can reconcile the
+        // head/tail pointers (which live on emView, not PanelTree).
+        // The (prev, next) snapshot lets HandleNotice decide whether to
+        // advance notice_ring_head_next or notice_ring_head_prev.
+        self.pending_ring_cleanup.push((prev, next));
     }
 
     /// Returns true if the given panel is the current view seek target.
@@ -1761,10 +1708,13 @@ impl PanelTree {
         std::mem::take(&mut self.navigation_requests)
     }
 
-    /// Whether any panel has pending notices queued (`NoticeList` non-empty
-    /// or `has_pending_notices` flag set). Used by `emView::Update` drain loop.
+    /// Whether the `has_pending_notices` flag is set.
+    ///
+    /// Phase 2 Task 6 (E006): ring head/tail moved to `emView`; this method
+    /// now only reports the flag that PanelTree sets when notice state changes.
+    /// `emView::HandleNotice` additionally checks its own `notice_ring_head_next`.
     pub fn has_pending_notices(&self) -> bool {
-        self.has_pending_notices || self.notice_ring_head_next.is_some()
+        self.has_pending_notices
     }
 
     /// Whether the `has_pending_notices` flag is set (panels set pending_notices
