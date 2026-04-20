@@ -3,6 +3,11 @@ use emcore::emView::emView;
 
 use super::common::*;
 
+fn sap(view: &mut emView, tree: &mut PanelTree, panel: PanelId, adherent: bool) {
+    let mut tvh = emcore::test_view_harness::TestViewHarness::new();
+    view.set_active_panel(tree, panel, adherent, &mut tvh.sched_ctx());
+}
+
 /// Skip test if golden data hasn't been generated yet.
 macro_rules! require_golden {
     () => {
@@ -42,7 +47,7 @@ fn interaction_activate_click() {
     let expected = load_behavioral_golden("activate_click");
     let (mut tree, mut view, root, child1, child2) = three_panel_tree();
 
-    view.set_active_panel(&mut tree, child1, false);
+    sap(&mut view, &mut tree, child1, false);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -76,7 +81,7 @@ fn interaction_activate_path() {
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 100.0, 100.0);
     view.Update(&mut tree);
-    view.set_active_panel(&mut tree, gc, false);
+    sap(&mut view, &mut tree, gc, false);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -100,8 +105,8 @@ fn interaction_activate_switch() {
     let expected = load_behavioral_golden("activate_switch");
     let (mut tree, mut view, root, child1, child2) = three_panel_tree();
 
-    view.set_active_panel(&mut tree, child1, false);
-    view.set_active_panel(&mut tree, child2, false);
+    sap(&mut view, &mut tree, child1, false);
+    sap(&mut view, &mut tree, child2, false);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -125,7 +130,7 @@ fn interaction_focus_click() {
     let (mut tree, mut view, root, child1, child2) = three_panel_tree();
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -148,7 +153,7 @@ fn interaction_activate_remove() {
     let expected = load_behavioral_golden("activate_remove");
     let (mut tree, mut view, root, child1, child2) = three_panel_tree();
 
-    view.set_active_panel(&mut tree, child1, false);
+    sap(&mut view, &mut tree, child1, false);
     view.remove_panel(&mut tree, child1);
 
     let actual = vec![panel_state(&tree, root), panel_state(&tree, child2)];
@@ -163,7 +168,7 @@ fn interaction_activate_nonfocusable() {
     let (mut tree, mut view, root, child1, child2) = three_panel_tree();
 
     tree.set_focusable(child1, false);
-    view.set_active_panel(&mut tree, child1, false);
+    sap(&mut view, &mut tree, child1, false);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -187,7 +192,7 @@ fn interaction_focus_tab_forward() {
     let (mut tree, mut view, root, child1, child2) = three_panel_tree();
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
     view.VisitNext(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -213,7 +218,7 @@ fn interaction_focus_tab_backward() {
     let (mut tree, mut view, root, child1, child2) = three_panel_tree();
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child2, true);
+    sap(&mut view, &mut tree, child2, true);
     view.VisitPrev(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -252,7 +257,7 @@ fn interaction_focus_unfocusable_skip() {
 
     tree.set_focusable(child2, false);
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
     view.VisitNext(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -291,7 +296,7 @@ fn interaction_focus_nested() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
     view.VisitIn(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -330,7 +335,7 @@ fn interaction_focus_visit_out() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, gc, true);
+    sap(&mut view, &mut tree, gc, true);
     view.VisitOut(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -357,7 +362,7 @@ fn interaction_focus_tab_wrap() {
     let (mut tree, mut view, root, child1, child2) = three_panel_tree();
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child2, true);
+    sap(&mut view, &mut tree, child2, true);
     view.VisitNext(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -395,7 +400,7 @@ fn interaction_focus_visit_first() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child2, true);
+    sap(&mut view, &mut tree, child2, true);
     view.VisitFirst(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -434,7 +439,7 @@ fn interaction_focus_visit_last() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
     view.VisitLast(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -473,7 +478,7 @@ fn interaction_focus_visit_left() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child3, true);
+    sap(&mut view, &mut tree, child3, true);
     view.VisitLeft(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -512,7 +517,7 @@ fn interaction_focus_visit_right() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
     view.VisitRight(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -551,7 +556,7 @@ fn interaction_focus_visit_down() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
     view.VisitDown(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -590,7 +595,7 @@ fn interaction_focus_visit_up() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child3, true);
+    sap(&mut view, &mut tree, child3, true);
     view.VisitUp(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -618,7 +623,7 @@ fn interaction_focus_disabled_panel() {
 
     tree.SetEnableSwitch(child1, false);
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
 
     let actual = vec![
         panel_state(&tree, root),
@@ -654,7 +659,7 @@ fn interaction_activate_remove_middle() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
     view.remove_panel(&mut tree, child2);
 
     let actual = vec![
@@ -691,7 +696,7 @@ fn interaction_activate_remove_in_path() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, gc, true);
+    sap(&mut view, &mut tree, gc, true);
     view.remove_panel(&mut tree, child1);
 
     let actual = vec![panel_state(&tree, root), panel_state(&tree, child2)];
@@ -726,7 +731,7 @@ fn interaction_focus_tab_deep() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, gc1, true);
+    sap(&mut view, &mut tree, gc1, true);
     view.VisitNext(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -766,7 +771,7 @@ fn interaction_focus_tab_ascend() {
     view.Update(&mut tree);
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, gc2, true);
+    sap(&mut view, &mut tree, gc2, true);
     view.VisitNext(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -793,7 +798,7 @@ fn interaction_focus_visit_out_to_root() {
     let (mut tree, mut view, root, child1, child2) = three_panel_tree();
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
     view.VisitOut(&mut tree);
     view.pump_visiting_va(&mut tree);
 
@@ -819,7 +824,7 @@ fn interaction_focus_remove_focused() {
     let (mut tree, mut view, root, child1, child2) = three_panel_tree();
 
     view.SetFocused(&mut tree, true);
-    view.set_active_panel(&mut tree, child1, true);
+    sap(&mut view, &mut tree, child1, true);
     view.remove_panel(&mut tree, child1);
 
     let actual = vec![panel_state(&tree, root), panel_state(&tree, child2)];

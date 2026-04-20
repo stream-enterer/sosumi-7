@@ -3420,7 +3420,8 @@ mod tests {
         tree.set_focusable(child, true);
         tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
         view.Update(&mut tree);
-        view.set_active_panel(&mut tree, child, false);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
+        view.set_active_panel(&mut tree, child, false, &mut h.sched_ctx());
 
         let lines = crate::emStd1::stop_capture();
         crate::emStd1::emEnableDLog(false);

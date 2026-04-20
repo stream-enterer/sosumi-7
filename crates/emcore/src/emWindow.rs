@@ -987,7 +987,10 @@ impl emWindow {
                 v.GetFocusablePanelAt(tree, event.mouse_x, event.mouse_y)
                     .unwrap_or_else(|| v.GetRootPanel())
             };
-            self.view.borrow_mut().set_active_panel(tree, panel, false);
+            self.view.borrow_mut().with_local_sched_ctx(
+                |_v| {},
+                |v, sc| v.set_active_panel(tree, panel, false, sc),
+            );
         }
 
         // Stamp modifier keys from emInputState onto the event

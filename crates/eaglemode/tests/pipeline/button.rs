@@ -433,7 +433,7 @@ fn bp9_vct_min_ext_guard_enter() {
 
     // Activate the panel, then press Enter.
     // Use set_active_panel directly since the panel is too small to Click.
-    h.view.set_active_panel(&mut h.tree, panel_id, false);
+    h.set_active_panel(panel_id);
     h.tick_n(1);
 
     h.press_key(InputKey::Enter);

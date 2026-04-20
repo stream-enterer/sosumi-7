@@ -1,7 +1,10 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
+use emcore::emContext::emContext;
+use emcore::emEngineCtx::{DeferredAction, SchedCtx};
 use emcore::emInput::{emInputEvent, InputKey, InputVariant};
 use emcore::emInputState::emInputState;
 use emcore::emPanel::PanelBehavior;
@@ -28,6 +31,8 @@ use winit::window::WindowId;
 pub struct PipelineTestHarness {
     pub tree: PanelTree,
     pub scheduler: EngineScheduler,
+    pub framework_actions: Vec<DeferredAction>,
+    pub root_context: Rc<emContext>,
     pub view: emView,
     pub vif_chain: Vec<Box<dyn emViewInputFilter>>,
     pub touch_vif: emDefaultTouchVIF,
@@ -43,7 +48,8 @@ impl PipelineTestHarness {
         tree.set_focusable(root, true);
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-        let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        let root_context = emcore::emContext::emContext::NewRoot();
+        let mut view = emView::new(Rc::clone(&root_context), root, 800.0, 600.0);
         view.Update(&mut tree);
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
@@ -60,6 +66,8 @@ impl PipelineTestHarness {
         Self {
             tree,
             scheduler: EngineScheduler::new(),
+            framework_actions: Vec::new(),
+            root_context,
             view,
             vif_chain,
             touch_vif: emDefaultTouchVIF::new(),
@@ -70,6 +78,25 @@ impl PipelineTestHarness {
 
     pub fn get_root_panel(&self) -> PanelId {
         self.root
+    }
+
+    pub fn sched_ctx(&mut self) -> SchedCtx<'_> {
+        SchedCtx {
+            scheduler: &mut self.scheduler,
+            framework_actions: &mut self.framework_actions,
+            root_context: &self.root_context,
+            current_engine: None,
+        }
+    }
+
+    pub fn set_active_panel(&mut self, panel: emcore::emPanelTree::PanelId) {
+        let mut sc = SchedCtx {
+            scheduler: &mut self.scheduler,
+            framework_actions: &mut self.framework_actions,
+            root_context: &self.root_context,
+            current_engine: None,
+        };
+        self.view.set_active_panel(&mut self.tree, panel, false, &mut sc);
     }
 
     // ── Frame / tick ─────────────────────────────────────────────
@@ -83,10 +110,9 @@ impl PipelineTestHarness {
     pub fn tick(&mut self) {
         let mut windows: HashMap<WindowId, std::rc::Rc<std::cell::RefCell<emWindow>>> =
             HashMap::new();
-        let __root_ctx = emcore::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
         self.scheduler
-            .DoTimeSlice(&mut self.tree, &mut windows, &__root_ctx, &mut __fw);
+            .DoTimeSlice(&mut self.tree, &mut windows, &self.root_context, &mut __fw);
         self.view.pump_visiting_va(&mut self.tree);
         self.view.HandleNotice(&mut self.tree);
         self.view.Update(&mut self.tree);
@@ -210,7 +236,13 @@ impl PipelineTestHarness {
                 .view
                 .GetFocusablePanelAt(&self.tree, event.mouse_x, event.mouse_y)
                 .unwrap_or_else(|| self.view.GetRootPanel());
-            self.view.set_active_panel(&mut self.tree, panel, false);
+            let mut sc = SchedCtx {
+                scheduler: &mut self.scheduler,
+                framework_actions: &mut self.framework_actions,
+                root_context: &self.root_context,
+                current_engine: None,
+            };
+            self.view.set_active_panel(&mut self.tree, panel, false, &mut sc);
         }
 
         // Stamp modifier keys from emInputState onto the event

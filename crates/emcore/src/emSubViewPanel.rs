@@ -248,7 +248,10 @@ impl PanelBehavior for emSubViewPanel {
                 .unwrap_or_else(|| self.sub_view.borrow().GetRootPanel());
             self.sub_view
                 .borrow_mut()
-                .set_active_panel(&mut self.sub_tree, panel, false);
+                .with_local_sched_ctx(
+                    |_v| {},
+                    |v, sc| v.set_active_panel(&mut self.sub_tree, panel, false, sc),
+                );
         }
 
         // Ensure sub-view viewing state is current for coordinate transforms.

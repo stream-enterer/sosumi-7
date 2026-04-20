@@ -8,6 +8,11 @@ use emcore::emView::{emView, ViewFlags};
 use super::common::*;
 use super::support::NoticeBehavior;
 
+fn sap(view: &mut emView, tree: &mut PanelTree, panel: emcore::emPanelTree::PanelId) {
+    let mut tvh = emcore::test_view_harness::TestViewHarness::new();
+    view.set_active_panel(tree, panel, false, &mut tvh.sched_ctx());
+}
+
 /// Skip test if golden data hasn't been generated yet.
 macro_rules! require_golden {
     () => {
@@ -69,7 +74,7 @@ fn notice_active_changed() {
     hard_reset_file_state(&acc_child2);
 
     // Action: activate child1
-    view.set_active_panel(&mut tree, child1, false);
+    sap(&mut view, &mut tree, child1);
 
     // Deliver new notices
     settle(&mut tree, &mut view);
@@ -264,7 +269,7 @@ fn notice_window_focus_gained() {
     let acc_child1 = attach_notice(&mut tree, child1);
 
     // Activate child1
-    view.set_active_panel(&mut tree, child1, false);
+    sap(&mut view, &mut tree, child1);
 
     // Settle initial notices
     settle(&mut tree, &mut view);
@@ -311,7 +316,7 @@ fn notice_window_focus_lost() {
     let acc_child1 = attach_notice(&mut tree, child1);
 
     // Activate child1 + gain focus
-    view.set_active_panel(&mut tree, child1, false);
+    sap(&mut view, &mut tree, child1);
     view.SetFocused(&mut tree, true);
 
     // Settle
@@ -630,7 +635,7 @@ fn notice_add_and_activate() {
     let child2 = tree.create_child(root, "child2");
     tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
     let acc_child2 = attach_notice(&mut tree, child2);
-    view.set_active_panel(&mut tree, child2, false);
+    sap(&mut view, &mut tree, child2);
 
     settle(&mut tree, &mut view);
 

@@ -412,7 +412,10 @@ impl emViewAnimator for emKineticViewAnimator {
             dist[1],
             dist[2],
         );
-        view.SetActivePanelBestPossible(tree);
+        view.with_local_sched_ctx(
+            |_v| {},
+            |v, sc| v.SetActivePanelBestPossible(tree, sc),
+        );
 
         // Blocked-motion feedback: zero velocity for blocked dimensions
         for i in 0..3 {
@@ -2128,7 +2131,10 @@ impl emViewAnimator for emVisitingViewAnimator {
                 let already_in_path = tree.GetRec(act).map(|p| p.in_active_path).unwrap_or(false);
                 let is_focusable = tree.focusable(nep.panel);
                 if is_focusable || !already_in_path {
-                    view.set_active_panel(tree, act, self.adherent);
+                    view.with_local_sched_ctx(
+                        |_v| {},
+                        |v, sc| v.set_active_panel(tree, act, self.adherent, sc),
+                    );
                 }
             }
         }

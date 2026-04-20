@@ -45,7 +45,7 @@ fn vif_consumes_prevents_behavior() {
     h.tick();
 
     // Set child as active
-    h.view.set_active_panel(&mut h.tree, _child, false);
+    h.set_active_panel(_child);
     h.view.Update(&mut h.tree);
 
     // Alt+ArrowUp should be consumed by emKeyboardZoomScrollVIF (zoom/scroll)
@@ -91,7 +91,7 @@ fn focus_change_routes_keyboard() {
     h.tick();
 
     // Activate A and type a key
-    h.view.set_active_panel(&mut h.tree, a, false);
+    h.set_active_panel(a);
     h.view.Update(&mut h.tree);
     let key_x = emInputEvent::press(InputKey::Key('x'));
     h.inject_input(&key_x);

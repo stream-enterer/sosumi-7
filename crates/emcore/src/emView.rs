@@ -680,23 +680,38 @@ impl emView {
         on_reentrant: impl FnOnce(&mut Self),
         f: impl FnOnce(&mut Self, &mut crate::emEngineCtx::SchedCtx<'_>) -> R,
     ) -> Option<R> {
-        let sched_rc = self.scheduler.as_ref()?.clone();
-        let mut sched = match sched_rc.try_borrow_mut() {
-            Ok(s) => s,
-            Err(_) => {
-                on_reentrant(self);
-                return None;
-            }
-        };
-        let root = self.Context.GetRootContext();
-        let mut scratch: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
-        let mut sc = crate::emEngineCtx::SchedCtx {
-            scheduler: &mut sched,
-            framework_actions: &mut scratch,
-            root_context: &root,
-            current_engine: None,
-        };
-        Some(f(self, &mut sc))
+        if let Some(sched_rc) = self.scheduler.as_ref().cloned() {
+            let mut sched = match sched_rc.try_borrow_mut() {
+                Ok(s) => s,
+                Err(_) => {
+                    on_reentrant(self);
+                    return None;
+                }
+            };
+            let root = self.Context.GetRootContext();
+            let mut scratch: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut sched,
+                framework_actions: &mut scratch,
+                root_context: &root,
+                current_engine: None,
+            };
+            Some(f(self, &mut sc))
+        } else {
+            // No scheduler attached (e.g. test-harness-less callers).
+            // Fire with a throwaway scheduler; any signals on control_panel_signal
+            // fire into it and are silently discarded.
+            let mut sched = crate::emScheduler::EngineScheduler::new();
+            let root = self.Context.GetRootContext();
+            let mut scratch: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut sched,
+                framework_actions: &mut scratch,
+                root_context: &root,
+                current_engine: None,
+            };
+            Some(f(self, &mut sc))
+        }
     }
 
     // --- Accessors ---
@@ -1262,7 +1277,10 @@ impl emView {
             self.RawVisit(tree, panel, rx, ry, ra, true);
         }
         // C++ emView.cpp:800.
-        self.SetActivePanelBestPossible(tree);
+        self.with_local_sched_ctx(
+            |_v| {},
+            |v, sc| v.SetActivePanelBestPossible(tree, sc),
+        );
     }
 
     /// Port of C++ `emView::Scroll(deltaX, deltaY)` (emView.cpp:765-782).
@@ -1296,7 +1314,10 @@ impl emView {
             self.RawVisit(tree, panel, rx, ry, ra, true);
         }
         // C++ emView.cpp:780.
-        self.SetActivePanelBestPossible(tree);
+        self.with_local_sched_ctx(
+            |_v| {},
+            |v, sc| v.SetActivePanelBestPossible(tree, sc),
+        );
     }
 
     /// Port of C++ `emView::RawScrollAndZoom(fixX, fixY, dX, dY, dZ, panel, ...)`
@@ -1400,7 +1421,10 @@ impl emView {
     pub fn ZoomOut(&mut self, tree: &mut PanelTree) {
         self.RawZoomOut(tree, false);
         // C++ emView.cpp:901.
-        self.SetActivePanelBestPossible(tree);
+        self.with_local_sched_ctx(
+            |_v| {},
+            |v, sc| v.SetActivePanelBestPossible(tree, sc),
+        );
     }
 
     /// DIVERGED: C++ has public `RawZoomOut()` + private overload
@@ -1566,7 +1590,14 @@ impl emView {
 
     // --- Active Panel Management ---
 
-    pub fn set_active_panel(&mut self, tree: &mut PanelTree, panel: PanelId, adherent: bool) {
+    /// Ctx-threaded per Phase 1.5 Task 1c (method 6/7). Other unmigrated emView methods use `with_local_sched_ctx` to bridge.
+    pub fn set_active_panel(
+        &mut self,
+        tree: &mut PanelTree,
+        panel: PanelId,
+        adherent: bool,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) {
         // Walk up to nearest focusable panel (self included, matching C++ SetActivePanel)
         let target = if tree.GetRec(panel).map(|p| p.focusable).unwrap_or(false) {
             panel
@@ -1625,7 +1656,7 @@ impl emView {
         self.InvalidateHighlight(tree);
         self.control_panel_invalid = true;
         if let Some(sig) = self.control_panel_signal {
-            self.queue_or_apply_sched_op(SchedOp::Fire(sig));
+            ctx.fire(sig);
         }
         for id in notice_ids {
             tree.queue_notice(id, flags);
@@ -1638,7 +1669,12 @@ impl emView {
     /// max-area. Starts at SVP and descends into the deepest focusable child
     /// whose clip rect contains the viewport center, stopping when children
     /// are too small (< 99% view width AND height, AND < 33% view area).
-    pub fn SetActivePanelBestPossible(&mut self, tree: &mut PanelTree) {
+    /// Ctx-threaded per Phase 1.5 Task 1c (method 6/7). Other unmigrated emView methods use `with_local_sched_ctx` to bridge.
+    pub fn SetActivePanelBestPossible(
+        &mut self,
+        tree: &mut PanelTree,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) {
         let svp = match self.supreme_viewed_panel {
             Some(id) => id,
             None => return,
@@ -1706,7 +1742,7 @@ impl emView {
                     {
                         if let Some(best_panel) = tree.GetRec(best) {
                             if best_panel.in_active_path {
-                                self.set_active_panel(tree, active_id, true);
+                                self.set_active_panel(tree, active_id, true, ctx);
                                 return;
                             }
                         }
@@ -1715,7 +1751,7 @@ impl emView {
             }
         }
         dlog!("set_active_panel_best_possible chose {:?}", best);
-        self.set_active_panel(tree, best, false);
+        self.set_active_panel(tree, best, false, ctx);
     }
 
     // --- Coordinate transform: RawVisitAbs + helpers ---
@@ -2948,7 +2984,10 @@ impl emView {
     pub fn remove_panel(&mut self, tree: &mut PanelTree, id: PanelId) {
         if tree.GetRec(id).map(|p| p.in_active_path).unwrap_or(false) {
             if let Some(parent) = tree.GetParentContext(id) {
-                self.set_active_panel(tree, parent, false);
+                self.with_local_sched_ctx(
+                    |_v| {},
+                    |v, sc| v.set_active_panel(tree, parent, false, sc),
+                );
             } else {
                 self.active = None;
             }
@@ -2960,13 +2999,19 @@ impl emView {
 
     /// Activate a panel (delegate to set_active_panel).
     pub fn activate_panel(&mut self, tree: &mut PanelTree, panel: PanelId) {
-        self.set_active_panel(tree, panel, false);
+        self.with_local_sched_ctx(
+            |_v| {},
+            |v, sc| v.set_active_panel(tree, panel, false, sc),
+        );
     }
 
     /// Focus the view and activate a panel.
     pub fn focus_panel(&mut self, tree: &mut PanelTree, panel: PanelId) {
         self.SetFocused(tree, true);
-        self.set_active_panel(tree, panel, false);
+        self.with_local_sched_ctx(
+            |_v| {},
+            |v, sc| v.set_active_panel(tree, panel, false, sc),
+        );
     }
 
     /// Whether a panel is focused: it is the active panel and the view's
@@ -5233,7 +5278,8 @@ mod tests {
     fn test_active_path_flags() {
         let (mut tree, root, child1, _child2) = setup_tree();
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
-        view.set_active_panel(&mut tree, child1, false);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
         view.Update(&mut tree);
 
         assert!(tree.GetRec(child1).unwrap().is_active);
@@ -5269,8 +5315,9 @@ mod tests {
     fn test_visit_next_prev() {
         let (mut tree, root, child1, child2) = setup_tree();
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         view.Update(&mut tree);
-        view.set_active_panel(&mut tree, child1, false);
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
 
         view.VisitNext(&mut tree);
         view.pump_visiting_va(&mut tree);
@@ -5289,8 +5336,9 @@ mod tests {
         tree.Layout(grandchild, 0.0, 0.0, 1.0, 1.0, 1.0);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         view.Update(&mut tree);
-        view.set_active_panel(&mut tree, child1, false);
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
 
         view.VisitIn(&mut tree);
         view.pump_visiting_va(&mut tree);
@@ -5319,8 +5367,9 @@ mod tests {
     fn test_directional_navigation() {
         let (mut tree, root, child1, child2) = setup_tree();
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         view.Update(&mut tree);
-        view.set_active_panel(&mut tree, child1, false);
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
 
         // child2 is to the right of child1
         view.VisitRight(&mut tree);
@@ -5347,8 +5396,9 @@ mod tests {
     fn test_is_panel_focused() {
         let (mut tree, root, child1, _child2) = setup_tree();
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         view.Update(&mut tree);
-        view.set_active_panel(&mut tree, child1, false);
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
 
         assert!(view.is_panel_focused(&tree, child1));
         assert!(!view.is_panel_focused(&tree, root));
@@ -5361,8 +5411,9 @@ mod tests {
     fn test_is_panel_in_focused_path() {
         let (mut tree, root, child1, child2) = setup_tree();
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         view.Update(&mut tree);
-        view.set_active_panel(&mut tree, child1, false);
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
 
         assert!(view.is_panel_in_focused_path(&tree, child1));
         assert!(view.is_panel_in_focused_path(&tree, root));
@@ -5425,9 +5476,10 @@ mod tests {
     fn test_invalidate_title_and_cursor() {
         let (mut tree, root, child1, _child2) = setup_tree();
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         view.Update(&mut tree);
         view.clear_cursor_invalid(); // drain change-block side effect
-        view.set_active_panel(&mut tree, child1, false);
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
 
         // child1 is active, thus in_active_path
         assert!(!view.is_title_invalid());
@@ -5484,8 +5536,9 @@ mod tests {
     fn test_invalidate_control_panel() {
         let (mut tree, root, child1, child2) = setup_tree();
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         view.Update(&mut tree);
-        view.set_active_panel(&mut tree, child1, false);
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
 
         // set_active_panel unconditionally invalidates the control panel
         assert!(view.is_control_panel_invalid());
@@ -5526,20 +5579,21 @@ mod tests {
     fn test_activation_adherent() {
         let (mut tree, root, child1, _child2) = setup_tree();
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         view.Update(&mut tree);
 
         // Direct activation is not adherent
-        view.set_active_panel(&mut tree, child1, false);
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
         assert!(!view.IsActivationAdherent());
         assert!(!view.is_panel_activated_adherent(&tree, child1));
 
         // Explicit adherent activation
-        view.set_active_panel(&mut tree, child1, true);
+        view.set_active_panel(&mut tree, child1, true, &mut h.sched_ctx());
         assert!(view.IsActivationAdherent());
         assert!(view.is_panel_activated_adherent(&tree, child1));
 
         // Switching to a different panel clears adherent
-        view.set_active_panel(&mut tree, root, false);
+        view.set_active_panel(&mut tree, root, false, &mut h.sched_ctx());
         assert!(!view.IsActivationAdherent());
     }
 
@@ -5547,18 +5601,19 @@ mod tests {
     fn test_activation_adherent_early_return_update() {
         let (mut tree, root, child1, _child2) = setup_tree();
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         view.Update(&mut tree);
 
         // Set active non-adherent
-        view.set_active_panel(&mut tree, child1, false);
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
         assert!(!view.IsActivationAdherent());
 
         // Re-set same panel as adherent — hits early-return path, updates flag
-        view.set_active_panel(&mut tree, child1, true);
+        view.set_active_panel(&mut tree, child1, true, &mut h.sched_ctx());
         assert!(view.IsActivationAdherent());
 
         // Re-set same panel as non-adherent — hits early-return path again
-        view.set_active_panel(&mut tree, child1, false);
+        view.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
         assert!(!view.IsActivationAdherent());
     }
 
@@ -5587,7 +5642,8 @@ mod tests {
         tree.Layout(child, 0.1, 0.1, 0.5, 0.25, 1.0);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
-        view.set_active_panel(&mut tree, child, false);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
+        view.set_active_panel(&mut tree, child, false, &mut h.sched_ctx());
         view.Update(&mut tree);
 
         let panel = tree.GetRec(child).unwrap();
@@ -6108,7 +6164,10 @@ mod tests {
 
         // set_active_panel fires ControlPanelSignal.
         view.Update(&mut tree);
-        view.set_active_panel(&mut tree, child, false);
+        view.with_local_sched_ctx(
+            |_v| {},
+            |v, sc| v.set_active_panel(&mut tree, child, false, sc),
+        );
         assert!(sched.borrow().is_pending(cp_sig));
 
         // VisitByIdentity routes through VisitingVA per W4 Phase 3.
@@ -6351,8 +6410,9 @@ mod tests {
         // unchanged across repeated calls.
         let (mut tree, root, child_a, _child_b) = setup_tree();
         let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         // Use set_active_panel (lowercase) which actually sets in_active_path.
-        v.set_active_panel(&mut tree, child_a, false);
+        v.set_active_panel(&mut tree, child_a, false, &mut h.sched_ctx());
         v.Update(&mut tree);
         let before = tree.GetRec(child_a).unwrap().in_active_path;
         // Second Update — no active-path mutation path should run.
@@ -6559,12 +6619,13 @@ mod tests {
     fn set_active_panel_transition_invalidates_highlight() {
         let (mut tree, root, child1, child2) = setup_tree();
         let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         v.Update(&mut tree);
         // Establish child1 as active first.
-        v.set_active_panel(&mut tree, child1, false);
+        v.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
         v.dirty_rects.clear();
         // Transition to child2 — must InvalidateHighlight for old (child1) and new (child2).
-        v.set_active_panel(&mut tree, child2, false);
+        v.set_active_panel(&mut tree, child2, false, &mut h.sched_ctx());
         assert!(
             !v.dirty_rects.is_empty(),
             "set_active_panel transition should InvalidateHighlight"
@@ -6577,11 +6638,12 @@ mod tests {
     fn set_active_panel_adherent_only_invalidates_highlight() {
         let (mut tree, root, child1, _child2) = setup_tree();
         let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         v.Update(&mut tree);
-        v.set_active_panel(&mut tree, child1, false);
+        v.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
         v.dirty_rects.clear();
         // Same panel, different adherent — only C++ emView.cpp:312 branch fires.
-        v.set_active_panel(&mut tree, child1, true);
+        v.set_active_panel(&mut tree, child1, true, &mut h.sched_ctx());
         assert!(
             !v.dirty_rects.is_empty(),
             "set_active_panel adherent-only change should InvalidateHighlight"
@@ -6595,8 +6657,9 @@ mod tests {
     fn set_focused_invalidates_highlight() {
         let (mut tree, root, child1, _child2) = setup_tree();
         let mut v = emView::new(crate::emContext::emContext::NewRoot(), root, 640.0, 480.0);
+        let mut h = crate::test_view_harness::TestViewHarness::new();
         v.Update(&mut tree);
-        v.set_active_panel(&mut tree, child1, false);
+        v.set_active_panel(&mut tree, child1, false, &mut h.sched_ctx());
         v.SetFocused(&mut tree, true);
         v.dirty_rects.clear();
         v.SetFocused(&mut tree, false);

@@ -146,7 +146,7 @@ fn input_scroll_delta() {
     h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
 
     // Activate child1
-    h.view.set_active_panel(&mut h.tree, child1, false);
+    h.set_active_panel(child1);
 
     let recv_root = attach_input(&mut h.tree, root);
     let recv_child1 = attach_input(&mut h.tree, child1);

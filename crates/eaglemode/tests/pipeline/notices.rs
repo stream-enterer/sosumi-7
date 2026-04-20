@@ -408,11 +408,11 @@ fn focus_change_fires_active_and_focus_changed_on_both_panels() {
     h.tick();
     log.borrow_mut().clear();
 
-    h.view.set_active_panel(&mut h.tree, panel_a, false);
+    h.set_active_panel(panel_a);
     h.tick();
     log.borrow_mut().clear();
 
-    h.view.set_active_panel(&mut h.tree, panel_b, false);
+    h.set_active_panel(panel_b);
     h.tick();
 
     let entries = log.borrow();
@@ -487,11 +487,11 @@ fn focus_change_old_panel_notified_before_new_panel() {
 
     h.tick();
 
-    h.view.set_active_panel(&mut h.tree, panel_a, false);
+    h.set_active_panel(panel_a);
     h.tick();
     log.borrow_mut().clear();
 
-    h.view.set_active_panel(&mut h.tree, panel_b, false);
+    h.set_active_panel(panel_b);
     h.tick();
 
     let entries = log.borrow();
@@ -546,11 +546,11 @@ fn focus_change_ancestor_receives_active_changed() {
 
     h.tick();
 
-    h.view.set_active_panel(&mut h.tree, sibling, false);
+    h.set_active_panel(sibling);
     h.tick();
     log.borrow_mut().clear();
 
-    h.view.set_active_panel(&mut h.tree, child, false);
+    h.set_active_panel(child);
     h.tick();
 
     let entries = log.borrow();
@@ -605,14 +605,14 @@ fn focus_change_no_focus_changed_when_window_unfocused() {
 
     h.tick();
 
-    h.view.set_active_panel(&mut h.tree, panel_a, false);
+    h.set_active_panel(panel_a);
     h.tick();
 
     h.view.SetFocused(&mut h.tree, false);
     h.tick();
     log.borrow_mut().clear();
 
-    h.view.set_active_panel(&mut h.tree, panel_b, false);
+    h.set_active_panel(panel_b);
     h.tick();
 
     let entries = log.borrow();
@@ -650,11 +650,11 @@ fn focus_change_same_panel_is_noop() {
 
     h.tick();
 
-    h.view.set_active_panel(&mut h.tree, panel_a, false);
+    h.set_active_panel(panel_a);
     h.tick();
     log.borrow_mut().clear();
 
-    h.view.set_active_panel(&mut h.tree, panel_a, false);
+    h.set_active_panel(panel_a);
     h.tick();
 
     let entries = log.borrow();
@@ -696,11 +696,11 @@ fn focus_change_shared_ancestor_receives_notice() {
 
     h.tick();
 
-    h.view.set_active_panel(&mut h.tree, child_a, false);
+    h.set_active_panel(child_a);
     h.tick();
     log.borrow_mut().clear();
 
-    h.view.set_active_panel(&mut h.tree, child_b, false);
+    h.set_active_panel(child_b);
     h.tick();
 
     let entries = log.borrow();
@@ -1153,14 +1153,14 @@ fn active_changed_fires_on_old_active_panel() {
     let (_root, root_acc, _ba, ba_acc, leaf_a, la_acc, _bb, bb_acc, leaf_b, lb_acc) =
         build_labeled_tree(&mut h, &log);
 
-    h.view.set_active_panel(&mut h.tree, leaf_a, false);
+    h.set_active_panel(leaf_a);
     flush_and_clear(
         &mut h,
         &log,
         &[&root_acc, &ba_acc, &la_acc, &bb_acc, &lb_acc],
     );
 
-    h.view.set_active_panel(&mut h.tree, leaf_b, false);
+    h.set_active_panel(leaf_b);
     h.tick();
 
     assert!(
@@ -1176,14 +1176,14 @@ fn active_changed_fires_on_new_active_panel() {
     let (_root, root_acc, _ba, ba_acc, leaf_a, la_acc, _bb, bb_acc, leaf_b, lb_acc) =
         build_labeled_tree(&mut h, &log);
 
-    h.view.set_active_panel(&mut h.tree, leaf_a, false);
+    h.set_active_panel(leaf_a);
     flush_and_clear(
         &mut h,
         &log,
         &[&root_acc, &ba_acc, &la_acc, &bb_acc, &lb_acc],
     );
 
-    h.view.set_active_panel(&mut h.tree, leaf_b, false);
+    h.set_active_panel(leaf_b);
     h.tick();
 
     assert!(
@@ -1199,14 +1199,14 @@ fn active_changed_fires_on_old_active_ancestor() {
     let (_root, root_acc, _ba, ba_acc, leaf_a, la_acc, _bb, bb_acc, leaf_b, lb_acc) =
         build_labeled_tree(&mut h, &log);
 
-    h.view.set_active_panel(&mut h.tree, leaf_a, false);
+    h.set_active_panel(leaf_a);
     flush_and_clear(
         &mut h,
         &log,
         &[&root_acc, &ba_acc, &la_acc, &bb_acc, &lb_acc],
     );
 
-    h.view.set_active_panel(&mut h.tree, leaf_b, false);
+    h.set_active_panel(leaf_b);
     h.tick();
 
     assert!(
@@ -1222,14 +1222,14 @@ fn active_changed_fires_on_new_active_ancestor() {
     let (_root, root_acc, _ba, ba_acc, leaf_a, la_acc, _bb, bb_acc, leaf_b, lb_acc) =
         build_labeled_tree(&mut h, &log);
 
-    h.view.set_active_panel(&mut h.tree, leaf_a, false);
+    h.set_active_panel(leaf_a);
     flush_and_clear(
         &mut h,
         &log,
         &[&root_acc, &ba_acc, &la_acc, &bb_acc, &lb_acc],
     );
 
-    h.view.set_active_panel(&mut h.tree, leaf_b, false);
+    h.set_active_panel(leaf_b);
     h.tick();
 
     assert!(
@@ -1245,14 +1245,14 @@ fn shared_ancestor_receives_active_changed() {
     let (_root, root_acc, _ba, ba_acc, leaf_a, la_acc, _bb, bb_acc, leaf_b, lb_acc) =
         build_labeled_tree(&mut h, &log);
 
-    h.view.set_active_panel(&mut h.tree, leaf_a, false);
+    h.set_active_panel(leaf_a);
     flush_and_clear(
         &mut h,
         &log,
         &[&root_acc, &ba_acc, &la_acc, &bb_acc, &lb_acc],
     );
 
-    h.view.set_active_panel(&mut h.tree, leaf_b, false);
+    h.set_active_panel(leaf_b);
     h.tick();
 
     assert!(
@@ -1292,7 +1292,7 @@ fn non_path_panels_do_not_receive_active_changed() {
         )),
     );
 
-    h.view.set_active_panel(&mut h.tree, leaf_a, false);
+    h.set_active_panel(leaf_a);
     flush_and_clear(
         &mut h,
         &log,
@@ -1306,7 +1306,7 @@ fn non_path_panels_do_not_receive_active_changed() {
         ],
     );
 
-    h.view.set_active_panel(&mut h.tree, leaf_b, false);
+    h.set_active_panel(leaf_b);
     h.tick();
 
     assert!(
@@ -1322,14 +1322,14 @@ fn delivery_order_old_active_before_new_active() {
     let (_root, root_acc, _ba, ba_acc, leaf_a, la_acc, _bb, bb_acc, leaf_b, lb_acc) =
         build_labeled_tree(&mut h, &log);
 
-    h.view.set_active_panel(&mut h.tree, leaf_a, false);
+    h.set_active_panel(leaf_a);
     flush_and_clear(
         &mut h,
         &log,
         &[&root_acc, &ba_acc, &la_acc, &bb_acc, &lb_acc],
     );
 
-    h.view.set_active_panel(&mut h.tree, leaf_b, false);
+    h.set_active_panel(leaf_b);
     h.tick();
 
     let entries = log.borrow().clone();
@@ -1376,14 +1376,14 @@ fn no_active_changed_when_reactivating_same_panel() {
     let (_root, root_acc, _ba, ba_acc, leaf_a, la_acc, _bb, bb_acc, _leaf_b, lb_acc) =
         build_labeled_tree(&mut h, &log);
 
-    h.view.set_active_panel(&mut h.tree, leaf_a, false);
+    h.set_active_panel(leaf_a);
     flush_and_clear(
         &mut h,
         &log,
         &[&root_acc, &ba_acc, &la_acc, &bb_acc, &lb_acc],
     );
 
-    h.view.set_active_panel(&mut h.tree, leaf_a, false);
+    h.set_active_panel(leaf_a);
     h.tick();
 
     assert!(
@@ -1411,14 +1411,14 @@ fn all_panels_on_both_paths_receive_active_changed() {
     let (_root, root_acc, _ba, ba_acc, leaf_a, la_acc, _bb, bb_acc, leaf_b, lb_acc) =
         build_labeled_tree(&mut h, &log);
 
-    h.view.set_active_panel(&mut h.tree, leaf_a, false);
+    h.set_active_panel(leaf_a);
     flush_and_clear(
         &mut h,
         &log,
         &[&root_acc, &ba_acc, &la_acc, &bb_acc, &lb_acc],
     );
 
-    h.view.set_active_panel(&mut h.tree, leaf_b, false);
+    h.set_active_panel(leaf_b);
     h.tick();
 
     assert!(

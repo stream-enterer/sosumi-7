@@ -726,7 +726,8 @@ fn dispatch_event(
         let panel = view
             .GetFocusablePanelAt(tree, event.mouse_x, event.mouse_y)
             .unwrap_or_else(|| view.GetRootPanel());
-        view.set_active_panel(tree, panel, false);
+        let mut tvh = emcore::test_view_harness::TestViewHarness::new();
+        view.set_active_panel(tree, panel, false, &mut tvh.sched_ctx());
     }
 
     let wf = view.IsFocused();
