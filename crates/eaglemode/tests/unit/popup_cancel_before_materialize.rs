@@ -33,6 +33,7 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
+use emcore::test_view_harness::TestSched;
 use emcore::emGUIFramework::App;
 use emcore::emWindow::{emWindow, WindowFlags};
 use winit::application::ApplicationHandler;
@@ -100,6 +101,7 @@ impl ApplicationHandler for Harness {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let mut ts = TestSched::new();
         match self.phase {
             0 => {
                 // Lazy-wire `pending_framework_actions` onto the view.
@@ -124,13 +126,12 @@ impl ApplicationHandler for Harness {
                     let mut home = home_rc.borrow_mut();
                     let tree = &mut self.app.tree;
                     let mut view = home.view_mut();
-                    view.set_scheduler(Rc::clone(&self.app.scheduler));
                     // Clear zoomed_out_before_sg so RawVisit doesn't
                     // zoom-out-and-tear-down; mirrors popup_materialization.
-                    view.Update(tree);
-                    view.SetViewFlags(emcore::emView::ViewFlags::POPUP_ZOOM, tree);
+                    ts.with(|sc| view.Update(tree, sc));
+                    ts.with(|sc| view.SetViewFlags(emcore::emView::ViewFlags::POPUP_ZOOM, tree, sc));
                     // Small rel_a → vw >> HomeWidth → outside_home → popup branch.
-                    view.RawVisit(tree, child, 0.0, 0.0, 0.1, true);
+                    ts.with(|sc| view.RawVisit(tree, child, 0.0, 0.0, 0.1, true, sc));
                 }
 
                 // Invariant: popup Pending + one action queued.
@@ -171,7 +172,7 @@ impl ApplicationHandler for Harness {
                     // dropping the view's strong ref on the popup. The
                     // only remaining strong ref is the one captured by
                     // the deferred materialize closure.
-                    view.ZoomOut(tree);
+                    ts.with(|sc| view.ZoomOut(tree, sc));
                 }
 
                 // Invariant: PopupWindow cleared.
@@ -232,15 +233,15 @@ fn popup_cancels_when_dropped_before_materialize() {
 
     let setup = Box::new(move |app: &mut App, event_loop: &ActiveEventLoop| {
         let root = app.tree.create_root_deferred_view("test_root");
-        app.tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
-        let child = app.tree.create_child(root, "child_a");
-        app.tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
+        app.tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
+        let child = app.tree.create_child(root, "child_a", None);
+        app.tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0, None);
         captured_for_setup.borrow_mut().popup_trigger_child = Some(child);
 
-        let close = app.scheduler.borrow_mut().create_signal();
-        let flags_sig = app.scheduler.borrow_mut().create_signal();
-        let focus_sig = app.scheduler.borrow_mut().create_signal();
-        let geom_sig = app.scheduler.borrow_mut().create_signal();
+        let close = app.scheduler.create_signal();
+        let flags_sig = app.scheduler.create_signal();
+        let focus_sig = app.scheduler.create_signal();
+        let geom_sig = app.scheduler.create_signal();
 
         let home = emWindow::create(
             event_loop,

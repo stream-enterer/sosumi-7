@@ -3,9 +3,9 @@ mod common;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use emcore::emColor::emColor;
-
 use emcore::emImage::emImage;
 use emcore::emPainter::emPainter;
+use emcore::test_view_harness::TestSched;
 
 use common::scaled::{build_scaled_tree, run_one_scaled_frame};
 use common::{DEFAULT_VH, DEFAULT_VW};
@@ -60,7 +60,8 @@ fn bench_scaled_update(c: &mut Criterion) {
 
             b.iter(|| {
                 // SP5: HandleNotice is now driven from emView::Update internally.
-                view.Update(&mut tree);
+                let mut ts = TestSched::new();
+                ts.with(|sc| view.Update(&mut tree, sc));
             });
         });
     }

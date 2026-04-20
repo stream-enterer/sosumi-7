@@ -106,3 +106,6 @@ pub mod emViewRendererTileCache;
 pub mod emWindow;
 pub mod emWindowPlatform;
 pub mod emWindowStateSaver;
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_view_harness;

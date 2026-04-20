@@ -3,6 +3,33 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+/// Test helper: owns the data needed to construct a `SchedCtx`.
+/// Use `.with(|sc| ...)` to call ctx-taking emView / emViewAnimator methods in
+/// golden tests that don't have a full TestHarness.
+pub struct TestSched {
+    sched: emcore::emScheduler::EngineScheduler,
+    fw: Vec<emcore::emEngineCtx::DeferredAction>,
+    ctx: std::rc::Rc<emcore::emContext::emContext>,
+}
+impl TestSched {
+    pub fn new() -> Self {
+        Self {
+            sched: emcore::emScheduler::EngineScheduler::new(),
+            fw: Vec::new(),
+            ctx: emcore::emContext::emContext::NewRoot(),
+        }
+    }
+    pub fn with<R>(&mut self, f: impl FnOnce(&mut emcore::emEngineCtx::SchedCtx<'_>) -> R) -> R {
+        let mut sc = emcore::emEngineCtx::SchedCtx {
+            scheduler: &mut self.sched,
+            framework_actions: &mut self.fw,
+            root_context: &self.ctx,
+            current_engine: None,
+        };
+        f(&mut sc)
+    }
+}
+
 /// Path to the current divergence log file.
 /// Rotates on first use: `divergence.jsonl` → `divergence.prev.jsonl`.
 fn divergence_log_path() -> &'static PathBuf {

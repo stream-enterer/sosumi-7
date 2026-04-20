@@ -21,15 +21,16 @@ macro_rules! require_golden {
 /// ROOT_SAME_TALLNESS, zoom 10000x (matching C++ Zoom(400,300,100.0)),
 /// window focused.
 fn setup_vif_view() -> (PanelTree, emView) {
+    let mut ts = TestSched::new();
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
-    view.Update(&mut tree);
+    ts.with(|sc| view.Update(&mut tree, sc));
     // C++ Zoom(400,300,100.0) -> ra *= 1/100^2 -> rel_a *= 100^2 = 10000
-    view.Zoom(&mut tree, 100.0, 400.0, 300.0);
-    view.Update(&mut tree);
+    ts.with(|sc| view.Zoom(&mut tree, 100.0, 400.0, 300.0, sc));
+    ts.with(|sc| view.Update(&mut tree, sc));
     view.SetFocused(&mut tree, true);
     (tree, view)
 }
@@ -91,6 +92,7 @@ fn read_view_state(view: &emView, tree: &PanelTree) -> TrajectoryStep {
 
 #[test]
 fn filter_wheel_zoom_in() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("filter_wheel_zoom_in");
     let (mut tree, mut view) = setup_vif_view();
@@ -100,12 +102,12 @@ fn filter_wheel_zoom_in() {
     let event = emInputEvent::press(InputKey::WheelUp).with_mouse(400.0, 300.0);
     let mut state = emInputState::new();
     state.set_mouse(400.0, 300.0);
-    vif.filter(&event, &state, &mut view, &mut tree);
+    ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
 
     let mut actual = Vec::with_capacity(60);
     for i in 0..60 {
         vif.set_test_clock(CLOCK_INIT + (i as u64 + 1) * CLOCK_STEP);
-        vif.animate_wheel(&mut view, &mut tree, dt_for_frame(i));
+        ts.with(|sc| vif.animate_wheel(&mut view, &mut tree, dt_for_frame(i), sc));
         actual.push(read_view_state(&view, &tree));
     }
 
@@ -115,6 +117,7 @@ fn filter_wheel_zoom_in() {
 
 #[test]
 fn filter_wheel_zoom_out() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("filter_wheel_zoom_out");
     let (mut tree, mut view) = setup_vif_view();
@@ -123,12 +126,12 @@ fn filter_wheel_zoom_out() {
     let event = emInputEvent::press(InputKey::WheelDown).with_mouse(400.0, 300.0);
     let mut state = emInputState::new();
     state.set_mouse(400.0, 300.0);
-    vif.filter(&event, &state, &mut view, &mut tree);
+    ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
 
     let mut actual = Vec::with_capacity(60);
     for i in 0..60 {
         vif.set_test_clock(CLOCK_INIT + (i as u64 + 1) * CLOCK_STEP);
-        vif.animate_wheel(&mut view, &mut tree, dt_for_frame(i));
+        ts.with(|sc| vif.animate_wheel(&mut view, &mut tree, dt_for_frame(i), sc));
         actual.push(read_view_state(&view, &tree));
     }
 
@@ -138,6 +141,7 @@ fn filter_wheel_zoom_out() {
 
 #[test]
 fn filter_wheel_acceleration() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("filter_wheel_acceleration");
     let (mut tree, mut view) = setup_vif_view();
@@ -151,11 +155,11 @@ fn filter_wheel_acceleration() {
             let event = emInputEvent::press(InputKey::WheelUp).with_mouse(400.0, 300.0);
             let mut state = emInputState::new();
             state.set_mouse(400.0, 300.0);
-            vif.filter(&event, &state, &mut view, &mut tree);
+            ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
         }
 
         vif.set_test_clock(CLOCK_INIT + (i as u64 + 1) * CLOCK_STEP);
-        vif.animate_wheel(&mut view, &mut tree, dt_for_frame(i));
+        ts.with(|sc| vif.animate_wheel(&mut view, &mut tree, dt_for_frame(i), sc));
         actual.push(read_view_state(&view, &tree));
     }
 
@@ -167,6 +171,7 @@ fn filter_wheel_acceleration() {
 
 #[test]
 fn filter_middle_pan() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("filter_middle_pan");
     let (mut tree, mut view) = setup_vif_view();
@@ -178,7 +183,7 @@ fn filter_middle_pan() {
         let mut state = emInputState::new();
         state.set_mouse(400.0, 300.0);
         state.press(InputKey::MouseMiddle);
-        vif.filter(&event, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
     }
 
     let mut actual = Vec::with_capacity(60);
@@ -191,10 +196,10 @@ fn filter_middle_pan() {
             let mut state = emInputState::new();
             state.set_mouse(mx, my);
             state.press(InputKey::MouseMiddle);
-            vif.filter(&event, &state, &mut view, &mut tree);
+            ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
         }
 
-        vif.animate_grip(&mut view, &mut tree, dt_for_frame(i));
+        ts.with(|sc| vif.animate_grip(&mut view, &mut tree, dt_for_frame(i), sc));
         actual.push(read_view_state(&view, &tree));
     }
 
@@ -204,6 +209,7 @@ fn filter_middle_pan() {
 
 #[test]
 fn filter_middle_fling() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("filter_middle_fling");
     let (mut tree, mut view) = setup_vif_view();
@@ -215,7 +221,7 @@ fn filter_middle_fling() {
         let mut state = emInputState::new();
         state.set_mouse(400.0, 300.0);
         state.press(InputKey::MouseMiddle);
-        vif.filter(&event, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
     }
 
     let mut actual = Vec::with_capacity(60);
@@ -228,7 +234,7 @@ fn filter_middle_fling() {
             let mut state = emInputState::new();
             state.set_mouse(mx, my);
             state.press(InputKey::MouseMiddle);
-            vif.filter(&event, &state, &mut view, &mut tree);
+            ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
         }
 
         // Frame 10: release middle button (after move event)
@@ -236,10 +242,10 @@ fn filter_middle_fling() {
             let event = emInputEvent::release(InputKey::MouseMiddle).with_mouse(500.0, 400.0);
             let mut state = emInputState::new();
             state.set_mouse(500.0, 400.0);
-            vif.filter(&event, &state, &mut view, &mut tree);
+            ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
         }
 
-        vif.animate_grip(&mut view, &mut tree, dt_for_frame(i));
+        ts.with(|sc| vif.animate_grip(&mut view, &mut tree, dt_for_frame(i), sc));
         actual.push(read_view_state(&view, &tree));
     }
 
@@ -251,6 +257,7 @@ fn filter_middle_fling() {
 
 #[test]
 fn filter_keyboard_scroll() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("filter_keyboard_scroll");
     let (mut tree, mut view) = setup_vif_view();
@@ -263,12 +270,12 @@ fn filter_keyboard_scroll() {
         let mut state = emInputState::new();
         state.press(InputKey::Alt);
         state.press(InputKey::ArrowRight);
-        vif.filter(&event, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
     }
 
     let mut actual = Vec::with_capacity(60);
     for i in 0..60 {
-        vif.animate(&mut view, &mut tree, dt_for_frame(i));
+        ts.with(|sc| vif.animate(&mut view, &mut tree, dt_for_frame(i), sc));
         actual.push(read_view_state(&view, &tree));
     }
 
@@ -278,6 +285,7 @@ fn filter_keyboard_scroll() {
 
 #[test]
 fn filter_keyboard_zoom() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("filter_keyboard_zoom");
     let (mut tree, mut view) = setup_vif_view();
@@ -290,12 +298,12 @@ fn filter_keyboard_zoom() {
         let mut state = emInputState::new();
         state.press(InputKey::Alt);
         state.press(InputKey::PageUp);
-        vif.filter(&event, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
     }
 
     let mut actual = Vec::with_capacity(60);
     for i in 0..60 {
-        vif.animate(&mut view, &mut tree, dt_for_frame(i));
+        ts.with(|sc| vif.animate(&mut view, &mut tree, dt_for_frame(i), sc));
         actual.push(read_view_state(&view, &tree));
     }
 
@@ -305,6 +313,7 @@ fn filter_keyboard_zoom() {
 
 #[test]
 fn filter_keyboard_release() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("filter_keyboard_release");
     let (mut tree, mut view) = setup_vif_view();
@@ -317,7 +326,7 @@ fn filter_keyboard_release() {
         let mut state = emInputState::new();
         state.press(InputKey::Alt);
         state.press(InputKey::ArrowRight);
-        vif.filter(&event, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
     }
 
     let mut actual = Vec::with_capacity(60);
@@ -328,10 +337,10 @@ fn filter_keyboard_release() {
             event.alt = true;
             let mut state = emInputState::new();
             state.press(InputKey::Alt);
-            vif.filter(&event, &state, &mut view, &mut tree);
+            ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
         }
 
-        vif.animate(&mut view, &mut tree, dt_for_frame(i));
+        ts.with(|sc| vif.animate(&mut view, &mut tree, dt_for_frame(i), sc));
         actual.push(read_view_state(&view, &tree));
     }
 

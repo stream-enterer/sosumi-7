@@ -150,7 +150,11 @@ impl PanelBehavior for emDirEntryAltPanel {
         }
     }
 
-    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         let cfg = self.config.borrow();
         let gen = cfg.GetChangeSignal();
         drop(cfg);

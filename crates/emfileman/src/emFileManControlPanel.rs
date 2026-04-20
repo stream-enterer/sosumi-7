@@ -285,7 +285,11 @@ impl PanelBehavior for emFileManControlPanel {
         false
     }
 
-    fn Cycle(&mut self, _ctx: &mut emcore::emPanelCtx::PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        _ctx: &mut emcore::emPanelCtx::PanelCtx,
+    ) -> bool {
         let gen = self.config.borrow().GetChangeSignal();
         if gen != self.last_config_gen {
             self.last_config_gen = gen;
@@ -510,6 +514,13 @@ impl PanelBehavior for emFileManControlPanel {
 mod tests {
     use super::*;
 
+    struct NoopEngineForTest;
+    impl emcore::emEngine::emEngine for NoopEngineForTest {
+        fn Cycle(&mut self, _ctx: &mut emcore::emEngineCtx::EngineCtx<'_>) -> bool {
+            false
+        }
+    }
+
     #[test]
     fn panel_implements_panel_behavior() {
         use emcore::emPanel::PanelBehavior;
@@ -550,11 +561,21 @@ mod tests {
             tree: &mut tree,
             id: PanelId::null(),
             current_pixel_tallness: 1.0,
+            scheduler: None,
         };
-        let changed = panel.Cycle(&mut pctx);
+        let mut h = emcore::test_view_harness::TestViewHarness::new();
+        let dummy_eid = h.scheduler.register_engine(
+            Box::new(NoopEngineForTest),
+            emcore::emEngine::Priority::Medium,
+        );
+        let changed = {
+            let mut ectx = h.engine_ctx(dummy_eid);
+            panel.Cycle(&mut ectx, &mut pctx)
+        };
         assert!(changed);
         // Widget should now reflect BySize
         assert_eq!(panel.sort_group.borrow().GetChecked(), Some(5));
+        h.scheduler.remove_engine(dummy_eid);
     }
 
     #[test]

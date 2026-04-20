@@ -386,13 +386,6 @@ impl emWindow {
         window
     }
 
-    /// Construct a fully headless `emWindow` for integration tests that need
-    /// to drive the scheduler through `UpdateEngineClass::Cycle` end-to-end,
-    /// without a real winit window or wgpu surface. Registers the view's
-    /// engines (`UpdateEngineClass`, `VisitingVAEngineClass`) with the
-    /// scheduler and wakes the update engine (matching
-    /// `attach_to_scheduler` / C++ `emView` ctor parity).
-    ///
     // DIVERGED: Plan listed `materialized()`/`materialized_mut()` returning 6-tuple borrows; inlined as match in callers because the multi-borrow signature is awkward in Rust.
     /// Public accessor for the materialized winit window.
     ///
@@ -424,6 +417,7 @@ impl emWindow {
         tree: &mut crate::emPanelTree::PanelTree,
         width: u32,
         height: u32,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
         let w = width.max(1);
         let h = height.max(1);
@@ -440,7 +434,7 @@ impl emWindow {
         }
         self.view
             .borrow_mut()
-            .SetGeometry(tree, 0.0, 0.0, w as f64, h as f64, 1.0);
+            .SetGeometry(tree, 0.0, 0.0, w as f64, h as f64, 1.0, ctx);
     }
 
     /// Update the render thread pool from emCoreConfig.
@@ -848,6 +842,7 @@ impl emWindow {
         tree: &mut PanelTree,
         event: &emInputEvent,
         state: &mut emInputState,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
         // Track mouse position for cursor warping (skip wheel events).
         if !matches!(
@@ -890,12 +885,12 @@ impl emWindow {
             let vp = self.view.borrow().CurrentViewPort.clone();
             let mut vp = vp.borrow_mut();
             vp.input_clock_ms = crate::emScheduler::emGetClockMS();
-            vp.InputToView(&mut self.view.borrow_mut(), tree, &event, state);
+            vp.InputToView(&mut self.view.borrow_mut(), tree, &event, state, ctx);
         }
 
         // Run VIF chain
         for vif in &mut self.vif_chain {
-            if vif.filter(&event, state, &mut self.view.borrow_mut(), tree) {
+            if vif.filter(&event, state, &mut self.view.borrow_mut(), tree, ctx) {
                 return;
             }
         }
@@ -917,7 +912,7 @@ impl emWindow {
 
         // Run cheat VIF (never consumes events, but may produce actions)
         self.cheat_vif
-            .filter(&event, state, &mut self.view.borrow_mut(), tree);
+            .filter(&event, state, &mut self.view.borrow_mut(), tree, ctx);
         for action in self.cheat_vif.drain_actions() {
             match action {
                 CheatAction::PanFunction
@@ -986,7 +981,9 @@ impl emWindow {
                 v.GetFocusablePanelAt(tree, event.mouse_x, event.mouse_y)
                     .unwrap_or_else(|| v.GetRootPanel())
             };
-            self.view.borrow_mut().set_active_panel(tree, panel, false);
+            self.view
+                .borrow_mut()
+                .set_active_panel(tree, panel, false, ctx);
         }
 
         // Stamp modifier keys from emInputState onto the event
@@ -1051,7 +1048,7 @@ impl emWindow {
                 if let Some(rect) = behavior.take_scroll_to_visible() {
                     self.view
                         .borrow_mut()
-                        .scroll_to_panel_rect(tree, panel_id, rect);
+                        .scroll_to_panel_rect(tree, panel_id, rect, ctx);
                 }
                 tree.put_behavior(panel_id, behavior);
                 if consumed {
@@ -1268,21 +1265,26 @@ impl emWindow {
 
     /// Tick VIF animations (wheel zoom spring, grip pan spring).
     /// Returns true if any animation is still active.
-    pub fn tick_vif_animations(&mut self, tree: &mut PanelTree, dt: f64) -> bool {
+    pub fn tick_vif_animations(
+        &mut self,
+        tree: &mut PanelTree,
+        dt: f64,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) -> bool {
         let mut active = false;
         for vif in &mut self.vif_chain {
-            if vif.animate(&mut self.view.borrow_mut(), tree, dt) {
+            if vif.animate(&mut self.view.borrow_mut(), tree, dt, ctx) {
                 active = true;
             }
         }
         // Tick touch gesture timer (C++ emDefaultTouchVIF::Cycle)
         let dt_ms = (dt * 1000.0) as i32;
         self.touch_vif
-            .cycle_gesture(&mut self.view.borrow_mut(), tree, dt_ms);
+            .cycle_gesture(&mut self.view.borrow_mut(), tree, dt_ms, ctx);
         // Tick fling animation
         if self
             .touch_vif
-            .animate_fling(&mut self.view.borrow_mut(), tree, dt)
+            .animate_fling(&mut self.view.borrow_mut(), tree, dt, ctx)
         {
             active = true;
         }
@@ -1291,7 +1293,12 @@ impl emWindow {
 
     /// Handle a winit Touch event by routing to the emDefaultTouchVIF.
     /// Returns true if the event was consumed.
-    pub fn handle_touch(&mut self, touch: &winit::event::Touch, tree: &mut PanelTree) -> bool {
+    pub fn handle_touch(
+        &mut self,
+        touch: &winit::event::Touch,
+        tree: &mut PanelTree,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) -> bool {
         use winit::event::TouchPhase;
         match touch.phase {
             TouchPhase::Started => self.touch_vif.touch_start(
@@ -1300,6 +1307,7 @@ impl emWindow {
                 touch.location.y,
                 &mut self.view.borrow_mut(),
                 tree,
+                ctx,
             ),
             TouchPhase::Moved => {
                 // dt=0.016 is a reasonable default; the real frame delta is
@@ -1311,11 +1319,12 @@ impl emWindow {
                     0.016,
                     &mut self.view.borrow_mut(),
                     tree,
+                    ctx,
                 )
             }
             TouchPhase::Ended | TouchPhase::Cancelled => {
                 self.touch_vif
-                    .touch_end(touch.id, &mut self.view.borrow_mut(), tree)
+                    .touch_end(touch.id, &mut self.view.borrow_mut(), tree, ctx)
             }
         }
     }
@@ -1777,14 +1786,13 @@ mod tests {
     use crate::emScheduler::EngineScheduler;
 
     /// Verify that a headless window constructed via `new_popup_pending` +
-    /// `attach_to_scheduler` (the SP5-native pattern) registers engines
-    /// correctly — same observable postcondition previously checked by the
-    /// deleted `new_for_test` constructor.
+    /// `RegisterEngines` registers engines correctly — same observable
+    /// postcondition previously checked by the deleted `new_for_test` constructor.
     #[test]
-    fn headless_window_attach_to_scheduler_registers_engines() {
+    fn headless_window_register_engines_registers_engines() {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         let win_id = winit::window::WindowId::dummy();
         let sched = std::rc::Rc::new(std::cell::RefCell::new(EngineScheduler::new()));
         let close_sig = sched.borrow_mut().create_signal();
@@ -1807,9 +1815,20 @@ mod tests {
             std::rc::Rc::downgrade(w.view_rc())
         };
         let _ = win_id;
-        win.borrow_mut()
-            .view_mut()
-            .attach_to_scheduler(sched.clone(), view_weak);
+        {
+            let mut w = win.borrow_mut();
+            let mut v = w.view_mut();
+            let root = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, view_weak);
+        }
         assert!(win.borrow().view().update_engine_id.is_some());
 
         // Scheduler cleanup for Drop debug_asserts.

@@ -599,9 +599,10 @@ fn run_splitter_layout_step(
         parent_rect.2,
         parent_rect.3,
         1.0,
+        None,
     );
-    let c0 = tree.create_child(root, "left");
-    let c1 = tree.create_child(root, "right");
+    let c0 = tree.create_child(root, "left", None);
+    let c1 = tree.create_child(root, "right", None);
 
     tree.set_behavior(root, Box::new(SplitterLayoutBehavior { splitter: sp }));
     let mut behavior = tree.take_behavior(root).unwrap();
@@ -726,7 +727,8 @@ fn dispatch_event(
         let panel = view
             .GetFocusablePanelAt(tree, event.mouse_x, event.mouse_y)
             .unwrap_or_else(|| view.GetRootPanel());
-        view.set_active_panel(tree, panel, false);
+        let mut tvh = emcore::test_view_harness::TestViewHarness::new();
+        view.set_active_panel(tree, panel, false, &mut tvh.sched_ctx());
     }
 
     let wf = view.IsFocused();
@@ -755,6 +757,7 @@ fn dispatch_event(
 
 #[test]
 fn composition_click_through_tree() {
+    let mut ts = TestSched::new();
     let click_count = Rc::new(Cell::new(0u32));
     let clicked_clone = click_count.clone();
 
@@ -768,9 +771,9 @@ fn composition_click_through_tree() {
         .with_inner(InnerBorderType::None)
         .with_caption("Root");
     root_group.border.label_in_border = true;
-    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0, None);
 
-    let container_id = tree.create_child(root, "container");
+    let container_id = tree.create_child(root, "container", None);
     let mut container_group = emLinearGroup::vertical();
     container_group.border = emBorder::new(OuterBorderType::Rect)
         .with_inner(InnerBorderType::None)
@@ -778,7 +781,7 @@ fn composition_click_through_tree() {
     container_group.border.label_in_border = true;
     tree.set_behavior(container_id, Box::new(container_group));
 
-    let button_id = tree.create_child(container_id, "button");
+    let button_id = tree.create_child(container_id, "button", None);
     let mut btn = emButton::new("Click Me", look);
     btn.on_click = Some(Box::new(move || {
         clicked_clone.set(clicked_clone.get() + 1);
@@ -791,7 +794,7 @@ fn composition_click_through_tree() {
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     for _ in 0..200 {
         view.HandleNotice(&mut tree);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
     }
 
     let mut compositor = SoftwareCompositor::new(800, 600);

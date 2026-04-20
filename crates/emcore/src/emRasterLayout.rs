@@ -353,10 +353,10 @@ mod tests {
     fn setup(n: usize, w: f64, h: f64) -> (PanelTree, PanelId, Vec<PanelId>) {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, w, h, 1.0);
+        tree.Layout(root, 0.0, 0.0, w, h, 1.0, None);
         let mut children = Vec::new();
         for i in 0..n {
-            children.push(tree.create_child(root, &format!("c{i}")));
+            children.push(tree.create_child(root, &format!("c{i}"), None));
         }
         (tree, root, children)
     }

@@ -45,7 +45,7 @@ fn parent_resize_triggers_child_relayout() {
 
     // Resize parent_context — parent_context gets LAYOUT_CHANGED → LayoutChildren sets child rect
     // → child gets LAYOUT_CHANGED on next deliver_notices
-    h.tree.Layout(parent, 0.0, 0.0, 0.8, 0.8, 1.0);
+    h.tree.Layout(parent, 0.0, 0.0, 0.8, 0.8, 1.0, None);
     h.tick();
 
     {
@@ -98,12 +98,12 @@ fn nested_layout_cascade() {
     log_child.borrow_mut().clear();
 
     // Resize grandparent — cascade should reach parent_context and child
-    h.tree.Layout(grandparent, 0.0, 0.0, 0.7, 0.7, 1.0);
+    h.tree.Layout(grandparent, 0.0, 0.0, 0.7, 0.7, 1.0, None);
 
     // Resize parent_context too (simulating the cascade — in a real app, parent_context's
     // LayoutChildren would set child rects, which triggers child notices)
-    h.tree.Layout(parent, 0.0, 0.0, 0.6, 0.6, 1.0);
-    h.tree.Layout(_child, 0.0, 0.0, 0.5, 0.5, 1.0);
+    h.tree.Layout(parent, 0.0, 0.0, 0.6, 0.6, 1.0, None);
+    h.tree.Layout(_child, 0.0, 0.0, 0.5, 0.5, 1.0, None);
 
     h.tick();
 
@@ -127,7 +127,7 @@ fn layout_affects_hit_test() {
 
     // Panel at left side initially
     let panel = h.add_panel(root, "movable");
-    h.tree.Layout(panel, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(panel, 0.0, 0.0, 0.5, 1.0, 1.0, None);
     h.tick();
 
     // Click at right side — should NOT find the panel
@@ -138,7 +138,7 @@ fn layout_affects_hit_test() {
     let _active_before = h.view.GetActivePanel();
 
     // Move panel to right side
-    h.tree.Layout(panel, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(panel, 0.5, 0.0, 0.5, 1.0, 1.0, None);
     h.tick();
 
     // Click at right side — should now find the panel

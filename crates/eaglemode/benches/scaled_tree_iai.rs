@@ -2,6 +2,7 @@
 mod common;
 
 use emcore::emColor::emColor;
+use emcore::test_view_harness::TestSched;
 use gungraun::{library_benchmark, library_benchmark_group, main};
 
 use emcore::emImage::emImage;
@@ -103,7 +104,8 @@ fn paint_200(state: FrameState) {
 fn update_10(state: (PanelTree, emView)) {
     let (mut tree, mut view) = state;
     // SP5: HandleNotice is now driven from emView::Update internally.
-    view.Update(&mut tree);
+    let mut ts = TestSched::new();
+    ts.with(|sc| view.Update(&mut tree, sc));
 }
 
 #[library_benchmark]
@@ -111,7 +113,8 @@ fn update_10(state: (PanelTree, emView)) {
 fn update_50(state: (PanelTree, emView)) {
     let (mut tree, mut view) = state;
     // SP5: HandleNotice is now driven from emView::Update internally.
-    view.Update(&mut tree);
+    let mut ts = TestSched::new();
+    ts.with(|sc| view.Update(&mut tree, sc));
 }
 
 #[library_benchmark]
@@ -119,7 +122,8 @@ fn update_50(state: (PanelTree, emView)) {
 fn update_200(state: (PanelTree, emView)) {
     let (mut tree, mut view) = state;
     // SP5: HandleNotice is now driven from emView::Update internally.
-    view.Update(&mut tree);
+    let mut ts = TestSched::new();
+    ts.with(|sc| view.Update(&mut tree, sc));
 }
 
 // ---------------------------------------------------------------------------

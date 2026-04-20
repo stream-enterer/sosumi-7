@@ -68,7 +68,11 @@ impl PanelBehavior for ColorFieldBehavior {
         self.color_field.LayoutChildren(ctx, rect.w, rect.h);
     }
 
-    fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        ctx: &mut PanelCtx,
+    ) -> bool {
         self.color_field.sync_from_children(ctx);
         self.color_field.Cycle()
     }
@@ -346,7 +350,7 @@ fn colorfield_no_children_before_expansion() {
 
     // Set a very high threshold so the panel is NOT auto-expanded at 1x.
     h.tree
-        .SetAutoExpansionThreshold(panel_id, 1e12, ViewConditionType::Area);
+        .SetAutoExpansionThreshold(panel_id, 1e12, ViewConditionType::Area, None);
     h.tick_n(5);
 
     assert!(
@@ -361,7 +365,7 @@ fn colorfield_no_children_before_expansion() {
 
     // Now lower the threshold back to default so that expansion is triggered.
     h.tree
-        .SetAutoExpansionThreshold(panel_id, 150.0, ViewConditionType::Area);
+        .SetAutoExpansionThreshold(panel_id, 150.0, ViewConditionType::Area, None);
     h.tick_n(10);
 
     assert!(

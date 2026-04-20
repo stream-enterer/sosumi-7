@@ -563,7 +563,7 @@ fn checkbutton_disabled_rejects_click() {
     let (mut h, cb_ref, panel_id) = setup_checkbutton_harness();
 
     // Disable the panel via the tree's enable switch
-    h.tree.SetEnableSwitch(panel_id, false);
+    h.tree.SetEnableSwitch(panel_id, false, None);
     h.tick_n(3);
     // Re-render so the emCheckButton's cached `enabled` field updates
     let mut compositor = SoftwareCompositor::new(800, 600);
@@ -585,7 +585,7 @@ fn checkbutton_disabled_rejects_click() {
 fn checkbutton_disabled_rejects_enter() {
     let (mut h, cb_ref, panel_id) = setup_checkbutton_harness();
 
-    h.tree.SetEnableSwitch(panel_id, false);
+    h.tree.SetEnableSwitch(panel_id, false, None);
     h.tick_n(3);
     let mut compositor = SoftwareCompositor::new(800, 600);
     compositor.render(&mut h.tree, &h.view);
@@ -607,7 +607,7 @@ fn checkbutton_reenable_accepts_input() {
     let (mut h, cb_ref, panel_id) = setup_checkbutton_harness();
 
     // Disable
-    h.tree.SetEnableSwitch(panel_id, false);
+    h.tree.SetEnableSwitch(panel_id, false, None);
     h.tick_n(3);
     let mut compositor = SoftwareCompositor::new(800, 600);
     compositor.render(&mut h.tree, &h.view);
@@ -616,7 +616,7 @@ fn checkbutton_reenable_accepts_input() {
     assert!(!cb_ref.borrow().IsChecked(), "disabled: click rejected");
 
     // Re-enable
-    h.tree.SetEnableSwitch(panel_id, true);
+    h.tree.SetEnableSwitch(panel_id, true, None);
     h.tick_n(3);
     compositor.render(&mut h.tree, &h.view);
 

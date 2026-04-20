@@ -8,7 +8,13 @@ use crate::emPanelTree::PanelTree;
 /// Trait for view animation strategies.
 pub trait emViewAnimator {
     /// Advance the animation by one frame. Returns true if still animating.
-    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64) -> bool;
+    fn animate(
+        &mut self,
+        view: &mut emView,
+        tree: &mut PanelTree,
+        dt: f64,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) -> bool;
 
     /// Whether the animation is currently active.
     fn is_active(&self) -> bool;
@@ -358,7 +364,7 @@ impl emKineticViewAnimator {
 }
 
 impl emViewAnimator for emKineticViewAnimator {
-    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64) -> bool {
+    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) -> bool {
         if !self.active {
             return false;
         }
@@ -411,8 +417,9 @@ impl emViewAnimator for emKineticViewAnimator {
             dist[0],
             dist[1],
             dist[2],
+            ctx,
         );
-        view.SetActivePanelBestPossible(tree);
+        view.SetActivePanelBestPossible(tree, ctx);
 
         // Blocked-motion feedback: zero velocity for blocked dimensions
         for i in 0..3 {
@@ -535,7 +542,7 @@ fn accelerate_dim(
 }
 
 impl emViewAnimator for emSpeedingViewAnimator {
-    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64) -> bool {
+    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) -> bool {
         if !self.active {
             return false;
         }
@@ -577,7 +584,7 @@ impl emViewAnimator for emSpeedingViewAnimator {
         // Temporarily disable friction on inner (speeding handles it via acceleration)
         let saved_friction = self.inner.IsFrictionEnabled();
         self.inner.SetFrictionEnabled(false);
-        self.inner.animate(view, tree, dt);
+        self.inner.animate(view, tree, dt, ctx);
         self.inner.SetFrictionEnabled(saved_friction);
 
         // Idle check: target near zero and inner stopped
@@ -2087,7 +2094,7 @@ impl emVisitingViewAnimator {
 }
 
 impl emViewAnimator for emVisitingViewAnimator {
-    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64) -> bool {
+    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) -> bool {
         if !self.active {
             return false;
         }
@@ -2128,7 +2135,7 @@ impl emViewAnimator for emVisitingViewAnimator {
                 let already_in_path = tree.GetRec(act).map(|p| p.in_active_path).unwrap_or(false);
                 let is_focusable = tree.focusable(nep.panel);
                 if is_focusable || !already_in_path {
-                    view.set_active_panel(tree, act, self.adherent);
+                    view.set_active_panel(tree, act, self.adherent, ctx);
                 }
             }
         }
@@ -2185,8 +2192,15 @@ impl emViewAnimator for emVisitingViewAnimator {
             let delta_y = dir_y * delta_xy_px;
 
             let (vw, vh) = view.viewport_size();
-            let done =
-                view.RawScrollAndZoom(tree, vw * 0.5, vh * 0.5, delta_x, delta_y, delta_z_view);
+            let done = view.RawScrollAndZoom(
+                tree,
+                vw * 0.5,
+                vh * 0.5,
+                delta_x,
+                delta_y,
+                delta_z_view,
+                ctx,
+            );
 
             let delta_mag =
                 (delta_x * delta_x + delta_y * delta_y + delta_z_view * delta_z_view).sqrt();
@@ -2219,13 +2233,14 @@ impl emViewAnimator for emVisitingViewAnimator {
                     nep.target_y,
                     nep.target_a,
                     false,
+                    ctx,
                 );
                 self.state = VisitingState::GoalReached;
                 return false;
             } else if view.seek_pos_panel() != Some(nep.panel) {
                 view.SetSeekPos(tree, Some(nep.panel), &self.names[nep.depth + 1]);
                 // C++ uses RawVisitFullsized (no stack growth). VisitFullsized would push.
-                view.RawVisitFullsized(tree, nep.panel, false);
+                view.RawVisitFullsized(tree, nep.panel, false, ctx);
                 self.time_slices_without_hope = 4;
             } else if view.IsHopeForSeeking(tree) {
                 self.time_slices_without_hope = 0;
@@ -2375,7 +2390,7 @@ impl emSwipingViewAnimator {
 }
 
 impl emViewAnimator for emSwipingViewAnimator {
-    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64) -> bool {
+    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) -> bool {
         let base_busy;
 
         if self.busy && self.gripped {
@@ -2418,11 +2433,11 @@ impl emViewAnimator for emSwipingViewAnimator {
             // Disable friction during grip, delegate to kinetic for scroll/zoom
             let saved_friction = self.inner.IsFrictionEnabled();
             self.inner.SetFrictionEnabled(false);
-            base_busy = self.inner.animate(view, tree, dt);
+            base_busy = self.inner.animate(view, tree, dt, ctx);
             self.inner.SetFrictionEnabled(saved_friction);
         } else {
             // Not gripped or not busy — pure kinetic coasting with friction
-            base_busy = self.inner.animate(view, tree, dt);
+            base_busy = self.inner.animate(view, tree, dt, ctx);
         }
 
         self.update_busy_state();
@@ -2658,7 +2673,7 @@ impl emMagneticViewAnimator {
 
 impl emViewAnimator for emMagneticViewAnimator {
     /// C++ emMagneticViewAnimator::CycleAnimation (emViewAnimator.cpp:716-806).
-    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64) -> bool {
+    fn animate(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) -> bool {
         if !self.inner.active {
             return false;
         }
@@ -2758,7 +2773,7 @@ impl emViewAnimator for emMagneticViewAnimator {
         let friction_enabled = self.inner.IsFrictionEnabled();
         self.inner
             .SetFrictionEnabled(friction_enabled && !self.magnetism_active);
-        if self.inner.animate(view, tree, dt) {
+        if self.inner.animate(view, tree, dt, ctx) {
             busy = true;
         }
         self.inner.SetFrictionEnabled(friction_enabled);
@@ -2789,26 +2804,53 @@ impl emViewAnimator for emMagneticViewAnimator {
 mod tests {
     use super::*;
     use crate::emPanelTree::PanelTree;
+    use crate::emScheduler::EngineScheduler;
+
+    /// Test helper: owns the data needed to construct a `SchedCtx`.
+    struct TestSched {
+        sched: EngineScheduler,
+        fw: Vec<crate::emEngineCtx::DeferredAction>,
+        ctx: std::rc::Rc<crate::emContext::emContext>,
+    }
+    impl TestSched {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                ctx: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn with<R>(&mut self, f: impl FnOnce(&mut crate::emEngineCtx::SchedCtx<'_>) -> R) -> R {
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.ctx,
+                current_engine: None,
+            };
+            f(&mut sc)
+        }
+    }
 
     fn setup() -> (PanelTree, emView) {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         (tree, view)
     }
 
     #[test]
     fn kinetic_with_zoom() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let (_, _, _, initial_a) = view
             .get_visited_panel_idiom(&tree)
             .expect("visited panel should exist at initial state");
 
         let mut anim = emKineticViewAnimator::new(0.0, 0.0, 100.0, 1000.0);
         // friction_enabled defaults to false — just test that zoom scroll works
-        anim.animate(&mut view, &mut tree, 0.1);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, 0.1, sc));
 
         // Zoom velocity should have changed rel_a (dz = 100 * 0.1 = 10)
         let (_, _, _, final_a) = view
@@ -2819,14 +2861,15 @@ mod tests {
 
     #[test]
     fn speeding_with_zoom() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut anim = emSpeedingViewAnimator::new(1000.0);
         anim.SetTargetVelocity(0.0, 0.0, 2.0);
 
         for _ in 0..10 {
-            anim.animate(&mut view, &mut tree, 0.016);
+            ts.with(|sc| anim.animate(&mut view, &mut tree, 0.016, sc));
         }
 
         // Should be accelerating toward zoom
@@ -2836,8 +2879,9 @@ mod tests {
 
     #[test]
     fn visiting_converges() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut anim = emVisitingViewAnimator::new(0.1, 0.1, 2.0, 10.0);
         anim.set_identity("root", "");
@@ -2846,7 +2890,7 @@ mod tests {
         anim.SetMaxAbsoluteSpeed(5.0);
 
         for _ in 0..500 {
-            if !anim.animate(&mut view, &mut tree, 0.016) {
+            if !ts.with(|sc| anim.animate(&mut view, &mut tree, 0.016, sc)) {
                 break;
             }
         }
@@ -2856,14 +2900,15 @@ mod tests {
 
     #[test]
     fn kinetic_linear_friction_stops() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut anim = emKineticViewAnimator::new(100.0, 0.0, 0.0, 1000.0);
         anim.SetFrictionEnabled(true);
 
         for _ in 0..200 {
-            if !anim.animate(&mut view, &mut tree, 0.016) {
+            if !ts.with(|sc| anim.animate(&mut view, &mut tree, 0.016, sc)) {
                 break;
             }
         }
@@ -2873,13 +2918,14 @@ mod tests {
 
     #[test]
     fn kinetic_friction_disabled() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut anim = emKineticViewAnimator::new(100.0, 0.0, 0.0, 1000.0);
         // friction_enabled defaults to false
 
-        anim.animate(&mut view, &mut tree, 0.016);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, 0.016, sc));
 
         let (vx, _, _) = anim.GetVelocity();
         // Without friction, velocity should remain at 100.0 (or zeroed by blocked-motion)
@@ -2889,8 +2935,9 @@ mod tests {
 
     #[test]
     fn speeding_3branch_reverse() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut anim = emSpeedingViewAnimator::new(1000.0);
         anim.SetReverseAcceleration(500.0);
@@ -2900,7 +2947,7 @@ mod tests {
         // Target going left — should trigger reverse acceleration
         anim.SetTargetVelocity(-100.0, 0.0, 0.0);
 
-        anim.animate(&mut view, &mut tree, 0.016);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, 0.016, sc));
 
         let (vx, _, _) = anim.inner().GetVelocity();
         // Velocity should have moved toward -100 (decreased from 100)
@@ -2909,8 +2956,9 @@ mod tests {
 
     #[test]
     fn speeding_delegates_to_kinetic() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let (_, _, _, initial_a) = view
             .get_visited_panel_idiom(&tree)
             .expect("visited panel should exist at initial state");
@@ -2920,7 +2968,7 @@ mod tests {
         anim.SetAcceleration(1000.0);
 
         for _ in 0..10 {
-            anim.animate(&mut view, &mut tree, 0.016);
+            ts.with(|sc| anim.animate(&mut view, &mut tree, 0.016, sc));
         }
 
         // Inner kinetic should have applied zoom via raw_scroll_and_zoom
@@ -2990,8 +3038,9 @@ mod tests {
 
     #[test]
     fn visiting_goal_reached_on_target() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         // Target is the root at current coords — should reach goal quickly
         let (_, state_rx, state_ry, state_ra) = view
@@ -3005,7 +3054,7 @@ mod tests {
 
         let mut reached = false;
         for _ in 0..20 {
-            if !anim.animate(&mut view, &mut tree, 0.016) {
+            if !ts.with(|sc| anim.animate(&mut view, &mut tree, 0.016, sc)) {
                 reached = true;
                 break;
             }
@@ -3016,15 +3065,16 @@ mod tests {
 
     #[test]
     fn visiting_giving_up_no_panel() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         // Target a non-existent panel
         let mut anim = emVisitingViewAnimator::new(0.5, 0.5, 2.0, 5.0);
         anim.set_identity("nonexistent", "");
         anim.SetAnimated(true);
 
-        anim.animate(&mut view, &mut tree, 0.016);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, 0.016, sc));
         assert_eq!(
             anim.visiting_state(),
             VisitingState::GivingUp,
@@ -3033,7 +3083,7 @@ mod tests {
 
         // Run through the 1.5s give-up display
         for _ in 0..200 {
-            if !anim.animate(&mut view, &mut tree, 0.016) {
+            if !ts.with(|sc| anim.animate(&mut view, &mut tree, 0.016, sc)) {
                 break;
             }
         }
@@ -3042,10 +3092,11 @@ mod tests {
 
     #[test]
     fn swiping_grip_spring() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         // Zoom in so the panel is larger than the viewport and scroll isn't clamped.
-        view.Zoom(&mut tree, 4.0, 400.0, 300.0);
+        ts.with(|sc| view.Zoom(&mut tree, 4.0, 400.0, 300.0, sc));
 
         let mut anim = emSwipingViewAnimator::new(2.0);
         anim.inner_mut().SetFrictionEnabled(true);
@@ -3058,17 +3109,18 @@ mod tests {
         assert!(anim.is_active());
 
         // Animate — spring should produce kinetic velocity
-        anim.animate(&mut view, &mut tree, 0.016);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, 0.016, sc));
         let (vx, _, _) = anim.inner().GetVelocity();
         assert!(vx.abs() > 0.0, "Spring should produce X velocity");
     }
 
     #[test]
     fn swiping_release_coasts() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         // Zoom in so the panel is larger than the viewport and scroll isn't clamped.
-        view.Zoom(&mut tree, 4.0, 400.0, 300.0);
+        ts.with(|sc| view.Zoom(&mut tree, 4.0, 400.0, 300.0, sc));
 
         let mut anim = emSwipingViewAnimator::new(2.0);
         anim.inner_mut().SetFrictionEnabled(true);
@@ -3078,7 +3130,7 @@ mod tests {
         // Build up velocity via spring
         for _ in 0..10 {
             anim.MoveGrip(0, 5.0);
-            anim.animate(&mut view, &mut tree, 1.0 / 60.0);
+            ts.with(|sc| anim.animate(&mut view, &mut tree, 1.0 / 60.0, sc));
         }
         let (vx_before, _, _) = anim.inner().GetVelocity();
         assert!(vx_before.abs() > 1.0, "Should have built up velocity");
@@ -3086,7 +3138,7 @@ mod tests {
         // Release — should coast with friction
         anim.SetGripped(false);
         for _ in 0..5000 {
-            if !anim.animate(&mut view, &mut tree, 1.0 / 60.0) {
+            if !ts.with(|sc| anim.animate(&mut view, &mut tree, 1.0 / 60.0, sc)) {
                 break;
             }
         }
@@ -3138,24 +3190,25 @@ mod tests {
 
     #[test]
     fn magnetic_animate_finds_focusable_panel() {
+        let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
         tree.set_focusable(root, true);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         // Zoom in so root panel is offset, giving nonzero distance
-        view.Zoom(&mut tree, 2.0, 400.0, 300.0);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Zoom(&mut tree, 2.0, 400.0, 300.0, sc));
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut anim = emMagneticViewAnimator::new();
         anim.Activate(None);
 
         // Should converge toward root panel over many frames
         for _ in 0..300 {
-            if !anim.animate(&mut view, &mut tree, 1.0 / 60.0) {
+            if !ts.with(|sc| anim.animate(&mut view, &mut tree, 1.0 / 60.0, sc)) {
                 break;
             }
         }
@@ -3164,6 +3217,7 @@ mod tests {
     #[test]
     #[ignore]
     fn kinetic_velocity_inherited_on_activation() {
+        let mut ts = TestSched::new();
         // BLOCKED: needs active-animator registry on emView/Window with velocity
         // inheritance protocol. C++ ref: emViewAnimator.cpp:Activate() (lines
         // 68-84) inherits LastTSC/LastClk from the currently active animator,
@@ -3190,11 +3244,11 @@ mod tests {
         // Expected behavior: swiping animator at velocity (100, 0, 0) is
         // replaced by a new kinetic animator which inherits that velocity.
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut old_anim = emKineticViewAnimator::new(100.0, 50.0, 0.0, 1000.0);
         old_anim.SetFrictionEnabled(true);
-        old_anim.animate(&mut view, &mut tree, 0.016);
+        ts.with(|sc| old_anim.animate(&mut view, &mut tree, 0.016, sc));
 
         // A new kinetic animator should inherit velocity from old_anim.
         // Currently there is no activation protocol to transfer velocity.
@@ -3299,27 +3353,28 @@ mod tests {
 
     #[test]
     fn calculate_distance_finds_nearest_panel() {
+        let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         tree.set_focusable(root, true);
 
         // 3 child panels at different positions
-        let left = tree.create_child(root, "left");
-        tree.Layout(left, 0.0, 0.0, 0.3, 1.0, 1.0);
+        let left = tree.create_child(root, "left", None);
+        tree.Layout(left, 0.0, 0.0, 0.3, 1.0, 1.0, None);
         tree.set_focusable(left, true);
 
-        let center = tree.create_child(root, "center");
-        tree.Layout(center, 0.35, 0.0, 0.3, 1.0, 1.0);
+        let center = tree.create_child(root, "center", None);
+        tree.Layout(center, 0.35, 0.0, 0.3, 1.0, 1.0, None);
         tree.set_focusable(center, true);
 
-        let right = tree.create_child(root, "right");
-        tree.Layout(right, 0.7, 0.0, 0.3, 1.0, 1.0);
+        let right = tree.create_child(root, "right", None);
+        tree.Layout(right, 0.7, 0.0, 0.3, 1.0, 1.0, None);
         tree.set_focusable(right, true);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let (dx, _dy, _dz, abs_dist) = emMagneticViewAnimator::calculate_distance(&view, &tree);
         // At least one focusable panel should be found
@@ -3337,13 +3392,14 @@ mod tests {
 
     #[test]
     fn calculate_distance_uses_log_zoom_z_axis() {
+        let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         tree.set_focusable(root, true);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let (_dx, _dy, dz, abs_dist) = emMagneticViewAnimator::calculate_distance(&view, &tree);
         // Root panel fills the viewport, so dz depends on
@@ -3413,22 +3469,24 @@ mod tests {
     // survive a convention change (viewport-fraction → panel-fraction).
 
     fn setup_scrolled(factor: f64) -> (PanelTree, emView) {
+        let mut ts = TestSched::new();
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
-        view.Update(&mut tree);
-        view.Zoom(&mut tree, factor, 400.0, 300.0);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
+        ts.with(|sc| view.Zoom(&mut tree, factor, 400.0, 300.0, sc));
+        ts.with(|sc| view.Update(&mut tree, sc));
         // Scroll off-center so rel_x != 0
-        view.Scroll(&mut tree, 80.0, 40.0);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Scroll(&mut tree, 80.0, 40.0, sc));
+        ts.with(|sc| view.Update(&mut tree, sc));
         (tree, view)
     }
 
     #[test]
     fn invariant_equilibrium_at_target() {
+        let mut ts = TestSched::new();
         // When the visiting animator targets the current view state, it should
         // not move: get_distance_to must return 0 at the current position.
         // Also verifies that viewed_x is consistent with the visit state
@@ -3452,7 +3510,7 @@ mod tests {
 
             // Drive several steps — view should not move
             for step in 0..10 {
-                anim.animate(&mut view, &mut tree, 1.0 / 60.0);
+                ts.with(|sc| anim.animate(&mut view, &mut tree, 1.0 / 60.0, sc));
                 let (_, after_rx, after_ry, after_ra) = view
                     .get_visited_panel_idiom(&tree)
                     .expect("visited panel should exist at step");
@@ -3496,6 +3554,7 @@ mod tests {
 
     #[test]
     fn invariant_animator_convergence() {
+        let mut ts = TestSched::new();
         // Visiting animator reaches CalcVisitCoords target within 120 frames.
         // Tests the full pipeline: get_distance_to → curve solver → RawScrollAndZoom → Update.
         //
@@ -3511,19 +3570,19 @@ mod tests {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
         tree.get_mut(root).unwrap().focusable = true;
-        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
-        let child = tree.create_child(root, "child");
+        tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
+        let child = tree.create_child(root, "child", None);
         tree.get_mut(child).unwrap().focusable = true;
-        tree.Layout(child, 0.1, 0.1, 0.4, 0.5, 1.0);
+        tree.Layout(child, 0.1, 0.1, 0.4, 0.5, 1.0, None);
 
         let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         // Start zoomed in 4x, off-center
-        view.Zoom(&mut tree, 4.0, 400.0, 300.0);
-        view.Update(&mut tree);
-        view.Scroll(&mut tree, 100.0, 50.0);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Zoom(&mut tree, 4.0, 400.0, 300.0, sc));
+        ts.with(|sc| view.Update(&mut tree, sc));
+        ts.with(|sc| view.Scroll(&mut tree, 100.0, 50.0, sc));
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         // Target: CalcVisitCoords for child.
         //
@@ -3550,7 +3609,7 @@ mod tests {
 
         let mut frames_run = 0usize;
         for _ in 0..300 {
-            if !anim.animate(&mut view, &mut tree, 1.0 / 60.0) {
+            if !ts.with(|sc| anim.animate(&mut view, &mut tree, 1.0 / 60.0, sc)) {
                 break;
             }
             frames_run += 1;

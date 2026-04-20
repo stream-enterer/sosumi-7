@@ -41,9 +41,9 @@ fn input_mouse_hit() {
     let root = h.get_root_panel();
 
     let child1 = h.add_panel(root, "child1");
-    h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0, None);
     let child2 = h.add_panel(root, "child2");
-    h.tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0, None);
 
     let recv_root = attach_input(&mut h.tree, root);
     let recv_child1 = attach_input(&mut h.tree, child1);
@@ -91,12 +91,18 @@ fn input_key_to_focused() {
     let root = h.get_root_panel();
 
     let child1 = h.add_panel(root, "child1");
-    h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0, None);
     let child2 = h.add_panel(root, "child2");
-    h.tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0, None);
 
     // Focus child1
-    h.view.focus_panel(&mut h.tree, child1);
+    {
+
+        let mut sc = emcore::emEngineCtx::SchedCtx { scheduler: &mut h.scheduler, framework_actions: &mut h.framework_actions, root_context: &h.root_context, current_engine: None };
+
+        h.view.focus_panel(&mut h.tree, child1, &mut sc);
+
+    }
 
     let recv_root = attach_input(&mut h.tree, root);
     let recv_child1 = attach_input(&mut h.tree, child1);
@@ -143,10 +149,10 @@ fn input_scroll_delta() {
     let root = h.get_root_panel();
 
     let child1 = h.add_panel(root, "child1");
-    h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0, None);
 
     // Activate child1
-    h.view.set_active_panel(&mut h.tree, child1, false);
+    h.set_active_panel(child1);
 
     let recv_root = attach_input(&mut h.tree, root);
     let recv_child1 = attach_input(&mut h.tree, child1);
@@ -192,9 +198,9 @@ fn input_mouse_miss() {
     let mut h = TestHarness::new();
     let root = h.get_root_panel();
 
-    h.tree.Layout(root, 0.0, 0.0, 1.0, 0.5, 1.0); // Only covers top half
+    h.tree.Layout(root, 0.0, 0.0, 1.0, 0.5, 1.0, None); // Only covers top half
     let child1 = h.add_panel(root, "child1");
-    h.tree.Layout(child1, 0.0, 0.0, 1.0, 1.0, 1.0);
+    h.tree.Layout(child1, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     let recv_root = attach_input(&mut h.tree, root);
     let recv_child1 = attach_input(&mut h.tree, child1);
@@ -240,13 +246,13 @@ fn input_nested_hit() {
     let mut h = TestHarness::new();
     let root = h.get_root_panel();
 
-    h.tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    h.tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     let child1 = h.add_panel(root, "child1");
-    h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0, None);
     let gc = h.add_panel(child1, "gc");
-    h.tree.Layout(gc, 0.0, 0.0, 1.0, 1.0, 1.0);
+    h.tree.Layout(gc, 0.0, 0.0, 1.0, 1.0, 1.0, None);
     let child2 = h.add_panel(root, "child2");
-    h.tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0, None);
 
     let recv_root = attach_input(&mut h.tree, root);
     let recv_child1 = attach_input(&mut h.tree, child1);
@@ -299,9 +305,9 @@ fn input_drag_sequence() {
     let root = h.get_root_panel();
 
     let child1 = h.add_panel(root, "child1");
-    h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(child1, 0.0, 0.0, 0.5, 1.0, 1.0, None);
     let child2 = h.add_panel(root, "child2");
-    h.tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0, None);
 
     let recv_root = attach_input(&mut h.tree, root);
     let recv_child1 = attach_input(&mut h.tree, child1);

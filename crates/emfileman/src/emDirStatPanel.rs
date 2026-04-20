@@ -106,7 +106,11 @@ impl emDirStatPanel {
 }
 
 impl PanelBehavior for emDirStatPanel {
-    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         self.file_panel.refresh_vir_file_state();
         self.update_statistics();
         false

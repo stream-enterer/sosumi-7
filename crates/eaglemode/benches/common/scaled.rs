@@ -9,6 +9,10 @@ use emcore::emView::{emView, ViewFlags};
 
 use super::{DEFAULT_VH, DEFAULT_VW};
 
+fn make_sched() -> emcore::test_view_harness::TestSched {
+    emcore::test_view_harness::TestSched::new()
+}
+
 // ---------------------------------------------------------------------------
 // Trivial panel for scaling benchmarks
 // ---------------------------------------------------------------------------
@@ -37,7 +41,7 @@ pub fn build_scaled_tree(panel_count: usize) -> (PanelTree, emView, PanelId) {
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("scaled_root");
     let tallness = DEFAULT_VH as f64 / DEFAULT_VW as f64;
-    tree.Layout(root, 0.0, 0.0, 1.0, tallness, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, tallness, 1.0, None);
     tree.set_behavior(
         root,
         Box::new(ColorPanel {
@@ -58,11 +62,11 @@ pub fn build_scaled_tree(panel_count: usize) -> (PanelTree, emView, PanelId) {
                     if created >= panel_count {
                         break 'outer;
                     }
-                    let child = tree.create_child(parent, &format!("p{created}"));
+                    let child = tree.create_child(parent, &format!("p{created}"), None);
                     let siblings = branching.min(panel_count - created + child_idx);
                     let x = child_idx as f64 / siblings as f64;
                     let w = 1.0 / siblings as f64;
-                    tree.Layout(child, x, 0.0, w, 1.0, 1.0);
+                    tree.Layout(child, x, 0.0, w, 1.0, 1.0, None);
                     tree.set_behavior(
                         child,
                         Box::new(ColorPanel {
@@ -85,7 +89,8 @@ pub fn build_scaled_tree(panel_count: usize) -> (PanelTree, emView, PanelId) {
     );
     view.flags |= ViewFlags::ROOT_SAME_TALLNESS;
     // SP5: HandleNotice is now driven from emView::Update internally.
-    view.Update(&mut tree);
+    let mut ts = make_sched();
+    ts.with(|sc| view.Update(&mut tree, sc));
 
     (tree, view, root)
 }
@@ -102,9 +107,11 @@ pub fn run_one_scaled_frame(
     let fix_x = DEFAULT_VW as f64 / 2.0;
     let fix_y = DEFAULT_VH as f64 / 2.0;
 
-    view.RawScrollAndZoom(tree, fix_x, fix_y, dx, dy, dz);
-    // SP5: HandleNotice is now driven from emView::Update internally.
-    view.Update(tree);
+    let mut ts = make_sched();
+    ts.with(|sc| {
+        view.RawScrollAndZoom(tree, fix_x, fix_y, dx, dy, dz, sc);
+        view.Update(tree, sc);
+    });
 
     viewport_buf.fill(emColor::BLACK);
     {

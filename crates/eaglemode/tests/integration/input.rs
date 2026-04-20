@@ -12,11 +12,11 @@ fn mouse_click_activates_correct_panel() {
 
     // Panel A: left half
     let a = h.add_panel(root, "a");
-    h.tree.Layout(a, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(a, 0.0, 0.0, 0.5, 1.0, 1.0, None);
 
     // Panel B: right half
     let b = h.add_panel(root, "b");
-    h.tree.Layout(b, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(b, 0.5, 0.0, 0.5, 1.0, 1.0, None);
 
     h.tick();
 
@@ -45,8 +45,14 @@ fn vif_consumes_prevents_behavior() {
     h.tick();
 
     // Set child as active
-    h.view.set_active_panel(&mut h.tree, _child, false);
-    h.view.Update(&mut h.tree);
+    h.set_active_panel(_child);
+    {
+
+        let mut sc = emcore::emEngineCtx::SchedCtx { scheduler: &mut h.scheduler, framework_actions: &mut h.framework_actions, root_context: &h.root_context, current_engine: None };
+
+        h.view.Update(&mut h.tree, &mut sc);
+
+    }
 
     // Alt+ArrowUp should be consumed by emKeyboardZoomScrollVIF (zoom/scroll)
     h.input_state.press(InputKey::Alt);
@@ -78,7 +84,7 @@ fn focus_change_routes_keyboard() {
         "a",
         Box::new(RecordingBehavior::new(Rc::clone(&log_a))),
     );
-    h.tree.Layout(a, 0.0, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(a, 0.0, 0.0, 0.5, 1.0, 1.0, None);
 
     // Panel B: right half
     let b = h.add_panel_with(
@@ -86,13 +92,19 @@ fn focus_change_routes_keyboard() {
         "b",
         Box::new(RecordingBehavior::new(Rc::clone(&log_b))),
     );
-    h.tree.Layout(b, 0.5, 0.0, 0.5, 1.0, 1.0);
+    h.tree.Layout(b, 0.5, 0.0, 0.5, 1.0, 1.0, None);
 
     h.tick();
 
     // Activate A and type a key
-    h.view.set_active_panel(&mut h.tree, a, false);
-    h.view.Update(&mut h.tree);
+    h.set_active_panel(a);
+    {
+
+        let mut sc = emcore::emEngineCtx::SchedCtx { scheduler: &mut h.scheduler, framework_actions: &mut h.framework_actions, root_context: &h.root_context, current_engine: None };
+
+        h.view.Update(&mut h.tree, &mut sc);
+
+    }
     let key_x = emInputEvent::press(InputKey::Key('x'));
     h.inject_input(&key_x);
 
@@ -128,11 +140,11 @@ fn input_without_update_returns_none() {
     let mut tree = emcore::emPanelTree::PanelTree::new();
     let root = tree.create_root_deferred_view("root");
     tree.set_focusable(root, true);
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
-    let child = tree.create_child(root, "child");
+    let child = tree.create_child(root, "child", None);
     tree.set_focusable(child, true);
-    tree.Layout(child, 0.0, 0.0, 1.0, 1.0, 1.0);
+    tree.Layout(child, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
     // Create view but do NOT call update_viewing
     let view =

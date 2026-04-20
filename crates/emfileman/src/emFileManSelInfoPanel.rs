@@ -642,7 +642,11 @@ impl emFileManSelInfoPanel {
 }
 
 impl PanelBehavior for emFileManSelInfoPanel {
-    fn Cycle(&mut self, _ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        _ctx: &mut PanelCtx,
+    ) -> bool {
         let gen = self.file_man.borrow().GetSelectionSignal();
         if gen != self.last_selection_gen {
             self.last_selection_gen = gen;

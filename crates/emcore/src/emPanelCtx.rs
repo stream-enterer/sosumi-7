@@ -3,6 +3,7 @@ use super::emPanelTree::{PanelId, PanelTree};
 use crate::emColor::emColor;
 use crate::emPanel::PanelBehavior;
 use crate::emPanel::Rect;
+use crate::emScheduler::EngineScheduler;
 
 /// Panel context — provides a scoped API for a panel to interact with the tree.
 ///
@@ -16,24 +17,46 @@ pub struct PanelCtx<'a> {
     /// time so layout / viewed-coord computations can use it without needing
     /// a `View&` reference (C++ `emPanel::Layout` reads it via `View&`).
     pub current_pixel_tallness: f64,
+    /// Scheduler for engine wakeup. `None` in test-only contexts that do not
+    /// need engine wakeup (layout-only tests, etc.).
+    pub scheduler: Option<&'a mut EngineScheduler>,
 }
 
 impl<'a> PanelCtx<'a> {
-    /// Create a context for the given panel.
+    /// Create a context for the given panel without a scheduler.
+    /// Engine wakeup methods (`wake_up`, `wake_up_panel`) will be no-ops.
     pub fn new(tree: &'a mut PanelTree, id: PanelId, current_pixel_tallness: f64) -> Self {
         Self {
             tree,
             id,
             current_pixel_tallness,
+            scheduler: None,
+        }
+    }
+
+    /// Create a context with a scheduler so engine wakeups are propagated.
+    pub fn with_scheduler(
+        tree: &'a mut PanelTree,
+        id: PanelId,
+        current_pixel_tallness: f64,
+        scheduler: &'a mut EngineScheduler,
+    ) -> Self {
+        Self {
+            tree,
+            id,
+            current_pixel_tallness,
+            scheduler: Some(scheduler),
         }
     }
 
     /// Wake this panel's scheduler engine.
     pub fn wake_up(&mut self) {
-        self.wake_up_panel(self.id);
+        let id = self.id;
+        self.wake_up_panel(id);
     }
 
     /// Wake another panel's scheduler engine.
+    /// C++ equivalent: panel->GetView().UpdateEngine->WakeUp().
     pub fn wake_up_panel(&mut self, id: crate::emPanelTree::PanelId) {
         let Some(panel) = self.tree.GetRec(id) else {
             return;
@@ -41,12 +64,9 @@ impl<'a> PanelCtx<'a> {
         let Some(eid) = panel.engine_id else {
             return;
         };
-        let Some(view_rc) = panel.View.upgrade() else {
-            return;
-        };
-        view_rc
-            .borrow_mut()
-            .queue_or_apply_sched_op(crate::emView::SchedOp::WakeUp(eid));
+        if let Some(sched) = self.scheduler.as_deref_mut() {
+            sched.wake_up(eid);
+        }
     }
 
     /// Returns true if this panel is the view's current seek target.
@@ -62,12 +82,15 @@ impl<'a> PanelCtx<'a> {
 
     /// Create a child panel under the current panel.
     pub fn create_child(&mut self, name: &str) -> PanelId {
-        self.tree.create_child(self.id, name)
+        self.tree
+            .create_child(self.id, name, self.scheduler.as_deref_mut())
     }
 
     /// Create a child with a behavior.
     pub fn create_child_with(&mut self, name: &str, behavior: Box<dyn PanelBehavior>) -> PanelId {
-        let child_id = self.tree.create_child(self.id, name);
+        let child_id = self
+            .tree
+            .create_child(self.id, name, self.scheduler.as_deref_mut());
         self.tree.set_behavior(child_id, behavior);
         child_id
     }
@@ -76,19 +99,21 @@ impl<'a> PanelCtx<'a> {
     pub fn delete_child(&mut self, child: PanelId) {
         // Verify it's actually a child
         if self.tree.GetParentContext(child) == Some(self.id) {
-            self.tree.remove(child);
+            self.tree.remove(child, self.scheduler.as_deref_mut());
         }
     }
 
     /// Delete the current panel (removes self from tree).
-    pub fn delete_self(self) {
-        self.tree.remove(self.id);
+    pub fn delete_self(mut self) {
+        let id = self.id;
+        self.tree.remove(id, self.scheduler.as_deref_mut());
     }
 
     /// Set layout rect for a child panel.
     pub fn layout_child(&mut self, child: PanelId, x: f64, y: f64, w: f64, h: f64) {
+        let pt = self.current_pixel_tallness;
         self.tree
-            .Layout(child, x, y, w, h, self.current_pixel_tallness);
+            .Layout(child, x, y, w, h, pt, self.scheduler.as_deref_mut());
     }
 
     /// Set layout rect and canvas color for a child panel.
@@ -105,9 +130,11 @@ impl<'a> PanelCtx<'a> {
         h: f64,
         canvas_color: emColor,
     ) {
+        let pt = self.current_pixel_tallness;
         self.tree
-            .Layout(child, x, y, w, h, self.current_pixel_tallness);
-        self.tree.SetCanvasColor(child, canvas_color);
+            .Layout(child, x, y, w, h, pt, self.scheduler.as_deref_mut());
+        self.tree
+            .SetCanvasColor(child, canvas_color, self.scheduler.as_deref_mut());
     }
 
     /// Get the parent panel ID.
@@ -150,7 +177,8 @@ impl<'a> PanelCtx<'a> {
 
     /// Set the canvas color.
     pub fn SetCanvasColor(&mut self, color: emColor) {
-        self.tree.SetCanvasColor(self.id, color);
+        self.tree
+            .SetCanvasColor(self.id, color, self.scheduler.as_deref_mut());
     }
 
     /// Get whether the panel is visible.
@@ -201,7 +229,10 @@ impl<'a> PanelCtx<'a> {
 
     /// Remove all children of the current panel.
     pub fn DeleteAllChildren(&mut self) {
-        self.tree.DeleteAllChildren(self.id);
+        let children: Vec<PanelId> = self.tree.children(self.id).collect();
+        for child in children {
+            self.tree.remove(child, self.scheduler.as_deref_mut());
+        }
     }
 
     /// Find a child by name.
@@ -232,7 +263,8 @@ impl<'a> PanelCtx<'a> {
 
     /// Set the enable switch for the current panel.
     pub fn SetEnableSwitch(&mut self, enable: bool) {
-        self.tree.SetEnableSwitch(self.id, enable);
+        self.tree
+            .SetEnableSwitch(self.id, enable, self.scheduler.as_deref_mut());
     }
 
     /// Get the number of children.
@@ -244,7 +276,8 @@ impl<'a> PanelCtx<'a> {
     ///
     /// C++ equivalent: the canvasColor argument of `child->Layout()`.
     pub fn set_child_canvas_color(&mut self, child: PanelId, color: emColor) {
-        self.tree.SetCanvasColor(child, color);
+        self.tree
+            .SetCanvasColor(child, color, self.scheduler.as_deref_mut());
     }
 
     /// Set canvas color on all children of the current panel.
@@ -254,7 +287,8 @@ impl<'a> PanelCtx<'a> {
     pub fn set_all_children_canvas_color(&mut self, color: emColor) {
         let children: Vec<PanelId> = self.tree.children(self.id).collect();
         for child in children {
-            self.tree.SetCanvasColor(child, color);
+            self.tree
+                .SetCanvasColor(child, color, self.scheduler.as_deref_mut());
         }
     }
 
@@ -287,7 +321,7 @@ impl<'a> PanelCtx<'a> {
 
     /// Make child the first child in sibling order. Port of C++ `BeFirst()`.
     pub fn be_first_child(&mut self, child: PanelId) {
-        self.tree.BeFirst(child);
+        self.tree.BeFirst(child, self.scheduler.as_deref_mut());
     }
 
     /// Check if child panel is in the active path.

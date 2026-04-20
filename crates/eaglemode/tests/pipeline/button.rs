@@ -330,7 +330,7 @@ fn bp9_disabled_button_ignores_press() {
     let (mut h, panel_id, counter, press_log) = make_button_harness();
 
     // Disable the panel via the tree's enable_switch mechanism.
-    h.tree.SetEnableSwitch(panel_id, false);
+    h.tree.SetEnableSwitch(panel_id, false, None);
     h.tick_n(3);
     // Re-render so emButton.PaintContent() caches enabled=false.
     let mut compositor = SoftwareCompositor::new(800, 600);
@@ -350,7 +350,7 @@ fn bp9_disabled_button_ignores_press() {
 fn bp9_disabled_button_ignores_enter() {
     let (mut h, panel_id, counter, _press_log) = make_button_harness();
 
-    h.tree.SetEnableSwitch(panel_id, false);
+    h.tree.SetEnableSwitch(panel_id, false, None);
     h.tick_n(3);
     let mut compositor = SoftwareCompositor::new(800, 600);
     compositor.render(&mut h.tree, &h.view);
@@ -383,10 +383,10 @@ fn bp9_vct_min_ext_guard_mouse() {
         counter_c.set(counter_c.get() + 1);
     }));
 
-    let panel_id = h.tree.create_child(root, "button");
+    let panel_id = h.tree.create_child(root, "button", None);
     h.tree.set_focusable(panel_id, true);
     // Tiny layout: 0.1% of root in each dimension → ~0.8px at 800x600.
-    h.tree.Layout(panel_id, 0.0, 0.0, 0.001, 0.001, 1.0);
+    h.tree.Layout(panel_id, 0.0, 0.0, 0.001, 0.001, 1.0, None);
     h.tree
         .set_behavior(panel_id, Box::new(ButtonPanel { widget: btn }));
 
@@ -421,9 +421,9 @@ fn bp9_vct_min_ext_guard_enter() {
         counter_c.set(counter_c.get() + 1);
     }));
 
-    let panel_id = h.tree.create_child(root, "button");
+    let panel_id = h.tree.create_child(root, "button", None);
     h.tree.set_focusable(panel_id, true);
-    h.tree.Layout(panel_id, 0.0, 0.0, 0.001, 0.001, 1.0);
+    h.tree.Layout(panel_id, 0.0, 0.0, 0.001, 0.001, 1.0, None);
     h.tree
         .set_behavior(panel_id, Box::new(ButtonPanel { widget: btn }));
 
@@ -433,7 +433,7 @@ fn bp9_vct_min_ext_guard_enter() {
 
     // Activate the panel, then press Enter.
     // Use set_active_panel directly since the panel is too small to Click.
-    h.view.set_active_panel(&mut h.tree, panel_id, false);
+    h.set_active_panel(panel_id);
     h.tick_n(1);
 
     h.press_key(InputKey::Enter);

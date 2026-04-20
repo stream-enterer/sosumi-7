@@ -138,6 +138,15 @@ impl EngineCtx<'_> {
     pub fn id(&self) -> EngineId {
         self.engine_id
     }
+
+    pub fn as_sched_ctx(&mut self) -> SchedCtx<'_> {
+        SchedCtx {
+            scheduler: self.scheduler,
+            framework_actions: self.framework_actions,
+            root_context: self.root_context,
+            current_engine: Some(self.engine_id),
+        }
+    }
 }
 
 impl SchedCtx<'_> {
@@ -179,6 +188,13 @@ impl SchedCtx<'_> {
 
     pub fn is_signaled(&self, sig: SignalId) -> bool {
         self.scheduler.is_pending(sig)
+    }
+
+    pub fn IsSignaled(&self, signal: SignalId) -> bool {
+        match self.current_engine {
+            Some(eid) => self.scheduler.is_signaled_for_engine(signal, eid),
+            None => self.scheduler.is_pending(signal),
+        }
     }
 }
 

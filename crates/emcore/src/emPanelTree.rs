@@ -12,6 +12,7 @@ use super::emPanelCycleEngine::PanelCycleEngine;
 use crate::emColor::emColor;
 use crate::emPanel::Rect;
 use crate::emPanelCtx::PanelCtx;
+use crate::emScheduler::EngineScheduler;
 
 // ── Autoplay handling flags ─────────────────────────────────────────
 
@@ -331,6 +332,10 @@ pub struct PanelTree {
     /// and calls `View.RawZoomOut(true)` when zoomed out. `emView::Update`
     /// drains this flag and calls `RawZoomOut` when it is true.
     pub(crate) root_layout_changed: bool,
+    /// Engine IDs queued for removal when the scheduler was busy (borrowed
+    /// by `DoTimeSlice`) at the time `deregister_engine_for` ran.
+    /// Drained at the start of each `DoTimeSlice` before the main loop.
+    pub(crate) pending_engine_removals: Vec<crate::emEngine::EngineId>,
 }
 
 impl PanelTree {
@@ -346,12 +351,14 @@ impl PanelTree {
             notice_ring_head_next: None,
             notice_ring_head_prev: None,
             root_layout_changed: false,
+            pending_engine_removals: Vec::new(),
         }
     }
 
-    /// Link `id` into the notice ring at the tail.
+    /// Link `id` into the notice ring at the tail and wake the view's update
+    /// engine if a scheduler is provided.
     /// Port of C++ `emView::AddToNoticeList` (emView.cpp).
-    pub(crate) fn add_to_notice_list(&mut self, id: PanelId) {
+    pub(crate) fn add_to_notice_list(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
         // Guard: View must be either populated (strong > 0) or the unset sentinel
         // Weak::new() (strong == 0 && weak == 0). A dangling Weak (strong == 0 &&
         // weak > 0) means the owning emView was dropped — that is a real bug.
@@ -393,15 +400,19 @@ impl PanelTree {
             }
         }
         // C++ emView::AddToNoticeList (emView.cpp:1288) calls UpdateEngine->WakeUp().
-        // Since the ring is now on PanelTree, wake via the panel's View.
-        // Use try_borrow_mut: if the view is already mutably borrowed (we are inside
-        // HandleNotice dispatch), the engine is already awake — no wakeup needed.
-        if let Some(view_rc) = self.panels[id].View.upgrade() {
-            if let Ok(mut view) = view_rc.try_borrow_mut() {
-                view.WakeUpUpdateEngine();
+        // Wake via the panel's View. If the caller provides a scheduler, read
+        // update_engine_id via try_borrow (view may be mutably borrowed during
+        // Update/HandleNotice — in that case the update engine is already running
+        // so no explicit wakeup is needed).
+        if let Some(sched) = sched {
+            if let Some(view_rc) = self.panels[id].View.upgrade() {
+                if let Ok(view) = view_rc.try_borrow() {
+                    if let Some(eng_id) = view.update_engine_id {
+                        drop(view);
+                        sched.wake_up(eng_id);
+                    }
+                }
             }
-            // If try_borrow_mut fails, we are inside the view's Update/HandleNotice;
-            // the engine is already running, so no explicit wakeup is needed.
         }
     }
 
@@ -501,7 +512,7 @@ impl PanelTree {
         // C++ fires all NF_* flags on new panels as initialization notices
         self.panels[id].pending_notices = Self::INIT_NOTICE_FLAGS;
         self.has_pending_notices = true;
-        self.add_to_notice_list(id);
+        self.add_to_notice_list(id, None);
         id
     }
 
@@ -528,34 +539,41 @@ impl PanelTree {
         &mut self,
         id: PanelId,
         view: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
+        sched: Option<&mut EngineScheduler>,
     ) {
         self.panels[id].View = view.clone();
-        self.register_engine_for(id);
+        // Split sched borrow: collect ids, then iterate with sched.
+        let mut ids_to_register = vec![id];
         let mut stack = vec![id];
         while let Some(p) = stack.pop() {
             let mut child = self.panels[p].first_child;
             while let Some(c) = child {
                 self.panels[c].View = view.clone();
-                self.register_engine_for(c);
+                ids_to_register.push(c);
                 stack.push(c);
                 child = self.panels[c].next_sibling;
+            }
+        }
+        match sched {
+            Some(s) => {
+                for reg_id in ids_to_register {
+                    self.register_engine_for(reg_id, Some(s));
+                }
+            }
+            None => {
+                for reg_id in ids_to_register {
+                    self.register_engine_for(reg_id, None);
+                }
             }
         }
     }
 
     /// Register `id`'s scheduler engine if the panel has a live view and
-    /// does not already have one. Called from `init_panel_view` and its
-    /// descendant walk, and from `create_child` (SP4.5).
-    ///
-    /// Uses `try_borrow_mut` on the scheduler so callers reachable from
-    /// inside an engine's `Cycle` (e.g. `StartupEngine::Cycle` →
-    /// `create_child`) don't re-entrantly borrow the scheduler that
-    /// `DoTimeSlice` is currently holding. When the scheduler is busy the
-    /// panel is left with `engine_id = None`; the post-`DoTimeSlice`
-    /// `register_pending_engines()` catch-up sweep (in
-    /// `App::about_to_wait` and `emSubViewPanel::Cycle`) registers it on
-    /// the way out of the slice.
-    fn register_engine_for(&mut self, id: PanelId) {
+    /// does not already have one. When `sched` is `None` (no scheduler
+    /// available yet, e.g. before `RegisterEngines` runs), the call is a
+    /// no-op; the post-`DoTimeSlice` `register_pending_engines()` catch-up
+    /// sweep registers it later.
+    fn register_engine_for(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
         if self.panels.get(id).and_then(|p| p.engine_id).is_some() {
             return; // idempotent re-attachment guard
         }
@@ -577,21 +595,15 @@ impl PanelTree {
         let Ok(view_borrow) = view_rc.try_borrow() else {
             return;
         };
-        let Some(sched_rc) = view_borrow.scheduler_ref().cloned() else {
-            return; // unit-test bare view with no scheduler
-        };
         drop(view_borrow);
+        let Some(sched) = sched else {
+            return; // no scheduler provided; defer to register_pending_engines
+        };
         let adapter = PanelCycleEngine {
             panel_id: id,
             view: view_weak,
             #[cfg(any(test, feature = "test-support"))]
             first_cycle_probe: None,
-        };
-        let Ok(mut sched) = sched_rc.try_borrow_mut() else {
-            // Re-entrant: scheduler is already borrowed by DoTimeSlice
-            // (e.g. caller is inside another engine's Cycle). Defer to the
-            // post-slice catch-up sweep.
-            return;
         };
         let eid = sched.register_engine(Box::new(adapter), Priority::Medium);
         self.panels[id].engine_id = Some(eid);
@@ -602,30 +614,14 @@ impl PanelTree {
     /// `self.panels` and calls `register_engine_for(id)` on each; the helper
     /// is idempotent (early-returns if `engine_id.is_some()` or the view has
     /// no scheduler yet).
-    pub fn register_pending_engines(&mut self) {
+    pub fn register_pending_engines(&mut self, sched: &mut EngineScheduler) {
         let ids: Vec<PanelId> = self.panels.keys().collect();
         for id in ids {
-            self.register_engine_for(id);
+            self.register_engine_for(id, Some(sched));
         }
     }
 
-    /// Deregister `id`'s scheduler engine. Uses
-    /// `queue_or_apply_sched_op(SchedOp::RemoveEngine(eid))` on the owning
-    /// view so a panel removed from inside a sibling's `Cycle` (scheduler
-    /// already borrowed) defers the removal to after the slice.
-    fn deregister_engine_for(&mut self, id: PanelId) {
-        let Some(eid) = self.panels.get_mut(id).and_then(|p| p.engine_id.take()) else {
-            return;
-        };
-        let Some(view_rc) = self.panels.get(id).and_then(|p| p.View.upgrade()) else {
-            // View gone; scheduler teardown will drain engines.
-            return;
-        };
-        view_rc
-            .borrow_mut()
-            .queue_or_apply_sched_op(crate::emView::SchedOp::RemoveEngine(eid));
-    }
-
+    /// Deregister `id`'s scheduler engine.
     /// Propagate a view weak reference to a panel and all its descendants.
     ///
     /// Use after [`create_root_deferred_view`] once the owning view is
@@ -639,20 +635,22 @@ impl PanelTree {
         id: PanelId,
         view: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
     ) {
-        self.init_panel_view(id, view);
+        self.init_panel_view(id, view, None);
     }
 
     /// Create a child panel under the given parent.
-    pub fn create_child(&mut self, parent: PanelId, name: &str) -> PanelId {
+    pub fn create_child(
+        &mut self,
+        parent: PanelId,
+        name: &str,
+        mut sched: Option<&mut EngineScheduler>,
+    ) -> PanelId {
         // C++ emPanel ctor: CreatedByAE = Parent->AECalling
         let created_by_ae = self.panels[parent].ae_calling;
         let parent_view = self.panels[parent].View.clone();
 
         let id = self.panels.insert(PanelData::new(name.to_string()));
         self.panels[id].View = parent_view;
-        if self.panels[id].View.strong_count() > 0 {
-            self.register_engine_for(id);
-        }
         self.name_index.insert((parent, name.to_string()), id);
 
         // Link into parent's child list
@@ -669,24 +667,28 @@ impl PanelTree {
         self.panels[parent].last_child = Some(id);
 
         // Inherit parent's enabled state
-        self.recompute_enabled(id);
+        self.recompute_enabled(id, None);
+
+        if self.panels[id].View.strong_count() > 0 {
+            self.register_engine_for(id, sched.as_deref_mut());
+        }
 
         // Notify parent
         self.panels[parent]
             .pending_notices
             .insert(NoticeFlags::CHILD_LIST_CHANGED);
         self.has_pending_notices = true;
-        self.add_to_notice_list(parent);
+        self.add_to_notice_list(parent, sched.as_deref_mut());
 
         // C++ fires all NF_* flags on new panels as initialization notices
         self.panels[id].pending_notices = Self::INIT_NOTICE_FLAGS;
-        self.add_to_notice_list(id);
+        self.add_to_notice_list(id, sched);
 
         id
     }
 
     /// Remove a panel and all its descendants.
-    pub fn remove(&mut self, id: PanelId) {
+    pub fn remove(&mut self, id: PanelId, mut sched: Option<&mut EngineScheduler>) {
         // Collect all descendants first
         let descendants = self.collect_descendants(id);
 
@@ -699,10 +701,26 @@ impl PanelTree {
 
         // SP4.5: deregister scheduler engines for self and descendants while
         // the View weak ref is still reachable.
+        // We can't pass sched multiple times via Option<&mut>, so collect eids.
+        let mut eids_to_remove: Vec<EngineId> = Vec::new();
         for &desc_id in &descendants {
-            self.deregister_engine_for(desc_id);
+            if let Some(eid) = self.panels.get_mut(desc_id).and_then(|p| p.engine_id.take()) {
+                eids_to_remove.push(eid);
+            }
         }
-        self.deregister_engine_for(id);
+        if let Some(eid) = self.panels.get_mut(id).and_then(|p| p.engine_id.take()) {
+            eids_to_remove.push(eid);
+        }
+        match sched.as_deref_mut() {
+            Some(s) => {
+                for eid in eids_to_remove {
+                    s.remove_engine(eid);
+                }
+            }
+            None => {
+                self.pending_engine_removals.extend(eids_to_remove);
+            }
+        }
 
         // Unlink from parent's child list
         if let Some(parent_id) = self.panels[id].parent {
@@ -725,7 +743,7 @@ impl PanelTree {
                 .pending_notices
                 .insert(NoticeFlags::CHILD_LIST_CHANGED);
             self.has_pending_notices = true;
-            self.add_to_notice_list(parent_id);
+            self.add_to_notice_list(parent_id, sched);
         }
 
         // Remove root reference if needed
@@ -778,13 +796,18 @@ impl PanelTree {
     }
 
     /// Queue notice flags on a panel and mark the tree as having pending notices.
-    pub fn queue_notice(&mut self, id: PanelId, flags: NoticeFlags) {
+    pub fn queue_notice(
+        &mut self,
+        id: PanelId,
+        flags: NoticeFlags,
+        sched: Option<&mut EngineScheduler>,
+    ) {
         if let Some(panel) = self.panels.get_mut(id) {
             panel.pending_notices.insert(flags);
             self.has_pending_notices = true;
             // Link into the notice ring if not already linked
             // (C++ emPanel.cpp:1417: `if (!NoticeNode.Next) View.AddToNoticeList(...)`)
-            self.add_to_notice_list(id);
+            self.add_to_notice_list(id, sched);
         }
     }
 
@@ -831,7 +854,12 @@ impl PanelTree {
     // ── Public write accessors ─────────────────────────────────────────
 
     /// Set whether the panel is visible.
-    pub fn set_visible(&mut self, id: PanelId, visible: bool) {
+    pub fn set_visible(
+        &mut self,
+        id: PanelId,
+        visible: bool,
+        sched: Option<&mut EngineScheduler>,
+    ) {
         let changed = if let Some(panel) = self.panels.get_mut(id) {
             if panel.visible != visible {
                 panel.visible = visible;
@@ -845,7 +873,7 @@ impl PanelTree {
             false
         };
         if changed {
-            self.add_to_notice_list(id);
+            self.add_to_notice_list(id, sched);
         }
     }
 
@@ -1004,14 +1032,14 @@ impl PanelTree {
     }
 
     /// After a sibling reorder, notify parent of child list change.
-    fn notify_sibling_reorder(&mut self, id: PanelId) {
+    fn notify_sibling_reorder(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
         let parent = self.panels[id].parent;
         if let Some(parent_id) = parent {
             self.panels[parent_id]
                 .pending_notices
                 .insert(NoticeFlags::CHILD_LIST_CHANGED);
             self.has_pending_notices = true;
-            self.add_to_notice_list(parent_id);
+            self.add_to_notice_list(parent_id, sched);
         }
     }
 
@@ -1019,7 +1047,7 @@ impl PanelTree {
     /// No-op if already first or if the panel is the root.
     ///
     /// Corresponds to `emPanel::BeFirst`.
-    pub fn BeFirst(&mut self, id: PanelId) {
+    pub fn BeFirst(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
         // No-op if no parent or already first
         let parent = match self.panels.get(id).and_then(|p| p.parent) {
             Some(p) => p,
@@ -1042,14 +1070,14 @@ impl PanelTree {
             self.panels[parent].last_child = Some(id);
         }
 
-        self.notify_sibling_reorder(id);
+        self.notify_sibling_reorder(id, sched);
     }
 
     /// Move this panel to the end (last) of its parent's child list.
     /// No-op if already last or if the panel is the root.
     ///
     /// Corresponds to `emPanel::BeLast`.
-    pub fn BeLast(&mut self, id: PanelId) {
+    pub fn BeLast(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
         let parent = match self.panels.get(id).and_then(|p| p.parent) {
             Some(p) => p,
             None => return,
@@ -1071,20 +1099,25 @@ impl PanelTree {
             self.panels[parent].first_child = Some(id);
         }
 
-        self.notify_sibling_reorder(id);
+        self.notify_sibling_reorder(id, sched);
     }
 
     /// Move this panel to be immediately before the given sibling.
-    /// If `sibling` is `None`, calls [`be_last`](Self::be_last).
+    /// If `sibling` is `None`, calls [`BeLast`](Self::BeLast).
     /// No-op if `sibling` is this panel, is already the next sibling, or has
     /// a different parent.
     ///
     /// Corresponds to `emPanel::BePrevOf`.
-    pub fn BePrevOf(&mut self, id: PanelId, sibling: Option<PanelId>) {
+    pub fn BePrevOf(
+        &mut self,
+        id: PanelId,
+        sibling: Option<PanelId>,
+        sched: Option<&mut EngineScheduler>,
+    ) {
         let sibling = match sibling {
             Some(s) => s,
             None => {
-                self.BeLast(id);
+                self.BeLast(id, sched);
                 return;
             }
         };
@@ -1116,20 +1149,25 @@ impl PanelTree {
             self.panels[parent].first_child = Some(id);
         }
 
-        self.notify_sibling_reorder(id);
+        self.notify_sibling_reorder(id, sched);
     }
 
     /// Move this panel to be immediately after the given sibling.
-    /// If `sibling` is `None`, calls [`be_first`](Self::be_first).
+    /// If `sibling` is `None`, calls [`BeFirst`](Self::BeFirst).
     /// No-op if `sibling` is this panel, is already the prev sibling, or has
     /// a different parent.
     ///
     /// Corresponds to `emPanel::BeNextOf`.
-    pub fn BeNextOf(&mut self, id: PanelId, sibling: Option<PanelId>) {
+    pub fn BeNextOf(
+        &mut self,
+        id: PanelId,
+        sibling: Option<PanelId>,
+        sched: Option<&mut EngineScheduler>,
+    ) {
         let sibling = match sibling {
             Some(s) => s,
             None => {
-                self.BeFirst(id);
+                self.BeFirst(id, sched);
                 return;
             }
         };
@@ -1161,15 +1199,19 @@ impl PanelTree {
             self.panels[parent].last_child = Some(id);
         }
 
-        self.notify_sibling_reorder(id);
+        self.notify_sibling_reorder(id, sched);
     }
 
     /// Sort the children of a panel using the given comparator.
     /// Notifies `CHILDREN_CHANGED` only if the order actually changed.
     ///
     /// Corresponds to `emPanel::SortChildren`.
-    pub fn SortChildren<F>(&mut self, parent: PanelId, mut compare: F)
-    where
+    pub fn SortChildren<F>(
+        &mut self,
+        parent: PanelId,
+        mut compare: F,
+        sched: Option<&mut EngineScheduler>,
+    ) where
         F: FnMut(PanelId, PanelId) -> std::cmp::Ordering,
     {
         // Collect children into a vec
@@ -1203,7 +1245,7 @@ impl PanelTree {
             .pending_notices
             .insert(NoticeFlags::CHILD_LIST_CHANGED);
         self.has_pending_notices = true;
-        self.add_to_notice_list(parent);
+        self.add_to_notice_list(parent, sched);
     }
 
     // ── Title / Icon ─────────────────────────────────────────────────
@@ -1255,10 +1297,10 @@ impl PanelTree {
     }
 
     /// Remove all children of a panel.
-    pub fn DeleteAllChildren(&mut self, parent: PanelId) {
+    pub fn DeleteAllChildren(&mut self, parent: PanelId, mut sched: Option<&mut EngineScheduler>) {
         let children: Vec<PanelId> = self.children(parent).collect();
         for child in children {
-            self.remove(child);
+            self.remove(child, sched.as_deref_mut());
         }
     }
 
@@ -1266,11 +1308,11 @@ impl PanelTree {
     ///
     /// Preserves manually-added children. Corresponds to the C++ pattern of
     /// only removing `CreatedByAE` children during auto-shrink.
-    pub fn delete_ae_children(&mut self, parent: PanelId) {
+    pub fn delete_ae_children(&mut self, parent: PanelId, mut sched: Option<&mut EngineScheduler>) {
         let children: Vec<PanelId> = self.children(parent).collect();
         for child in children {
             if self.panels.get(child).is_some_and(|p| p.created_by_ae) {
-                self.remove(child);
+                self.remove(child, sched.as_deref_mut());
             }
         }
     }
@@ -1279,14 +1321,18 @@ impl PanelTree {
     /// `NoticeFlags::LAYOUT_CHANGED` into each child's pending notices.
     ///
     /// Corresponds to `emPanel::InvalidateChildrenLayout`.
-    pub fn InvalidateChildrenLayout(&mut self, id: PanelId) {
+    pub fn InvalidateChildrenLayout(
+        &mut self,
+        id: PanelId,
+        mut sched: Option<&mut EngineScheduler>,
+    ) {
         let children: Vec<PanelId> = self.children(id).collect();
         for child in children {
             if let Some(panel) = self.panels.get_mut(child) {
                 panel.pending_notices.insert(NoticeFlags::LAYOUT_CHANGED);
                 self.has_pending_notices = true;
             }
-            self.add_to_notice_list(child);
+            self.add_to_notice_list(child, sched.as_deref_mut());
         }
     }
 
@@ -1301,6 +1347,7 @@ impl PanelTree {
     ///
     /// Width and height are clamped to a minimum of `1e-100` to prevent
     /// division-by-zero when computing tallness.
+    #[allow(clippy::too_many_arguments)]
     pub fn Layout(
         &mut self,
         id: PanelId,
@@ -1309,6 +1356,7 @@ impl PanelTree {
         w: f64,
         h: f64,
         current_pixel_tallness: f64,
+        mut sched: Option<&mut EngineScheduler>,
     ) {
         let rect = Rect {
             x,
@@ -1328,7 +1376,7 @@ impl PanelTree {
         } else {
             return;
         }
-        self.add_to_notice_list(id);
+        self.add_to_notice_list(id, sched.as_deref_mut());
 
         // C++ emPanel::Layout `!Parent` branch (emPanel.cpp:524):
         //   View.SVPChoiceInvalid=true; ... RawZoomOut(true) or RawVisit(p,...,true)
@@ -1417,9 +1465,9 @@ impl PanelTree {
                     | NoticeFlags::MEMORY_LIMIT_CHANGED,
             );
             self.has_pending_notices = true;
-            self.add_to_notice_list(id);
+            self.add_to_notice_list(id, sched.as_deref_mut());
             // Propagate to children (C++ emPanel.cpp:591: UpdateChildrenViewing()).
-            self.UpdateChildrenViewing(id, current_pixel_tallness);
+            self.UpdateChildrenViewing(id, current_pixel_tallness, sched);
         } else {
             // Panel is outside clip. Clear viewed state if it was in viewed path.
             let was_in_viewed_path = self
@@ -1440,14 +1488,19 @@ impl PanelTree {
                         | NoticeFlags::MEMORY_LIMIT_CHANGED,
                 );
                 self.has_pending_notices = true;
-                self.add_to_notice_list(id);
-                self.UpdateChildrenViewing(id, current_pixel_tallness);
+                self.add_to_notice_list(id, sched.as_deref_mut());
+                self.UpdateChildrenViewing(id, current_pixel_tallness, sched);
             }
         }
     }
 
     /// Set the canvas color for a panel.
-    pub fn SetCanvasColor(&mut self, id: PanelId, color: emColor) {
+    pub fn SetCanvasColor(
+        &mut self,
+        id: PanelId,
+        color: emColor,
+        sched: Option<&mut EngineScheduler>,
+    ) {
         if let Some(panel) = self.panels.get_mut(id) {
             panel.canvas_color = color;
             panel.pending_notices.insert(NoticeFlags::VIEWING_CHANGED);
@@ -1455,22 +1508,27 @@ impl PanelTree {
         } else {
             return;
         }
-        self.add_to_notice_list(id);
+        self.add_to_notice_list(id, sched);
     }
 
     /// Set the enable switch for a panel and recompute enabled state for descendants.
-    pub fn SetEnableSwitch(&mut self, id: PanelId, enable: bool) {
+    pub fn SetEnableSwitch(
+        &mut self,
+        id: PanelId,
+        enable: bool,
+        sched: Option<&mut EngineScheduler>,
+    ) {
         if let Some(panel) = self.panels.get_mut(id) {
             if panel.enable_switch == enable {
                 return;
             }
             panel.enable_switch = enable;
         }
-        self.recompute_enabled(id);
+        self.recompute_enabled(id, sched);
     }
 
     /// Recompute the `enabled` field for a panel and its descendants.
-    fn recompute_enabled(&mut self, id: PanelId) {
+    fn recompute_enabled(&mut self, id: PanelId, mut sched: Option<&mut EngineScheduler>) {
         let parent_enabled = self
             .panels
             .get(id)
@@ -1493,13 +1551,13 @@ impl PanelTree {
             false
         };
         if changed {
-            self.add_to_notice_list(id);
+            self.add_to_notice_list(id, sched.as_deref_mut());
         }
 
         // Recurse into children
         let child_ids: Vec<PanelId> = self.children(id).collect();
         for child_id in child_ids {
-            self.recompute_enabled(child_id);
+            self.recompute_enabled(child_id, sched.as_deref_mut());
         }
     }
 
@@ -1524,14 +1582,14 @@ impl PanelTree {
     /// Re-fire initialization notices on a panel (e.g., after setting
     /// behavior on an existing panel that already had its init notices
     /// drained before behavior was attached).
-    pub fn fire_init_notices(&mut self, id: PanelId) {
+    pub fn fire_init_notices(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
         if let Some(panel) = self.panels.get_mut(id) {
             panel.pending_notices.insert(Self::INIT_NOTICE_FLAGS);
             self.has_pending_notices = true;
         } else {
             return;
         }
-        self.add_to_notice_list(id);
+        self.add_to_notice_list(id, sched);
     }
 
     /// Build a `PanelState` snapshot for the given panel.
@@ -1834,6 +1892,7 @@ impl PanelTree {
         id: PanelId,
         threshold_value: f64,
         threshold_type: ViewConditionType,
+        sched: Option<&mut EngineScheduler>,
     ) {
         if let Some(panel) = self.panels.get_mut(id) {
             if panel.ae_threshold_value == threshold_value
@@ -1847,7 +1906,7 @@ impl PanelTree {
             // C++ emPanel::SetAutoExpansionThreshold: AddToNoticeList
             self.has_pending_notices = true;
         }
-        self.add_to_notice_list(id);
+        self.add_to_notice_list(id, sched);
     }
 
     /// Return the auto-expansion threshold value.
@@ -2349,7 +2408,12 @@ impl PanelTree {
     /// Precondition: when called, `self.panels[id].in_viewed_path` and
     /// `viewed` already reflect `id`'s own new state. The method then
     /// updates each child based on whether `id` is Viewed.
-    pub(crate) fn UpdateChildrenViewing(&mut self, id: PanelId, current_pixel_tallness: f64) {
+    pub(crate) fn UpdateChildrenViewing(
+        &mut self,
+        id: PanelId,
+        current_pixel_tallness: f64,
+        mut sched: Option<&mut EngineScheduler>,
+    ) {
         let (id_viewed, id_in_path, pid_vx, pid_vy, pid_vw, pid_cx1, pid_cy1, pid_cx2, pid_cy2) = {
             let p = match self.panels.get(id) {
                 Some(p) => p,
@@ -2390,9 +2454,10 @@ impl PanelTree {
                         NoticeFlags::VIEWING_CHANGED
                             | NoticeFlags::UPDATE_PRIORITY_CHANGED
                             | NoticeFlags::MEMORY_LIMIT_CHANGED,
+                        sched.as_deref_mut(),
                     );
                     if self.GetFirstChild(c).is_some() {
-                        self.UpdateChildrenViewing(c, current_pixel_tallness);
+                        self.UpdateChildrenViewing(c, current_pixel_tallness, sched.as_deref_mut());
                     }
                 }
                 child_opt = next;
@@ -2462,9 +2527,10 @@ impl PanelTree {
                     NoticeFlags::VIEWING_CHANGED
                         | NoticeFlags::UPDATE_PRIORITY_CHANGED
                         | NoticeFlags::MEMORY_LIMIT_CHANGED,
+                    sched.as_deref_mut(),
                 );
                 if self.GetFirstChild(c).is_some() {
-                    self.UpdateChildrenViewing(c, current_pixel_tallness);
+                    self.UpdateChildrenViewing(c, current_pixel_tallness, sched.as_deref_mut());
                 }
             }
 
@@ -2609,31 +2675,31 @@ mod tests {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
         t.set_focusable(root, true);
-        t.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        t.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
-        let a = t.create_child(root, "a");
+        let a = t.create_child(root, "a", None);
         t.set_focusable(a, false);
-        t.Layout(a, 0.0, 0.0, 0.5, 0.5, 1.0);
+        t.Layout(a, 0.0, 0.0, 0.5, 0.5, 1.0, None);
 
-        let a1 = t.create_child(a, "a1");
-        t.Layout(a1, 0.0, 0.0, 0.5, 1.0, 1.0);
+        let a1 = t.create_child(a, "a1", None);
+        t.Layout(a1, 0.0, 0.0, 0.5, 1.0, 1.0, None);
 
-        let a2 = t.create_child(a, "a2");
-        t.Layout(a2, 0.5, 0.0, 0.5, 1.0, 1.0);
+        let a2 = t.create_child(a, "a2", None);
+        t.Layout(a2, 0.5, 0.0, 0.5, 1.0, 1.0, None);
 
-        let b = t.create_child(root, "b");
-        t.Layout(b, 0.5, 0.0, 0.5, 0.5, 1.0);
+        let b = t.create_child(root, "b", None);
+        t.Layout(b, 0.5, 0.0, 0.5, 0.5, 1.0, None);
 
-        let c = t.create_child(root, "c");
+        let c = t.create_child(root, "c", None);
         t.set_focusable(c, false);
-        t.Layout(c, 0.0, 0.5, 1.0, 0.5, 1.0);
+        t.Layout(c, 0.0, 0.5, 1.0, 0.5, 1.0, None);
 
-        let c1 = t.create_child(c, "c1");
+        let c1 = t.create_child(c, "c1", None);
         t.set_focusable(c1, false);
-        t.Layout(c1, 0.0, 0.0, 1.0, 1.0, 1.0);
+        t.Layout(c1, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
-        let c1a = t.create_child(c1, "c1a");
-        t.Layout(c1a, 0.0, 0.0, 1.0, 1.0, 1.0);
+        let c1a = t.create_child(c1, "c1a", None);
+        t.Layout(c1a, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
         (t, root, a1, a2, b, c1a, c)
     }
@@ -2642,7 +2708,7 @@ mod tests {
     fn test_get_height_and_tallness() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("r");
-        t.Layout(root, 0.0, 0.0, 2.0, 6.0, 1.0);
+        t.Layout(root, 0.0, 0.0, 2.0, 6.0, 1.0, None);
         assert!((t.get_height(root) - 3.0).abs() < 1e-12);
         assert!((t.GetTallness(root) - t.get_height(root)).abs() < 1e-15);
     }
@@ -2651,7 +2717,7 @@ mod tests {
     fn test_substance_rect_default() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("r");
-        t.Layout(root, 0.0, 0.0, 2.0, 4.0, 1.0);
+        t.Layout(root, 0.0, 0.0, 2.0, 4.0, 1.0, None);
         let (sx, sy, sw, sh, sr) = t.GetSubstanceRect(root);
         assert_eq!((sx, sy, sw), (0.0, 0.0, 1.0));
         assert!((sh - 2.0).abs() < 1e-12);
@@ -2662,7 +2728,7 @@ mod tests {
     fn test_point_in_substance_rect() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("r");
-        t.Layout(root, 0.0, 0.0, 1.0, 2.0, 1.0);
+        t.Layout(root, 0.0, 0.0, 1.0, 2.0, 1.0, None);
         assert!(t.IsPointInSubstanceRect(root, 0.5, 1.0));
         assert!(t.IsPointInSubstanceRect(root, 0.0, 0.0));
         assert!(!t.IsPointInSubstanceRect(root, 1.0, 0.0));
@@ -2674,7 +2740,7 @@ mod tests {
     fn test_essence_rect() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("r");
-        t.Layout(root, 0.0, 0.0, 1.0, 3.0, 1.0);
+        t.Layout(root, 0.0, 0.0, 1.0, 3.0, 1.0, None);
         let (ex, ey, ew, eh) = t.GetEssenceRect(root);
         assert_eq!((ex, ey, ew), (0.0, 0.0, 1.0));
         assert!((eh - 3.0).abs() < 1e-12);
@@ -2696,7 +2762,7 @@ mod tests {
     fn test_focusable_first_child_none() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("r");
-        let child = t.create_child(root, "c");
+        let child = t.create_child(root, "c", None);
         t.set_focusable(child, false);
         assert_eq!(t.GetFocusableFirstChild(root), None);
     }
@@ -2785,24 +2851,24 @@ mod tests {
     fn test_be_first() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
-        let a = t.create_child(root, "a");
-        let b = t.create_child(root, "b");
-        let c = t.create_child(root, "c");
+        let a = t.create_child(root, "a", None);
+        let b = t.create_child(root, "b", None);
+        let c = t.create_child(root, "c", None);
 
         // Move c to front
-        t.BeFirst(c);
+        t.BeFirst(c, None);
         assert_eq!(child_names(&t, root), vec!["c", "a", "b"]);
 
         // Move c again (already first → no-op)
-        t.BeFirst(c);
+        t.BeFirst(c, None);
         assert_eq!(child_names(&t, root), vec!["c", "a", "b"]);
 
         // Move b to front
-        t.BeFirst(b);
+        t.BeFirst(b, None);
         assert_eq!(child_names(&t, root), vec!["b", "c", "a"]);
 
         // Already first → no-op
-        t.BeFirst(a);
+        t.BeFirst(a, None);
         // a is last, move to first
         assert_eq!(child_names(&t, root), vec!["a", "b", "c"]);
     }
@@ -2811,12 +2877,12 @@ mod tests {
     fn test_be_last() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
-        let a = t.create_child(root, "a");
-        let _b = t.create_child(root, "b");
-        let _c = t.create_child(root, "c");
+        let a = t.create_child(root, "a", None);
+        let _b = t.create_child(root, "b", None);
+        let _c = t.create_child(root, "c", None);
 
         // Move a to end
-        t.BeLast(a);
+        t.BeLast(a, None);
         assert_eq!(child_names(&t, root), vec!["b", "c", "a"]);
     }
 
@@ -2824,20 +2890,20 @@ mod tests {
     fn test_be_prev_of() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
-        let a = t.create_child(root, "a");
-        let b = t.create_child(root, "b");
-        let c = t.create_child(root, "c");
+        let a = t.create_child(root, "a", None);
+        let b = t.create_child(root, "b", None);
+        let c = t.create_child(root, "c", None);
 
         // Move c before a → c, a, b
-        t.BePrevOf(c, Some(a));
+        t.BePrevOf(c, Some(a), None);
         assert_eq!(child_names(&t, root), vec!["c", "a", "b"]);
 
         // Move b before a → c, b, a
-        t.BePrevOf(b, Some(a));
+        t.BePrevOf(b, Some(a), None);
         assert_eq!(child_names(&t, root), vec!["c", "b", "a"]);
 
         // be_prev_of with None → be_last
-        t.BePrevOf(c, None);
+        t.BePrevOf(c, None, None);
         assert_eq!(child_names(&t, root), vec!["b", "a", "c"]);
     }
 
@@ -2845,16 +2911,16 @@ mod tests {
     fn test_be_next_of() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
-        let a = t.create_child(root, "a");
-        let _b = t.create_child(root, "b");
-        let c = t.create_child(root, "c");
+        let a = t.create_child(root, "a", None);
+        let _b = t.create_child(root, "b", None);
+        let c = t.create_child(root, "c", None);
 
         // Move a after c → b, c, a
-        t.BeNextOf(a, Some(c));
+        t.BeNextOf(a, Some(c), None);
         assert_eq!(child_names(&t, root), vec!["b", "c", "a"]);
 
         // be_next_of with None → be_first
-        t.BeNextOf(a, None);
+        t.BeNextOf(a, None, None);
         assert_eq!(child_names(&t, root), vec!["a", "b", "c"]);
     }
 
@@ -2862,15 +2928,15 @@ mod tests {
     fn test_be_prev_of_no_op_cases() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
-        let a = t.create_child(root, "a");
-        let b = t.create_child(root, "b");
+        let a = t.create_child(root, "a", None);
+        let b = t.create_child(root, "b", None);
 
         // Same panel → no-op
-        t.BePrevOf(a, Some(a));
+        t.BePrevOf(a, Some(a), None);
         assert_eq!(child_names(&t, root), vec!["a", "b"]);
 
         // Already before sibling → no-op
-        t.BePrevOf(a, Some(b));
+        t.BePrevOf(a, Some(b), None);
         assert_eq!(child_names(&t, root), vec!["a", "b"]);
     }
 
@@ -2878,15 +2944,15 @@ mod tests {
     fn test_be_next_of_no_op_cases() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
-        let a = t.create_child(root, "a");
-        let b = t.create_child(root, "b");
+        let a = t.create_child(root, "a", None);
+        let b = t.create_child(root, "b", None);
 
         // Same panel → no-op
-        t.BeNextOf(b, Some(b));
+        t.BeNextOf(b, Some(b), None);
         assert_eq!(child_names(&t, root), vec!["a", "b"]);
 
         // Already after sibling → no-op
-        t.BeNextOf(b, Some(a));
+        t.BeNextOf(b, Some(a), None);
         assert_eq!(child_names(&t, root), vec!["a", "b"]);
     }
 
@@ -2894,16 +2960,16 @@ mod tests {
     fn test_sort_children() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
-        let _c = t.create_child(root, "c");
-        let _a = t.create_child(root, "a");
-        let _b = t.create_child(root, "b");
+        let _c = t.create_child(root, "c", None);
+        let _a = t.create_child(root, "a", None);
+        let _b = t.create_child(root, "b", None);
 
         // Build a name map before sorting so the closure doesn't borrow t
         let names: HashMap<PanelId, String> = t
             .children(root)
             .map(|id| (id, t.name(id).unwrap().to_string()))
             .collect();
-        t.SortChildren(root, |a_id, b_id| names[&a_id].cmp(&names[&b_id]));
+        t.SortChildren(root, |a_id, b_id| names[&a_id].cmp(&names[&b_id]), None);
         assert_eq!(child_names(&t, root), vec!["a", "b", "c"]);
     }
 
@@ -2911,8 +2977,8 @@ mod tests {
     fn test_sort_children_no_change() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
-        let _a = t.create_child(root, "a");
-        let _b = t.create_child(root, "b");
+        let _a = t.create_child(root, "a", None);
+        let _b = t.create_child(root, "b", None);
 
         // Clear pending notices before sort
         let mut view =
@@ -2926,7 +2992,7 @@ mod tests {
             .collect();
 
         // Already sorted -> should not set CHILDREN_CHANGED
-        t.SortChildren(root, |a_id, b_id| names[&a_id].cmp(&names[&b_id]));
+        t.SortChildren(root, |a_id, b_id| names[&a_id].cmp(&names[&b_id]), None);
         assert!(!t
             .pending_notices(root)
             .contains(NoticeFlags::CHILD_LIST_CHANGED));
@@ -2936,9 +3002,9 @@ mod tests {
     fn test_sort_children_reverse() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
-        let _a = t.create_child(root, "a");
-        let _b = t.create_child(root, "b");
-        let _c = t.create_child(root, "c");
+        let _a = t.create_child(root, "a", None);
+        let _b = t.create_child(root, "b", None);
+        let _c = t.create_child(root, "c", None);
 
         // Build name map
         let names: HashMap<PanelId, String> = t
@@ -2947,7 +3013,7 @@ mod tests {
             .collect();
 
         // Sort in reverse
-        t.SortChildren(root, |a_id, b_id| names[&b_id].cmp(&names[&a_id]));
+        t.SortChildren(root, |a_id, b_id| names[&b_id].cmp(&names[&a_id]), None);
         assert_eq!(child_names(&t, root), vec!["c", "b", "a"]);
 
         // Verify reverse iteration also works
@@ -2974,7 +3040,7 @@ mod tests {
         let root = t.create_root_deferred_view("root");
         t.set_behavior(root, Box::new(ControlCreator));
 
-        let child = t.create_child(root, "child");
+        let child = t.create_child(root, "child", None);
         // child has no behavior, so create_control_panel should
         // walk up to root, which has ControlCreator.
         let ctrl_id = t
@@ -2989,7 +3055,7 @@ mod tests {
     fn test_create_control_panel_returns_none_at_root_without_behavior() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
-        let child = t.create_child(root, "child");
+        let child = t.create_child(root, "child", None);
         // No behaviors at all -- should walk to root and return None
         let result = t.CreateControlPanel(child, root, "ctrl", 1.0);
         assert!(result.is_none());
@@ -3010,7 +3076,7 @@ mod tests {
         assert_eq!(t.GetAutoExpansionThresholdValue(root), 150.0);
 
         // Change threshold
-        t.SetAutoExpansionThreshold(root, 100.0, ViewConditionType::Width);
+        t.SetAutoExpansionThreshold(root, 100.0, ViewConditionType::Width, None);
         assert_eq!(
             t.GetAutoExpansionThresholdType(root),
             ViewConditionType::Width
@@ -3022,7 +3088,7 @@ mod tests {
 
         // No-op when values unchanged
         t.get_mut(root).unwrap().ae_decision_invalid = false;
-        t.SetAutoExpansionThreshold(root, 100.0, ViewConditionType::Width);
+        t.SetAutoExpansionThreshold(root, 100.0, ViewConditionType::Width, None);
         assert!(!t.GetRec(root).unwrap().ae_decision_invalid);
     }
 
@@ -3051,7 +3117,7 @@ mod tests {
     fn test_get_view_condition() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("r");
-        t.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        t.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
         // Not viewed, not in viewed path => 0.0
         assert_eq!(t.GetViewCondition(root, ViewConditionType::Area), 0.0);
@@ -3078,7 +3144,7 @@ mod tests {
     fn test_get_update_priority() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("r");
-        t.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        t.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
         let vw = 800.0;
         let vh = 600.0;
@@ -3120,7 +3186,7 @@ mod tests {
     fn test_get_memory_limit() {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("r");
-        t.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        t.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
         let vw = 800.0;
         let vh = 600.0;
@@ -3168,8 +3234,7 @@ mod tests {
     // `set_panel_view` so that `PanelTree::register_engine_for` sees a
     // live scheduler and registers a `PanelCycleEngine` adapter.
     // Scheduler `Drop` asserts "no dangling engines"; tests clean up by
-    // removing panels (which enqueues `SchedOp::RemoveEngine`) before
-    // dropping the scheduler.
+    // removing panels before dropping the scheduler.
 
     use crate::emEngine::EngineId as _EngineId;
     use crate::emScheduler::EngineScheduler;
@@ -3195,8 +3260,8 @@ mod tests {
             600.0,
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        view.borrow_mut().set_scheduler(sched.clone());
         tree.set_panel_view(root, Rc::downgrade(&view));
+        tree.register_pending_engines(&mut sched.borrow_mut());
         (tree, view, sched, root)
     }
 
@@ -3212,14 +3277,14 @@ mod tests {
             "scheduler should hold the registered engine"
         );
         // Cleanup: remove root → deregisters engine so scheduler Drop passes.
-        tree.remove(root);
+        tree.remove(root, Some(&mut sched.borrow_mut()));
         assert!(sched.borrow().get_engine_priority(eid).is_none());
     }
 
     #[test]
     fn sp4_5_child_panel_engine_registered_via_init_propagation() {
         let (mut tree, _view, sched, root) = make_registered_tree();
-        let child = tree.create_child(root, "child");
+        let child = tree.create_child(root, "child", Some(&mut sched.borrow_mut()));
         let eid = tree
             .GetRec(child)
             .and_then(|p| p.engine_id)
@@ -3229,34 +3294,34 @@ mod tests {
             "scheduler should have the registered child engine"
         );
         // Cleanup.
-        tree.remove(root);
+        tree.remove(root, Some(&mut sched.borrow_mut()));
     }
 
     #[test]
     fn sp4_5_panel_engine_deregistered_on_panel_removal() {
         let (mut tree, _view, sched, root) = make_registered_tree();
-        let child = tree.create_child(root, "child");
+        let child = tree.create_child(root, "child", Some(&mut sched.borrow_mut()));
         let eid = tree
             .GetRec(child)
             .and_then(|p| p.engine_id)
             .expect("child has engine_id");
         assert!(sched.borrow().get_engine_priority(eid).is_some());
 
-        tree.remove(child);
+        tree.remove(child, Some(&mut sched.borrow_mut()));
 
         assert!(
             sched.borrow().get_engine_priority(eid).is_none(),
             "scheduler must not hold a removed panel's engine"
         );
         // Cleanup root engine too.
-        tree.remove(root);
+        tree.remove(root, Some(&mut sched.borrow_mut()));
     }
 
     #[test]
     fn sp4_5_register_pending_engines_catches_late_scheduler_attach() {
         // Reproduces the production ordering in emMainWindow.rs:
         //   1. init_panel_view (view exists but has no scheduler yet)
-        //   2. attach_to_scheduler (view now has a scheduler)
+        //   2. RegisterEngines (view now has a scheduler)
         //   3. register_pending_engines (catch-up pass)
         // After step 3, the root panel must have an engine_id.
         let mut tree = PanelTree::new();
@@ -3267,28 +3332,38 @@ mod tests {
             800.0,
             600.0,
         )));
-        // Step 1: init_panel_view BEFORE attach_to_scheduler. The helper
+        // Step 1: init_panel_view BEFORE RegisterEngines. The helper
         // early-returns with no engine_id because the view has no scheduler.
-        tree.init_panel_view(root, Rc::downgrade(&view));
+        tree.init_panel_view(root, Rc::downgrade(&view), None);
         assert!(
             tree.GetRec(root).and_then(|p| p.engine_id).is_none(),
             "without a scheduler attached, init_panel_view must leave engine_id=None"
         );
 
-        // Step 2: attach_to_scheduler.
+        // Step 2: RegisterEngines.
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let view_weak = Rc::downgrade(&view);
-        view.borrow_mut()
-            .attach_to_scheduler(sched.clone(), view_weak);
-
+        {
+            let mut v = view.borrow_mut();
+            let root_ctx = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, view_weak);
+        }
         // Still no engine_id — register_engine_for was never re-invoked.
         assert!(
             tree.GetRec(root).and_then(|p| p.engine_id).is_none(),
-            "attach_to_scheduler alone must not retroactively register panel engines"
+            "RegisterEngines alone must not retroactively register panel engines"
         );
 
-        // Step 3: catch-up pass.
-        tree.register_pending_engines();
+        // Step 3: catch-up pass (replaces the old attach_scheduler → register pattern).
+        tree.register_pending_engines(&mut sched.borrow_mut());
         let eid = tree
             .GetRec(root)
             .and_then(|p| p.engine_id)
@@ -3299,13 +3374,13 @@ mod tests {
         );
 
         // Idempotent: second call is a no-op.
-        tree.register_pending_engines();
+        tree.register_pending_engines(&mut sched.borrow_mut());
         assert_eq!(tree.GetRec(root).and_then(|p| p.engine_id), Some(eid));
 
         // Cleanup.
-        tree.remove(root);
+        tree.remove(root, Some(&mut sched.borrow_mut()));
         assert!(sched.borrow().get_engine_priority(eid).is_none());
-        // Drop attach_to_scheduler's engines so scheduler Drop passes.
+        // Drop RegisterEngines' engines so scheduler Drop passes.
         {
             let mut v = view.borrow_mut();
             if let Some(id) = v.update_engine_id.take() {
@@ -3342,7 +3417,7 @@ mod tests {
         impl crate::emEngine::emEngine for ChildSpawnEngine {
             fn Cycle(&mut self, ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
                 if !self.spawned {
-                    ctx.tree.create_child(self.parent, "spawned");
+                    ctx.tree.create_child(self.parent, "spawned", None);
                     self.spawned = true;
                 }
                 false
@@ -3375,7 +3450,7 @@ mod tests {
         // The catch-up pass that fires after DoTimeSlice (in production: in
         // App::about_to_wait; here we invoke it explicitly) must register
         // the deferred panel's engine.
-        tree.register_pending_engines();
+        tree.register_pending_engines(&mut sched.borrow_mut());
         let child_eid = tree
             .GetRec(child)
             .and_then(|p| p.engine_id)
@@ -3386,7 +3461,7 @@ mod tests {
         );
 
         // Cleanup.
-        tree.remove(root);
+        tree.remove(root, Some(&mut sched.borrow_mut()));
         sched.borrow_mut().remove_engine(spawn_eid);
     }
 
@@ -3403,7 +3478,7 @@ mod tests {
         // Simulate the production "view is currently borrow_mut'd" state
         // (as it is throughout `emView::Update`).
         let _view_borrow = view.borrow_mut();
-        let child = tree.create_child(root, "spawned");
+        let child = tree.create_child(root, "spawned", None);
         drop(_view_borrow);
 
         // create_child returned without panic. Engine registration was
@@ -3412,14 +3487,14 @@ mod tests {
             tree.GetRec(child).and_then(|p| p.engine_id).is_none(),
             "engine_id should be deferred while view borrow_mut was held",
         );
-        tree.register_pending_engines();
+        tree.register_pending_engines(&mut sched.borrow_mut());
         let eid = tree
             .GetRec(child)
             .and_then(|p| p.engine_id)
             .expect("catch-up must register the deferred engine");
         assert!(sched.borrow().get_engine_priority(eid).is_some());
 
-        tree.remove(root);
+        tree.remove(root, Some(&mut sched.borrow_mut()));
     }
 
     // ── SP4.5 Phase 5 tests: multi-view tallness + sibling wake ───────
@@ -3444,7 +3519,11 @@ mod tests {
             recorded: Rc<Cell<Option<f64>>>,
         }
         impl PanelBehavior for TallnessRecordingBehavior {
-            fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+            fn Cycle(
+                &mut self,
+                _ectx: &mut crate::emEngineCtx::EngineCtx<'_>,
+                ctx: &mut PanelCtx,
+            ) -> bool {
                 self.recorded.set(Some(ctx.current_pixel_tallness));
                 false // sleep after one cycle
             }
@@ -3460,9 +3539,9 @@ mod tests {
             600.0,
         )));
         let sched_a = Rc::new(RefCell::new(EngineScheduler::new()));
-        view_a.borrow_mut().set_scheduler(sched_a.clone());
         view_a.borrow_mut().CurrentPixelTallness = 1.5;
         tree_a.set_panel_view(root_a, Rc::downgrade(&view_a));
+        tree_a.register_pending_engines(&mut sched_a.borrow_mut());
         let recorded_a = Rc::new(Cell::new(None));
         tree_a.set_behavior(
             root_a,
@@ -3482,9 +3561,9 @@ mod tests {
             600.0,
         )));
         let sched_b = Rc::new(RefCell::new(EngineScheduler::new()));
-        view_b.borrow_mut().set_scheduler(sched_b.clone());
         view_b.borrow_mut().CurrentPixelTallness = 0.5;
         tree_b.set_panel_view(root_b, Rc::downgrade(&view_b));
+        tree_b.register_pending_engines(&mut sched_b.borrow_mut());
         let recorded_b = Rc::new(Cell::new(None));
         tree_b.set_behavior(
             root_b,
@@ -3522,14 +3601,15 @@ mod tests {
         );
 
         // Cleanup.
-        tree_a.remove(root_a);
-        tree_b.remove(root_b);
+        tree_a.remove(root_a, Some(&mut sched_a.borrow_mut()));
+        tree_b.remove(root_b, Some(&mut sched_b.borrow_mut()));
     }
 
     /// Phase 5 Task 5.2 — a panel's Cycle may call ctx.wake_up_panel(b);
-    /// because the scheduler is borrowed mid-slice, the WakeUp is queued
-    /// into view.pending_sched_ops. After the slice ends and pending ops
-    /// are drained, a subsequent slice must cycle sibling B.
+    /// because the scheduler is borrowed mid-slice (DoTimeSlice holds
+    /// `&mut EngineScheduler`), the WakeUp is queued into
+    /// `tree.pending_engine_wakeups`. The wakeup is applied at the start of
+    /// the next DoTimeSlice, so a subsequent slice cycles sibling B.
     #[test]
     fn sp4_5_wake_up_panel_from_cycle_reaches_sibling() {
         use crate::emPanel::PanelBehavior;
@@ -3546,7 +3626,11 @@ mod tests {
             cycles: Rc<Cell<u32>>,
         }
         impl PanelBehavior for WakerBehavior {
-            fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+            fn Cycle(
+                &mut self,
+                _ectx: &mut crate::emEngineCtx::EngineCtx<'_>,
+                ctx: &mut PanelCtx,
+            ) -> bool {
                 self.cycles.set(self.cycles.get() + 1);
                 if self.woke_called.get() == 0 {
                     ctx.wake_up_panel(self.sibling);
@@ -3561,7 +3645,11 @@ mod tests {
             cycles: Rc<Cell<u32>>,
         }
         impl PanelBehavior for CounterBehavior {
-            fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+            fn Cycle(
+                &mut self,
+                _ectx: &mut crate::emEngineCtx::EngineCtx<'_>,
+                ctx: &mut PanelCtx,
+            ) -> bool {
                 let _ = ctx;
                 self.cycles.set(self.cycles.get() + 1);
                 false
@@ -3577,11 +3665,12 @@ mod tests {
             600.0,
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        view.borrow_mut().set_scheduler(sched.clone());
         tree.set_panel_view(root, Rc::downgrade(&view));
+        tree.register_pending_engines(&mut sched.borrow_mut());
 
-        let a = tree.create_child(root, "a");
-        let b = tree.create_child(root, "b");
+        let a = tree.create_child(root, "a", None);
+        let b = tree.create_child(root, "b", None);
+        tree.register_pending_engines(&mut sched.borrow_mut());
 
         let b_cycles = Rc::new(Cell::new(0u32));
         let a_cycles = Rc::new(Cell::new(0u32));
@@ -3607,9 +3696,11 @@ mod tests {
         // Wake A; B is asleep.
         sched.borrow_mut().wake_up(eid_a);
 
-        // Slice 1: A cycles, calls ctx.wake_up_panel(b). Because the
-        // scheduler is borrowed, the WakeUp op is queued onto
-        // view.pending_sched_ops rather than applied directly.
+        // Slice 1: A cycles, calls ctx.wake_up_panel(b). With the new
+        // direct-wakeup implementation, wake_up is called on the scheduler
+        // immediately via raw pointer (no deferred pending_engine_wakeups queue).
+        // B may cycle in slice 1 (if the scheduler scan hasn't passed B's
+        // priority slot yet) or in slice 2.
         let mut windows = HashMap::new();
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
@@ -3618,52 +3709,33 @@ mod tests {
             .DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
         assert_eq!(a_cycles.get(), 1, "A must have cycled once");
         assert_eq!(woke.get(), 1, "A must have called wake_up_panel");
-        assert_eq!(
-            b_cycles.get(),
-            0,
-            "B must not cycle before pending ops are drained"
-        );
 
-        // Drain pending scheduler ops queued during slice 1.
-        let ops: Vec<crate::emView::SchedOp> =
-            view.borrow_mut().pending_sched_ops.drain(..).collect();
-        assert!(
-            !ops.is_empty(),
-            "slice 1 must have queued at least one SchedOp::WakeUp"
-        );
-        {
-            let mut s = sched.borrow_mut();
-            for op in ops {
-                op.apply_to(&mut s);
-            }
+        // Drive at most one additional slice to give B a chance to cycle.
+        if b_cycles.get() == 0 {
+            let __root_ctx = crate::emContext::emContext::NewRoot();
+            let mut __fw: Vec<_> = Vec::new();
+            sched
+                .borrow_mut()
+                .DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
         }
-
-        // Slice 2: B should now run.
-        let __root_ctx = crate::emContext::emContext::NewRoot();
-        let mut __fw: Vec<_> = Vec::new();
-        sched
-            .borrow_mut()
-            .DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
         assert_eq!(
             b_cycles.get(),
             1,
-            "B must cycle after its WakeUp op is applied"
+            "B must cycle within one or two slices after wake_up_panel"
         );
 
         // Sanity: engine ids still match.
         assert_eq!(tree.GetRec(a).and_then(|p| p.engine_id), Some(eid_a));
         assert_eq!(tree.GetRec(b).and_then(|p| p.engine_id), Some(eid_b));
 
-        // Cleanup: remove root (deregisters engines via queued RemoveEngine
-        // ops). Drain those before dropping the scheduler so its "no
-        // dangling engines" Drop assertion passes.
-        tree.remove(root);
-        let cleanup_ops: Vec<crate::emView::SchedOp> =
-            view.borrow_mut().pending_sched_ops.drain(..).collect();
-        let mut s = sched.borrow_mut();
-        for op in cleanup_ops {
-            op.apply_to(&mut s);
-        }
+        // Cleanup: remove root (deregisters engines; scheduler busy so
+        // pending_engine_removals is populated). DoTimeSlice drains it.
+        tree.remove(root, None);
+        let __root_ctx = crate::emContext::emContext::NewRoot();
+        let mut __fw: Vec<_> = Vec::new();
+        sched
+            .borrow_mut()
+            .DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
     }
 
     /// SP4.5-FIX-1 Part B Path 1 — measures the slice delta between the
@@ -3695,7 +3767,7 @@ mod tests {
         impl crate::emEngine::emEngine for StartupShapeEngine {
             fn Cycle(&mut self, ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
                 if !self.done {
-                    let child = ctx.tree.create_child(self.parent, "spawned");
+                    let child = ctx.tree.create_child(self.parent, "spawned", None);
                     self.spawned_out.set(Some(child));
                     self.create_slice_out.set(Some(ctx.time_slice_counter()));
                     self.done = true;
@@ -3734,7 +3806,7 @@ mod tests {
 
         // Mirrors App::about_to_wait: register engines that were deferred
         // because the scheduler borrow_mut was held during DoTimeSlice.
-        tree.register_pending_engines();
+        tree.register_pending_engines(&mut sched.borrow_mut());
 
         // Attach the first-cycle probe to the spawned panel's engine.
         let child_eid = tree
@@ -3756,22 +3828,12 @@ mod tests {
             if cycled_at.get().is_some() {
                 break;
             }
-            // Drain any pending view ops queued during the previous slice
-            // (mirrors App::about_to_wait SchedOp drain).
-            let ops: Vec<crate::emView::SchedOp> =
-                _view.borrow_mut().pending_sched_ops.drain(..).collect();
-            {
-                let mut s = sched.borrow_mut();
-                for op in ops {
-                    op.apply_to(&mut s);
-                }
-            }
             let __root_ctx = crate::emContext::emContext::NewRoot();
             let mut __fw: Vec<_> = Vec::new();
             sched
                 .borrow_mut()
                 .DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
-            tree.register_pending_engines();
+            tree.register_pending_engines(&mut sched.borrow_mut());
         }
 
         let cycled_at_val = cycled_at
@@ -3782,13 +3844,12 @@ mod tests {
 
         // Cleanup before the assertion so the scheduler Drop invariant holds
         // even if the assert panics.
-        tree.remove(root);
-        let cleanup_ops: Vec<crate::emView::SchedOp> =
-            _view.borrow_mut().pending_sched_ops.drain(..).collect();
+        tree.remove(root, None);
+        // Drain pending_engine_removals queued by tree.remove(root) above.
         {
             let mut s = sched.borrow_mut();
-            for op in cleanup_ops {
-                op.apply_to(&mut s);
+            for eid in tree.pending_engine_removals.drain(..) {
+                s.remove_engine(eid);
             }
             s.remove_engine(spawn_eid);
         }
@@ -3832,9 +3893,9 @@ mod tests {
         // Simulate the production "view borrow_mut held" state (mirrors emView::Update running).
         let spawned = {
             let _view_borrow = view.borrow_mut();
-            tree.create_child(root, "spawned")
+            tree.create_child(root, "spawned", None)
         };
-        tree.register_pending_engines();
+        tree.register_pending_engines(&mut sched.borrow_mut());
         let pce_eid = tree
             .GetRec(spawned)
             .and_then(|p| p.engine_id)
@@ -3854,7 +3915,7 @@ mod tests {
             sched
                 .borrow_mut()
                 .DoTimeSlice(&mut tree, &mut empty_windows, &__root_ctx, &mut __fw);
-            tree.register_pending_engines();
+            tree.register_pending_engines(&mut sched.borrow_mut());
             slices += 1;
             assert!(
                 slices < 10,
@@ -3865,13 +3926,12 @@ mod tests {
         let delta = cycled_at - create_at;
 
         // Cleanup before assert (preserve scheduler-Drop invariant).
-        tree.remove(root);
-        let cleanup_ops: Vec<crate::emView::SchedOp> =
-            view.borrow_mut().pending_sched_ops.drain(..).collect();
+        tree.remove(root, None);
+        // Drain pending_engine_removals queued by tree.remove(root).
         {
             let mut s = sched.borrow_mut();
-            for op in cleanup_ops {
-                op.apply_to(&mut s);
+            for eid in tree.pending_engine_removals.drain(..) {
+                s.remove_engine(eid);
             }
         }
 

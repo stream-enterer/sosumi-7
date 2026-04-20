@@ -381,6 +381,13 @@ impl EngineScheduler {
         self.inner.deadline = Instant::now() + TIME_SLICE_DURATION;
         let next_parity = self.inner.time_slice ^ 1;
 
+        // Drain deferred engine removals queued when remove() was called without
+        // a scheduler context (e.g. from test cleanup or non-Cycle paths).
+        let pending_removals: Vec<_> = tree.pending_engine_removals.drain(..).collect();
+        for eid in pending_removals {
+            self.remove_engine(eid);
+        }
+
         // Timer phase: check timers and fire their signals
         let timer_signals = self.inner.timer_central.check_and_collect();
         for sig in timer_signals {

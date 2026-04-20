@@ -454,7 +454,7 @@ fn scalarfield_disabled_rejects_input() {
     let (mut h, value, pid) = setup_sf(0.0, 100.0, 50.0, true, &[], 10);
 
     // Disable the panel via the tree.
-    h.tree.SetEnableSwitch(pid, false);
+    h.tree.SetEnableSwitch(pid, false, None);
     h.tick_n(3);
     // Re-render so that PaintContent() propagates the disabled state into the widget.
     let mut comp = SoftwareCompositor::new(800, 600);

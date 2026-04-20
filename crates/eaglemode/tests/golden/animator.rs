@@ -23,18 +23,19 @@ macro_rules! require_golden {
 /// scrolling (panel larger than viewport) and further zoom-in (rel_a < 1000).
 /// The velocity trajectory is view-independent as long as no boundaries are hit.
 fn setup_anim_view() -> (PanelTree, emView) {
+    let mut ts = TestSched::new();
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
-    view.Update(&mut tree);
+    ts.with(|sc| view.Update(&mut tree, sc));
 
     // Moderate zoom in: factor=2 matches C++ VisitAnimViewSetup Zoom(400,300,2.0).
     // rel_a ≈ 4 (ra *= 1/4). Gives room to scroll and zoom further in.
-    view.Zoom(&mut tree, 2.0, 400.0, 300.0);
-    view.Update(&mut tree);
+    ts.with(|sc| view.Zoom(&mut tree, 2.0, 400.0, 300.0, sc));
+    ts.with(|sc| view.Update(&mut tree, sc));
 
     (tree, view)
 }
@@ -51,6 +52,7 @@ fn run_kinetic_velocity_trajectory(
     friction_enabled: bool,
     steps: usize,
 ) -> Vec<TrajectoryStep> {
+    let mut ts = TestSched::new();
     let mut anim = emKineticViewAnimator::new(vx, vy, vz, friction);
     anim.SetFrictionEnabled(friction_enabled);
 
@@ -58,7 +60,7 @@ fn run_kinetic_velocity_trajectory(
     let mut trajectory = Vec::with_capacity(steps);
 
     for _ in 0..steps {
-        anim.animate(view, tree, dt);
+        ts.with(|sc| anim.animate(view, tree, dt, sc));
         let (vel_x, vel_y, vel_z) = anim.GetVelocity();
         trajectory.push(TrajectoryStep {
             vel_x,
@@ -112,6 +114,7 @@ fn animator_kinetic_zoom() {
 
 #[test]
 fn animator_speeding_ramp() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("animator_speeding_ramp");
     let (mut tree, mut view) = setup_anim_view();
@@ -125,7 +128,7 @@ fn animator_speeding_ramp() {
     let dt = 1.0 / 60.0;
     let mut actual = Vec::with_capacity(60);
     for _ in 0..60 {
-        anim.animate(&mut view, &mut tree, dt);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, dt, sc));
         let (vel_x, vel_y, vel_z) = anim.inner().GetVelocity();
         actual.push(TrajectoryStep {
             vel_x,
@@ -140,6 +143,7 @@ fn animator_speeding_ramp() {
 
 #[test]
 fn animator_speeding_reverse() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("animator_speeding_reverse");
     let (mut tree, mut view) = setup_anim_view();
@@ -154,7 +158,7 @@ fn animator_speeding_reverse() {
     let dt = 1.0 / 60.0;
     let mut actual = Vec::with_capacity(60);
     for _ in 0..60 {
-        anim.animate(&mut view, &mut tree, dt);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, dt, sc));
         let (vel_x, vel_y, vel_z) = anim.inner().GetVelocity();
         actual.push(TrajectoryStep {
             vel_x,
@@ -169,6 +173,7 @@ fn animator_speeding_reverse() {
 
 #[test]
 fn animator_speeding_release() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("animator_speeding_release");
     let (mut tree, mut view) = setup_anim_view();
@@ -185,7 +190,7 @@ fn animator_speeding_release() {
         if i == 30 {
             anim.release();
         }
-        anim.animate(&mut view, &mut tree, dt);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, dt, sc));
         let (vel_x, vel_y, vel_z) = anim.inner().GetVelocity();
         actual.push(TrajectoryStep {
             vel_x,
@@ -202,6 +207,7 @@ fn animator_speeding_release() {
 
 #[test]
 fn animator_swiping_grip() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("animator_swiping_grip");
     let (mut tree, mut view) = setup_anim_view();
@@ -217,7 +223,7 @@ fn animator_swiping_grip() {
         if i < 10 {
             anim.MoveGrip(0, 5.0);
         }
-        anim.animate(&mut view, &mut tree, dt);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, dt, sc));
         let (vel_x, vel_y, vel_z) = anim.inner().GetVelocity();
         actual.push(TrajectoryStep {
             vel_x,
@@ -232,6 +238,7 @@ fn animator_swiping_grip() {
 
 #[test]
 fn animator_swiping_release() {
+    let mut ts = TestSched::new();
     require_golden!();
     let golden = load_trajectory_golden("animator_swiping_release");
     let (mut tree, mut view) = setup_anim_view();
@@ -250,7 +257,7 @@ fn animator_swiping_release() {
         if i == 20 {
             anim.SetGripped(false);
         }
-        anim.animate(&mut view, &mut tree, dt);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, dt, sc));
         let (vel_x, vel_y, vel_z) = anim.inner().GetVelocity();
         actual.push(TrajectoryStep {
             vel_x,
@@ -278,6 +285,7 @@ fn run_visiting_trajectory(
     target_a: f64,
     steps: usize,
 ) -> Vec<TrajectoryStep> {
+    let mut ts = TestSched::new();
     let mut anim = emVisitingViewAnimator::new(target_x, target_y, target_a, 0.0);
     anim.set_identity("root", "");
     anim.SetAnimated(true);
@@ -289,7 +297,7 @@ fn run_visiting_trajectory(
     let mut trajectory = Vec::with_capacity(steps);
 
     for _ in 0..steps {
-        anim.animate(view, tree, dt);
+        ts.with(|sc| anim.animate(view, tree, dt, sc));
         let (_, rx, ry, ra) = view
             .get_visited_panel_idiom(tree)
             .expect("visited panel should exist at trajectory step");
@@ -338,16 +346,17 @@ fn animator_visiting_short() {
 /// viewport. This makes panel_aspect != viewport_aspect, exercising the
 /// scroll denominator fix (BUG-8) which is invisible at matching aspects.
 fn setup_anim_view_square_panel() -> (PanelTree, emView) {
+    let mut ts = TestSched::new();
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0); // square panel
+    tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None); // square panel
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
-    view.Update(&mut tree);
+    ts.with(|sc| view.Update(&mut tree, sc));
 
-    view.Zoom(&mut tree, 2.0, 400.0, 300.0);
-    view.Update(&mut tree);
+    ts.with(|sc| view.Zoom(&mut tree, 2.0, 400.0, 300.0, sc));
+    ts.with(|sc| view.Update(&mut tree, sc));
 
     (tree, view)
 }
@@ -387,18 +396,19 @@ fn animator_visiting_zoom() {
 /// Matches C++ gen_animator_magnetic_approach: AnimViewSetup (root at 0,0,1,0.75,
 /// zoom factor 100), Activate, 60 frames of CycleAnimation, Deactivate.
 fn run_magnetic_trajectory(steps: usize) -> Vec<TrajectoryStep> {
+    let mut ts = TestSched::new();
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("root");
-    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0);
+    tree.Layout(root, 0.0, 0.0, 1.0, 0.75, 1.0, None);
     tree.set_focusable(root, true);
 
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::ROOT_SAME_TALLNESS);
-    view.Update(&mut tree);
+    ts.with(|sc| view.Update(&mut tree, sc));
 
     // C++ AnimViewSetup: Zoom(400, 300, 100.0)
-    view.Zoom(&mut tree, 100.0, 400.0, 300.0);
-    view.Update(&mut tree);
+    ts.with(|sc| view.Zoom(&mut tree, 100.0, 400.0, 300.0, sc));
+    ts.with(|sc| view.Update(&mut tree, sc));
 
     let mut anim = emMagneticViewAnimator::new();
     // C++ Activate() with no prior active animator → friction=1E10
@@ -408,7 +418,7 @@ fn run_magnetic_trajectory(steps: usize) -> Vec<TrajectoryStep> {
     let mut trajectory = Vec::with_capacity(steps);
 
     for _ in 0..steps {
-        anim.animate(&mut view, &mut tree, dt);
+        ts.with(|sc| anim.animate(&mut view, &mut tree, dt, sc));
         let (vel_x, vel_y, vel_z) = anim.inner().GetVelocity();
         trajectory.push(TrajectoryStep {
             vel_x,

@@ -24,6 +24,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use emcore::test_view_harness::TestSched;
 use emcore::emGUIFramework::App;
 use emcore::emWindow::{emWindow, WindowFlags};
 use winit::application::ApplicationHandler;
@@ -85,6 +86,7 @@ impl ApplicationHandler for Harness {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let mut ts = TestSched::new();
         match self.phase {
             0 => {
                 // Delegate to App::about_to_wait so the lazy-wire step
@@ -115,19 +117,16 @@ impl ApplicationHandler for Harness {
                     let mut home = home_rc.borrow_mut();
                     let tree = &mut self.app.tree;
                     let mut view = home.view_mut();
-                    // Attach to scheduler so popup-entry can allocate popup
-                    // signals via the real scheduler path.
-                    view.set_scheduler(Rc::clone(&self.app.scheduler));
                     // Update first — mirrors test_phase4: clears
                     // zoomed_out_before_sg so RawVisit doesn't immediately
                     // zoom out and tear down the popup.
-                    view.Update(tree);
+                    ts.with(|sc| view.Update(tree, sc));
                     // Enable popup zoom mode.
-                    view.SetViewFlags(emcore::emView::ViewFlags::POPUP_ZOOM, tree);
+                    ts.with(|sc| view.SetViewFlags(emcore::emView::ViewFlags::POPUP_ZOOM, tree, sc));
                     // Visit `child` with very small rel_a — the ancestor
                     // clamp loop ascends to root with vw >> HomeWidth,
                     // triggering outside_home → popup branch.
-                    view.RawVisit(tree, child, 0.0, 0.0, 0.1, true);
+                    ts.with(|sc| view.RawVisit(tree, child, 0.0, 0.0, 0.1, true, sc));
                 }
 
                 // Synchronous W3 invariant: PopupWindow present, Pending.
@@ -206,15 +205,15 @@ fn popup_surface_materializes_on_about_to_wait() {
         // we can trigger popup entry by visiting it with a tiny rel_a
         // (same pattern as emView::tests::test_phase4_popup_zoom_creates_popup_window).
         let root = app.tree.create_root_deferred_view("test_root");
-        app.tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
-        let child = app.tree.create_child(root, "child_a");
-        app.tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
+        app.tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
+        let child = app.tree.create_child(root, "child_a", None);
+        app.tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0, None);
         captured_for_setup.borrow_mut().popup_trigger_child = Some(child);
 
-        let close = app.scheduler.borrow_mut().create_signal();
-        let flags_sig = app.scheduler.borrow_mut().create_signal();
-        let focus_sig = app.scheduler.borrow_mut().create_signal();
-        let geom_sig = app.scheduler.borrow_mut().create_signal();
+        let close = app.scheduler.create_signal();
+        let flags_sig = app.scheduler.create_signal();
+        let focus_sig = app.scheduler.create_signal();
+        let geom_sig = app.scheduler.create_signal();
 
         let home = emWindow::create(
             event_loop,

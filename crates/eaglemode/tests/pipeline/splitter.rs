@@ -573,7 +573,7 @@ fn splitter_disabled_rejects_input() {
         setup_splitter_with_id(Orientation::Horizontal, 0.5);
 
     // Disable the panel via the tree.
-    h.tree.SetEnableSwitch(panel_id, false);
+    h.tree.SetEnableSwitch(panel_id, false, None);
     h.tick_n(3);
     // Re-render so the emSplitter caches enabled=false from the PaintContent call.
     compositor.render(&mut h.tree, &h.view);

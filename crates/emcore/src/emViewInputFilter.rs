@@ -17,6 +17,7 @@ pub trait emViewInputFilter {
         state: &emInputState,
         view: &mut emView,
         tree: &mut PanelTree,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool;
 
     /// Tick per-frame animations (wheel zoom spring, grip pan spring).
@@ -26,6 +27,7 @@ pub trait emViewInputFilter {
         _view: &mut emView,
         _tree: &mut super::emPanelTree::PanelTree,
         _dt: f64,
+        _ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
         false
     }
@@ -505,6 +507,7 @@ impl emMouseZoomScrollVIF {
         view: &mut emView,
         tree: &mut super::emPanelTree::PanelTree,
         dt: f64,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
         if !self.grip_active {
             return false;
@@ -570,7 +573,7 @@ impl emMouseZoomScrollVIF {
             let dy = self.grip_velocity_y * dt;
             let dz = self.grip_velocity_z * dt;
             if dx.abs() > 0.01 || dy.abs() > 0.01 || dz.abs() > 0.001 {
-                view.RawScrollAndZoom(tree, self.grip_fix_x, self.grip_fix_y, dx, dy, dz);
+                view.RawScrollAndZoom(tree, self.grip_fix_x, self.grip_fix_y, dx, dy, dz, ctx);
             }
         } else {
             // ── Coasting phase: linear friction (C++ emKineticViewAnimator) ──
@@ -599,7 +602,7 @@ impl emMouseZoomScrollVIF {
 
             if dx.abs() >= 0.01 || dy.abs() >= 0.01 || dz.abs() >= 0.001 {
                 let done =
-                    view.RawScrollAndZoom(tree, self.grip_fix_x, self.grip_fix_y, dx, dy, dz);
+                    view.RawScrollAndZoom(tree, self.grip_fix_x, self.grip_fix_y, dx, dy, dz, ctx);
                 // C++: stop axis if view bounced (done < 99% of requested)
                 if done[0].abs() < 0.99 * dx.abs() {
                     self.grip_velocity_x = 0.0;
@@ -654,6 +657,7 @@ impl emMouseZoomScrollVIF {
         view: &mut emView,
         tree: &mut super::emPanelTree::PanelTree,
         dt: f64,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
         if !self.wheel_active {
             return false;
@@ -674,7 +678,7 @@ impl emMouseZoomScrollVIF {
             self.wheel_velocity_z *= f;
             let dz = (v1 + self.wheel_velocity_z) * 0.5 * dt;
             if dz.abs() >= 0.01 {
-                view.RawScrollAndZoom(tree, self.wheel_fix_x, self.wheel_fix_y, 0.0, 0.0, dz);
+                view.RawScrollAndZoom(tree, self.wheel_fix_x, self.wheel_fix_y, 0.0, 0.0, dz, ctx);
             }
             if self.wheel_velocity_z.abs() < 0.01 {
                 self.wheel_velocity_z = 0.0;
@@ -708,7 +712,7 @@ impl emMouseZoomScrollVIF {
         // Apply zoom velocity via raw_scroll_and_zoom
         let dz = self.wheel_velocity_z * dt;
         if dz.abs() > 0.001 {
-            view.RawScrollAndZoom(tree, self.wheel_fix_x, self.wheel_fix_y, 0.0, 0.0, dz);
+            view.RawScrollAndZoom(tree, self.wheel_fix_x, self.wheel_fix_y, 0.0, 0.0, dz, ctx);
         }
 
         // C++ VIF stop condition: when velocity and extension are both low,
@@ -749,6 +753,7 @@ impl emViewInputFilter for emMouseZoomScrollVIF {
         state: &emInputState,
         view: &mut emView,
         _tree: &mut PanelTree,
+        _ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
         if view.flags.contains(ViewFlags::NO_USER_NAVIGATION) {
             return false;
@@ -895,9 +900,10 @@ impl emViewInputFilter for emMouseZoomScrollVIF {
         view: &mut emView,
         tree: &mut super::emPanelTree::PanelTree,
         dt: f64,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
-        let wheel = self.animate_wheel(view, tree, dt);
-        let grip = self.animate_grip(view, tree, dt);
+        let wheel = self.animate_wheel(view, tree, dt, ctx);
+        let grip = self.animate_grip(view, tree, dt, ctx);
         wheel || grip
     }
 
@@ -1027,6 +1033,7 @@ impl emKeyboardZoomScrollVIF {
         view: &mut emView,
         tree: &mut super::emPanelTree::PanelTree,
         dt: f64,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
         // Compute target velocities from held keys (in pixels/sec, matching C++)
         let target_vx = if self.key_state.contains(KeyState::RIGHT) {
@@ -1089,7 +1096,7 @@ impl emKeyboardZoomScrollVIF {
         let dz = self.zoom_velocity * dt;
         if dx.abs() > 0.001 || dy.abs() > 0.001 || dz.abs() > 0.0001 {
             let (vw, vh) = view.viewport_size();
-            view.RawScrollAndZoom(tree, vw * 0.5, vh * 0.5, dx, dy, dz);
+            view.RawScrollAndZoom(tree, vw * 0.5, vh * 0.5, dx, dy, dz, ctx);
         }
     }
 
@@ -1107,6 +1114,7 @@ impl emKeyboardZoomScrollVIF {
         state: &emInputState,
         view: &mut emView,
         tree: &mut PanelTree,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
         const SCROLL_DELTA: f64 = 0.3;
         const ZOOM_FAC: f64 = 1.0015;
@@ -1168,29 +1176,29 @@ impl emKeyboardZoomScrollVIF {
 
                 match event.key {
                     InputKey::ArrowLeft => {
-                        view.Scroll(tree, -SCROLL_DELTA * step * vw, 0.0);
+                        view.Scroll(tree, -SCROLL_DELTA * step * vw, 0.0, ctx);
                         true
                     }
                     InputKey::ArrowRight => {
-                        view.Scroll(tree, SCROLL_DELTA * step * vw, 0.0);
+                        view.Scroll(tree, SCROLL_DELTA * step * vw, 0.0, ctx);
                         true
                     }
                     InputKey::ArrowUp => {
-                        view.Scroll(tree, 0.0, -SCROLL_DELTA * step * vh / cpt);
+                        view.Scroll(tree, 0.0, -SCROLL_DELTA * step * vh / cpt, ctx);
                         true
                     }
                     InputKey::ArrowDown => {
-                        view.Scroll(tree, 0.0, SCROLL_DELTA * step * vh / cpt);
+                        view.Scroll(tree, 0.0, SCROLL_DELTA * step * vh / cpt, ctx);
                         true
                     }
                     InputKey::PageUp => {
                         let factor = ZOOM_FAC.powf(step);
-                        view.Zoom(tree, factor, vw * 0.5, vh * 0.5);
+                        view.Zoom(tree, factor, vw * 0.5, vh * 0.5, ctx);
                         true
                     }
                     InputKey::PageDown => {
                         let factor = 1.0 / ZOOM_FAC.powf(step);
-                        view.Zoom(tree, factor, vw * 0.5, vh * 0.5);
+                        view.Zoom(tree, factor, vw * 0.5, vh * 0.5, ctx);
                         true
                     }
                     _ => false,
@@ -1214,6 +1222,7 @@ impl emViewInputFilter for emKeyboardZoomScrollVIF {
         state: &emInputState,
         view: &mut emView,
         tree: &mut PanelTree,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
         if view.flags.contains(ViewFlags::NO_USER_NAVIGATION) {
             return false;
@@ -1225,7 +1234,7 @@ impl emViewInputFilter for emKeyboardZoomScrollVIF {
         }
 
         // Try programmatic navigation first
-        if self.navigate_by_program(event, state, view, tree) {
+        if self.navigate_by_program(event, state, view, tree, ctx) {
             return true;
         }
 
@@ -1539,7 +1548,12 @@ impl TouchTracker {
 
     /// Run one step of the gesture state machine. Returns true if state changed
     /// (caller should loop until stable). `view` is used for scroll/zoom actions.
-    pub fn do_gesture(&mut self, view: &mut emView, tree: &mut PanelTree) -> bool {
+    pub fn do_gesture(
+        &mut self,
+        view: &mut emView,
+        tree: &mut PanelTree,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) -> bool {
         let old_state = self.gesture_state;
 
         match self.gesture_state {
@@ -1572,7 +1586,7 @@ impl TouchTracker {
                 } else {
                     let mx = -self.get_touch_move_x(0);
                     let my = -self.get_touch_move_y(0);
-                    view.Scroll(tree, mx, my);
+                    view.Scroll(tree, mx, my, ctx);
                 }
             }
 
@@ -1587,9 +1601,9 @@ impl TouchTracker {
                     // C++: scroll + zoom combined
                     let mx = -self.get_touch_move_x(0);
                     let my = -self.get_touch_move_y(0);
-                    view.Scroll(tree, mx, my);
-                    view.Zoom(tree, factor, x, y);
-                    view.Update(tree);
+                    view.Scroll(tree, mx, my, ctx);
+                    view.Zoom(tree, factor, x, y, ctx);
+                    view.Update(tree, ctx);
                 }
             }
 
@@ -1604,9 +1618,9 @@ impl TouchTracker {
                     // C++: scroll + zoom combined
                     let mx = -self.get_touch_move_x(0);
                     let my = -self.get_touch_move_y(0);
-                    view.Scroll(tree, mx, my);
-                    view.Zoom(tree, factor, x, y);
-                    view.Update(tree);
+                    view.Scroll(tree, mx, my, ctx);
+                    view.Zoom(tree, factor, x, y, ctx);
+                    view.Update(tree, ctx);
                 }
             }
 
@@ -1945,6 +1959,7 @@ impl emDefaultTouchVIF {
         y: f64,
         view: &mut emView,
         tree: &mut PanelTree,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
         // Cancel any active fling
         if self.state == TouchState::Fling {
@@ -2009,7 +2024,7 @@ impl emDefaultTouchVIF {
             self.gesture_tracker.touch_count += 1;
         }
 
-        self.run_gesture_loop(view, tree);
+        self.run_gesture_loop(view, tree, ctx);
         let events = self.drain_gesture_actions(view);
         self.pending_forward_events.extend(events);
         true
@@ -2017,6 +2032,7 @@ impl emDefaultTouchVIF {
 
     /// Handle a touch move event. Applies pan or pinch-zoom to the view.
     /// `dt` is the frame delta in seconds. Returns true if consumed.
+    #[allow(clippy::too_many_arguments)]
     pub fn touch_move(
         &mut self,
         id: u64,
@@ -2025,6 +2041,7 @@ impl emDefaultTouchVIF {
         dt: f64,
         view: &mut emView,
         tree: &mut PanelTree,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
         self.update_touch(id, x, y);
 
@@ -2053,7 +2070,7 @@ impl emDefaultTouchVIF {
                     let dy = tp.y - tp.prev_y;
                     if dx.abs() > 0.001 || dy.abs() > 0.001 {
                         if !gesture_handles_move {
-                            view.Scroll(tree, dx, dy);
+                            view.Scroll(tree, dx, dy, ctx);
                         }
                         // Update smoothed velocity for fling detection regardless
                         let dt_safe = dt.max(1e-6);
@@ -2072,7 +2089,7 @@ impl emDefaultTouchVIF {
                     if self.last_pinch_distance > 0.1 && new_dist > 0.1 {
                         let factor = new_dist / self.last_pinch_distance;
                         let (cx, cy) = self.pinch_center(id1, id2);
-                        view.Zoom(tree, factor, cx, cy);
+                        view.Zoom(tree, factor, cx, cy, ctx);
                     }
                     self.last_pinch_distance = new_dist;
                 }
@@ -2082,7 +2099,7 @@ impl emDefaultTouchVIF {
         };
 
         if consumed {
-            self.run_gesture_loop(view, tree);
+            self.run_gesture_loop(view, tree, ctx);
             let events = self.drain_gesture_actions(view);
             self.pending_forward_events.extend(events);
         }
@@ -2090,7 +2107,13 @@ impl emDefaultTouchVIF {
     }
 
     /// Handle a touch end event. May trigger fling. Returns true if consumed.
-    pub fn touch_end(&mut self, id: u64, view: &mut emView, tree: &mut PanelTree) -> bool {
+    pub fn touch_end(
+        &mut self,
+        id: u64,
+        view: &mut emView,
+        tree: &mut PanelTree,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) -> bool {
         let removed = self.RemoveTouch(id);
         if removed.is_none() {
             return false;
@@ -2139,14 +2162,20 @@ impl emDefaultTouchVIF {
             }
         }
 
-        self.run_gesture_loop(view, tree);
+        self.run_gesture_loop(view, tree, ctx);
         let events = self.drain_gesture_actions(view);
         self.pending_forward_events.extend(events);
         true
     }
 
     /// Animate fling deceleration. Call each frame. Returns true if still animating.
-    pub fn animate_fling(&mut self, view: &mut emView, tree: &mut PanelTree, dt: f64) -> bool {
+    pub fn animate_fling(
+        &mut self,
+        view: &mut emView,
+        tree: &mut PanelTree,
+        dt: f64,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) -> bool {
         if self.state != TouchState::Fling {
             return false;
         }
@@ -2158,7 +2187,7 @@ impl emDefaultTouchVIF {
         let dy = self.fling_velocity_y * dt;
 
         if dx.abs() > 0.001 || dy.abs() > 0.001 {
-            view.Scroll(tree, dx, dy);
+            view.Scroll(tree, dx, dy, ctx);
         }
 
         let speed = (self.fling_velocity_x * self.fling_velocity_x
@@ -2182,9 +2211,14 @@ impl Default for emDefaultTouchVIF {
 
 impl emDefaultTouchVIF {
     /// Run the gesture state machine until stable (C++ DoGesture loop in Input/Cycle).
-    fn run_gesture_loop(&mut self, view: &mut emView, tree: &mut PanelTree) {
+    fn run_gesture_loop(
+        &mut self,
+        view: &mut emView,
+        tree: &mut PanelTree,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) {
         for _ in 0..100 {
-            if !self.gesture_tracker.do_gesture(view, tree) {
+            if !self.gesture_tracker.do_gesture(view, tree, ctx) {
                 break;
             }
         }
@@ -2192,9 +2226,15 @@ impl emDefaultTouchVIF {
 
     /// C++ Cycle(): advance touch timers and loop DoGesture for time-based
     /// transitions (e.g. hold timeouts, tap chain timeouts).
-    pub fn cycle_gesture(&mut self, view: &mut emView, tree: &mut PanelTree, dt_ms: i32) {
+    pub fn cycle_gesture(
+        &mut self,
+        view: &mut emView,
+        tree: &mut PanelTree,
+        dt_ms: i32,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) {
         self.gesture_tracker.next_touches(dt_ms);
-        self.run_gesture_loop(view, tree);
+        self.run_gesture_loop(view, tree, ctx);
         let events = self.drain_gesture_actions(view);
         self.pending_forward_events.extend(events);
     }
@@ -2291,6 +2331,7 @@ impl emViewInputFilter for emDefaultTouchVIF {
         _state: &emInputState,
         _view: &mut emView,
         _tree: &mut PanelTree,
+        _ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
         // Touch events are handled via touch_start/touch_move/touch_end,
         // not through the generic filter. This filter only handles
@@ -2454,6 +2495,7 @@ impl emViewInputFilter for emCheatVIF {
         _state: &emInputState,
         view: &mut emView,
         _tree: &mut PanelTree,
+        _ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) -> bool {
         // C++: skip if NO_USER_NAVIGATION
         if view.flags.contains(ViewFlags::NO_USER_NAVIGATION) {
@@ -2529,11 +2571,37 @@ impl emViewInputFilter for emCheatVIF {
 mod tests {
     use super::*;
     use crate::emPanelTree::PanelTree;
+    use crate::emScheduler::EngineScheduler;
+
+    /// Test helper: owns the data needed to construct a `SchedCtx`.
+    struct TestSched {
+        sched: EngineScheduler,
+        fw: Vec<crate::emEngineCtx::DeferredAction>,
+        ctx: std::rc::Rc<crate::emContext::emContext>,
+    }
+    impl TestSched {
+        fn new() -> Self {
+            Self {
+                sched: EngineScheduler::new(),
+                fw: Vec::new(),
+                ctx: crate::emContext::emContext::NewRoot(),
+            }
+        }
+        fn with<R>(&mut self, f: impl FnOnce(&mut crate::emEngineCtx::SchedCtx<'_>) -> R) -> R {
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut self.sched,
+                framework_actions: &mut self.fw,
+                root_context: &self.ctx,
+                current_engine: None,
+            };
+            f(&mut sc)
+        }
+    }
 
     fn setup() -> (PanelTree, emView) {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0);
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
         (tree, view)
     }
@@ -2562,18 +2630,19 @@ mod tests {
 
     #[test]
     fn test_gesture_dead_zone_no_scroll_under_20px() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let root = view.GetRootPanel();
         tree.set_focusable(root, true);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let (_, rx_before, ry_before, _) = view
             .get_visited_panel_idiom(&tree)
             .expect("visited panel should exist before gesture");
 
         let mut vif = emDefaultTouchVIF::new();
-        vif.touch_start(1, 100.0, 100.0, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_start(1, 100.0, 100.0, &mut view, &mut tree, sc));
         // Move 10px — under the gesture machine's 20px dead zone
-        vif.touch_move(1, 110.0, 100.0, 0.016, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_move(1, 110.0, 100.0, 0.016, &mut view, &mut tree, sc));
 
         // With old system suppressed, view should NOT have scrolled
         let (_, rx_after, ry_after, _) = view
@@ -2714,11 +2783,12 @@ mod tests {
 
     #[test]
     fn test_navigate_by_program() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         // Zoom in so Scroll is not clamped by zoom-out root-centering.
-        view.Zoom(&mut tree, 4.0, 400.0, 300.0);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Zoom(&mut tree, 4.0, 400.0, 300.0, sc));
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut vif = emKeyboardZoomScrollVIF::new();
 
         let mut state = emInputState::new();
@@ -2727,18 +2797,18 @@ mod tests {
 
         // Step 1: Shift+Alt+End
         let event = emInputEvent::press(InputKey::End);
-        assert!(vif.navigate_by_program(&event, &state, &mut view, &mut tree));
+        assert!(ts.with(|sc| vif.navigate_by_program(&event, &state, &mut view, &mut tree, sc)));
 
         // Step 2: Shift+Alt+C (step = 3)
         let event2 = emInputEvent::press(InputKey::Key('c'));
-        assert!(vif.navigate_by_program(&event2, &state, &mut view, &mut tree));
+        assert!(ts.with(|sc| vif.navigate_by_program(&event2, &state, &mut view, &mut tree, sc)));
 
         // Step 3: Shift+Alt+Right (scroll right)
         let (_, before, _, _) = view
             .get_visited_panel_idiom(&tree)
             .expect("visited panel before scroll");
         let event3 = emInputEvent::press(InputKey::ArrowRight);
-        assert!(vif.navigate_by_program(&event3, &state, &mut view, &mut tree));
+        assert!(ts.with(|sc| vif.navigate_by_program(&event3, &state, &mut view, &mut tree, sc)));
         let (_, after, _, _) = view
             .get_visited_panel_idiom(&tree)
             .expect("visited panel after scroll");
@@ -2747,6 +2817,7 @@ mod tests {
 
     #[test]
     fn test_keyboard_continuous_key_state() {
+        let mut ts = TestSched::new();
         let mut vif = emKeyboardZoomScrollVIF::new();
 
         // Initially not animating
@@ -2758,24 +2829,25 @@ mod tests {
 
         let event = emInputEvent::press(InputKey::ArrowRight);
         let (mut tree, mut view) = setup();
-        assert!(vif.filter(&event, &state, &mut view, &mut tree));
+        assert!(ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc)));
         assert!(vif.key_state.contains(KeyState::RIGHT));
         assert!(vif.is_animating());
 
         // Release right arrow
         let release_event = emInputEvent::release(InputKey::ArrowRight);
-        assert!(vif.filter(&release_event, &state, &mut view, &mut tree));
+        assert!(ts.with(|sc| vif.filter(&release_event, &state, &mut view, &mut tree, sc)));
         assert!(!vif.key_state.contains(KeyState::RIGHT));
     }
 
     #[test]
     fn test_keyboard_continuous_animation() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         // Zoom in so the per-frame scroll deltas are observable via
         // get_visited_panel_idiom (otherwise root-centering clamps rel_x=0).
-        view.Zoom(&mut tree, 4.0, 400.0, 300.0);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Zoom(&mut tree, 4.0, 400.0, 300.0, sc));
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut vif = emKeyboardZoomScrollVIF::new();
         vif.key_state.insert(KeyState::RIGHT);
@@ -2786,7 +2858,7 @@ mod tests {
 
         // Animate several frames
         for _ in 0..10 {
-            vif.animate(&mut view, &mut tree, 0.016);
+            ts.with(|sc| vif.animate(&mut view, &mut tree, 0.016, sc));
         }
 
         let (_, after, _, _) = view
@@ -2797,8 +2869,9 @@ mod tests {
 
     #[test]
     fn test_keyboard_deceleration() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut vif = emKeyboardZoomScrollVIF::new();
         // Enable friction so release decelerates (C++ parity requires set_animator_params)
@@ -2806,14 +2879,14 @@ mod tests {
         // Ramp up velocity
         vif.key_state.insert(KeyState::DOWN);
         for _ in 0..20 {
-            vif.animate(&mut view, &mut tree, 0.016);
+            ts.with(|sc| vif.animate(&mut view, &mut tree, 0.016, sc));
         }
         assert!(vif.scroll_velocity_y.abs() > 0.1, "Should have velocity");
 
         // Release key — should decelerate via friction
         vif.key_state.remove(KeyState::DOWN);
         for _ in 0..100 {
-            vif.animate(&mut view, &mut tree, 0.016);
+            ts.with(|sc| vif.animate(&mut view, &mut tree, 0.016, sc));
         }
         assert!(
             vif.scroll_velocity_y.abs() < 0.1,
@@ -2823,8 +2896,9 @@ mod tests {
 
     #[test]
     fn test_keyboard_zoom_continuous() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut vif = emKeyboardZoomScrollVIF::new();
         // Use set_animator_params to compute zoom_speed in correct units for
@@ -2837,7 +2911,7 @@ mod tests {
             .get_visited_panel_idiom(&tree)
             .expect("visited panel should exist before zoom animation");
         for _ in 0..20 {
-            vif.animate(&mut view, &mut tree, 0.016);
+            ts.with(|sc| vif.animate(&mut view, &mut tree, 0.016, sc));
         }
 
         let (_, _, _, after) = view
@@ -2850,6 +2924,7 @@ mod tests {
 
     #[test]
     fn test_keyboard_alt_release_clears() {
+        let mut ts = TestSched::new();
         let mut vif = emKeyboardZoomScrollVIF::new();
         let mut state = emInputState::new();
         state.press(InputKey::Alt);
@@ -2857,32 +2932,33 @@ mod tests {
 
         // Press some keys
         let e1 = emInputEvent::press(InputKey::ArrowUp);
-        vif.filter(&e1, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&e1, &state, &mut view, &mut tree, sc));
         let e2 = emInputEvent::press(InputKey::PageUp);
-        vif.filter(&e2, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&e2, &state, &mut view, &mut tree, sc));
         assert!(!vif.key_state.is_empty());
 
         // Release Alt — should clear all key state
         state.release(InputKey::Alt);
         let alt_release = emInputEvent::release(InputKey::Alt);
-        vif.filter(&alt_release, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&alt_release, &state, &mut view, &mut tree, sc));
         assert!(vif.key_state.is_empty());
     }
 
     #[test]
     fn test_touch_single_pan() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         // Zoom in so the pan motion is observable via get_visited_panel_idiom
         // (otherwise root-centering clamps rel_x=0).
-        view.Zoom(&mut tree, 4.0, 400.0, 300.0);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Zoom(&mut tree, 4.0, 400.0, 300.0, sc));
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut vif = emDefaultTouchVIF::new();
         assert_eq!(vif.state(), TouchState::Idle);
 
         // Touch start
-        assert!(vif.touch_start(1, 100.0, 100.0, &mut view, &mut tree));
+        ts.with(|sc| assert!(vif.touch_start(1, 100.0, 100.0, &mut view, &mut tree, sc)));
         assert_eq!(vif.state(), TouchState::SingleTouch { id: 1 });
         assert_eq!(vif.active_count(), 1);
 
@@ -2891,7 +2967,7 @@ mod tests {
         let (_, before, _, _) = view
             .get_visited_panel_idiom(&tree)
             .expect("visited panel before touch_move");
-        vif.touch_move(1, 130.0, 100.0, 0.016, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_move(1, 130.0, 100.0, 0.016, &mut view, &mut tree, sc));
         let (_, after, _, _) = view
             .get_visited_panel_idiom(&tree)
             .expect("visited panel after touch_move");
@@ -2901,21 +2977,22 @@ mod tests {
         );
 
         // Touch end with low velocity — should go idle
-        vif.touch_end(1, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_end(1, &mut view, &mut tree, sc));
         assert_eq!(vif.active_count(), 0);
     }
 
     #[test]
     fn test_touch_pinch_zoom() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut vif = emDefaultTouchVIF::new();
 
         // Two touches — gesture machine is active (FirstDown→SecondDown),
         // so old PinchZoom state is suppressed.
-        vif.touch_start(1, 100.0, 200.0, &mut view, &mut tree);
-        vif.touch_start(2, 200.0, 200.0, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_start(1, 100.0, 200.0, &mut view, &mut tree, sc));
+        ts.with(|sc| vif.touch_start(2, 200.0, 200.0, &mut view, &mut tree, sc));
         // Gesture machine handles two-finger input; old PinchZoom suppressed
         assert!(
             !matches!(vif.state(), TouchState::PinchZoom { .. }),
@@ -2926,30 +3003,32 @@ mod tests {
 
     #[test]
     fn test_touch_fling() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut vif = emDefaultTouchVIF::new();
         vif.set_fling_friction(0.95);
 
         // Rapid drag
-        vif.touch_start(1, 100.0, 100.0, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_start(1, 100.0, 100.0, &mut view, &mut tree, sc));
         for i in 1..10 {
-            vif.touch_move(
+            ts.with(|sc| vif.touch_move(
                 1,
                 100.0 + i as f64 * 50.0,
                 100.0,
                 0.016,
                 &mut view,
                 &mut tree,
-            );
+                sc,
+            ));
         }
-        vif.touch_end(1, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_end(1, &mut view, &mut tree, sc));
         assert_eq!(vif.state(), TouchState::Fling);
 
         // Animate fling until stopped
         let mut frames = 0;
-        while vif.animate_fling(&mut view, &mut tree, 0.016) {
+        while ts.with(|sc| vif.animate_fling(&mut view, &mut tree, 0.016, sc))  {
             frames += 1;
             if frames > 1000 {
                 break;
@@ -2960,41 +3039,44 @@ mod tests {
 
     #[test]
     fn test_touch_fling_cancel_on_press() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut vif = emDefaultTouchVIF::new();
 
         // Create fling
-        vif.touch_start(1, 100.0, 100.0, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_start(1, 100.0, 100.0, &mut view, &mut tree, sc));
         for i in 1..10 {
-            vif.touch_move(
+            ts.with(|sc| vif.touch_move(
                 1,
                 100.0 + i as f64 * 50.0,
                 100.0,
                 0.016,
                 &mut view,
                 &mut tree,
-            );
+                sc,
+            ));
         }
-        vif.touch_end(1, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_end(1, &mut view, &mut tree, sc));
         assert_eq!(vif.state(), TouchState::Fling);
 
         // Press any key cancels fling
         let state = emInputState::new();
         let event = emInputEvent::press(InputKey::Escape);
-        assert!(vif.filter(&event, &state, &mut view, &mut tree));
+        assert!(ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc)));
         assert_eq!(vif.state(), TouchState::Idle);
     }
 
     #[test]
     fn test_touch_pinch_to_single() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let mut vif = emDefaultTouchVIF::new();
 
         // Two touches — gesture machine is active, PinchZoom suppressed
-        vif.touch_start(1, 100.0, 200.0, &mut view, &mut tree);
-        vif.touch_start(2, 200.0, 200.0, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_start(1, 100.0, 200.0, &mut view, &mut tree, sc));
+        ts.with(|sc| vif.touch_start(2, 200.0, 200.0, &mut view, &mut tree, sc));
         assert!(
             !matches!(vif.state(), TouchState::PinchZoom { .. }),
             "PinchZoom should be suppressed"
@@ -3002,7 +3084,7 @@ mod tests {
 
         // Lift one finger — stays in SingleTouch (entered at first touch)
         // since PinchZoom was never entered
-        vif.touch_end(1, &mut view, &mut tree);
+        ts.with(|sc| vif.touch_end(1, &mut view, &mut tree, sc));
         assert_eq!(vif.active_count(), 1);
     }
 
@@ -3033,10 +3115,11 @@ mod tests {
 
     #[test]
     fn test_grip_kinetic_coasting_after_drag() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         // Zoom in so the panel is larger than the viewport and scroll isn't clamped.
-        view.Zoom(&mut tree, 4.0, 400.0, 300.0);
+        ts.with(|sc| view.Zoom(&mut tree, 4.0, 400.0, 300.0, sc));
 
         let mut vif = emMouseZoomScrollVIF::new();
         // Enable kinetic behavior with realistic parameters
@@ -3048,7 +3131,7 @@ mod tests {
         let press = emInputEvent::press(InputKey::MouseMiddle);
         state.mouse_x = 100.0;
         state.mouse_y = 100.0;
-        assert!(vif.filter(&press, &state, &mut view, &mut tree));
+        assert!(ts.with(|sc| vif.filter(&press, &state, &mut view, &mut tree, sc)));
         assert!(
             vif.is_grip_animating(),
             "Should be animating during grip phase"
@@ -3072,14 +3155,14 @@ mod tests {
                 meta: false,
                 eaten: false,
             };
-            vif.filter(&move_event, &state, &mut view, &mut tree);
+            ts.with(|sc| vif.filter(&move_event, &state, &mut view, &mut tree, sc));
             // Tick spring physics between move events
-            vif.animate_grip(&mut view, &mut tree, 1.0 / 60.0);
+            ts.with(|sc| vif.animate_grip(&mut view, &mut tree, 1.0 / 60.0, sc));
         }
 
         // Release — should transition to coasting
         let release = emInputEvent::release(InputKey::MouseMiddle);
-        assert!(vif.filter(&release, &state, &mut view, &mut tree));
+        assert!(ts.with(|sc| vif.filter(&release, &state, &mut view, &mut tree, sc)));
         assert!(
             vif.is_grip_animating(),
             "Should be coasting after kinetic drag"
@@ -3087,7 +3170,7 @@ mod tests {
 
         // Animate coasting until it stops
         let mut frames = 0;
-        while vif.animate_grip(&mut view, &mut tree, 1.0 / 60.0) {
+        while ts.with(|sc| vif.animate_grip(&mut view, &mut tree, 1.0 / 60.0, sc)) {
             frames += 1;
             if frames > 10_000 {
                 panic!("Coasting did not stop within 10000 frames");
@@ -3099,8 +3182,9 @@ mod tests {
 
     #[test]
     fn test_grip_no_coasting_when_kinetic_disabled() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut vif = emMouseZoomScrollVIF::new();
         // Explicitly disable kinetic (k=0 → friction_enabled=false)
@@ -3112,7 +3196,7 @@ mod tests {
         let press = emInputEvent::press(InputKey::MouseMiddle);
         state.mouse_x = 100.0;
         state.mouse_y = 100.0;
-        vif.filter(&press, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&press, &state, &mut view, &mut tree, sc));
 
         // Drag with animation ticks
         for i in 1..=10 {
@@ -3131,13 +3215,13 @@ mod tests {
                 meta: false,
                 eaten: false,
             };
-            vif.filter(&move_event, &state, &mut view, &mut tree);
-            vif.animate_grip(&mut view, &mut tree, 1.0 / 60.0);
+            ts.with(|sc| vif.filter(&move_event, &state, &mut view, &mut tree, sc));
+            ts.with(|sc| vif.animate_grip(&mut view, &mut tree, 1.0 / 60.0, sc));
         }
 
         // Release — should NOT coast when kinetic is disabled
         let release = emInputEvent::release(InputKey::MouseMiddle);
-        vif.filter(&release, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&release, &state, &mut view, &mut tree, sc));
         assert!(
             !vif.is_grip_animating(),
             "Should not coast when kinetic is disabled"
@@ -3146,8 +3230,9 @@ mod tests {
 
     #[test]
     fn test_grip_press_cancels_coasting() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
 
         let mut vif = emMouseZoomScrollVIF::new();
         vif.set_mouse_anim_params(1.0, 0.5, 0.01);
@@ -3158,7 +3243,7 @@ mod tests {
         let press = emInputEvent::press(InputKey::MouseMiddle);
         state.mouse_x = 100.0;
         state.mouse_y = 100.0;
-        vif.filter(&press, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&press, &state, &mut view, &mut tree, sc));
 
         for i in 1..=10 {
             state.mouse_x = 100.0 + i as f64 * 20.0;
@@ -3176,17 +3261,17 @@ mod tests {
                 meta: false,
                 eaten: false,
             };
-            vif.filter(&move_event, &state, &mut view, &mut tree);
-            vif.animate_grip(&mut view, &mut tree, 1.0 / 60.0);
+            ts.with(|sc| vif.filter(&move_event, &state, &mut view, &mut tree, sc));
+            ts.with(|sc| vif.animate_grip(&mut view, &mut tree, 1.0 / 60.0, sc));
         }
 
         let release = emInputEvent::release(InputKey::MouseMiddle);
-        vif.filter(&release, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&release, &state, &mut view, &mut tree, sc));
         assert!(vif.is_grip_animating(), "Should be coasting");
 
         // New press resets to gripped phase (still animating, but gripped)
         let press2 = emInputEvent::press(InputKey::MouseMiddle);
-        vif.filter(&press2, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&press2, &state, &mut view, &mut tree, sc));
         // Now in gripped phase — animation is active for spring, velocity zeroed
         assert!(
             vif.is_grip_animating(),
@@ -3196,34 +3281,37 @@ mod tests {
 
     #[test]
     fn test_grip_animate_returns_false_when_inactive() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let mut vif = emMouseZoomScrollVIF::new();
-        assert!(!vif.animate_grip(&mut view, &mut tree, 1.0 / 60.0));
+        assert!(!ts.with(|sc| vif.animate_grip(&mut view, &mut tree, 1.0 / 60.0, sc)));
     }
 
     #[test]
     fn test_vif_animate_trait_delegates_wheel() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let mut vif = emMouseZoomScrollVIF::new();
         let state = emInputState::new();
 
         // Feed a wheel event to activate wheel spring
         let event = emInputEvent::press(InputKey::WheelUp);
-        let consumed = vif.filter(&event, &state, &mut view, &mut tree);
+        let consumed = ts.with(|sc| vif.filter(&event, &state, &mut view, &mut tree, sc));
         assert!(consumed);
 
         // Call animate via the trait — should return true (animation active)
-        let active = emViewInputFilter::animate(&mut vif, &mut view, &mut tree, 1.0 / 60.0);
+        let active = ts.with(|sc| emViewInputFilter::animate(&mut vif, &mut view, &mut tree, 1.0 / 60.0, sc));
         assert!(active, "animate() should return true when wheel is active");
     }
 
     #[test]
     fn test_vif_animate_returns_false_when_idle() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let mut vif = emMouseZoomScrollVIF::new();
 
         // No events fed — animate should return false
-        let active = emViewInputFilter::animate(&mut vif, &mut view, &mut tree, 1.0 / 60.0);
+        let active = ts.with(|sc| emViewInputFilter::animate(&mut vif, &mut view, &mut tree, 1.0 / 60.0, sc));
         assert!(!active, "animate() should return false when idle");
     }
 
@@ -3236,10 +3324,11 @@ mod tests {
 
     /// Helper: type a sequence of characters into a emCheatVIF one char at a time.
     fn type_cheat(vif: &mut emCheatVIF, view: &mut emView, tree: &mut PanelTree, text: &str) {
+        let mut ts = TestSched::new();
         let state = emInputState::new();
         for ch in text.chars() {
             let event = cheat_key_event(&ch.to_string());
-            vif.filter(&event, &state, view, tree);
+            ts.with(|sc| vif.filter(&event, &state, view, tree, sc));
         }
     }
 
@@ -3281,6 +3370,7 @@ mod tests {
 
     #[test]
     fn cheat_vif_escape_cancels() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let mut vif = emCheatVIF::new();
         let state = emInputState::new();
@@ -3290,7 +3380,7 @@ mod tests {
 
         // An event with no chars (e.g. Escape press) doesn't affect the buffer
         let escape_event = emInputEvent::press(InputKey::Escape);
-        vif.filter(&escape_event, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&escape_event, &state, &mut view, &mut tree, sc));
 
         // Continue typing — the buffer still has the previous chars
         type_cheat(&mut vif, &mut view, &mut tree, "n!");
@@ -3407,6 +3497,7 @@ mod tests {
 
     #[test]
     fn dlog_integration_captures_call_site() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let root = view.GetRootPanel();
 
@@ -3416,11 +3507,12 @@ mod tests {
 
         // Trigger a known dlog call site: set_active_panel logs
         // "active panel changed to ..."
-        let child = tree.create_child(root, "dlog_test_child");
+        let child = tree.create_child(root, "dlog_test_child", None);
         tree.set_focusable(child, true);
-        tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0);
-        view.Update(&mut tree);
-        view.set_active_panel(&mut tree, child, false);
+        tree.Layout(child, 0.0, 0.0, 0.5, 1.0, 1.0, None);
+        ts.with(|sc| view.Update(&mut tree, sc));
+        let mut h = crate::test_view_harness::TestViewHarness::new();
+        view.set_active_panel(&mut tree, child, false, &mut h.sched_ctx());
 
         let lines = crate::emStd1::stop_capture();
         crate::emStd1::emEnableDLog(false);
@@ -3498,8 +3590,9 @@ mod tests {
 
     #[test]
     fn three_finger_release_injects_menu_key() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = TouchTracker::new();
 
         // Three fingers down
@@ -3521,7 +3614,7 @@ mod tests {
         for i in 0..3 {
             tracker.touches[i].down = false;
         }
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
 
         assert!(
             tracker
@@ -3533,8 +3626,9 @@ mod tests {
 
     #[test]
     fn four_finger_release_toggles_soft_keyboard() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = TouchTracker::new();
 
         // Four fingers down
@@ -3556,7 +3650,7 @@ mod tests {
         for i in 0..4 {
             tracker.touches[i].down = false;
         }
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
 
         assert!(
             tracker
@@ -3568,14 +3662,15 @@ mod tests {
 
     #[test]
     fn gesture_finish_returns_to_ready() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = TouchTracker::new();
 
         // Set up Finish state with no touches down
         tracker.gesture_state = GestureState::Finish;
         tracker.touch_count = 0;
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
 
         assert_eq!(
             tracker.gesture_state,
@@ -3613,46 +3708,51 @@ mod tests {
 
     #[test]
     fn two_finger_horizontal_right_emu_mouse_1() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = setup_two_finger_tracker(100.0, 200.0, 200.0, 200.0);
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
         assert_eq!(tracker.gesture_state, GestureState::EmuMouse1);
     }
 
     #[test]
     fn two_finger_horizontal_left_emu_mouse_2() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = setup_two_finger_tracker(200.0, 200.0, 100.0, 200.0);
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
         assert_eq!(tracker.gesture_state, GestureState::EmuMouse2);
     }
 
     #[test]
     fn two_finger_vertical_down_emu_mouse_3() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = setup_two_finger_tracker(200.0, 100.0, 200.0, 200.0);
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
         assert_eq!(tracker.gesture_state, GestureState::EmuMouse3);
     }
 
     #[test]
     fn two_finger_vertical_up_emu_mouse_4() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = setup_two_finger_tracker(200.0, 200.0, 200.0, 100.0);
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
         assert_eq!(tracker.gesture_state, GestureState::EmuMouse4);
     }
 
     #[test]
     fn gesture_double_tap_visits_fullsized() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let root = view.GetRootPanel();
         tree.set_focusable(root, true);
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = TouchTracker::new();
 
         // First down
@@ -3671,7 +3771,7 @@ mod tests {
         // First up (within 250ms)
         tracker.touches[0].down = false;
         tracker.touches[0].ms_total = 100;
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
         assert_eq!(tracker.gesture_state, GestureState::FirstDownUp);
 
         // Second down (new touch)
@@ -3685,25 +3785,26 @@ mod tests {
             ..Touch::default()
         };
         tracker.touch_count = 2;
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
         assert_eq!(tracker.gesture_state, GestureState::DoubleDown);
 
         // Second up
         tracker.touches[0].down = false;
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
         assert_eq!(tracker.gesture_state, GestureState::DoubleDownUp);
 
         // Wait > 250ms — should trigger visit_fullsized and transition through Finish → Ready
         tracker.touches[0].ms_total = 260;
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
         // After the loop settles, gesture completes and returns to Ready
         assert_eq!(tracker.gesture_state, GestureState::Ready);
     }
 
     #[test]
     fn gesture_single_tap_timeout() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = TouchTracker::new();
 
         // Touch down
@@ -3722,20 +3823,21 @@ mod tests {
         // Touch up quickly
         tracker.touches[0].down = false;
         tracker.touches[0].ms_total = 50;
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
         assert_eq!(tracker.gesture_state, GestureState::FirstDownUp);
 
         // Wait > 250ms — single tap timeout → Finish → Ready
         tracker.touches[0].ms_total = 260;
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
         // After loop settles, should be back at Ready (timeout, no action taken)
         assert_eq!(tracker.gesture_state, GestureState::Ready);
     }
 
     #[test]
     fn gesture_scroll_on_drag_over_20px() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = TouchTracker::new();
 
         // Simulate touch down
@@ -3756,7 +3858,7 @@ mod tests {
         tracker.touches[0].x = 130.0; // 30px total move
 
         // Run gesture until stable
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
 
         assert_eq!(
             tracker.gesture_state,
@@ -3767,8 +3869,9 @@ mod tests {
 
     #[test]
     fn gesture_zoom_in_on_hold_over_250ms() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
-        view.Update(&mut tree);
+        ts.with(|sc| view.Update(&mut tree, sc));
         let mut tracker = TouchTracker::new();
 
         // Simulate touch down held for > 250ms
@@ -3785,7 +3888,7 @@ mod tests {
         tracker.touch_count = 1;
         tracker.gesture_state = GestureState::FirstDown;
 
-        while tracker.do_gesture(&mut view, &mut tree) {}
+        while ts.with(|sc| tracker.do_gesture(&mut view, &mut tree, sc)) {}
 
         assert_eq!(
             tracker.gesture_state,
@@ -3824,6 +3927,7 @@ mod tests {
 
     #[test]
     fn stick_mouse_accumulates_warp_during_drag() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let mut vif = emMouseZoomScrollVIF::new();
         vif.set_stick_mouse(true);
@@ -3832,13 +3936,13 @@ mod tests {
 
         // Start middle-button press to initiate panning
         let press = emInputEvent::press(InputKey::MouseMiddle).with_mouse(100.0, 100.0);
-        vif.filter(&press, &state_press, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&press, &state_press, &mut view, &mut tree, sc));
         assert!(vif.panning);
 
         // Move mouse (simulating drag)
         let state_move = input_state_at(120.0, 110.0);
         let move_ev = emInputEvent::mouse_move(InputKey::MouseMiddle, 120.0, 110.0);
-        vif.filter(&move_ev, &state_move, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&move_ev, &state_move, &mut view, &mut tree, sc));
 
         // Pending warp should have accumulated (-dmx, -dmy) = (-20, -10)
         let (wx, wy) = vif.drain_pending_warp();
@@ -3856,17 +3960,18 @@ mod tests {
 
     #[test]
     fn stick_mouse_no_warp_when_disabled() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let mut vif = emMouseZoomScrollVIF::new();
         // stick_mouse defaults to false
 
         let state_press = input_state_at(100.0, 100.0);
         let press = emInputEvent::press(InputKey::MouseMiddle).with_mouse(100.0, 100.0);
-        vif.filter(&press, &state_press, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&press, &state_press, &mut view, &mut tree, sc));
 
         let state_move = input_state_at(120.0, 110.0);
         let move_ev = emInputEvent::mouse_move(InputKey::MouseMiddle, 120.0, 110.0);
-        vif.filter(&move_ev, &state_move, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&move_ev, &state_move, &mut view, &mut tree, sc));
 
         let (wx, wy) = vif.drain_pending_warp();
         assert!(
@@ -3916,6 +4021,7 @@ mod tests {
 
     #[test]
     fn test_magnetism_avoidance_wired_into_filter() {
+        let mut ts = TestSched::new();
         let (mut tree, mut view) = setup();
         let mut vif = emMouseZoomScrollVIF::new();
         vif.set_test_clock(1000);
@@ -3923,7 +4029,7 @@ mod tests {
         // Start grip — inits magnetism avoidance
         let press = emInputEvent::press(InputKey::MouseMiddle);
         let state = emInputState::new();
-        vif.filter(&press, &state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&press, &state, &mut view, &mut tree, sc));
         assert!(vif.panning);
         assert!(!vif.magnetism_avoidance());
 
@@ -3934,12 +4040,12 @@ mod tests {
         move_state.press(InputKey::MouseMiddle);
         let move_event = emInputEvent::mouse_move(InputKey::MouseLeft, 1.0, 0.0);
         vif.set_test_clock(1100);
-        vif.filter(&move_event, &move_state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&move_event, &move_state, &mut view, &mut tree, sc));
         assert!(!vif.magnetism_avoidance());
 
         // Hold still for 750ms
         vif.set_test_clock(1851);
-        vif.filter(&move_event, &move_state, &mut view, &mut tree);
+        ts.with(|sc| vif.filter(&move_event, &move_state, &mut view, &mut tree, sc));
         assert!(vif.magnetism_avoidance());
     }
 }

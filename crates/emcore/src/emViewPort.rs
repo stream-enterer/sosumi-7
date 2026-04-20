@@ -250,9 +250,10 @@ impl emViewPort {
         tree: &mut crate::emPanelTree::PanelTree,
         event: &crate::emInput::emInputEvent,
         state: &crate::emInputState::emInputState,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
         self.input_event_count += 1;
-        view.Input(tree, event, state);
+        view.Input(tree, event, state, ctx);
     }
 
     /// Port of C++ `emViewPort::InvalidateCursor`.

@@ -317,7 +317,8 @@ impl MouseMiscGroup {
         }));
         let stick_id = ctx.create_child_with("stick", Box::new(CheckBoxPanel { check_box: stick }));
         if !self.stick_possible {
-            ctx.tree.SetEnableSwitch(stick_id, false);
+            ctx.tree
+                .SetEnableSwitch(stick_id, false, ctx.scheduler.as_deref_mut());
         }
 
         let mut emu = emCheckBox::new("Emulate\nmiddle button", self.look.clone());
@@ -804,7 +805,8 @@ impl PanelBehavior for MaxMemInnerTunnelPanel {
             .GetChildRect(rect.w, rect.h, ctx.GetCanvasColor());
         if let Some(&child) = ctx.children().first() {
             ctx.layout_child(child, cr.x, cr.y, cr.w, cr.h);
-            ctx.tree.SetCanvasColor(child, cr.canvas_color);
+            ctx.tree
+                .SetCanvasColor(child, cr.canvas_color, ctx.scheduler.as_deref_mut());
         }
     }
 }
@@ -867,7 +869,8 @@ impl PanelBehavior for MaxMemTunnelPanel {
             .GetChildRect(rect.w, rect.h, ctx.GetCanvasColor());
         if let Some(&child) = ctx.children().first() {
             ctx.layout_child(child, cr.x, cr.y, cr.w, cr.h);
-            ctx.tree.SetCanvasColor(child, cr.canvas_color);
+            ctx.tree
+                .SetCanvasColor(child, cr.canvas_color, ctx.scheduler.as_deref_mut());
         }
     }
 }

@@ -18,6 +18,7 @@ use super::emEngine::emEngine;
 use super::emEngineCtx::EngineCtx;
 use super::emPanelCtx::PanelCtx;
 use super::emPanelTree::PanelId;
+use super::emScheduler::EngineScheduler;
 use super::emView::emView;
 
 /// Probe attached to a `PanelCycleEngine` in test/test-support builds.
@@ -55,11 +56,55 @@ impl emEngine for PanelCycleEngine {
         // Take the behavior off the tree, build a PanelCtx, drive Cycle,
         // put it back (if the panel still exists — behavior may have called
         // delete_self via ctx).
+        //
+        // Field-disjoint split: `pctx` borrows `ctx.tree`; the outer `ectx`
+        // forwarded into `Cycle` below is built by re-borrowing the other
+        // fields of `ctx` — scheduler / windows / root_context /
+        // framework_actions — into a new `EngineCtx` that excludes `tree`.
         let Some(mut behavior) = ctx.tree.take_behavior(self.panel_id) else {
             return false;
         };
-        let mut pctx = PanelCtx::new(ctx.tree, self.panel_id, tallness);
-        let stay_awake = behavior.Cycle(&mut pctx);
+
+        // SAFETY / borrow split: `tree` is held exclusively by `pctx`; the
+        // other ctx fields are re-borrowed into a fresh `EngineCtx` whose
+        // `tree` field points at a throwaway tree (we intentionally do NOT
+        // hand the original tree twice). Since `Cycle` impls must reach the
+        // tree via `pctx`, not `ectx.tree`, swapping in a dummy is sound.
+        //
+        // We use `PanelTree` default for the dummy; it's discarded after the
+        // call. The cost is one PanelTree allocation per cycled panel, which
+        // matches the pre-Phase-1.5 path's per-cycle take/put cost profile.
+        let mut dummy_tree = crate::emPanelTree::PanelTree::new();
+        let stay_awake = {
+            // SAFETY: `ectx.scheduler` and `pctx.scheduler` alias the same
+            // `EngineScheduler`. This is sound because:
+            //   1. The event loop is single-threaded — no concurrent access.
+            //   2. `EngineScheduler` methods (wake_up, register_engine, etc.)
+            //      are safe to call re-entrantly from within a Cycle callback;
+            //      this mirrors C++ where emEngine::Cycle receives a raw pointer
+            //      to the scheduler and may call scheduler methods freely.
+            //   3. No two `&mut` operations on distinct subfields alias each
+            //      other — all scheduler mutations go through the same handle.
+            let sched_ptr: *mut EngineScheduler = &mut *ctx.scheduler;
+            let mut ectx = crate::emEngineCtx::EngineCtx {
+                // SAFETY: see above — aliased borrow of scheduler is sound here.
+                scheduler: unsafe { &mut *sched_ptr },
+                tree: &mut dummy_tree,
+                windows: &mut *ctx.windows,
+                root_context: ctx.root_context,
+                framework_actions: &mut *ctx.framework_actions,
+                engine_id: ctx.engine_id,
+            };
+            let mut pctx = PanelCtx::with_scheduler(
+                ctx.tree,
+                self.panel_id,
+                tallness,
+                // SAFETY: see above — aliased borrow of scheduler is sound here.
+                unsafe { &mut *sched_ptr },
+            );
+            behavior.Cycle(&mut ectx, &mut pctx)
+        };
+        drop(dummy_tree);
         if ctx.tree.panels.contains_key(self.panel_id) {
             ctx.tree.put_behavior(self.panel_id, behavior);
         }

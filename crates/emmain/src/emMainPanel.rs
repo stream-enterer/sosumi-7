@@ -639,7 +639,11 @@ impl PanelBehavior for emMainPanel {
         Some("Eagle Mode".to_string())
     }
 
-    fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        ctx: &mut PanelCtx,
+    ) -> bool {
         // Check slider auto-hide timer (C++ SliderTimer, 5-second one-shot).
         if let Some(start) = self.slider_hide_timer_start
             && start.elapsed().as_millis() >= 5000

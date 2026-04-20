@@ -125,8 +125,8 @@ impl emMainWindow {
 
     /// Port of C++ `emMainWindow::ReloadFiles`.
     /// Fires the global file-update signal so all listening file models reload.
-    pub fn ReloadFiles(&self, app: &App) {
-        app.scheduler.borrow_mut().fire(app.file_update_signal);
+    pub fn ReloadFiles(&self, app: &mut App) {
+        app.scheduler.fire(app.file_update_signal);
     }
 
     /// Port of C++ `emMainWindow::ToggleControlView` (emMainWindow.cpp:144-158).
@@ -150,8 +150,8 @@ impl emMainWindow {
     }
 
     /// Port of C++ `emMainWindow::Quit`.
-    pub fn Quit(&self, app: &App) {
-        app.scheduler.borrow_mut().InitiateTermination();
+    pub fn Quit(&self, app: &mut App) {
+        app.scheduler.InitiateTermination();
     }
 
     /// Port of C++ `emMainWindow::GetTitle` (emMainWindow.cpp:87-95).
@@ -468,7 +468,9 @@ impl emEngine for StartupEngine {
             // child directly on the main panel. In Rust the engine has tree
             // access, so we create the child here and hand its id to emMainPanel.
             3 => {
-                let overlay_id = ctx.tree.create_child(self.main_panel_id, "startupOverlay");
+                let overlay_id =
+                    ctx.tree
+                        .create_child(self.main_panel_id, "startupOverlay", Some(&mut *ctx.scheduler));
                 ctx.tree
                     .set_behavior(overlay_id, Box::new(StartupOverlayPanel));
                 ctx.tree
@@ -518,7 +520,7 @@ impl emEngine for StartupEngine {
                         .with_behavior_as::<emSubViewPanel, _>(ctrl_id, |svp| {
                             let sub_tree = svp.sub_tree_mut();
                             let sub_root = sub_tree.GetRootPanel().expect("sub-view has root");
-                            let child_id = sub_tree.create_child(sub_root, "ctrl");
+                            let child_id = sub_tree.create_child(sub_root, "ctrl", None);
                             sub_tree.set_behavior(
                                 child_id,
                                 Box::new(emMainControlPanel::new(ctrl_ctx, content_view_id)),
@@ -526,7 +528,7 @@ impl emEngine for StartupEngine {
                             // C++ control tallness matches the parent's control_tallness
                             // C++ control panel fills the control view; tallness matches
                             // ControlTallness (0.0538) set on emMainPanel.
-                            sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 0.0538, 1.0);
+                            sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 0.0538, 1.0, None);
                         });
                 }
 
@@ -564,7 +566,7 @@ impl emEngine for StartupEngine {
                             // the same here so the cosmos is permanent
                             // (not marked created_by_ae) and won't be deleted
                             // by AutoShrink.
-                            let cosmos_id = sub_tree.create_child(sub_root, "");
+                            let cosmos_id = sub_tree.create_child(sub_root, "", None);
                             sub_tree.set_behavior(
                                 cosmos_id,
                                 Box::new(crate::emVirtualCosmos::emVirtualCosmosPanel::new(
@@ -576,7 +578,7 @@ impl emEngine for StartupEngine {
                             });
                             // Re-fire init notices so the new behavior gets
                             // notice + LayoutChildren calls.
-                            sub_tree.fire_init_notices(sub_root);
+                            sub_tree.fire_init_notices(sub_root, None);
                         });
                 }
 
@@ -675,13 +677,8 @@ impl emEngine for StartupEngine {
                     ctx.tree
                         .with_behavior_as::<emSubViewPanel, _>(svp_id, |svp| {
                             svp.active_animator = None;
-                            // Clone the Rc so the RefMut holds no borrow of
-                            // svp, allowing sub_tree_mut() (&mut self) to
-                            // coexist with the live RefMut.
-                            let sub_view_rc = svp.sub_view_rc().clone();
-                            sub_view_rc
-                                .borrow_mut()
-                                .RawZoomOut(svp.sub_tree_mut(), false);
+                            // C++: VisitingVA.Reset(); ContentView.RawZoomOut();
+                            svp.raw_zoom_out(false);
                         });
                 }
                 let overlay_id = ctx
@@ -692,7 +689,7 @@ impl emEngine for StartupEngine {
                     .flatten();
                 // C++ does `delete StartupOverlay` — remove from tree.
                 if let Some(id) = overlay_id {
-                    ctx.tree.remove(id);
+                    ctx.tree.remove(id, Some(&mut *ctx.scheduler));
                 }
                 self.clock = std::time::Instant::now();
                 self.state += 1;
@@ -783,15 +780,15 @@ pub fn create_main_window(
     ctrl_svp.set_sub_view_flags(
         ViewFlags::POPUP_ZOOM | ViewFlags::ROOT_SAME_TALLNESS | ViewFlags::NO_ACTIVE_HIGHLIGHT,
     );
-    let ctrl_id = app.tree.create_child(root_id, "control view");
+    let ctrl_id = app.tree.create_child(root_id, "control view", None);
     app.tree.set_behavior(ctrl_id, Box::new(ctrl_svp));
 
     let mut content_svp = emSubViewPanel::new(Rc::clone(&app.context));
     content_svp.set_sub_view_flags(ViewFlags::ROOT_SAME_TALLNESS);
-    let content_id = app.tree.create_child(root_id, "content view");
+    let content_id = app.tree.create_child(root_id, "content view", None);
     app.tree.set_behavior(content_id, Box::new(content_svp));
 
-    let slider_id = app.tree.create_child(root_id, "slider");
+    let slider_id = app.tree.create_child(root_id, "slider", None);
     app.tree
         .set_behavior(slider_id, Box::new(SliderPanel::new()));
 
@@ -807,10 +804,10 @@ pub fn create_main_window(
         flags |= WindowFlags::FULLSCREEN;
     }
 
-    let close_signal = app.scheduler.borrow_mut().create_signal();
-    let flags_signal = app.scheduler.borrow_mut().create_signal();
-    let focus_signal = app.scheduler.borrow_mut().create_signal();
-    let geometry_signal = app.scheduler.borrow_mut().create_signal();
+    let close_signal = app.scheduler.create_signal();
+    let flags_signal = app.scheduler.create_signal();
+    let focus_signal = app.scheduler.create_signal();
+    let geometry_signal = app.scheduler.create_signal();
     mw._close_signal = Some(close_signal);
 
     // Create the window
@@ -832,7 +829,7 @@ pub fn create_main_window(
     // Wire the owning view's Weak onto the root panel now that the window exists.
     if let Some(rc) = app.windows.get(&window_id) {
         let view_weak = Rc::downgrade(rc.borrow().view_rc());
-        app.tree.init_panel_view(root_id, view_weak);
+        app.tree.init_panel_view(root_id, view_weak, None);
     }
 
     // Acquire bookmarks model.
@@ -843,14 +840,13 @@ pub fn create_main_window(
         StartupEngine::new(Rc::clone(&app.context), root_id, window_id, &mw.config);
     let engine_id = app
         .scheduler
-        .borrow_mut()
         .register_engine(Box::new(startup_engine), Priority::Low);
-    app.scheduler.borrow_mut().wake_up(engine_id);
+    app.scheduler.wake_up(engine_id);
     mw.startup_engine_id = Some(engine_id);
 
     // Register MainWindowEngine — wakes only on signals, no wake_up call
     // (C++ emMainWindow::Cycle, emMainWindow.cpp:174-190).
-    let title_signal = app.scheduler.borrow_mut().create_signal();
+    let title_signal = app.scheduler.create_signal();
     if let Some(rc) = app.windows.get(&window_id) {
         rc.borrow_mut().view_mut().set_title_signal(title_signal);
     }
@@ -863,30 +859,35 @@ pub fn create_main_window(
     };
     let mw_engine_id = app
         .scheduler
-        .borrow_mut()
         .register_engine(Box::new(mw_engine), Priority::Low);
-    app.scheduler
-        .borrow_mut()
-        .connect(close_signal, mw_engine_id);
-    app.scheduler
-        .borrow_mut()
-        .connect(title_signal, mw_engine_id);
+    app.scheduler.connect(close_signal, mw_engine_id);
+    app.scheduler.connect(title_signal, mw_engine_id);
 
     // Wire control panel signal + ControlPanelBridge.
     // The bridge reacts to control panel signal (active panel changes) and
     // will update the content control panel in the control sub-view.
-    let cp_signal = app.scheduler.borrow_mut().create_signal();
-    if let Some(rc) = app.windows.get(&window_id) {
+    let cp_signal = app.scheduler.create_signal();
+    if let Some(rc) = app.windows.get(&window_id).cloned() {
         let mut win = rc.borrow_mut();
         let view_weak = Rc::downgrade(win.view_rc());
-        win.view_mut()
-            .attach_to_scheduler(Rc::clone(&app.scheduler), view_weak);
+        {
+            let mut v = win.view_mut();
+            let root_ctx = v.GetRootContext();
+            let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+            let mut sc = emcore::emEngineCtx::SchedCtx {
+                scheduler: &mut app.scheduler,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, view_weak);
+        }
         win.view_mut().set_control_panel_signal(cp_signal);
     }
-    // SP4.5: init_panel_view ran before attach_to_scheduler above, so the
+    // SP4.5: init_panel_view ran before RegisterEngines above, so the
     // root panel (and any children already created) missed the in-line
     // register_engine_for pass. Catch them up now.
-    app.tree.register_pending_engines();
+    app.tree.register_pending_engines(&mut app.scheduler);
     // We don't yet have the sub-view panel IDs (created during LayoutChildren),
     // so use a dummy PanelId(0) for now — the bridge only uses the signal.
     let bridge = ControlPanelBridge {
@@ -896,9 +897,8 @@ pub fn create_main_window(
     };
     let bridge_id = app
         .scheduler
-        .borrow_mut()
         .register_engine(Box::new(bridge), Priority::Low);
-    app.scheduler.borrow_mut().connect(cp_signal, bridge_id);
+    app.scheduler.connect(cp_signal, bridge_id);
 
     // Register emWindowStateSaver engine — persists window geometry.
     // Port of C++ emWindowStateSaver construction in emMainWindow constructor.
@@ -909,7 +909,7 @@ pub fn create_main_window(
             Some("WinState.rec"),
         )
         .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/eaglemode-winstate.rec"));
-        let change_signal = app.scheduler.borrow_mut().create_signal();
+        let change_signal = app.scheduler.create_signal();
         let saver = emWindowStateSaver::new(
             window_id,
             state_path,
@@ -935,13 +935,10 @@ pub fn create_main_window(
 
         let saver_id = app
             .scheduler
-            .borrow_mut()
             .register_engine(Box::new(saver), Priority::Low);
-        app.scheduler.borrow_mut().connect(flags_signal, saver_id);
-        app.scheduler.borrow_mut().connect(focus_signal, saver_id);
-        app.scheduler
-            .borrow_mut()
-            .connect(geometry_signal, saver_id);
+        app.scheduler.connect(flags_signal, saver_id);
+        app.scheduler.connect(focus_signal, saver_id);
+        app.scheduler.connect(geometry_signal, saver_id);
     }
 
     mw.autoplay_view_model = Some(crate::emAutoplay::emAutoplayViewModel::new());
@@ -991,10 +988,10 @@ pub fn create_control_window(
     app.tree.set_behavior(root_id, Box::new(ctrl_panel));
 
     let flags = WindowFlags::AUTO_DELETE;
-    let close_signal = app.scheduler.borrow_mut().create_signal();
-    let flags_signal = app.scheduler.borrow_mut().create_signal();
-    let focus_signal = app.scheduler.borrow_mut().create_signal();
-    let geometry_signal = app.scheduler.borrow_mut().create_signal();
+    let close_signal = app.scheduler.create_signal();
+    let flags_signal = app.scheduler.create_signal();
+    let focus_signal = app.scheduler.create_signal();
+    let geometry_signal = app.scheduler.create_signal();
 
     let window = emWindow::create(
         event_loop,
@@ -1013,7 +1010,7 @@ pub fn create_control_window(
     // Wire the owning view's Weak onto the root panel now that the window exists.
     if let Some(rc) = app.windows.get(&window_id) {
         let view_weak = Rc::downgrade(rc.borrow().view_rc());
-        app.tree.init_panel_view(root_id, view_weak);
+        app.tree.init_panel_view(root_id, view_weak, None);
     }
 
     // Store the control window ID for raise-if-existing logic.
@@ -1091,14 +1088,14 @@ fn RecreateContentPanels(app: &mut App) {
             let sub_root = svp.sub_root();
             let children: Vec<PanelId> = svp.sub_tree().children(sub_root).collect();
             for child in children {
-                svp.sub_tree_mut().remove(child);
+                svp.sub_tree_mut().remove(child, None);
             }
 
             // Create new content panel (C++ emMainWindow.cpp:303).
             let sub_tree = svp.sub_tree_mut();
-            let child_id = sub_tree.create_child(sub_root, "");
+            let child_id = sub_tree.create_child(sub_root, "", None);
             sub_tree.set_behavior(child_id, Box::new(emMainContentPanel::new(ctx)));
-            sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 1.0, 1.0);
+            sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
             // Restore visit (C++ emMainWindow.cpp:304).
             svp.visit_by_identity(&identity, rel_x, rel_y, rel_a, adherent, &title);
