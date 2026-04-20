@@ -9,6 +9,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
+use crate::emClipboard::emClipboard;
 use crate::emContext::emContext;
 use crate::emEngineCtx::DeferredAction as FrameworkDeferredAction;
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
@@ -119,6 +120,16 @@ pub struct App {
     /// `Rc<RefCell<...>>` so `emView` can hold a handle and enqueue without
     /// a borrow of `App`.
     pub pending_actions: Rc<RefCell<Vec<DeferredAction>>>,
+    /// Chartered §3.6(a): mutated from winit text-event callbacks that lack &mut framework reach.
+    ///
+    /// Phase-3 Task-2 relocation: in C++, `emClipboard` is looked up via
+    /// `emRef<emClipboard>` on `emContext`; in Rust, winit text-event callbacks
+    /// need write access without `&mut framework` reach, so the clipboard is
+    /// chartered here instead of on `emContext`. Accessed through
+    /// `EngineCtx::clipboard_mut` / `SchedCtx::clipboard_mut` during engine
+    /// cycles, or directly via `framework.clipboard.borrow_mut()` from
+    /// winit-side callbacks.
+    pub clipboard: RefCell<Option<Box<dyn emClipboard>>>,
     /// Global file-update signal. Port of C++ `emFileModel::AcquireUpdateSignalModel`.
     /// When fired, all file models that listen to it will reload from disk.
     pub file_update_signal: SignalId,
@@ -153,6 +164,7 @@ impl App {
             pending_inputs: Vec::new(),
             input_dispatch_engine_id,
             pending_actions: Rc::new(RefCell::new(Vec::new())),
+            clipboard: RefCell::new(None),
             file_update_signal,
             setup_fn: Some(setup),
             initialized: false,
@@ -318,6 +330,7 @@ impl App {
                 tree,
                 framework_actions,
                 windows,
+                clipboard,
                 ..
             } = self;
             let home = windows.get_mut(&home_key).expect("home_key still present");
@@ -332,6 +345,7 @@ impl App {
                 scheduler,
                 framework_actions,
                 root_context: &root,
+                framework_clipboard: clipboard,
                 current_engine: None,
             };
             popup
@@ -421,6 +435,7 @@ impl ApplicationHandler for App {
                         scheduler: &mut self.scheduler,
                         framework_actions: &mut self.framework_actions,
                         root_context: &root,
+                        framework_clipboard: &self.clipboard,
                         current_engine: None,
                     };
                     win.resize(gpu, &mut self.tree, size.width, size.height, &mut sc);
@@ -458,6 +473,7 @@ impl ApplicationHandler for App {
                         scheduler: &mut self.scheduler,
                         framework_actions: &mut self.framework_actions,
                         root_context: &self.context,
+                        framework_clipboard: &self.clipboard,
                         current_engine: None,
                     };
                     win.handle_touch(touch, &mut self.tree, &mut sc);
@@ -611,6 +627,7 @@ impl ApplicationHandler for App {
                 ref mut framework_actions,
                 ref mut pending_inputs,
                 ref mut input_state,
+                ref clipboard,
                 ..
             } = *self;
             scheduler.DoTimeSlice(
@@ -620,6 +637,7 @@ impl ApplicationHandler for App {
                 framework_actions,
                 pending_inputs,
                 input_state,
+                clipboard,
             );
         }
 
@@ -666,6 +684,7 @@ impl ApplicationHandler for App {
             ref context,
             ref mut windows,
             ref mut pending_inputs,
+            ref clipboard,
             input_dispatch_engine_id,
             ..
         } = *self;
@@ -680,6 +699,7 @@ impl ApplicationHandler for App {
                 scheduler,
                 framework_actions,
                 root_context: context,
+                framework_clipboard: clipboard,
                 current_engine: None,
             };
 

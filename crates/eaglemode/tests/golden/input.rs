@@ -97,10 +97,13 @@ fn input_key_to_focused() {
 
     // Focus child1
     {
+        let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         let mut sc = emcore::emEngineCtx::SchedCtx {
             scheduler: &mut h.scheduler,
             framework_actions: &mut h.framework_actions,
             root_context: &h.root_context,
+            framework_clipboard: &__cb,
             current_engine: None,
         };
 

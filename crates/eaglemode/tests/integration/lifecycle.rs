@@ -38,10 +38,13 @@ fn remove_active_panel_reselects() {
     // Make A active
     h.set_active_panel(a);
     {
+        let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         let mut sc = emcore::emEngineCtx::SchedCtx {
             scheduler: &mut h.scheduler,
             framework_actions: &mut h.framework_actions,
             root_context: &h.root_context,
+            framework_clipboard: &__cb,
             current_engine: None,
         };
 
@@ -56,10 +59,13 @@ fn remove_active_panel_reselects() {
     // emView should auto-select a new active panel (set_active_panel_best_possible).
     // Only B and root remain; B is the expected pick (deepest focusable).
     {
+        let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         let mut sc = emcore::emEngineCtx::SchedCtx {
             scheduler: &mut h.scheduler,
             framework_actions: &mut h.framework_actions,
             root_context: &h.root_context,
+            framework_clipboard: &__cb,
             current_engine: None,
         };
         h.view.SetActivePanelBestPossible(&mut h.tree, &mut sc);

@@ -23,10 +23,13 @@ impl TestSched {
         &mut self.sched
     }
     pub fn with<R>(&mut self, f: impl FnOnce(&mut emcore::emEngineCtx::SchedCtx<'_>) -> R) -> R {
+        let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         let mut sc = emcore::emEngineCtx::SchedCtx {
             scheduler: &mut self.sched,
             framework_actions: &mut self.fw,
             root_context: &self.ctx,
+            framework_clipboard: &__cb,
             current_engine: None,
         };
         f(&mut sc)

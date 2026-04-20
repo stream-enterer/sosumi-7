@@ -33,6 +33,7 @@ pub struct PipelineTestHarness {
     pub scheduler: EngineScheduler,
     pub framework_actions: Vec<DeferredAction>,
     pub root_context: Rc<emContext>,
+    pub framework_clipboard: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>>,
     pub view: emView,
     pub vif_chain: Vec<Box<dyn emViewInputFilter>>,
     pub touch_vif: emDefaultTouchVIF,
@@ -53,10 +54,13 @@ impl PipelineTestHarness {
         {
             let mut __sched = EngineScheduler::new();
             let mut __fw: Vec<DeferredAction> = Vec::new();
+            let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
             let mut sc = SchedCtx {
                 scheduler: &mut __sched,
                 framework_actions: &mut __fw,
                 root_context: &root_context,
+                framework_clipboard: &__cb,
                 current_engine: None,
             };
             view.Update(&mut tree, &mut sc);
@@ -78,6 +82,7 @@ impl PipelineTestHarness {
             scheduler: EngineScheduler::new(),
             framework_actions: Vec::new(),
             root_context,
+            framework_clipboard: std::cell::RefCell::new(None),
             view,
             vif_chain,
             touch_vif: emDefaultTouchVIF::new(),
@@ -95,6 +100,7 @@ impl PipelineTestHarness {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.framework_actions,
             root_context: &self.root_context,
+            framework_clipboard: &self.framework_clipboard,
             current_engine: None,
         }
     }
@@ -104,6 +110,7 @@ impl PipelineTestHarness {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.framework_actions,
             root_context: &self.root_context,
+            framework_clipboard: &self.framework_clipboard,
             current_engine: None,
         };
         self.view
@@ -131,6 +138,7 @@ impl PipelineTestHarness {
             &mut __fw,
             &mut __pending_inputs,
             &mut __input_state,
+            &self.framework_clipboard,
         );
         self.view.pump_visiting_va(&mut self.tree);
         self.view.HandleNotice(&mut self.tree, &mut self.scheduler);
@@ -138,6 +146,7 @@ impl PipelineTestHarness {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.framework_actions,
             root_context: &self.root_context,
+            framework_clipboard: &self.framework_clipboard,
             current_engine: None,
         };
         self.view.Update(&mut self.tree, &mut sc);
@@ -189,6 +198,7 @@ impl PipelineTestHarness {
                 scheduler: &mut self.scheduler,
                 framework_actions: &mut self.framework_actions,
                 root_context: &self.root_context,
+                framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
             };
             self.view.RawZoomOut(&mut self.tree, false, &mut sc);
@@ -203,6 +213,7 @@ impl PipelineTestHarness {
                 scheduler: &mut self.scheduler,
                 framework_actions: &mut self.framework_actions,
                 root_context: &self.root_context,
+                framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
             };
             self.view
@@ -215,6 +226,7 @@ impl PipelineTestHarness {
                 scheduler: &mut self.scheduler,
                 framework_actions: &mut self.framework_actions,
                 root_context: &self.root_context,
+                framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
             };
             self.view.Update(&mut self.tree, &mut sc);
@@ -255,6 +267,7 @@ impl PipelineTestHarness {
                 scheduler: &mut self.scheduler,
                 framework_actions: &mut self.framework_actions,
                 root_context: &self.root_context,
+                framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
             };
             if vif.filter(
@@ -300,6 +313,7 @@ impl PipelineTestHarness {
                 scheduler: &mut self.scheduler,
                 framework_actions: &mut self.framework_actions,
                 root_context: &self.root_context,
+                framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
             };
             self.view
@@ -336,11 +350,12 @@ impl PipelineTestHarness {
 
                 let pixel_tallness = self.view.GetCurrentPixelTallness();
                 consumed = {
-                    let mut pctx = PanelCtx::with_scheduler(
+                    let mut pctx = PanelCtx::with_scheduler_and_clipboard(
                         &mut self.tree,
                         panel_id,
                         pixel_tallness,
                         &mut self.scheduler,
+                        &self.framework_clipboard,
                     );
                     behavior.Input(&panel_ev, &panel_state, &self.input_state, &mut pctx)
                 };

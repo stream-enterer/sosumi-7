@@ -1835,10 +1835,13 @@ mod tests {
             let root = v.Context.GetRootContext();
             let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
             let mut s = sched.borrow_mut();
+            let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root,
+                framework_clipboard: &__cb,
                 current_engine: None,
             };
             v.RegisterEngines(

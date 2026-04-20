@@ -105,6 +105,8 @@ mod linux {
         let mut __pending_inputs: Vec<(winit::window::WindowId, emcore::emInput::emInputEvent)> =
             Vec::new();
         let mut __input_state = emcore::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         sched.DoTimeSlice(
             &mut tree,
             &mut windows,
@@ -112,6 +114,7 @@ mod linux {
             &mut __fw,
             &mut __pending_inputs,
             &mut __input_state,
+            &__cb,
         );
     }
 

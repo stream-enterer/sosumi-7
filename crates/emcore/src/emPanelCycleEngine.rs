@@ -100,14 +100,16 @@ impl emEngine for PanelCycleEngine {
                 framework_actions: &mut *ctx.framework_actions,
                 pending_inputs: &mut *ctx.pending_inputs,
                 input_state: &mut *ctx.input_state,
+                framework_clipboard: ctx.framework_clipboard,
                 engine_id: ctx.engine_id,
             };
-            let mut pctx = PanelCtx::with_scheduler(
+            let mut pctx = PanelCtx::with_scheduler_and_clipboard(
                 ctx.tree,
                 self.panel_id,
                 tallness,
                 // SAFETY: see above — aliased borrow of scheduler is sound here.
                 unsafe { &mut *sched_ptr },
+                ctx.framework_clipboard,
             );
             behavior.Cycle(&mut ectx, &mut pctx)
         };

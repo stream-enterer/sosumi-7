@@ -182,6 +182,7 @@ impl emSubViewPanel {
         &mut self,
         state: &PanelState,
         sched: &mut crate::emScheduler::EngineScheduler,
+        framework_clipboard: &std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>>,
     ) {
         let (w, h) = if state.viewed {
             self.viewed_x = state.viewed_rect.x;
@@ -204,6 +205,7 @@ impl emSubViewPanel {
             scheduler: sched,
             framework_actions: &mut fw,
             root_context: &root_ctx,
+            framework_clipboard,
             current_engine: None,
         };
         self.sub_view
@@ -289,12 +291,19 @@ impl PanelBehavior for emSubViewPanel {
                 .sub_view
                 .GetFocusablePanelAt(&self.sub_tree, sub_vx, sub_vy)
                 .unwrap_or_else(|| self.sub_view.GetRootPanel());
+            // Borrow-split: pull framework_clipboard and scheduler disjointly.
+            let cb_ref = ctx.framework_clipboard.unwrap_or_else(|| {
+                panic!(
+                    "emSubViewPanel::Input requires PanelCtx with framework_clipboard (Phase 3 Task 2)"
+                )
+            });
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: ctx.scheduler.as_deref_mut().expect(
                     "emSubViewPanel::Input requires PanelCtx with a scheduler (Phase 1.76)",
                 ),
                 framework_actions: &mut fw_input,
                 root_context: &root_ctx_for_input,
+                framework_clipboard: cb_ref,
                 current_engine: None,
             };
             self.sub_view
@@ -303,12 +312,19 @@ impl PanelBehavior for emSubViewPanel {
 
         // Ensure sub-view viewing state is current for coordinate transforms.
         {
+            // Borrow-split: pull framework_clipboard and scheduler disjointly.
+            let cb_ref = ctx.framework_clipboard.unwrap_or_else(|| {
+                panic!(
+                    "emSubViewPanel::Input requires PanelCtx with framework_clipboard (Phase 3 Task 2)"
+                )
+            });
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: ctx.scheduler.as_deref_mut().expect(
                     "emSubViewPanel::Input requires PanelCtx with a scheduler (Phase 1.76)",
                 ),
                 framework_actions: &mut fw_input,
                 root_context: &root_ctx_for_input,
+                framework_clipboard: cb_ref,
                 current_engine: None,
             };
             self.sub_view.Update(&mut self.sub_tree, &mut sc);
@@ -403,11 +419,16 @@ impl PanelBehavior for emSubViewPanel {
         }
         // C++ NF_VIEWING_CHANGED → SetViewGeometry(...)
         if flags.intersects(NoticeFlags::VIEWING_CHANGED | NoticeFlags::LAYOUT_CHANGED) {
+            // Borrow-split: pull framework_clipboard out before reborrowing
+            // scheduler, so both references can live simultaneously.
+            let fallback_cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
+            let cb_ref = ctx.framework_clipboard.unwrap_or(&fallback_cb);
             let sched = ctx
                 .scheduler
                 .as_deref_mut()
                 .expect("emSubViewPanel::notice requires PanelCtx with a scheduler (Phase 1.75)");
-            self.sync_geometry(state, sched);
+            self.sync_geometry(state, sched, cb_ref);
         }
     }
 
@@ -515,11 +536,14 @@ mod sp8_tests {
             let mut outer_sched = crate::emScheduler::EngineScheduler::new();
             let root_ctx = crate::emContext::emContext::NewRoot();
             let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
             let panel = {
                 let mut sc = crate::emEngineCtx::SchedCtx {
                     scheduler: &mut outer_sched,
                     framework_actions: &mut fw,
                     root_context: &root_ctx,
+                    framework_clipboard: &cb,
                     current_engine: None,
                 };
                 emSubViewPanel::new(root_ctx.clone(), owner_id, &mut sc)

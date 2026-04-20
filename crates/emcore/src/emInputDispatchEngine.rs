@@ -42,6 +42,7 @@ impl emEngine for InputDispatchEngine {
                 root_context,
                 framework_actions,
                 input_state,
+                framework_clipboard,
                 ..
             } = ctx;
 
@@ -75,6 +76,7 @@ impl emEngine for InputDispatchEngine {
                 scheduler,
                 framework_actions,
                 root_context,
+                framework_clipboard,
                 current_engine: None,
             };
             win.dispatch_input(tree, &event, input_state, &mut sc);
@@ -105,6 +107,9 @@ mod tests {
         let mut framework_actions: Vec<DeferredAction> = Vec::new();
         let mut pending_inputs: Vec<(winit::window::WindowId, emInputEvent)> = Vec::new();
         let mut input_state = emInputState::new();
+        let framework_clipboard: std::cell::RefCell<
+            Option<Box<dyn crate::emClipboard::emClipboard>>,
+        > = std::cell::RefCell::new(None);
 
         let eid = sched.register_engine(
             Box::new(InputDispatchEngine),
@@ -128,6 +133,7 @@ mod tests {
             &mut framework_actions,
             &mut pending_inputs,
             &mut input_state,
+            &framework_clipboard,
         );
 
         assert!(

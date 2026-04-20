@@ -3357,10 +3357,13 @@ mod tests {
             let root_ctx = v.Context.GetRootContext();
             let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
             let mut s = sched.borrow_mut();
+            let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root_ctx,
+                framework_clipboard: &__cb,
                 current_engine: None,
             };
             v.RegisterEngines(
@@ -3447,6 +3450,8 @@ mod tests {
         let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
             Vec::new();
         let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         sched.borrow_mut().DoTimeSlice(
             &mut tree,
             &mut empty_windows,
@@ -3454,6 +3459,7 @@ mod tests {
             &mut __fw,
             &mut __pending_inputs,
             &mut __input_state,
+            &__cb,
         );
         let child = tree
             .GetRec(root)
@@ -3599,6 +3605,8 @@ mod tests {
         let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
             Vec::new();
         let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         sched_a.borrow_mut().DoTimeSlice(
             &mut tree_a,
             &mut windows,
@@ -3606,12 +3614,15 @@ mod tests {
             &mut __fw,
             &mut __pending_inputs,
             &mut __input_state,
+            &__cb,
         );
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
         let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
             Vec::new();
         let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         sched_b.borrow_mut().DoTimeSlice(
             &mut tree_b,
             &mut windows,
@@ -3619,6 +3630,7 @@ mod tests {
             &mut __fw,
             &mut __pending_inputs,
             &mut __input_state,
+            &__cb,
         );
         assert_eq!(
             recorded_a.get(),
@@ -3743,6 +3755,8 @@ mod tests {
         let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
             Vec::new();
         let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         sched.borrow_mut().DoTimeSlice(
             &mut tree,
             &mut windows,
@@ -3750,6 +3764,7 @@ mod tests {
             &mut __fw,
             &mut __pending_inputs,
             &mut __input_state,
+            &__cb,
         );
         assert_eq!(a_cycles.get(), 1, "A must have cycled once");
         assert_eq!(woke.get(), 1, "A must have called wake_up_panel");
@@ -3761,6 +3776,8 @@ mod tests {
             let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
                 Vec::new();
             let mut __input_state = crate::emInputState::emInputState::new();
+            let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
             sched.borrow_mut().DoTimeSlice(
                 &mut tree,
                 &mut windows,
@@ -3768,6 +3785,7 @@ mod tests {
                 &mut __fw,
                 &mut __pending_inputs,
                 &mut __input_state,
+                &__cb,
             );
         }
         assert_eq!(
@@ -3788,6 +3806,8 @@ mod tests {
         let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
             Vec::new();
         let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         sched.borrow_mut().DoTimeSlice(
             &mut tree,
             &mut windows,
@@ -3795,6 +3815,7 @@ mod tests {
             &mut __fw,
             &mut __pending_inputs,
             &mut __input_state,
+            &__cb,
         );
     }
 
@@ -3888,6 +3909,8 @@ mod tests {
         let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
             Vec::new();
         let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         sched.borrow_mut().DoTimeSlice(
             &mut tree,
             &mut empty_windows,
@@ -3895,6 +3918,7 @@ mod tests {
             &mut __fw,
             &mut __pending_inputs,
             &mut __input_state,
+            &__cb,
         );
 
         let create_at = create_slice

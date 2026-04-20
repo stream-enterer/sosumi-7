@@ -193,6 +193,8 @@ mod tests {
         let mut __pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
             Vec::new();
         let mut __input_state = crate::emInputState::emInputState::new();
+        let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
         sched.DoTimeSlice(
             &mut tree,
             &mut windows,
@@ -200,6 +202,7 @@ mod tests {
             &mut __fw,
             &mut __pending_inputs,
             &mut __input_state,
+            &__cb,
         );
     }
 

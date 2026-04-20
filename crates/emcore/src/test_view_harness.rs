@@ -28,6 +28,7 @@ pub struct TestViewHarness {
     pub scheduler: EngineScheduler,
     pub framework_actions: Vec<DeferredAction>,
     pub root_context: Rc<emContext>,
+    pub framework_clipboard: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>>,
     pub tree: PanelTree,
     pub windows: HashMap<WindowId, emWindow>,
     pub pending_inputs: Vec<(WindowId, crate::emInput::emInputEvent)>,
@@ -46,6 +47,7 @@ impl TestViewHarness {
             scheduler: EngineScheduler::new(),
             framework_actions: Vec::new(),
             root_context: emContext::NewRoot(),
+            framework_clipboard: std::cell::RefCell::new(None),
             tree: PanelTree::new(),
             windows: HashMap::new(),
             pending_inputs: Vec::new(),
@@ -61,6 +63,7 @@ impl TestViewHarness {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.framework_actions,
             root_context: &self.root_context,
+            framework_clipboard: &self.framework_clipboard,
             current_engine: None,
         }
     }
@@ -71,6 +74,7 @@ impl TestViewHarness {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.framework_actions,
             root_context: &self.root_context,
+            framework_clipboard: &self.framework_clipboard,
             current_engine: Some(engine),
         }
     }
@@ -86,6 +90,7 @@ impl TestViewHarness {
             framework_actions: &mut self.framework_actions,
             pending_inputs: &mut self.pending_inputs,
             input_state: &mut self.input_state,
+            framework_clipboard: &self.framework_clipboard,
             engine_id,
         }
     }
@@ -108,6 +113,7 @@ pub struct TestSched {
     sched: EngineScheduler,
     fw: Vec<DeferredAction>,
     ctx: Rc<emContext>,
+    cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>>,
 }
 
 impl Default for TestSched {
@@ -122,6 +128,7 @@ impl TestSched {
             sched: EngineScheduler::new(),
             fw: Vec::new(),
             ctx: emContext::NewRoot(),
+            cb: std::cell::RefCell::new(None),
         }
     }
 
@@ -130,6 +137,7 @@ impl TestSched {
             scheduler: &mut self.sched,
             framework_actions: &mut self.fw,
             root_context: &self.ctx,
+            framework_clipboard: &self.cb,
             current_engine: None,
         };
         f(&mut sc)
