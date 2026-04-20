@@ -675,3 +675,35 @@ app.tree.attach_scheduler(Rc::clone(&app.scheduler));
 emmain regresses from green to red (1 error). All other crates are green.
 
 **Required next step:** substep 1e.1 must run before 1f can be declared DONE. 1e.1 unblocks this line by removing the `PanelTree::sched_rc` field and changing or removing `attach_scheduler`.
+
+---
+
+## Task 1 substep 1h: bench migration (post-crash recovery)
+
+### 2026-04-20 — DONE @ a270957
+
+Recovered from a mid-session crash (session was dispatching the final
+bench-migration + harness-rewire chunk when the host rebooted). Work
+that had been on disk but uncommitted:
+
+- `crates/eaglemode/benches/common/mod.rs`
+- `crates/eaglemode/benches/common/scaled.rs`
+- `crates/eaglemode/benches/scaled_tree.rs`
+- `crates/eaglemode/benches/scaled_tree_iai.rs`
+- `crates/emcore/src/emPanelTree.rs` (one line: `#[allow(clippy::too_many_arguments)]` on `Layout`, whitelisted by CLAUDE.md)
+
+Shape: each `view.Update(&mut tree)` / `view.RawScrollAndZoom(...)` /
+`tree.Layout(...)` / `tree.create_child(...)` call now wraps via
+`TestSched::new().with(|sc| ...)` to obtain a `&mut SchedCtx<'_>`.
+
+**Full gate state post-commit:**
+- `cargo clippy --all-targets --all-features -- -D warnings`: PASS
+- `cargo-nextest ntr`: 2455/2455 pass, 9 skipped
+- Goldens: 237/6 (baseline preserved)
+
+`interaction.rs` / `interaction_iai.rs` benches were migrated in an
+earlier commit (part of the 1c/7 cascade).
+
+The "~150 unit test rewire" bullet of substep 1h (plan text) was
+already absorbed into each method-migration commit of 1c/1-7; no
+discrete test-rewire commit needed.
