@@ -22,9 +22,8 @@ use super::emView::{emView, ViewFlags};
 pub struct emSubViewPanel {
     sub_tree: PanelTree,
     // DIVERGED: C++ `SubViewPort` is a pointer to a heap-allocated emViewPort
-    // subclass that holds the emView inline. Phase 2 Task 3 makes this a plain
-    // owned value (was Rc<RefCell<emView>>); Weak<RefCell<emView>> wiring for
-    // init_panel_view/RegisterEngines uses a null placeholder until Tasks 5–7.
+    // subclass that holds the emView inline. Rust uses a plain owned value
+    // (`emView` directly) rather than a pointer-to-subclass.
     pub sub_view: emView,
     /// Cached viewed geometry from the parent panel (absolute viewport pixels).
     viewed_x: f64,

@@ -4,9 +4,7 @@
 // hooks. Rust has no dummy-base-class pattern; the "default implementation
 // connects to nothing" model becomes an `Option<WindowId>` back-reference
 // (resolved through `EngineCtx::windows` / `App::windows`) which is `None`
-// for dummy instances. Earlier versions used `Weak<RefCell<emWindow>>`;
-// Phase-2 port-ownership-rewrite narrowed windows to plain `emWindow` so
-// Weak is no longer expressible.
+// for dummy instances.
 //
 // C++ emViewPort has two constructors:
 //   emViewPort(emView & homeView) — real port, registers itself on the view
@@ -43,12 +41,10 @@ pub struct emViewPort {
     // DIVERGED: stores the home geometry on the port (plain f64 fields)
     // rather than following a back-reference to the emView. C++ reads these
     // through a raw `HomeView*` pointer (emViewPort reaches the view's
-    // HomeX/Y/Width/Height/HomePixelTallness). A Rust `Weak<RefCell<emView>>`
-    // back-reference would not be a cycle-hazard (the `window` field below
-    // uses exactly that shape), but `upgrade().borrow()` cannot run while
-    // emView is already borrowed_mut — which is the common case inside
-    // `SetGeometry` and `SwapViewPorts`. Storing the geometry on the port
-    // avoids that re-entrancy and lets `SwapViewPorts` move it atomically
+    // HomeX/Y/Width/Height/HomePixelTallness). Storing the geometry on the
+    // port avoids re-entrancy (a back-reference borrow cannot run while
+    // emView is already borrowed_mut — the common case inside `SetGeometry`
+    // and `SwapViewPorts`) and lets `SwapViewPorts` move it atomically
     // when the Home and Current ports exchange identities.
     pub home_x: f64,
     pub home_y: f64,
