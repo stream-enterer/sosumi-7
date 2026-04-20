@@ -216,16 +216,21 @@ pub(crate) struct PanelData {
     pub(crate) pending_input: bool,
 
     // Notice ring linkage (C++ emPanel::NoticeNode.Prev/Next).
-    // Panels with queued notices form a doubly-linked circular ring
-    // rooted on PanelTree.notice_ring_head_*. When neither prev nor next
-    // is set, the panel is NOT in the ring.
+    // Panels with queued notices form a doubly-linked list.  The ring
+    // head/tail sentinel is stored on `emView` (notice_ring_head_next/prev).
+    // When neither prev nor next is set, the panel is NOT in the ring.
     pub(crate) notice_prev_in_ring: Option<PanelId>,
     pub(crate) notice_next_in_ring: Option<PanelId>,
 
-    /// 1:1 with C++ `emPanel::View &` (emPanel.h).
-    /// Set at construction by `PanelTree::create_root` / `create_child`;
-    /// never mutated thereafter.
-    pub(crate) View: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
+    /// Phase 2 Task 7 (keystone): replaces
+    /// `Weak<RefCell<emView>>` — `emView` is now plain on `emWindow` and
+    /// `emSubViewPanel`, so a `Weak` has nothing to reference. The former
+    /// field was only ever queried for presence (`strong_count() > 0`)
+    /// before registering a panel's engine with the scheduler, so a plain
+    /// bool suffices. The identity of the owning view is now carried by
+    /// the tree's `tree_location` plus (for Toplevel) a `WindowId` on the
+    /// registering `PanelCycleEngine`/`UpdateEngineClass`.
+    pub(crate) has_view: bool,
 
     /// Scheduler engine handle for this panel (SP4.5).
     ///
@@ -277,7 +282,7 @@ impl PanelData {
             pending_input: false,
             notice_prev_in_ring: None,
             notice_next_in_ring: None,
-            View: std::rc::Weak::new(),
+            has_view: false,
             engine_id: None,
         }
     }
@@ -302,31 +307,13 @@ pub struct PanelTree {
     pub(crate) seek_pos_panel: Option<PanelId>,
     /// Mirror of `emView::seek_pos_child_name`.
     pub(crate) seek_pos_child_name: String,
-    /// Head of the notice-delivery ring.
-    ///
-    /// DIVERGED: C++ uses a `PanelRingNode* NoticeList` sentinel with raw
-    /// pointer linkage (emView.h:576, emPanel.h:823). Rust uses two
-    /// `Option<PanelId>` fields to point at the first and last queued
-    /// panels (arena indices replace raw pointers). Semantics: panels
-    /// with queued notices form a doubly-linked list; `add_to_notice_list`
-    /// links at the tail; `emView::HandleNotice` drains from the head.
-    ///
-    /// Divergence classification per the Port Ideology (CLAUDE.md):
-    /// - **Storage shape** (global `PanelTree` owns NoticeList vs C++
-    ///   per-view `emView::NoticeList`): *Forced.* Rust RefCell borrow rules
-    ///   prevent per-view ring ownership — `emView::HandleNotice` is called
-    ///   with `&mut self` (view mutably borrowed), so callbacks inside
-    ///   dispatch that call `tree.add_to_notice_list` cannot re-borrow
-    ///   the same view to append to a view-owned ring. Ring storage stays
-    ///   on `PanelTree`; dispatch driver is per-view (SP5, emView.cpp:1312
-    ///   parity). The remaining storage divergence is *forced*.
-    /// - **Data structure** (`Option<PanelId>` arena-index vs `PanelRingNode*`
-    ///   sentinel): *Idiom adaptation.* Below the observable surface.
-    /// - **Dispatch driver**: SP5 resolved this — `emView::HandleNotice`
-    ///   is called from `emView::Update` using the view's own
-    ///   `CurrentPixelTallness` and `window_focused` (emView.cpp:1312 parity).
-    pub(crate) notice_ring_head_next: Option<PanelId>,
-    pub(crate) notice_ring_head_prev: Option<PanelId>,
+    /// Pending ring-cleanup entries from `remove()` calls that lacked a
+    /// view reference.  Each tuple is `(prev_in_ring, next_in_ring)` for
+    /// the panel that was removed.  `emView::HandleNotice` drains this at
+    /// the top of each drain cycle, updating `notice_ring_head_next/prev`
+    /// as needed.  Filled only when `remove()` is called without an
+    /// `emView` (e.g. from `PanelCtx` or test code).
+    pub(crate) pending_ring_cleanup: Vec<(Option<PanelId>, Option<PanelId>)>,
     /// Set by `Layout()` on the root panel (no parent). Matches C++
     /// `emPanel::Layout` `!Parent` branch which sets `View.SVPChoiceInvalid`
     /// and calls `View.RawZoomOut(true)` when zoomed out. `emView::Update`
@@ -343,13 +330,18 @@ pub struct PanelTree {
     /// registered with the correct `TreeLocation` on the single outer
     /// scheduler and dispatch resolves through the sub-view chain.
     pub(crate) tree_location: TreeLocation,
-    /// Phase 1.75 Task 5 (continuation): cached copy of the owning view's
-    /// `update_engine_id`. Populated by `emView::RegisterEngines` via
-    /// [`PanelTree::set_update_engine_id`]; cleared on view detach. Read by
-    /// `add_to_notice_list` to wake the update engine WITHOUT borrowing the
-    /// view (which may be mutably borrowed by `UpdateEngineClass::Cycle`
-    /// while notice drain runs).
+    /// Cached copy of the owning view's `update_engine_id`.
+    /// Populated by `emView::RegisterEngines` via [`PanelTree::set_update_engine_id`];
+    /// cleared on view detach.  Read by `add_to_notice_list` to wake the
+    /// update engine without borrowing the view.
     pub(crate) update_engine_id: Option<crate::emEngine::EngineId>,
+    /// Phase 2 Task 7: cached mirror of the owning view's
+    /// `CurrentPixelTallness`.  Written by `emView::SetGeometry` every
+    /// time the view's tallness changes; read by `PanelCycleEngine::Cycle`
+    /// to build a `PanelCtx::current_pixel_tallness` without resolving
+    /// back to the view.  Starts at `1.0` to match
+    /// `emView::CurrentPixelTallness` default.
+    pub(crate) cached_pixel_tallness: f64,
 }
 
 impl PanelTree {
@@ -373,108 +365,76 @@ impl PanelTree {
             navigation_requests: Vec::new(),
             seek_pos_panel: None,
             seek_pos_child_name: String::new(),
-            notice_ring_head_next: None,
-            notice_ring_head_prev: None,
+            pending_ring_cleanup: Vec::new(),
             root_layout_changed: false,
             pending_engine_removals: Vec::new(),
             tree_location,
             update_engine_id: None,
+            cached_pixel_tallness: 1.0,
         }
     }
 
-    /// Phase 1.75 Task 5 (continuation): set the cached update-engine id used
-    /// by `add_to_notice_list` to wake the view's update engine without
-    /// borrowing the view. Called by `emView::RegisterEngines` right after
-    /// the engine is registered; cleared by view detach paths.
+    /// Set the cached update-engine id so `add_to_notice_list` can wake the
+    /// view's update engine without a scheduler call through the view.
+    /// Called by `emView::RegisterEngines`; cleared on view detach.
     pub fn set_update_engine_id(&mut self, id: Option<crate::emEngine::EngineId>) {
         self.update_engine_id = id;
     }
 
-    /// Link `id` into the notice ring at the tail and wake the view's update
-    /// engine if a scheduler is provided.
-    /// Port of C++ `emView::AddToNoticeList` (emView.cpp).
-    pub(crate) fn add_to_notice_list(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
-        // Guard: View must be either populated (strong > 0) or the unset sentinel
-        // Weak::new() (strong == 0 && weak == 0). A dangling Weak (strong == 0 &&
-        // weak > 0) means the owning emView was dropped — that is a real bug.
-        debug_assert!(
-            {
-                let v = &self.panels[id].View;
-                v.strong_count() > 0 || v.weak_count() == 0
-            },
-            "emPanel::View is dangling (strong=0, weak={weak}): owning emView was dropped \
-             before this panel; panel = {name:?}",
-            weak = self.panels[id].View.weak_count(),
-            name = self.panels[id].name,
-        );
-        // Already linked?
-        {
-            let p = &self.panels[id];
-            if p.notice_prev_in_ring.is_some() || p.notice_next_in_ring.is_some() {
-                return;
-            }
-            // Or currently the single head?
-            if self.notice_ring_head_next == Some(id) {
-                return;
-            }
-        }
-        match self.notice_ring_head_prev {
-            Some(old_tail) => {
-                // Link new node after old tail.
-                self.panels[old_tail].notice_next_in_ring = Some(id);
-                self.panels[id].notice_prev_in_ring = Some(old_tail);
-                self.panels[id].notice_next_in_ring = None;
-                self.notice_ring_head_prev = Some(id);
-            }
-            None => {
-                // Ring was empty.
-                self.panels[id].notice_prev_in_ring = None;
-                self.panels[id].notice_next_in_ring = None;
-                self.notice_ring_head_next = Some(id);
-                self.notice_ring_head_prev = Some(id);
-            }
-        }
+    /// Mark pending notices and wake the update engine.
+    ///
+    /// Phase 2 Task 6 (E006): ring linking is now on `emView::AddToNoticeList`.
+    /// `PanelTree::add_to_notice_list` remains as the call site for tree-internal
+    /// paths that do not have an `&mut emView` available.  It sets the
+    /// `has_pending_notices` flag (picked up by `emView::HandleNotice`'s safety-net
+    /// scan) and wakes the update engine so the drain runs on the next cycle.
+    ///
+    /// Call sites that DO have `&mut emView` should call
+    /// `view.AddToNoticeList(id, tree)` directly instead.
+    pub(crate) fn add_to_notice_list(&mut self, _id: PanelId, sched: Option<&mut EngineScheduler>) {
+        self.has_pending_notices = true;
+        // Wake the update engine so HandleNotice runs this cycle.
         // C++ emView::AddToNoticeList (emView.cpp:1288) calls UpdateEngine->WakeUp().
-        // Phase 1.75 Task 5 (continuation): wake via cached
-        // `self.update_engine_id` (populated by `emView::RegisterEngines`)
-        // instead of borrowing the view. Wake is idempotent; always safe to
-        // issue (matches C++ unconditional `UpdateEngine->WakeUp()`).
         if let (Some(sched), Some(eng_id)) = (sched, self.update_engine_id) {
             sched.wake_up(eng_id);
         }
     }
 
-    /// Unlink `id` from the notice ring (no-op if not linked).
-    /// `pub(crate)` so `emView::HandleNotice` can call it directly.
+    /// Unlink `id` from the notice ring (neighbor-pointer cleanup only).
+    ///
+    /// Removes `id` from its neighbors' `notice_next/prev_in_ring` pointers and
+    /// snapshots the ring slot into `pending_ring_cleanup` so that
+    /// `emView::HandleNotice` can update the emView-owned head/tail pointers on
+    /// the next drain.  No-op if `id` is not in the ring.
+    ///
+    /// Must be called BEFORE `id` is removed from the arena (while
+    /// `panels[id]` is still valid).
     pub(crate) fn remove_from_notice_list(&mut self, id: PanelId) {
         if !self.panels.contains_key(id) {
-            // Panel has been deleted; nothing to unlink.
-            // (Caller should have updated ring pointers before remove()
-            // anyway; this is defensive.)
             return;
         }
         let (prev, next) = {
             let p = &self.panels[id];
             (p.notice_prev_in_ring, p.notice_next_in_ring)
         };
-        // If not linked and not the sole head, nothing to do.
-        if prev.is_none()
-            && next.is_none()
-            && self.notice_ring_head_next != Some(id)
-            && self.notice_ring_head_prev != Some(id)
-        {
-            return;
+        // Update neighbor-panel pointers (the parts we can do without emView).
+        if let Some(p) = prev {
+            if self.panels.contains_key(p) {
+                self.panels[p].notice_next_in_ring = next;
+            }
         }
-        match prev {
-            Some(p) => self.panels[p].notice_next_in_ring = next,
-            None => self.notice_ring_head_next = next,
-        }
-        match next {
-            Some(n) => self.panels[n].notice_prev_in_ring = prev,
-            None => self.notice_ring_head_prev = prev,
+        if let Some(n) = next {
+            if self.panels.contains_key(n) {
+                self.panels[n].notice_prev_in_ring = prev;
+            }
         }
         self.panels[id].notice_prev_in_ring = None;
         self.panels[id].notice_next_in_ring = None;
+        // Push a cleanup entry so emView::HandleNotice can reconcile the
+        // head/tail pointers (which live on emView, not PanelTree).
+        // The (prev, next) snapshot lets HandleNotice decide whether to
+        // advance notice_ring_head_next or notice_ring_head_prev.
+        self.pending_ring_cleanup.push((prev, next));
     }
 
     /// Returns true if the given panel is the current view seek target.
@@ -516,11 +476,7 @@ impl PanelTree {
     ///
     /// # Panics
     /// Panics if a root panel already exists.
-    pub fn create_root(
-        &mut self,
-        name: &str,
-        view: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
-    ) -> PanelId {
+    pub fn create_root(&mut self, name: &str, has_view: bool) -> PanelId {
         assert!(
             self.root.is_none(),
             "create_root called but root panel already exists"
@@ -532,7 +488,7 @@ impl PanelTree {
         // path resolution like "::FS::..." where the first "" after the
         // initial ":" is meant to be a child of root, not root itself.
         self.root = Some(id);
-        self.panels[id].View = view;
+        self.panels[id].has_view = has_view;
         // C++ emPanel root ctor (emPanel.cpp:~100): Active=1; InActivePath=1;
         // View.ActivePanel=this. Root starts as the active panel.
         self.panels[id].is_active = true;
@@ -553,7 +509,7 @@ impl PanelTree {
     /// Not a C++ analogue — test-support only.
     #[cfg(any(test, feature = "test-support"))]
     pub fn create_root_deferred_view(&mut self, name: &str) -> PanelId {
-        self.create_root(name, std::rc::Weak::new())
+        self.create_root(name, false)
     }
 
     /// Propagate a view weak reference to a panel and all its descendants.
@@ -563,20 +519,15 @@ impl PanelTree {
     /// before the view exists (chicken-and-egg).
     ///
     /// Not a C++ analogue — Rust ownership requires this two-phase init.
-    pub fn init_panel_view(
-        &mut self,
-        id: PanelId,
-        view: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
-        sched: Option<&mut EngineScheduler>,
-    ) {
-        self.panels[id].View = view.clone();
+    pub fn init_panel_view(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
+        self.panels[id].has_view = true;
         // Split sched borrow: collect ids, then iterate with sched.
         let mut ids_to_register = vec![id];
         let mut stack = vec![id];
         while let Some(p) = stack.pop() {
             let mut child = self.panels[p].first_child;
             while let Some(c) = child {
-                self.panels[c].View = view.clone();
+                self.panels[c].has_view = true;
                 ids_to_register.push(c);
                 stack.push(c);
                 child = self.panels[c].next_sibling;
@@ -617,20 +568,32 @@ impl PanelTree {
         if self.panels.get(id).and_then(|p| p.engine_id).is_some() {
             return; // idempotent re-attachment guard
         }
-        let Some(view_weak) = self
-            .panels
-            .get(id)
-            .map(|p| p.View.clone())
-            .filter(|w| w.strong_count() > 0)
-        else {
+        // Phase 2 Task 5: `View` weak still gates registration — when it is
+        // null, the panel has no live view yet (same condition as pre-Task-5).
+        // The adapter itself no longer stores the weak; it stores a
+        // `PanelScope` derived from this tree's `tree_location`.
+        let has_view = self.panels.get(id).map(|p| p.has_view).unwrap_or(false);
+        if !has_view {
             return; // no view yet (or view dropped)
-        };
+        }
         let Some(sched) = sched else {
             return; // no scheduler provided; `init_panel_view` will register once one is available
         };
+        // Derive scope from this tree's TreeLocation. Outer trees use a
+        // placeholder WindowId; resolve-time lookup walks `ctx.windows` to
+        // find the matching emWindow. Tasks 6–7 will thread the real
+        // WindowId through window/tree construction.
+        let scope = match &self.tree_location {
+            crate::emEngine::TreeLocation::Outer => {
+                crate::emPanelScope::PanelScope::Toplevel(winit::window::WindowId::dummy())
+            }
+            crate::emEngine::TreeLocation::SubView { outer_panel_id, .. } => {
+                crate::emPanelScope::PanelScope::SubView(*outer_panel_id)
+            }
+        };
         let adapter = PanelCycleEngine {
             panel_id: id,
-            view: view_weak,
+            scope,
             #[cfg(any(test, feature = "test-support"))]
             first_cycle_probe: None,
         };
@@ -651,12 +614,8 @@ impl PanelTree {
     ///
     /// Not a C++ analogue — test-support only.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn set_panel_view(
-        &mut self,
-        id: PanelId,
-        view: std::rc::Weak<std::cell::RefCell<crate::emView::emView>>,
-    ) {
-        self.init_panel_view(id, view, None);
+    pub fn set_panel_view(&mut self, id: PanelId) {
+        self.init_panel_view(id, None);
     }
 
     /// Create a child panel under the given parent.
@@ -668,10 +627,10 @@ impl PanelTree {
     ) -> PanelId {
         // C++ emPanel ctor: CreatedByAE = Parent->AECalling
         let created_by_ae = self.panels[parent].ae_calling;
-        let parent_view = self.panels[parent].View.clone();
+        let parent_has_view = self.panels[parent].has_view;
 
         let id = self.panels.insert(PanelData::new(name.to_string()));
-        self.panels[id].View = parent_view;
+        self.panels[id].has_view = parent_has_view;
         self.name_index.insert((parent, name.to_string()), id);
 
         // Link into parent's child list
@@ -690,7 +649,7 @@ impl PanelTree {
         // Inherit parent's enabled state
         self.recompute_enabled(id, None);
 
-        if self.panels[id].View.strong_count() > 0 {
+        if self.panels[id].has_view {
             self.register_engine_for(id, sched.as_deref_mut());
         }
 
@@ -1745,10 +1704,13 @@ impl PanelTree {
         std::mem::take(&mut self.navigation_requests)
     }
 
-    /// Whether any panel has pending notices queued (`NoticeList` non-empty
-    /// or `has_pending_notices` flag set). Used by `emView::Update` drain loop.
+    /// Whether the `has_pending_notices` flag is set.
+    ///
+    /// Phase 2 Task 6 (E006): ring head/tail moved to `emView`; this method
+    /// now only reports the flag that PanelTree sets when notice state changes.
+    /// `emView::HandleNotice` additionally checks its own `notice_ring_head_next`.
     pub fn has_pending_notices(&self) -> bool {
-        self.has_pending_notices || self.notice_ring_head_next.is_some()
+        self.has_pending_notices
     }
 
     /// Whether the `has_pending_notices` flag is set (panels set pending_notices
@@ -3262,8 +3224,8 @@ mod tests {
         let mut t = PanelTree::new();
         let root = t.create_root_deferred_view("root");
         assert!(
-            t.panels[root].View.upgrade().is_none(),
-            "View must be Weak::new() until populated by create_root (Task 2.2)"
+            !t.panels[root].has_view,
+            "has_view must be false until populated by create_root (Task 2.2)"
         );
     }
 
@@ -3306,7 +3268,7 @@ mod tests {
         // `init_panel_view` (sched supplied); replaces deleted catch-up pass.
         {
             let mut s = sched.borrow_mut();
-            tree.init_panel_view(root, Rc::downgrade(&view), Some(&mut s));
+            tree.init_panel_view(root, Some(&mut s));
         }
         (tree, view, sched, root)
     }
@@ -3381,7 +3343,7 @@ mod tests {
         )));
         // Step 1: init_panel_view BEFORE RegisterEngines. The helper
         // early-returns with no engine_id because the view has no scheduler.
-        tree.init_panel_view(root, Rc::downgrade(&view), None);
+        tree.init_panel_view(root, None);
         assert!(
             tree.GetRec(root).and_then(|p| p.engine_id).is_none(),
             "without a scheduler attached, init_panel_view must leave engine_id=None"
@@ -3389,7 +3351,7 @@ mod tests {
 
         // Step 2: RegisterEngines — the inline catch-up loop registers root.
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        let view_weak = Rc::downgrade(&view);
+        let scope = crate::emPanelScope::PanelScope::Toplevel(winit::window::WindowId::dummy());
         {
             let mut v = view.borrow_mut();
             let root_ctx = v.Context.GetRootContext();
@@ -3404,7 +3366,7 @@ mod tests {
             v.RegisterEngines(
                 &mut sc,
                 &mut tree,
-                view_weak,
+                scope,
                 crate::emEngine::TreeLocation::Outer,
             );
         }
@@ -3478,10 +3440,8 @@ mod tests {
         );
         sched.borrow_mut().wake_up(spawn_eid);
 
-        let mut empty_windows: HashMap<
-            winit::window::WindowId,
-            Rc<RefCell<crate::emWindow::emWindow>>,
-        > = HashMap::new();
+        let mut empty_windows: HashMap<winit::window::WindowId, crate::emWindow::emWindow> =
+            HashMap::new();
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
         sched
@@ -3581,9 +3541,10 @@ mod tests {
         )));
         let sched_a = Rc::new(RefCell::new(EngineScheduler::new()));
         view_a.borrow_mut().CurrentPixelTallness = 1.5;
+        tree_a.cached_pixel_tallness = 1.5;
         {
             let mut s = sched_a.borrow_mut();
-            tree_a.init_panel_view(root_a, Rc::downgrade(&view_a), Some(&mut s));
+            tree_a.init_panel_view(root_a, Some(&mut s));
         }
         let recorded_a = Rc::new(Cell::new(None));
         tree_a.set_behavior(
@@ -3605,9 +3566,10 @@ mod tests {
         )));
         let sched_b = Rc::new(RefCell::new(EngineScheduler::new()));
         view_b.borrow_mut().CurrentPixelTallness = 0.5;
+        tree_b.cached_pixel_tallness = 0.5;
         {
             let mut s = sched_b.borrow_mut();
-            tree_b.init_panel_view(root_b, Rc::downgrade(&view_b), Some(&mut s));
+            tree_b.init_panel_view(root_b, Some(&mut s));
         }
         let recorded_b = Rc::new(Cell::new(None));
         tree_b.set_behavior(
@@ -3703,7 +3665,7 @@ mod tests {
 
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
-        let view = Rc::new(RefCell::new(emView::new(
+        let _view = Rc::new(RefCell::new(emView::new(
             crate::emContext::emContext::NewRoot(),
             root,
             800.0,
@@ -3712,7 +3674,7 @@ mod tests {
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         {
             let mut s = sched.borrow_mut();
-            tree.init_panel_view(root, Rc::downgrade(&view), Some(&mut s));
+            tree.init_panel_view(root, Some(&mut s));
         }
 
         let (a, b) = {
@@ -3871,10 +3833,8 @@ mod tests {
         );
         sched.borrow_mut().wake_up(spawn_eid);
 
-        let mut empty_windows: HashMap<
-            winit::window::WindowId,
-            Rc<RefCell<crate::emWindow::emWindow>>,
-        > = HashMap::new();
+        let mut empty_windows: HashMap<winit::window::WindowId, crate::emWindow::emWindow> =
+            HashMap::new();
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
         sched

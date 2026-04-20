@@ -3,7 +3,6 @@
 //! This module replaces the `Rc`-wrapped scheduler ownership model.
 //! See `docs/superpowers/specs/2026-04-19-port-ownership-rewrite-design.md` §3.1.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -35,7 +34,7 @@ pub enum DeferredAction {
 pub struct EngineCtx<'a> {
     pub scheduler: &'a mut EngineScheduler,
     pub tree: &'a mut PanelTree,
-    pub windows: &'a mut HashMap<winit::window::WindowId, Rc<RefCell<emWindow>>>,
+    pub windows: &'a mut HashMap<winit::window::WindowId, emWindow>,
     pub root_context: &'a Rc<emContext>,
     pub framework_actions: &'a mut Vec<DeferredAction>,
     /// The ID of the engine currently being cycled. Populated by the

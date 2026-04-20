@@ -2,8 +2,9 @@
 //
 // DIVERGED: not a class hierarchy but a concrete struct with optional backend
 // hooks. Rust has no dummy-base-class pattern; the "default implementation
-// connects to nothing" model becomes a `Weak<RefCell<emWindow>>` back-reference
-// which is `None` for dummy instances.
+// connects to nothing" model becomes an `Option<WindowId>` back-reference
+// (resolved through `EngineCtx::windows` / `App::windows`) which is `None`
+// for dummy instances.
 //
 // C++ emViewPort has two constructors:
 //   emViewPort(emView & homeView) — real port, registers itself on the view
@@ -25,14 +26,14 @@
 //   InvalidateCursor      — set cursor-dirty flag (consumed by emWindow on next frame)
 //   InvalidatePainting    — delegate to emWindow::invalidate_rect (tile cache)
 
-use std::cell::RefCell;
-use std::rc::Weak;
+use winit::window::WindowId;
 
 /// Port of C++ `emViewPort` (emView.h:719-794).
 ///
 /// Connects an `emView` to its OS/hardware backend. The default ("dummy")
 /// instance connects to nothing (back-reference is `None`). A real instance
-/// has a `Weak<emWindow>` back-reference set by `emWindow::create`.
+/// has a `WindowId` back-reference set by `emWindow::create`; callers resolve
+/// it through `EngineCtx::windows` / `App::windows`.
 #[allow(non_snake_case)]
 pub struct emViewPort {
     // === C++ private fields (emView.h:789-793) ===
@@ -40,30 +41,26 @@ pub struct emViewPort {
     // DIVERGED: stores the home geometry on the port (plain f64 fields)
     // rather than following a back-reference to the emView. C++ reads these
     // through a raw `HomeView*` pointer (emViewPort reaches the view's
-    // HomeX/Y/Width/Height). A Rust `Weak<RefCell<emView>>` back-reference
-    // would not be a cycle-hazard (the `window` field below uses exactly
-    // that shape), but `upgrade().borrow()` cannot run while emView is
-    // already borrowed_mut — which is the common case inside `SetGeometry`
-    // and `SwapViewPorts`. Storing the geometry on the port avoids that
-    // re-entrancy and lets `SwapViewPorts` move it atomically when the
-    // Home and Current ports exchange identities.
+    // HomeX/Y/Width/Height/HomePixelTallness). Storing the geometry on the
+    // port avoids re-entrancy (a back-reference borrow cannot run while
+    // emView is already borrowed_mut — the common case inside `SetGeometry`
+    // and `SwapViewPorts`) and lets `SwapViewPorts` move it atomically
+    // when the Home and Current ports exchange identities.
     pub home_x: f64,
     pub home_y: f64,
     pub home_width: f64,
     pub home_height: f64,
+    /// C++ `HomeView->HomePixelTallness` — pixel shape ratio of the home view
+    /// owning this port. Used by `SwapViewPorts` to update `CurrentPixelTallness`
+    /// from the correct view after the port exchange, matching C++ emView.cpp:1990.
+    pub home_pixel_tallness: f64,
 
-    // Focus state for this port. C++ stores it on the view (Focused field);
-    // here it lives on the port so SwapViewPorts can transfer it between home
-    // and popup without touching the view's window_focused directly.
-    //
-    // DIVERGED: no direct C++ equivalent field on emViewPort; focus is on
-    // the emView. Introduced here to support SwapViewPorts stub.
-    focused: bool,
-
-    /// Back-reference to the owning emWindow. Used by `PaintView`,
-    /// `InvalidatePainting` to dispatch to backend machinery. `Weak` to
-    /// avoid `Rc` cycles. `None` for dummy ports.
-    pub(crate) window: Option<Weak<RefCell<crate::emWindow::emWindow>>>,
+    /// Back-reference to the owning emWindow by WindowId. Used by
+    /// `PaintView` / `InvalidatePainting` to dispatch to backend machinery.
+    /// Resolved through `EngineCtx::windows` / `App::windows` at call time,
+    /// so no `Weak` back-reference is needed. `None` for dummy ports and
+    /// for popup ports while the OS surface is still `Pending`.
+    pub(crate) window_id: Option<WindowId>,
 
     /// Cursor reported by the view; `emWindow` consumes it on each frame.
     /// (C++ stores the cursor on `emView`, not `emViewPort`; the Rust
@@ -94,8 +91,8 @@ impl emViewPort {
             home_y: 0.0,
             home_width: 0.0,
             home_height: 0.0,
-            focused: false,
-            window: None,
+            home_pixel_tallness: 1.0,
+            window_id: None,
             cursor: crate::emCursor::emCursor::Normal,
             cursor_dirty: false,
             input_clock_ms: 0,
@@ -110,14 +107,20 @@ impl emViewPort {
     ///
     /// DIVERGED: registration side-effect moved to call site; geometry
     /// passed explicitly instead of read from homeView on construction.
-    pub fn new_with_geometry(home_x: f64, home_y: f64, home_width: f64, home_height: f64) -> Self {
+    pub fn new_with_geometry(
+        home_x: f64,
+        home_y: f64,
+        home_width: f64,
+        home_height: f64,
+        home_pixel_tallness: f64,
+    ) -> Self {
         Self {
             home_x,
             home_y,
             home_width,
             home_height,
-            focused: false,
-            window: None,
+            home_pixel_tallness,
+            window_id: None,
             cursor: crate::emCursor::emCursor::Normal,
             cursor_dirty: false,
             input_clock_ms: 0,
@@ -165,51 +168,59 @@ impl emViewPort {
 
     /// Port of C++ `emViewPort::PaintView`.
     ///
-    /// Requests a redraw on the owning `emWindow`. No-op for dummy ports.
-    ///
-    /// **Re-entrancy warning:** the back-reference is upgraded and the owning
-    /// `emWindow` is borrowed shared. Callers must NOT already hold a
-    /// `rc.borrow_mut()` on the same window (e.g. from inside `render`,
-    /// `dispatch_input`, or `handle_touch`) — the runtime `RefCell` check
-    /// would panic rather than being caught at compile time. A full audit is
-    /// required when production call sites are first wired.
-    pub fn PaintView(&self) {
+    /// Requests a redraw on the owning `emWindow`, resolved via
+    /// `windows[self.window_id]`. No-op for dummy ports (`window_id` is
+    /// `None`) and for popup ports whose OS surface is still `Pending`
+    /// (WindowId not yet in `windows`).
+    pub fn PaintView(
+        &self,
+        windows: &std::collections::HashMap<WindowId, crate::emWindow::emWindow>,
+    ) {
         debug_assert!(
-            self.window.is_some() || cfg!(test),
+            self.window_id.is_some() || cfg!(test),
             "emViewPort::PaintView called on viewport without back-reference"
         );
-        if let Some(weak) = &self.window {
-            if let Some(rc) = weak.upgrade() {
-                rc.borrow().request_redraw();
+        if let Some(wid) = self.window_id {
+            if let Some(win) = windows.get(&wid) {
+                win.request_redraw();
             }
         }
     }
 
     // === Protected methods (emView.h:763-778) ===
 
-    /// Port of C++ `emViewPort::SetViewGeometry(x, y, w, h, pixelTallness)`.
-    /// Updates the stored home geometry. Called by `SetViewPosSize` and the
-    /// backend geometry callback.
-    pub fn SetViewGeometry(&mut self, x: f64, y: f64, w: f64, h: f64) {
+    /// Port of C++ `emViewPort::SetViewGeometry(x, y, w, h, pixelTallness)`
+    /// (emView.h:1025-1030).
+    ///
+    /// Updates the stored home geometry including pixel tallness. Called by
+    /// `SetViewPosSize` and the backend geometry callback.
+    pub fn SetViewGeometry(&mut self, x: f64, y: f64, w: f64, h: f64, pixel_tallness: f64) {
         self.home_x = x;
         self.home_y = y;
         self.home_width = w;
         self.home_height = h;
+        self.home_pixel_tallness = pixel_tallness;
     }
 
     /// Port of C++ `emViewPort::SetViewFocused(bool focused)`.
-    /// Updates the focus state on this port.
-    pub fn SetViewFocused(&mut self, focused: bool) {
-        self.focused = focused;
-    }
+    ///
+    /// C++ (emView.h:1032-1035): calls `CurrentView->SetFocused(focused)`.
+    /// Rust: focus is canonical on `emView::window_focused`; callers that have
+    /// an `&mut emView` in scope must call `emView::SetFocused` directly.
+    /// This stub exists to satisfy the C++ name correspondence requirement;
+    /// it is a no-op because the port no longer stores a focused field.
+    ///
+    /// DIVERGED: C++ mutates the view through a raw `CurrentView*` pointer;
+    /// Rust drops the forwarding because the port has no back-reference to
+    /// `emView`. All known call sites have been migrated to `emView::SetFocused`.
+    pub fn SetViewFocused(&mut self, _focused: bool) {}
 
     /// Port of C++ `emViewPort::RequestFocus`.
     ///
-    /// Default implementation (emView.cpp:2661): calls `SetViewFocused(true)`.
-    pub fn RequestFocus(&mut self) {
-        // emView.cpp:2661-2664: default base-class implementation
-        self.SetViewFocused(true);
-    }
+    /// C++ default implementation (emView.cpp:2661): calls `SetViewFocused(true)`.
+    /// Rust: see `SetViewFocused` — callers with `&mut emView` in scope call
+    /// `emView::SetFocused(tree, true)` directly.
+    pub fn RequestFocus(&mut self) {}
 
     /// Port of C++ `emViewPort::IsSoftKeyboardShown`.
     ///
@@ -241,9 +252,10 @@ impl emViewPort {
     ///
     /// Routes an input event to the home view. C++ dispatches via
     /// `CurrentView->Input(event, state)`; Rust takes `view` and `tree` as
-    /// parameters because the back-reference is `Weak<RefCell<emWindow>>`
-    /// and `emView` lives inside `emWindow`. The dispatch site in
-    /// `emWindow::dispatch_input` already holds borrows to both.
+    /// parameters because the back-reference is `Option<WindowId>` (resolved
+    /// through `EngineCtx::windows`) and `emView` lives inside `emWindow`.
+    /// The dispatch site in `emWindow::dispatch_input` already holds borrows
+    /// to both.
     pub fn InputToView(
         &mut self,
         view: &mut crate::emView::emView,
@@ -266,43 +278,26 @@ impl emViewPort {
 
     /// Port of C++ `emViewPort::InvalidatePainting(x, y, w, h)`.
     ///
-    /// Delegates to the owning `emWindow`'s tile cache. No-op for dummy
-    /// ports.
-    ///
-    /// **Re-entrancy warning:** the back-reference is upgraded and the owning
-    /// `emWindow` is borrowed mutably (`rc.borrow_mut()`). Callers must NOT
-    /// already hold any borrow on the same window (e.g. from inside `render`,
-    /// `dispatch_input`, or `handle_touch`) — the runtime `RefCell` check
-    /// would panic rather than being caught at compile time. A full audit is
-    /// required when production call sites are first wired.
-    pub fn InvalidatePainting(&mut self, x: f64, y: f64, w: f64, h: f64) {
+    /// Delegates to the owning `emWindow`'s tile cache, resolved via
+    /// `windows[self.window_id]`. No-op for dummy ports and for popup
+    /// ports whose OS surface is still `Pending`.
+    pub fn InvalidatePainting(
+        &mut self,
+        windows: &mut std::collections::HashMap<WindowId, crate::emWindow::emWindow>,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    ) {
         debug_assert!(
-            self.window.is_some() || cfg!(test),
+            self.window_id.is_some() || cfg!(test),
             "emViewPort::InvalidatePainting called on viewport without back-reference"
         );
-        if let Some(weak) = &self.window {
-            if let Some(rc) = weak.upgrade() {
-                rc.borrow_mut().invalidate_rect(x, y, w, h);
+        if let Some(wid) = self.window_id {
+            if let Some(win) = windows.get_mut(&wid) {
+                win.invalidate_rect(x, y, w, h);
             }
         }
-    }
-
-    // === Rust-only accessors for SwapViewPorts / focus transfer ===
-
-    /// Returns whether this port currently holds focus.
-    ///
-    /// DIVERGED: no C++ equivalent method on emViewPort; focus state was
-    /// stored directly on emView::Focused. Introduced to support
-    /// SwapViewPorts focus-transfer without holding a back-reference.
-    pub fn is_focused(&self) -> bool {
-        self.focused
-    }
-
-    /// Sets the focused flag on this port.
-    ///
-    /// DIVERGED: see `is_focused`.
-    pub fn set_focused(&mut self, focused: bool) {
-        self.focused = focused;
     }
 
     /// Updates the home geometry fields and pixel tallness.
@@ -314,11 +309,11 @@ impl emViewPort {
     /// the equivalent in C++ is the `emWindowPort` override of
     /// `SetViewGeometry` triggered by the windowing system. Phase 4
     /// implements this as a direct setter on the stub.
-    pub fn SetViewPosSize(&mut self, x: f64, y: f64, w: f64, h: f64) {
+    pub fn SetViewPosSize(&mut self, x: f64, y: f64, w: f64, h: f64, pixel_tallness: f64) {
         self.home_x = x;
         self.home_y = y;
         self.home_width = w;
         self.home_height = h;
-        // pixel_tallness unchanged — popup inherits home pixel tallness
+        self.home_pixel_tallness = pixel_tallness;
     }
 }

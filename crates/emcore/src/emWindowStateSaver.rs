@@ -241,7 +241,7 @@ impl emEngine for emWindowStateSaver {
             || ctx.IsSignaled(self.geometry_signal);
 
         if signaled {
-            if let Some(window) = ctx.windows.get(&self.window_id).map(|rc| rc.borrow()) {
+            if let Some(window) = ctx.windows.get(&self.window_id) {
                 if window.view().IsFocused() {
                     // Need mutable self for Save, but we only need an immutable
                     // window reference. Clone the relevant data to avoid borrow conflict.

@@ -433,7 +433,7 @@ mod tests {
 
     fn make_test_tree() -> (PanelTree, PanelId) {
         let mut tree = PanelTree::new();
-        let root = tree.create_root("test", std::rc::Weak::new());
+        let root = tree.create_root("test", false);
         (tree, root)
     }
 

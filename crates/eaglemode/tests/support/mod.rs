@@ -96,8 +96,7 @@ impl TestHarness {
 
     /// Run one frame: scheduler time slice → deliver notices → update viewing.
     pub fn tick(&mut self) {
-        let mut windows: HashMap<WindowId, std::rc::Rc<std::cell::RefCell<emWindow>>> =
-            HashMap::new();
+        let mut windows: HashMap<WindowId, emWindow> = HashMap::new();
         let mut __fw: Vec<_> = Vec::new();
         self.scheduler
             .DoTimeSlice(&mut self.tree, &mut windows, &self.root_context, &mut __fw);

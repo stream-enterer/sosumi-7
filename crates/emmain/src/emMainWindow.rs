@@ -116,8 +116,7 @@ impl emMainWindow {
 
     /// Port of C++ `emMainWindow::ToggleFullscreen`.
     pub fn ToggleFullscreen(&self, app: &mut App) {
-        if let Some(rc) = self.window_id.and_then(|id| app.windows.get(&id)) {
-            let mut win = rc.borrow_mut();
+        if let Some(win) = self.window_id.and_then(|id| app.windows.get_mut(&id)) {
             let new_flags = win.flags ^ WindowFlags::FULLSCREEN;
             win.SetWindowFlags(new_flags);
         }
@@ -161,9 +160,8 @@ impl emMainWindow {
     pub fn GetTitle(&self, app: &App) -> String {
         if self.main_panel_id.is_some()
             && self.startup_engine_id.is_none()
-            && let Some(rc) = self.window_id.and_then(|id| app.windows.get(&id))
+            && let Some(win) = self.window_id.and_then(|id| app.windows.get(&id))
         {
-            let win = rc.borrow();
             let view = win.view();
             let title = view.GetTitle();
             if !title.is_empty() {
@@ -181,8 +179,7 @@ impl emMainWindow {
     pub fn Duplicate(&self, app: &mut App) {
         // Extract visit info from the current window's view (C++ emMainWindow.cpp:112-117).
         let (visit_identity, rel_x, rel_y, rel_a, adherent) =
-            if let Some(rc) = self.window_id.and_then(|id| app.windows.get(&id)) {
-                let win = rc.borrow();
+            if let Some(win) = self.window_id.and_then(|id| app.windows.get(&id)) {
                 let view = win.view();
                 let mut rel_x = 0.0;
                 let mut rel_y = 0.0;
@@ -358,9 +355,8 @@ impl emEngine for MainWindowEngine {
         if let Some(title_sig) = self.title_signal
             && ctx.IsSignaled(title_sig)
             && let Some(wid) = self.window_id
-            && let Some(rc) = ctx.windows.get(&wid)
+            && let Some(win) = ctx.windows.get(&wid)
         {
-            let win = rc.borrow();
             let view = win.view();
             let view_title = view.GetTitle();
             let title = if view_title.is_empty() {
@@ -776,7 +772,7 @@ pub fn create_main_window(
     // Create root panel in the tree. View is not yet constructed (emWindow::create
     // happens below); wire the Weak back after the window is inserted.
     let panel = emMainPanel::new(Rc::clone(&app.context), mw.config.control_tallness);
-    let root_id = app.tree.create_root("root", std::rc::Weak::new());
+    let root_id = app.tree.create_root("root", false);
     app.tree.set_behavior(root_id, Box::new(panel));
     mw.main_panel_id = Some(root_id);
 
@@ -858,15 +854,12 @@ pub fn create_main_window(
         focus_signal,
         geometry_signal,
     );
-    let window_id = window.borrow().winit_window().id();
+    let window_id = window.winit_window().id();
     app.windows.insert(window_id, window);
     mw.window_id = Some(window_id);
 
-    // Wire the owning view's Weak onto the root panel now that the window exists.
-    if let Some(rc) = app.windows.get(&window_id) {
-        let view_weak = Rc::downgrade(rc.borrow().view_rc());
-        app.tree.init_panel_view(root_id, view_weak, None);
-    }
+    // Mark the root panel as view-owned now that the window exists.
+    app.tree.init_panel_view(root_id, None);
 
     // Acquire bookmarks model.
     mw.bookmarks_model = Some(emBookmarksModel::Acquire(&app.context));
@@ -883,8 +876,8 @@ pub fn create_main_window(
     // Register MainWindowEngine — wakes only on signals, no wake_up call
     // (C++ emMainWindow::Cycle, emMainWindow.cpp:174-190).
     let title_signal = app.scheduler.create_signal();
-    if let Some(rc) = app.windows.get(&window_id) {
-        rc.borrow_mut().view_mut().set_title_signal(title_signal);
+    if let Some(win) = app.windows.get_mut(&window_id) {
+        win.view_mut().set_title_signal(title_signal);
     }
     let mw_engine = MainWindowEngine {
         close_signal,
@@ -903,27 +896,29 @@ pub fn create_main_window(
     // The bridge reacts to control panel signal (active panel changes) and
     // will update the content control panel in the control sub-view.
     let cp_signal = app.scheduler.create_signal();
-    if let Some(rc) = app.windows.get(&window_id).cloned() {
-        let mut win = rc.borrow_mut();
-        let view_weak = Rc::downgrade(win.view_rc());
-        {
-            let mut v = win.view_mut();
-            let root_ctx = v.GetRootContext();
-            let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
-            let mut sc = emcore::emEngineCtx::SchedCtx {
-                scheduler: &mut app.scheduler,
-                framework_actions: &mut fw,
-                root_context: &root_ctx,
-                current_engine: None,
-            };
-            v.RegisterEngines(
-                &mut sc,
-                &mut app.tree,
-                view_weak,
-                emcore::emEngine::TreeLocation::Outer,
-            );
+    {
+        let App {
+            ref mut scheduler,
+            ref mut tree,
+            ref mut windows,
+            ..
+        } = *app;
+        if let Some(win) = windows.get_mut(&window_id) {
+            let scope = emcore::emPanelScope::PanelScope::Toplevel(window_id);
+            {
+                let v = win.view_mut();
+                let root_ctx = v.GetRootContext();
+                let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+                let mut sc = emcore::emEngineCtx::SchedCtx {
+                    scheduler,
+                    framework_actions: &mut fw,
+                    root_context: &root_ctx,
+                    current_engine: None,
+                };
+                v.RegisterEngines(&mut sc, tree, scope, emcore::emEngine::TreeLocation::Outer);
+            }
+            win.view_mut().set_control_panel_signal(cp_signal);
         }
-        win.view_mut().set_control_panel_signal(cp_signal);
     }
     // Phase 1.75 Task 5 (continuation): RegisterEngines now registers any
     // pre-existing panels' adapters inline via tree.register_engine_for_public,
@@ -969,8 +964,8 @@ pub fn create_main_window(
             ..
         } = *app;
         let screen = screen.as_ref().expect("Screen not initialized");
-        if let Some(rc) = windows.get(&window_id) {
-            saver.Restore(&mut rc.borrow_mut(), screen);
+        if let Some(win) = windows.get_mut(&window_id) {
+            saver.Restore(win, screen);
         }
 
         let saver_id =
@@ -1001,8 +996,8 @@ pub fn create_control_window(
     // C++ emMainWindow.cpp:311-313: If ControlWindow exists, raise it.
     let existing_id = with_main_window(|mw| mw.control_window_id).flatten();
     if let Some(cw_id) = existing_id {
-        if let Some(rc) = app.windows.get(&cw_id) {
-            rc.borrow().winit_window().focus_window();
+        if let Some(win) = app.windows.get(&cw_id) {
+            win.winit_window().focus_window();
             return Some(cw_id);
         }
         // Window was closed/removed — clear stale ID.
@@ -1022,9 +1017,7 @@ pub fn create_control_window(
 
     let ctrl_panel = emMainControlPanel::new(Rc::clone(&app.context), content_view_id);
     // View wire-back: root is created before the window, so start with empty Weak.
-    let root_id = app
-        .tree
-        .create_root("ctrl_window_root", std::rc::Weak::new());
+    let root_id = app.tree.create_root("ctrl_window_root", false);
     app.tree.set_behavior(root_id, Box::new(ctrl_panel));
 
     let flags = WindowFlags::AUTO_DELETE;
@@ -1044,14 +1037,11 @@ pub fn create_control_window(
         focus_signal,
         geometry_signal,
     );
-    let window_id = window.borrow().winit_window().id();
+    let window_id = window.winit_window().id();
     app.windows.insert(window_id, window);
 
-    // Wire the owning view's Weak onto the root panel now that the window exists.
-    if let Some(rc) = app.windows.get(&window_id) {
-        let view_weak = Rc::downgrade(rc.borrow().view_rc());
-        app.tree.init_panel_view(root_id, view_weak, None);
-    }
+    // Mark the root panel as view-owned now that the window exists.
+    app.tree.init_panel_view(root_id, None);
 
     // Store the control window ID for raise-if-existing logic.
     with_main_window(|mw| {
@@ -1121,7 +1111,7 @@ fn RecreateContentPanels(app: &mut App) {
             // the Visit call afterward.
             let title = sv.GetTitle().to_string();
             let adherent = sv.IsActivationAdherent();
-            drop(sv);
+            let _ = sv;
 
             // Delete old content panel(s) — remove all children of sub-tree root
             // (C++ emMainWindow.cpp:302).

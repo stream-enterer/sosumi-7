@@ -119,8 +119,7 @@ impl PipelineTestHarness {
     /// `ctx.windows`) cannot advance the animator — the harness pumps it
     /// directly to observe post-convergence active-panel state.
     pub fn tick(&mut self) {
-        let mut windows: HashMap<WindowId, std::rc::Rc<std::cell::RefCell<emWindow>>> =
-            HashMap::new();
+        let mut windows: HashMap<WindowId, emWindow> = HashMap::new();
         let mut __fw: Vec<_> = Vec::new();
         self.scheduler
             .DoTimeSlice(&mut self.tree, &mut windows, &self.root_context, &mut __fw);

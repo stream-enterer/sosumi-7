@@ -1277,7 +1277,7 @@ mod tests {
         let state = PanelState::default_for_test();
         let input_state = emInputState::default();
         let mut tree = emcore::emPanelTree::PanelTree::new();
-        let root = tree.create_root("test", std::rc::Weak::new());
+        let root = tree.create_root("test", false);
         let mut pctx = PanelCtx::new(&mut tree, root, 1.0);
         panel.Input(&press_event, &state, &input_state, &mut pctx);
         assert!(panel.pressed);
@@ -1303,7 +1303,7 @@ mod tests {
         let state = PanelState::default_for_test();
         let input_state = emInputState::default();
         let mut tree = emcore::emPanelTree::PanelTree::new();
-        let root = tree.create_root("test", std::rc::Weak::new());
+        let root = tree.create_root("test", false);
         let mut pctx = PanelCtx::new(&mut tree, root, 1.0);
         panel.Input(&press_event, &state, &input_state, &mut pctx);
         assert!(panel.pressed);

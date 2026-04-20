@@ -1,16 +1,15 @@
 // RUST_ONLY: test harness for Phase 1.5 keystone migration.
 //
 // Bundles `EngineScheduler`, `Vec<DeferredAction>`, `Rc<emContext>`,
-// `PanelTree`, and `HashMap<WindowId, Rc<RefCell<emWindow>>>` so unit
-// tests can construct the four ctx types (`EngineCtx`, `SchedCtx`,
-// `InitCtx`) without duplicating setup across ~150 test sites.
+// `PanelTree`, and `HashMap<WindowId, emWindow>` so unit tests can
+// construct the four ctx types (`EngineCtx`, `SchedCtx`, `InitCtx`)
+// without duplicating setup across ~150 test sites.
 //
 // Introduced by Phase 1.5 Task 1 step 1a. Consumed by step 1h's test
 // rewire pass.
 
 #![cfg(any(test, feature = "test-support"))]
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -30,7 +29,7 @@ pub struct TestViewHarness {
     pub framework_actions: Vec<DeferredAction>,
     pub root_context: Rc<emContext>,
     pub tree: PanelTree,
-    pub windows: HashMap<WindowId, Rc<RefCell<emWindow>>>,
+    pub windows: HashMap<WindowId, emWindow>,
 }
 
 impl Default for TestViewHarness {

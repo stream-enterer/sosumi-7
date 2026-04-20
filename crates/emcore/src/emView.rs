@@ -181,33 +181,60 @@ impl StressTest {
 /// Scheduler-driven engine that calls `emView::Update` once per slice.
 ///
 /// Ported from C++ `emView::UpdateEngineClass` (inner class of `emView`,
-/// holds direct pointer to view). Rust holds `Weak<RefCell<emView>>` since
-/// `emView` lives in `Rc<RefCell<>>`.
+/// holds direct pointer to view). Phase 2 Task 7 (keystone): Rust now
+/// identifies the owning view by `PanelScope` (top-level `WindowId` or
+/// sub-view outer-panel id) and resolves through `EngineCtx::windows` /
+/// `ctx.tree` at Cycle time, since `emView` is no longer in
+/// `Rc<RefCell<>>`.
 pub struct UpdateEngineClass {
-    pub view: std::rc::Weak<std::cell::RefCell<emView>>,
+    pub scope: crate::emPanelScope::PanelScope,
 }
 
 impl UpdateEngineClass {
-    pub fn new(view: std::rc::Weak<std::cell::RefCell<emView>>) -> Self {
-        Self { view }
+    pub fn new(scope: crate::emPanelScope::PanelScope) -> Self {
+        Self { scope }
     }
 }
 
 impl super::emEngine::emEngine for UpdateEngineClass {
     fn Cycle(&mut self, ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
-        let Some(view_rc) = self.view.upgrade() else {
-            return false;
-        };
-        let mut view = view_rc.borrow_mut();
+        let scope = self.scope;
         let engine_id = ctx.engine_id;
-        let mut sc = crate::emEngineCtx::SchedCtx {
-            scheduler: ctx.scheduler,
-            framework_actions: ctx.framework_actions,
-            root_context: ctx.root_context,
-            current_engine: Some(engine_id),
-        };
-        view.Update(ctx.tree, &mut sc);
-        false
+        match scope {
+            crate::emPanelScope::PanelScope::Toplevel(wid) => {
+                let Some(window) = ctx.windows.get_mut(&wid) else {
+                    return false;
+                };
+                let mut sc = crate::emEngineCtx::SchedCtx {
+                    scheduler: ctx.scheduler,
+                    framework_actions: ctx.framework_actions,
+                    root_context: ctx.root_context,
+                    current_engine: Some(engine_id),
+                };
+                window.view.Update(ctx.tree, &mut sc);
+                false
+            }
+            crate::emPanelScope::PanelScope::SubView(pid) => {
+                let Some(svp) = ctx
+                    .tree
+                    .panels
+                    .get_mut(pid)
+                    .and_then(|p| p.behavior.as_mut())
+                    .and_then(|b| b.as_sub_view_panel_mut())
+                else {
+                    return false;
+                };
+                let mut sc = crate::emEngineCtx::SchedCtx {
+                    scheduler: ctx.scheduler,
+                    framework_actions: ctx.framework_actions,
+                    root_context: ctx.root_context,
+                    current_engine: Some(engine_id),
+                };
+                let (sub_view, sub_tree) = svp.sub_view_and_tree_mut();
+                sub_view.Update(sub_tree, &mut sc);
+                false
+            }
+        }
     }
 }
 
@@ -223,14 +250,14 @@ impl super::emEngine::emEngine for UpdateEngineClass {
 /// animator is active — forwards to `emVisitingViewAnimator::animate`,
 /// which corresponds to C++ `CycleAnimation` (emViewAnimator.cpp:1194).
 pub struct VisitingVAEngineClass {
-    pub view: std::rc::Weak<std::cell::RefCell<emView>>,
+    pub scope: crate::emPanelScope::PanelScope,
     last_cycle: Option<Instant>,
 }
 
 impl VisitingVAEngineClass {
-    pub fn new(view: std::rc::Weak<std::cell::RefCell<emView>>) -> Self {
+    pub fn new(scope: crate::emPanelScope::PanelScope) -> Self {
         Self {
-            view,
+            scope,
             last_cycle: None,
         }
     }
@@ -246,25 +273,53 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
             .clamp(0.001, 0.1);
         self.last_cycle = Some(now);
 
-        let Some(view_rc) = self.view.upgrade() else {
-            return false;
-        };
-        let mut view = view_rc.borrow_mut();
-        let va_rc = Rc::clone(&view.VisitingVA);
-        let mut va = va_rc.borrow_mut();
-        if !va.is_active() {
-            return false;
-        }
         use super::emViewAnimator::emViewAnimator as _;
-        // Build SchedCtx using disjoint field borrows (ctx.tree is borrowed separately above).
+        let scope = self.scope;
         let engine_id = ctx.engine_id;
-        let mut sc = crate::emEngineCtx::SchedCtx {
-            scheduler: ctx.scheduler,
-            framework_actions: ctx.framework_actions,
-            root_context: ctx.root_context,
-            current_engine: Some(engine_id),
-        };
-        va.animate(&mut view, ctx.tree, dt, &mut sc)
+        match scope {
+            crate::emPanelScope::PanelScope::Toplevel(wid) => {
+                let Some(window) = ctx.windows.get_mut(&wid) else {
+                    return false;
+                };
+                let view = &mut window.view;
+                let va_rc = Rc::clone(&view.VisitingVA);
+                let mut va = va_rc.borrow_mut();
+                if !va.is_active() {
+                    return false;
+                }
+                let mut sc = crate::emEngineCtx::SchedCtx {
+                    scheduler: ctx.scheduler,
+                    framework_actions: ctx.framework_actions,
+                    root_context: ctx.root_context,
+                    current_engine: Some(engine_id),
+                };
+                va.animate(view, ctx.tree, dt, &mut sc)
+            }
+            crate::emPanelScope::PanelScope::SubView(pid) => {
+                let Some(svp) = ctx
+                    .tree
+                    .panels
+                    .get_mut(pid)
+                    .and_then(|p| p.behavior.as_mut())
+                    .and_then(|b| b.as_sub_view_panel_mut())
+                else {
+                    return false;
+                };
+                let (sub_view, sub_tree) = svp.sub_view_and_tree_mut();
+                let va_rc = Rc::clone(&sub_view.VisitingVA);
+                let mut va = va_rc.borrow_mut();
+                if !va.is_active() {
+                    return false;
+                }
+                let mut sc = crate::emEngineCtx::SchedCtx {
+                    scheduler: ctx.scheduler,
+                    framework_actions: ctx.framework_actions,
+                    root_context: ctx.root_context,
+                    current_engine: Some(engine_id),
+                };
+                va.animate(sub_view, sub_tree, dt, &mut sc)
+            }
+        }
     }
 }
 
@@ -460,7 +515,32 @@ pub struct emView {
     // === C++ popup infrastructure (emView.h:708-713) ===
     /// C++ PopupWindow — owned handle to the popup window created when
     /// zooming past the home-rect edges under VF_POPUP_ZOOM.
-    pub PopupWindow: Option<Rc<RefCell<crate::emWindow::emWindow>>>,
+    ///
+    /// Task-8 Path B: matches C++ ownership exactly (emView.h:670
+    /// `emWindow * PopupWindow`; allocated in emView.cpp:1636). The popup
+    /// is owned by the launching `emView` for its entire lifetime;
+    /// `App::windows` deliberately does NOT hold a copy. Winit events
+    /// destined for the popup's `WindowId` are routed by
+    /// `App::find_window_mut`, which scans parent views' `PopupWindow`
+    /// handles — the forced Rust-side adaptation for winit's single
+    /// `ApplicationHandler` dispatch model. C++ has no registry because
+    /// the backend dispatches OS events to each `emWindow` via its own
+    /// callback registration.
+    // DIVERGED (Phase 2 Task 2): Box<emWindow> instead of emWindow. Now
+    // that emWindow::view is a plain emView (not Rc<RefCell>), storing
+    // emWindow inline here would create infinite-sized recursion
+    // (emView -> emWindow -> emView). Box breaks the cycle. This is a
+    // forced Rust divergence: C++ stores a raw `emWindow*` (heap-allocated
+    // pointer), so Box preserves the "heap-allocated, optionally-present"
+    // shape of the C++ field exactly.
+    pub PopupWindow: Option<Box<crate::emWindow::emWindow>>,
+    /// DIVERGED: no C++ analogue — C++ reads the close-signal directly off
+    /// `PopupWindow->GetCloseSignal()`. Rust mirrors it here so that
+    /// `Update`'s close-signal probe and `RawVisitAbs` teardown avoid
+    /// borrowing `PopupWindow: Option<emWindow>` (which would conflict with
+    /// the enclosing `&mut emView`). Kept in sync with the popup at
+    /// insertion (RawVisitAbs) and teardown.
+    pub PopupCloseSignal: Option<super::emSignal::SignalId>,
     /// C++ HomeViewPort — the view-port that connects the emView to its
     /// *home* window (the original non-popup window).
     pub HomeViewPort: Rc<RefCell<super::emViewPort::emViewPort>>,
@@ -481,6 +561,24 @@ pub struct emView {
     /// Acquired at construction (`emView.cpp:35`).
     pub CoreConfig:
         Rc<RefCell<crate::emConfigModel::emConfigModel<crate::emCoreConfig::emCoreConfig>>>,
+
+    // === C++ emView::NoticeList (emView.h:707) ===
+    /// Head of the notice-delivery ring.
+    ///
+    /// 1:1 with C++ `emView::NoticeList` (emView.h:707).  C++ uses a
+    /// `PanelRingNode NoticeList` sentinel node whose `Next`/`Prev` form a
+    /// circular doubly-linked list.  Rust replaces the sentinel with two
+    /// `Option<PanelId>` fields pointing at the first and last queued
+    /// panels; per-panel ring linkage (`notice_prev/next_in_ring`) stays on
+    /// `PanelData` in `PanelTree`.
+    ///
+    /// DIVERGED: data structure only (*idiom adaptation*, below the observable
+    /// surface).  `Option<PanelId>` arena-index vs `PanelRingNode*` sentinel;
+    /// no raw-pointer arithmetic.  Dispatch driver (per-view, per-view
+    /// `CurrentPixelTallness`) matches C++ exactly.
+    pub(crate) notice_ring_head_next: Option<PanelId>,
+    /// Tail of the notice-delivery ring.  See `notice_ring_head_next`.
+    pub(crate) notice_ring_head_prev: Option<PanelId>,
 
     // DIVERGED: C++ `class emView : public emContext` — Rust has no
     // inheritance; store the context by composition. `GetContext` /
@@ -567,6 +665,7 @@ impl emView {
             geometry_signal: None,
 
             PopupWindow: None,
+            PopupCloseSignal: None,
             HomeViewPort: home_vp,
             CurrentViewPort: current_vp,
             DummyViewPort: Rc::new(RefCell::new(super::emViewPort::emViewPort::new_dummy())),
@@ -575,6 +674,8 @@ impl emView {
             )),
             CoreConfig,
             Context,
+            notice_ring_head_next: None,
+            notice_ring_head_prev: None,
         }
     }
 
@@ -1048,12 +1149,31 @@ impl emView {
             self.HomeWidth = width;
             self.HomeHeight = height;
             self.HomePixelTallness = pixel_tallness;
+            // Keep port home geometry in sync so SwapViewPorts reads the
+            // correct values. C++ emView.cpp:1986-1990 reads geometry as
+            // `CurrentViewPort->HomeView->HomeX` etc., resolving through the
+            // `HomeView*` back-reference. Rust stores geometry directly on
+            // the port; we mirror the view's Home* onto the HomeViewPort here
+            // so that after a swap, the peer view reads the right geometry
+            // from the exchanged port.
+            {
+                let mut vp = self.HomeViewPort.borrow_mut();
+                vp.home_x = x;
+                vp.home_y = y;
+                vp.home_width = width;
+                vp.home_height = height;
+                vp.home_pixel_tallness = pixel_tallness;
+            }
         }
         self.CurrentX = x;
         self.CurrentY = y;
         self.CurrentWidth = width;
         self.CurrentHeight = height;
         self.CurrentPixelTallness = pixel_tallness;
+        // Phase 2 Task 7: mirror tallness onto the panel tree so
+        // `PanelCycleEngine::Cycle` can read it without resolving back to
+        // the view (which requires WindowId lookup).
+        tree.cached_pixel_tallness = pixel_tallness;
 
         // C++ Signal(GeometrySignal).
         if let Some(sig) = self.geometry_signal {
@@ -1822,7 +1942,8 @@ impl emView {
                         geom_sig,
                         self.background_color,
                     );
-                    self.PopupWindow = Some(popup.clone());
+                    self.PopupWindow = Some(Box::new(popup));
+                    self.PopupCloseSignal = Some(close_sig);
                     // C++ (emView.cpp:1644): UpdateEngine->AddWakeUpSignal(PopupWindow->GetCloseSignal())
                     if let Some(eng_id) = self.update_engine_id {
                         ctx.connect(close_sig, eng_id);
@@ -1830,18 +1951,25 @@ impl emView {
                     // C++ (emView.cpp:1644): SwapViewPorts(true)
                     self.SwapViewPorts(true, ctx);
                     // C++ (emView.cpp:1645): if (wasFocused && !Focused) CurrentViewPort->RequestFocus()
+                    // C++ RequestFocus → SetViewFocused(true) → CurrentView->SetFocused(true).
+                    // Rust calls SetFocused directly (port has no view back-reference).
                     if was_focused && !self.window_focused {
-                        self.CurrentViewPort.borrow_mut().RequestFocus();
+                        self.SetFocused(tree, true);
                     }
                     // Enqueue OS-surface materialization. Drained by
                     // `App::about_to_wait` on the next tick. If the popup
                     // is torn down before the drain (same-frame exit),
-                    // `materialize_popup_surface` detects `strong_count == 1`
-                    // and skips creation.
+                    // `materialize_popup_surface` observes no Pending popup
+                    // in any view and skips creation (natural cancellation).
+                    //
+                    // DIVERGED (Phase-2 port-ownership-rewrite): the popup
+                    // `emWindow` is owned by `emView::PopupWindow` rather
+                    // than by the closure (plain values can't be split
+                    // between two owners). The framework-side materializer
+                    // walks `App::windows` to find the Pending popup.
                     if let Some(fw_actions) = self.pending_framework_actions.as_ref() {
-                        let popup_for_closure = popup;
                         fw_actions.borrow_mut().push(Box::new(move |fw, el| {
-                            fw.materialize_popup_surface(popup_for_closure, el);
+                            fw.materialize_pending_popup(el);
                         }));
                     }
                 }
@@ -1892,8 +2020,8 @@ impl emView {
                     || (y2 - self.CurrentY - self.CurrentHeight).abs() > 0.01
                 {
                     self.SwapViewPorts(false, ctx);
-                    if let Some(ref w) = self.PopupWindow {
-                        w.borrow_mut().SetViewPosSize(x1, y1, x2 - x1, y2 - y1);
+                    if let Some(ref mut w) = self.PopupWindow {
+                        w.SetViewPosSize(x1, y1, x2 - x1, y2 - y1);
                     }
                     self.SwapViewPorts(false, ctx);
                     forceViewingUpdate = true;
@@ -1903,35 +2031,20 @@ impl emView {
                 self.SwapViewPorts(true, ctx);
                 // Disconnect + remove the popup's close signal (allocated on
                 // popup creation above) so the scheduler doesn't leak it.
-                // Also enqueue a framework-side cleanup closure to drop the
-                // materialized popup window from `App::windows` so the
-                // winit/wgpu surface is released.
-                let popup = self
+                // The popup `emWindow` is dropped here (the `Option::take`
+                // below moves it out of `self.PopupWindow` and the binding
+                // goes out of scope). Since Phase-2 port-ownership-rewrite
+                // the popup lives only in `emView::PopupWindow` (never in
+                // `App::windows`), so no framework-side removal is needed.
+                let _popup = self
                     .PopupWindow
                     .take()
                     .expect("PopupWindow.is_some() checked above");
-                if let Some(eng_id) = self.update_engine_id {
-                    let close_sig = popup.borrow().close_signal;
-                    ctx.disconnect(close_sig, eng_id);
+                if let Some(close_sig) = self.PopupCloseSignal.take() {
+                    if let Some(eng_id) = self.update_engine_id {
+                        ctx.disconnect(close_sig, eng_id);
+                    }
                     ctx.remove_signal(close_sig);
-                }
-                let materialized_id = popup
-                    .borrow()
-                    .winit_window_if_materialized()
-                    .map(|w| w.id());
-                // Race window: `close_signal` is removed above synchronously,
-                // but `App.windows.remove(&window_id)` is deferred to the next
-                // `about_to_wait` drain. If a winit event (e.g. CloseRequested
-                // from the WM) arrives in that gap, `App::window_event` will
-                // call `scheduler.fire(close_signal)` on the already-removed
-                // signal. This is safe: `emScheduler::fire` is defensive and
-                // treats a lookup miss as a no-op (see its docstring).
-                if let (Some(window_id), Some(fw_actions)) =
-                    (materialized_id, self.pending_framework_actions.as_ref())
-                {
-                    fw_actions.borrow_mut().push(Box::new(move |fw, _el| {
-                        fw.windows.remove(&window_id);
-                    }));
                 }
                 // GeometrySignal fires twice on popup teardown (both intentional):
                 // once from SwapViewPorts(true) above (Rust-only: the Rust
@@ -2385,9 +2498,8 @@ impl emView {
         // just calls View.Update() and Update itself calls IsSignaled on the close signal.
         // Here ctx.IsSignaled uses current_engine (set by UpdateEngineClass::Cycle).
         let popup_closed = self
-            .PopupWindow
-            .as_ref()
-            .map(|p| ctx.IsSignaled(p.borrow().close_signal))
+            .PopupCloseSignal
+            .map(|s| ctx.IsSignaled(s))
             .unwrap_or(false);
         if popup_closed {
             self.ZoomOut(tree, ctx);
@@ -3109,26 +3221,26 @@ impl emView {
         &mut self,
         ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
         tree: &mut PanelTree,
-        self_view_weak: std::rc::Weak<std::cell::RefCell<emView>>,
+        scope: crate::emPanelScope::PanelScope,
         tree_location: super::emEngine::TreeLocation,
     ) {
         let engine_id = ctx.scheduler.register_engine(
-            Box::new(UpdateEngineClass::new(self_view_weak.clone())),
+            Box::new(UpdateEngineClass::new(scope)),
             super::emEngine::Priority::High,
             tree_location.clone(),
         );
         let eoi_signal = ctx.scheduler.create_signal();
         // C++ emViewAnimator base ctor sets HIGH_PRIORITY (emViewAnimator.cpp:39).
         let visiting_va_engine_id = ctx.scheduler.register_engine(
-            Box::new(VisitingVAEngineClass::new(self_view_weak)),
+            Box::new(VisitingVAEngineClass::new(scope)),
             super::emEngine::Priority::High,
             tree_location,
         );
         self.update_engine_id = Some(engine_id);
         self.EOISignal = Some(eoi_signal);
         self.visiting_va_engine_id = Some(visiting_va_engine_id);
-        // Phase 1.75 Task 5 (continuation): cache on the tree so
-        // `add_to_notice_list` can wake without borrowing the view.
+        // Cache engine_id on the tree so `add_to_notice_list` can wake the
+        // engine without needing a view reference.
         tree.set_update_engine_id(Some(engine_id));
         // Register any panels that were created before the scheduler existed
         // (e.g. deferred-view test roots, sub-view roots created pre-register).
@@ -3288,25 +3400,42 @@ impl emView {
 
     /// Port of C++ `emView::SwapViewPorts(bool swapFocus)` (emView.cpp:1974).
     ///
-    /// Swaps the view's `HomeViewPort` and `CurrentViewPort`. Called by the
-    /// popup branch in `RawVisitAbs` to exchange the home-window port with
-    /// the popup-window port.
+    /// Exchanges `CurrentViewPort` between `this` and `PopupWindow`, then
+    /// updates both views' `Current*` geometry fields from the swapped ports.
+    /// Called by the popup branch in `RawVisitAbs` to exchange the home-window
+    /// port with the popup-window port.
     ///
-    /// DIVERGED: C++ swaps raw pointers between `this` and `PopupWindow`,
-    /// then updates `CurrentX/Y/Width/Height/PixelTallness` from the new
-    /// `CurrentViewPort->HomeView->Home*` fields. Phase 4 approximates this
-    /// by reading the geometry from the exchanged `emViewPort` directly
-    /// (since the stub port stores home_* instead of a HomeView back-ref).
+    /// Shape: Path B — parent view owns `PopupWindow: Option<Box<emWindow>>`.
+    /// No cross-`HashMap` lookup; the swap is between two fields of `this`
+    /// (`self.CurrentViewPort`) and `self.PopupWindow.view.CurrentViewPort`.
+    /// `HashMap::get_disjoint_mut` is not applicable here; both targets live
+    /// under a single `&mut emView` borrow.
+    ///
+    /// DIVERGED: C++ stores `HomeView*` back-refs on `emViewPort` and reads
+    /// geometry as `CurrentViewPort->HomeView->HomeX` etc. Rust stores the
+    /// geometry directly on the port (`home_x`, `home_y`, `home_width`,
+    /// `home_height`, `home_pixel_tallness`) to avoid re-entrancy: the
+    /// `upgrade().borrow()` path cannot run while `emView` is borrowed_mut,
+    /// which is the common case during `SetGeometry` and `SwapViewPorts`.
+    /// `SetGeometry` keeps `home_pixel_tallness` on the `HomeViewPort` in
+    /// sync so the swap reads the correct value.
+    ///
+    /// DIVERGED: C++ `emViewPort::CurrentView` pointers (emView.cpp:1984-1985)
+    /// are updated to point to the new owning view after the swap. Rust does
+    /// not have `CurrentView` on `emViewPort` (it uses `WindowId` instead);
+    /// this per-port update is not needed.
     pub fn SwapViewPorts(&mut self, swap_focus: bool, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
-        // Swap the popup window's current_view_port with our CurrentViewPort.
-        // This mirrors C++:
-        //   vp = PopupWindow->CurrentViewPort;
-        //   PopupWindow->CurrentViewPort = CurrentViewPort;
+        // C++ (emView.cpp:1980-1985):
+        //   w = PopupWindow;
+        //   vp = w->CurrentViewPort;
+        //   w->CurrentViewPort = CurrentViewPort;
         //   CurrentViewPort = vp;
-        if let Some(ref popup) = self.PopupWindow {
-            let popup_vp = Rc::clone(&popup.borrow().view().CurrentViewPort);
+        //   CurrentViewPort->CurrentView = this;    // (no Rust equivalent)
+        //   w->CurrentViewPort->CurrentView = w;    // (no Rust equivalent)
+        if let Some(popup) = self.PopupWindow.as_mut() {
+            let popup_vp = Rc::clone(&popup.view().CurrentViewPort);
             let our_vp = Rc::clone(&self.CurrentViewPort);
-            popup.borrow_mut().view_mut().CurrentViewPort = our_vp;
+            popup.view_mut().CurrentViewPort = our_vp;
             self.CurrentViewPort = popup_vp;
         } else {
             // Fallback if no popup exists: swap Home and Current (no-op for
@@ -3314,33 +3443,60 @@ impl emView {
             std::mem::swap(&mut self.HomeViewPort, &mut self.CurrentViewPort);
         }
 
-        // Update Current* from the new CurrentViewPort's stored geometry.
-        // C++ (emView.cpp:1984-1989):
+        // C++ (emView.cpp:1986-1990): update this view's Current* from the
+        // newly acquired CurrentViewPort's stored geometry.
         //   CurrentX = CurrentViewPort->HomeView->HomeX;  etc.
+        // `home_pixel_tallness` mirrors `HomeView->HomePixelTallness`; kept in
+        // sync by `SetGeometry` whenever `is_home` is true.
         {
             let vp = self.CurrentViewPort.borrow();
             self.CurrentX = vp.home_x;
             self.CurrentY = vp.home_y;
             self.CurrentWidth = vp.home_width;
             self.CurrentHeight = vp.home_height;
-            self.CurrentPixelTallness = self.HomePixelTallness;
+            self.CurrentPixelTallness = vp.home_pixel_tallness;
+        }
+
+        // C++ (emView.cpp:1991-1995): update popup view's Current* from its
+        // newly acquired CurrentViewPort's stored geometry.
+        //   w->CurrentX = w->CurrentViewPort->HomeView->HomeX;  etc.
+        if let Some(ref mut popup) = self.PopupWindow {
+            let vp = popup.view().CurrentViewPort.borrow();
+            let (cx, cy, cw, ch, cpt) = (
+                vp.home_x,
+                vp.home_y,
+                vp.home_width,
+                vp.home_height,
+                vp.home_pixel_tallness,
+            );
+            drop(vp);
+            let pv = popup.view_mut();
+            pv.CurrentX = cx;
+            pv.CurrentY = cy;
+            pv.CurrentWidth = cw;
+            pv.CurrentHeight = ch;
+            pv.CurrentPixelTallness = cpt;
         }
 
         if swap_focus {
-            // C++ (emView.cpp:1990-1994):
+            // C++ (emView.cpp:1996-2000):
             //   fcs = Focused; SetFocused(w->Focused); w->SetFocused(fcs);
-            // Phase 4: transfer focus between ports; emView::window_focused
-            // is NOT changed here because no PanelTree is available and focus
-            // notification is a Phase-5 concern.
-            let vp_focus = self.CurrentViewPort.borrow().is_focused();
-            self.CurrentViewPort
-                .borrow_mut()
-                .set_focused(self.window_focused);
-            self.HomeViewPort.borrow_mut().set_focused(vp_focus);
+            // Swap window_focused between this view and the popup view.
+            // Full SetFocused (with panel-tree notification) is Phase-5;
+            // for now swap the raw bool so the focus state tracks correctly
+            // across port exchanges.
+            if let Some(ref mut popup) = self.PopupWindow {
+                let popup_focused = popup.view().window_focused;
+                let our_focused = self.window_focused;
+                popup.view_mut().window_focused = our_focused;
+                self.window_focused = popup_focused;
+            }
         }
 
-        // C++ emView.cpp:1995: Signal(GeometrySignal) — viewport swap changes
-        // the current geometry, so wake listeners (e.g. emWindowStateSaver).
+        // C++ emView.cpp fires GeometrySignal inside SetFocused when swapping
+        // focus, and also as a consequence of geometry changes. Rust fires it
+        // unconditionally here (geometry always changes on port swap) to keep
+        // listeners (e.g. emWindowStateSaver) current.
         if let Some(sig) = self.geometry_signal {
             ctx.fire(sig);
         }
@@ -3444,30 +3600,155 @@ impl emView {
         ));
     }
 
+    /// Port of C++ `emView::AddToNoticeList` (emView.cpp:1282–1288).
+    ///
+    /// Links `id` into the notice ring at the tail.  Must be called with
+    /// `&mut self` (emView) so it can update `notice_ring_head_*`.
+    /// Tree-internal paths that lack an `emView` reference call
+    /// `tree.add_to_notice_list(id, sched)` instead, which sets the
+    /// `has_pending_notices` flag; the safety-net scan in `HandleNotice`
+    /// then enrols those panels before draining.
+    pub fn AddToNoticeList(&mut self, id: PanelId, tree: &mut PanelTree) {
+        // Already linked?
+        {
+            let p = &tree.panels[id];
+            if p.notice_prev_in_ring.is_some() || p.notice_next_in_ring.is_some() {
+                return;
+            }
+            if self.notice_ring_head_next == Some(id) {
+                return;
+            }
+        }
+        match self.notice_ring_head_prev {
+            Some(old_tail) => {
+                tree.panels[old_tail].notice_next_in_ring = Some(id);
+                tree.panels[id].notice_prev_in_ring = Some(old_tail);
+                tree.panels[id].notice_next_in_ring = None;
+                self.notice_ring_head_prev = Some(id);
+            }
+            None => {
+                tree.panels[id].notice_prev_in_ring = None;
+                tree.panels[id].notice_next_in_ring = None;
+                self.notice_ring_head_next = Some(id);
+                self.notice_ring_head_prev = Some(id);
+            }
+        }
+        // C++ emView::AddToNoticeList (emView.cpp:1288) calls UpdateEngine->WakeUp().
+        // Callers of this method that have a scheduler (e.g. external triggers)
+        // should also call tree.add_to_notice_list(id, sched) to deliver the
+        // wake-up, or wake the engine directly.  HandleNotice's own call sites
+        // do not need a wake because the engine is already cycling.
+    }
+
+    /// Unlink `id` from the notice ring owned by `self`.
+    ///
+    /// Also drains any `pending_ring_cleanup` entries from `tree` (produced
+    /// by `tree.remove_from_notice_list` calls that lacked a view reference).
+    ///
+    /// No-op if `id` is not in the ring.
+    pub(crate) fn remove_from_notice_list(&mut self, id: PanelId, tree: &mut PanelTree) {
+        // Drain tree's pending cleanup first so head/tail are accurate.
+        self.drain_pending_ring_cleanup(tree);
+
+        let (prev, next) = if let Some(p) = tree.panels.get(id) {
+            (p.notice_prev_in_ring, p.notice_next_in_ring)
+        } else {
+            // Panel already removed from arena; check head/tail directly.
+            if self.notice_ring_head_next == Some(id) {
+                // We can't read the panel's next pointer — treat ring as empty.
+                self.notice_ring_head_next = None;
+                self.notice_ring_head_prev = None;
+            }
+            return;
+        };
+        // Not in ring (and not the sole head)?
+        if prev.is_none()
+            && next.is_none()
+            && self.notice_ring_head_next != Some(id)
+            && self.notice_ring_head_prev != Some(id)
+        {
+            return;
+        }
+        match prev {
+            Some(p) => {
+                if tree.panels.contains_key(p) {
+                    tree.panels[p].notice_next_in_ring = next;
+                }
+            }
+            None => self.notice_ring_head_next = next,
+        }
+        match next {
+            Some(n) => {
+                if tree.panels.contains_key(n) {
+                    tree.panels[n].notice_prev_in_ring = prev;
+                }
+            }
+            None => self.notice_ring_head_prev = prev,
+        }
+        if tree.panels.contains_key(id) {
+            tree.panels[id].notice_prev_in_ring = None;
+            tree.panels[id].notice_next_in_ring = None;
+        }
+    }
+
+    /// Drain `tree.pending_ring_cleanup` — entries produced by
+    /// `PanelTree::remove_from_notice_list` when no view was available.
+    /// Each entry is `(prev_snapshot, next_snapshot)` for the removed panel.
+    fn drain_pending_ring_cleanup(&mut self, tree: &mut PanelTree) {
+        let cleanups = std::mem::take(&mut tree.pending_ring_cleanup);
+        for (prev, next) in cleanups {
+            // The panel has already been removed from the arena; we only need
+            // to fix head/tail if the entry was the head or tail.
+            // Head: was prev == None for a real linked node (meaning it was
+            // the first entry, i.e. head).  We advance head to `next`.
+            if prev.is_none() {
+                // This cleanup entry was at the front (no previous node).
+                // If the current head points past a now-deleted slot, advance.
+                if let Some(h) = self.notice_ring_head_next {
+                    if !tree.panels.contains_key(h) {
+                        self.notice_ring_head_next = next;
+                        if self.notice_ring_head_next.is_none() {
+                            self.notice_ring_head_prev = None;
+                        }
+                    }
+                }
+            }
+            // Tail: was next == None for a real linked node (meaning it was
+            // the last entry, i.e. tail).  We retract tail to `prev`.
+            if next.is_none() {
+                if let Some(t) = self.notice_ring_head_prev {
+                    if !tree.panels.contains_key(t) {
+                        self.notice_ring_head_prev = prev;
+                        if self.notice_ring_head_prev.is_none() {
+                            self.notice_ring_head_next = None;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Port of C++ `emView::Update` notice-drain inner loop (emView.cpp:1303–1314).
     ///
-    /// Drains the notice ring owned by `tree`, dispatching `HandleNotice`/
-    /// `LayoutChildren` on each panel using this view's own
-    /// `CurrentPixelTallness` and `window_focused`.
+    /// Drains `self.notice_ring_head_next` (the notice ring owned by this view),
+    /// dispatching `handle_notice_one`/`LayoutChildren` on each panel using this
+    /// view's own `CurrentPixelTallness` and `window_focused`.
     ///
     /// Returns `true` if any notices were handled.
-    ///
-    /// DIVERGED: C++ `emView::NoticeList` is an intrusive ring on `emView`
-    /// (emView.h:576); Rust keeps the ring fields on `PanelTree` to avoid
-    /// RefCell re-entrancy (the view is mutably borrowed during dispatch, so
-    /// callers inside callbacks cannot re-borrow it to append to a view-owned
-    /// ring).  Ring storage location is *forced*; dispatch driver (per-view,
-    /// using per-view `CurrentPixelTallness`) matches C++ exactly.
     pub fn HandleNotice(
         &mut self,
         tree: &mut PanelTree,
         sched: &mut crate::emScheduler::EngineScheduler,
     ) -> bool {
-        if !tree.has_pending_notices() {
+        if !tree.has_pending_notices() && self.notice_ring_head_next.is_none() {
             return false;
         }
+        // Drain any pending ring-cleanup entries from PanelTree before the
+        // safety-net scan so head/tail are accurate.
+        self.drain_pending_ring_cleanup(tree);
         // Safety net: enroll any panels that set pending_notices through paths
-        // that didn't call add_to_notice_list (legacy callers, external writes).
+        // that called only `tree.add_to_notice_list` (which now only sets the
+        // flag, without linking into the ring).
         if tree.has_pending_notices_flag() {
             let ids: Vec<PanelId> = tree.panels.keys().collect();
             for id in ids {
@@ -3479,9 +3760,9 @@ impl emView {
                     || p.children_layout_invalid)
                     && p.notice_prev_in_ring.is_none()
                     && p.notice_next_in_ring.is_none()
-                    && tree.notice_ring_head_next != Some(id)
+                    && self.notice_ring_head_next != Some(id)
                 {
-                    tree.add_to_notice_list(id, None);
+                    self.AddToNoticeList(id, tree);
                 }
             }
         }
@@ -3489,15 +3770,57 @@ impl emView {
         // Drain the ring (port of C++ emView::Update do-while loop,
         // emView.cpp:1303-1314). New panels appended during processing are
         // picked up in FIFO order.
-        while let Some(id) = tree.notice_ring_head_next {
-            if !tree.panels.contains_key(id) {
-                tree.remove_from_notice_list(id);
-                continue;
+        //
+        // Phase 2 Task 7: `handle_notice_one` may call tree methods
+        // (`Layout`, `SetCanvasColor`, …) that call `tree.add_to_notice_list`
+        // which only sets `has_pending_notices=true` — it does NOT enroll
+        // into the ring (E006 relocation). Outer loop re-scans while the
+        // flag is set, so newly-pending panels land in the ring and drain
+        // in the same HandleNotice call.
+        loop {
+            while let Some(id) = self.notice_ring_head_next {
+                if !tree.panels.contains_key(id) {
+                    // Stale ring entry (panel deleted without proper unlink).
+                    // Drain cleanup entries first to try to advance the head.
+                    self.drain_pending_ring_cleanup(tree);
+                    // If still stale, reset ring.
+                    if self.notice_ring_head_next == Some(id) {
+                        self.notice_ring_head_next = None;
+                        self.notice_ring_head_prev = None;
+                    }
+                    continue;
+                }
+                // C++ unlinks BEFORE calling HandleNotice (emView.cpp:1307-1310).
+                self.remove_from_notice_list(id, tree);
+                delivered = true;
+                self.handle_notice_one(tree, id, sched);
             }
-            // C++ unlinks BEFORE calling HandleNotice (emView.cpp:1307-1310).
-            tree.remove_from_notice_list(id);
-            delivered = true;
-            self.handle_notice_one(tree, id, sched);
+            // Re-scan if any tree-internal path set `has_pending_notices`
+            // during the drain.
+            if !tree.has_pending_notices_flag() {
+                break;
+            }
+            self.drain_pending_ring_cleanup(tree);
+            let ids: Vec<PanelId> = tree.panels.keys().collect();
+            let mut enrolled_any = false;
+            for id in ids {
+                let Some(p) = tree.panels.get(id) else {
+                    continue;
+                };
+                if (!p.pending_notices.is_empty()
+                    || p.ae_decision_invalid
+                    || p.children_layout_invalid)
+                    && p.notice_prev_in_ring.is_none()
+                    && p.notice_next_in_ring.is_none()
+                    && self.notice_ring_head_next != Some(id)
+                {
+                    self.AddToNoticeList(id, tree);
+                    enrolled_any = true;
+                }
+            }
+            if !enrolled_any {
+                break; // nothing new to enroll — avoid infinite loop
+            }
         }
         tree.clear_pending_notices_flag();
         delivered
@@ -3596,7 +3919,7 @@ impl emView {
             }
             // Re-add to ring if still work to do (C++ emPanel.cpp:1416-1418).
             if new_ae_di || new_cli {
-                tree.add_to_notice_list(id, None);
+                self.AddToNoticeList(id, tree);
             }
 
             // Deliver notice (C++ emPanel.cpp:1419-1421).
@@ -6347,7 +6670,7 @@ mod tests {
             480.0,
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        let v_weak = Rc::downgrade(&v_rc);
+        let scope = crate::emPanelScope::PanelScope::Toplevel(winit::window::WindowId::dummy());
         {
             let mut v = v_rc.borrow_mut();
             let root = v.Context.GetRootContext();
@@ -6362,7 +6685,7 @@ mod tests {
             v.RegisterEngines(
                 &mut sc,
                 &mut tree,
-                v_weak,
+                scope,
                 crate::emEngine::TreeLocation::Outer,
             );
         }
@@ -6441,7 +6764,7 @@ mod tests {
             480.0,
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        let v_weak = Rc::downgrade(&v_rc);
+        let scope = crate::emPanelScope::PanelScope::Toplevel(winit::window::WindowId::dummy());
         {
             let mut v = v_rc.borrow_mut();
             let root = v.Context.GetRootContext();
@@ -6456,7 +6779,7 @@ mod tests {
             v.RegisterEngines(
                 &mut sc,
                 &mut tree,
-                v_weak,
+                scope,
                 crate::emEngine::TreeLocation::Outer,
             );
         }
@@ -6573,30 +6896,29 @@ mod tests {
         );
     }
 
-    /// Phase 7: queuing a notice via `tree.add_to_notice_list` wakes the
-    /// scheduler-registered `UpdateEngineClass` for the panel's view.
+    /// Phase 7 / Task 6 (E006): queuing a notice via `tree.add_to_notice_list`
+    /// wakes the scheduler-registered `UpdateEngineClass` for the panel's view.
     ///
-    /// SP5: `AddToNoticeList` was removed from `emView`; the ring is owned by
-    /// `PanelTree` and the wakeup is driven from `PanelTree::add_to_notice_list`
-    /// (emView.cpp:1288 parity). This test verifies that path with a real View
-    /// ref-cell so the `Weak::upgrade()` in `add_to_notice_list` succeeds.
+    /// Task 6 (E006): ring fields moved to `emView`; `tree.add_to_notice_list`
+    /// now only sets `has_pending_notices` and wakes the engine via the cached
+    /// `tree.update_engine_id` (set by `RegisterEngines`).  The ring-link step
+    /// now lives in `emView::AddToNoticeList`.
     #[test]
     fn test_phase7_add_to_notice_list_wakes_update_engine() {
         let mut ts = TestSched::new();
         let (mut tree, root, child1, _) = setup_tree();
-        // Wrap the view behind Rc<RefCell> so add_to_notice_list can upgrade it.
+        // Wrap the view behind Rc<RefCell> so RegisterEngines can receive a Weak.
         let v_rc = Rc::new(RefCell::new(emView::new(
             crate::emContext::emContext::NewRoot(),
             root,
             640.0,
             480.0,
         )));
-        // Set the view on all panels (root + descendants) so add_to_notice_list
-        // can upgrade the Weak and call WakeUpUpdateEngine.
-        tree.set_panel_view(root, Rc::downgrade(&v_rc));
+        // Set the view on all panels so the engine-ID cache is populated.
+        tree.set_panel_view(root);
 
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        let v_weak = Rc::downgrade(&v_rc);
+        let scope = crate::emPanelScope::PanelScope::Toplevel(winit::window::WindowId::dummy());
         {
             let mut v = v_rc.borrow_mut();
             let root = v.Context.GetRootContext();
@@ -6611,7 +6933,7 @@ mod tests {
             v.RegisterEngines(
                 &mut sc,
                 &mut tree,
-                v_weak,
+                scope,
                 crate::emEngine::TreeLocation::Outer,
             );
         }
@@ -6627,14 +6949,15 @@ mod tests {
         sched.borrow_mut().sleep(eng_id);
         assert!(!sched.borrow().has_awake_engines());
 
-        // Queueing a notice via tree.add_to_notice_list should wake the engine.
+        // Queueing a notice via tree.add_to_notice_list should wake the engine
+        // via the cached update_engine_id (set by RegisterEngines).
         {
             let mut s = sched.borrow_mut();
             tree.add_to_notice_list(child1, Some(&mut *s));
         }
         assert!(
             sched.borrow().has_awake_engines(),
-            "add_to_notice_list should wake the update engine via the panel's View"
+            "add_to_notice_list should wake the update engine via update_engine_id cache"
         );
         // Drain the scheduler to satisfy its debug_assert on drop.
         {
@@ -6698,14 +7021,14 @@ mod tests {
         let (mut tree, root, child_a, _) = setup_tree();
         let win_id = winit::window::WindowId::dummy();
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        let win = {
+        let mut win = {
             use crate::emColor::emColor;
             use crate::emWindow::{emWindow, WindowFlags};
             let cs = sched.borrow_mut().create_signal();
             let fs = sched.borrow_mut().create_signal();
             let fos = sched.borrow_mut().create_signal();
             let gs = sched.borrow_mut().create_signal();
-            let w = emWindow::new_popup_pending(
+            let mut w = emWindow::new_popup_pending(
                 crate::emContext::emContext::NewRoot(),
                 root,
                 WindowFlags::empty(),
@@ -6726,15 +7049,13 @@ mod tests {
                     root_context: &root_ctx,
                     current_engine: None,
                 };
-                w.borrow_mut()
-                    .view_mut()
+                w.view_mut()
                     .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0, &mut sc);
             }
-            let view_weak = Rc::downgrade(w.borrow().view_rc());
+            let scope = crate::emPanelScope::PanelScope::Toplevel(win_id);
             let _ = win_id;
             {
-                let mut win_borrow = w.borrow_mut();
-                let mut v = win_borrow.view_mut();
+                let v = w.view_mut();
                 let root = v.Context.GetRootContext();
                 let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
                 let mut s = sched.borrow_mut();
@@ -6747,7 +7068,7 @@ mod tests {
                 v.RegisterEngines(
                     &mut sc,
                     &mut tree,
-                    view_weak,
+                    scope,
                     crate::emEngine::TreeLocation::Outer,
                 );
             }
@@ -6777,17 +7098,13 @@ mod tests {
 
         // Prime Update once so the view is in a stable "after-first-Update"
         // state (clears zoomed_out_before_sg, populates SVP).
-        {
-            let mut w = win.borrow_mut();
-            ts.with(|sc| w.view_mut().Update(&mut tree, sc));
-        }
+        ts.with(|sc| win.view_mut().Update(&mut tree, sc));
 
         // Put the view into POPUP_ZOOM and push a popup. RawVisit under
         // POPUP_ZOOM creates a PopupWindow; its tear-down on ZoomOut is
         // what fires geometry_signal from inside Update.
         {
-            let mut w = win.borrow_mut();
-            let mut v = w.view_mut();
+            let v = win.view_mut();
             ts.with(|sc| v.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree, sc));
             ts.with(|sc| v.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true, sc));
             assert!(v.PopupWindow.is_some(), "popup created under POPUP_ZOOM");
@@ -6797,7 +7114,7 @@ mod tests {
         // The view's geometry_signal field is used by SwapViewPorts and
         // the popup-teardown path inside RawVisitAbs.
         let geom_sig = sched.borrow_mut().create_signal();
-        win.borrow_mut().view_mut().geometry_signal = Some(geom_sig);
+        win.view_mut().geometry_signal = Some(geom_sig);
         sched.borrow_mut().connect(geom_sig, recv_id);
 
         // Fire the popup's close_signal. DoTimeSlice below will observe it
@@ -6805,17 +7122,17 @@ mod tests {
         // Update will run ZoomOut → RawVisitAbs teardown → queue a Fire of
         // geometry_signal, drained at the end of Cycle.
         let close_sig = win
-            .borrow()
             .view()
-            .PopupWindow
-            .as_ref()
-            .unwrap()
-            .borrow()
-            .close_signal;
+            .PopupCloseSignal
+            .expect("popup must have close signal after creation");
         sched.borrow_mut().fire(close_sig);
 
+        // Phase 2 Task 7: `UpdateEngineClass` resolves the view via
+        // `ctx.windows.get_mut(win_id)` now that view is plain on emWindow;
+        // insert `win` so the update engine can actually run `Update()` and
+        // fire the signal whose reception the test asserts.
         let mut windows: HashMap<_, _> = HashMap::new();
-        windows.insert(win_id, Rc::clone(&win));
+        windows.insert(win_id, win);
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
         sched
@@ -6831,9 +7148,9 @@ mod tests {
         sched.borrow_mut().disconnect(geom_sig, recv_id);
         sched.borrow_mut().remove_signal(geom_sig);
         sched.borrow_mut().remove_engine(recv_id);
+        let mut win = windows.remove(&win_id).expect("win reinserted");
         {
-            let mut w = win.borrow_mut();
-            let mut v = w.view_mut();
+            let v = win.view_mut();
             v.geometry_signal = None;
             if let Some(id) = v.update_engine_id.take() {
                 sched.borrow_mut().remove_engine(id);
@@ -6863,14 +7180,14 @@ mod tests {
         let (mut tree, root, child_a, _) = setup_tree();
         let win_id = winit::window::WindowId::dummy();
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        let win = {
+        let mut win = {
             use crate::emColor::emColor;
             use crate::emWindow::{emWindow, WindowFlags};
             let cs = sched.borrow_mut().create_signal();
             let fs = sched.borrow_mut().create_signal();
             let fos = sched.borrow_mut().create_signal();
             let gs = sched.borrow_mut().create_signal();
-            let w = emWindow::new_popup_pending(
+            let mut w = emWindow::new_popup_pending(
                 crate::emContext::emContext::NewRoot(),
                 root,
                 WindowFlags::empty(),
@@ -6891,15 +7208,13 @@ mod tests {
                     root_context: &root_ctx,
                     current_engine: None,
                 };
-                w.borrow_mut()
-                    .view_mut()
+                w.view_mut()
                     .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0, &mut sc);
             }
-            let view_weak = Rc::downgrade(w.borrow().view_rc());
+            let scope = crate::emPanelScope::PanelScope::Toplevel(win_id);
             let _ = win_id;
             {
-                let mut win_borrow = w.borrow_mut();
-                let mut v = win_borrow.view_mut();
+                let v = w.view_mut();
                 let root = v.Context.GetRootContext();
                 let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
                 let mut s = sched.borrow_mut();
@@ -6912,7 +7227,7 @@ mod tests {
                 v.RegisterEngines(
                     &mut sc,
                     &mut tree,
-                    view_weak,
+                    scope,
                     crate::emEngine::TreeLocation::Outer,
                 );
             }
@@ -6923,8 +7238,7 @@ mod tests {
         // POPUP_ZOOM. RawVisit wires close_signal to UpdateEngineClass via
         // SwapViewPorts.
         {
-            let mut w = win.borrow_mut();
-            let mut v = w.view_mut();
+            let v = win.view_mut();
             ts.with(|sc| v.Update(&mut tree, sc));
             ts.with(|sc| v.SetViewFlags(ViewFlags::POPUP_ZOOM, &mut tree, sc));
             ts.with(|sc| v.RawVisit(&mut tree, child_a, 0.0, 0.0, 0.1, true, sc));
@@ -6932,37 +7246,34 @@ mod tests {
         }
 
         let close_sig = win
-            .borrow()
             .view()
-            .PopupWindow
-            .as_ref()
-            .unwrap()
-            .borrow()
-            .close_signal;
+            .PopupCloseSignal
+            .expect("popup must have close signal after creation");
         sched.borrow_mut().fire(close_sig);
 
         // One DoTimeSlice: Cycle observes close_sig, calls Update → ZoomOut →
-        // RawVisitAbs popup teardown.
+        // RawVisitAbs popup teardown.  Phase 2 Task 7: insert the window so
+        // `UpdateEngineClass` can resolve the view via `Toplevel(win_id)`.
         let mut windows: HashMap<_, _> = HashMap::new();
-        windows.insert(win_id, Rc::clone(&win));
+        windows.insert(win_id, win);
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
         sched
             .borrow_mut()
             .DoTimeSlice(&mut tree, &mut windows, &__root_ctx, &mut __fw);
+        let mut win = windows.remove(&win_id).expect("win reinserted");
         assert!(
-            win.borrow().view().PopupWindow.is_none(),
+            win.view().PopupWindow.is_none(),
             "close_signal → ZoomOut must tear down PopupWindow in one time slice"
         );
         assert!(
-            !win.borrow().view().popped_up,
+            !win.view().popped_up,
             "popped_up must be false after ZoomOut"
         );
 
         // Cleanup for scheduler Drop debug_asserts.
         {
-            let mut w = win.borrow_mut();
-            let mut v = w.view_mut();
+            let v = win.view_mut();
             if let Some(id) = v.update_engine_id.take() {
                 sched.borrow_mut().remove_engine(id);
             }
@@ -6996,7 +7307,7 @@ mod tests {
             600.0,
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
-        let view_weak = Rc::downgrade(&view_rc);
+        let scope = crate::emPanelScope::PanelScope::Toplevel(winit::window::WindowId::dummy());
         {
             let mut v = view_rc.borrow_mut();
             let root = v.Context.GetRootContext();
@@ -7011,7 +7322,7 @@ mod tests {
             v.RegisterEngines(
                 &mut sc,
                 &mut tree,
-                view_weak,
+                scope,
                 crate::emEngine::TreeLocation::Outer,
             );
         }
@@ -7217,6 +7528,121 @@ mod tests {
         // Pixel tallness must remain distinct (HandleNotice did not perturb).
         assert_eq!(view_a.GetCurrentPixelTallness(), 1.0);
         assert_eq!(view_b.GetCurrentPixelTallness(), 2.0);
+    }
+
+    /// Task 9: `SwapViewPorts` correctness — Shape 2 (parent view ↔ popup view).
+    ///
+    /// Verifies that after `SwapViewPorts(false)`:
+    ///   - `this->CurrentViewPort` is the popup's original port,
+    ///   - `popup->CurrentViewPort` is the parent's original port,
+    ///   - `this->Current*` are updated from the swapped-in port's home geometry,
+    ///   - `popup->Current*` are updated from the swapped-in port's home geometry.
+    ///
+    /// Matches C++ emView.cpp:1974-2001 (Shape 2).
+    ///
+    /// Note: `HashMap::get_disjoint_mut` is not applicable — both ports live
+    /// under a single `&mut emView` borrow (parent owns `PopupWindow`
+    /// inline). The plan's Shape 1 framing does not apply here.
+    #[test]
+    fn test_task9_swap_view_ports_geometry_exchange() {
+        use crate::emColor::emColor;
+        use crate::emWindow::{emWindow, WindowFlags};
+        use std::rc::Rc;
+
+        let mut ts = TestSched::new();
+        let (mut tree, root, _child_a, _child_b) = setup_tree();
+
+        // Build a parent emView with a known pixel tallness.
+        let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        // Set geometry with a non-1.0 pixel tallness on the parent view so
+        // we can distinguish parent vs popup tallness after the swap.
+        ts.with(|sc| view.SetGeometry(&mut tree, 0.0, 0.0, 800.0, 600.0, 1.5, sc));
+        assert_eq!(view.HomePixelTallness, 1.5);
+        // Home port's home_pixel_tallness must match (kept in sync by SetGeometry).
+        assert_eq!(
+            view.HomeViewPort.borrow().home_pixel_tallness,
+            1.5,
+            "HomeViewPort.home_pixel_tallness must mirror HomePixelTallness after SetGeometry"
+        );
+
+        // Create a popup emWindow with a different geometry.
+        let cs = ts.sched.create_signal();
+        let fs = ts.sched.create_signal();
+        let fos = ts.sched.create_signal();
+        let gs = ts.sched.create_signal();
+        let mut popup = emWindow::new_popup_pending(
+            Rc::clone(&view.Context),
+            root,
+            WindowFlags::POPUP,
+            "test_popup".to_string(),
+            cs,
+            fs,
+            fos,
+            gs,
+            emColor::TRANSPARENT,
+        );
+        // Give the popup view its own distinct geometry (pixel tallness 0.75).
+        ts.with(|sc| {
+            popup
+                .view_mut()
+                .SetGeometry(&mut tree, 100.0, 50.0, 400.0, 300.0, 0.75, sc)
+        });
+        assert_eq!(popup.view().HomePixelTallness, 0.75);
+        assert_eq!(
+            popup.view().HomeViewPort.borrow().home_pixel_tallness,
+            0.75,
+            "popup HomeViewPort.home_pixel_tallness must mirror popup HomePixelTallness"
+        );
+
+        // Capture the Rc identities before the swap.
+        let parent_port_ptr = Rc::as_ptr(&view.CurrentViewPort);
+        let popup_port_ptr = Rc::as_ptr(&popup.view().CurrentViewPort);
+
+        // Install the popup on the view.
+        view.PopupWindow = Some(Box::new(popup));
+
+        // Execute the swap (swapFocus = false).
+        ts.with(|sc| view.SwapViewPorts(false, sc));
+
+        // After the swap, parent's CurrentViewPort must be the popup's original port.
+        assert_eq!(
+            Rc::as_ptr(&view.CurrentViewPort),
+            popup_port_ptr,
+            "parent's CurrentViewPort must be the popup's original port after swap"
+        );
+
+        // Popup's CurrentViewPort must be the parent's original port.
+        let popup_current_port_ptr =
+            Rc::as_ptr(&view.PopupWindow.as_ref().unwrap().view().CurrentViewPort);
+        assert_eq!(
+            popup_current_port_ptr, parent_port_ptr,
+            "popup's CurrentViewPort must be the parent's original port after swap"
+        );
+
+        // Parent's Current* must reflect the popup's original home geometry.
+        // C++ emView.cpp:1986-1990: CurrentX/Y/Width/Height/PixelTallness =
+        //   CurrentViewPort->HomeView->Home*  (popup's Home* after swap).
+        assert_eq!(view.CurrentX, 100.0, "parent CurrentX after swap");
+        assert_eq!(view.CurrentY, 50.0, "parent CurrentY after swap");
+        assert_eq!(view.CurrentWidth, 400.0, "parent CurrentWidth after swap");
+        assert_eq!(view.CurrentHeight, 300.0, "parent CurrentHeight after swap");
+        assert_eq!(
+            view.CurrentPixelTallness,
+            0.75,
+            "parent CurrentPixelTallness must come from popup's port (0.75), not parent HomePixelTallness (1.5)"
+        );
+
+        // Popup's Current* must reflect the parent's original home geometry.
+        // C++ emView.cpp:1991-1995: w->Current* = w->CurrentViewPort->HomeView->Home*.
+        let pv = view.PopupWindow.as_ref().unwrap().view();
+        assert_eq!(pv.CurrentX, 0.0, "popup CurrentX after swap");
+        assert_eq!(pv.CurrentY, 0.0, "popup CurrentY after swap");
+        assert_eq!(pv.CurrentWidth, 800.0, "popup CurrentWidth after swap");
+        assert_eq!(pv.CurrentHeight, 600.0, "popup CurrentHeight after swap");
+        assert_eq!(
+            pv.CurrentPixelTallness, 1.5,
+            "popup CurrentPixelTallness must come from parent's port (1.5)"
+        );
     }
 }
 
