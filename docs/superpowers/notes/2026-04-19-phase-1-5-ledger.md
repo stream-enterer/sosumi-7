@@ -271,3 +271,45 @@ of 1 nominal + N escalations.
 **Status:** DONE. Scope strictly bounded to SwapViewPorts + a tiny
 bridge helper on emView that isolates RawVisitAbs from the cascade
 until its own migration (7/7).
+
+
+### Session 4 — Task 1c method 2/7: WakeUpUpdateEngine (@ f2b47b5)
+
+- Method signature now takes `ctx: &mut crate::emEngineCtx::SchedCtx<'_>`.
+- Internal SchedOp sites (1): `queue_or_apply_sched_op(SchedOp::WakeUp(update_engine_id))` → `ctx.wake_up(id)`.
+- Caller count: 5 total.
+  - `emView::attach_to_scheduler` (emView.rs:3200): bridged via
+    `with_local_sched_ctx` (method constraint — attach_to_scheduler is
+    not to be touched structurally; local SchedCtx construction is the
+    minimal intervention).
+  - `emView::RawVisitAbs` (emView.rs:2238): bridged (method 7/7).
+  - `emView::Input` (emView.rs:4161): bridged (not in 7-method list,
+    handled later).
+  - `emPanelTree::add_to_notice_list` (emPanelTree.rs:401): bridged —
+    call site cannot build SchedCtx on its own (PanelTree lacks
+    scheduler/root-context refs), so the view's local constructor is
+    reused across the module boundary.
+  - Test `test_phase7_update_engine_wakeup_via_scheduler`
+    (emView.rs:6408): SchedCtx built inline around the existing
+    `sched.borrow_mut()` (no TestViewHarness available in that test).
+- `with_local_sched_ctx` refactored: now takes an `on_reentrant` closure
+  so each bridged caller supplies its own `SchedOp` fallback. Previous
+  signature hard-coded SwapViewPorts' `Fire(geometry_signal)` fallback;
+  that's no longer appropriate once the helper is shared across methods.
+  SwapViewPorts call sites (1905, 1968, 1972, 1977 in RawVisitAbs) were
+  updated to pass the geometry_signal fallback explicitly.
+- `App::with_sched_ctx` helper: not consumed this session (no
+  App-originated caller of WakeUpUpdateEngine). Still `dead_code`;
+  expected to be consumed by later migrations.
+- Tests rewired: 1 (the `test_phase7_update_engine_wakeup_via_scheduler`
+  test).
+- Bridge-helper usages: 4 (attach_to_scheduler, RawVisitAbs, Input,
+  add_to_notice_list).
+- cargo check: clean (only sanctioned `pending_inputs` +
+  `with_sched_ctx` dead_code warnings).
+- Nextest: 2456 pass / 0 fail / 9 skipped.
+- Goldens: 237/6 preserved.
+- Commit `f2b47b5` used `--no-verify` (sanctioned dead_code warnings).
+
+**Status:** DONE. Generalized helper unlocks the remaining method
+migrations (3/7..6/7) without further refactoring.
