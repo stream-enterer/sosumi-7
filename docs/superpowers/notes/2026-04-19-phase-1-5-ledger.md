@@ -147,3 +147,100 @@ trait-signature flip landed, and the test harness exists for the
 session-2 rewire. No intermediate-red commits on the branch; every
 commit compiles and all 2456 nextest tests pass.
 
+### Session 2 (2026-04-19 later) — Task 1 substeps 1c–1i BLOCKED
+
+Resumption-point SHA: e2109af (unchanged). No commits made.
+
+**Outcome:** BLOCKED — on entry, the subagent reviewed all required
+reading, enumerated the actual call-site surface against the plan's
+per-substep budgets, and concluded the cascade as written is
+structurally too large for a single session.
+
+**Evidence collected (mechanical grep, not speculation):**
+
+- `queue_or_apply_sched_op` call sites in production: **9** in
+  `emView.rs` (lines 1120, 1578, 1860, 1947, 1948, 1974, 3045, 3163,
+  3349) + **1** in `emPanelCtx.rs` + **1** in `emPanelTree.rs` +
+  **drain sites** in `emSubViewPanel.rs` (1), `emPanelTree.rs` (5) ×
+  both forward + cleanup. Total ~17 production sites.
+- **The 7 emView methods** named in 1c are called from outside emView
+  at these external locations: `SetGeometry` from emGUIFramework.rs,
+  emSubViewPanel.rs (×2), emWindow.rs, notice.rs test, plus 6 internal
+  emView test sites; `set_active_panel` from emViewAnimator.rs,
+  emViewInputFilter.rs, emSubViewPanel.rs, emWindow.rs, plus **~180
+  test sites** across integration/, golden/, pipeline/, unit/. Full
+  grep: `grep -rcE '\.(SetGeometry|set_active_panel|RawVisitAbs|...)\('`
+  returns **152** direct call sites (excluding emView.rs internals).
+- `WakeUpUpdateEngine` is called from `RawVisitAbs` and `Input` (4104)
+  — `Input` is NOT one of the 7 methods but propagation into it is
+  mandatory, and `Input` itself is called from emWindow input
+  dispatch + animator + IVF, cascading transitively.
+- `attach_to_scheduler` has **~31** call sites (plan cites this); each
+  call site's surrounding test/setup code must rework to use
+  `TestViewHarness` or direct `sched.register_engine(UpdateEngineClass)`
+  wiring.
+
+**Why this is BLOCKED, not DONE_WITH_CONCERNS-with-partial-progress:**
+
+The plan substep 1c is atomic in the sense that it deletes SchedOp
+and `queue_or_apply_sched_op`. Partial execution (threading ctx
+through some methods but not others) leaves the codebase in a
+non-compiling state because `SchedOp` and its helpers must remain
+live until ALL 9 production sites migrate. Test rewires in 1h also
+must land with 1c/1d for the crate to build — every `emView::new()`
+without a scheduler field but with ctx-threaded `Update` needs a
+harness even for tests that don't use signals.
+
+Put differently: substeps 1c through 1h form a single connected
+change front. The session-1 subagent correctly identified this and
+reported DONE_WITH_CONCERNS; the present session confirms the same
+diagnosis with concrete grep counts.
+
+**Specific over-budget areas vs plan estimates:**
+
+- Plan says "~50-100 call sites" for emView propagation. Actual: 152
+  direct + transitive cascade through `Input`, `RawVisit`, `RawZoomOut`,
+  `SetActivePanelBestPossible`, `FindBestSVP`, the animator, the IVF,
+  window input dispatch. The transitive surface is the bulk of the
+  emView public API (~200+ methods).
+- Plan says "~150 test rewire". Actual ~180 unique call sites for
+  `set_active_panel` alone, plus ~20–40 each for `SetGeometry` /
+  `RawVisitAbs` / `SignalEOIDelayed`, times the fact that each test
+  file has its own harness idiom (`h.view`, `view` + separate `tree`,
+  pipeline helpers) that needs adapting.
+- Plan sanctions `--no-verify` on the final 1i commit for dead_code
+  on `pending_inputs`. No mechanism is proposed for committing
+  intermediate RED states (mandatory with a multi-commit cascade
+  when substeps land one-at-a-time). `CLAUDE.md` allows `--no-verify`
+  on intermediate-red commits for long-running phase branches — the
+  plan should explicitly authorize this pattern for 1c/1d/1e/1f if
+  those are to land separately, which they must.
+
+**Recommended re-plan (for whoever picks this up):**
+
+1. **Subdivide 1c** into 7 substeps, one per method, each threading
+   ctx through that method's transitive caller graph. Substep ordering
+   (least → most invasive):
+   - 1c.1 `SwapViewPorts` (4 callers, all inside `RawVisitAbs`)
+   - 1c.2 `WakeUpUpdateEngine` (4 internal + 1 PanelTree + tests)
+   - 1c.3 `InvalidateControlPanel` (2 test sites; external callers?)
+   - 1c.4 `SignalEOIDelayed` (1 test site; called from behaviors?)
+   - 1c.5 `SetGeometry` (~10 sites)
+   - 1c.6 `set_active_panel` (~180 sites — own session)
+   - 1c.7 `RawVisitAbs` (deep propagation via `Visit` chain)
+2. **Gate each substep** on a green intermediate commit with
+   `--no-verify` sanctioned for dead_code on the still-alive
+   `SchedOp` (becomes dead as call sites migrate off). The final
+   cleanup substep (formerly 1d) deletes `SchedOp` when use-count
+   hits zero.
+3. **Keep 1h distributed**: rewire test sites as each method migrates,
+   not all-at-once. Each 1c.N test sites that call the N'th method
+   get rewired in the same commit as that method's signature change.
+4. **Defer 1e/1f** until all of 1c.1–1c.7 land: those are post-cleanup
+   steps whose preconditions are "zero uses of emView.scheduler".
+
+This restructure makes the cascade tractable in 3–5 sessions instead
+of 1 nominal + N escalations.
+
+**No code changes.** Working tree clean. Branch unchanged at e2109af.
+
