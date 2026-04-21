@@ -1,8 +1,9 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::emButton::emButton;
 use crate::emCursor::emCursor;
-use crate::emEngineCtx::{ConstructCtx, PanelCtx};
+use crate::emEngineCtx::{ConstructCtx, FrameworkDeferredAction, PanelCtx};
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emPainter::emPainter;
@@ -293,6 +294,70 @@ impl emDialog {
     /// EnableAutoDeletion(true) + content label + show`.
     pub fn ShowMessage<C: ConstructCtx>(_ctx: &mut C, _title: &str, _message: &str) -> Self {
         unimplemented!("emDialog::ShowMessage — Phase 3.6 impl; no live caller in 3.5")
+    }
+
+    /// Programmatically finish the dialog post-show with the given result.
+    ///
+    /// Port of C++ `emDialog::Finish(int)` (emDialog.cpp:146-153) for the
+    /// post-show case. Phase 3.5 exposes this narrowly (`emFileDialog::Cycle`
+    /// is the only live consumer); Phase 3.6 generalizes to full
+    /// `App::mutate_dialog_by_id`.
+    ///
+    /// Pushes a closure that sets `DlgPanel.pending_result = Some(result)`,
+    /// which `DialogPrivateEngine::Cycle` picks up on the next tick and routes
+    /// through the normal finalize → fire(finish_signal) → invoke on_finish
+    /// sequence. Matches C++ `Finish` behavior: CheckFinish still runs via
+    /// `DialogPrivateEngine`'s normal flow.
+    ///
+    /// Guard: only sets `pending_result` if neither `pending_result` nor
+    /// `finalized_result` is `Some` (first-fire semantics, matching C++ Finish).
+    ///
+    /// Note: deviation from spec §Deferred §"Post-show dialog mutation" which
+    /// says this lands in Phase 3.6. `emFileDialog::Cycle` has live
+    /// `Finish(Ok)` calls that force a minimal path into 3.5. The general
+    /// `App::mutate_dialog_by_id` is still Phase 3.6 scope.
+    ///
+    /// Takes `pending_actions` directly (not a `ConstructCtx`) so callers
+    /// from `PanelCtx`-based code paths (e.g. `emFileDialog::Cycle`) can
+    /// use it without a full `ConstructCtx`. A `ConstructCtx` wrapper is
+    /// provided by `finish_post_show_ctx` for call sites that have one.
+    pub fn finish_post_show(
+        &self,
+        pending_actions: &Rc<RefCell<Vec<FrameworkDeferredAction>>>,
+        result: DialogResult,
+    ) {
+        let did = self.dialog_id;
+        let root_panel_id = self.root_panel_id;
+        pending_actions.borrow_mut().push(Box::new(move |app, _el| {
+            if let Some(&wid) = app.dialog_windows.get(&did) {
+                if let Some(win) = app.windows.get_mut(&wid) {
+                    let mut tree = win.take_tree();
+                    if let Some(mut b) = tree.take_behavior(root_panel_id) {
+                        if let Some(dlg) = b.as_dlg_panel_mut() {
+                            if dlg.pending_result.is_none() && dlg.finalized_result.is_none() {
+                                dlg.pending_result = Some(result);
+                            }
+                        }
+                        tree.put_behavior(root_panel_id, b);
+                    }
+                    win.put_tree(tree);
+                }
+                // Wake DialogPrivateEngine: after FinishState==0 /
+                // !ADEnabled branch returns false, the engine sleeps until
+                // a connected signal fires. Direct mutation of
+                // pending_result via finish_post_show does not fire any
+                // connected signal, so the engine would never observe the
+                // mutation. Call wake_up on all engines scoped to
+                // Toplevel(wid) — exactly one for a dialog window
+                // (DialogPrivateEngine) — to force one cycle.
+                let eids = app
+                    .scheduler
+                    .engines_for_scope(crate::emPanelScope::PanelScope::Toplevel(wid));
+                for eid in eids {
+                    app.scheduler.wake_up(eid);
+                }
+            }
+        }));
     }
 
     // ─── Legacy-compatibility stubs ─────────────────────────────────────────
@@ -1752,6 +1817,183 @@ mod tests {
         );
 
         // Teardown.
+        app.scheduler.remove_engine(engine_id);
+        app.scheduler.clear_pending_for_tests();
+    }
+
+    // ─── Task 20 tests ───────────────────────────────────────────────────────
+
+    /// End-to-end: build dialog, install headless, call `finish_post_show(Ok)`,
+    /// drain `pending_actions`, `DoTimeSlice`, assert `finalized_result == Ok`
+    /// and `on_finish` fired with `Ok`.
+    ///
+    /// Ports plan Step 20.5.
+    #[test]
+    fn finish_post_show_sets_pending_result() {
+        use crate::emEngineCtx::InitCtx;
+        use crate::emGUIFramework::App;
+        use winit::window::WindowId;
+
+        let mut app = App::new(Box::new(|_app, _el| {}));
+
+        let result_cell: Rc<RefCell<Option<DialogResult>>> = Rc::new(RefCell::new(None));
+        let result_clone = Rc::clone(&result_cell);
+
+        // Build dialog, extract stable fields, push pending to app directly
+        // (mirrors existing headless-install tests).
+        let (dlg_id, finish_sig, root_id) = {
+            let mut ctx = InitCtx {
+                scheduler: &mut app.scheduler,
+                framework_actions: &mut app.framework_actions,
+                root_context: &app.context,
+                pending_actions: &app.pending_actions,
+            };
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut ctx, "Test", look);
+            dlg.AddCustomButton(&mut ctx, "OK", DialogResult::Ok);
+            dlg.set_on_finish(Box::new(move |r, _sched| {
+                *result_clone.borrow_mut() = Some(*r);
+            }));
+            let dlg_id = dlg.dialog_id;
+            let finish_sig = dlg.finish_signal;
+            let root_id = dlg.root_panel_id;
+            app.pending_top_level.push(dlg.pending.unwrap());
+            (dlg_id, finish_sig, root_id)
+        };
+
+        let wid = WindowId::dummy();
+        let engine_id = app
+            .install_pending_top_level_headless(wid)
+            .expect("install registers DialogPrivateEngine");
+
+        // Build a minimal handle to call finish_post_show. finish_post_show
+        // only reads self.dialog_id and self.root_panel_id (both Copy), so
+        // we construct a post-show handle directly.
+        let dummy_sig = app.scheduler.create_signal();
+        let handle = emDialog {
+            dialog_id: dlg_id,
+            finish_signal: finish_sig,
+            close_signal: dummy_sig,
+            root_panel_id: root_id,
+            look: emLook::new(),
+            pending: None, // post-show
+        };
+        handle.finish_post_show(&app.pending_actions, DialogResult::Ok);
+
+        // Drain pending_actions (the finish_post_show closure + wake).
+        app.drain_pending_actions_headless();
+
+        let mut pending_inputs: Vec<(WindowId, emInputEvent)> = Vec::new();
+        let mut input_state = emInputState::new();
+        let fc: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        app.scheduler.DoTimeSlice(
+            &mut app.windows,
+            &app.context,
+            &mut app.framework_actions,
+            &mut pending_inputs,
+            &mut input_state,
+            &fc,
+            &app.pending_actions,
+        );
+
+        assert_eq!(
+            *result_cell.borrow(),
+            Some(DialogResult::Ok),
+            "on_finish must fire with Ok after finish_post_show"
+        );
+        {
+            let win = app.windows.get_mut(&wid).expect("window present");
+            let mut tree = win.take_tree();
+            let mut beh = tree.take_behavior(root_id).expect("behavior present");
+            let dlg = beh.as_dlg_panel_mut().unwrap();
+            assert_eq!(
+                dlg.finalized_result,
+                Some(DialogResult::Ok),
+                "finalized_result must be Ok"
+            );
+            tree.put_behavior(root_id, beh);
+            win.put_tree(tree);
+        }
+
+        app.scheduler.remove_engine(engine_id);
+        app.scheduler.clear_pending_for_tests();
+    }
+
+    /// Verifies first-fire guard: a second `finish_post_show` call while
+    /// `pending_result` is already `Some` is a no-op (does not overwrite).
+    ///
+    /// Ports plan Step 20.5 double-call idempotence requirement.
+    #[test]
+    fn finish_post_show_double_call_is_noop() {
+        use crate::emEngineCtx::InitCtx;
+        use crate::emGUIFramework::App;
+        use winit::window::WindowId;
+
+        let mut app = App::new(Box::new(|_app, _el| {}));
+
+        let (dlg_id, finish_sig, root_id) = {
+            let mut ctx = InitCtx {
+                scheduler: &mut app.scheduler,
+                framework_actions: &mut app.framework_actions,
+                root_context: &app.context,
+                pending_actions: &app.pending_actions,
+            };
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut ctx, "Test", look);
+            dlg.AddCustomButton(&mut ctx, "OK", DialogResult::Ok);
+            let dlg_id = dlg.dialog_id;
+            let finish_sig = dlg.finish_signal;
+            let root_id = dlg.root_panel_id;
+            app.pending_top_level.push(dlg.pending.unwrap());
+            (dlg_id, finish_sig, root_id)
+        };
+
+        let wid = WindowId::dummy();
+        let engine_id = app
+            .install_pending_top_level_headless(wid)
+            .expect("install");
+
+        // Pre-set pending_result = Ok directly — simulates first call fired.
+        {
+            let win = app.windows.get_mut(&wid).unwrap();
+            let mut tree = win.take_tree();
+            let mut beh = tree.take_behavior(root_id).unwrap();
+            beh.as_dlg_panel_mut().unwrap().pending_result = Some(DialogResult::Ok);
+            tree.put_behavior(root_id, beh);
+            win.put_tree(tree);
+        }
+
+        // Build a second handle with the same identity and call finish_post_show
+        // with Cancel — the guard must block it.
+        let dummy_sig2 = app.scheduler.create_signal();
+        let handle2 = emDialog {
+            dialog_id: dlg_id,
+            finish_signal: finish_sig,
+            close_signal: dummy_sig2,
+            root_panel_id: root_id,
+            look: emLook::new(),
+            pending: None,
+        };
+        handle2.finish_post_show(&app.pending_actions, DialogResult::Cancel);
+
+        // Drain pending_actions.
+        app.drain_pending_actions_headless();
+
+        // pending_result must still be Ok (Cancel was blocked by guard).
+        {
+            let win = app.windows.get_mut(&wid).unwrap();
+            let mut tree = win.take_tree();
+            let mut beh = tree.take_behavior(root_id).unwrap();
+            let dlg = beh.as_dlg_panel_mut().unwrap();
+            assert_eq!(
+                dlg.pending_result,
+                Some(DialogResult::Ok),
+                "second finish_post_show must not overwrite pending_result"
+            );
+            tree.put_behavior(root_id, beh);
+            win.put_tree(tree);
+        }
+
         app.scheduler.remove_engine(engine_id);
         app.scheduler.clear_pending_for_tests();
     }

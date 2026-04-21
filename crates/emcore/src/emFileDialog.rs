@@ -187,14 +187,6 @@ impl emFileDialog {
         &mut self.fsb
     }
 
-    pub fn Finish(&mut self, result: DialogResult, ctx: &mut PanelCtx<'_>) {
-        self.dialog.Finish(result, ctx);
-    }
-
-    pub fn GetResult(&self) -> Option<&DialogResult> {
-        self.dialog.GetResult()
-    }
-
     /// Check whether the dialog can finish with the given result.
     ///
     /// Port of C++ `emFileDialog::CheckFinish`. Validates the selection
@@ -323,8 +315,8 @@ impl emFileDialog {
     /// wake-up-signal subscription plumbing. Tracked by raw-material entry E024.
     pub fn Cycle(&mut self, ctx: &mut PanelCtx<'_>) -> bool {
         // Decide what transition to execute based on currently-pending
-        // signals, then drop the SchedCtx borrow before mutating ctx via
-        // Finish (which itself synthesizes a SchedCtx to fire finish_signal).
+        // signals, then drop the SchedCtx borrow before enqueueing closures
+        // via finish_post_show / pending_actions (which borrow ctx mutably).
         enum Action {
             None,
             FinishOk,
@@ -339,10 +331,12 @@ impl emFileDialog {
                 Action::FinishOk
             } else if let Some(od) = self.overwrite_dialog.as_ref() {
                 if sched.is_signaled(od.finish_signal) {
-                    match od.GetResult() {
+                    // Read from the Cell shim populated by the overwrite
+                    // dialog's on_finish closure (Task 19/20).
+                    match self.overwrite_result.take() {
                         Some(DialogResult::Ok) => Action::OverwriteConfirmed,
                         Some(DialogResult::Cancel) => Action::OverwriteCancelled,
-                        _ => Action::None,
+                        Some(DialogResult::Custom(_)) | None => Action::None,
                     }
                 } else {
                     Action::None
@@ -352,21 +346,43 @@ impl emFileDialog {
             }
         };
 
+        // Get the pending_actions ref once (PanelCtx exposes it as an
+        // Option field; Cycle's contract requires it to be Some — if it's
+        // None we have no closure rail and must return false).
+        let Some(pa) = ctx.pending_actions else {
+            return false;
+        };
+
         match action {
             Action::None => false,
             Action::FinishOk => {
-                self.dialog.Finish(DialogResult::Ok, ctx);
+                self.dialog.finish_post_show(pa, DialogResult::Ok);
                 true
             }
             Action::OverwriteConfirmed => {
                 self.overwrite_confirmed = std::mem::take(&mut self.overwrite_asked);
-                self.overwrite_dialog = None;
-                self.dialog.Finish(DialogResult::Ok, ctx);
+                if let Some(od) = self.overwrite_dialog.take() {
+                    let did = od.dialog_id;
+                    pa.borrow_mut().push(Box::new(
+                        move |app: &mut crate::emGUIFramework::App, _el| {
+                            app.close_dialog_by_id(did);
+                        },
+                    ));
+                }
+                self.dialog.finish_post_show(pa, DialogResult::Ok);
                 true
             }
             Action::OverwriteCancelled => {
                 self.overwrite_asked.clear();
-                self.overwrite_dialog = None;
+                if let Some(od) = self.overwrite_dialog.take() {
+                    let did = od.dialog_id;
+                    pa.borrow_mut().push(Box::new(
+                        move |app: &mut crate::emGUIFramework::App, _el| {
+                            app.close_dialog_by_id(did);
+                        },
+                    ));
+                }
+                // Outer dialog stays open; user may try save again.
                 true
             }
         }

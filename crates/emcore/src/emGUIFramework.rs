@@ -674,6 +674,23 @@ impl App {
         None
     }
 
+    /// Drain `pending_actions` without a real `ActiveEventLoop`.
+    ///
+    /// For use in `#[cfg(test)]` only. Runs each closure with a null
+    /// `&ActiveEventLoop` pointer. Safe as long as closures annotate their
+    /// `_el` parameter with a leading `_` and never dereference it.
+    /// All closures pushed by `emDialog::finish_post_show` and the auto-delete
+    /// rail satisfy this invariant.
+    #[cfg(test)]
+    pub(crate) fn drain_pending_actions_headless(&mut self) {
+        let actions: Vec<DeferredAction> = self.pending_actions.borrow_mut().drain(..).collect();
+        for action in actions {
+            // SAFETY: all pending_actions closures in this crate take `_el`
+            // and never dereference it. The null pointer is never read.
+            action(self, unsafe { &*(std::ptr::NonNull::dangling().as_ptr()) });
+        }
+    }
+
     /// Phase 3.5 Task 10: unified close path for dialogs.
     ///
     /// Handles both lifecycle states:
