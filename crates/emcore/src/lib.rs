@@ -34,6 +34,7 @@ pub mod emFileModel;
 pub mod emFilePanel;
 pub mod emFileSelectionBox;
 pub mod emFileStream;
+pub mod emFlagsRec;
 pub mod emFontCache;
 pub mod emFontCacheBitmapFont;
 pub mod emFpPlugin;
