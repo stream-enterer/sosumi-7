@@ -97,3 +97,9 @@ Stub live-caller audit (for Task 22):
 - All four stubs are dead in production. Task 22 can delete them.
 
 New tests: `finish_post_show_sets_pending_result`, `finish_post_show_double_call_is_noop`. Gate green — nextest 2498/0/9, `cargo clippy --all-targets --all-features -- -D warnings` clean.
+
+### Task 20 fix — restore generic `finish_post_show<C: ConstructCtx>` signature
+
+The implementer's rationale ("PanelCtx doesn't impl ConstructCtx") was wrong: `impl ConstructCtx for PanelCtx<'_>` exists at `emEngineCtx.rs:378` with `pending_actions()` returning `self.pending_actions.expect(...)`. The non-generic signature was unforced drift from plan Step 20.4.
+
+Fix: `finish_post_show` now `pub fn finish_post_show<C: ConstructCtx>(&self, ctx: &mut C, result: DialogResult)`, body calls `ctx.pending_actions().borrow_mut().push(...)`. `emFileDialog::Cycle` updated to pass `ctx` directly and call `ctx.pending_actions()` for close-dialog pushes; `ConstructCtx` added to imports. The two Task 20 tests updated to construct an `InitCtx` and pass `&mut ctx`. Removed unused `FrameworkDeferredAction` and `RefCell` top-level imports from `emDialog.rs`. Gate green — nextest 2498/0/9, clippy clean.
