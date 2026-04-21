@@ -146,3 +146,17 @@ COMPLETE. No narrowings feasible — cross-crate emmain callers documented in `p
 | `tree_mut()` | yes (emDialog.rs only) | none | already `pub(crate)` — correct, no change |
 
 No code changes. Ledger-only commit.
+
+## Closeout
+
+All tasks 1-23 green. Gate final: nextest 2510/0/9, goldens 237/6, clippy clean.
+
+Invariants I5a-I5j verified (Task 13 keystone).
+
+Spec compliance: all in-scope items shipped; deferred items land in Phase 3.6.
+
+Deviations from spec:
+- Added narrow `emDialog::finish_post_show` in Task 20 instead of deferring wholesale to Phase 3.6, because emFileDialog::Cycle has live post-show Finish(Ok) calls that cannot ship without the path.
+
+Follow-ups:
+- Phase 3.6 emFileDialog full engine subscription + general `App::mutate_dialog_by_id`.
