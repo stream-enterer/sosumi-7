@@ -63,6 +63,10 @@ pub struct emFileDialog {
     look: Rc<emLook>,
     /// PanelId of the emFileSelectionBox installed under content panel.
     fsb_panel_id: PanelId,
+    /// SignalId cached at construction so callers can subscribe / fire
+    /// without walking the tree (fsb behavior lives under the dialog's
+    /// pending tree pre-show, the app window's tree post-show).
+    fsb_trigger_sig: SignalId,
     mode: FileDialogMode,
     dir_allowed: bool,
 }
@@ -138,8 +142,22 @@ impl emFileDialog {
                 // outer dialog finalizes.
 
                 // fsb_file_trigger signalled? → set pending_result = Ok.
+                //
+                // stay_awake tracking: on_cycle_ext runs AFTER the base
+                // Cycle body (emDialog.rs Cycle step 5a). If we mutate
+                // pending_result here the base won't observe it until the
+                // NEXT Cycle, so we must keep the engine awake to guarantee
+                // that next Cycle happens. Without the `true` return, the
+                // engine would sleep and finalization would never occur
+                // until some other signal woke the engine.
+                //
+                // C++ equivalent: emFileDialog.cpp:82-84 calls Finish(POSITIVE)
+                // which re-enters via emDialog::Finish → FinishState=1 the
+                // same cycle, so C++ doesn't have this re-wake requirement.
+                let mut stay = false;
                 if ctx.IsSignaled(closure_fsb_sig) && dlg.pending_result.is_none() {
                     dlg.pending_result = Some(DialogResult::Ok);
+                    stay = true;
                 }
 
                 // Overwrite dialog finished? Observe via the cached
@@ -208,10 +226,11 @@ impl emFileDialog {
                                 app.close_dialog_by_id(od_did);
                             },
                         ));
+                        stay = true;
                     }
                 }
 
-                false
+                stay
             },
         );
 
@@ -232,9 +251,17 @@ impl emFileDialog {
             dialog,
             look,
             fsb_panel_id,
+            fsb_trigger_sig,
             mode,
             dir_allowed: false,
         }
+    }
+
+    /// SignalId of the embedded emFileSelectionBox's file_trigger_signal.
+    /// Used by post-show consumers (including Task 5 E024 tests) to fire
+    /// the signal without reaching through the tree.
+    pub fn file_trigger_signal(&self) -> SignalId {
+        self.fsb_trigger_sig
     }
 
     pub fn show<C: ConstructCtx>(&mut self, ctx: &mut C) {
@@ -664,5 +691,475 @@ mod tests {
         let mut __init = TestInit::new();
         let dlg = make_dialog(&mut __init, FileDialogMode::Select);
         assert!(!dlg.is_directory_result_allowed());
+    }
+}
+
+// ─── Phase 3.6 Task 5: E024 closure tests ──────────────────────────────────
+//
+// Mechanical arbiter that demonstrates E024 is STRUCTURALLY CLOSED: the
+// scheduler drives emFileDialog to finish WITH ZERO CALLER INVOCATION OF
+// ANY `Cycle` METHOD. Signals are fired into the scheduler, `DoTimeSlice`
+// runs, assertions are made on pending-signals and finalized_result.
+//
+// Invariant (enforced by CI grep — see plan Task 5 Step 5.7):
+//     rg -n '\.Cycle\(' crates/emcore/src/emFileDialog.rs == 0
+#[cfg(test)]
+mod e024_closure_tests {
+    use super::*;
+    use crate::emDialog::DialogResult;
+    use crate::emGUIFramework::App;
+    use crate::emInput::emInputEvent;
+    use crate::emInputState::emInputState;
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use winit::window::WindowId;
+
+    /// Test-only fixture: owns an `App` + a tmp dir for file-system scratch.
+    /// Drops the tmp dir on teardown.
+    struct FileDialogTestHarness {
+        app: App,
+        tmp_dir: PathBuf,
+    }
+
+    static UID: AtomicU64 = AtomicU64::new(0);
+
+    impl FileDialogTestHarness {
+        fn new() -> Self {
+            let uid = UID.fetch_add(1, Ordering::Relaxed);
+            let tmp_dir = std::env::temp_dir().join(format!(
+                "emcore_filedialog_test_{}_{}",
+                std::process::id(),
+                uid
+            ));
+            std::fs::create_dir_all(&tmp_dir).expect("create tmp dir");
+            Self {
+                app: App::new(Box::new(|_app, _el| {})),
+                tmp_dir,
+            }
+        }
+
+        fn write_test_file(&self, name: &str, content: &[u8]) -> PathBuf {
+            let path = self.tmp_dir.join(name);
+            std::fs::write(&path, content).expect("write test file");
+            path
+        }
+
+        /// Run `n` scheduler slices. Does NOT call any `Cycle` method —
+        /// `DoTimeSlice` dispatches engines internally. This is the
+        /// E024-closure invariant: tests never pull `Cycle` manually.
+        fn run_n_slices(&mut self, n: usize) {
+            let mut pending_inputs: Vec<(WindowId, emInputEvent)> = Vec::new();
+            let mut input_state = emInputState::new();
+            let fc: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+            for _ in 0..n {
+                self.app.scheduler.DoTimeSlice(
+                    &mut self.app.windows,
+                    &self.app.context,
+                    &mut self.app.framework_actions,
+                    &mut pending_inputs,
+                    &mut input_state,
+                    &fc,
+                    &self.app.pending_actions,
+                );
+            }
+        }
+    }
+
+    impl Drop for FileDialogTestHarness {
+        fn drop(&mut self) {
+            // Clean scheduler state so other tests don't see leaked pending.
+            // EngineScheduler's Drop debug_asserts `engines.is_empty()` so
+            // we must close every dialog (removes engines + windows) before
+            // dropping the scheduler.
+            self.app.pending_actions.borrow_mut().clear();
+            let dids: Vec<crate::emGUIFramework::DialogId> =
+                self.app.dialog_windows.keys().copied().collect();
+            for did in dids {
+                self.app.close_dialog_by_id(did);
+            }
+            self.app.scheduler.clear_pending_for_tests();
+            let _ = std::fs::remove_dir_all(&self.tmp_dir);
+        }
+    }
+
+    /// Build an emFileDialog on the harness's App and install headless.
+    /// Returns `(fd, wid)`. After this helper, `fd.dialog.pending` is `None`
+    /// (consumed by install).
+    fn build_and_install(
+        h: &mut FileDialogTestHarness,
+        mode: FileDialogMode,
+    ) -> (emFileDialog, WindowId) {
+        let look = emLook::new();
+        let mut fd = {
+            let mut ctx = crate::emEngineCtx::InitCtx {
+                scheduler: &mut h.app.scheduler,
+                framework_actions: &mut h.app.framework_actions,
+                root_context: &h.app.context,
+                pending_actions: &h.app.pending_actions,
+            };
+            emFileDialog::new(&mut ctx, mode, look)
+        };
+        // Set a default directory so post-install CheckFinish has a valid path.
+        fd.set_parent_directory(&h.tmp_dir);
+
+        // Push pending into App and install headless. Mirrors the production
+        // `show()` path without needing an ActiveEventLoop.
+        let pending = fd
+            .dialog
+            .pending
+            .take()
+            .expect("fd.dialog.pending present pre-install");
+        h.app.pending_top_level.push(pending);
+        let wid = WindowId::dummy();
+        h.app
+            .install_pending_top_level_headless(wid)
+            .expect("install registers DialogPrivateEngine");
+        (fd, wid)
+    }
+
+    /// Walk into app.windows[wid].tree, take DlgPanel behavior, apply `f`,
+    /// restore. Only legal post-install.
+    fn with_dlg_panel<R>(
+        app: &mut App,
+        wid: WindowId,
+        root_id: PanelId,
+        f: impl FnOnce(&mut crate::emDialog::DlgPanel) -> R,
+    ) -> R {
+        let win = app
+            .windows
+            .get_mut(&wid)
+            .expect("window present post-install");
+        let mut tree = win.take_tree();
+        let mut beh = tree.take_behavior(root_id).expect("root behavior present");
+        let r = f(beh.as_dlg_panel_mut().expect("root is DlgPanel"));
+        tree.put_behavior(root_id, beh);
+        win.put_tree(tree);
+        r
+    }
+
+    /// Read `finalized_result` from outer DlgPanel — tests' view of
+    /// `GetResult`. (`emDialog` has no direct post-show `GetResult` helper;
+    /// we read DlgPanel directly via the window's tree.)
+    fn read_result(app: &mut App, wid: WindowId, root_id: PanelId) -> Option<DialogResult> {
+        with_dlg_panel(app, wid, root_id, |p| p.finalized_result)
+    }
+
+    // ─── Test 1: fsb file_trigger_signal drives dialog to finish ───────────
+
+    /// E024 closure core observation: firing fsb.file_trigger_signal into
+    /// the scheduler drives the outer dialog's DialogPrivateEngine to
+    /// finalize the result as Ok. Test does NOT call any Cycle method.
+    ///
+    /// Cycle-count rationale:
+    ///   slice 1 — engine awakens via wake_up_signals subscription;
+    ///             base body has no pending_result; on_cycle_ext runs AFTER
+    ///             base (per emDialog.rs:962), sets pending_result = Ok;
+    ///             returns true so engine stays awake.
+    ///   slice 2 — engine runs base body: pending_result → finalized_result;
+    ///             finish_state 1 → fires finish_signal.
+    #[test]
+    fn fsb_file_trigger_drives_dialog_to_finish_via_scheduler() {
+        let mut h = FileDialogTestHarness::new();
+        h.write_test_file("hello.txt", b"hi");
+
+        let look = emLook::new();
+        let mut fd = {
+            let mut ctx = crate::emEngineCtx::InitCtx {
+                scheduler: &mut h.app.scheduler,
+                framework_actions: &mut h.app.framework_actions,
+                root_context: &h.app.context,
+                pending_actions: &h.app.pending_actions,
+            };
+            emFileDialog::new(&mut ctx, FileDialogMode::Open, look)
+        };
+        fd.set_parent_directory(&h.tmp_dir);
+        fd.set_selected_name("hello.txt");
+
+        let finish_sig = fd.finish_signal();
+        let fsb_trigger_sig = fd.file_trigger_signal();
+        let outer_root = fd.dialog.root_panel_id;
+
+        // Install headless.
+        let pending = fd.dialog.pending.take().expect("pending present");
+        h.app.pending_top_level.push(pending);
+        let wid = WindowId::dummy();
+        h.app
+            .install_pending_top_level_headless(wid)
+            .expect("install");
+
+        // USER ACTION: fire fsb.file_trigger_signal. From here forward,
+        // the test NEVER invokes any Cycle method. The scheduler dispatches
+        // DialogPrivateEngine.Cycle via DoTimeSlice internally.
+        h.app.scheduler.fire(fsb_trigger_sig);
+
+        // Two slices: see Cycle-count rationale in doc comment above.
+        h.run_n_slices(2);
+
+        // Observable post-slice: finalized_result is set, finish_state
+        // advanced past 1. `is_pending(finish_sig)` is NOT a reliable
+        // post-DoTimeSlice check — the scheduler clears pending after
+        // processing. finalized_result is the durable observable.
+        let (result, state) = with_dlg_panel(&mut h.app, wid, outer_root, |p| {
+            (p.finalized_result, p.finish_state)
+        });
+        assert_eq!(
+            result,
+            Some(DialogResult::Ok),
+            "E024 closure: finalized_result must be Ok after fsb trigger drives the scheduler"
+        );
+        assert!(
+            state >= 2,
+            "finish_state must have advanced past 1 (==2, fire + reset); got {state}"
+        );
+        let _ = finish_sig;
+    }
+
+    // ─── Test 2: overwrite-POSITIVE — DEFERRED (see note) ─────────────────
+    //
+    // DEFERRED: the full scheduler-driven POSITIVE livelock regression
+    // test would install both outer + OD as headless top-levels and
+    // drive OD's user-OK through its own engine. That requires a second
+    // test-only `WindowId` distinct from `WindowId::dummy()` (currently
+    // the sole stable headless id); without a second id, installing OD
+    // overwrites outer's entry in `App::windows`.
+    //
+    // The scheduler-driven EVIDENCE for Task 3's fix is instead carried
+    // by `save_mode_overwrite_od_finish_signal_schedules_pending_action`
+    // below: it proves (a) OD.finish_signal is correctly subscribed to
+    // outer's engine via wake_up_signals; (b) on_cycle_ext runs on wake
+    // and observes the signal; (c) a pending_action is pushed for the
+    // deferred OD-result read + promotion; (d) OD is torn down from
+    // DlgPanel; (e) overwrite_asked is cleared. The promotion code path
+    // itself is an inline closure over `&mut DlgPanel` in on_cycle_ext
+    // and is verified by source-read.
+    //
+    // Follow-up: expose a second headless `WindowId` on `App` (or
+    // parameterize `install_pending_top_level_headless` with a caller-
+    // supplied id) to enable a two-dialog scheduler-driven POSITIVE test.
+
+    // ─── Test 2: on_cycle_ext-push verification (reduced-scope POSITIVE) ───
+
+    /// Task 5 pragmatic POSITIVE test: scheduler-driven proof that when
+    /// OD.finish_signal fires, outer's `on_cycle_ext` closure observes it
+    /// AND pushes a deferred pending_action. This proves the subscription
+    /// wiring (wake_up_signals → scheduler.connect) and the observation
+    /// path of the Task 3 fix without requiring a second WindowId for a
+    /// full installed OD.
+    ///
+    /// The POSITIVE promotion (overwrite_asked → overwrite_confirmed +
+    /// pending_result = Ok) is tested at source-read level; the full
+    /// scheduler-driven POSITIVE path is deferred to a follow-up task
+    /// requiring a second headless WindowId in the test infrastructure.
+    /// See the long comment in the previous test.
+    #[test]
+    fn save_mode_overwrite_od_finish_signal_schedules_pending_action() {
+        let mut h = FileDialogTestHarness::new();
+        h.write_test_file("doc.txt", b"existing");
+
+        let look = emLook::new();
+        let mut fd = {
+            let mut ctx = crate::emEngineCtx::InitCtx {
+                scheduler: &mut h.app.scheduler,
+                framework_actions: &mut h.app.framework_actions,
+                root_context: &h.app.context,
+                pending_actions: &h.app.pending_actions,
+            };
+            emFileDialog::new(&mut ctx, FileDialogMode::Save, look)
+        };
+        fd.set_parent_directory(&h.tmp_dir);
+        fd.set_selected_name("doc.txt");
+
+        // CheckFinish: parks OD, adds OD.finish_signal to outer's
+        // wake_up_signals, queues `od.show(ctx)` pending_action.
+        let check = {
+            let mut ctx = crate::emEngineCtx::InitCtx {
+                scheduler: &mut h.app.scheduler,
+                framework_actions: &mut h.app.framework_actions,
+                root_context: &h.app.context,
+                pending_actions: &h.app.pending_actions,
+            };
+            fd.CheckFinish(&mut ctx, &DialogResult::Ok)
+        };
+        assert!(matches!(check, FileDialogCheckResult::ConfirmOverwrite(_)));
+
+        // Discard the OD.show(ctx) closure: would crash on headless drain.
+        h.app.pending_actions.borrow_mut().clear();
+
+        // Capture OD's finish_signal from the parked OD, then install outer.
+        let outer_root = fd.dialog.root_panel_id;
+        let od_finish_sig = {
+            let pending = fd.dialog.pending_mut();
+            let tree = pending.window.tree_mut();
+            let beh = tree.take_behavior(outer_root).expect("outer root");
+            let sig = beh
+                .as_dlg_panel()
+                .and_then(|p| p.overwrite_dialog.as_ref())
+                .map(|od| od.finish_signal)
+                .expect("OD parked with finish_signal");
+            tree.put_behavior(outer_root, beh);
+            sig
+        };
+
+        let outer_pending = fd.dialog.pending.take().expect("outer pending");
+        h.app.pending_top_level.push(outer_pending);
+        let outer_wid = WindowId::dummy();
+        h.app
+            .install_pending_top_level_headless(outer_wid)
+            .expect("outer install");
+
+        // USER ACTION: fire OD.finish_signal. Scheduler wakes outer engine
+        // (OD.finish_signal was connected via wake_up_signals by install).
+        h.app.scheduler.fire(od_finish_sig);
+
+        // One slice: base body does nothing (no buttons, no close, no
+        // pending_result); on_cycle_ext runs post-base, observes od_finish_sig
+        // pending, takes OD out of DlgPanel, pushes a pending_action.
+        h.run_n_slices(1);
+
+        // E024 closure observation: on_cycle_ext pushed the pending_action
+        // that processes OD's result. This is the scheduler-driven evidence
+        // that the Task 3 fix's observation path is correctly wired.
+        assert_eq!(
+            h.app.pending_actions.borrow().len(),
+            1,
+            "on_cycle_ext must push exactly one pending_action on OD.finish_signal"
+        );
+
+        // Also verify OD was taken out of DlgPanel (C++ emFileDialog.cpp:95
+        // `delete OverwriteDialog.Get();` — OD handle is dropped).
+        with_dlg_panel(&mut h.app, outer_wid, outer_root, |p| {
+            assert!(
+                p.overwrite_dialog.is_none(),
+                "OD must be removed from DlgPanel after on_cycle_ext observation"
+            );
+            assert_eq!(
+                p.overwrite_asked, "",
+                "overwrite_asked must be cleared by mem::take in closure"
+            );
+        });
+    }
+
+    // ─── Test 3: overwrite-NEGATIVE path ──────────────────────────────────
+
+    /// Save-mode overwrite NEGATIVE: user cancels OD → outer dialog stays
+    /// open; OD is torn down; overwrite_asked cleared; outer.finish_signal
+    /// NOT pending.
+    ///
+    /// Same WindowId constraint as test 2b: OD is not installed as a
+    /// second top-level window. To drive the NEGATIVE branch, we fire
+    /// OD.finish_signal and drain the resulting pending_action; the
+    /// action calls `mutate_dialog_by_id(od_did, ...)` which is a no-op
+    /// (OD never installed → od_did not in dialog_windows). The NEGATIVE
+    /// branch's code path runs (since `od_result` is `None`), matching
+    /// the code path for a user-cancelled OD at the behavioral level.
+    #[test]
+    fn save_mode_overwrite_negative_tears_down_od_outer_stays_open() {
+        let mut h = FileDialogTestHarness::new();
+        h.write_test_file("doc.txt", b"existing");
+
+        let look = emLook::new();
+        let mut fd = {
+            let mut ctx = crate::emEngineCtx::InitCtx {
+                scheduler: &mut h.app.scheduler,
+                framework_actions: &mut h.app.framework_actions,
+                root_context: &h.app.context,
+                pending_actions: &h.app.pending_actions,
+            };
+            emFileDialog::new(&mut ctx, FileDialogMode::Save, look)
+        };
+        fd.set_parent_directory(&h.tmp_dir);
+        fd.set_selected_name("doc.txt");
+
+        let _check = {
+            let mut ctx = crate::emEngineCtx::InitCtx {
+                scheduler: &mut h.app.scheduler,
+                framework_actions: &mut h.app.framework_actions,
+                root_context: &h.app.context,
+                pending_actions: &h.app.pending_actions,
+            };
+            fd.CheckFinish(&mut ctx, &DialogResult::Ok)
+        };
+        h.app.pending_actions.borrow_mut().clear();
+
+        let outer_root = fd.dialog.root_panel_id;
+        let outer_finish_sig = fd.finish_signal();
+        let od_finish_sig = {
+            let pending = fd.dialog.pending_mut();
+            let tree = pending.window.tree_mut();
+            let beh = tree.take_behavior(outer_root).expect("outer root");
+            let sig = beh
+                .as_dlg_panel()
+                .and_then(|p| p.overwrite_dialog.as_ref())
+                .map(|od| od.finish_signal)
+                .expect("OD parked");
+            tree.put_behavior(outer_root, beh);
+            sig
+        };
+
+        let outer_pending = fd.dialog.pending.take().expect("outer pending");
+        h.app.pending_top_level.push(outer_pending);
+        let outer_wid = WindowId::dummy();
+        h.app
+            .install_pending_top_level_headless(outer_wid)
+            .expect("outer install");
+
+        // Fire OD.finish_signal → on_cycle_ext pushes action → drain → NEGATIVE branch.
+        h.app.scheduler.fire(od_finish_sig);
+        h.run_n_slices(1);
+        // Drain pending_actions to run the on_cycle_ext-pushed closure.
+        h.app.drain_pending_actions_headless();
+
+        // Assertions on outer state after NEGATIVE resolution:
+        assert!(
+            !h.app.scheduler.is_pending(outer_finish_sig),
+            "NEGATIVE: outer finish_signal must NOT be pending"
+        );
+        assert_eq!(
+            read_result(&mut h.app, outer_wid, outer_root),
+            None,
+            "NEGATIVE: outer finalized_result must be None (outer stays open)"
+        );
+        with_dlg_panel(&mut h.app, outer_wid, outer_root, |p| {
+            assert!(p.overwrite_dialog.is_none(), "OD torn down after NEGATIVE");
+            assert_eq!(
+                p.overwrite_asked, "",
+                "overwrite_asked cleared after NEGATIVE"
+            );
+            assert_eq!(
+                p.overwrite_confirmed, "",
+                "NEGATIVE: overwrite_confirmed NOT promoted"
+            );
+            assert_eq!(
+                p.pending_result, None,
+                "NEGATIVE: outer pending_result NOT set"
+            );
+        });
+    }
+
+    // ─── Test 4: no-signals one-slice is no-op ────────────────────────────
+
+    /// Baseline sanity: constructing + installing a dialog, then running
+    /// a single slice with no signals fired, must NOT finish the dialog.
+    /// Counterpart to the legacy `cycle_no_signals_is_no_op`.
+    #[test]
+    fn no_signals_one_slice_is_no_op() {
+        let mut h = FileDialogTestHarness::new();
+        let (fd, wid) = build_and_install(&mut h, FileDialogMode::Open);
+        let finish_sig = fd.finish_signal();
+        let outer_root = fd.dialog.root_panel_id;
+        let _ = fd;
+
+        h.run_n_slices(1);
+
+        assert!(
+            !h.app.scheduler.is_pending(finish_sig),
+            "no-signals slice must not fire finish_signal"
+        );
+        assert_eq!(
+            read_result(&mut h.app, wid, outer_root),
+            None,
+            "no-signals slice must not finalize a result"
+        );
     }
 }
