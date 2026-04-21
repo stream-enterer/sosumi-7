@@ -59,3 +59,7 @@ COMPLETE. Option B chosen: `DialogResult` derives `Copy` (`Ok`, `Cancel`, `Custo
 ## Task 15 — emStocksListBox migration: Cell::take polling + closure-rail silent_cancel
 
 COMPLETE. 4 construct sites (`DeleteStocks`, `CutStocks`, `PasteStocks`, `SetInterest`) fully migrated per spec §10.2: `silent_cancel` replaced with `old.take()` + `cc.pending_actions().borrow_mut().push(close_dialog_by_id closure)` + `cell.set(None)` stale-result clear; `dialog.show(cc)` added after `set_on_finish` registration and before storing in `Option` field. 4 `Cycle` polling sites migrated per spec §10.3: `dialog.GetResult()` replaced with `self.*_result.take()` — Cell::take atomically consumes result; `dialog = None` handle drop on result presence; `busy = true` on dialog-present-but-no-result. `silent_cancel` stub in `emDialog.rs` **retained** — `emFileDialog.rs:408` still calls it (Task 19's responsibility). `rg 'silent_cancel|GetResult' crates/emstocks/` → 0 matches. First golden checkpoint: 237/6 (pre-existing failures preserved; no new regressions). Nextest 2496/0/9. `cargo clippy --all-targets --all-features -- -D warnings` clean.
+
+### Keystone: Task 5.2 emStocksListBox migration COMPLETE
+
+Tasks 14–15 landed the consumer migration: Rc<Cell<Option<DialogResult>>> result slots, on_finish Cell-writer closures at 4 construct sites, Cell::take polling in Cycle, closure-rail close_dialog_by_id replacing silent_cancel. DialogResult gained Copy. Goldens preserved 237/6. Nextest 2496/0/9.
