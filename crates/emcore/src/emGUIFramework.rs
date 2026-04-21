@@ -557,10 +557,13 @@ impl App {
 
         // Phase 3.5 Task 5: construct DialogPrivateEngine here, not in emDialog::new.
         // `new_wid` is known at this point; pass it to the engine.
+        // Phase 3.5 Task 10: also pass `dialog_id` so auto-delete can call
+        // `App::close_dialog_by_id(did)` via the closure rail.
         {
             let engine = Box::new(crate::emDialog::DialogPrivateEngine {
+                dialog_id: pending.dialog_id,
                 root_panel_id: pending.private_engine_root_panel_id,
-                window_id: new_wid,
+                _window_id: new_wid,
                 close_signal: pending.close_signal,
             });
             let engine_id = self.scheduler.register_engine(
@@ -635,9 +638,11 @@ impl App {
         pending.window.wire_viewport_window_id(wid);
         // Phase 3.5 Task 5: construct DialogPrivateEngine here, not in emDialog::new.
         // Mirrors `install_pending_top_level` but skips winit surface creation.
+        // Phase 3.5 Task 10: pass `dialog_id` for closure-rail auto-delete.
         let engine = Box::new(crate::emDialog::DialogPrivateEngine {
+            dialog_id: pending.dialog_id,
             root_panel_id: pending.private_engine_root_panel_id,
-            window_id: wid,
+            _window_id: wid,
             close_signal: pending.close_signal,
         });
         let engine_id =
@@ -669,6 +674,43 @@ impl App {
             }
         }
         None
+    }
+
+    /// Phase 3.5 Task 10: unified close path for dialogs.
+    ///
+    /// Handles both lifecycle states:
+    /// - **Post-materialize** (`dialog_windows` has `did`): unregisters all
+    ///   `PanelScope::Toplevel(wid)` engines (via `engines_for_scope`) and
+    ///   removes the `emWindow` from `self.windows`. Signal cleanup is handled
+    ///   by slotmap dead-key semantics — fire-to-dead-signal is a no-op.
+    /// - **Pre-materialize** (still in `pending_top_level`): `swap_remove`s
+    ///   the pending entry; order of remaining entries does not matter.
+    /// - **Unknown `DialogId`**: no-op; idempotent.
+    ///
+    /// Consumers:
+    /// - `DialogPrivateEngine::Cycle` auto-delete (closure-rail push).
+    /// - `emStocksListBox` `silent_cancel` replacement (Phase 3.5 Task 15).
+    pub fn close_dialog_by_id(&mut self, did: DialogId) {
+        if let Some(wid) = self.dialog_windows.remove(&did) {
+            // Post-materialize: unregister all engines scoped to this window
+            // then drop the emWindow.
+            let engine_ids = self
+                .scheduler
+                .engines_for_scope(crate::emPanelScope::PanelScope::Toplevel(wid));
+            for eid in engine_ids {
+                self.scheduler.remove_engine(eid);
+            }
+            self.windows.remove(&wid);
+        } else if let Some(idx) = self
+            .pending_top_level
+            .iter()
+            .position(|p| p.dialog_id == did)
+        {
+            // Pre-materialize: drop the pending entry.
+            // swap_remove is O(1); order of pending_top_level doesn't matter.
+            self.pending_top_level.swap_remove(idx);
+        }
+        // Else: unknown DialogId — idempotent no-op.
     }
 }
 
@@ -1292,6 +1334,102 @@ mod tests {
                 app.pending_top_level[0].private_engine_root_panel_id,
                 root_id
             );
+        }
+
+        // ─── Phase 3.5 Task 10 tests — close_dialog_by_id ───────────────────
+
+        fn push_pending(app: &mut App) -> (DialogId, crate::emPanelTree::PanelId) {
+            let did = app.allocate_dialog_id();
+            let close_sig = app.scheduler.create_signal();
+            let window = make_pending_window(app);
+            let mut tree = crate::emPanelTree::PanelTree::new();
+            let root_id = tree.create_root("dlg", false);
+            // The PendingTopLevel carries the tree via its emWindow, but
+            // make_pending_window creates a window without a meaningful tree.
+            // For these close_dialog_by_id tests we only need the pending
+            // queue to have the entry — the tree contents are irrelevant.
+            app.pending_top_level.push(PendingTopLevel {
+                dialog_id: did,
+                window,
+                close_signal: close_sig,
+                private_engine_root_panel_id: root_id,
+            });
+            (did, root_id)
+        }
+
+        #[test]
+        fn close_dialog_by_id_pre_materialize_drops_pending() {
+            let mut app = test_app();
+            let (did, _root_id) = push_pending(&mut app);
+            assert_eq!(app.pending_top_level.len(), 1);
+
+            app.close_dialog_by_id(did);
+
+            assert_eq!(
+                app.pending_top_level.len(),
+                0,
+                "pending entry must be removed"
+            );
+            assert!(
+                !app.dialog_windows.contains_key(&did),
+                "dialog_windows unaffected (wasn't materialized)"
+            );
+        }
+
+        #[test]
+        fn close_dialog_by_id_post_materialize_removes_window_and_engines() {
+            use crate::emPanelScope::PanelScope;
+            use winit::window::WindowId;
+
+            let mut app = test_app();
+            let (did, root_id) = push_pending(&mut app);
+            let wid = WindowId::dummy();
+            // Give the pending window a proper tree so install can find the
+            // root panel (the engine expects it). Re-build the pending entry.
+            // Simplest: use install_pending_top_level_headless which handles
+            // everything.
+            // The existing push_pending already set private_engine_root_panel_id.
+            let engine_id = app
+                .install_pending_top_level_headless(wid)
+                .expect("install succeeds");
+
+            // Post-install: window + engine + mapping all present.
+            assert!(app.windows.contains_key(&wid));
+            assert_eq!(app.dialog_windows.get(&did).copied(), Some(wid));
+            assert!(
+                !app.scheduler
+                    .engines_for_scope(PanelScope::Toplevel(wid))
+                    .is_empty(),
+                "engine registered at Toplevel(wid)"
+            );
+
+            app.close_dialog_by_id(did);
+
+            assert!(!app.windows.contains_key(&wid), "window must be removed");
+            assert!(
+                !app.dialog_windows.contains_key(&did),
+                "dialog_windows mapping must be cleared"
+            );
+            assert!(
+                app.scheduler
+                    .engines_for_scope(PanelScope::Toplevel(wid))
+                    .is_empty(),
+                "all Toplevel(wid) engines must be unregistered"
+            );
+
+            // Suppress unused — engine_id was consumed by close_dialog_by_id
+            let _ = engine_id;
+            let _ = root_id;
+            app.scheduler.clear_pending_for_tests();
+        }
+
+        #[test]
+        fn close_dialog_by_id_unknown_is_noop() {
+            let mut app = test_app();
+            let did = app.allocate_dialog_id();
+            // Never enqueued, never materialized.
+            app.close_dialog_by_id(did); // must not panic
+            assert_eq!(app.pending_top_level.len(), 0);
         }
     }
 }

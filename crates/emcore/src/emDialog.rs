@@ -769,11 +769,19 @@ impl PanelBehavior for DlgButton {
 ///      `DeferredAction::CloseWindow` (C++ `delete this` at FinishState==4).
 ///
 pub(crate) struct DialogPrivateEngine {
+    /// Phase 3.5 Task 10: `DialogId` stored directly so the auto-delete
+    /// branch can call `App::close_dialog_by_id(did)` via the closure rail
+    /// without a reverse-lookup.
+    pub(crate) dialog_id: crate::emGUIFramework::DialogId,
     pub(crate) root_panel_id: crate::emPanelTree::PanelId,
     /// Phase 3.5 Task 5: no longer `Option<WindowId>` — the engine is
     /// constructed at install time with `materialized_wid` known, so
     /// the field is always populated.
-    pub(crate) window_id: winit::window::WindowId,
+    /// Phase 3.5 Task 10: the auto-delete branch now uses `dialog_id` +
+    /// `close_dialog_by_id` instead of `CloseWindow(window_id)`, so the
+    /// field is structurally present (C++ `PrivateEngineClass` back-ref) but
+    /// not directly read in Rust. Prefixed `_` to suppress dead_code lint.
+    pub(crate) _window_id: winit::window::WindowId,
     pub(crate) close_signal: SignalId,
 }
 
@@ -910,12 +918,17 @@ impl crate::emEngine::emEngine for DialogPrivateEngine {
                 true
             } else {
                 // state == 3 (or greater): `delete this` in C++.
-                // Post-Task-5: window_id always populated (not Option).
-                ctx.framework_action(crate::emEngineCtx::DeferredAction::CloseWindow(
-                    self.window_id,
-                ));
-                // NOTE: this emission still uses the undrained enum rail; Task 12 rewrites
-                // to the closure rail via App::close_dialog_by_id.
+                // Phase 3.5 Task 10: closure-rail replaces the undrained
+                // enum-rail `DeferredAction::CloseWindow` push. The previous
+                // emission was never consumed (CloseWindow was on the
+                // framework_actions enum rail which the event loop did not
+                // drain for dialogs), so auto-delete was latently broken.
+                // Push a `pending_actions` closure that calls
+                // `App::close_dialog_by_id(did)` instead.
+                let did = self.dialog_id;
+                ctx.pending_actions()
+                    .borrow_mut()
+                    .push(Box::new(move |app, _el| app.close_dialog_by_id(did)));
                 false
             }
         };
@@ -1602,6 +1615,110 @@ mod tests {
         let mut dlg = emDialog::new(&mut init.ctx(), "Test", look);
         dlg.show(&mut init.ctx());
         dlg.show(&mut init.ctx()); // panics
+    }
+
+    // ─── Phase 3.5 Task 10 test ──────────────────────────────────────────────
+
+    /// Verifies that `DialogPrivateEngine::Cycle`'s auto-delete countdown
+    /// (FinishState 1→2→3→emit) pushes a `close_dialog_by_id` closure onto
+    /// `pending_actions` rather than emitting the old undrained
+    /// `DeferredAction::CloseWindow` enum-rail action.
+    ///
+    /// Setup mirrors `private_engine_observes_close_signal_sets_pending_cancel`
+    /// but enables `auto_delete` before install and runs 4 slices (one to
+    /// finalize, three to count down).
+    #[test]
+    fn private_engine_with_auto_delete_emits_close_closure() {
+        use crate::emGUIFramework::{App, PendingTopLevel};
+        use crate::emWindow::WindowFlags;
+        use winit::window::WindowId;
+
+        let mut app = App::new(Box::new(|_app, _el| {}));
+
+        // Build dialog tree with auto_delete=true.
+        let mut tree = PanelTree::new();
+        let root_id = tree.create_root("dlg", false);
+        let finish_sig = app.scheduler.create_signal();
+        let close_sig = app.scheduler.create_signal();
+        let flags_sig = app.scheduler.create_signal();
+        let focus_sig = app.scheduler.create_signal();
+        let geom_sig = app.scheduler.create_signal();
+        let mut dlg_panel = DlgPanel::new("Test", emLook::new(), finish_sig);
+        // Enable auto-delete before install.
+        dlg_panel.auto_delete = true;
+        tree.set_behavior(root_id, Box::new(dlg_panel));
+
+        let mut window = crate::emWindow::emWindow::new_top_level_pending(
+            Rc::clone(&app.context),
+            WindowFlags::empty(),
+            "test-auto-delete".to_string(),
+            close_sig,
+            flags_sig,
+            focus_sig,
+            geom_sig,
+            crate::emColor::emColor::TRANSPARENT,
+        );
+        let _discarded = window.take_tree();
+        window.put_tree(tree);
+
+        let wid = WindowId::dummy();
+        let dialog_id = app.allocate_dialog_id();
+        app.pending_top_level.push(PendingTopLevel {
+            dialog_id,
+            window,
+            close_signal: close_sig,
+            private_engine_root_panel_id: root_id,
+        });
+        let engine_id = app
+            .install_pending_top_level_headless(wid)
+            .expect("install registers DialogPrivateEngine");
+
+        let mut pending_inputs: Vec<(WindowId, emInputEvent)> = Vec::new();
+        let mut input_state = emInputState::new();
+        let fc: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+
+        // Helper closure to run one scheduler slice.
+        let do_slice = |app: &mut App,
+                        pending_inputs: &mut Vec<(WindowId, emInputEvent)>,
+                        input_state: &mut emInputState| {
+            app.scheduler.DoTimeSlice(
+                &mut app.windows,
+                &app.context,
+                &mut app.framework_actions,
+                pending_inputs,
+                input_state,
+                &fc,
+                &app.pending_actions,
+            );
+        };
+
+        // Slice 1: fire close_signal → FinishState 0→1 (pending_result=Cancel),
+        //          then 1→2 (fire finish_signal, advance state).
+        app.scheduler.fire(close_sig);
+        do_slice(&mut app, &mut pending_inputs, &mut input_state);
+
+        // Slices 2+3+4: FinishState 2→3 (count), 3→4 (count), 4→emit closure.
+        // Each slice the engine is awoken because it returned true at state 1.
+        do_slice(&mut app, &mut pending_inputs, &mut input_state);
+        do_slice(&mut app, &mut pending_inputs, &mut input_state);
+        do_slice(&mut app, &mut pending_inputs, &mut input_state);
+
+        // After 4 slices the auto-delete branch (state==3, +1 more tick) has
+        // fired. Check that exactly one closure was pushed onto pending_actions.
+        assert_eq!(
+            app.pending_actions.borrow().len(),
+            1,
+            "auto-delete must push exactly one close_dialog_by_id closure"
+        );
+
+        // Teardown — engine_id was already removed by close_dialog_by_id if
+        // the closure had been drained; it hasn't yet, so remove it manually.
+        // (The closure itself calls close_dialog_by_id when drained by App.)
+        // Clear pending_actions to avoid running the closure against a partial
+        // App in test teardown.
+        app.pending_actions.borrow_mut().clear();
+        app.scheduler.remove_engine(engine_id);
+        app.scheduler.clear_pending_for_tests();
     }
 
     // ─── Legacy emDialog tests staged for Task 12 porting ────────────────────
