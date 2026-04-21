@@ -21,3 +21,4 @@
 
 ## Task ledger
 
+- **Task 1 — Entry audit + ledger open:** COMPLETE. Branch created off port-rewrite-phase-3-5-a-complete (586d6af5). Entry audit recorded. Gate green — nextest 2492/0/9.
