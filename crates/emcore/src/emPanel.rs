@@ -378,9 +378,7 @@ pub trait PanelBehavior: AsAny {
     /// the standard `take_behavior` / `put_behavior` cycle-path — Rust analog
     /// of the C++ `PrivateEngineClass::Dlg&` back-reference.
     ///
-    /// The default returns `None`; only `DlgPanel` (cfg(test)-gated until
-    /// task 5) overrides this to return `Some(self)`.
-    #[cfg(test)]
+    /// The default returns `None`; only `DlgPanel` overrides this to return `Some(self)`.
     fn as_dlg_panel_mut(&mut self) -> Option<&mut crate::emDialog::DlgPanel> {
         None
     }

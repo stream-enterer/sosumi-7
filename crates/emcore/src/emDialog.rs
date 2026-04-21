@@ -1,14 +1,11 @@
 use std::rc::Rc;
 
-#[cfg(test)]
 use crate::emButton::emButton;
-#[cfg(test)]
 use crate::emCursor::emCursor;
 use crate::emEngineCtx::{ConstructCtx, PanelCtx};
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
 use crate::emPainter::emPainter;
-#[cfg(test)]
 use crate::emPanel::PanelBehavior;
 use crate::emPanel::PanelState;
 use crate::emPanel::Rect;
@@ -58,16 +55,12 @@ const BOTTOM_MARGIN: f64 = 4.0;
 /// `tree.take_behavior(root_panel_id)` — the Rust analog of the C++
 /// `PrivateEngineClass::Dlg&` back-reference (B3.5e).
 ///
-/// `#[cfg(test)]`-gated in Task 2 — Task 5 removes the gate when
-/// DialogPrivateEngine becomes the real consumer. Without the gate, the
-/// lib build's dead-code lint would fire on fields unused until Task 5.
-#[cfg(test)]
 pub struct DlgPanel {
     border: emBorder,
     look: Rc<emLook>,
     /// Dialog buttons: (caption string, result payload). Rendered in the
     /// bottom button row as `DlgButton` child panels.
-    pub(crate) buttons: Vec<(String, DialogResult)>,
+    pub buttons: Vec<(String, DialogResult)>,
     /// Set by `Finish` once CheckFinish permits. `DialogPrivateEngine`
     /// observes this on Cycle and fires `finish_signal`.
     pub(crate) pending_result: Option<DialogResult>,
@@ -101,9 +94,8 @@ pub struct DlgPanel {
     pub(crate) button_signals: Vec<(SignalId, DialogResult)>,
 }
 
-#[cfg(test)]
 impl DlgPanel {
-    pub(crate) fn new(title: &str, look: Rc<emLook>, finish_signal: SignalId) -> Self {
+    pub fn new(title: &str, look: Rc<emLook>, finish_signal: SignalId) -> Self {
         Self {
             border: emBorder::new(OuterBorderType::PopupRoot).with_caption(title),
             look,
@@ -122,12 +114,11 @@ impl DlgPanel {
         }
     }
 
-    pub(crate) fn SetTitle(&mut self, title: &str) {
+    pub fn SetTitle(&mut self, title: &str) {
         self.border.SetCaption(title);
     }
 }
 
-#[cfg(test)]
 impl PanelBehavior for DlgPanel {
     fn as_dlg_panel_mut(&mut self) -> Option<&mut DlgPanel> {
         Some(self)
@@ -236,10 +227,7 @@ impl PanelBehavior for DlgPanel {
 ///
 /// Precedent: `ButtonPanel` adapter in `emColorFieldFieldPanel.rs:187-210`.
 ///
-/// `#[cfg(test)]`-gated in Task 3 — Task 5 removes the gate when wired
-/// into the public API.
-#[cfg(test)]
-pub(crate) struct DlgButton {
+pub struct DlgButton {
     pub(crate) button: emButton,
     /// Dialog result payload carried by this button. C++ parity: `int Result`
     /// in `class DlgButton` (emDialog.h:182).
@@ -248,12 +236,11 @@ pub(crate) struct DlgButton {
     /// (Task 4+7) uses this to reach the `DlgPanel` and write
     /// `pending_result`. Rust analog of the C++ back-edge
     /// `((emDialog*)GetWindow())->Finish(Result)` (emDialog.cpp:236).
-    pub(crate) dlg_panel_id: crate::emPanelTree::PanelId,
+    pub dlg_panel_id: crate::emPanelTree::PanelId,
 }
 
-#[cfg(test)]
 impl DlgButton {
-    pub(crate) fn new<C: ConstructCtx>(
+    pub fn new<C: ConstructCtx>(
         ctx: &mut C,
         caption: &str,
         look: Rc<emLook>,
@@ -268,21 +255,20 @@ impl DlgButton {
     }
 
     /// Port of C++ `emBorder::GetCaption` (via `emButton` inheritance).
-    pub(crate) fn caption(&self) -> &str {
+    pub fn caption(&self) -> &str {
         self.button.GetCaption()
     }
 
     /// Port of C++ `DlgButton::GetResult` (emDialog.h:249-252).
-    pub(crate) fn result(&self) -> &DialogResult {
+    pub fn result(&self) -> &DialogResult {
         &self.result
     }
 
-    pub(crate) fn SetCaption(&mut self, text: &str) {
+    pub fn SetCaption(&mut self, text: &str) {
         self.button.SetCaption(text);
     }
 }
 
-#[cfg(test)]
 impl PanelBehavior for DlgButton {
     fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
@@ -326,10 +312,6 @@ impl PanelBehavior for DlgButton {
 ///   4. Auto-delete countdown: 3 slices after finalize, emit
 ///      `DeferredAction::CloseWindow` (C++ `delete this` at FinishState==4).
 ///
-/// `#[cfg(test)]`-gated until Task 5 wires it into emDialog construction.
-/// The `install` associated function mirrors the ctor's "create + priority +
-/// wake-up-signal + connect" sequence (emDialog.cpp:37-38).
-#[cfg(test)]
 pub(crate) struct DialogPrivateEngine {
     pub(crate) root_panel_id: crate::emPanelTree::PanelId,
     /// Phase 3.5 Task 5: no longer `Option<WindowId>` — the engine is
@@ -339,7 +321,6 @@ pub(crate) struct DialogPrivateEngine {
     pub(crate) close_signal: SignalId,
 }
 
-#[cfg(test)]
 impl crate::emEngine::emEngine for DialogPrivateEngine {
     fn Cycle(&mut self, ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
         // Port of emDialog::PrivateCycle (emDialog.cpp:194-224).

@@ -19,9 +19,7 @@ use crate::emScheduler::EngineScheduler;
 use crate::emSignal::SignalId;
 
 use super::emWindow::{emWindow, WindowFlags};
-#[cfg(test)]
 use crate::emEngine::Priority;
-#[cfg(test)]
 use crate::emPanelScope::PanelScope;
 use crate::emScreen::emScreen;
 
@@ -559,9 +557,6 @@ impl App {
 
         // Phase 3.5 Task 5: construct DialogPrivateEngine here, not in emDialog::new.
         // `new_wid` is known at this point; pass it to the engine.
-        // `#[cfg(test)]`-gated because `DialogPrivateEngine` is still test-gated
-        // in Task 5; Task 6 un-gates the struct and removes this gate.
-        #[cfg(test)]
         {
             let engine = Box::new(crate::emDialog::DialogPrivateEngine {
                 root_panel_id: pending.private_engine_root_panel_id,
