@@ -5,6 +5,7 @@ pub mod emATMatrix;
 pub mod emArray;
 pub mod emAvlTreeMap;
 pub mod emAvlTreeSet;
+pub mod emBoolRec;
 pub mod emBorder;
 pub mod emBorderAlignment;
 pub mod emButton;
