@@ -2,6 +2,14 @@ use std::rc::Rc;
 
 use crate::emButton::emButton;
 use crate::emCursor::emCursor;
+
+/// Extension callback invoked by DialogPrivateEngine::Cycle after the base
+/// cycle body. Populated by emFileDialog (Task 3) to inject file-dialog
+/// Cycle logic — observation of fsb.file_trigger_signal +
+/// overwrite_dialog.finish_signal — while keeping a single engine type
+/// (D2 decision from the Phase 3.5 brainstorm).
+pub(crate) type DialogCycleExt =
+    Box<dyn FnMut(&mut DlgPanel, &mut crate::emEngineCtx::EngineCtx<'_>) -> bool>;
 use crate::emEngineCtx::{ConstructCtx, PanelCtx};
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
@@ -428,6 +436,25 @@ pub struct DlgPanel {
     /// observe button clicks, mirroring C++ `emDialog::PrivateEngineClass`
     /// observing button signals via `AddWakeUpSignal` (emDialog.cpp:38).
     pub(crate) button_signals: Vec<(SignalId, DialogResult)>,
+    /// DIVERGED: Rust mechanism for the C++ "emFileDialog::Cycle calls
+    /// emDialog::Cycle() first then runs its own logic" inheritance pattern
+    /// (emFileDialog.cpp:82). In C++, `emFileDialog` is a subclass and its
+    /// `Cycle()` override calls `emDialog::Cycle()` then continues. In Rust
+    /// there is a single engine type (`DialogPrivateEngine`) with no
+    /// inheritance; this callback slot lets emFileDialog inject post-base
+    /// Cycle logic without needing a separate engine or vtable dispatch.
+    ///
+    /// `DialogPrivateEngine::Cycle` calls this AFTER the base cycle body
+    /// (close-signal observation, pending_result resolution, auto-delete
+    /// countdown). Return value: whether the extension wants to keep the
+    /// engine awake (OR'd with the base Cycle's return).
+    ///
+    /// NOTE: the extension must not call `ctx.tree.take_behavior(root_panel_id)`
+    /// — that behavior is already taken by the engine's Cycle body. The
+    /// extension CAN take other panels (e.g. overwrite dialog's root).
+    ///
+    /// Populated by emFileDialog::new in Task 3. `None` for plain emDialog.
+    pub(crate) on_cycle_ext: Option<DialogCycleExt>,
 }
 
 impl DlgPanel {
@@ -446,6 +473,7 @@ impl DlgPanel {
             content_panel_id: None,
             buttons_panel_id: None,
             button_signals: Vec::new(),
+            on_cycle_ext: None,
         }
     }
 
@@ -808,7 +836,28 @@ impl crate::emEngine::emEngine for DialogPrivateEngine {
             }
         };
 
-        // Step 5: put DlgPanel behavior back.
+        // Step 5a: call on_cycle_ext (if set) BEFORE putting behavior back.
+        // The extension runs after the base cycle body so any pending_result
+        // it sets will be visible to the base on the NEXT Cycle, matching C++
+        // emFileDialog::Cycle() calling emDialog::Cycle() first (emFileDialog.cpp:82).
+        //
+        // Swap-out pattern: take the closure from dlg_panel, call it with
+        // &mut dlg_panel, put it back. This avoids a double-borrow of dlg_panel
+        // (we can't hold `dlg_panel.on_cycle_ext.as_mut()` while also passing
+        // `&mut dlg_panel` to the same closure).
+        let ext_stay = if let Some(dlg_panel) = behavior.as_dlg_panel_mut() {
+            if let Some(mut ext) = dlg_panel.on_cycle_ext.take() {
+                let stay = ext(dlg_panel, ctx);
+                dlg_panel.on_cycle_ext = Some(ext);
+                stay
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        // Step 5b: put DlgPanel behavior back.
         let tree = ctx
             .tree
             .as_deref_mut()
@@ -816,7 +865,7 @@ impl crate::emEngine::emEngine for DialogPrivateEngine {
         if tree.panels.contains_key(self.root_panel_id) {
             tree.put_behavior(self.root_panel_id, behavior);
         }
-        stay_awake
+        stay_awake || ext_stay
     }
 }
 
@@ -2200,6 +2249,100 @@ mod tests {
             win.put_tree(tree);
         }
 
+        app.scheduler.remove_engine(engine_id);
+        app.scheduler.clear_pending_for_tests();
+    }
+
+    // ─── Phase 3.6 Task 2 test ───────────────────────────────────────────────
+
+    /// Asserts that `DialogPrivateEngine::Cycle` invokes `DlgPanel.on_cycle_ext`
+    /// exactly once per Cycle slice.
+    ///
+    /// Setup follows the headless-install shape used by
+    /// `private_engine_observes_close_signal_sets_pending_cancel`:
+    /// build DlgPanel, set `on_cycle_ext` to a closure incrementing an
+    /// `Rc<Cell<u32>>` counter, install via `install_pending_top_level_headless`,
+    /// wake the engine by firing close_signal, run one `DoTimeSlice`, assert
+    /// counter == 1.
+    ///
+    /// The extension receives `&mut DlgPanel` directly — it must NOT call
+    /// `ctx.tree.take_behavior(root_panel_id)` (already taken by the engine body).
+    #[test]
+    fn dialog_private_engine_calls_on_cycle_ext() {
+        use crate::emGUIFramework::{App, PendingTopLevel};
+        use crate::emWindow::WindowFlags;
+        use std::cell::Cell;
+        use winit::window::WindowId;
+
+        let mut app = App::new(Box::new(|_app, _el| {}));
+
+        // Counter captured by the extension closure.
+        let counter: Rc<Cell<u32>> = Rc::new(Cell::new(0));
+        let counter_clone = Rc::clone(&counter);
+
+        // Build dialog tree, set on_cycle_ext before install.
+        let mut tree = PanelTree::new();
+        let root_id = tree.create_root("dlg", false);
+        let finish_sig = app.scheduler.create_signal();
+        let close_sig = app.scheduler.create_signal();
+        let flags_sig = app.scheduler.create_signal();
+        let focus_sig = app.scheduler.create_signal();
+        let geom_sig = app.scheduler.create_signal();
+        let mut dlg_panel = DlgPanel::new("Ext", emLook::new(), finish_sig);
+        dlg_panel.on_cycle_ext = Some(Box::new(move |_dlg, _ctx| {
+            counter_clone.set(counter_clone.get() + 1);
+            false
+        }));
+        tree.set_behavior(root_id, Box::new(dlg_panel));
+
+        let mut window = crate::emWindow::emWindow::new_top_level_pending(
+            Rc::clone(&app.context),
+            WindowFlags::empty(),
+            "test-ext".to_string(),
+            close_sig,
+            flags_sig,
+            focus_sig,
+            geom_sig,
+            crate::emColor::emColor::TRANSPARENT,
+        );
+        let _discarded = window.take_tree();
+        window.put_tree(tree);
+
+        let wid = WindowId::dummy();
+        let dialog_id = app.allocate_dialog_id();
+        app.pending_top_level.push(PendingTopLevel {
+            dialog_id,
+            window,
+            close_signal: close_sig,
+            private_engine_root_panel_id: root_id,
+        });
+        let engine_id = app
+            .install_pending_top_level_headless(wid)
+            .expect("install registers DialogPrivateEngine");
+
+        // Fire close_signal to wake the engine and run one slice.
+        app.scheduler.fire(close_sig);
+        let mut pending_inputs: Vec<(WindowId, emInputEvent)> = Vec::new();
+        let mut input_state = emInputState::new();
+        let fc: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        app.scheduler.DoTimeSlice(
+            &mut app.windows,
+            &app.context,
+            &mut app.framework_actions,
+            &mut pending_inputs,
+            &mut input_state,
+            &fc,
+            &app.pending_actions,
+        );
+
+        assert_eq!(
+            counter.get(),
+            1,
+            "on_cycle_ext must be called exactly once per Cycle slice"
+        );
+
+        // Teardown.
+        app.pending_actions.borrow_mut().clear();
         app.scheduler.remove_engine(engine_id);
         app.scheduler.clear_pending_for_tests();
     }
