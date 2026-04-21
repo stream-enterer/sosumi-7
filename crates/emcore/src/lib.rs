@@ -27,6 +27,7 @@ pub mod emDialog;
 pub mod emDoubleRec;
 pub mod emEngine;
 pub mod emEngineCtx;
+pub mod emEnumRec;
 pub mod emErrorPanel;
 pub mod emFileDialog;
 pub mod emFileModel;
