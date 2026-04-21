@@ -66,8 +66,9 @@ impl emSubViewPanel {
         let mut sub_tree = PanelTree::new_with_location(sub_location.clone());
 
         // Phase 2 Task 7: sub_view is plain; engines identify their owning
-        // view via `PanelScope::SubView(outer_panel_id)`, resolved at Cycle
-        // entry through `EngineCtx::tree.panels[..].behavior.as_sub_view_panel_mut()`.
+        // view via `PanelScope::SubView { window_id, outer_panel_id }`,
+        // resolved at Cycle entry through
+        // `EngineCtx::tree.panels[..].behavior.as_sub_view_panel_mut()`.
         let root = sub_tree.create_root("", true);
         // Last arg is pixel tallness; sub_view.CurrentPixelTallness starts at 1.0.
         sub_tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
@@ -79,7 +80,15 @@ impl emSubViewPanel {
         // with SubView location. The outer scheduler's priority-queue dispatch
         // resolves these engines through this panel's `sub_tree` on a single
         // shared queue (spec §3.3) — no per-sub-view scheduler exists.
-        let scope = crate::emPanelScope::PanelScope::SubView(outer_panel_id);
+        // Phase 3.5.A Task 5: `window_id` for SubView scopes isn't threaded
+        // through emSubViewPanel construction yet; use a placeholder
+        // matching `PanelTree::register_engine_for`'s Outer path. Task 7
+        // backfills the real WindowId when window/tree construction
+        // carries it.
+        let scope = crate::emPanelScope::PanelScope::SubView {
+            window_id: winit::window::WindowId::dummy(),
+            outer_panel_id,
+        };
         sub_view.RegisterEngines(ctx, &mut sub_tree, scope, sub_location);
 
         Self {

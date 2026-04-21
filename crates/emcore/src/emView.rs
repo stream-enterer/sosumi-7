@@ -215,7 +215,10 @@ impl super::emEngine::emEngine for UpdateEngineClass {
                 window.view.Update(ctx.tree, &mut sc);
                 false
             }
-            crate::emPanelScope::PanelScope::SubView(pid) => {
+            crate::emPanelScope::PanelScope::SubView {
+                window_id: _,
+                outer_panel_id: pid,
+            } => {
                 let Some(svp) = ctx
                     .tree
                     .panels
@@ -235,6 +238,11 @@ impl super::emEngine::emEngine for UpdateEngineClass {
                 let (sub_view, sub_tree) = svp.sub_view_and_tree_mut();
                 sub_view.Update(sub_tree, &mut sc);
                 false
+            }
+            crate::emPanelScope::PanelScope::Framework => {
+                unreachable!(
+                    "UpdateEngineClass is panel-bound; Framework scope is never registered for it"
+                )
             }
         }
     }
@@ -298,7 +306,10 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
                 };
                 va.animate(view, ctx.tree, dt, &mut sc)
             }
-            crate::emPanelScope::PanelScope::SubView(pid) => {
+            crate::emPanelScope::PanelScope::SubView {
+                window_id: _,
+                outer_panel_id: pid,
+            } => {
                 let Some(svp) = ctx
                     .tree
                     .panels
@@ -322,6 +333,11 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
                     current_engine: Some(engine_id),
                 };
                 va.animate(sub_view, sub_tree, dt, &mut sc)
+            }
+            crate::emPanelScope::PanelScope::Framework => {
+                unreachable!(
+                    "VisitingVAEngineClass is panel-bound; Framework scope is never registered for it"
+                )
             }
         }
     }

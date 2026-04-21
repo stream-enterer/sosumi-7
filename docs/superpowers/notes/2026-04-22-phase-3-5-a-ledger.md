@@ -44,3 +44,16 @@ See plan §"Bootstrap decisions" (B3.5a.a–B3.5a.g).
   Task 6 wires into scheduler dispatch, Task 7 migrates home tree into it,
   Task 8 migrates popup tree into it. One roundtrip unit test. Gate
   green — nextest 2485/0/9.
+- **Task 5 — PanelScope extension:** COMPLETE. Added Framework variant;
+  SubView gains window_id field (struct variant, flat — no `rest` chain).
+  Added window_id() accessor. resolve_view updated: Framework → None;
+  SubView walk now WindowId-aware (ctx.tree still &mut PanelTree at this
+  task — Option migration in Task 6). One new unit test
+  (window_id_extraction); pre-existing scope_variants_exist expanded to
+  cover all three variants including struct-variant SubView. Migrated
+  existing SubView call-sites to new struct shape (emSubViewPanel.rs,
+  emPanelTree.rs, emView.rs — UpdateEngine + VisitingVA match arms plus
+  defensive Framework no-op arms since those engines are panel-bound).
+  Call-sites pass WindowId::dummy() for now; Task 7 backfills real
+  WindowIds through window/tree construction. Framework variant not
+  yet dispatched (Task 6). Gate green — nextest 2486/0/9.

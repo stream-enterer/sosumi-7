@@ -588,7 +588,10 @@ impl PanelTree {
                 crate::emPanelScope::PanelScope::Toplevel(winit::window::WindowId::dummy())
             }
             crate::emEngine::TreeLocation::SubView { outer_panel_id, .. } => {
-                crate::emPanelScope::PanelScope::SubView(*outer_panel_id)
+                crate::emPanelScope::PanelScope::SubView {
+                    window_id: winit::window::WindowId::dummy(),
+                    outer_panel_id: *outer_panel_id,
+                }
             }
         };
         let adapter = PanelCycleEngine {
