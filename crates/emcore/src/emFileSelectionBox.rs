@@ -1363,6 +1363,10 @@ fn match_pattern_recursive(fname: &[u8], pattern: &[u8]) -> bool {
 }
 
 impl PanelBehavior for emFileSelectionBox {
+    fn as_file_selection_box_mut(&mut self) -> Option<&mut emFileSelectionBox> {
+        Some(self)
+    }
+
     fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
         self.border.paint_border(
             painter,

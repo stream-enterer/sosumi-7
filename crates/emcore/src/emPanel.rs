@@ -383,6 +383,13 @@ pub trait PanelBehavior: AsAny {
         None
     }
 
+    /// Immutable variant of `as_dlg_panel_mut`. Used by `on_cycle_ext`
+    /// closures that need to read DlgPanel state (e.g. OD's
+    /// `finalized_result`) without taking behavior mutably.
+    fn as_dlg_panel(&self) -> Option<&crate::emDialog::DlgPanel> {
+        None
+    }
+
     /// Downcast to `emDialog::DlgButton` without `Any`. Used by
     /// `emDialog::set_button_label_for_result` (phase 3.5 task 8) to walk
     /// child panels and find the button whose result matches, then update its
@@ -394,6 +401,19 @@ pub trait PanelBehavior: AsAny {
     /// this `pub` trait method names it — same `private_interfaces` forced
     /// divergence as `DlgPanel`.
     fn as_dlg_button_mut(&mut self) -> Option<&mut crate::emDialog::DlgButton> {
+        None
+    }
+
+    /// Downcast to `emFileSelectionBox::emFileSelectionBox` without `Any`.
+    /// Used by `emFileDialog` (Phase 3.6 Task 3) to reach the fsb's mutable
+    /// state via the standard `take_behavior` / `put_behavior` cycle-path —
+    /// Rust analog of the C++ `emFileDialog::Fsb` direct member access
+    /// (emFileDialog.h:190). Pattern mirrors `as_dlg_panel_mut`.
+    ///
+    /// The default returns `None`; only `emFileSelectionBox` overrides this.
+    fn as_file_selection_box_mut(
+        &mut self,
+    ) -> Option<&mut crate::emFileSelectionBox::emFileSelectionBox> {
         None
     }
 }

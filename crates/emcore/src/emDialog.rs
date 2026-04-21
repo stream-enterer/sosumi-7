@@ -2,6 +2,14 @@ use std::rc::Rc;
 
 use crate::emButton::emButton;
 use crate::emCursor::emCursor;
+
+/// Extension callback invoked by DialogPrivateEngine::Cycle after the base
+/// cycle body. Populated by emFileDialog (Task 3) to inject file-dialog
+/// Cycle logic — observation of fsb.file_trigger_signal +
+/// overwrite_dialog.finish_signal — while keeping a single engine type
+/// (D2 decision from the Phase 3.5 brainstorm).
+pub(crate) type DialogCycleExt =
+    Box<dyn FnMut(&mut DlgPanel, &mut crate::emEngineCtx::EngineCtx<'_>) -> bool>;
 use crate::emEngineCtx::{ConstructCtx, PanelCtx};
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
@@ -104,6 +112,7 @@ impl emDialog {
                 window,
                 close_signal,
                 private_engine_root_panel_id: root_panel_id,
+                wake_up_signals: Vec::new(),
             }),
         }
     }
@@ -199,28 +208,74 @@ impl emDialog {
         self.AddCustomButton(ctx, label, DialogResult::Cancel);
     }
 
-    /// Update the dialog title. Pre-show only.
+    /// Update the dialog title.
     ///
     /// Port of C++ `emDialog::SetRootTitle` (emDialog.cpp:49-52).
-    pub fn SetRootTitle(&mut self, title: &str) {
-        self.with_dlg_panel_mut("SetRootTitle", |p| p.SetTitle(title));
+    /// Pre-show: mutates DlgPanel directly via `with_dlg_panel_mut`.
+    /// Post-show: routes through `pending_actions` → `App::mutate_dialog_by_id`.
+    pub fn SetRootTitle<C: ConstructCtx>(&mut self, ctx: &mut C, title: &str) {
+        if self.pending.is_some() {
+            self.with_dlg_panel_mut("SetRootTitle", |p| p.SetTitle(title));
+        } else {
+            let did = self.dialog_id;
+            let title = title.to_string();
+            ctx.pending_actions()
+                .borrow_mut()
+                .push(Box::new(move |app, _el| {
+                    app.mutate_dialog_by_id(did, |p, _tree| p.SetTitle(&title));
+                }));
+        }
     }
 
-    /// Update label of the first button whose result matches `result`. Pre-show only.
+    /// Update label of the first button whose result matches `result`.
     ///
     /// Port of C++ `emDialog::SetButtonLabel` (emDialog.cpp:55-62). Walks the
     /// DlgButton children of the DlgPanel root to find the first button whose
     /// result payload matches, then updates its caption.
-    pub fn set_button_label_for_result(&mut self, result: &DialogResult, label: &str) {
-        let pending = self
-            .pending
-            .as_mut()
-            .expect("set_button_label_for_result after show");
-        let tree = pending.window.tree_mut();
+    /// Pre-show: walks DlgButton children directly in the pending tree.
+    /// Post-show: routes through `pending_actions` → `App::mutate_dialog_by_id`,
+    /// walking DlgButton children inline via the `&mut PanelTree` argument.
+    /// Root panel is taken out of the tree during the closure — children remain
+    /// accessible through the passed-in tree ref. `root_panel_id` is captured
+    /// from `self` so the closure can call `tree.children(root_panel_id)`.
+    pub fn set_button_label_for_result<C: ConstructCtx>(
+        &mut self,
+        ctx: &mut C,
+        result: &DialogResult,
+        label: &str,
+    ) {
+        if let Some(pending) = self.pending.as_mut() {
+            let tree = pending.window.tree_mut();
+            Self::walk_and_set_button_label(tree, self.root_panel_id, result, label);
+        } else {
+            let did = self.dialog_id;
+            let root_panel_id = self.root_panel_id;
+            let result = *result;
+            let label = label.to_string();
+            ctx.pending_actions()
+                .borrow_mut()
+                .push(Box::new(move |app, _el| {
+                    app.mutate_dialog_by_id(did, move |_p, tree| {
+                        // Root panel is detached from the tree during this closure;
+                        // children remain in the tree and are walkable via `tree`.
+                        Self::walk_and_set_button_label(tree, root_panel_id, &result, &label);
+                    });
+                }));
+        }
+    }
+
+    /// Walk children of `root_id` in `tree` and set the caption of the first
+    /// `DlgButton` whose result matches `result`. Shared by both pre-show and
+    /// post-show paths of `set_button_label_for_result`.
+    fn walk_and_set_button_label(
+        tree: &mut crate::emPanelTree::PanelTree,
+        root_id: crate::emPanelTree::PanelId,
+        result: &DialogResult,
+        label: &str,
+    ) {
         // Collect child ids to avoid holding a reference into `tree` while
         // mutably borrowing per-child behaviors.
-        let children: Vec<crate::emPanelTree::PanelId> =
-            tree.children(self.root_panel_id).collect();
+        let children: Vec<crate::emPanelTree::PanelId> = tree.children(root_id).collect();
         for cid in children {
             let mut behavior = match tree.take_behavior(cid) {
                 Some(b) => b,
@@ -244,9 +299,19 @@ impl emDialog {
     }
 
     /// Port of C++ `emDialog::EnableAutoDeletion` (emDialog.cpp:156-159).
-    /// Pre-show only. Panics if called after `show()`.
-    pub fn EnableAutoDeletion(&mut self, enabled: bool) {
-        self.with_dlg_panel_mut("EnableAutoDeletion", |p| p.auto_delete = enabled);
+    /// Pre-show: mutates DlgPanel directly via `with_dlg_panel_mut`.
+    /// Post-show: routes through `pending_actions` → `App::mutate_dialog_by_id`.
+    pub fn EnableAutoDeletion<C: ConstructCtx>(&mut self, ctx: &mut C, enabled: bool) {
+        if self.pending.is_some() {
+            self.with_dlg_panel_mut("EnableAutoDeletion", |p| p.auto_delete = enabled);
+        } else {
+            let did = self.dialog_id;
+            ctx.pending_actions()
+                .borrow_mut()
+                .push(Box::new(move |app, _el| {
+                    app.mutate_dialog_by_id(did, |p, _tree| p.auto_delete = enabled);
+                }));
+        }
     }
 
     /// Set the finish callback — invoked once when the dialog result is
@@ -295,60 +360,115 @@ impl emDialog {
         unimplemented!("emDialog::ShowMessage — Phase 3.6 impl; no live caller in 3.5")
     }
 
+    /// Stable PanelId of the DlgPanel root. Always valid (pre-show and
+    /// post-show) — captured at construction in `emDialog::new`.
+    pub fn root_panel_id(&self) -> crate::emPanelTree::PanelId {
+        self.root_panel_id
+    }
+
+    /// Mutable access to the pre-show builder state. Panics post-show
+    /// (after `show()` has consumed `self.pending`). Used by subclass-like
+    /// consumers (e.g. `emFileDialog`) to reach into the pending tree and
+    /// install child panels before the dialog materializes.
+    pub(crate) fn pending_mut(&mut self) -> &mut crate::emGUIFramework::PendingTopLevel {
+        self.pending
+            .as_mut()
+            .expect("pending_mut after show: emDialog pre-show state consumed")
+    }
+
+    /// Subscribe an arbitrary signal to the to-be-built `DialogPrivateEngine`
+    /// at install time. Pre-show only; panics if called after `show()`.
+    ///
+    /// Port of C++ `emFileDialog` ctor calling
+    /// `AddWakeUpSignal(Fsb->GetFileTriggerSignal())` (emFileDialog.cpp:41).
+    /// In C++ the private engine exists in the ctor and takes subscriptions
+    /// directly; in Rust the engine is built deferred, so subscribers stash
+    /// signals on `PendingTopLevel.wake_up_signals` for the installer to
+    /// drain post-register_engine.
+    pub fn add_pre_show_wake_up_signal(&mut self, sig: SignalId) {
+        self.pending
+            .as_mut()
+            .expect("add_pre_show_wake_up_signal after show")
+            .wake_up_signals
+            .push(sig);
+    }
+
+    /// Lazily create (or return) the content panel of this dialog.
+    ///
+    /// Port of C++ `emDialog::GetContentPanel` (emDialog.cpp:67-73). In C++
+    /// the content panel is an `emLinearGroup` lazy-created on first call;
+    /// in Rust we create a plain child panel named "content" under the
+    /// DlgPanel root and record it in `DlgPanel.content_panel_id` so
+    /// subsequent calls return the same id.
+    ///
+    /// DIVERGED: Rust's lazy-create is simpler (plain child) because the
+    /// layout contract in `DlgPanel::LayoutChildren` already rects-out
+    /// `content_panel_id` against the computed content area — the C++
+    /// emLinearGroup wrapper is an idiom adaptation since the wrapper
+    /// layer is not yet ported. Consumers install their own child behavior
+    /// via the returned PanelId (see `emFileDialog::new`).
+    ///
+    /// Pre-show only. Panics post-show: content panel must be installed
+    /// before `show()` because the pre-show tree-reach pattern is the only
+    /// mutation path for the dialog's PanelTree before materialization.
+    pub fn GetContentPanel<C: ConstructCtx>(
+        &mut self,
+        _ctx: &mut C,
+    ) -> crate::emPanelTree::PanelId {
+        let root_panel_id = self.root_panel_id;
+        let pending = self.pending.as_mut().expect("GetContentPanel after show");
+        let tree = pending.window.tree_mut();
+
+        // Check existing id cached on DlgPanel.
+        if let Some(mut behavior) = tree.take_behavior(root_panel_id) {
+            let existing = behavior.as_dlg_panel_mut().and_then(|p| p.content_panel_id);
+            tree.put_behavior(root_panel_id, behavior);
+            if let Some(id) = existing {
+                return id;
+            }
+        }
+
+        // Lazy-create a "content" child under the DlgPanel root.
+        let content_id = tree.create_child(root_panel_id, "content", None);
+        if let Some(mut behavior) = tree.take_behavior(root_panel_id) {
+            if let Some(dlg) = behavior.as_dlg_panel_mut() {
+                dlg.content_panel_id = Some(content_id);
+            }
+            tree.put_behavior(root_panel_id, behavior);
+        }
+        content_id
+    }
+
     /// Programmatically finish the dialog post-show with the given result.
     ///
     /// Port of C++ `emDialog::Finish(int)` (emDialog.cpp:146-153) for the
-    /// post-show case. Phase 3.5 exposes this narrowly (`emFileDialog::Cycle`
-    /// is the only live consumer); Phase 3.6 generalizes to full
-    /// `App::mutate_dialog_by_id`.
+    /// post-show case.
     ///
-    /// Pushes a closure that sets `DlgPanel.pending_result = Some(result)`,
-    /// which `DialogPrivateEngine::Cycle` picks up on the next tick and routes
-    /// through the normal finalize → fire(finish_signal) → invoke on_finish
-    /// sequence. Matches C++ `Finish` behavior: CheckFinish still runs via
-    /// `DialogPrivateEngine`'s normal flow.
+    /// Thin wrapper over `App::mutate_dialog_by_id` (Prereq A). Pushes a
+    /// closure that sets `DlgPanel.pending_result = Some(result)` via the
+    /// general mutation rail; `mutate_dialog_by_id` handles the tree walk and
+    /// engine wake-up. `DialogPrivateEngine::Cycle` picks up `pending_result`
+    /// on the next tick and routes through the normal finalize →
+    /// fire(finish_signal) → invoke on_finish sequence. Matches C++ `Finish`
+    /// behavior: `CheckFinish` still runs via `DialogPrivateEngine`'s normal
+    /// flow.
     ///
     /// Guard: only sets `pending_result` if neither `pending_result` nor
     /// `finalized_result` is `Some` (first-fire semantics, matching C++ Finish).
     ///
-    /// Note: deviation from spec §Deferred §"Post-show dialog mutation" which
-    /// says this lands in Phase 3.6. `emFileDialog::Cycle` has live
-    /// `Finish(Ok)` calls that force a minimal path into 3.5. The general
-    /// `App::mutate_dialog_by_id` is still Phase 3.6 scope.
+    /// Preserved for the 2 callers in `emFileDialog::Cycle` (Phase 3.6 Task 4
+    /// deletes `Cycle` and both call sites). When Task 4 lands this method
+    /// becomes vestigial; re-evaluate for deletion then.
     pub fn finish_post_show<C: ConstructCtx>(&self, ctx: &mut C, result: DialogResult) {
         let did = self.dialog_id;
-        let root_panel_id = self.root_panel_id;
         ctx.pending_actions()
             .borrow_mut()
             .push(Box::new(move |app, _el| {
-                if let Some(&wid) = app.dialog_windows.get(&did) {
-                    if let Some(win) = app.windows.get_mut(&wid) {
-                        let mut tree = win.take_tree();
-                        if let Some(mut b) = tree.take_behavior(root_panel_id) {
-                            if let Some(dlg) = b.as_dlg_panel_mut() {
-                                if dlg.pending_result.is_none() && dlg.finalized_result.is_none() {
-                                    dlg.pending_result = Some(result);
-                                }
-                            }
-                            tree.put_behavior(root_panel_id, b);
-                        }
-                        win.put_tree(tree);
+                app.mutate_dialog_by_id(did, move |p, _tree| {
+                    if p.pending_result.is_none() && p.finalized_result.is_none() {
+                        p.pending_result = Some(result);
                     }
-                    // Wake DialogPrivateEngine: after FinishState==0 /
-                    // !ADEnabled branch returns false, the engine sleeps until
-                    // a connected signal fires. Direct mutation of
-                    // pending_result via finish_post_show does not fire any
-                    // connected signal, so the engine would never observe the
-                    // mutation. Call wake_up on all engines scoped to
-                    // Toplevel(wid) — exactly one for a dialog window
-                    // (DialogPrivateEngine) — to force one cycle.
-                    let eids = app
-                        .scheduler
-                        .engines_for_scope(crate::emPanelScope::PanelScope::Toplevel(wid));
-                    for eid in eids {
-                        app.scheduler.wake_up(eid);
-                    }
-                }
+                });
             }));
     }
 }
@@ -396,6 +516,61 @@ pub struct DlgPanel {
     /// observe button clicks, mirroring C++ `emDialog::PrivateEngineClass`
     /// observing button signals via `AddWakeUpSignal` (emDialog.cpp:38).
     pub(crate) button_signals: Vec<(SignalId, DialogResult)>,
+    /// DIVERGED: Rust mechanism for the C++ "emFileDialog::Cycle calls
+    /// emDialog::Cycle() first then runs its own logic" inheritance pattern
+    /// (emFileDialog.cpp:82). In C++, `emFileDialog` is a subclass and its
+    /// `Cycle()` override calls `emDialog::Cycle()` then continues. In Rust
+    /// there is a single engine type (`DialogPrivateEngine`) with no
+    /// inheritance; this callback slot lets emFileDialog inject post-base
+    /// Cycle logic without needing a separate engine or vtable dispatch.
+    ///
+    /// `DialogPrivateEngine::Cycle` calls this AFTER the base cycle body
+    /// (close-signal observation, pending_result resolution, auto-delete
+    /// countdown). Return value: whether the extension wants to keep the
+    /// engine awake (OR'd with the base Cycle's return).
+    ///
+    /// NOTE: the extension must not call `ctx.tree.take_behavior(root_panel_id)`
+    /// — that behavior is already taken by the engine's Cycle body. The
+    /// extension CAN take other panels (e.g. overwrite dialog's root).
+    ///
+    /// Populated by emFileDialog::new in Task 3. `None` for plain emDialog.
+    pub(crate) on_cycle_ext: Option<DialogCycleExt>,
+    /// DIVERGED (Phase 3.6 Task 3): file-dialog overwrite-confirmation
+    /// sub-dialog. Set by `emFileDialog::CheckFinish` when Save-mode detects
+    /// overwrite conflicts; consumed + torn down by the file-dialog
+    /// on_cycle_ext closure at next Cycle. Port of C++
+    /// `emCrossPtr<emDialog> emFileDialog::OverwriteDialog`
+    /// (emFileDialog.h:204); the `emCrossPtr` auto-null semantics are
+    /// captured by the Option's None state combined with on_cycle_ext's
+    /// take-deregister-drop pattern on finish observation.
+    ///
+    /// Placement rationale: this field lives on DlgPanel (not on
+    /// emFileDialog) so the `'static + FnMut` `on_cycle_ext` closure can
+    /// reach it through its `&mut DlgPanel` argument — avoiding
+    /// `Rc<RefCell<Option<emDialog>>>` which would be a Do-NOT violation
+    /// per CLAUDE.md.
+    pub(crate) overwrite_dialog: Option<emDialog>,
+    /// DIVERGED (Phase 3.6 Task 3): `EngineId` of this dialog's
+    /// `DialogPrivateEngine`, populated at install time (after register).
+    /// Lets `emFileDialog::CheckFinish` subscribe the overwrite dialog's
+    /// finish signal to this engine without a scheduler-scope walk. Port
+    /// of the C++ member-pointer that `emFileDialog::CheckFinish` uses via
+    /// inheritance to reach its own private engine
+    /// (emFileDialog.cpp:168 `AddWakeUpSignal(OverwriteDialog->GetFinishSignal())`).
+    pub(crate) private_engine_id: Option<crate::emEngine::EngineId>,
+    /// DIVERGED (Phase 3.6 Task 3): text being confirmed for overwrite.
+    /// Matches C++ `OverwriteAsked` in emFileDialog.h:202. Placement on
+    /// DlgPanel mirrors `overwrite_dialog` for the same closure-reach
+    /// reason.
+    pub(crate) overwrite_asked: String,
+    /// DIVERGED (Phase 3.6 Task 3 fix): last-confirmed overwrite text.
+    /// C++ `emFileDialog::OverwriteConfirmed` (emFileDialog.h:203).
+    /// Lives on `DlgPanel` (not on `emFileDialog`) so the `on_cycle_ext`
+    /// closure — which has only `&mut DlgPanel` + `&mut EngineCtx` — can
+    /// promote `overwrite_asked → overwrite_confirmed` on OD POSITIVE
+    /// without reaching back into `emFileDialog`. Placement rationale
+    /// matches `overwrite_dialog` / `overwrite_asked`.
+    pub(crate) overwrite_confirmed: String,
 }
 
 impl DlgPanel {
@@ -414,6 +589,11 @@ impl DlgPanel {
             content_panel_id: None,
             buttons_panel_id: None,
             button_signals: Vec::new(),
+            on_cycle_ext: None,
+            overwrite_dialog: None,
+            private_engine_id: None,
+            overwrite_asked: String::new(),
+            overwrite_confirmed: String::new(),
         }
     }
 
@@ -424,6 +604,10 @@ impl DlgPanel {
 
 impl PanelBehavior for DlgPanel {
     fn as_dlg_panel_mut(&mut self) -> Option<&mut DlgPanel> {
+        Some(self)
+    }
+
+    fn as_dlg_panel(&self) -> Option<&DlgPanel> {
         Some(self)
     }
 
@@ -776,7 +960,28 @@ impl crate::emEngine::emEngine for DialogPrivateEngine {
             }
         };
 
-        // Step 5: put DlgPanel behavior back.
+        // Step 5a: call on_cycle_ext (if set) BEFORE putting behavior back.
+        // The extension runs after the base cycle body so any pending_result
+        // it sets will be visible to the base on the NEXT Cycle, matching C++
+        // emFileDialog::Cycle() calling emDialog::Cycle() first (emFileDialog.cpp:82).
+        //
+        // Swap-out pattern: take the closure from dlg_panel, call it with
+        // &mut dlg_panel, put it back. This avoids a double-borrow of dlg_panel
+        // (we can't hold `dlg_panel.on_cycle_ext.as_mut()` while also passing
+        // `&mut dlg_panel` to the same closure).
+        let ext_stay = if let Some(dlg_panel) = behavior.as_dlg_panel_mut() {
+            if let Some(mut ext) = dlg_panel.on_cycle_ext.take() {
+                let stay = ext(dlg_panel, ctx);
+                dlg_panel.on_cycle_ext = Some(ext);
+                stay
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        // Step 5b: put DlgPanel behavior back.
         let tree = ctx
             .tree
             .as_deref_mut()
@@ -784,7 +989,7 @@ impl crate::emEngine::emEngine for DialogPrivateEngine {
         if tree.panels.contains_key(self.root_panel_id) {
             tree.put_behavior(self.root_panel_id, behavior);
         }
-        stay_awake
+        stay_awake || ext_stay
     }
 }
 
@@ -1122,6 +1327,7 @@ mod tests {
             window,
             close_signal: close_sig,
             private_engine_root_panel_id: root_id,
+            wake_up_signals: Vec::new(),
         });
         let engine_id = app
             .install_pending_top_level_headless(wid)
@@ -1296,7 +1502,7 @@ mod tests {
         let mut init = TestInit::new();
         let look = emLook::new();
         let mut dlg = emDialog::new(&mut init.ctx(), "Old", look);
-        dlg.SetRootTitle("New");
+        dlg.SetRootTitle(&mut init.ctx(), "New");
 
         let pending = dlg.pending.as_mut().unwrap();
         let tree = pending.window.tree_mut();
@@ -1306,14 +1512,73 @@ mod tests {
         assert_eq!(caption, "New");
     }
 
+    /// Post-show SetRootTitle routes through pending_actions → mutate_dialog_by_id.
+    /// Prereq B replaces the former #[should_panic] test.
     #[test]
-    #[should_panic(expected = "SetRootTitle after show")]
-    fn set_root_title_after_show_panics() {
-        let mut init = TestInit::new();
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut init.ctx(), "Old", look);
-        let _ = dlg.pending.take();
-        dlg.SetRootTitle("New");
+    fn set_root_title_post_show_routes_via_pending_actions() {
+        use crate::emEngineCtx::InitCtx;
+        use crate::emGUIFramework::App;
+        use winit::window::WindowId;
+
+        let mut app = App::new(Box::new(|_app, _el| {}));
+
+        let (dlg_id, root_id) = {
+            let mut ctx = InitCtx {
+                scheduler: &mut app.scheduler,
+                framework_actions: &mut app.framework_actions,
+                root_context: &app.context,
+                pending_actions: &app.pending_actions,
+            };
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut ctx, "Old", look);
+            let dlg_id = dlg.dialog_id;
+            let root_id = dlg.root_panel_id;
+            app.pending_top_level.push(dlg.pending.take().unwrap());
+            (dlg_id, root_id)
+        };
+
+        let wid = WindowId::dummy();
+        let engine_id = app
+            .install_pending_top_level_headless(wid)
+            .expect("install registers DialogPrivateEngine");
+
+        // Build a post-show handle (pending = None) and call SetRootTitle.
+        let dummy_sig = app.scheduler.create_signal();
+        let mut handle = emDialog {
+            dialog_id: dlg_id,
+            finish_signal: dummy_sig,
+            close_signal: dummy_sig,
+            root_panel_id: root_id,
+            look: emLook::new(),
+            pending: None,
+        };
+        {
+            let mut ctx = InitCtx {
+                scheduler: &mut app.scheduler,
+                framework_actions: &mut app.framework_actions,
+                root_context: &app.context,
+                pending_actions: &app.pending_actions,
+            };
+            handle.SetRootTitle(&mut ctx, "Changed");
+        }
+
+        // Drain pending_actions so mutate_dialog_by_id fires.
+        app.drain_pending_actions_headless();
+
+        // Read back the title from the materialized DlgPanel.
+        let win = app.windows.get_mut(&wid).expect("window present");
+        let mut tree = win.take_tree();
+        let mut b = tree.take_behavior(root_id).expect("DlgPanel present");
+        let caption = b.as_dlg_panel_mut().unwrap().border.caption.clone();
+        tree.put_behavior(root_id, b);
+        win.put_tree(tree);
+        assert_eq!(
+            caption, "Changed",
+            "SetRootTitle post-show must land on DlgPanel"
+        );
+
+        app.scheduler.remove_engine(engine_id);
+        app.scheduler.clear_pending_for_tests();
     }
 
     #[test]
@@ -1322,7 +1587,7 @@ mod tests {
         let look = emLook::new();
         let mut dlg = emDialog::new(&mut init.ctx(), "Test", look);
         dlg.AddCustomButton(&mut init.ctx(), "OK", DialogResult::Ok);
-        dlg.set_button_label_for_result(&DialogResult::Ok, "Accept");
+        dlg.set_button_label_for_result(&mut init.ctx(), &DialogResult::Ok, "Accept");
 
         let pending = dlg.pending.as_mut().unwrap();
         let tree = pending.window.tree_mut();
@@ -1338,14 +1603,83 @@ mod tests {
         assert_eq!(caption, "Accept");
     }
 
+    /// Post-show set_button_label_for_result routes through pending_actions →
+    /// mutate_dialog_by_id, walking DlgButton children inline via the tree arg.
+    /// Prereq B rework: queue + step 0.5 removed; label lands after draining
+    /// pending_actions (no DoTimeSlice needed).
     #[test]
-    #[should_panic(expected = "set_button_label_for_result after show")]
-    fn set_button_label_for_result_after_show_panics() {
-        let mut init = TestInit::new();
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut init.ctx(), "Test", look);
-        let _ = dlg.pending.take();
-        dlg.set_button_label_for_result(&DialogResult::Ok, "Accept");
+    fn set_button_label_for_result_post_show_routes_via_pending_actions() {
+        use crate::emEngineCtx::InitCtx;
+        use crate::emGUIFramework::App;
+        use winit::window::WindowId;
+
+        let mut app = App::new(Box::new(|_app, _el| {}));
+
+        let (dlg_id, root_id) = {
+            let mut ctx = InitCtx {
+                scheduler: &mut app.scheduler,
+                framework_actions: &mut app.framework_actions,
+                root_context: &app.context,
+                pending_actions: &app.pending_actions,
+            };
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut ctx, "Test", look);
+            dlg.AddCustomButton(&mut ctx, "OK", DialogResult::Ok);
+            let dlg_id = dlg.dialog_id;
+            let root_id = dlg.root_panel_id;
+            app.pending_top_level.push(dlg.pending.take().unwrap());
+            (dlg_id, root_id)
+        };
+
+        let wid = WindowId::dummy();
+        let engine_id = app
+            .install_pending_top_level_headless(wid)
+            .expect("install registers DialogPrivateEngine");
+
+        // Post-show handle.
+        let dummy_sig = app.scheduler.create_signal();
+        let mut handle = emDialog {
+            dialog_id: dlg_id,
+            finish_signal: dummy_sig,
+            close_signal: dummy_sig,
+            root_panel_id: root_id,
+            look: emLook::new(),
+            pending: None,
+        };
+        {
+            let mut ctx = InitCtx {
+                scheduler: &mut app.scheduler,
+                framework_actions: &mut app.framework_actions,
+                root_context: &app.context,
+                pending_actions: &app.pending_actions,
+            };
+            handle.set_button_label_for_result(&mut ctx, &DialogResult::Ok, "Accept");
+        }
+
+        // Drain pending_actions: mutate_dialog_by_id fires and walks DlgButton
+        // children inline — label lands immediately, no DoTimeSlice required.
+        app.drain_pending_actions_headless();
+
+        // Read back the button caption.
+        let win = app.windows.get_mut(&wid).expect("window present");
+        let mut tree = win.take_tree();
+        let children: Vec<_> = tree.children(root_id).collect();
+        let mut b = tree.take_behavior(children[0]).expect("DlgButton present");
+        let caption = b
+            .as_dlg_button_mut()
+            .unwrap()
+            .button
+            .GetCaption()
+            .to_string();
+        tree.put_behavior(children[0], b);
+        win.put_tree(tree);
+        assert_eq!(
+            caption, "Accept",
+            "set_button_label_for_result post-show must land after pending_actions drain"
+        );
+
+        app.scheduler.remove_engine(engine_id);
+        app.scheduler.clear_pending_for_tests();
     }
 
     #[test]
@@ -1353,7 +1687,7 @@ mod tests {
         let mut init = TestInit::new();
         let look = emLook::new();
         let mut dlg = emDialog::new(&mut init.ctx(), "Test", look);
-        dlg.EnableAutoDeletion(true);
+        dlg.EnableAutoDeletion(&mut init.ctx(), true);
 
         let pending = dlg.pending.as_mut().unwrap();
         let tree = pending.window.tree_mut();
@@ -1363,14 +1697,81 @@ mod tests {
         assert!(flag);
     }
 
+    /// Post-show EnableAutoDeletion routes through pending_actions → mutate_dialog_by_id.
+    /// Prereq B replaces the former #[should_panic] test.
     #[test]
-    #[should_panic(expected = "EnableAutoDeletion after show")]
-    fn enable_auto_deletion_after_show_panics() {
-        let mut init = TestInit::new();
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut init.ctx(), "Test", look);
-        let _ = dlg.pending.take();
-        dlg.EnableAutoDeletion(true);
+    fn enable_auto_deletion_post_show_routes_via_pending_actions() {
+        use crate::emEngineCtx::InitCtx;
+        use crate::emGUIFramework::App;
+        use winit::window::WindowId;
+
+        let mut app = App::new(Box::new(|_app, _el| {}));
+
+        let (dlg_id, root_id) = {
+            let mut ctx = InitCtx {
+                scheduler: &mut app.scheduler,
+                framework_actions: &mut app.framework_actions,
+                root_context: &app.context,
+                pending_actions: &app.pending_actions,
+            };
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut ctx, "Test", look);
+            let dlg_id = dlg.dialog_id;
+            let root_id = dlg.root_panel_id;
+            app.pending_top_level.push(dlg.pending.take().unwrap());
+            (dlg_id, root_id)
+        };
+
+        let wid = WindowId::dummy();
+        let engine_id = app
+            .install_pending_top_level_headless(wid)
+            .expect("install registers DialogPrivateEngine");
+
+        // Confirm auto_delete starts false.
+        {
+            let win = app.windows.get_mut(&wid).unwrap();
+            let mut tree = win.take_tree();
+            let mut b = tree.take_behavior(root_id).unwrap();
+            let flag = b.as_dlg_panel_mut().unwrap().auto_delete;
+            tree.put_behavior(root_id, b);
+            win.put_tree(tree);
+            assert!(!flag, "auto_delete must start false");
+        }
+
+        // Post-show handle.
+        let dummy_sig = app.scheduler.create_signal();
+        let mut handle = emDialog {
+            dialog_id: dlg_id,
+            finish_signal: dummy_sig,
+            close_signal: dummy_sig,
+            root_panel_id: root_id,
+            look: emLook::new(),
+            pending: None,
+        };
+        {
+            let mut ctx = InitCtx {
+                scheduler: &mut app.scheduler,
+                framework_actions: &mut app.framework_actions,
+                root_context: &app.context,
+                pending_actions: &app.pending_actions,
+            };
+            handle.EnableAutoDeletion(&mut ctx, true);
+        }
+
+        // Drain pending_actions so mutate_dialog_by_id fires.
+        app.drain_pending_actions_headless();
+
+        // Read back auto_delete.
+        let win = app.windows.get_mut(&wid).expect("window present");
+        let mut tree = win.take_tree();
+        let mut b = tree.take_behavior(root_id).expect("DlgPanel present");
+        let flag = b.as_dlg_panel_mut().unwrap().auto_delete;
+        tree.put_behavior(root_id, b);
+        win.put_tree(tree);
+        assert!(flag, "EnableAutoDeletion post-show must land on DlgPanel");
+
+        app.scheduler.remove_engine(engine_id);
+        app.scheduler.clear_pending_for_tests();
     }
 
     #[test]
@@ -1511,6 +1912,7 @@ mod tests {
             window,
             close_signal: close_sig,
             private_engine_root_panel_id: root_id,
+            wake_up_signals: Vec::new(),
         });
         let engine_id = app
             .install_pending_top_level_headless(wid)
@@ -1973,6 +2375,101 @@ mod tests {
             win.put_tree(tree);
         }
 
+        app.scheduler.remove_engine(engine_id);
+        app.scheduler.clear_pending_for_tests();
+    }
+
+    // ─── Phase 3.6 Task 2 test ───────────────────────────────────────────────
+
+    /// Asserts that `DialogPrivateEngine::Cycle` invokes `DlgPanel.on_cycle_ext`
+    /// exactly once per Cycle slice.
+    ///
+    /// Setup follows the headless-install shape used by
+    /// `private_engine_observes_close_signal_sets_pending_cancel`:
+    /// build DlgPanel, set `on_cycle_ext` to a closure incrementing an
+    /// `Rc<Cell<u32>>` counter, install via `install_pending_top_level_headless`,
+    /// wake the engine by firing close_signal, run one `DoTimeSlice`, assert
+    /// counter == 1.
+    ///
+    /// The extension receives `&mut DlgPanel` directly — it must NOT call
+    /// `ctx.tree.take_behavior(root_panel_id)` (already taken by the engine body).
+    #[test]
+    fn dialog_private_engine_calls_on_cycle_ext() {
+        use crate::emGUIFramework::{App, PendingTopLevel};
+        use crate::emWindow::WindowFlags;
+        use std::cell::Cell;
+        use winit::window::WindowId;
+
+        let mut app = App::new(Box::new(|_app, _el| {}));
+
+        // Counter captured by the extension closure.
+        let counter: Rc<Cell<u32>> = Rc::new(Cell::new(0));
+        let counter_clone = Rc::clone(&counter);
+
+        // Build dialog tree, set on_cycle_ext before install.
+        let mut tree = PanelTree::new();
+        let root_id = tree.create_root("dlg", false);
+        let finish_sig = app.scheduler.create_signal();
+        let close_sig = app.scheduler.create_signal();
+        let flags_sig = app.scheduler.create_signal();
+        let focus_sig = app.scheduler.create_signal();
+        let geom_sig = app.scheduler.create_signal();
+        let mut dlg_panel = DlgPanel::new("Ext", emLook::new(), finish_sig);
+        dlg_panel.on_cycle_ext = Some(Box::new(move |_dlg, _ctx| {
+            counter_clone.set(counter_clone.get() + 1);
+            false
+        }));
+        tree.set_behavior(root_id, Box::new(dlg_panel));
+
+        let mut window = crate::emWindow::emWindow::new_top_level_pending(
+            Rc::clone(&app.context),
+            WindowFlags::empty(),
+            "test-ext".to_string(),
+            close_sig,
+            flags_sig,
+            focus_sig,
+            geom_sig,
+            crate::emColor::emColor::TRANSPARENT,
+        );
+        let _discarded = window.take_tree();
+        window.put_tree(tree);
+
+        let wid = WindowId::dummy();
+        let dialog_id = app.allocate_dialog_id();
+        app.pending_top_level.push(PendingTopLevel {
+            dialog_id,
+            window,
+            close_signal: close_sig,
+            private_engine_root_panel_id: root_id,
+            wake_up_signals: Vec::new(),
+        });
+        let engine_id = app
+            .install_pending_top_level_headless(wid)
+            .expect("install registers DialogPrivateEngine");
+
+        // Fire close_signal to wake the engine and run one slice.
+        app.scheduler.fire(close_sig);
+        let mut pending_inputs: Vec<(WindowId, emInputEvent)> = Vec::new();
+        let mut input_state = emInputState::new();
+        let fc: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        app.scheduler.DoTimeSlice(
+            &mut app.windows,
+            &app.context,
+            &mut app.framework_actions,
+            &mut pending_inputs,
+            &mut input_state,
+            &fc,
+            &app.pending_actions,
+        );
+
+        assert_eq!(
+            counter.get(),
+            1,
+            "on_cycle_ext must be called exactly once per Cycle slice"
+        );
+
+        // Teardown.
+        app.pending_actions.borrow_mut().clear();
         app.scheduler.remove_engine(engine_id);
         app.scheduler.clear_pending_for_tests();
     }
