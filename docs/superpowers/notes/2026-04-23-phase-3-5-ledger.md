@@ -51,3 +51,7 @@ Invariants verified:
 - I5h: construction no &mut App — ConstructCtx only.
 - I5i: on_finish + Rc<Cell> observation — shape ready; Task 14+ consumes.
 - I5j: close_dialog_by_id supersedes silent_cancel — Task 14+ consumes.
+
+## Task 14 — emStocksListBox Rc<Cell> fields
+
+COMPLETE. Option B chosen: `DialogResult` derives `Copy` (`Ok`, `Cancel`, `Custom(u32)` — no heap-owning variants; trivially Copy). Added `#[derive(Clone, Copy, ...)]` to `DialogResult` in `emDialog.rs`; fixed five `clone_on_copy` clippy errors that fired in production (`emDialog.rs:152, 660, 711`) and test code (`emDialog.rs:1221, 1245, 1250, 1609, 1695`). Four `Rc<Cell<Option<DialogResult>>>` fields added to `emStocksListBox`: `cut_stocks_result`, `paste_stocks_result`, `delete_stocks_result`, `interest_result`. Initialized to `Rc::new(Cell::new(None))` in `new()`. `std::cell::Cell` import added. To make fields live (satisfying `dead_code` lint without `#[allow]`), the four construct sites (`DeleteStocks`, `CutStocks`, `PasteStocks`, `SetInterest`) now register `set_on_finish` closures capturing `Rc::clone(&self.*_result)` — a natural partial step toward §10.2 (full Cycle-polling rewrite is Task 15). Test `result_slots_initialize_to_none` added to verify initialization. Nextest 2496/0/9 (one new test vs 2495 baseline). `cargo clippy --all-targets --all-features -- -D warnings` clean.
