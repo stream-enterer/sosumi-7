@@ -97,20 +97,17 @@ impl emDialog {
         let _discarded = window.take_tree();
         window.put_tree(tree);
 
-        // Pre-build private engine (registered at Toplevel(wid) on install).
-        let private_engine: Box<dyn emEngine> = Box::new(DialogPrivateEngine {
-            root_panel_id,
-            window_id: None,  // filled in at install time
-            close_signal,
-        });
-
+        // No pre-built engine. `PendingTopLevel` carries the construction
+        // inputs (`close_signal`, `root_panel_id`); `install_pending_top_level`
+        // builds `DialogPrivateEngine` once `window_id` is known.
         Self {
             dialog_id, finish_signal, close_signal, root_panel_id,
+            look: Rc::clone(&look),
             pending: Some(PendingTopLevel {
                 dialog_id,
                 window,
                 close_signal,
-                pending_private_engine: Some(private_engine),
+                private_engine_root_panel_id: root_panel_id,
             }),
         }
     }
@@ -119,7 +116,7 @@ impl emDialog {
 
 Construction does not touch `&mut App`. It uses only `ctx.allocate_dialog_id`, `ctx.create_signal`, and the already-Rc'd `root_context` — all reachable through `ConstructCtx`.
 
-`DialogPrivateEngine::window_id` is `None` at build time. `install_pending_top_level` (existing 3.5.A code) must be updated to backfill the `window_id` field before registering the engine. (The current impl already receives the boxed engine from `PendingTopLevel::pending_private_engine` and registers it at `PanelScope::Toplevel(wid)` — Task 5.1 adds a downcast-or-mutator hook to set `window_id` before register.)
+`DialogPrivateEngine` is **built at install time**, not at construction. The 3.5.A field `PendingTopLevel::pending_private_engine: Option<Box<dyn emEngine>>` is replaced by `private_engine_root_panel_id: PanelId` (plus the already-present `close_signal`). Inside `install_pending_top_level`, once the winit surface is created and `materialized_wid` is known, the install path constructs `Box::new(DialogPrivateEngine { root_panel_id, window_id: materialized_wid, close_signal })` and calls `scheduler.register_engine(..., PanelScope::Toplevel(materialized_wid))`. `DialogPrivateEngine::window_id` narrows from `Option<WindowId>` to `WindowId` — no `Option`, no downcast, no builder struct. See Risks table for fallback options.
 
 ### 3. Mutators operate on pre-show builder state
 
@@ -224,7 +221,7 @@ impl EngineScheduler {
     pub fn engines_for_scope(&self, scope: PanelScope) -> Vec<EngineId>;
 }
 ```
-No existing precedent uses a multi-engine scope query — this is new — but it is a thin `iter().filter().collect()` over existing state. Alternative: let `Drop for emWindow` unregister per-window engines when the window is removed. The drop-based alternative avoids the helper but couples scheduler lifetime to window lifetime; Task 5.1 chooses the explicit helper for testability.
+No existing precedent uses a multi-engine scope query — this is new — but it is a thin `iter().filter().collect()` over existing state. Why the explicit helper rather than `Drop for emWindow`: emWindow holds no reference to `EngineScheduler`, and giving it one would require either an `Rc<RefCell<EngineScheduler>>` (violates single-threaded ownership) or a back-pointer through App (cyclic). The helper-plus-explicit-call pattern is forced by ownership, not chosen for taste.
 
 ### 7. `ConstructCtx` trait extensions
 
@@ -523,8 +520,8 @@ Static convenience method that builds an OK-only message dialog with auto-delete
 **Changes:**
 - `emEngineCtx.rs`: extend `ConstructCtx` trait with `pending_actions` / `allocate_dialog_id` / `root_context`; add the `pending_actions: &'a Rc<RefCell<Vec<FrameworkDeferredAction>>>` field to `InitCtx` / `EngineCtx` / `SchedCtx` (and `PanelCtx` via its inner ctx). No new `DeferredAction` enum variants.
 - `emScheduler.rs`: add `next_dialog_id: u64` field, `allocate_dialog_id()` method, `engines_for_scope(scope: PanelScope) -> Vec<EngineId>` helper.
-- `emGUIFramework.rs`: delete `App::next_dialog_id` field; `App::allocate_dialog_id` delegates to scheduler. Thread `self.pending_actions.clone()` into every ctx construction site. Add `App::close_dialog_by_id(did)` method (body in `## App::close_dialog_by_id` section). `install_pending_top_level` updated to backfill `DialogPrivateEngine::window_id` before register (via the Open Questions §1 resolution).
-- `emDialog.rs`: delete legacy `emDialog::{Finish, Input, Paint, LayoutChildren, CheckFinish, silent_cancel, result, on_finish, on_check_finish, auto_delete, buttons, border, preferred_size, GetButton, GetButtonForResult, GetOKButton, GetCancelButton, IsAutoDeletionEnabled}` and the legacy private fields (`look` kept — §3.1). Un-gate `DlgPanel`, `DlgButton`, `DialogPrivateEngine`. Reshape `emDialog` struct + constructor. Implement all mutators on the new shape. Implement `show()`. Rewrite `DialogPrivateEngine::Cycle`'s auto-delete emission from `ctx.framework_action(DeferredAction::CloseWindow(wid))` to `ctx.pending_actions().borrow_mut().push(Box::new(move |app, _| app.close_dialog_by_id(did)))` — fixes latent undrained-push bug. Port `ShowMessage` as an `unimplemented!()` shim until Phase 3.6. Update the existing 15+ tests to the new API.
+- `emGUIFramework.rs`: delete `App::next_dialog_id` field; `App::allocate_dialog_id` delegates to scheduler. Thread `self.pending_actions.clone()` into every ctx construction site. Add `App::close_dialog_by_id(did)` method (body in `## App::close_dialog_by_id` section). Reshape `PendingTopLevel`: drop `pending_private_engine: Option<Box<dyn emEngine>>`, add `private_engine_root_panel_id: PanelId` — `install_pending_top_level` constructs `DialogPrivateEngine` on the spot with `window_id = materialized_wid` and registers it at `PanelScope::Toplevel(wid)`.
+- `emDialog.rs`: delete legacy `emDialog::{Finish, Input, Paint, LayoutChildren, CheckFinish, silent_cancel, result, on_finish, on_check_finish, auto_delete, buttons, border, preferred_size, GetButton, GetButtonForResult, GetOKButton, GetCancelButton, IsAutoDeletionEnabled}` and the legacy private fields (`look` kept — §3.1). Un-gate `DlgPanel`, `DlgButton`, `DialogPrivateEngine`. Narrow `DialogPrivateEngine::window_id` from `Option<WindowId>` to `WindowId` (now that construction happens at install time). Reshape `emDialog` struct + constructor. Implement all mutators on the new shape. Implement `show()`. Rewrite `DialogPrivateEngine::Cycle`'s auto-delete emission from `ctx.framework_action(DeferredAction::CloseWindow(wid))` to `ctx.pending_actions().borrow_mut().push(Box::new(move |app, _| app.close_dialog_by_id(did)))` — fixes latent undrained-push bug. Port `ShowMessage` as an `unimplemented!()` shim until Phase 3.6. Update the existing 15+ tests to the new API.
 - `emWindow.rs`: narrow `tree`/`take_tree`/`put_tree` visibility per `project_phase35a_pub_narrow.md` (if no new cross-crate callers emerge).
 
 **Gate:** `cargo check`, `cargo clippy -D warnings`, `cargo-nextest ntr` green. The existing `private_engine_observes_close_signal_sets_pending_cancel` test passes with the new `emDialog::new` → `show` → install path (replaces the manual `PendingTopLevel::push` at emDialog.rs:1235).
@@ -557,12 +554,13 @@ Static convenience method that builds an OK-only message dialog with auto-delete
 
 | Risk | Mitigation |
 |---|---|
-| `DialogPrivateEngine::window_id = None` at build time → install must mutate it | Add a typed `set_window_id(&mut self, wid)` on `DialogPrivateEngine`; `install_pending_top_level` downcasts via an `Any`-free trait object method. Or: make `pending_private_engine: Option<DialogPrivateEngineBuilder>` where the builder finalizes to `Box<dyn emEngine>` at install time. Task 5.1 picks between these based on which is less-scope; default: builder struct. |
+| `DialogPrivateEngine::window_id = None` at build time → install must know it | **Default: construct at install time.** Drop the pre-built `pending_private_engine: Option<Box<dyn emEngine>>` on `PendingTopLevel`; replace it with the raw construction inputs (`close_signal: SignalId`, `root_panel_id: PanelId` — already on `PendingTopLevel` in other forms). `install_pending_top_level` builds `DialogPrivateEngine { root_panel_id, window_id: Some(materialized_wid), close_signal }` at the point it knows `wid`, then calls `scheduler.register_engine(...)` at `PanelScope::Toplevel(wid)`. No `Option<WindowId>`, no downcast, no builder struct. The 3.5.A code that pre-boxes the engine is replaced, not extended. Fallbacks if construction-at-install proves awkward: (a) typed `set_window_id` method on `DialogPrivateEngine` + downcast through a narrow trait; (b) `PendingDialogPrivateEngine → Box<dyn emEngine>` builder finalizer. |
 | Mutators requiring `&mut C` (e.g. `AddCustomButton` creating signals for `DlgButton::click_signal`) need ctx threaded through | API-level: `AddCustomButton(&mut self, ctx: &mut C, label, result)`. Consumer sites already have `cc` in scope. Matches C++ where the button's parent-context reach is implicit. |
 | Consumer's `Rc<Cell>` may be fired-to after handle drop | Drop order is: consumer drops `emDialog` → `DialogPrivateEngine` still running → `on_finish` closure still holds `Rc<Cell>` (not `Weak`) → fires into a Cell nobody polls. Harmless. Cell is later dropped when consumer drops. |
 | Closure-rail ordering: `close_dialog_by_id(did)` for an old dialog races with `install_pending_top_level` for a new dialog | `DialogId` is monotonic and freshly allocated at each `emDialog::new`. Consumer-level replacement uses `close_dialog_by_id(old_did)` (closure at time T) followed by `emDialog::new(→ new_did).show(ctx)` (closure at time T+ε) — different IDs; the two closures drain in FIFO order within one `about_to_wait` tick, so the old dialog's teardown runs before the new dialog's install. |
 | Orphaned signals after pre-materialize close | `SlotMap::remove` on signals is cheap; `close_dialog_by_id` calls `scheduler.remove_signal` for finish / close / flags / focus / geom. Alternative: leak-tolerant (signals are small). Default: explicit remove. |
 | `emStocksListBox::Cycle` takes `&mut C: ConstructCtx` but `pending_actions` was not on the trait | Task 5.1 adds `pending_actions` to `ConstructCtx`. Four implementors gain the `Rc<RefCell<...>>` handle at construction (threaded from `App::pending_actions.clone()`). |
+| Phase 3.5 correctness of `emFileDialog` is contingent on Phase 3.6 landing | The `Cell` shim at §11.4 preserves `emFileDialog::Cycle`'s caller-driven polling cadence while deleting `GetResult`. If Phase 3.6 slips, `emFileDialog` stays in a "poll-where-C++-subscribed" state: correct but suboptimal — the Cycle runs whenever the enclosing panel cycles, not precisely when `fsb.file_trigger_signal` or `overwrite_dialog.finish_signal` fires. Acceptable for Phase 3.5 because `emFileDialog` has no live user-path consumers (the file-open flow isn't wired up yet); the correctness window is open until a real consumer lands. If 3.6 slips past that consumer, revisit. |
 
 ## Test strategy
 
@@ -574,5 +572,5 @@ Static convenience method that builds an OK-only message dialog with auto-delete
 
 ## Open questions for implementation (non-blocking for this spec)
 
-1. `DialogPrivateEngine::set_window_id` via trait method vs. builder struct (`PendingDialogPrivateEngine → Box<dyn emEngine>` finalizer) — Task 5.1 picks based on which is less-scope; default: builder struct.
+1. `DialogPrivateEngine` install-time construction: default is to store `(close_signal, root_panel_id)` on `PendingTopLevel` and build the engine inside `install_pending_top_level` once `window_id` is known (no `Option<WindowId>`, no downcast). Fallbacks documented in Risks. Task 5.1 validates the default; switches to a fallback only if construction-at-install conflicts with an unforeseen constraint.
 2. `AddCustomButton` child-panel naming (`0`, `1`, …) matches C++ `emString::Format("%d", ButtonNum)` — preserve.
