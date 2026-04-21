@@ -195,3 +195,38 @@ See plan §"Bootstrap decisions" (B3.6a–B3.6d).
   Task 4's exit condition (all three greps = 0) is met by the Task 3
   landing. No code commit required — this ledger entry is the Task 4
   closeout on record.
+
+- **Task 5 — E024 closure tests:** commit 9eb7ff03. Four scheduler-driven
+  tests in emFileDialog.rs::e024_closure_tests: (1)
+  fsb.file_trigger → outer finalized_result=Ok via 2 DoTimeSlice slices;
+  (2) OD.finish_signal → on_cycle_ext pushes pending_action, OD torn
+  down from DlgPanel, overwrite_asked cleared (Task 3 fix's observation
+  path under scheduler control); (3) OD NEGATIVE path → pending_action
+  drains, outer stays open, promotion NOT applied, outer pending_result
+  NOT set; (4) no-signals 1-slice no-op baseline. NO test invokes any
+  Cycle method — verified via `rg -n '\.Cycle\('
+  crates/emcore/src/emFileDialog.rs` == 0.
+
+  Production change revealed by the mechanical arbiter: `on_cycle_ext`
+  now returns `true` when it mutates `pending_result` or pushes a
+  pending_action, because on_cycle_ext runs AFTER the base Cycle body
+  and any state it sets requires another Cycle to finalize. Without
+  this the engine sleeps with pending_result orphaned. C++
+  emFileDialog.cpp:82-84 doesn't have this gap because Finish(POSITIVE)
+  finalizes in-cycle via FinishState=1.
+
+  Added: `emFileDialog::file_trigger_signal()` pub accessor + cached
+  `fsb_trigger_sig` field (prior: only reachable via pending-tree
+  walk). FileDialogTestHarness inlined in the test module (static UID
+  counter for parallel-safe tmp dirs; Drop cleans up engines via
+  close_dialog_by_id + clear_pending_for_tests + rm tmp_dir).
+
+  Deferred: full scheduler-driven POSITIVE livelock regression test
+  requires a second test-only WindowId distinct from
+  WindowId::dummy(). Follow-up to parameterize
+  install_pending_top_level_headless with a caller-supplied id.
+  Documented inline at the Test 2 placeholder in
+  `e024_closure_tests`.
+
+  Gate green — nextest 2512/0/9, clippy clean, no new `#[allow]`,
+  `unsafe`, or `Rc<RefCell>`.
