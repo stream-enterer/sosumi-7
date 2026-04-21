@@ -186,6 +186,9 @@ impl emSubViewPanel {
         state: &PanelState,
         sched: &mut crate::emScheduler::EngineScheduler,
         framework_clipboard: &std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>>,
+        pending_actions: &std::rc::Rc<
+            std::cell::RefCell<Vec<crate::emGUIFramework::DeferredAction>>,
+        >,
     ) {
         let (w, h) = if state.viewed {
             self.viewed_x = state.viewed_rect.x;
@@ -210,6 +213,7 @@ impl emSubViewPanel {
             root_context: &root_ctx,
             framework_clipboard,
             current_engine: None,
+            pending_actions,
         };
         self.sub_view
             .SetGeometry(&mut self.sub_tree, 0.0, 0.0, w, h, 1.0, &mut sc);
@@ -294,7 +298,11 @@ impl PanelBehavior for emSubViewPanel {
         // built — matches the graceful pattern used in `HandleNotice` below.
         let fallback_cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
             std::cell::RefCell::new(None);
+        let fallback_pa: std::rc::Rc<
+            std::cell::RefCell<Vec<crate::emGUIFramework::DeferredAction>>,
+        > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let cb_ref = ctx.framework_clipboard.unwrap_or(&fallback_cb);
+        let pa_ref = ctx.pending_actions.unwrap_or(&fallback_pa);
 
         // Hit-test and set active panel on mouse press (mirrors parent window logic).
         if event.is_mouse_event() && event.variant == crate::emInput::InputVariant::Press {
@@ -310,6 +318,7 @@ impl PanelBehavior for emSubViewPanel {
                 root_context: &root_ctx_for_input,
                 framework_clipboard: cb_ref,
                 current_engine: None,
+                pending_actions: pa_ref,
             };
             self.sub_view
                 .set_active_panel(&mut self.sub_tree, panel, false, &mut sc);
@@ -325,6 +334,7 @@ impl PanelBehavior for emSubViewPanel {
                 root_context: &root_ctx_for_input,
                 framework_clipboard: cb_ref,
                 current_engine: None,
+                pending_actions: pa_ref,
             };
             self.sub_view.Update(&mut self.sub_tree, &mut sc);
         }
@@ -431,12 +441,16 @@ impl PanelBehavior for emSubViewPanel {
             // scheduler, so both references can live simultaneously.
             let fallback_cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let fallback_pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emGUIFramework::DeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let cb_ref = ctx.framework_clipboard.unwrap_or(&fallback_cb);
+            let pa_ref = ctx.pending_actions.unwrap_or(&fallback_pa);
             let sched = ctx
                 .scheduler
                 .as_deref_mut()
                 .expect("emSubViewPanel::notice requires PanelCtx with a scheduler (Phase 1.75)");
-            self.sync_geometry(state, sched, cb_ref);
+            self.sync_geometry(state, sched, cb_ref, pa_ref);
         }
     }
 
@@ -547,12 +561,16 @@ mod sp8_tests {
             let cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
             let panel = {
+                let __pa: std::rc::Rc<
+                    std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+                > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
                 let mut sc = crate::emEngineCtx::SchedCtx {
                     scheduler: &mut outer_sched,
                     framework_actions: &mut fw,
                     root_context: &root_ctx,
                     framework_clipboard: &cb,
                     current_engine: None,
+                    pending_actions: &__pa,
                 };
                 emSubViewPanel::new(root_ctx.clone(), owner_id, &mut sc)
             };

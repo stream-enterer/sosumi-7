@@ -389,6 +389,7 @@ mod tests {
         sched: EngineScheduler,
         fw: Vec<DeferredAction>,
         root: Rc<crate::emContext::emContext>,
+        pa: Rc<RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>>,
     }
     impl Drop for TestInit {
         fn drop(&mut self) {
@@ -403,6 +404,7 @@ mod tests {
                 sched: EngineScheduler::new(),
                 fw: Vec::new(),
                 root: crate::emContext::emContext::NewRoot(),
+                pa: Rc::new(RefCell::new(Vec::new())),
             }
         }
         fn ctx(&mut self) -> InitCtx<'_> {
@@ -410,6 +412,7 @@ mod tests {
                 scheduler: &mut self.sched,
                 framework_actions: &mut self.fw,
                 root_context: &self.root,
+                pending_actions: &self.pa,
             }
         }
     }
@@ -495,6 +498,7 @@ mod tests {
                 &mut init.fw,
                 &init.root,
                 &fw_cb,
+                &init.pa,
             );
             // Enter is instant: each press fires the callback immediately.
             btn.Input(&emInputEvent::press(InputKey::Enter), &ps, &is, &mut ctx);
@@ -522,6 +526,7 @@ mod tests {
                 &mut init.fw,
                 &init.root,
                 &fw_cb,
+                &init.pa,
             );
             btn.Input(&emInputEvent::press(InputKey::Enter), &ps, &is, &mut ctx);
         }

@@ -73,6 +73,7 @@ fn two_branch_tree() -> (
             root_context: &h.root_context,
             framework_clipboard: &__cb,
             current_engine: None,
+            pending_actions: &h.pending_actions,
         };
 
         h.view.Update(&mut h.tree, &mut sc);
@@ -387,6 +388,7 @@ fn deep_tree_activation_propagates_in_active_path() {
             root_context: &h.root_context,
             framework_clipboard: &__cb,
             current_engine: None,
+            pending_actions: &h.pending_actions,
         };
 
         h.view.Update(&mut h.tree, &mut sc);

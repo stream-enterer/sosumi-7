@@ -855,6 +855,7 @@ pub fn create_main_window(
             root_context: &root_ctx,
             framework_clipboard: &app.clipboard,
             current_engine: None,
+            pending_actions: &app.pending_actions,
         };
         let mut svp = emSubViewPanel::new(Rc::clone(&app.context), ctrl_id, &mut sc);
         svp.set_sub_view_flags(
@@ -873,6 +874,7 @@ pub fn create_main_window(
             root_context: &root_ctx,
             framework_clipboard: &app.clipboard,
             current_engine: None,
+            pending_actions: &app.pending_actions,
         };
         let mut svp = emSubViewPanel::new(Rc::clone(&app.context), content_id, &mut sc);
         svp.set_sub_view_flags(ViewFlags::ROOT_SAME_TALLNESS);
@@ -970,6 +972,7 @@ pub fn create_main_window(
             ref mut scheduler,
             ref mut windows,
             ref clipboard,
+            ref pending_actions,
             ..
         } = *app;
         if let Some(win) = windows.get_mut(&window_id) {
@@ -987,6 +990,7 @@ pub fn create_main_window(
                     root_context: &root_ctx,
                     framework_clipboard: clipboard,
                     current_engine: None,
+                    pending_actions,
                 };
                 v.RegisterEngines(&mut sc, &mut tree, scope);
             }

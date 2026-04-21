@@ -1170,6 +1170,7 @@ impl emWindow {
                         ctx.framework_actions,
                         ctx.root_context,
                         ctx.framework_clipboard,
+                        ctx.pending_actions,
                     );
                     behavior.Input(&panel_ev, &panel_state, state, &mut panel_ctx)
                 };
@@ -2020,12 +2021,16 @@ mod tests {
             let mut s = sched.borrow_mut();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             v.RegisterEngines(&mut sc, &mut tree, scope);
         }

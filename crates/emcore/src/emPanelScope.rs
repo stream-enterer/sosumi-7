@@ -95,6 +95,7 @@ impl PanelScope {
                     root_context: ctx.root_context,
                     framework_clipboard: ctx.framework_clipboard,
                     current_engine: Some(ctx.engine_id),
+                    pending_actions: ctx.pending_actions,
                 };
                 Some(f(view, &mut sched_ctx))
             }
@@ -146,6 +147,7 @@ impl PanelScope {
                     root_context: ctx.root_context,
                     framework_clipboard: ctx.framework_clipboard,
                     current_engine: Some(engine_id),
+                    pending_actions: ctx.pending_actions,
                 };
                 Some(f(&mut svp.sub_view, &mut sched_ctx))
             }

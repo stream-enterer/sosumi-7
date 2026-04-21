@@ -55,6 +55,7 @@ fn vif_consumes_prevents_behavior() {
             root_context: &h.root_context,
             framework_clipboard: &__cb,
             current_engine: None,
+            pending_actions: &h.pending_actions,
         };
 
         h.view.Update(&mut h.tree, &mut sc);
@@ -113,6 +114,7 @@ fn focus_change_routes_keyboard() {
             root_context: &h.root_context,
             framework_clipboard: &__cb,
             current_engine: None,
+            pending_actions: &h.pending_actions,
         };
 
         h.view.Update(&mut h.tree, &mut sc);

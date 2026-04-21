@@ -106,6 +106,7 @@ impl emEngine for PanelCycleEngine {
                 input_state: &mut *ctx.input_state,
                 framework_clipboard: ctx.framework_clipboard,
                 engine_id: ctx.engine_id,
+                pending_actions: ctx.pending_actions,
             };
             let pctx_tree = ctx
                 .tree
@@ -121,6 +122,7 @@ impl emEngine for PanelCycleEngine {
                 unsafe { &mut *fw_ptr },
                 ctx.root_context,
                 ctx.framework_clipboard,
+                ctx.pending_actions,
             );
             behavior.Cycle(&mut ectx, &mut pctx)
         };

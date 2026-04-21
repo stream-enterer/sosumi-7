@@ -2603,6 +2603,7 @@ mod tests {
         sched: EngineScheduler,
         fw: Vec<DeferredAction>,
         root: Rc<crate::emContext::emContext>,
+        pa: Rc<RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>>,
     }
     impl Drop for TestInit {
         fn drop(&mut self) {
@@ -2617,6 +2618,7 @@ mod tests {
                 sched: EngineScheduler::new(),
                 fw: Vec::new(),
                 root: crate::emContext::emContext::NewRoot(),
+                pa: Rc::new(RefCell::new(Vec::new())),
             }
         }
         fn ctx(&mut self) -> InitCtx<'_> {
@@ -2624,6 +2626,7 @@ mod tests {
                 scheduler: &mut self.sched,
                 framework_actions: &mut self.fw,
                 root_context: &self.root,
+                pending_actions: &self.pa,
             }
         }
     }
@@ -2726,6 +2729,7 @@ mod tests {
             &mut __init.fw,
             &__init.root,
             &fw_cb,
+            &__init.pa,
         );
         tf.Input(&char_press('X'), &ps, &is, &mut ctx);
         tf.Input(&char_press('Y'), &ps, &is, &mut ctx);
@@ -3659,6 +3663,7 @@ mod tests {
                 &mut __init.fw,
                 &__init.root,
                 &fw_cb,
+                &__init.pa,
             );
             tf.SelectAll(&mut ctx);
         }
@@ -3689,6 +3694,7 @@ mod tests {
             &mut __init.fw,
             &__init.root,
             &fw_cb,
+            &__init.pa,
         );
         tf.Select(1, 3, &mut ctx);
         assert_eq!(*count.borrow(), 1);
@@ -3716,6 +3722,7 @@ mod tests {
                 &mut __init.fw,
                 &__init.root,
                 &fw_cb,
+                &__init.pa,
             );
             tf.Input(&char_press('A'), &ps, &is, &mut ctx);
         }
@@ -3742,6 +3749,7 @@ mod tests {
                 &mut __init.fw,
                 &__init.root,
                 &fw_cb,
+                &__init.pa,
             );
             tf.Input(&char_press('A'), &ps, &is, &mut ctx);
         }
@@ -3773,6 +3781,7 @@ mod tests {
             &mut __init.fw,
             &__init.root,
             &fw_cb,
+            &__init.pa,
         );
         // Type a char -> undo becomes available
         tf.Input(&char_press('A'), &ps, &is, &mut ctx);

@@ -11,6 +11,7 @@ use crate::emClipboard::emClipboard;
 use crate::emColor::emColor;
 use crate::emContext::emContext;
 use crate::emEngine::{EngineId, Priority};
+pub use crate::emGUIFramework::DeferredAction as FrameworkDeferredAction;
 use crate::emInput::emInputEvent;
 use crate::emInputState::emInputState;
 use crate::emPanel::{PanelBehavior, Rect};
@@ -76,6 +77,10 @@ pub struct EngineCtx<'a> {
     /// The ID of the engine currently being cycled. Populated by the
     /// scheduler at Cycle-dispatch time.
     pub engine_id: EngineId,
+    /// Phase 3.5 Task 2: closure-rail handle. Plumbed from `App::pending_actions`
+    /// at setup; lets construction code enqueue `FnOnce(&mut App, &ActiveEventLoop)`
+    /// closures without a borrow of App. See `InitCtx::pending_actions`.
+    pub pending_actions: &'a Rc<RefCell<Vec<FrameworkDeferredAction>>>,
 }
 
 pub struct SchedCtx<'a> {
@@ -87,6 +92,8 @@ pub struct SchedCtx<'a> {
     /// Phase-3 Task-2 relocation from `emContext::clipboard`.
     pub framework_clipboard: &'a RefCell<Option<Box<dyn emClipboard>>>,
     pub current_engine: Option<EngineId>,
+    /// Phase 3.5 Task 2: closure-rail handle. See `InitCtx::pending_actions`.
+    pub pending_actions: &'a Rc<RefCell<Vec<FrameworkDeferredAction>>>,
 }
 
 /// Construction-only ctx used before the scheduler has started its first
@@ -97,6 +104,10 @@ pub struct InitCtx<'a> {
     pub scheduler: &'a mut EngineScheduler,
     pub framework_actions: &'a mut Vec<DeferredAction>,
     pub root_context: &'a Rc<emContext>,
+    /// Phase 3.5 Task 2: closure-rail handle. Plumbed from `App::pending_actions`
+    /// at setup; lets construction code enqueue `FnOnce(&mut App, &ActiveEventLoop)`
+    /// closures without a borrow of App.
+    pub pending_actions: &'a Rc<RefCell<Vec<FrameworkDeferredAction>>>,
 }
 
 pub trait ConstructCtx {
@@ -108,6 +119,10 @@ pub trait ConstructCtx {
         scope: PanelScope,
     ) -> EngineId;
     fn wake_up(&mut self, eng: EngineId);
+    // Phase 3.5 Task 2 — closure-rail + identity accessors.
+    fn pending_actions(&self) -> &Rc<RefCell<Vec<FrameworkDeferredAction>>>;
+    fn root_context(&self) -> &Rc<emContext>;
+    fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId;
 }
 
 impl EngineCtx<'_> {
@@ -195,6 +210,7 @@ impl EngineCtx<'_> {
             root_context: self.root_context,
             framework_clipboard: self.framework_clipboard,
             current_engine: Some(self.engine_id),
+            pending_actions: self.pending_actions,
         }
     }
 
@@ -278,6 +294,18 @@ impl ConstructCtx for EngineCtx<'_> {
     fn wake_up(&mut self, eng: EngineId) {
         self.scheduler.wake_up(eng);
     }
+
+    fn pending_actions(&self) -> &Rc<RefCell<Vec<FrameworkDeferredAction>>> {
+        self.pending_actions
+    }
+
+    fn root_context(&self) -> &Rc<emContext> {
+        self.root_context
+    }
+
+    fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId {
+        self.scheduler.allocate_dialog_id()
+    }
 }
 
 impl ConstructCtx for SchedCtx<'_> {
@@ -297,6 +325,18 @@ impl ConstructCtx for SchedCtx<'_> {
     fn wake_up(&mut self, eng: EngineId) {
         self.scheduler.wake_up(eng);
     }
+
+    fn pending_actions(&self) -> &Rc<RefCell<Vec<FrameworkDeferredAction>>> {
+        self.pending_actions
+    }
+
+    fn root_context(&self) -> &Rc<emContext> {
+        self.root_context
+    }
+
+    fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId {
+        self.scheduler.allocate_dialog_id()
+    }
 }
 
 impl ConstructCtx for InitCtx<'_> {
@@ -315,6 +355,18 @@ impl ConstructCtx for InitCtx<'_> {
 
     fn wake_up(&mut self, eng: EngineId) {
         self.scheduler.wake_up(eng);
+    }
+
+    fn pending_actions(&self) -> &Rc<RefCell<Vec<FrameworkDeferredAction>>> {
+        self.pending_actions
+    }
+
+    fn root_context(&self) -> &Rc<emContext> {
+        self.root_context
+    }
+
+    fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId {
+        self.scheduler.allocate_dialog_id()
     }
 }
 
@@ -347,6 +399,24 @@ impl ConstructCtx for PanelCtx<'_> {
         if let Some(sched) = self.scheduler.as_deref_mut() {
             sched.wake_up(eng);
         }
+    }
+
+    fn pending_actions(&self) -> &Rc<RefCell<Vec<FrameworkDeferredAction>>> {
+        self.pending_actions
+            .as_ref()
+            .expect("PanelCtx: pending_actions required for ConstructCtx::pending_actions")
+    }
+
+    fn root_context(&self) -> &Rc<emContext> {
+        self.root_context
+            .expect("PanelCtx: root_context required for ConstructCtx::root_context")
+    }
+
+    fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId {
+        self.scheduler
+            .as_deref_mut()
+            .expect("PanelCtx: scheduler required for ConstructCtx::allocate_dialog_id")
+            .allocate_dialog_id()
     }
 }
 
@@ -388,6 +458,11 @@ pub struct PanelCtx<'a> {
     /// `PanelCycleEngine` and other full-reach call sites so behaviors can
     /// build a `SchedCtx` via `as_sched_ctx()`. Phase-3 B3.1.
     pub root_context: Option<&'a Rc<emContext>>,
+    /// Phase 3.5 Task 2: closure-rail handle (spec §7). `None` in
+    /// layout-only / unit tests that do not need to enqueue deferred App
+    /// actions. Set by full-reach call sites so behaviors can call
+    /// `ConstructCtx::pending_actions`. Mirrors `framework_clipboard` pattern.
+    pub pending_actions: Option<&'a Rc<RefCell<Vec<FrameworkDeferredAction>>>>,
 }
 
 impl<'a> PanelCtx<'a> {
@@ -402,6 +477,7 @@ impl<'a> PanelCtx<'a> {
             framework_clipboard: None,
             framework_actions: None,
             root_context: None,
+            pending_actions: None,
         }
     }
 
@@ -420,6 +496,7 @@ impl<'a> PanelCtx<'a> {
             framework_clipboard: None,
             framework_actions: None,
             root_context: None,
+            pending_actions: None,
         }
     }
 
@@ -435,11 +512,24 @@ impl<'a> PanelCtx<'a> {
         self
     }
 
-    /// Attach all four scheduler-reach handles at once (scheduler,
-    /// framework_actions, root_context, framework_clipboard). Production
-    /// call sites that cycle or input-dispatch a panel from inside an
-    /// `EngineCtx` context have all four available and should prefer this
-    /// over chaining individual builders. Phase-3 B3.1.
+    /// Attach the closure-rail handle. Builder-style config per CLAUDE.md
+    /// Code Rules (`with_*(self) -> Self`): chain after `with_scheduler` so
+    /// behaviors can call `ConstructCtx::pending_actions`. Phase 3.5 Task 2.
+    pub fn with_pending_actions(
+        mut self,
+        pending_actions: &'a Rc<RefCell<Vec<FrameworkDeferredAction>>>,
+    ) -> Self {
+        self.pending_actions = Some(pending_actions);
+        self
+    }
+
+    /// Attach all five scheduler-reach handles at once (scheduler,
+    /// framework_actions, root_context, framework_clipboard,
+    /// pending_actions). Production call sites that cycle or input-dispatch
+    /// a panel from inside an `EngineCtx` context have all five available
+    /// and should prefer this over chaining individual builders.
+    /// Phase-3 B3.1; extended in Phase 3.5 Task 2 with `pending_actions`.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_sched_reach(
         tree: &'a mut PanelTree,
         id: PanelId,
@@ -448,6 +538,7 @@ impl<'a> PanelCtx<'a> {
         framework_actions: &'a mut Vec<DeferredAction>,
         root_context: &'a Rc<emContext>,
         framework_clipboard: &'a RefCell<Option<Box<dyn emClipboard>>>,
+        pending_actions: &'a Rc<RefCell<Vec<FrameworkDeferredAction>>>,
     ) -> Self {
         Self {
             tree,
@@ -457,6 +548,7 @@ impl<'a> PanelCtx<'a> {
             framework_clipboard: Some(framework_clipboard),
             framework_actions: Some(framework_actions),
             root_context: Some(root_context),
+            pending_actions: Some(pending_actions),
         }
     }
 
@@ -470,12 +562,14 @@ impl<'a> PanelCtx<'a> {
         let framework_actions = self.framework_actions.as_deref_mut()?;
         let root_context = self.root_context?;
         let framework_clipboard = self.framework_clipboard?;
+        let pending_actions = self.pending_actions?;
         Some(SchedCtx {
             scheduler,
             framework_actions,
             root_context,
             framework_clipboard,
             current_engine: None,
+            pending_actions,
         })
     }
 
@@ -791,12 +885,14 @@ mod tests {
         let mut actions = Vec::new();
         let ctx_root = crate::emContext::emContext::NewRoot();
         let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
         let mut sc = SchedCtx {
             scheduler: &mut sched,
             framework_actions: &mut actions,
             root_context: &ctx_root,
             framework_clipboard: &cb,
             current_engine: None,
+            pending_actions: &pa,
         };
 
         assert!(sc.current_engine.is_none());
@@ -823,12 +919,14 @@ mod tests {
         let mut actions: Vec<DeferredAction> = Vec::new();
         let ctx_root = crate::emContext::emContext::NewRoot();
         let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
         let mut sc = SchedCtx {
             scheduler: &mut sched,
             framework_actions: &mut actions,
             root_context: &ctx_root,
             framework_clipboard: &cb,
             current_engine: None,
+            pending_actions: &pa,
         };
 
         let sig = sc.create_signal();
@@ -850,10 +948,12 @@ mod tests {
         let mut sched = EngineScheduler::new();
         let mut actions: Vec<DeferredAction> = Vec::new();
         let ctx_root = crate::emContext::emContext::NewRoot();
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
         let mut ic = InitCtx {
             scheduler: &mut sched,
             framework_actions: &mut actions,
             root_context: &ctx_root,
+            pending_actions: &pa,
         };
 
         assert!(ic.framework_actions.is_empty());
@@ -879,12 +979,14 @@ mod tests {
         let mut actions: Vec<DeferredAction> = Vec::new();
         let ctx_root = crate::emContext::emContext::NewRoot();
         let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
         let mut sc = SchedCtx {
             scheduler: &mut sched,
             framework_actions: &mut actions,
             root_context: &ctx_root,
             framework_clipboard: &cb,
             current_engine: None,
+            pending_actions: &pa,
         };
         let cc: &mut dyn ConstructCtx = &mut sc;
         let _sig = cc.create_signal();
@@ -904,12 +1006,14 @@ mod tests {
         let mut actions: Vec<DeferredAction> = Vec::new();
         let ctx_root = crate::emContext::emContext::NewRoot();
         let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
         let mut sc = SchedCtx {
             scheduler: &mut sched,
             framework_actions: &mut actions,
             root_context: &ctx_root,
             framework_clipboard: &cb,
             current_engine: None,
+            pending_actions: &pa,
         };
 
         let sig = sc.create_signal();
@@ -940,5 +1044,28 @@ mod tests {
                 DeferredAction::CloseWindow(_) | DeferredAction::MaterializePopup(_) => {}
             }
         }
+    }
+
+    #[test]
+    fn construct_ctx_exposes_pending_actions_and_root_context() {
+        // Proves the trait extensions are present; use InitCtx as the concrete impl.
+        let mut sched = EngineScheduler::new();
+        let root = crate::emContext::emContext::NewRoot();
+        let pending_actions: Rc<RefCell<Vec<FrameworkDeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
+        let mut fw_actions: Vec<DeferredAction> = Vec::new();
+        let mut ctx = InitCtx {
+            scheduler: &mut sched,
+            framework_actions: &mut fw_actions,
+            root_context: &root,
+            pending_actions: &pending_actions,
+        };
+        // Exercise both accessors.
+        let _: &Rc<RefCell<Vec<FrameworkDeferredAction>>> = ctx.pending_actions();
+        let _: &Rc<emContext> = ctx.root_context();
+        // Exercise allocate_dialog_id.
+        let id0 = ctx.allocate_dialog_id();
+        let id1 = ctx.allocate_dialog_id();
+        assert_ne!(id0, id1);
     }
 }

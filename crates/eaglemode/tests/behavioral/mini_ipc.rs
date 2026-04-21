@@ -105,6 +105,8 @@ mod linux {
         let mut __input_state = emcore::emInputState::emInputState::new();
         let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
             std::cell::RefCell::new(None);
+        let __pa: std::rc::Rc<std::cell::RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         sched.DoTimeSlice(
             &mut windows,
             &__root_ctx,
@@ -112,6 +114,7 @@ mod linux {
             &mut __pending_inputs,
             &mut __input_state,
             &__cb,
+            &__pa,
         );
     }
 

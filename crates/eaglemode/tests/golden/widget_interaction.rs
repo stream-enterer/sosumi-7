@@ -812,6 +812,7 @@ fn dispatch_event(
                     &mut tvh.framework_actions,
                     &tvh.root_context,
                     &tvh.framework_clipboard,
+                    &tvh.pending_actions,
                 );
                 behavior.Input(&panel_ev, &panel_state, input_state, &mut pctx)
             };

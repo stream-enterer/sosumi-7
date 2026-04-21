@@ -19,6 +19,8 @@ fn slice(sched: &mut EngineScheduler) {
     let mut __input_state = emcore::emInputState::emInputState::new();
     let __cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
         std::cell::RefCell::new(None);
+    let __pa: Rc<RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+        Rc::new(RefCell::new(Vec::new()));
     sched.DoTimeSlice(
         &mut windows,
         &__root_ctx,
@@ -26,6 +28,7 @@ fn slice(sched: &mut EngineScheduler) {
         &mut __pending_inputs,
         &mut __input_state,
         &__cb,
+        &__pa,
     );
 }
 

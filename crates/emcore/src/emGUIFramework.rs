@@ -428,6 +428,7 @@ impl App {
                 framework_actions,
                 windows,
                 clipboard,
+                pending_actions,
                 ..
             } = self;
             let home = windows.get_mut(&home_key).expect("home_key still present");
@@ -450,6 +451,7 @@ impl App {
                 root_context: &root,
                 framework_clipboard: clipboard,
                 current_engine: None,
+                pending_actions,
             };
             popup.view_mut().SetGeometry(
                 &mut popup_tree,
@@ -577,6 +579,7 @@ impl App {
             scheduler,
             framework_actions,
             clipboard,
+            pending_actions,
             ..
         } = self;
         let mut tree = pending.window.take_tree();
@@ -587,6 +590,7 @@ impl App {
                 root_context: &root,
                 framework_clipboard: clipboard,
                 current_engine: None,
+                pending_actions,
             };
             pending
                 .window
@@ -749,6 +753,7 @@ impl ApplicationHandler for App {
                         root_context: &root,
                         framework_clipboard: &self.clipboard,
                         current_engine: None,
+                        pending_actions: &self.pending_actions,
                     };
                     // Phase 3.5.A Task 7: emWindow::resize drops its external
                     // tree param; the window uses its own `self.tree` via
@@ -795,6 +800,7 @@ impl ApplicationHandler for App {
                         root_context: &self.context,
                         framework_clipboard: &self.clipboard,
                         current_engine: None,
+                        pending_actions: &self.pending_actions,
                     };
                     // Phase 3.5.A Task 7: window owns its tree; handle_touch
                     // splits internally.
@@ -949,6 +955,7 @@ impl ApplicationHandler for App {
                 ref mut pending_inputs,
                 ref mut input_state,
                 ref clipboard,
+                ref pending_actions,
                 ..
             } = *self;
             scheduler.DoTimeSlice(
@@ -958,6 +965,7 @@ impl ApplicationHandler for App {
                 pending_inputs,
                 input_state,
                 clipboard,
+                pending_actions,
             );
         }
 
@@ -1004,6 +1012,7 @@ impl ApplicationHandler for App {
             ref mut windows,
             ref mut pending_inputs,
             ref clipboard,
+            ref pending_actions,
             input_dispatch_engine_id,
             ..
         } = *self;
@@ -1020,6 +1029,7 @@ impl ApplicationHandler for App {
                 root_context: context,
                 framework_clipboard: clipboard,
                 current_engine: None,
+                pending_actions,
             };
 
             // Phase 3.5.A Task 7: each window owns its tree. Take it out for

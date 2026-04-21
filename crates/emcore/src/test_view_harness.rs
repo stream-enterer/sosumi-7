@@ -10,6 +10,7 @@
 
 #![cfg(any(test, feature = "test-support"))]
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -17,7 +18,7 @@ use winit::window::WindowId;
 
 use crate::emContext::emContext;
 use crate::emEngine::EngineId;
-use crate::emEngineCtx::{DeferredAction, EngineCtx, InitCtx, SchedCtx};
+use crate::emEngineCtx::{DeferredAction, EngineCtx, FrameworkDeferredAction, InitCtx, SchedCtx};
 use crate::emPanelTree::PanelTree;
 use crate::emScheduler::EngineScheduler;
 use crate::emWindow::emWindow;
@@ -33,6 +34,8 @@ pub struct TestViewHarness {
     pub windows: HashMap<WindowId, emWindow>,
     pub pending_inputs: Vec<(WindowId, crate::emInput::emInputEvent)>,
     pub input_state: crate::emInputState::emInputState,
+    /// Phase 3.5 Task 2: closure-rail handle threaded through ctx constructors.
+    pub pending_actions: Rc<RefCell<Vec<FrameworkDeferredAction>>>,
 }
 
 impl Default for TestViewHarness {
@@ -52,6 +55,7 @@ impl TestViewHarness {
             windows: HashMap::new(),
             pending_inputs: Vec::new(),
             input_state: crate::emInputState::emInputState::new(),
+            pending_actions: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -65,6 +69,7 @@ impl TestViewHarness {
             root_context: &self.root_context,
             framework_clipboard: &self.framework_clipboard,
             current_engine: None,
+            pending_actions: &self.pending_actions,
         }
     }
 
@@ -76,6 +81,7 @@ impl TestViewHarness {
             root_context: &self.root_context,
             framework_clipboard: &self.framework_clipboard,
             current_engine: Some(engine),
+            pending_actions: &self.pending_actions,
         }
     }
 
@@ -96,6 +102,7 @@ impl TestViewHarness {
             input_state: &mut self.input_state,
             framework_clipboard: &self.framework_clipboard,
             engine_id,
+            pending_actions: &self.pending_actions,
         }
     }
 
@@ -106,6 +113,7 @@ impl TestViewHarness {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.framework_actions,
             root_context: &self.root_context,
+            pending_actions: &self.pending_actions,
         }
     }
 }
@@ -125,6 +133,8 @@ pub struct InitHarness {
     pub scheduler: EngineScheduler,
     pub actions: Vec<DeferredAction>,
     pub root: Rc<emContext>,
+    /// Phase 3.5 Task 2: closure-rail handle threaded through InitCtx.
+    pub pending_actions: Rc<RefCell<Vec<FrameworkDeferredAction>>>,
 }
 
 impl Default for InitHarness {
@@ -139,6 +149,7 @@ impl InitHarness {
             scheduler: EngineScheduler::new(),
             actions: Vec::new(),
             root: emContext::NewRoot(),
+            pending_actions: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -147,6 +158,7 @@ impl InitHarness {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.actions,
             root_context: &self.root,
+            pending_actions: &self.pending_actions,
         }
     }
 }
@@ -159,6 +171,8 @@ pub struct TestSched {
     fw: Vec<DeferredAction>,
     ctx: Rc<emContext>,
     cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>>,
+    /// Phase 3.5 Task 2: closure-rail handle threaded through SchedCtx.
+    pa: Rc<RefCell<Vec<FrameworkDeferredAction>>>,
 }
 
 impl Default for TestSched {
@@ -174,6 +188,7 @@ impl TestSched {
             fw: Vec::new(),
             ctx: emContext::NewRoot(),
             cb: std::cell::RefCell::new(None),
+            pa: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -184,6 +199,7 @@ impl TestSched {
             root_context: &self.ctx,
             framework_clipboard: &self.cb,
             current_engine: None,
+            pending_actions: &self.pa,
         };
         f(&mut sc)
     }

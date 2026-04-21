@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use emcore::emContext::emContext;
-use emcore::emEngineCtx::{DeferredAction, PanelCtx, SchedCtx};
+use emcore::emEngineCtx::{DeferredAction, FrameworkDeferredAction, PanelCtx, SchedCtx};
 use emcore::emInput::{emInputEvent, InputKey, InputVariant};
 use emcore::emInputState::emInputState;
 use emcore::emPanel::PanelBehavior;
@@ -39,6 +39,8 @@ pub struct PipelineTestHarness {
     pub touch_vif: emDefaultTouchVIF,
     pub input_state: emInputState,
     root: PanelId,
+    /// Phase 3.5 Task 2: closure-rail handle threaded through ctx constructors.
+    pub pending_actions: std::rc::Rc<std::cell::RefCell<Vec<FrameworkDeferredAction>>>,
 }
 
 impl Drop for PipelineTestHarness {
@@ -59,6 +61,8 @@ impl PipelineTestHarness {
 
         let root_context = emcore::emContext::emContext::NewRoot();
         let mut view = emView::new(Rc::clone(&root_context), root, 800.0, 600.0);
+        let pending_actions: std::rc::Rc<std::cell::RefCell<Vec<FrameworkDeferredAction>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         {
             let mut __sched = EngineScheduler::new();
             let mut __fw: Vec<DeferredAction> = Vec::new();
@@ -70,6 +74,7 @@ impl PipelineTestHarness {
                 root_context: &root_context,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &pending_actions,
             };
             view.Update(&mut tree, &mut sc);
         }
@@ -96,6 +101,7 @@ impl PipelineTestHarness {
             touch_vif: emDefaultTouchVIF::new(),
             input_state: emInputState::new(),
             root,
+            pending_actions,
         }
     }
 
@@ -116,6 +122,7 @@ impl PipelineTestHarness {
             &mut self.framework_actions,
             &self.root_context,
             &self.framework_clipboard,
+            &self.pending_actions,
         );
         f(&mut ctx)
     }
@@ -132,6 +139,7 @@ impl PipelineTestHarness {
             &mut self.framework_actions,
             &self.root_context,
             &self.framework_clipboard,
+            &self.pending_actions,
         )
     }
 
@@ -142,6 +150,7 @@ impl PipelineTestHarness {
             root_context: &self.root_context,
             framework_clipboard: &self.framework_clipboard,
             current_engine: None,
+            pending_actions: &self.pending_actions,
         }
     }
 
@@ -152,6 +161,7 @@ impl PipelineTestHarness {
             root_context: &self.root_context,
             framework_clipboard: &self.framework_clipboard,
             current_engine: None,
+            pending_actions: &self.pending_actions,
         };
         self.view
             .set_active_panel(&mut self.tree, panel, false, &mut sc);
@@ -178,6 +188,7 @@ impl PipelineTestHarness {
             &mut __pending_inputs,
             &mut __input_state,
             &self.framework_clipboard,
+            &self.pending_actions,
         );
         self.view.pump_visiting_va(&mut self.tree);
         self.view.HandleNotice(&mut self.tree, &mut self.scheduler);
@@ -187,6 +198,7 @@ impl PipelineTestHarness {
             root_context: &self.root_context,
             framework_clipboard: &self.framework_clipboard,
             current_engine: None,
+            pending_actions: &self.pending_actions,
         };
         self.view.Update(&mut self.tree, &mut sc);
     }
@@ -239,6 +251,7 @@ impl PipelineTestHarness {
                 root_context: &self.root_context,
                 framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
+                pending_actions: &self.pending_actions,
             };
             self.view.RawZoomOut(&mut self.tree, false, &mut sc);
         }
@@ -254,6 +267,7 @@ impl PipelineTestHarness {
                 root_context: &self.root_context,
                 framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
+                pending_actions: &self.pending_actions,
             };
             self.view
                 .Zoom(&mut self.tree, level, vw * 0.5, vh * 0.5, &mut sc);
@@ -267,6 +281,7 @@ impl PipelineTestHarness {
                 root_context: &self.root_context,
                 framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
+                pending_actions: &self.pending_actions,
             };
             self.view.Update(&mut self.tree, &mut sc);
         }
@@ -308,6 +323,7 @@ impl PipelineTestHarness {
                 root_context: &self.root_context,
                 framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
+                pending_actions: &self.pending_actions,
             };
             if vif.filter(
                 event,
@@ -354,6 +370,7 @@ impl PipelineTestHarness {
                 root_context: &self.root_context,
                 framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
+                pending_actions: &self.pending_actions,
             };
             self.view
                 .set_active_panel(&mut self.tree, panel, false, &mut sc);
@@ -397,6 +414,7 @@ impl PipelineTestHarness {
                         &mut self.framework_actions,
                         &self.root_context,
                         &self.framework_clipboard,
+                        &self.pending_actions,
                     );
                     behavior.Input(&panel_ev, &panel_state, &self.input_state, &mut pctx)
                 };

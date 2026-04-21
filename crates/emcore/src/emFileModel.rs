@@ -901,6 +901,8 @@ mod tests {
             let mut __input_state = crate::emInputState::emInputState::new();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<std::cell::RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
+                std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             sched.DoTimeSlice(
                 &mut windows,
                 &__root_ctx,
@@ -908,6 +910,7 @@ mod tests {
                 &mut __pending_inputs,
                 &mut __input_state,
                 &__cb,
+                &__pa,
             );
         }
 

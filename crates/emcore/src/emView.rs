@@ -215,6 +215,7 @@ impl super::emEngine::emEngine for UpdateEngineClass {
                     root_context: ctx.root_context,
                     framework_clipboard: ctx.framework_clipboard,
                     current_engine: Some(engine_id),
+                    pending_actions: ctx.pending_actions,
                 };
                 window.view.Update(tree, &mut sc);
                 false
@@ -237,6 +238,7 @@ impl super::emEngine::emEngine for UpdateEngineClass {
                     root_context: ctx.root_context,
                     framework_clipboard: ctx.framework_clipboard,
                     current_engine: Some(engine_id),
+                    pending_actions: ctx.pending_actions,
                 };
                 let (sub_view, sub_tree) = svp.sub_view_and_tree_mut();
                 sub_view.Update(sub_tree, &mut sc);
@@ -310,6 +312,7 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
                     root_context: ctx.root_context,
                     framework_clipboard: ctx.framework_clipboard,
                     current_engine: Some(engine_id),
+                    pending_actions: ctx.pending_actions,
                 };
                 va.animate(view, tree, dt, &mut sc)
             }
@@ -337,6 +340,7 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
                     root_context: ctx.root_context,
                     framework_clipboard: ctx.framework_clipboard,
                     current_engine: Some(engine_id),
+                    pending_actions: ctx.pending_actions,
                 };
                 va.animate(sub_view, sub_tree, dt, &mut sc)
             }
@@ -3311,6 +3315,8 @@ impl emView {
         let mut __sched = crate::emScheduler::EngineScheduler::new();
         let mut __fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
         let __ctx = self.GetRootContext();
+        let __pa: std::rc::Rc<std::cell::RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         for _ in 0..1024 {
             let mut va = va_rc.borrow_mut();
             if !va.is_active() {
@@ -3324,6 +3330,7 @@ impl emView {
                 root_context: &__ctx,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             let still = va.animate(self, tree, 0.1, &mut sc);
             if !still {
@@ -5347,12 +5354,16 @@ mod tests {
         fn with<R>(&mut self, f: impl FnOnce(&mut crate::emEngineCtx::SchedCtx<'_>) -> R) -> R {
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut self.sched,
                 framework_actions: &mut self.fw,
                 root_context: &self.ctx,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             f(&mut sc)
         }
@@ -6365,12 +6376,16 @@ mod tests {
             let mut sched_guard = sched.borrow_mut();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut sched_guard,
                 framework_actions: &mut fw,
                 root_context: &root_ctx,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             view.Update(&mut tree, &mut sc);
         }
@@ -6378,12 +6393,16 @@ mod tests {
             let mut sched_guard = sched.borrow_mut();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut sched_guard,
                 framework_actions: &mut fw,
                 root_context: &root_ctx,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             view.set_active_panel(&mut tree, child, false, &mut sc);
         }
@@ -6723,12 +6742,16 @@ mod tests {
             let mut s = sched.borrow_mut();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             v.RegisterEngines(&mut sc, &mut tree, scope);
         }
@@ -6749,6 +6772,9 @@ mod tests {
         );
         sched.borrow_mut().connect(eoi, listener_id);
 
+        let __pa: std::rc::Rc<
+            std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+        > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         {
             let mut sched_borrow = sched.borrow_mut();
             let root = v_rc.borrow().Context.GetRootContext();
@@ -6761,6 +6787,7 @@ mod tests {
                 root_context: &root,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             v_rc.borrow_mut().SignalEOIDelayed(&mut sc);
         }
@@ -6780,6 +6807,7 @@ mod tests {
                 &mut __pending_inputs,
                 &mut __input_state,
                 &__cb,
+                &__pa,
             );
             if fired.get() {
                 break;
@@ -6828,12 +6856,16 @@ mod tests {
             let mut s = sched.borrow_mut();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             v.RegisterEngines(&mut sc, &mut tree, scope);
         }
@@ -6850,12 +6882,16 @@ mod tests {
             let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut sched_borrow,
                 framework_actions: &mut fw,
                 root_context: &root,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             v_rc.borrow_mut().WakeUpUpdateEngine(&mut sc);
         }
@@ -6983,12 +7019,16 @@ mod tests {
             let mut s = sched.borrow_mut();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             v.RegisterEngines(&mut sc, &mut tree, scope);
         }
@@ -7107,12 +7147,16 @@ mod tests {
             let mut s = sched.borrow_mut();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root_ctx,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             win.view_mut()
                 .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0, &mut sc);
@@ -7125,12 +7169,16 @@ mod tests {
             let mut s = sched.borrow_mut();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root_ctx,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             v.RegisterEngines(&mut sc, &mut tree, scope);
         }
@@ -7201,6 +7249,8 @@ mod tests {
         let mut __input_state = crate::emInputState::emInputState::new();
         let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
             std::cell::RefCell::new(None);
+        let __pa: std::rc::Rc<std::cell::RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         sched.borrow_mut().DoTimeSlice(
             &mut windows,
             &__root_ctx,
@@ -7208,6 +7258,7 @@ mod tests {
             &mut __pending_inputs,
             &mut __input_state,
             &__cb,
+            &__pa,
         );
         // Reclaim tree for teardown.
         let mut tree = windows
@@ -7288,12 +7339,16 @@ mod tests {
             let mut s = sched.borrow_mut();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root_ctx,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             win.view_mut()
                 .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0, &mut sc);
@@ -7306,12 +7361,16 @@ mod tests {
             let mut s = sched.borrow_mut();
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut s,
                 framework_actions: &mut fw,
                 root_context: &root_ctx,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             v.RegisterEngines(&mut sc, &mut tree, scope);
         }
@@ -7348,6 +7407,9 @@ mod tests {
         let mut __input_state = crate::emInputState::emInputState::new();
         let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
             std::cell::RefCell::new(None);
+        let __pa2: std::rc::Rc<
+            std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+        > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         sched.borrow_mut().DoTimeSlice(
             &mut windows,
             &__root_ctx,
@@ -7355,6 +7417,7 @@ mod tests {
             &mut __pending_inputs,
             &mut __input_state,
             &__cb,
+            &__pa2,
         );
         let mut win = windows.remove(&win_id).expect("win reinserted");
         let mut tree = win.take_tree();
@@ -7406,6 +7469,9 @@ mod tests {
         )));
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
         let scope = crate::emPanelScope::PanelScope::Toplevel(winit::window::WindowId::dummy());
+        let __pa: std::rc::Rc<
+            std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+        > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         {
             let mut v = view_rc.borrow_mut();
             let root = v.Context.GetRootContext();
@@ -7419,6 +7485,7 @@ mod tests {
                 root_context: &root,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             v.RegisterEngines(&mut sc, &mut tree, scope);
         }
@@ -7461,6 +7528,7 @@ mod tests {
             &mut __pending_inputs,
             &mut __input_state,
             &__cb,
+            &__pa,
         );
         // Either outcome is valid — we only assert that Cycle ran without panic.
         let _ = view_rc.borrow().VisitingVA.borrow().is_active();

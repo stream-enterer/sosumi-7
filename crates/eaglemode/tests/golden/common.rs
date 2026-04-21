@@ -10,6 +10,7 @@ pub struct TestSched {
     sched: emcore::emScheduler::EngineScheduler,
     fw: Vec<emcore::emEngineCtx::DeferredAction>,
     ctx: std::rc::Rc<emcore::emContext::emContext>,
+    pa: std::rc::Rc<std::cell::RefCell<Vec<emcore::emEngineCtx::FrameworkDeferredAction>>>,
 }
 impl TestSched {
     pub fn new() -> Self {
@@ -17,6 +18,7 @@ impl TestSched {
             sched: emcore::emScheduler::EngineScheduler::new(),
             fw: Vec::new(),
             ctx: emcore::emContext::emContext::NewRoot(),
+            pa: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
         }
     }
     pub fn sched_mut(&mut self) -> &mut emcore::emScheduler::EngineScheduler {
@@ -29,6 +31,7 @@ impl TestSched {
             scheduler: &mut self.sched,
             framework_actions: &mut self.fw,
             root_context: &self.ctx,
+            pending_actions: &self.pa,
         }
     }
 
@@ -41,6 +44,7 @@ impl TestSched {
             root_context: &self.ctx,
             framework_clipboard: &__cb,
             current_engine: None,
+            pending_actions: &self.pa,
         };
         f(&mut sc)
     }

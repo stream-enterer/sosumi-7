@@ -136,12 +136,20 @@ pub fn emGetClockMS() -> u64 {
 pub struct EngineScheduler {
     pub(crate) inner: EngineCtxInner,
     terminated: bool,
+    /// Phase 3.5 Task 2 — monotonic counter for `allocate_dialog_id`.
+    /// Relocated from `App::next_dialog_id` (Phase 3.5.A Task 9) so that
+    /// construction code can allocate IDs through `ConstructCtx` without
+    /// requiring `&mut App`. Matches spec §8. Task 3 wires the full body;
+    /// for now the counter is here and `App::allocate_dialog_id` delegates
+    /// to this method.
+    pub(crate) next_dialog_id: u64,
 }
 
 impl EngineScheduler {
     pub fn new() -> Self {
         Self {
             terminated: false,
+            next_dialog_id: 0,
             inner: EngineCtxInner {
                 signals: SlotMap::with_key(),
                 engines: SlotMap::with_key(),
@@ -156,6 +164,24 @@ impl EngineScheduler {
                 current_awake_idx: None,
             },
         }
+    }
+
+    // ── DialogId allocator ─────────────────────────────────────────
+
+    /// Allocate a fresh `DialogId`. Monotonic counter; panics on u64 overflow.
+    ///
+    /// Phase 3.5 Task 2: stub implementation. Task 3 wires this into the
+    /// `ConstructCtx::allocate_dialog_id` call chain and deletes
+    /// `App::next_dialog_id`, delegating `App::allocate_dialog_id` here.
+    /// The counter field and this method are the permanent home (spec §8).
+    // Task 3: real body — replace `App::next_dialog_id` with this allocator.
+    pub fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId {
+        let id = crate::emGUIFramework::DialogId(self.next_dialog_id);
+        self.next_dialog_id = self
+            .next_dialog_id
+            .checked_add(1)
+            .expect("DialogId overflow — u64 exhausted");
+        id
     }
 
     // ── Signal API ──────────────────────────────────────────────────
@@ -405,6 +431,9 @@ impl EngineScheduler {
         pending_inputs: &mut Vec<(WindowId, crate::emInput::emInputEvent)>,
         input_state: &mut crate::emInputState::emInputState,
         framework_clipboard: &std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>>,
+        pending_actions: &std::rc::Rc<
+            std::cell::RefCell<Vec<crate::emGUIFramework::DeferredAction>>,
+        >,
     ) {
         self.inner.time_slice_counter += 1;
         self.inner.deadline = Instant::now() + TIME_SLICE_DURATION;
@@ -514,6 +543,7 @@ impl EngineScheduler {
                         input_state,
                         framework_clipboard,
                         engine_id,
+                        pending_actions,
                     };
                     behavior.Cycle(&mut ctx)
                 }
@@ -544,6 +574,7 @@ impl EngineScheduler {
                             input_state,
                             framework_clipboard,
                             engine_id,
+                            pending_actions,
                         };
                         behavior.Cycle(&mut ctx)
                     };
@@ -589,6 +620,7 @@ impl EngineScheduler {
                             input_state,
                             framework_clipboard,
                             engine_id,
+                            pending_actions,
                         };
                         behavior.Cycle(&mut ctx)
                     };
@@ -645,6 +677,9 @@ impl EngineScheduler {
         let framework_clipboard: std::cell::RefCell<
             Option<Box<dyn crate::emClipboard::emClipboard>>,
         > = std::cell::RefCell::new(None);
+        let pending_actions: std::rc::Rc<
+            std::cell::RefCell<Vec<crate::emGUIFramework::DeferredAction>>,
+        > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         self.terminated = false;
         while !self.terminated {
             self.DoTimeSlice(
@@ -654,6 +689,7 @@ impl EngineScheduler {
                 &mut pending_inputs,
                 &mut input_state,
                 &framework_clipboard,
+                &pending_actions,
             );
         }
     }
@@ -768,6 +804,8 @@ mod tests {
         let mut input_state = crate::emInputState::emInputState::new();
         let fc: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
             std::cell::RefCell::new(None);
+        let __pa: Rc<RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
         sched.DoTimeSlice(
             &mut windows,
             &root_context,
@@ -775,6 +813,7 @@ mod tests {
             &mut pending_inputs,
             &mut input_state,
             &fc,
+            &__pa,
         );
     }
 
@@ -1257,6 +1296,8 @@ mod tests {
         let mut input_state = crate::emInputState::emInputState::new();
         let fc: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
             std::cell::RefCell::new(None);
+        let __pa: Rc<RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
         sched.DoTimeSlice(
             &mut windows,
             &root_context,
@@ -1264,6 +1305,7 @@ mod tests {
             &mut pending_inputs,
             &mut input_state,
             &fc,
+            &__pa,
         );
 
         assert_eq!(*count.borrow(), 1, "Cycle must have run once");
@@ -1308,6 +1350,8 @@ mod tests {
         let mut input_state = crate::emInputState::emInputState::new();
         let fc: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
             std::cell::RefCell::new(None);
+        let __pa: Rc<RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
         sched.DoTimeSlice(
             &mut windows,
             &root_context,
@@ -1315,6 +1359,7 @@ mod tests {
             &mut pending_inputs,
             &mut input_state,
             &fc,
+            &__pa,
         );
 
         assert_eq!(

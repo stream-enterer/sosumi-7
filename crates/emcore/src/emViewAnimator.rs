@@ -2853,12 +2853,16 @@ mod tests {
         fn with<R>(&mut self, f: impl FnOnce(&mut crate::emEngineCtx::SchedCtx<'_>) -> R) -> R {
             let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
                 std::cell::RefCell::new(None);
+            let __pa: std::rc::Rc<
+                std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+            > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler: &mut self.sched,
                 framework_actions: &mut self.fw,
                 root_context: &self.ctx,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &__pa,
             };
             f(&mut sc)
         }

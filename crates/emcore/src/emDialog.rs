@@ -706,6 +706,7 @@ mod tests {
         sched: EngineScheduler,
         fw: Vec<DeferredAction>,
         root: Rc<crate::emContext::emContext>,
+        pa: Rc<RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>>,
     }
     impl Drop for TestInit {
         fn drop(&mut self) {
@@ -720,6 +721,7 @@ mod tests {
                 sched: EngineScheduler::new(),
                 fw: Vec::new(),
                 root: crate::emContext::emContext::NewRoot(),
+                pa: Rc::new(RefCell::new(Vec::new())),
             }
         }
         fn ctx(&mut self) -> InitCtx<'_> {
@@ -727,6 +729,7 @@ mod tests {
                 scheduler: &mut self.sched,
                 framework_actions: &mut self.fw,
                 root_context: &self.root,
+                pending_actions: &self.pa,
             }
         }
     }
@@ -775,6 +778,7 @@ mod tests {
                 &mut __init.fw,
                 &__init.root,
                 &fw_cb,
+                &__init.pa,
             );
             dlg.Input(
                 &emInputEvent::press(InputKey::Enter),
@@ -812,6 +816,7 @@ mod tests {
             &mut __init.fw,
             &__init.root,
             &fw_cb,
+            &__init.pa,
         );
         assert!(dlg.GetResult().is_none());
         dlg.Finish(DialogResult::Ok, &mut ctx);
@@ -1263,6 +1268,7 @@ mod tests {
             &mut pending_inputs,
             &mut input_state,
             &fc,
+            &app.pending_actions,
         );
 
         // Direct probe: finish_signal fired exactly once during the slice.
@@ -1309,6 +1315,7 @@ mod tests {
             &mut pending_inputs,
             &mut input_state,
             &fc,
+            &app.pending_actions,
         );
         assert_eq!(
             *hits.borrow(),

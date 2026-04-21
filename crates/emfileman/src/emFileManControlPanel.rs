@@ -545,6 +545,7 @@ mod tests {
         sched: EngineScheduler,
         fw: Vec<DeferredAction>,
         root: Rc<emContext>,
+        pa: Rc<RefCell<Vec<emcore::emEngineCtx::FrameworkDeferredAction>>>,
     }
     impl TestInit {
         fn new() -> Self {
@@ -552,6 +553,7 @@ mod tests {
                 sched: EngineScheduler::new(),
                 fw: Vec::new(),
                 root: emcore::emContext::emContext::NewRoot(),
+                pa: Rc::new(RefCell::new(Vec::new())),
             }
         }
         fn ctx(&mut self) -> InitCtx<'_> {
@@ -559,6 +561,7 @@ mod tests {
                 scheduler: &mut self.sched,
                 framework_actions: &mut self.fw,
                 root_context: &self.root,
+                pending_actions: &self.pa,
             }
         }
     }
@@ -617,6 +620,7 @@ mod tests {
             framework_clipboard: None,
             framework_actions: None,
             root_context: None,
+            pending_actions: None,
         };
         let mut h = emcore::test_view_harness::TestViewHarness::new();
         let dummy_eid = h.scheduler.register_engine(

@@ -42,6 +42,7 @@ impl emEngine for InputDispatchEngine {
                 framework_actions,
                 input_state,
                 framework_clipboard,
+                pending_actions,
                 ..
             } = ctx;
 
@@ -77,6 +78,7 @@ impl emEngine for InputDispatchEngine {
                 root_context,
                 framework_clipboard,
                 current_engine: None,
+                pending_actions,
             };
             win.dispatch_input(&event, input_state, &mut sc);
         }
@@ -124,6 +126,8 @@ mod tests {
         pending_inputs.push((dummy_wid, event));
         sched.wake_up(eid);
 
+        let __pa: std::rc::Rc<std::cell::RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         sched.DoTimeSlice(
             &mut windows,
             &root_context,
@@ -131,6 +135,7 @@ mod tests {
             &mut pending_inputs,
             &mut input_state,
             &framework_clipboard,
+            &__pa,
         );
 
         assert!(

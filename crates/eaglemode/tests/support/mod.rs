@@ -9,7 +9,7 @@ use std::rc::Rc;
 use emcore::emClipboard::emClipboard;
 use emcore::emContext::emContext;
 use emcore::emEngineCtx::PanelCtx;
-use emcore::emEngineCtx::{DeferredAction, SchedCtx};
+use emcore::emEngineCtx::{DeferredAction, FrameworkDeferredAction, SchedCtx};
 use emcore::emInput::{emInputEvent, InputKey, InputVariant};
 use emcore::emInputState::emInputState;
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
@@ -35,6 +35,8 @@ pub struct TestHarness {
     pub touch_vif: emDefaultTouchVIF,
     pub input_state: emInputState,
     root: PanelId,
+    /// Phase 3.5 Task 2: closure-rail handle threaded through ctx constructors.
+    pub pending_actions: Rc<RefCell<Vec<FrameworkDeferredAction>>>,
 }
 
 impl Drop for TestHarness {
@@ -55,6 +57,8 @@ impl TestHarness {
 
         let root_context = emcore::emContext::emContext::NewRoot();
         let mut view = emView::new(Rc::clone(&root_context), root, 800.0, 600.0);
+        let pending_actions: Rc<RefCell<Vec<FrameworkDeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
         {
             let mut __sched = EngineScheduler::new();
             let mut __fw: Vec<DeferredAction> = Vec::new();
@@ -65,6 +69,7 @@ impl TestHarness {
                 root_context: &root_context,
                 framework_clipboard: &__cb,
                 current_engine: None,
+                pending_actions: &pending_actions,
             };
             view.Update(&mut tree, &mut sc);
         }
@@ -91,6 +96,7 @@ impl TestHarness {
             touch_vif: emDefaultTouchVIF::new(),
             input_state: emInputState::new(),
             root,
+            pending_actions,
         }
     }
 
@@ -105,6 +111,7 @@ impl TestHarness {
             root_context: &self.root_context,
             framework_clipboard: &self.framework_clipboard,
             current_engine: None,
+            pending_actions: &self.pending_actions,
         }
     }
 
@@ -120,6 +127,7 @@ impl TestHarness {
             &mut self.framework_actions,
             &self.root_context,
             &self.framework_clipboard,
+            &self.pending_actions,
         )
     }
 
@@ -137,6 +145,7 @@ impl TestHarness {
             &mut __pending_inputs,
             &mut __input_state,
             &self.framework_clipboard,
+            &self.pending_actions,
         );
         self.view.HandleNotice(&mut self.tree, &mut self.scheduler);
         let mut sc = SchedCtx {
@@ -145,6 +154,7 @@ impl TestHarness {
             root_context: &self.root_context,
             framework_clipboard: &self.framework_clipboard,
             current_engine: None,
+            pending_actions: &self.pending_actions,
         };
         self.view.Update(&mut self.tree, &mut sc);
     }
@@ -163,6 +173,7 @@ impl TestHarness {
             root_context: &self.root_context,
             framework_clipboard: &self.framework_clipboard,
             current_engine: None,
+            pending_actions: &self.pending_actions,
         };
         self.view
             .set_active_panel(&mut self.tree, panel, false, &mut sc);
@@ -200,6 +211,7 @@ impl TestHarness {
                 root_context: &self.root_context,
                 framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
+                pending_actions: &self.pending_actions,
             };
             if vif.filter(
                 event,
@@ -229,6 +241,7 @@ impl TestHarness {
                 root_context: &self.root_context,
                 framework_clipboard: &self.framework_clipboard,
                 current_engine: None,
+                pending_actions: &self.pending_actions,
             };
             self.view
                 .set_active_panel(&mut self.tree, panel, false, &mut sc);
@@ -255,6 +268,7 @@ impl TestHarness {
                         &mut self.framework_actions,
                         &self.root_context,
                         &self.framework_clipboard,
+                        &self.pending_actions,
                     );
                     behavior.Input(&ev, &state, &self.input_state, &mut pctx)
                 };

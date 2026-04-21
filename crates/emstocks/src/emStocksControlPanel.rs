@@ -650,6 +650,7 @@ mod tests {
         sched: EngineScheduler,
         fw: Vec<DeferredAction>,
         root: Rc<emcore::emContext::emContext>,
+        pa: Rc<RefCell<Vec<emcore::emEngineCtx::FrameworkDeferredAction>>>,
     }
     impl TestInit {
         fn new() -> Self {
@@ -657,6 +658,7 @@ mod tests {
                 sched: EngineScheduler::new(),
                 fw: Vec::new(),
                 root: emcore::emContext::emContext::NewRoot(),
+                pa: Rc::new(RefCell::new(Vec::new())),
             }
         }
         fn ctx(&mut self) -> InitCtx<'_> {
@@ -664,6 +666,7 @@ mod tests {
                 scheduler: &mut self.sched,
                 framework_actions: &mut self.fw,
                 root_context: &self.root,
+                pending_actions: &self.pa,
             }
         }
     }

@@ -105,6 +105,7 @@ fn input_key_to_focused() {
             root_context: &h.root_context,
             framework_clipboard: &__cb,
             current_engine: None,
+            pending_actions: &h.pending_actions,
         };
 
         h.view.focus_panel(&mut h.tree, child1, &mut sc);

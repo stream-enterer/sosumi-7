@@ -429,11 +429,14 @@ mod tests {
     use super::*;
     use crate::emEngineCtx::{DeferredAction, InitCtx};
     use crate::emScheduler::EngineScheduler;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     struct TestInit {
         sched: EngineScheduler,
         fw: Vec<DeferredAction>,
-        root: std::rc::Rc<crate::emContext::emContext>,
+        root: Rc<crate::emContext::emContext>,
+        pa: Rc<RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>>,
     }
     impl Drop for TestInit {
         fn drop(&mut self) {
@@ -448,6 +451,7 @@ mod tests {
                 sched: EngineScheduler::new(),
                 fw: Vec::new(),
                 root: crate::emContext::emContext::NewRoot(),
+                pa: Rc::new(RefCell::new(Vec::new())),
             }
         }
         fn ctx(&mut self) -> InitCtx<'_> {
@@ -455,6 +459,7 @@ mod tests {
                 scheduler: &mut self.sched,
                 framework_actions: &mut self.fw,
                 root_context: &self.root,
+                pending_actions: &self.pa,
             }
         }
     }
@@ -525,7 +530,6 @@ mod tests {
     // ─── Signal-driven Cycle tests (Phase-3 Task 6 / E024) ──────────────────
 
     use crate::emPanelTree::PanelTree;
-    use std::cell::RefCell;
 
     fn test_panel_tree() -> (PanelTree, crate::emPanelTree::PanelId) {
         let mut tree = PanelTree::new();
@@ -547,6 +551,7 @@ mod tests {
             &mut __init.fw,
             &__init.root,
             &fw_cb,
+            &__init.pa,
         );
         assert!(!dlg.Cycle(&mut ctx));
         assert!(dlg.GetResult().is_none());
@@ -571,6 +576,7 @@ mod tests {
                 &mut __init.fw,
                 &__init.root,
                 &fw_cb,
+                &__init.pa,
             );
             let acted = dlg.Cycle(&mut ctx);
             assert!(acted);
@@ -628,6 +634,7 @@ mod tests {
                 &mut __init.fw,
                 &__init.root,
                 &fw_cb,
+                &__init.pa,
             );
             assert!(dlg.Cycle(&mut ctx));
         }
@@ -665,6 +672,7 @@ mod tests {
                 &mut __init.fw,
                 &__init.root,
                 &fw_cb,
+                &__init.pa,
             );
             assert!(dlg.Cycle(&mut ctx));
         }

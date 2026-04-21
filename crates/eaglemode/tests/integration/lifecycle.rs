@@ -46,6 +46,7 @@ fn remove_active_panel_reselects() {
             root_context: &h.root_context,
             framework_clipboard: &__cb,
             current_engine: None,
+            pending_actions: &h.pending_actions,
         };
 
         h.view.Update(&mut h.tree, &mut sc);
@@ -67,6 +68,7 @@ fn remove_active_panel_reselects() {
             root_context: &h.root_context,
             framework_clipboard: &__cb,
             current_engine: None,
+            pending_actions: &h.pending_actions,
         };
         h.view.SetActivePanelBestPossible(&mut h.tree, &mut sc);
     }
