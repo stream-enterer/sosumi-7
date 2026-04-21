@@ -48,6 +48,107 @@
 
 ---
 
+## Prerequisite: post-show dialog mutation infrastructure (MUST land before Task 2)
+
+**Context:** Phase 3.5 (`docs/superpowers/plans/2026-04-21-port-rewrite-phase-3-5-deferred-dialog-construction.md`) shipped a narrowly-scoped `emDialog::finish_post_show(ctx, result)` as a one-off post-show mutation path — `emFileDialog::Cycle`'s live `Finish(Ok)` calls forced that minimal helper into 3.5 against the spec's original intent. The spec at §Deferred to Phase 3.6 calls for a general `App::mutate_dialog_by_id(did, f)` + `DialogMutation` enum (or equivalent closure-based routing) that covers the other mutator surface (`SetRootTitle`, `set_button_label_for_result`, `AddCustomButton`, `EnableAutoDeletion`, `Finish`).
+
+Phase 3.6's engine-migration work (Task 2 onward) assumes post-show mutators exist — e.g. mode-change-induced title updates on a visible file dialog. **Land the general infrastructure FIRST**, then replace `finish_post_show` with a wrapper over the general path, then proceed to engine migration.
+
+### Prereq Task A: Add `App::mutate_dialog_by_id` + closure-based mutation
+
+**Files:**
+- Modify: `crates/emcore/src/emGUIFramework.rs`
+- Modify: `crates/emcore/src/emDialog.rs`
+
+**Design:** Per Phase 3.5 spec §Deferred post-show dialog mutation. Add:
+```rust
+impl App {
+    pub fn mutate_dialog_by_id(
+        &mut self,
+        did: DialogId,
+        f: impl FnOnce(&mut crate::emDialog::DlgPanel),
+    ) {
+        if let Some(&wid) = self.dialog_windows.get(&did) {
+            if let Some(win) = self.windows.get_mut(&wid) {
+                let mut tree = win.take_tree();
+                // Root panel id is stable per-dialog; lookup via a convention:
+                // each dialog's DlgPanel lives at the tree's single root.
+                if let Some(root_id) = tree.root_id() {
+                    if let Some(mut b) = tree.take_behavior(root_id) {
+                        if let Some(dlg) = b.as_dlg_panel_mut() {
+                            f(dlg);
+                        }
+                        tree.put_behavior(root_id, b);
+                    }
+                }
+                win.put_tree(tree);
+                // Wake DialogPrivateEngine (exactly one engine at Toplevel(wid)).
+                for eid in self
+                    .scheduler
+                    .engines_for_scope(crate::emPanelScope::PanelScope::Toplevel(wid))
+                {
+                    self.scheduler.wake_up(eid);
+                }
+            }
+        }
+    }
+}
+```
+
+### Prereq Task B: Route post-show `emDialog` mutators through `pending_actions`
+
+**Files:**
+- Modify: `crates/emcore/src/emDialog.rs`
+
+**Design:** Extend each pre-show-only mutator to handle the post-show case via `ctx.pending_actions().borrow_mut().push(...)` calling `app.mutate_dialog_by_id(did, |p| ...)`. Pattern:
+
+```rust
+impl emDialog {
+    pub fn SetRootTitle<C: ConstructCtx>(&mut self, ctx: &mut C, title: &str) {
+        if self.pending.is_some() {
+            self.with_dlg_panel_mut("SetRootTitle", |p| p.SetTitle(title));
+        } else {
+            let did = self.dialog_id;
+            let title = title.to_string();
+            ctx.pending_actions().borrow_mut().push(Box::new(move |app, _el| {
+                app.mutate_dialog_by_id(did, |p| p.SetTitle(&title));
+            }));
+        }
+    }
+}
+```
+
+Apply to: `SetRootTitle`, `set_button_label_for_result`, `EnableAutoDeletion`. `AddCustomButton` is trickier because adding a button post-show requires tree mutation beyond `DlgPanel` (child panel creation); defer until a live caller exists. `set_on_finish` / `set_on_check_finish` should stay pre-show-only (callback registration post-finish is a latent bug).
+
+**API break:** `SetRootTitle` / `EnableAutoDeletion` / `set_button_label_for_result` gain a `ctx` parameter. Update callers (Phase 3.5 Tasks 8 / 18 / 19 may have sites without ctx — they're all pre-show, so `ctx` is always in scope). Grep every call-site and thread ctx.
+
+### Prereq Task C: Retire `emDialog::finish_post_show` in favor of the general path
+
+Replace the body of `finish_post_show` with a one-liner over the general path:
+
+```rust
+pub fn finish_post_show<C: ConstructCtx>(&self, ctx: &mut C, result: DialogResult) {
+    let did = self.dialog_id;
+    ctx.pending_actions().borrow_mut().push(Box::new(move |app, _el| {
+        app.mutate_dialog_by_id(did, move |p| {
+            if p.pending_result.is_none() && p.finalized_result.is_none() {
+                p.pending_result = Some(result);
+            }
+        });
+    }));
+}
+```
+
+(The scheduler wake-up moves inside `mutate_dialog_by_id`; callers no longer do it themselves.)
+
+### Prereq gate
+
+Run Phase 3.5's full emDialog + emStocksListBox + emFileDialog test suites. Expectation: all green, no new failures. The `emFileDialog::Cycle` path through `finish_post_show` now routes via `mutate_dialog_by_id` — semantically identical. Commit each Prereq task separately for reviewer cadence; do not bundle.
+
+**Only after Prereq Tasks A/B/C land does Task 1 begin.**
+
+---
+
 ## Task 1: Entry-gate verification + ledger setup
 
 **Files:**
