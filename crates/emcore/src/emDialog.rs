@@ -354,57 +354,33 @@ impl emDialog {
     /// Programmatically finish the dialog post-show with the given result.
     ///
     /// Port of C++ `emDialog::Finish(int)` (emDialog.cpp:146-153) for the
-    /// post-show case. Phase 3.5 exposes this narrowly (`emFileDialog::Cycle`
-    /// is the only live consumer); Phase 3.6 generalizes to full
-    /// `App::mutate_dialog_by_id`.
+    /// post-show case.
     ///
-    /// Pushes a closure that sets `DlgPanel.pending_result = Some(result)`,
-    /// which `DialogPrivateEngine::Cycle` picks up on the next tick and routes
-    /// through the normal finalize → fire(finish_signal) → invoke on_finish
-    /// sequence. Matches C++ `Finish` behavior: CheckFinish still runs via
-    /// `DialogPrivateEngine`'s normal flow.
+    /// Thin wrapper over `App::mutate_dialog_by_id` (Prereq A). Pushes a
+    /// closure that sets `DlgPanel.pending_result = Some(result)` via the
+    /// general mutation rail; `mutate_dialog_by_id` handles the tree walk and
+    /// engine wake-up. `DialogPrivateEngine::Cycle` picks up `pending_result`
+    /// on the next tick and routes through the normal finalize →
+    /// fire(finish_signal) → invoke on_finish sequence. Matches C++ `Finish`
+    /// behavior: `CheckFinish` still runs via `DialogPrivateEngine`'s normal
+    /// flow.
     ///
     /// Guard: only sets `pending_result` if neither `pending_result` nor
     /// `finalized_result` is `Some` (first-fire semantics, matching C++ Finish).
     ///
-    /// Note: deviation from spec §Deferred §"Post-show dialog mutation" which
-    /// says this lands in Phase 3.6. `emFileDialog::Cycle` has live
-    /// `Finish(Ok)` calls that force a minimal path into 3.5. The general
-    /// `App::mutate_dialog_by_id` is still Phase 3.6 scope.
+    /// Preserved for the 2 callers in `emFileDialog::Cycle` (Phase 3.6 Task 4
+    /// deletes `Cycle` and both call sites). When Task 4 lands this method
+    /// becomes vestigial; re-evaluate for deletion then.
     pub fn finish_post_show<C: ConstructCtx>(&self, ctx: &mut C, result: DialogResult) {
         let did = self.dialog_id;
-        let root_panel_id = self.root_panel_id;
         ctx.pending_actions()
             .borrow_mut()
             .push(Box::new(move |app, _el| {
-                if let Some(&wid) = app.dialog_windows.get(&did) {
-                    if let Some(win) = app.windows.get_mut(&wid) {
-                        let mut tree = win.take_tree();
-                        if let Some(mut b) = tree.take_behavior(root_panel_id) {
-                            if let Some(dlg) = b.as_dlg_panel_mut() {
-                                if dlg.pending_result.is_none() && dlg.finalized_result.is_none() {
-                                    dlg.pending_result = Some(result);
-                                }
-                            }
-                            tree.put_behavior(root_panel_id, b);
-                        }
-                        win.put_tree(tree);
+                app.mutate_dialog_by_id(did, move |p, _tree| {
+                    if p.pending_result.is_none() && p.finalized_result.is_none() {
+                        p.pending_result = Some(result);
                     }
-                    // Wake DialogPrivateEngine: after FinishState==0 /
-                    // !ADEnabled branch returns false, the engine sleeps until
-                    // a connected signal fires. Direct mutation of
-                    // pending_result via finish_post_show does not fire any
-                    // connected signal, so the engine would never observe the
-                    // mutation. Call wake_up on all engines scoped to
-                    // Toplevel(wid) — exactly one for a dialog window
-                    // (DialogPrivateEngine) — to force one cycle.
-                    let eids = app
-                        .scheduler
-                        .engines_for_scope(crate::emPanelScope::PanelScope::Toplevel(wid));
-                    for eid in eids {
-                        app.scheduler.wake_up(eid);
-                    }
-                }
+                });
             }));
     }
 }
