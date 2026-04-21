@@ -1211,15 +1211,12 @@ mod tests {
         use crate::emWindow::WindowFlags;
 
         let mut sched = EngineScheduler::new();
-        let mut dummy_tree = PanelTree::new();
-        let root = dummy_tree.create_root_deferred_view("root");
         let close_sig = sched.create_signal();
         let flags_sig = sched.create_signal();
         let focus_sig = sched.create_signal();
         let geom_sig = sched.create_signal();
         let win = crate::emWindow::emWindow::new_popup_pending(
             crate::emContext::emContext::NewRoot(),
-            root,
             WindowFlags::empty(),
             "spike_toplevel".to_string(),
             close_sig,
@@ -1278,10 +1275,8 @@ mod tests {
         );
 
         sched.remove_engine(id);
-        // Drop the dummy outer tree's adapter engines before dropping
-        // the scheduler (Drop assert requires no remaining engines).
-        dummy_tree.remove(root, Some(&mut sched));
-        // Drain the window so its tree's engines go away too.
+        // Drain the window so its tree's engines (if any) go away before
+        // the scheduler's Drop-assert fires.
         let mut w = windows.remove(&wid).unwrap();
         let t = w.take_tree();
         drop(t);

@@ -197,7 +197,7 @@ impl TestSched {
 pub fn headless_emwindow_with_tree(
     root_ctx: &Rc<emContext>,
     scheduler: &mut EngineScheduler,
-    mut tree: PanelTree,
+    tree: PanelTree,
 ) -> (WindowId, emWindow) {
     use crate::emColor::emColor;
     use crate::emWindow::WindowFlags;
@@ -205,18 +205,14 @@ pub fn headless_emwindow_with_tree(
     let flags_sig = scheduler.create_signal();
     let focus_sig = scheduler.create_signal();
     let geom_sig = scheduler.create_signal();
-    // new_popup_pending requires a PanelId for the view's root. If the
-    // caller's tree has no root (e.g. after a teardown removed it), inject
-    // a throwaway root so the helper can still build a window. The root
-    // panel id stored on the view is not read by Framework engines in
-    // practice for this test helper.
-    let root_panel = match tree.GetRootPanel() {
-        Some(p) => p,
-        None => tree.create_root("__headless_root", false),
-    };
+    // Phase 3.5.A Task 8: `new_popup_pending` now builds its own internal
+    // tree + root. For this harness we discard that internal tree and
+    // install the caller's rooted tree. The view's `root: PanelId` still
+    // points at the discarded internal root — acceptable for Framework and
+    // Toplevel test engines that only read `ctx.tree` (not view.root) per
+    // the classification sheet's engine contracts.
     let mut win = emWindow::new_popup_pending(
         Rc::clone(root_ctx),
-        root_panel,
         WindowFlags::empty(),
         "headless".to_string(),
         close_sig,
@@ -225,7 +221,6 @@ pub fn headless_emwindow_with_tree(
         geom_sig,
         emColor::TRANSPARENT,
     );
-    // Replace the default empty tree with the caller's.
     let _ = win.take_tree();
     win.put_tree(tree);
     (WindowId::dummy(), win)

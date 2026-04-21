@@ -331,7 +331,6 @@ impl emWindow {
     #[allow(clippy::too_many_arguments)]
     pub fn new_popup_pending(
         parent_context: Rc<crate::emContext::emContext>,
-        root_panel: PanelId,
         flags: WindowFlags,
         caption: String,
         close_signal: SignalId,
@@ -340,6 +339,22 @@ impl emWindow {
         geometry_signal: SignalId,
         background_color: crate::emColor::emColor,
     ) -> Self {
+        // Phase 3.5.A Task 8: the popup owns its own PanelTree + RootPanel,
+        // mirroring C++ `emWindow` (which IS-A `emView` — `emWindow.cpp:31`
+        // forwards `(parentContext, viewFlags)` to `emView::emView(...)`
+        // which constructs a fresh RootPanel). The popup's panels must not
+        // be entangled with the launching view's tree.
+        //
+        // Build the tree + root here; the window takes ownership via
+        // `put_tree` below. The `view`'s `root: PanelId` is the index into
+        // this popup-owned tree.
+        let mut tree = PanelTree::new();
+        // `has_view=false` here mirrors `emMainWindow::create_main_window`
+        // (emMainWindow.rs:833): the `emView` is constructed just below and
+        // is wired via `init_panel_view` once the window is installed and a
+        // scheduler is available. Production popup path (RawVisitAbs)
+        // performs that wiring through `SetGeometry` + scheduler dispatch.
+        let root_panel = tree.create_root("popup_root", false);
         // Placeholder geometry — real position/size lands via
         // `SetViewPosSize` before materialization.
         let mut view = emView::new(parent_context, root_panel, 1.0, 1.0);
@@ -370,7 +385,7 @@ impl emWindow {
             focus_signal,
             geometry_signal,
             root_panel,
-            tree: PanelTree::default(),
+            tree,
             vif_chain,
             cheat_vif: emCheatVIF::new(),
             touch_vif: emDefaultTouchVIF::new(),
@@ -1878,15 +1893,12 @@ mod tests {
     #[test]
     fn window_view_is_plain() {
         let mut scheduler = EngineScheduler::new();
-        let mut tree = PanelTree::new();
-        let root = tree.create_root_deferred_view("root");
         let close_sig = scheduler.create_signal();
         let flags_sig = scheduler.create_signal();
         let focus_sig = scheduler.create_signal();
         let geom_sig = scheduler.create_signal();
         let win = emWindow::new_popup_pending(
             crate::emContext::emContext::NewRoot(),
-            root,
             WindowFlags::empty(),
             "test".to_string(),
             close_sig,
@@ -1903,9 +1915,6 @@ mod tests {
     /// postcondition previously checked by the deleted `new_for_test` constructor.
     #[test]
     fn headless_window_register_engines_registers_engines() {
-        let mut tree = PanelTree::new();
-        let root = tree.create_root_deferred_view("root");
-        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         let win_id = winit::window::WindowId::dummy();
         let sched = std::rc::Rc::new(std::cell::RefCell::new(EngineScheduler::new()));
         let close_sig = sched.borrow_mut().create_signal();
@@ -1914,7 +1923,6 @@ mod tests {
         let geom_sig = sched.borrow_mut().create_signal();
         let mut win = emWindow::new_popup_pending(
             crate::emContext::emContext::NewRoot(),
-            root,
             WindowFlags::empty(),
             "test".to_string(),
             close_sig,
@@ -1923,6 +1931,13 @@ mod tests {
             geom_sig,
             crate::emColor::emColor::TRANSPARENT,
         );
+        // Phase 3.5.A Task 8: popup now owns its tree + root internally.
+        // Use the popup's own tree for RegisterEngines' tree-walks.
+        let mut tree = win.take_tree();
+        let root = tree
+            .GetRootPanel()
+            .expect("popup tree has internal root from new_popup_pending");
+        tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
         // Phase 2 Task 7: engines identify their owning view via
         // `PanelScope::Toplevel(win_id)`.
         let scope = crate::emPanelScope::PanelScope::Toplevel(win_id);
@@ -1962,8 +1977,6 @@ mod tests {
     #[test]
     fn new_popup_pending_constructs_without_event_loop() {
         let mut scheduler = EngineScheduler::new();
-        let mut tree = PanelTree::new();
-        let root = tree.create_root_deferred_view("root");
 
         let close_sig = scheduler.create_signal();
         let flags_sig = scheduler.create_signal();
@@ -1973,7 +1986,6 @@ mod tests {
 
         let popup = emWindow::new_popup_pending(
             crate::emContext::emContext::NewRoot(),
-            root,
             WindowFlags::POPUP | WindowFlags::UNDECORATED | WindowFlags::AUTO_DELETE,
             "emViewPopup".to_string(),
             close_sig,
@@ -2001,7 +2013,13 @@ mod tests {
         assert_eq!(popup.flags_signal, flags_sig);
         assert_eq!(popup.focus_signal, focus_sig);
         assert_eq!(popup.geometry_signal, geom_sig);
-        assert_eq!(popup.root_panel, root);
+        // Phase 3.5.A Task 8: popup owns its internal tree + root_panel;
+        // the internal root must be the popup tree's sole root.
+        assert_eq!(
+            popup.tree.GetRootPanel(),
+            Some(popup.root_panel),
+            "internal root_panel must be the popup tree's root"
+        );
         assert_eq!(popup.view().GetBackgroundColor(), bg_color);
         assert!(popup.winit_window_if_materialized().is_none());
     }
@@ -2055,15 +2073,12 @@ mod tests {
     #[test]
     fn take_tree_put_tree_roundtrip() {
         let mut scheduler = EngineScheduler::new();
-        let mut dummy_tree = PanelTree::new();
-        let root = dummy_tree.create_root_deferred_view("root");
         let close_sig = scheduler.create_signal();
         let flags_sig = scheduler.create_signal();
         let focus_sig = scheduler.create_signal();
         let geom_sig = scheduler.create_signal();
         let mut win = emWindow::new_popup_pending(
             crate::emContext::emContext::NewRoot(),
-            root,
             WindowFlags::empty(),
             "test".to_string(),
             close_sig,
@@ -2073,11 +2088,13 @@ mod tests {
             crate::emColor::emColor::TRANSPARENT,
         );
 
-        // Initial tree is the empty sentinel — GetRootPanel() returns None.
+        // Phase 3.5.A Task 8: popup `new_popup_pending` constructs its own
+        // internal tree + root (not the empty Task-4-era sentinel). The
+        // first take_tree returns that internal popup tree.
         let taken = win.take_tree();
         assert!(
-            taken.GetRootPanel().is_none(),
-            "default sentinel tree must be empty"
+            taken.GetRootPanel().is_some(),
+            "popup's internal tree must have a root from new_popup_pending"
         );
         win.put_tree(taken);
 

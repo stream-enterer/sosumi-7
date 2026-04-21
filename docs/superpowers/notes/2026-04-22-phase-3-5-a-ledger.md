@@ -147,3 +147,48 @@ See plan §"Bootstrap decisions" (B3.5a.a–B3.5a.g).
   real home tree post-Task-7 (previously saw the empty default tree
   on windows[home_wid] while the real tree was on App::tree).
   Gate green — nextest 2487/0/10, clippy clean, fmt clean.
+- **Task 8 — Popup migration:** COMPLETE. `emWindow::new_popup_pending`
+  signature drops `root_panel: PanelId` and builds the popup's own
+  `PanelTree` + root (`create_root("popup_root", false)`, `has_view=false`
+  mirroring `emMainWindow::create_main_window`'s two-phase init). The
+  built tree is placed into `emWindow::tree` via direct struct-init (not
+  `PanelTree::default()` sentinel). `emView` is constructed over the
+  popup-internal root. `emView::RawVisitAbs` drops the `self.root`
+  pass-through.
+
+  `App::materialize_pending_popup` no longer pulls `home.take_tree()`
+  for the popup's `SetGeometry`; it now takes the popup's own tree
+  (`popup.take_tree`/`popup.put_tree`) — consistent with the new
+  ownership: popup panels live in popup's own tree.
+
+  Test call-sites migrated: `emScheduler.rs` spike (dummy_tree+cleanup
+  removed), `emWindow.rs` four unit tests (window_view_is_plain,
+  headless_window_register_engines_registers_engines,
+  new_popup_pending_constructs_without_event_loop,
+  take_tree_put_tree_roundtrip — the latter now asserts the initial
+  take_tree returns the popup's internal rooted tree, not the empty
+  sentinel), `emView.rs` three tests (sp4, phase8, swap_view_ports —
+  now build popup first, take its internal tree, extend with
+  setup_children_on helper on top of the popup's internal root),
+  `test_view_harness::headless_emwindow_with_tree` (ctor sig drop;
+  discarded internal tree; same Framework/Toplevel harness contract).
+
+  New test helper `setup_children_on(tree, root)` extracts sp4/phase8's
+  child-hierarchy builder so popup-harness tests can extend the popup's
+  internal root in place.
+
+  This closes the popup-shares-launching-view-tree implicit divergence
+  from C++'s `emWindow : emView` (emWindow.cpp:31-33 — popup ctor
+  forwards to `emView::emView(parentContext, viewFlags)`, which
+  constructs a fresh RootPanel). C++ parity restored at the
+  window-tree ownership level; symmetric with home window (Task 7)
+  and future dialog windows (Task 10).
+
+  Golden suite re-verified: 237/6 preserved (identical failing set —
+  composition_tktest_1x, composition_tktest_2x, notice_window_resize,
+  testpanel_expanded, testpanel_root, widget_file_selection_box —
+  confirmed pre-existing by git-stash A/B against HEAD^). No
+  paint-path regression. Spec §R7 contingency NOT invoked.
+
+  Gate green — nextest 2487/0/10, goldens 237/6 preserved, clippy
+  clean, fmt clean.

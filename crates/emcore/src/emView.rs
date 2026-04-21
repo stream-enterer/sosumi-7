@@ -1957,7 +1957,6 @@ impl emView {
                     let geom_sig = ctx.create_signal();
                     let popup = super::emWindow::emWindow::new_popup_pending(
                         Rc::clone(&self.Context),
-                        self.root,
                         super::emWindow::WindowFlags::POPUP
                             | super::emWindow::WindowFlags::UNDECORATED
                             | super::emWindow::WindowFlags::AUTO_DELETE,
@@ -5362,6 +5361,15 @@ mod tests {
     fn setup_tree() -> (PanelTree, PanelId, PanelId, PanelId) {
         let mut tree = PanelTree::new();
         let root = tree.create_root_deferred_view("root");
+        let (child1, child2) = setup_children_on(&mut tree, root);
+        (tree, root, child1, child2)
+    }
+
+    /// Phase 3.5.A Task 8 helper: populate an already-rooted tree with the
+    /// standard `setup_tree` child hierarchy. Used by popup-harness tests
+    /// that take the popup's internal tree+root and extend it in place
+    /// (since `new_popup_pending` no longer accepts an external root).
+    fn setup_children_on(tree: &mut PanelTree, root: PanelId) -> (PanelId, PanelId) {
         tree.get_mut(root).unwrap().focusable = true;
         tree.Layout(root, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
@@ -5373,7 +5381,7 @@ mod tests {
         tree.get_mut(child2).unwrap().focusable = true;
         tree.Layout(child2, 0.5, 0.0, 0.5, 1.0, 1.0, None);
 
-        (tree, root, child1, child2)
+        (child1, child2)
     }
 
     #[test]
@@ -7065,9 +7073,11 @@ mod tests {
         use crate::emEngineCtx::EngineCtx;
         use std::collections::HashMap;
 
-        let (mut tree, root, child_a, _) = setup_tree();
         let win_id = winit::window::WindowId::dummy();
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        // Phase 3.5.A Task 8: popup owns its internal tree + root. Build
+        // popup first, then take_tree and extend with the sp4 child
+        // hierarchy on top of the popup's internal root.
         let mut win = {
             use crate::emColor::emColor;
             use crate::emWindow::{emWindow, WindowFlags};
@@ -7075,9 +7085,8 @@ mod tests {
             let fs = sched.borrow_mut().create_signal();
             let fos = sched.borrow_mut().create_signal();
             let gs = sched.borrow_mut().create_signal();
-            let mut w = emWindow::new_popup_pending(
+            emWindow::new_popup_pending(
                 crate::emContext::emContext::NewRoot(),
-                root,
                 WindowFlags::empty(),
                 "test".to_string(),
                 cs,
@@ -7085,43 +7094,46 @@ mod tests {
                 fos,
                 gs,
                 emColor::TRANSPARENT,
-            );
-            {
-                let root_ctx = crate::emContext::emContext::NewRoot();
-                let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
-                let mut s = sched.borrow_mut();
-                let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
-                    std::cell::RefCell::new(None);
-                let mut sc = crate::emEngineCtx::SchedCtx {
-                    scheduler: &mut s,
-                    framework_actions: &mut fw,
-                    root_context: &root_ctx,
-                    framework_clipboard: &__cb,
-                    current_engine: None,
-                };
-                w.view_mut()
-                    .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0, &mut sc);
-            }
-            let scope = crate::emPanelScope::PanelScope::Toplevel(win_id);
-            let _ = win_id;
-            {
-                let v = w.view_mut();
-                let root = v.Context.GetRootContext();
-                let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
-                let mut s = sched.borrow_mut();
-                let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
-                    std::cell::RefCell::new(None);
-                let mut sc = crate::emEngineCtx::SchedCtx {
-                    scheduler: &mut s,
-                    framework_actions: &mut fw,
-                    root_context: &root,
-                    framework_clipboard: &__cb,
-                    current_engine: None,
-                };
-                v.RegisterEngines(&mut sc, &mut tree, scope);
-            }
-            w
+            )
         };
+        let mut tree = win.take_tree();
+        let root = tree
+            .GetRootPanel()
+            .expect("popup tree has internal root from new_popup_pending");
+        let (child_a, _) = setup_children_on(&mut tree, root);
+        {
+            let root_ctx = crate::emContext::emContext::NewRoot();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                framework_clipboard: &__cb,
+                current_engine: None,
+            };
+            win.view_mut()
+                .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0, &mut sc);
+        }
+        let scope = crate::emPanelScope::PanelScope::Toplevel(win_id);
+        {
+            let v = win.view_mut();
+            let root_ctx = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                framework_clipboard: &__cb,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, &mut tree, scope);
+        }
 
         // Receiver engine at Low priority (strictly below UpdateEngineClass
         // at High priority). Same-slice wake must traverse all priorities
@@ -7243,9 +7255,10 @@ mod tests {
         let mut ts = TestSched::new();
         use std::collections::HashMap;
 
-        let (mut tree, root, child_a, _) = setup_tree();
         let win_id = winit::window::WindowId::dummy();
         let sched = Rc::new(RefCell::new(EngineScheduler::new()));
+        // Phase 3.5.A Task 8: popup owns its internal tree + root. Build
+        // popup first, then take_tree and extend with the child hierarchy.
         let mut win = {
             use crate::emColor::emColor;
             use crate::emWindow::{emWindow, WindowFlags};
@@ -7253,9 +7266,8 @@ mod tests {
             let fs = sched.borrow_mut().create_signal();
             let fos = sched.borrow_mut().create_signal();
             let gs = sched.borrow_mut().create_signal();
-            let mut w = emWindow::new_popup_pending(
+            emWindow::new_popup_pending(
                 crate::emContext::emContext::NewRoot(),
-                root,
                 WindowFlags::empty(),
                 "test".to_string(),
                 cs,
@@ -7263,43 +7275,46 @@ mod tests {
                 fos,
                 gs,
                 emColor::TRANSPARENT,
-            );
-            {
-                let root_ctx = crate::emContext::emContext::NewRoot();
-                let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
-                let mut s = sched.borrow_mut();
-                let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
-                    std::cell::RefCell::new(None);
-                let mut sc = crate::emEngineCtx::SchedCtx {
-                    scheduler: &mut s,
-                    framework_actions: &mut fw,
-                    root_context: &root_ctx,
-                    framework_clipboard: &__cb,
-                    current_engine: None,
-                };
-                w.view_mut()
-                    .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0, &mut sc);
-            }
-            let scope = crate::emPanelScope::PanelScope::Toplevel(win_id);
-            let _ = win_id;
-            {
-                let v = w.view_mut();
-                let root = v.Context.GetRootContext();
-                let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
-                let mut s = sched.borrow_mut();
-                let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
-                    std::cell::RefCell::new(None);
-                let mut sc = crate::emEngineCtx::SchedCtx {
-                    scheduler: &mut s,
-                    framework_actions: &mut fw,
-                    root_context: &root,
-                    framework_clipboard: &__cb,
-                    current_engine: None,
-                };
-                v.RegisterEngines(&mut sc, &mut tree, scope);
-            }
-            w
+            )
         };
+        let mut tree = win.take_tree();
+        let root = tree
+            .GetRootPanel()
+            .expect("popup tree has internal root from new_popup_pending");
+        let (child_a, _) = setup_children_on(&mut tree, root);
+        {
+            let root_ctx = crate::emContext::emContext::NewRoot();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                framework_clipboard: &__cb,
+                current_engine: None,
+            };
+            win.view_mut()
+                .SetGeometry(&mut tree, 0.0, 0.0, 640.0, 480.0, 1.0, &mut sc);
+        }
+        let scope = crate::emPanelScope::PanelScope::Toplevel(win_id);
+        {
+            let v = win.view_mut();
+            let root_ctx = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let __cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                framework_clipboard: &__cb,
+                current_engine: None,
+            };
+            v.RegisterEngines(&mut sc, &mut tree, scope);
+        }
 
         // Prime Update (clear zoomed_out_before_sg), push a popup under
         // POPUP_ZOOM. RawVisit wires close_signal to UpdateEngineClass via
@@ -7663,7 +7678,6 @@ mod tests {
         let gs = ts.sched.create_signal();
         let mut popup = emWindow::new_popup_pending(
             Rc::clone(&view.Context),
-            root,
             WindowFlags::POPUP,
             "test_popup".to_string(),
             cs,
@@ -7672,12 +7686,17 @@ mod tests {
             gs,
             emColor::TRANSPARENT,
         );
+        // Phase 3.5.A Task 8: popup owns its own tree + root. Use the
+        // popup's internal tree for the popup's SetGeometry — parent view's
+        // `tree` belongs to parent's root only.
+        let mut popup_tree = popup.take_tree();
         // Give the popup view its own distinct geometry (pixel tallness 0.75).
         ts.with(|sc| {
             popup
                 .view_mut()
-                .SetGeometry(&mut tree, 100.0, 50.0, 400.0, 300.0, 0.75, sc)
+                .SetGeometry(&mut popup_tree, 100.0, 50.0, 400.0, 300.0, 0.75, sc)
         });
+        popup.put_tree(popup_tree);
         assert_eq!(popup.view().HomePixelTallness, 0.75);
         assert_eq!(
             popup.view().HomeViewPort.borrow().home_pixel_tallness,

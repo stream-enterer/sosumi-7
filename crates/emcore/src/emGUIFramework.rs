@@ -367,10 +367,6 @@ impl App {
                 ..
             } = self;
             let home = windows.get_mut(&home_key).expect("home_key still present");
-            // Phase 3.5.A Task 7: home window owns its tree; take it out so
-            // we can both mutate the window's popup field and pass the tree
-            // to SetGeometry below. Put it back at scope exit.
-            let mut home_tree = home.take_tree();
             let view = home.view_mut();
             let popup = view
                 .PopupWindow
@@ -378,6 +374,12 @@ impl App {
                 .expect("Pending popup still present");
             popup.os_surface = OsSurface::Materialized(Box::new(materialized));
             popup.wire_viewport_window_id(popup_window_id);
+            // Phase 3.5.A Task 8: popup owns its own PanelTree + RootPanel.
+            // SetGeometry mutates the popup view's root panel; the tree it
+            // writes to must be the popup's own tree (not the home's).
+            // Take the popup's tree out for the SetGeometry call, put it
+            // back at scope exit.
+            let mut popup_tree = popup.take_tree();
             let mut sc = crate::emEngineCtx::SchedCtx {
                 scheduler,
                 framework_actions,
@@ -386,7 +388,7 @@ impl App {
                 current_engine: None,
             };
             popup.view_mut().SetGeometry(
-                &mut home_tree,
+                &mut popup_tree,
                 0.0,
                 0.0,
                 w as f64,
@@ -394,7 +396,7 @@ impl App {
                 1.0,
                 &mut sc,
             );
-            home.put_tree(home_tree);
+            popup.put_tree(popup_tree);
         }
 
         winit_window.request_redraw();
