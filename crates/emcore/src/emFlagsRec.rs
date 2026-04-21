@@ -37,10 +37,7 @@ impl emFlagsRec {
         let identifiers: Vec<String> = identifiers
             .iter()
             .map(|s| {
-                assert!(
-                    !s.is_empty(),
-                    "emFlagsRec: identifier must be non-empty (C++ CheckIdentifier)"
-                );
+                check_identifier(s);
                 (*s).to_string()
             })
             .collect();
@@ -75,6 +72,24 @@ impl emFlagsRec {
             }
         }
         None
+    }
+}
+
+// TODO(phase-4b+): Centralize on `emRec::CheckIdentifier` once additional emRec types
+// (`emEnumRec`, `emStructRec` field varIdentifiers, etc.) need the same predicate.
+/// C++ emRec::CheckIdentifier (emRec.cpp:173-194): enforces `[A-Za-z_][A-Za-z0-9_]*`
+/// and `emFatalError`s on violation. Empty string fails (first byte is 0, none of
+/// letter/underscore). ASCII-only by design; works over bytes to mirror C++ char-by-char.
+fn check_identifier(s: &str) {
+    let bytes = s.as_bytes();
+    let valid_first = !bytes.is_empty()
+        && (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_uppercase() || bytes[0] == b'_');
+    let valid = valid_first
+        && bytes[1..].iter().all(|&b| {
+            b.is_ascii_lowercase() || b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_'
+        });
+    if !valid {
+        panic!("emRec: '{s}' is not a valid identifier.");
     }
 }
 
@@ -269,6 +284,122 @@ mod tests {
 
         assert_eq!(rec.GetBitOf("quux"), None);
         assert_eq!(rec.GetBitOf(""), None);
+    }
+
+    struct SchedCtxParts {
+        sched: EngineScheduler,
+        actions: Vec<DeferredAction>,
+        ctx_root: Rc<crate::emContext::emContext>,
+        cb: RefCell<Option<Box<dyn emClipboard>>>,
+        pa: Rc<RefCell<Vec<FrameworkDeferredAction>>>,
+    }
+
+    fn fresh_sched_ctx_parts() -> SchedCtxParts {
+        SchedCtxParts {
+            sched: EngineScheduler::new(),
+            actions: Vec::new(),
+            ctx_root: crate::emContext::emContext::NewRoot(),
+            cb: RefCell::new(None),
+            pa: Rc::new(RefCell::new(Vec::new())),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "is not a valid identifier")]
+    fn check_identifier_rejects_empty() {
+        let SchedCtxParts {
+            mut sched,
+            mut actions,
+            ctx_root,
+            cb,
+            pa,
+        } = fresh_sched_ctx_parts();
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+        let _ = emFlagsRec::new(&mut sc, 0, &[""]);
+    }
+
+    #[test]
+    #[should_panic(expected = "is not a valid identifier")]
+    fn check_identifier_rejects_leading_digit() {
+        let SchedCtxParts {
+            mut sched,
+            mut actions,
+            ctx_root,
+            cb,
+            pa,
+        } = fresh_sched_ctx_parts();
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+        let _ = emFlagsRec::new(&mut sc, 0, &["1foo"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "is not a valid identifier")]
+    fn check_identifier_rejects_leading_dash() {
+        let SchedCtxParts {
+            mut sched,
+            mut actions,
+            ctx_root,
+            cb,
+            pa,
+        } = fresh_sched_ctx_parts();
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+        let _ = emFlagsRec::new(&mut sc, 0, &["-foo"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "is not a valid identifier")]
+    fn check_identifier_rejects_internal_space() {
+        let SchedCtxParts {
+            mut sched,
+            mut actions,
+            ctx_root,
+            cb,
+            pa,
+        } = fresh_sched_ctx_parts();
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+        let _ = emFlagsRec::new(&mut sc, 0, &["foo bar"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "is not a valid identifier")]
+    fn check_identifier_rejects_punctuation() {
+        let SchedCtxParts {
+            mut sched,
+            mut actions,
+            ctx_root,
+            cb,
+            pa,
+        } = fresh_sched_ctx_parts();
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+        let _ = emFlagsRec::new(&mut sc, 0, &["foo-bar"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "is not a valid identifier")]
+    fn check_identifier_rejects_non_ascii() {
+        let SchedCtxParts {
+            mut sched,
+            mut actions,
+            ctx_root,
+            cb,
+            pa,
+        } = fresh_sched_ctx_parts();
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+        let _ = emFlagsRec::new(&mut sc, 0, &["foö"]);
+    }
+
+    #[test]
+    fn check_identifier_accepts_grammar_valid_names() {
+        let SchedCtxParts {
+            mut sched,
+            mut actions,
+            ctx_root,
+            cb,
+            pa,
+        } = fresh_sched_ctx_parts();
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+        let rec = emFlagsRec::new(&mut sc, 0, &["_foo", "_", "foo_bar", "foo123", "A"]);
+        assert_eq!(rec.GetIdentifierCount(), 5);
     }
 
     #[test]
