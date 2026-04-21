@@ -265,6 +265,36 @@ impl emDialog {
         self.with_dlg_panel_mut("set_on_check_finish", |p| p.on_check_finish = Some(cb));
     }
 
+    // ─── Show ────────────────────────────────────────────────────────────────
+
+    /// Enqueue this pending dialog for installation on the next
+    /// `about_to_wait` tick. Consumes `self.pending`; the handle remains
+    /// valid — `dialog_id` / `finish_signal` / `close_signal` / `root_panel_id`
+    /// are stable across the show transition.
+    ///
+    /// Port: C++ `emDialog` construction implicitly shows the dialog because
+    /// construction creates the X window via `emWindow` base-class ctor.
+    /// Rust splits the two-phase pattern (3.5.A `new_top_level_pending` +
+    /// `install_pending_top_level`); `show()` is the explicit second phase.
+    pub fn show<C: ConstructCtx>(&mut self, ctx: &mut C) {
+        let pending = self.pending.take().expect("show called twice");
+        let queue = ctx.pending_actions().clone();
+        queue.borrow_mut().push(Box::new(move |app, el| {
+            app.pending_top_level.push(pending);
+            app.install_pending_top_level(el);
+        }));
+    }
+
+    /// Static convenience that builds an OK-only message dialog with
+    /// auto-delete. Port of C++ `emDialog::ShowMessage` (emDialog.cpp:162-180).
+    ///
+    /// Phase 3.5: shimmed as `unimplemented!()` because no live caller exists
+    /// in-tree. Phase 3.6 wires a real path: `new + AddOKButton +
+    /// EnableAutoDeletion(true) + content label + show`.
+    pub fn ShowMessage<C: ConstructCtx>(_ctx: &mut C, _title: &str, _message: &str) -> Self {
+        unimplemented!("emDialog::ShowMessage — Phase 3.6 impl; no live caller in 3.5")
+    }
+
     // ─── Legacy-compatibility stubs ─────────────────────────────────────────
     // These stubs exist so production consumers (`emStocksListBox`,
     // `emFileDialog`) compile between Task 7 and their respective migration
@@ -1545,6 +1575,33 @@ mod tests {
         let mut dlg = emDialog::new(&mut init.ctx(), "Test", look);
         let _ = dlg.pending.take();
         dlg.set_on_check_finish(Box::new(|_r| true));
+    }
+
+    // ─── Task 9 tests ────────────────────────────────────────────────────────
+
+    #[test]
+    fn show_drains_pending_into_closure_rail() {
+        let mut init = TestInit::new();
+        let look = emLook::new();
+        let mut dlg = emDialog::new(&mut init.ctx(), "Test", look);
+        assert!(dlg.pending.is_some());
+        dlg.show(&mut init.ctx());
+        assert!(dlg.pending.is_none());
+        // Closure was pushed onto pending_actions.
+        assert_eq!(init.pa.borrow().len(), 1);
+        // Identity fields still valid.
+        let _: crate::emGUIFramework::DialogId = dlg.dialog_id;
+        let _: SignalId = dlg.finish_signal;
+    }
+
+    #[test]
+    #[should_panic(expected = "show called twice")]
+    fn show_twice_panics() {
+        let mut init = TestInit::new();
+        let look = emLook::new();
+        let mut dlg = emDialog::new(&mut init.ctx(), "Test", look);
+        dlg.show(&mut init.ctx());
+        dlg.show(&mut init.ctx()); // panics
     }
 
     // ─── Legacy emDialog tests staged for Task 12 porting ────────────────────
