@@ -24,6 +24,7 @@ pub mod emCoreConfigPanel;
 pub mod emCrossPtr;
 pub mod emCursor;
 pub mod emDialog;
+pub mod emDoubleRec;
 pub mod emEngine;
 pub mod emEngineCtx;
 pub mod emErrorPanel;
