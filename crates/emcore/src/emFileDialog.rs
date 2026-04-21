@@ -715,6 +715,11 @@ mod tests {
             dlg.overwrite_result.get().is_none(),
             "overwrite_result Cell must be empty after Cycle takes it"
         );
+        assert_eq!(
+            __init.pa.borrow().len(),
+            1,
+            "cancel path must enqueue exactly 1 action (close-od), not a finish"
+        );
 
         let _ = std::fs::remove_file(&f);
     }
