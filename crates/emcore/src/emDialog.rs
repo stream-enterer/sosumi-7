@@ -351,35 +351,6 @@ impl emDialog {
                 }
             }));
     }
-
-    // ─── Legacy-compatibility stubs ─────────────────────────────────────────
-    // These stubs exist so production consumers (`emStocksListBox`,
-    // `emFileDialog`) compile between Task 7 and their respective migration
-    // tasks (Task 15 for emStocks, Task 19 for emFileDialog). They panic at
-    // runtime; Tasks 15 and 19 remove them after consumer migration.
-
-    /// PHASE-3.5-STUB: Task 15 (emStocks) and Task 19 (emFileDialog)
-    /// replace this with the new `on_finish`-callback pattern.
-    pub fn GetResult(&self) -> Option<&DialogResult> {
-        unimplemented!("Task 15/19: GetResult replaced by on_finish callback")
-    }
-
-    /// PHASE-3.5-STUB: Task 15 / 19 remove this after consumer migration.
-    pub fn Finish(&mut self, _result: DialogResult, _ctx: &mut PanelCtx<'_>) {
-        unimplemented!("Task 15/19: Finish replaced by new dialog handle pattern")
-    }
-
-    /// PHASE-3.5-STUB: Task 15 replaces emStocks silent_cancel sites with
-    /// the new `pending_actions`-based cancel rail.
-    pub fn silent_cancel(&mut self) {
-        unimplemented!("Task 15: silent_cancel replaced by new cancel rail")
-    }
-
-    /// PHASE-3.5-STUB: Task 19 (emFileDialog) removes this; look is
-    /// accessible through the pending DlgPanel instead.
-    pub fn look(&self) -> &Rc<emLook> {
-        &self.look
-    }
 }
 
 /// Root-panel PanelBehavior for an `emDialog`.
@@ -394,10 +365,10 @@ impl emDialog {
 pub struct DlgPanel {
     pub(crate) border: emBorder,
     look: Rc<emLook>,
-    /// Set by `Finish` once CheckFinish permits. `DialogPrivateEngine`
+    /// Set by `DlgPanel::on_finish` once `CheckFinish` permits. `DialogPrivateEngine`
     /// observes this on Cycle and fires `finish_signal`.
     pub(crate) pending_result: Option<DialogResult>,
-    /// Stored after the finish signal has fired. Read via `GetResult`.
+    /// Stored after the finish signal has fired.
     pub(crate) finalized_result: Option<DialogResult>,
     /// Mirrors C++ `emDialog::FinishState` (emDialog.cpp:146-223). 0 = no
     /// finish pending; 1 = Finish has been called and accepted (the next

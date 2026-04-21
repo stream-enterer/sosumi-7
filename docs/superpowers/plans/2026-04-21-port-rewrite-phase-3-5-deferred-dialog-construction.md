@@ -2602,6 +2602,18 @@ git commit -m "phase-3.5 task 21: emFileDialog tests ported to new handle + fini
 
 ## Task 22: Task 5.3 gate — emFileDialog wrap-up + second golden checkpoint
 
+```
+### Keystone: Task 5.3 emFileDialog migration COMPLETE
+
+Tasks 17–21 landed: dead-API delete (set_mode, dialog_mut), new emDialog API + show in emFileDialog::new, CheckFinish overwrite dialog migrated to on_finish+Cell+show, emFileDialog::Cycle rewritten to Cell::take polling + closure-rail close_dialog_by_id + emDialog::finish_post_show for post-show programmatic finish, 11 tests restored + 1 new e2e test. Goldens preserved 237/6. Nextest 2510/0/9.
+
+Stub deletion audit (Task 22):
+- GetResult: deleted. Zero live callers (only comment refs in emFileDialog.rs).
+- Finish: deleted. Zero live callers (only comment ref in emGUIFramework.rs).
+- silent_cancel: deleted. Zero live callers (only comment ref in emGUIFramework.rs).
+- look(): deleted. Zero live callers (rg confirmed no `.look()` calls in crates/).
+```
+
 - [ ] **Step 22.1: Full gate.**
 
 ```bash
