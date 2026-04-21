@@ -1511,6 +1511,16 @@ impl emWindow {
         self.tree = tree;
     }
 
+    /// Borrow the panel tree mutably without a take/put cycle.
+    ///
+    /// Phase 3.5 Task 7: used by `emDialog` pre-show mutators
+    /// (`AddCustomButton`, `SetRootTitle`, etc.) that need to reach the
+    /// `DlgPanel` root behavior inside the pending window's tree. Avoids
+    /// the take/put boilerplate in the common non-concurrent pre-show path.
+    pub(crate) fn tree_mut(&mut self) -> &mut crate::emPanelTree::PanelTree {
+        &mut self.tree
+    }
+
     pub fn request_redraw(&self) {
         if let Some(w) = self.winit_window_if_materialized() {
             w.request_redraw();

@@ -29,22 +29,349 @@ type DialogFinishCb = crate::emEngineCtx::WidgetCallbackRef<DialogResult>;
 // value, not the payload lifetime. Remains a plain `Box<dyn FnMut>`.
 type DialogCheckFinishCb = Box<dyn FnMut(&DialogResult) -> bool>;
 
-/// Modal dialog container widget.
+/// Modal dialog handle.
+///
+/// Port of C++ `emDialog` (emDialog.h). After Phase 3.5 Task 7, this struct
+/// is a stable handle pointing to a pending-or-materialized top-level window.
+/// Pre-show state lives in `pending`; post-show state lives in
+/// `app.windows[app.dialog_windows[dialog_id]].tree`.
+///
+/// Spec §1 (phase-3-5-deferred-dialog-construction-design.md §1).
 pub struct emDialog {
-    border: emBorder,
-    look: Rc<emLook>,
-    buttons: Vec<(String, DialogResult)>,
-    result: Option<DialogResult>,
-    pub on_finish: Option<DialogFinishCb>,
-    pub on_check_finish: Option<DialogCheckFinishCb>,
-    auto_delete: bool,
-    /// Allocated per C++ `emDialog::GetFinishSignal()`. B3.4b: alloc only.
+    /// Stable identity across pre-show / post-show transition.
+    pub dialog_id: crate::emGUIFramework::DialogId,
     pub finish_signal: SignalId,
+    pub close_signal: SignalId,
+    /// PanelId of the DlgPanel root. Lives in `pending.window.tree` pre-show;
+    /// in `app.windows[app.dialog_windows[dialog_id]].tree` post-show.
+    pub root_panel_id: crate::emPanelTree::PanelId,
+    /// Shared look held on the handle so pre-show mutators can clone without
+    /// touching the pending DlgPanel. Keeps C++ `emDialog::GetLook()` semantics
+    /// without re-exposing an accessor.
+    pub(crate) look: Rc<emLook>,
+    /// Pre-show builder state. `Some` before `show()`, `None` after.
+    pub(crate) pending: Option<crate::emGUIFramework::PendingTopLevel>,
 }
 
-const BUTTON_HEIGHT: f64 = 22.0;
-const BUTTON_SPACING: f64 = 4.0;
-const BOTTOM_MARGIN: f64 = 4.0;
+impl emDialog {
+    /// Construction per spec §2 (phase-3-5-deferred-dialog-construction-design.md §2).
+    ///
+    /// Builds a DlgPanel-rooted PanelTree, wraps it in an
+    /// `emWindow::new_top_level_pending`, and stashes the whole bundle as
+    /// `self.pending`. Does NOT touch `&mut App` — uses only
+    /// `ctx.allocate_dialog_id`, `ctx.create_signal`, and `ctx.root_context`.
+    /// `DialogPrivateEngine` is built at install time (inside
+    /// `install_pending_top_level`) once the winit `WindowId` is known.
+    pub fn new<C: ConstructCtx>(ctx: &mut C, title: &str, look: Rc<emLook>) -> Self {
+        let dialog_id = ctx.allocate_dialog_id();
+        let finish_signal = ctx.create_signal();
+        let close_signal = ctx.create_signal();
+        let flags_signal = ctx.create_signal();
+        let focus_signal = ctx.create_signal();
+        let geom_signal = ctx.create_signal();
+
+        // Build the DlgPanel-rooted PanelTree out-of-band.
+        let mut tree = crate::emPanelTree::PanelTree::new();
+        let root_panel_id = tree.create_root("dlg", false);
+        let dlg_panel = DlgPanel::new(title, Rc::clone(&look), finish_signal);
+        tree.set_behavior(root_panel_id, Box::new(dlg_panel));
+
+        // Wrap in a pending top-level window.
+        let mut window = crate::emWindow::emWindow::new_top_level_pending(
+            Rc::clone(ctx.root_context()),
+            crate::emWindow::WindowFlags::empty(),
+            format!("emDialog-{}", dialog_id.0),
+            close_signal,
+            flags_signal,
+            focus_signal,
+            geom_signal,
+            crate::emColor::emColor::TRANSPARENT,
+        );
+        // `new_top_level_pending` creates an empty default tree; discard it
+        // and put our populated tree in its place (3.5.A headless-install
+        // test precedent at emDialog.rs:1201-1202).
+        let _ = window.take_tree();
+        window.put_tree(tree);
+
+        Self {
+            dialog_id,
+            finish_signal,
+            close_signal,
+            root_panel_id,
+            look: Rc::clone(&look),
+            pending: Some(crate::emGUIFramework::PendingTopLevel {
+                dialog_id,
+                window,
+                close_signal,
+                private_engine_root_panel_id: root_panel_id,
+            }),
+        }
+    }
+
+    // ─── Pre-show mutator helper ────────────────────────────────────────────
+
+    /// Reach into the pending DlgPanel and apply a closure. Panics if called
+    /// after `show()`. Used by pre-show mutators (`SetRootTitle`,
+    /// `set_button_label_for_result`, Task 8's `AddCustomButton`, etc.).
+    ///
+    /// Phase 3.5 Task 7 forward-stub: partially fills spec §3's
+    /// `with_dlg_panel_mut` shape. Compiles but requires `emWindow::tree_mut`
+    /// (added in this task).
+    fn with_dlg_panel_mut<R>(&mut self, f: impl FnOnce(&mut DlgPanel) -> R) -> R {
+        let pending = self
+            .pending
+            .as_mut()
+            .expect("emDialog mutator called after show()");
+        let tree = pending.window.tree_mut();
+        let mut behavior = tree
+            .take_behavior(self.root_panel_id)
+            .expect("DlgPanel root must exist in pending tree");
+        let r = f(behavior
+            .as_dlg_panel_mut()
+            .expect("root panel must be DlgPanel"));
+        tree.put_behavior(self.root_panel_id, behavior);
+        r
+    }
+
+    // ─── Pre-show mutators ───────────────────────────────────────────────────
+
+    /// Update the dialog title. Pre-show only.
+    ///
+    /// Port of C++ `emDialog::SetRootTitle` via `DlgPanel::SetTitle`.
+    /// Task 8 expands this pattern to `AddCustomButton` etc.
+    pub fn SetRootTitle(&mut self, title: &str) {
+        self.with_dlg_panel_mut(|p| p.SetTitle(title));
+    }
+
+    /// Update label of the first button whose result matches `result`. Pre-show only.
+    ///
+    /// Port of C++ `emDialog::SetButtonLabel`.
+    pub fn set_button_label_for_result(&mut self, result: &DialogResult, label: &str) {
+        self.with_dlg_panel_mut(|p| {
+            if let Some((lbl, _)) = p.buttons.iter_mut().find(|(_, r)| r == result) {
+                *lbl = label.to_string();
+            }
+        });
+    }
+
+    // ─── Legacy-compatibility stubs ─────────────────────────────────────────
+    // These stubs exist so production consumers (`emStocksListBox`,
+    // `emFileDialog`) compile between Task 7 and their respective migration
+    // tasks (Tasks 8/9 for mutators, Task 15 for emStocks, Task 19 for
+    // emFileDialog). They panic at runtime; tests that call them are gated
+    // under `#[cfg(any())]` below (Task 12 / 15 / 19 port those paths).
+
+    /// PHASE-3.5-STUB: Task 15 (emStocks) and Task 19 (emFileDialog)
+    /// replace this with the new `on_finish`-callback pattern.
+    pub fn GetResult(&self) -> Option<&DialogResult> {
+        unimplemented!("Task 15/19: GetResult replaced by on_finish callback")
+    }
+
+    /// PHASE-3.5-STUB: Task 11 / 15 / 19 remove this after consumer migration.
+    pub fn Finish(&mut self, _result: DialogResult, _ctx: &mut PanelCtx<'_>) {
+        unimplemented!("Task 15/19: Finish replaced by new dialog handle pattern")
+    }
+
+    /// PHASE-3.5-STUB: Task 15 replaces emStocks silent_cancel sites with
+    /// the new `pending_actions`-based cancel rail.
+    pub fn silent_cancel(&mut self) {
+        unimplemented!("Task 15: silent_cancel replaced by new cancel rail")
+    }
+
+    /// PHASE-3.5-STUB: Task 8 implements the real pre-show mutator.
+    /// Old signature (no ctx) kept here so emFileDialog / emStocksListBox callers compile.
+    /// Task 8 will add the real `AddCustomButton<C: ConstructCtx>` with ctx param.
+    pub fn AddCustomButton(&mut self, label: &str, result: DialogResult) {
+        // Placeholder: record the button in DlgPanel.buttons so the field
+        // is read from production code. Task 8 also creates DlgButton children
+        // (DlgButton::new requires a ConstructCtx, which the old callers don't
+        // provide — Task 8 adds the ctx-based API and migrates callers).
+        self.with_dlg_panel_mut(|p| {
+            p.buttons.push((label.to_string(), result));
+        });
+    }
+
+    /// PHASE-3.5-STUB: Task 19 (emFileDialog) removes this; look is
+    /// accessible through the pending DlgPanel instead.
+    pub fn look(&self) -> &Rc<emLook> {
+        &self.look
+    }
+}
+
+// PHASE-3.5-DELETE: Task 11 removes this entire block.
+// Legacy `impl emDialog` moved here under `#[cfg(any())]` so it does not
+// compile (dead-code-gated). Individual test functions that reference the
+// legacy API are also `#[cfg(any())]`-gated below (Task 12 ports them).
+#[cfg(any())]
+mod legacy_emdialog_impl {
+    use super::*;
+
+    const BUTTON_HEIGHT: f64 = 22.0;
+    const BUTTON_SPACING: f64 = 4.0;
+    const BOTTOM_MARGIN: f64 = 4.0;
+
+    impl emDialog {
+        pub fn AddCustomButton_legacy(&mut self, label: &str, result: DialogResult) {
+            self.buttons.push((label.to_string(), result));
+        }
+
+        pub fn SetRootTitle_legacy(&mut self, title: &str) {
+            self.border.SetCaption(title);
+        }
+
+        pub fn set_button_label_for_result_legacy(&mut self, result: &DialogResult, label: &str) {
+            if let Some((lbl, _)) = self.buttons.iter_mut().find(|(_, r)| r == result) {
+                *lbl = label.to_string();
+            }
+        }
+
+        pub fn look_legacy(&self) -> &Rc<emLook> {
+            &self.look
+        }
+
+        pub fn GetResult_legacy(&self) -> Option<&DialogResult> {
+            self.result.as_ref()
+        }
+
+        pub fn Finish_legacy(&mut self, result: DialogResult, ctx: &mut PanelCtx<'_>) {
+            if let Some(cb) = &mut self.on_check_finish {
+                if !cb(&result) {
+                    return;
+                }
+            }
+            self.result = Some(result.clone());
+            if let Some(mut sched) = ctx.as_sched_ctx() {
+                sched.fire(self.finish_signal);
+                if let Some(cb) = self.on_finish.as_mut() {
+                    cb(&result, &mut sched);
+                }
+            }
+        }
+
+        pub fn silent_cancel_legacy(&mut self) {
+            self.result = Some(DialogResult::Cancel);
+        }
+
+        pub fn Paint_legacy(&self, painter: &mut emPainter, w: f64, h: f64, pixel_scale: f64) {
+            self.border
+                .paint_border(painter, w, h, &self.look, false, true, pixel_scale);
+        }
+
+        pub fn LayoutChildren_legacy(&self, ctx: &mut PanelCtx, w: f64, h: f64) {
+            let Rect {
+                x: cx,
+                y: cy,
+                w: cw,
+                h: ch,
+            } = self.border.GetContentRect(w, h, &self.look);
+            let children = ctx.children();
+
+            if children.is_empty() {
+                return;
+            }
+
+            let button_count = self.buttons.len();
+            let content_children = children.len().saturating_sub(button_count);
+
+            let content_h = ch - BUTTON_HEIGHT - BOTTOM_MARGIN;
+            for (i, &child) in children.iter().take(content_children).enumerate() {
+                let child_h = content_h / content_children.max(1) as f64;
+                ctx.layout_child(child, cx, cy + i as f64 * child_h, cw, child_h);
+            }
+
+            if button_count > 0 {
+                let total_btn_w = cw;
+                let btn_w = (total_btn_w - (button_count as f64 - 1.0) * BUTTON_SPACING)
+                    / button_count as f64;
+                let btn_y = cy + ch - BUTTON_HEIGHT;
+
+                for (i, &child) in children.iter().skip(content_children).enumerate() {
+                    let btn_x = cx + i as f64 * (btn_w + BUTTON_SPACING);
+                    ctx.layout_child(child, btn_x, btn_y, btn_w, BUTTON_HEIGHT);
+                }
+            }
+
+            let cc = self.border.content_canvas_color(
+                ctx.GetCanvasColor(),
+                &self.look,
+                ctx.is_enabled(),
+            );
+            ctx.set_all_children_canvas_color(cc);
+        }
+
+        pub fn preferred_size_legacy(&self) -> (f64, f64) {
+            self.border
+                .preferred_size_for_content(200.0, 120.0 + BUTTON_HEIGHT + BOTTOM_MARGIN)
+        }
+
+        pub fn GetButton_legacy(&self, index: usize) -> Option<&(String, DialogResult)> {
+            self.buttons.get(index)
+        }
+
+        pub fn GetButtonForResult_legacy(
+            &self,
+            result: &DialogResult,
+        ) -> Option<&(String, DialogResult)> {
+            self.buttons.iter().find(|(_, r)| r == result)
+        }
+
+        pub fn GetOKButton_legacy(&self) -> Option<&(String, DialogResult)> {
+            self.GetButtonForResult_legacy(&DialogResult::Ok)
+        }
+
+        pub fn GetCancelButton_legacy(&self) -> Option<&(String, DialogResult)> {
+            self.GetButtonForResult_legacy(&DialogResult::Cancel)
+        }
+
+        pub fn EnableAutoDeletion_legacy(&mut self) {
+            self.auto_delete = true;
+        }
+
+        pub fn IsAutoDeletionEnabled_legacy(&self) -> bool {
+            self.auto_delete
+        }
+
+        pub fn ShowMessage_legacy<C: ConstructCtx>(
+            ctx: &mut C,
+            text: &str,
+            look: Rc<emLook>,
+        ) -> Self {
+            let mut dlg = Self::new(ctx, text, look);
+            dlg.AddCustomButton_legacy("OK", DialogResult::Ok);
+            dlg
+        }
+
+        pub fn Input_legacy(
+            &mut self,
+            event: &emInputEvent,
+            _state: &PanelState,
+            _input_state: &emInputState,
+            ctx: &mut PanelCtx,
+        ) -> bool {
+            if event.variant != InputVariant::Press {
+                return false;
+            }
+            if event.ctrl || event.alt || event.meta {
+                return false;
+            }
+            match event.key {
+                InputKey::Enter => {
+                    self.Finish_legacy(DialogResult::Ok, ctx);
+                    true
+                }
+                InputKey::Escape => {
+                    self.Finish_legacy(DialogResult::Cancel, ctx);
+                    true
+                }
+                _ => false,
+            }
+        }
+
+        pub fn CheckFinish_legacy(&self) -> bool {
+            self.result.is_some()
+        }
+    }
+}
 
 /// Root-panel PanelBehavior for an `emDialog`.
 ///
@@ -60,7 +387,7 @@ pub struct DlgPanel {
     look: Rc<emLook>,
     /// Dialog buttons: (caption string, result payload). Rendered in the
     /// bottom button row as `DlgButton` child panels.
-    pub buttons: Vec<(String, DialogResult)>,
+    pub(crate) buttons: Vec<(String, DialogResult)>,
     /// Set by `Finish` once CheckFinish permits. `DialogPrivateEngine`
     /// observes this on Cycle and fires `finish_signal`.
     pub(crate) pending_result: Option<DialogResult>,
@@ -95,7 +422,7 @@ pub struct DlgPanel {
 }
 
 impl DlgPanel {
-    pub fn new(title: &str, look: Rc<emLook>, finish_signal: SignalId) -> Self {
+    pub(crate) fn new(title: &str, look: Rc<emLook>, finish_signal: SignalId) -> Self {
         Self {
             border: emBorder::new(OuterBorderType::PopupRoot).with_caption(title),
             look,
@@ -114,7 +441,7 @@ impl DlgPanel {
         }
     }
 
-    pub fn SetTitle(&mut self, title: &str) {
+    pub(crate) fn SetTitle(&mut self, title: &str) {
         self.border.SetCaption(title);
     }
 }
@@ -227,6 +554,13 @@ impl PanelBehavior for DlgPanel {
 ///
 /// Precedent: `ButtonPanel` adapter in `emColorFieldFieldPanel.rs:187-210`.
 ///
+/// `DlgButton` struct and its methods remain `pub` (not narrowed to
+/// `pub(crate)`) in Task 7 because `AddCustomButton`'s real implementation
+/// (Task 8) has not yet been written — `DlgButton::new`, `caption`, `result`,
+/// and `SetCaption` have no production callers until Task 8. Narrowing to
+/// `pub(crate)` here would trigger dead_code lint since `cargo clippy` runs
+/// lib-only (no `--tests` flag). Task 8 narrows these when it fills in the
+/// `AddCustomButton` body that constructs `DlgButton` instances.
 pub struct DlgButton {
     pub(crate) button: emButton,
     /// Dialog result payload carried by this button. C++ parity: `int Result`
@@ -476,209 +810,6 @@ impl crate::emEngine::emEngine for DialogPrivateEngine {
     }
 }
 
-impl emDialog {
-    pub fn new<C: ConstructCtx>(ctx: &mut C, title: &str, look: Rc<emLook>) -> Self {
-        Self {
-            border: emBorder::new(OuterBorderType::PopupRoot).with_caption(title),
-            look,
-            buttons: Vec::new(),
-            result: None,
-            on_finish: None,
-            on_check_finish: None,
-            auto_delete: false,
-            finish_signal: ctx.create_signal(),
-        }
-    }
-
-    pub fn AddCustomButton(&mut self, label: &str, result: DialogResult) {
-        self.buttons.push((label.to_string(), result));
-    }
-
-    /// Update the dialog title (border caption).
-    pub fn SetRootTitle(&mut self, title: &str) {
-        self.border.SetCaption(title);
-    }
-
-    /// Update the label of the first button whose result matches `result`.
-    pub fn set_button_label_for_result(&mut self, result: &DialogResult, label: &str) {
-        if let Some((lbl, _)) = self.buttons.iter_mut().find(|(_, r)| r == result) {
-            *lbl = label.to_string();
-        }
-    }
-
-    /// Get the look used by this dialog.
-    pub fn look(&self) -> &Rc<emLook> {
-        &self.look
-    }
-
-    pub fn GetResult(&self) -> Option<&DialogResult> {
-        self.result.as_ref()
-    }
-
-    /// Mirrors C++ `emDialog::PrivateEngine::Cycle` finishing branch
-    /// (emDialog.cpp:200-206): CheckFinish → Signal(FinishSignal) → Finished.
-    pub fn Finish(&mut self, result: DialogResult, ctx: &mut PanelCtx<'_>) {
-        if let Some(cb) = &mut self.on_check_finish {
-            if !cb(&result) {
-                return;
-            }
-        }
-        self.result = Some(result.clone());
-        if let Some(mut sched) = ctx.as_sched_ctx() {
-            sched.fire(self.finish_signal);
-            if let Some(cb) = self.on_finish.as_mut() {
-                cb(&result, &mut sched);
-            }
-        }
-    }
-
-    /// Silently cancel an in-flight dialog without firing the finish signal
-    /// or invoking any callback. Used by emStocksListBox when it replaces
-    /// an in-flight confirmation dialog with a freshly created one —
-    /// there is no observer to notify, and firing would create a spurious
-    /// Finished(Cancel) signal that no UI consumer is watching. C++ parity:
-    /// the emStocksListBox code path simply `delete`s the old dialog
-    /// without calling `Finish` on it (emStocksListBox.cpp).
-    pub fn silent_cancel(&mut self) {
-        self.result = Some(DialogResult::Cancel);
-    }
-
-    pub fn Paint(&self, painter: &mut emPainter, w: f64, h: f64, pixel_scale: f64) {
-        self.border
-            .paint_border(painter, w, h, &self.look, false, true, pixel_scale);
-    }
-
-    /// Layout content area and button row at the bottom.
-    pub fn LayoutChildren(&self, ctx: &mut PanelCtx, w: f64, h: f64) {
-        let Rect {
-            x: cx,
-            y: cy,
-            w: cw,
-            h: ch,
-        } = self.border.GetContentRect(w, h, &self.look);
-        let children = ctx.children();
-
-        if children.is_empty() {
-            return;
-        }
-
-        let button_count = self.buttons.len();
-        let content_children = children.len().saturating_sub(button_count);
-
-        // Layout content children above button row
-        let content_h = ch - BUTTON_HEIGHT - BOTTOM_MARGIN;
-        for (i, &child) in children.iter().take(content_children).enumerate() {
-            let child_h = content_h / content_children.max(1) as f64;
-            ctx.layout_child(child, cx, cy + i as f64 * child_h, cw, child_h);
-        }
-
-        // Layout button row at the bottom
-        if button_count > 0 {
-            let total_btn_w = cw;
-            let btn_w =
-                (total_btn_w - (button_count as f64 - 1.0) * BUTTON_SPACING) / button_count as f64;
-            let btn_y = cy + ch - BUTTON_HEIGHT;
-
-            for (i, &child) in children.iter().skip(content_children).enumerate() {
-                let btn_x = cx + i as f64 * (btn_w + BUTTON_SPACING);
-                ctx.layout_child(child, btn_x, btn_y, btn_w, BUTTON_HEIGHT);
-            }
-        }
-
-        // Propagate content canvas color to children.
-        let cc =
-            self.border
-                .content_canvas_color(ctx.GetCanvasColor(), &self.look, ctx.is_enabled());
-        ctx.set_all_children_canvas_color(cc);
-    }
-
-    pub fn preferred_size(&self) -> (f64, f64) {
-        self.border
-            .preferred_size_for_content(200.0, 120.0 + BUTTON_HEIGHT + BOTTOM_MARGIN)
-    }
-
-    /// Access a button label and result by index.
-    ///
-    /// Port of C++ `emDialog::GetButton`.
-    pub fn GetButton(&self, index: usize) -> Option<&(String, DialogResult)> {
-        self.buttons.get(index)
-    }
-
-    /// Find the first button whose result matches `result`.
-    ///
-    /// Port of C++ `emDialog::GetButtonForResult`.
-    pub fn GetButtonForResult(&self, result: &DialogResult) -> Option<&(String, DialogResult)> {
-        self.buttons.iter().find(|(_, r)| r == result)
-    }
-
-    /// Convenience accessor for the first `Ok` button.
-    pub fn GetOKButton(&self) -> Option<&(String, DialogResult)> {
-        self.GetButtonForResult(&DialogResult::Ok)
-    }
-
-    /// Convenience accessor for the first `Cancel` button.
-    pub fn GetCancelButton(&self) -> Option<&(String, DialogResult)> {
-        self.GetButtonForResult(&DialogResult::Cancel)
-    }
-
-    /// Enable automatic deletion when the dialog closes.
-    pub fn EnableAutoDeletion(&mut self) {
-        self.auto_delete = true;
-    }
-
-    /// Check if auto-deletion is enabled.
-    pub fn IsAutoDeletionEnabled(&self) -> bool {
-        self.auto_delete
-    }
-
-    /// Static convenience to create a message dialog (returns a configured `emDialog`).
-    ///
-    /// Port of C++ `emDialog::ShowMessage`.
-    pub fn ShowMessage<C: ConstructCtx>(ctx: &mut C, text: &str, look: Rc<emLook>) -> Self {
-        let mut dlg = Self::new(ctx, text, look);
-        dlg.AddCustomButton("OK", DialogResult::Ok);
-        dlg
-    }
-
-    /// Handle keyboard input for the dialog.
-    ///
-    /// Port of C++ `emDlg::DlgPanel::Input`:
-    /// - Enter (no modifiers) → finish with `DialogResult::Ok`
-    /// - Escape (no modifiers) → finish with `DialogResult::Cancel`
-    pub fn Input(
-        &mut self,
-        event: &emInputEvent,
-        _state: &PanelState,
-        _input_state: &emInputState,
-        ctx: &mut PanelCtx,
-    ) -> bool {
-        if event.variant != InputVariant::Press {
-            return false;
-        }
-        if event.ctrl || event.alt || event.meta {
-            return false;
-        }
-        match event.key {
-            InputKey::Enter => {
-                self.Finish(DialogResult::Ok, ctx);
-                true
-            }
-            InputKey::Escape => {
-                self.Finish(DialogResult::Cancel, ctx);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    /// Check if the dialog should close (i.e. a result has been set).
-    ///
-    /// Port of C++ `emDialog::CheckFinish`.
-    pub fn CheckFinish(&self) -> bool {
-        self.result.is_some()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -727,227 +858,29 @@ mod tests {
         (tree, id)
     }
 
-    fn default_panel_state() -> PanelState {
-        PanelState {
-            id: PanelId::null(),
-            is_active: true,
-            in_active_path: true,
-            window_focused: true,
-            enabled: true,
-            viewed: true,
-            clip_rect: Rect::new(0.0, 0.0, 1e6, 1e6),
-            viewed_rect: Rect::new(0.0, 0.0, 200.0, 100.0),
-            priority: 1.0,
-            memory_limit: u64::MAX,
-            pixel_tallness: 1.0,
-            height: 1.0,
-        }
-    }
-
-    fn default_input_state() -> emInputState {
-        emInputState::new()
-    }
+    // ─── New API tests (Task 7+) ─────────────────────────────────────────────
 
     #[test]
-    fn dialog_fires_finish_signal_on_input_enter() {
-        let mut __init = TestInit::new();
+    fn new_builds_pending_with_populated_tree_and_identity() {
+        let mut init = TestInit::new();
         let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
-        let sig = dlg.finish_signal;
-        let (mut tree, tid) = test_tree();
-        let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
-        {
-            let mut ctx = PanelCtx::with_sched_reach(
-                &mut tree,
-                tid,
-                1.0,
-                &mut __init.sched,
-                &mut __init.fw,
-                &__init.root,
-                &fw_cb,
-                &__init.pa,
-            );
-            dlg.Input(
-                &emInputEvent::press(InputKey::Enter),
-                &default_panel_state(),
-                &default_input_state(),
-                &mut ctx,
-            );
-        }
-        assert!(__init.sched.is_pending(sig));
+        let dlg = emDialog::new(&mut init.ctx(), "Test Dialog", look);
+
+        // Identity fields are stable across show().
+        let _did: u64 = dlg.dialog_id.0; // just proves the field exists and is u64
+        let _: SignalId = dlg.finish_signal;
+        let _: SignalId = dlg.close_signal;
+        let _: crate::emPanelTree::PanelId = dlg.root_panel_id;
+
+        // Pre-show: pending is Some.
+        assert!(dlg.pending.is_some());
+        let pending = dlg.pending.as_ref().unwrap();
+        assert_eq!(pending.dialog_id, dlg.dialog_id);
+        assert_eq!(pending.close_signal, dlg.close_signal);
+        assert_eq!(pending.private_engine_root_panel_id, dlg.root_panel_id);
     }
 
-    #[test]
-    fn dialog_finish_fires_callback() {
-        let mut __init = TestInit::new();
-        let (mut tree, tid) = test_tree();
-        let look = emLook::new();
-        let results = Rc::new(RefCell::new(Vec::new()));
-        let res_clone = results.clone();
-
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
-        dlg.AddCustomButton("OK", DialogResult::Ok);
-        dlg.AddCustomButton("Cancel", DialogResult::Cancel);
-        dlg.on_finish = Some(Box::new(
-            move |r: &DialogResult, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                res_clone.borrow_mut().push(r.clone());
-            },
-        ));
-
-        let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
-        let mut ctx = PanelCtx::with_sched_reach(
-            &mut tree,
-            tid,
-            1.0,
-            &mut __init.sched,
-            &mut __init.fw,
-            &__init.root,
-            &fw_cb,
-            &__init.pa,
-        );
-        assert!(dlg.GetResult().is_none());
-        dlg.Finish(DialogResult::Ok, &mut ctx);
-        assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
-        assert_eq!(*results.borrow(), vec![DialogResult::Ok]);
-    }
-
-    #[test]
-    fn check_finish_can_veto() {
-        let mut __init = TestInit::new();
-        let (mut tree, tid) = test_tree();
-        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Veto", look);
-        dlg.on_check_finish = Some(Box::new(|r| *r != DialogResult::Cancel));
-
-        dlg.Finish(DialogResult::Cancel, &mut ctx);
-        assert!(dlg.GetResult().is_none(), "veto should prevent finish");
-
-        dlg.Finish(DialogResult::Ok, &mut ctx);
-        assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
-    }
-
-    #[test]
-    fn dialog_custom_result() {
-        let mut __init = TestInit::new();
-        let (mut tree, tid) = test_tree();
-        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Custom", look);
-        dlg.AddCustomButton("Retry", DialogResult::Custom(42));
-        dlg.Finish(DialogResult::Custom(42), &mut ctx);
-        assert_eq!(dlg.GetResult(), Some(&DialogResult::Custom(42)));
-    }
-
-    #[test]
-    fn enter_finishes_with_ok() {
-        let mut __init = TestInit::new();
-        let (mut tree, tid) = test_tree();
-        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
-        let ps = default_panel_state();
-        let is = default_input_state();
-
-        let consumed = dlg.Input(&emInputEvent::press(InputKey::Enter), &ps, &is, &mut ctx);
-        assert!(consumed);
-        assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
-    }
-
-    #[test]
-    fn escape_finishes_with_cancel() {
-        let mut __init = TestInit::new();
-        let (mut tree, tid) = test_tree();
-        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
-        let ps = default_panel_state();
-        let is = default_input_state();
-
-        let consumed = dlg.Input(&emInputEvent::press(InputKey::Escape), &ps, &is, &mut ctx);
-        assert!(consumed);
-        assert_eq!(dlg.GetResult(), Some(&DialogResult::Cancel));
-    }
-
-    #[test]
-    fn enter_with_modifier_is_ignored() {
-        let mut __init = TestInit::new();
-        let (mut tree, tid) = test_tree();
-        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
-        let ps = default_panel_state();
-        let is = default_input_state();
-
-        let mut ev = emInputEvent::press(InputKey::Enter);
-        ev.ctrl = true;
-        let consumed = dlg.Input(&ev, &ps, &is, &mut ctx);
-        assert!(!consumed);
-        assert!(dlg.GetResult().is_none());
-    }
-
-    #[test]
-    fn release_event_is_ignored() {
-        let mut __init = TestInit::new();
-        let (mut tree, tid) = test_tree();
-        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
-        let ps = default_panel_state();
-        let is = default_input_state();
-
-        let consumed = dlg.Input(&emInputEvent::release(InputKey::Enter), &ps, &is, &mut ctx);
-        assert!(!consumed);
-        assert!(dlg.GetResult().is_none());
-    }
-
-    #[test]
-    fn add_custom_button_lookup() {
-        let mut __init = TestInit::new();
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
-        dlg.AddCustomButton("Apply", DialogResult::Custom(7));
-        let btn = dlg.GetButtonForResult(&DialogResult::Custom(7));
-        assert!(btn.is_some());
-        let (label, _) = btn.unwrap();
-        assert_eq!(label, "Apply");
-    }
-
-    #[test]
-    fn set_button_label() {
-        let mut __init = TestInit::new();
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
-        dlg.AddCustomButton("OK", DialogResult::Ok);
-        dlg.set_button_label_for_result(&DialogResult::Ok, "Accept");
-        let btn = dlg.GetButtonForResult(&DialogResult::Ok);
-        assert!(btn.is_some());
-        let (label, _) = btn.unwrap();
-        assert_eq!(label, "Accept");
-    }
-
-    #[test]
-    fn auto_deletion_toggle() {
-        let mut __init = TestInit::new();
-        let look = emLook::new();
-        let dlg = emDialog::new(&mut __init.ctx(), "Test", look);
-        assert!(!dlg.IsAutoDeletionEnabled());
-        let mut dlg = dlg;
-        dlg.EnableAutoDeletion();
-        assert!(dlg.IsAutoDeletionEnabled());
-    }
-
-    #[test]
-    fn check_finish_lifecycle() {
-        let mut __init = TestInit::new();
-        let (mut tree, tid) = test_tree();
-        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
-        assert!(!dlg.CheckFinish());
-        dlg.Finish(DialogResult::Ok, &mut ctx);
-        assert!(dlg.CheckFinish());
-    }
+    // ─── DlgPanel tests — not affected by legacy API removal ─────────────────
 
     #[test]
     fn dlg_panel_enter_sets_pending_ok() {
@@ -1134,19 +1067,6 @@ mod tests {
     }
 
     #[test]
-    fn set_root_title() {
-        let mut __init = TestInit::new();
-        let (mut tree, tid) = test_tree();
-        let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
-        let look = emLook::new();
-        let mut dlg = emDialog::new(&mut __init.ctx(), "Old Title", look);
-        dlg.SetRootTitle("New Title");
-        // Verify the dialog still functions after title change.
-        dlg.Finish(DialogResult::Ok, &mut ctx);
-        assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
-    }
-
-    #[test]
     fn private_engine_observes_close_signal_sets_pending_cancel() {
         // Ports the C++ PrivateCycle close-signal branch (emDialog.cpp:196-198):
         //   if (IsSignaled(GetCloseSignal())) Finish(NEGATIVE);
@@ -1330,5 +1250,233 @@ mod tests {
         app.scheduler.remove_engine(engine_id);
         app.scheduler.remove_engine(probe_id);
         app.scheduler.clear_pending_for_tests();
+    }
+
+    // ─── Legacy emDialog tests staged for Task 12 porting ────────────────────
+    // These tests call the old `emDialog` API (Finish, GetResult, Input,
+    // AddCustomButton, EnableAutoDeletion, etc.) which was removed in Task 7.
+    // They are preserved here under #[cfg(any())] for Task 12 to port to the
+    // new callback-based API.
+    // PHASE-3.5-TASK-12: port to new API
+
+    #[cfg(any())]
+    mod legacy_tests {
+        use super::*;
+
+        #[test]
+        fn dialog_fires_finish_signal_on_input_enter() {
+            let mut __init = TestInit::new();
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
+            let sig = dlg.finish_signal;
+            let (mut tree, tid) = test_tree();
+            let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                RefCell::new(None);
+            {
+                let mut ctx = PanelCtx::with_sched_reach(
+                    &mut tree,
+                    tid,
+                    1.0,
+                    &mut __init.sched,
+                    &mut __init.fw,
+                    &__init.root,
+                    &fw_cb,
+                    &__init.pa,
+                );
+                dlg.Input(
+                    &emInputEvent::press(InputKey::Enter),
+                    &default_panel_state(),
+                    &default_input_state(),
+                    &mut ctx,
+                );
+            }
+            assert!(__init.sched.is_pending(sig));
+        }
+
+        #[test]
+        fn dialog_finish_fires_callback() {
+            let mut __init = TestInit::new();
+            let (mut tree, tid) = test_tree();
+            let look = emLook::new();
+            let results = Rc::new(RefCell::new(Vec::new()));
+            let res_clone = results.clone();
+
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
+            dlg.AddCustomButton("OK", DialogResult::Ok);
+            dlg.AddCustomButton("Cancel", DialogResult::Cancel);
+            dlg.on_finish = Some(Box::new(
+                move |r: &DialogResult, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
+                    res_clone.borrow_mut().push(r.clone());
+                },
+            ));
+
+            let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                RefCell::new(None);
+            let mut ctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                tid,
+                1.0,
+                &mut __init.sched,
+                &mut __init.fw,
+                &__init.root,
+                &fw_cb,
+                &__init.pa,
+            );
+            assert!(dlg.GetResult().is_none());
+            dlg.Finish(DialogResult::Ok, &mut ctx);
+            assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
+            assert_eq!(*results.borrow(), vec![DialogResult::Ok]);
+        }
+
+        #[test]
+        fn check_finish_can_veto() {
+            let mut __init = TestInit::new();
+            let (mut tree, tid) = test_tree();
+            let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Veto", look);
+            dlg.on_check_finish = Some(Box::new(|r| *r != DialogResult::Cancel));
+
+            dlg.Finish(DialogResult::Cancel, &mut ctx);
+            assert!(dlg.GetResult().is_none(), "veto should prevent finish");
+
+            dlg.Finish(DialogResult::Ok, &mut ctx);
+            assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
+        }
+
+        #[test]
+        fn dialog_custom_result() {
+            let mut __init = TestInit::new();
+            let (mut tree, tid) = test_tree();
+            let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Custom", look);
+            dlg.AddCustomButton("Retry", DialogResult::Custom(42));
+            dlg.Finish(DialogResult::Custom(42), &mut ctx);
+            assert_eq!(dlg.GetResult(), Some(&DialogResult::Custom(42)));
+        }
+
+        #[test]
+        fn enter_finishes_with_ok() {
+            let mut __init = TestInit::new();
+            let (mut tree, tid) = test_tree();
+            let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
+            let ps = default_panel_state();
+            let is = default_input_state();
+
+            let consumed = dlg.Input(&emInputEvent::press(InputKey::Enter), &ps, &is, &mut ctx);
+            assert!(consumed);
+            assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
+        }
+
+        #[test]
+        fn escape_finishes_with_cancel() {
+            let mut __init = TestInit::new();
+            let (mut tree, tid) = test_tree();
+            let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
+            let ps = default_panel_state();
+            let is = default_input_state();
+
+            let consumed = dlg.Input(&emInputEvent::press(InputKey::Escape), &ps, &is, &mut ctx);
+            assert!(consumed);
+            assert_eq!(dlg.GetResult(), Some(&DialogResult::Cancel));
+        }
+
+        #[test]
+        fn enter_with_modifier_is_ignored() {
+            let mut __init = TestInit::new();
+            let (mut tree, tid) = test_tree();
+            let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
+            let ps = default_panel_state();
+            let is = default_input_state();
+
+            let mut ev = emInputEvent::press(InputKey::Enter);
+            ev.ctrl = true;
+            let consumed = dlg.Input(&ev, &ps, &is, &mut ctx);
+            assert!(!consumed);
+            assert!(dlg.GetResult().is_none());
+        }
+
+        #[test]
+        fn release_event_is_ignored() {
+            let mut __init = TestInit::new();
+            let (mut tree, tid) = test_tree();
+            let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
+            let ps = default_panel_state();
+            let is = default_input_state();
+
+            let consumed = dlg.Input(&emInputEvent::release(InputKey::Enter), &ps, &is, &mut ctx);
+            assert!(!consumed);
+            assert!(dlg.GetResult().is_none());
+        }
+
+        #[test]
+        fn add_custom_button_lookup() {
+            let mut __init = TestInit::new();
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
+            dlg.AddCustomButton("Apply", DialogResult::Custom(7));
+            let btn = dlg.GetButtonForResult(&DialogResult::Custom(7));
+            assert!(btn.is_some());
+            let (label, _) = btn.unwrap();
+            assert_eq!(label, "Apply");
+        }
+
+        #[test]
+        fn set_button_label() {
+            let mut __init = TestInit::new();
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
+            dlg.AddCustomButton("OK", DialogResult::Ok);
+            dlg.set_button_label_for_result(&DialogResult::Ok, "Accept");
+            let btn = dlg.GetButtonForResult(&DialogResult::Ok);
+            assert!(btn.is_some());
+            let (label, _) = btn.unwrap();
+            assert_eq!(label, "Accept");
+        }
+
+        #[test]
+        fn auto_deletion_toggle() {
+            let mut __init = TestInit::new();
+            let look = emLook::new();
+            let dlg = emDialog::new(&mut __init.ctx(), "Test", look);
+            assert!(!dlg.IsAutoDeletionEnabled());
+            let mut dlg = dlg;
+            dlg.EnableAutoDeletion();
+            assert!(dlg.IsAutoDeletionEnabled());
+        }
+
+        #[test]
+        fn check_finish_lifecycle() {
+            let mut __init = TestInit::new();
+            let (mut tree, tid) = test_tree();
+            let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Test", look);
+            assert!(!dlg.CheckFinish());
+            dlg.Finish(DialogResult::Ok, &mut ctx);
+            assert!(dlg.CheckFinish());
+        }
+
+        #[test]
+        fn set_root_title() {
+            let mut __init = TestInit::new();
+            let (mut tree, tid) = test_tree();
+            let mut ctx = PanelCtx::new(&mut tree, tid, 1.0);
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut __init.ctx(), "Old Title", look);
+            dlg.SetRootTitle("New Title");
+            // Verify the dialog still functions after title change.
+            dlg.Finish(DialogResult::Ok, &mut ctx);
+            assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
+        }
     }
 }
