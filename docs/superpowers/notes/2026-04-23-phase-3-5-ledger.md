@@ -103,3 +103,29 @@ New tests: `finish_post_show_sets_pending_result`, `finish_post_show_double_call
 The implementer's rationale ("PanelCtx doesn't impl ConstructCtx") was wrong: `impl ConstructCtx for PanelCtx<'_>` exists at `emEngineCtx.rs:378` with `pending_actions()` returning `self.pending_actions.expect(...)`. The non-generic signature was unforced drift from plan Step 20.4.
 
 Fix: `finish_post_show` now `pub fn finish_post_show<C: ConstructCtx>(&self, ctx: &mut C, result: DialogResult)`, body calls `ctx.pending_actions().borrow_mut().push(...)`. `emFileDialog::Cycle` updated to pass `ctx` directly and call `ctx.pending_actions()` for close-dialog pushes; `ConstructCtx` added to imports. The two Task 20 tests updated to construct an `InitCtx` and pass `&mut ctx`. Removed unused `FrameworkDeferredAction` and `RefCell` top-level imports from `emDialog.rs`. Gate green — nextest 2498/0/9, clippy clean.
+
+## Task 21 — emFileDialog tests ported to new handle + finish_post_show
+
+COMPLETE. Both `#[cfg(any())]` gates removed from `emFileDialog.rs`: one on `test_force_overwrite_result` (gated by Task 7 fix, pending Task 21) and one on `mod tests` (gated by Task 19 comment). Zero `cfg(any())` occurrences remain in the file.
+
+**test_force_overwrite_result** rewritten: old body called `od.Finish` / `od.silent_cancel` (both `unimplemented!` stubs in the new handle-based emDialog API). New body sets `self.overwrite_result.set(Some(result))` directly — the Cell shim is the correct observable interface.
+
+**Ported tests (restored from cfg(any()) gate, 11 tests):**
+- `dialog_mode` — unchanged; still works.
+- `dialog_cancel_always_allowed` — unchanged; still works.
+- `dialog_open_no_selection_error` — unchanged; still works.
+- `multi_selection_forwarded` — unchanged; still works.
+- `filters_forwarded` — unchanged; still works.
+- `hidden_files_forwarded` — unchanged; still works.
+- `dir_result_default_disallowed` — unchanged; still works.
+- `cycle_no_signals_is_no_op` — ported: replaced `dlg.GetResult().is_none()` assertion with `pending_actions.len() == 0`; added constructor-queue drain before Cycle.
+- `cycle_file_trigger_signal_finishes_ok` — ported: removed `dlg.GetResult()` and `sched.is_pending(finish)` assertions (both invalid in new model); replaced with `!pending_actions.is_empty()` after Cycle; added constructor-queue drain.
+- `cycle_overwrite_dialog_positive_confirms_and_finishes` — ported: same assertion model (`pending_actions` non-empty); updated `test_force_overwrite_result` call (now just sets Cell); drained CheckFinish-queued actions before Cycle.
+- `cycle_overwrite_dialog_negative_cancels_overwrite_only` — ported: removed `dlg.GetResult().is_none()` / `!sched.is_pending(finish)` assertions; replaced with `overwrite_result.get().is_none()` (Cell taken by Cycle) to prove cancel path was exercised without outer-dialog finish.
+
+**New test (1):**
+- `save_existing_file_triggers_overwrite_dialog_and_confirms` — e2e: creates real temp file; CheckFinish → ConfirmOverwrite; populates Cell via `test_force_overwrite_result`; fires overwrite finish_signal; Cycle → OverwriteConfirmed; asserts `overwrite_result` Cell empty, overwrite handle None, and `pending_actions.len() >= 2` (close-od closure + finish_post_show closure). Note: full e2e through App (DialogPrivateEngine sets `finalized_result`, fires `finish_signal`) requires a live event loop not available in unit-test scope; lighter Cell-shim path chosen per plan §Step 4 fallback.
+
+**Deleted tests:** none — all 11 legacy tests were portable to the new observable surface.
+
+**Assertion migration rationale:** `emDialog::GetResult` is `unimplemented!()` (dead stub); `finish_signal` fires only after App processes `pending_actions` queue via `DialogPrivateEngine::Cycle`. In unit tests with no App event loop, "dialog finished" is observable as `pending_actions` gaining entries; "dialog NOT finished" as Cell value confirming Cycle branched correctly. Gate green — nextest 2510/0/9 (12 new emFileDialog tests; +12 vs 2498 baseline), `cargo clippy --all-targets --all-features -- -D warnings` clean.
