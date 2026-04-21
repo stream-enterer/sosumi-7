@@ -75,3 +75,25 @@ COMPLETE. `look: Rc<emLook>` field added to `emFileDialog` struct. `emFileDialog
 ## Task 19 — emFileDialog CheckFinish overwrite dialog
 
 COMPLETE. `overwrite_result: Rc<Cell<Option<DialogResult>>>` field added to `emFileDialog` struct (Task 18 did not add it); initialized to `Rc::new(Cell::new(None))` in `new()`. Overwrite dialog construction in `CheckFinish` migrated: `set_on_finish(Box::new(move |r, _sched| cell.set(Some(*r))))` + `show(ctx)` added. `*r` used (Copy, not clone). `emDialog::look()` stub confirmed zero live callers; retained per task spec. `Cycle` polling of `od.GetResult()` and stub `Finish` calls left intact (Task 20 scope). Gate green — nextest 2496/0/9, `cargo clippy --all-targets --all-features -- -D warnings` clean.
+
+## Task 20 — emFileDialog Cycle Cell shim + emDialog::finish_post_show
+
+COMPLETE. Overwrite-read site in `Cycle` now reads `self.overwrite_result.take()` instead of `od.GetResult()`. Outer-dialog programmatic finish goes via new `emDialog::finish_post_show` (closure-rail mutation of `DlgPanel.pending_result` + engine wake via `scheduler.engines_for_scope(Toplevel(wid))`). Overwrite-dialog close on `OverwriteConfirmed` / `OverwriteCancelled` uses `close_dialog_by_id` closure rail. `emFileDialog::Finish` and `emFileDialog::GetResult` forwarding methods deleted (they delegated to the panicking stubs).
+
+`finish_post_show` signature: `pub fn finish_post_show(&self, pending_actions: &Rc<RefCell<Vec<FrameworkDeferredAction>>>, result: DialogResult)`. Takes `pending_actions` directly instead of `C: ConstructCtx` — `emFileDialog::Cycle` receives `&mut PanelCtx<'_>` which does not implement `ConstructCtx`; plan pseudocode used `ctx` but `PanelCtx::pending_actions` is an `Option<&Rc<...>>` field, not a trait method. Caller accesses `ctx.pending_actions` directly. A `#[cfg(test)] drain_pending_actions_headless` helper added to `App` to run pending_actions closures in headless tests without a real `ActiveEventLoop`.
+
+Deviation from spec: spec §Deferred §"Post-show dialog mutation" said this lands in Phase 3.6; `emFileDialog::Cycle`'s live `Finish(Ok)` calls force a minimal post-show mutation path in 3.5. `finish_post_show` is narrowly scoped; general `App::mutate_dialog_by_id` still Phase 3.6.
+
+Exit-condition verification:
+- `rg '\.GetResult\(\)' crates/emcore/src/emFileDialog.rs` → 4 hits, all inside `#[cfg(any())]` dead-code block.
+- `rg '\.Finish\(' crates/emcore/src/emFileDialog.rs` → 1 hit, inside `#[cfg(any())]` dead-code block.
+- `rg 'fn finish_post_show' crates/emcore/src/emDialog.rs` → 1.
+
+Stub live-caller audit (for Task 22):
+- `emDialog::GetResult` — 0 live callers (all remaining calls are in `#[cfg(any())]` test block in emFileDialog).
+- `emDialog::Finish` — 0 live callers (all remaining calls are in `#[cfg(any())]` blocks).
+- `emDialog::silent_cancel` — 0 live callers (all remaining calls are in `#[cfg(any())]` block).
+- `emDialog::look` — 0 live callers (never called from production code).
+- All four stubs are dead in production. Task 22 can delete them.
+
+New tests: `finish_post_show_sets_pending_result`, `finish_post_show_double_call_is_noop`. Gate green — nextest 2498/0/9, `cargo clippy --all-targets --all-features -- -D warnings` clean.
