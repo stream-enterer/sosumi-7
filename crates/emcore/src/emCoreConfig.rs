@@ -4,7 +4,7 @@ use std::rc::Rc;
 use crate::emConfigModel::emConfigModel;
 use crate::emContext::emContext;
 use crate::emInstallInfo::{emGetInstallPath, InstallDirType};
-use crate::emRec::{RecError, RecStruct};
+use crate::emRecParser::{RecError, RecStruct};
 use crate::emRecRecord::Record;
 use slotmap::Key as _;
 

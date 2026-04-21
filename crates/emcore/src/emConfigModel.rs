@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::emRec::{parse_rec, write_rec, write_rec_with_format, RecError};
+use crate::emRecParser::{parse_rec, write_rec, write_rec_with_format, RecError};
 use crate::emSignal::SignalId;
 
 use crate::emRecRecord::Record;

@@ -2,7 +2,7 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::emRec::{parse_rec, write_rec};
+use crate::emRecParser::{parse_rec, write_rec};
 
 use crate::emFileModel::FileState;
 use crate::emRecRecord::Record;

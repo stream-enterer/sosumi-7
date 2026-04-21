@@ -10,7 +10,7 @@ use emcore::emGUIFramework::DialogId;
 use emcore::emListBox::emListBox;
 use emcore::emLook::emLook;
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
-use emcore::emRec::{parse_rec_with_format, write_rec_with_format};
+use emcore::emRecParser::{parse_rec_with_format, write_rec_with_format};
 use emcore::emRecRecord::Record;
 
 use super::emStocksConfig::{emStocksConfig, Sorting};

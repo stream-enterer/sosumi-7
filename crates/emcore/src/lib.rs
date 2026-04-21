@@ -74,6 +74,7 @@ pub mod emRasterLayout;
 pub mod emRec;
 pub mod emRecFileModel;
 pub mod emRecNode;
+pub mod emRecParser;
 pub mod emRecRecTypes;
 pub mod emRecRecord;
 pub mod emRenderThreadPool;

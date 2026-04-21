@@ -8,7 +8,7 @@ use emcore::emEngineCtx::PanelCtx;
 use emcore::emInstallInfo::{InstallDirType, emGetInstallPath};
 use emcore::emPainter::{TextAlignment, VAlign, emPainter};
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
-use emcore::emRec::{RecError, RecStruct, RecValue};
+use emcore::emRecParser::{RecError, RecStruct, RecValue};
 use emcore::emRecRecTypes::emColorRec;
 use emcore::emRecRecord::Record;
 use emcore::emSignal::SignalId;
@@ -1057,7 +1057,7 @@ mod tests {
     fn test_parse_cpp_format() {
         // Verify we can parse the C++ emBookmarks file format (top-level
         // array of union entries).
-        use emcore::emRec::parse_rec;
+        use emcore::emRecParser::parse_rec;
         let text = r#"#%rec:emBookmarks%#
 
 Bookmark: {
@@ -1142,7 +1142,7 @@ Group: {
     #[test]
     fn test_round_trip_cpp_format() {
         // Verify that to_rec + write_rec + parse_rec + from_rec round-trips.
-        use emcore::emRec::{parse_rec, write_rec_with_format};
+        use emcore::emRecParser::{parse_rec, write_rec_with_format};
         let mut bm = emBookmarkRec::default();
         bm.entry.Name = "Test".to_string();
         bm.Hotkey = "F5".to_string();

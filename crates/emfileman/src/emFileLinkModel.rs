@@ -5,8 +5,8 @@ use std::rc::Rc;
 use emcore::emContext::emContext;
 use emcore::emFileModel::FileState;
 use emcore::emInstallInfo::{emGetInstallPath, InstallDirType};
-use emcore::emRec::{RecError, RecStruct};
 use emcore::emRecFileModel::emRecFileModel;
+use emcore::emRecParser::{RecError, RecStruct};
 use emcore::emRecRecord::Record;
 
 /// Base path type for emFileLink resolution.

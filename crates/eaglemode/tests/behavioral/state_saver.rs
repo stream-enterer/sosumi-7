@@ -1,5 +1,5 @@
-use emcore::emRec::RecError;
-use emcore::emRec::{parse_rec, write_rec, RecStruct};
+use emcore::emRecParser::RecError;
+use emcore::emRecParser::{parse_rec, write_rec, RecStruct};
 use emcore::emRecRecord::Record;
 use emcore::emWindowStateSaver::WindowGeometry;
 

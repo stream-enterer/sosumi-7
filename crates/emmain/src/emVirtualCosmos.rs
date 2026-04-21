@@ -11,7 +11,7 @@ use emcore::emInstallInfo::{InstallDirType, emGetConfigDirOverloadable, emGetIns
 use emcore::emPainter::{TextAlignment, VAlign, emPainter};
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::emPanelTree::{AutoplayHandlingFlags, PanelId};
-use emcore::emRec::{RecError, RecStruct, RecValue};
+use emcore::emRecParser::{RecError, RecStruct, RecValue};
 use emcore::emRecRecTypes::emColorRec;
 use emcore::emRecRecord::Record;
 use emcore::emResTga::load_tga;
@@ -873,7 +873,7 @@ impl PanelBehavior for emVirtualCosmosPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use emcore::emRec::RecStruct;
+    use emcore::emRecParser::RecStruct;
     use emcore::emRecRecord::Record;
 
     #[test]

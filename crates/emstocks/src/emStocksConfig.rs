@@ -3,7 +3,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use emcore::emRec::{RecStruct, RecValue};
+use emcore::emRecParser::{RecStruct, RecValue};
 use emcore::emRecRecord::{RecError, Record};
 
 use super::emStocksRec::{GetDateDifferenceParts, GetDaysOfMonth, Interest, ParseDate};

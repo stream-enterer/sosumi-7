@@ -6,7 +6,7 @@ use emcore::emInstallInfo::{InstallDirType, emGetInstallPath};
 use emcore::emPanelTree::{
     AutoplayHandlingFlags, DecodeIdentity, EncodeIdentity, PanelId, PanelTree,
 };
-use emcore::emRec::{RecError, RecStruct};
+use emcore::emRecParser::{RecError, RecStruct};
 use emcore::emRecRecord::Record;
 use emcore::emSignal::SignalId;
 use slotmap::Key as _;

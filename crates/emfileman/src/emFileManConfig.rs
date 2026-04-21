@@ -4,7 +4,7 @@ use std::rc::Rc;
 use emcore::emConfigModel::emConfigModel;
 use emcore::emContext::emContext;
 use emcore::emInstallInfo::{emGetInstallPath, InstallDirType};
-use emcore::emRec::{RecError, RecStruct};
+use emcore::emRecParser::{RecError, RecStruct};
 use emcore::emRecRecord::Record;
 use emcore::emSignal::SignalId;
 use slotmap::Key as _;
