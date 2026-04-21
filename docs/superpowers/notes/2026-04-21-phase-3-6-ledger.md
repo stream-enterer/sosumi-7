@@ -104,3 +104,58 @@ See plan §"Bootstrap decisions" (B3.6a–B3.6d).
   test asserts the extension is called exactly once per Cycle slice.
   Extension is None today — Task 3 installs it for emFileDialog.
   Gate green — nextest 2513/0/9.
+
+- **Task 3 — emFileDialog reshape (keystone):** COMPLETE — commit
+  ab336382. emFileDialog now composes a 3.5 emDialog handle and
+  installs emFileSelectionBox as a child of the dialog's content
+  panel (lazy-created via new emDialog::GetContentPanel).
+
+  AddWakeUpSignal port (emFileDialog.cpp:41): new
+  PendingTopLevel.wake_up_signals rail + emDialog::add_pre_show_wake_up_signal
+  queue pre-show subscriptions; both installers (prod + headless) drain
+  the queue immediately after register_engine + connect(close_signal).
+  Both installers also stamp DlgPanel.private_engine_id for the
+  post-show reach pattern.
+
+  File-dialog Cycle logic ported into the on_cycle_ext closure on
+  DlgPanel, running after DialogPrivateEngine::Cycle's base body. The
+  closure observes fsb.file_trigger_signal → pending_result=Ok and
+  tears down a pending overwrite dialog on its finish_signal via
+  pending_actions close_dialog_by_id. Validation-funnel P3 divergence
+  (authorized (f)): file-trigger-path and button-click-OK-path both
+  skip CheckFinish re-entry because DialogCheckFinishCb's signature
+  lacks the ctx needed for OD spawn — deferred to a later phase that
+  widens the check-finish callback. OD-result-driven overwrite_confirmed
+  promotion also deferred (outer stays open on OD-finish).
+
+  Infrastructure added:
+    * emDialog::GetContentPanel, root_panel_id, pending_mut,
+      add_pre_show_wake_up_signal.
+    * DlgPanel.overwrite_dialog + overwrite_asked + private_engine_id
+      (DIVERGED markers; placement on DlgPanel avoids Rc<RefCell<Option<emDialog>>>
+      per CLAUDE.md Do-NOT).
+    * PanelBehavior::as_file_selection_box_mut + emFileSelectionBox
+      override.
+
+  Task 4 deletions absorbed into Task 3: pub fn Cycle(&mut self, ctx)
+  deleted along with fsb_file_trigger_signal field, overwrite_result
+  Rc<Cell>, on-struct overwrite_dialog/overwrite_asked (migrated to
+  DlgPanel), test_force_overwrite_result helper, and 5 Cycle-path
+  tests (the 4 named in the controller's adaptation list plus
+  save_existing_file_triggers_overwrite_dialog_and_confirms, which
+  depended on test_force_overwrite_result).
+
+  fsb accessors migrated to with_fsb / with_fsb_mut take/put pattern
+  (~18 methods; signatures grew to &mut self). Tests exercise
+  pre-show path exclusively — acceptable at Task 3 scope; post-show
+  routing deferred.
+
+  Verification:
+    * pub fn Cycle.*PanelCtx in emFileDialog.rs = 0
+    * test_force_overwrite_result in crates/ = 0
+    * fsb_file_trigger_signal in emFileDialog.rs = 0
+    * wake_up_signals in emGUIFramework.rs ≥ 4 (8 hits)
+    * No new #[allow], no new unsafe, no new Rc<RefCell>/Arc/Mutex/Cow/Any
+      in production code.
+
+  Gate green — nextest 2508/0/9 (was 2513; 5 tests deleted per plan).
