@@ -162,8 +162,6 @@ pub struct App {
     /// callers that hold a `DialogId` locate the materialized `emWindow`
     /// in `self.windows`.
     pub dialog_windows: HashMap<DialogId, WindowId>,
-    /// Phase 3.5.A Task 9: monotonic counter feeding `allocate_dialog_id`.
-    pub(crate) next_dialog_id: u64,
     /// Framework-level deferred actions produced by scheduler/view code that
     /// need to run back on `App` between time slices. Spec §3.1 / §3.7 —
     /// passed as `&mut Vec<DeferredAction>` into `EngineScheduler::DoTimeSlice`.
@@ -227,7 +225,6 @@ impl App {
             home_window_id: None,
             pending_top_level: Vec::new(),
             dialog_windows: HashMap::new(),
-            next_dialog_id: 0,
             framework_actions: Vec::new(),
             input_state: emInputState::new(),
             pending_inputs: Vec::new(),
@@ -468,17 +465,12 @@ impl App {
         winit_window.request_redraw();
     }
 
-    /// Allocate a fresh `DialogId`. Monotonic counter.
+    /// Allocate a fresh `DialogId` via the scheduler's monotonic counter.
     ///
-    /// Phase 3.5.A Task 9. Called by `emDialog::new` (Phase 3.5 Task 5
-    /// consumer) before pushing onto `pending_top_level`.
+    /// Phase 3.5 Task 3: counter relocated from `App` to `EngineScheduler`
+    /// (spec §8); delegates here so callers need no scheduler reference.
     pub fn allocate_dialog_id(&mut self) -> DialogId {
-        let id = DialogId(self.next_dialog_id);
-        self.next_dialog_id = self
-            .next_dialog_id
-            .checked_add(1)
-            .expect("DialogId overflow — u64 exhausted");
-        id
+        self.scheduler.allocate_dialog_id()
     }
 
     /// Materialize the first pending top-level window.

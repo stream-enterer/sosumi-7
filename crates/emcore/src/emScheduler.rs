@@ -136,12 +136,10 @@ pub fn emGetClockMS() -> u64 {
 pub struct EngineScheduler {
     pub(crate) inner: EngineCtxInner,
     terminated: bool,
-    /// Phase 3.5 Task 2 — monotonic counter for `allocate_dialog_id`.
+    /// Phase 3.5 Task 3 — monotonic counter for `allocate_dialog_id`.
     /// Relocated from `App::next_dialog_id` (Phase 3.5.A Task 9) so that
     /// construction code can allocate IDs through `ConstructCtx` without
-    /// requiring `&mut App`. Matches spec §8. Task 3 wires the full body;
-    /// for now the counter is here and `App::allocate_dialog_id` delegates
-    /// to this method.
+    /// requiring `&mut App`. Permanent home per spec §8.
     pub(crate) next_dialog_id: u64,
 }
 
@@ -170,11 +168,8 @@ impl EngineScheduler {
 
     /// Allocate a fresh `DialogId`. Monotonic counter; panics on u64 overflow.
     ///
-    /// Phase 3.5 Task 2: stub implementation. Task 3 wires this into the
-    /// `ConstructCtx::allocate_dialog_id` call chain and deletes
-    /// `App::next_dialog_id`, delegating `App::allocate_dialog_id` here.
-    /// The counter field and this method are the permanent home (spec §8).
-    // Task 3: real body — replace `App::next_dialog_id` with this allocator.
+    /// Phase 3.5 Task 3: permanent home (spec §8). `App::allocate_dialog_id`
+    /// delegates here; `App::next_dialog_id` has been deleted.
     pub fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId {
         let id = crate::emGUIFramework::DialogId(self.next_dialog_id);
         self.next_dialog_id = self
@@ -182,6 +177,22 @@ impl EngineScheduler {
             .checked_add(1)
             .expect("DialogId overflow — u64 exhausted");
         id
+    }
+
+    // ── Scope query ────────────────────────────────────────────────
+
+    /// Return all engine IDs registered under `scope`.
+    ///
+    /// Phase 3.5 Task 3 (spec §6): used by `App::close_dialog_by_id` to
+    /// unregister the per-window engines associated with a dialog's toplevel
+    /// window. Ownership-forced: `emWindow` cannot borrow the scheduler, so
+    /// the query lives here.
+    pub fn engines_for_scope(&self, scope: PanelScope) -> Vec<EngineId> {
+        self.inner
+            .engine_scopes
+            .iter()
+            .filter_map(|(eid, s)| if *s == scope { Some(eid) } else { None })
+            .collect()
     }
 
     // ── Signal API ──────────────────────────────────────────────────
@@ -1380,5 +1391,44 @@ mod tests {
         );
 
         sched.remove_engine(id);
+    }
+
+    // ── Phase 3.5 Task 3 tests ──────────────────────────────────────
+
+    #[test]
+    fn scheduler_allocates_monotonic_dialog_ids() {
+        let mut s = EngineScheduler::new();
+        let a = s.allocate_dialog_id();
+        let b = s.allocate_dialog_id();
+        let c = s.allocate_dialog_id();
+        assert_eq!(a.0, 0);
+        assert_eq!(b.0, 1);
+        assert_eq!(c.0, 2);
+    }
+
+    #[test]
+    fn engines_for_scope_filters_correctly() {
+        struct Noop;
+        impl crate::emEngine::emEngine for Noop {
+            fn Cycle(&mut self, _: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
+                false
+            }
+        }
+        let mut s = EngineScheduler::new();
+        let wid = WindowId::dummy();
+        let e1 = s.register_engine(Box::new(Noop), Priority::Medium, PanelScope::Framework);
+        let e2 = s.register_engine(Box::new(Noop), Priority::Medium, PanelScope::Toplevel(wid));
+        let e3 = s.register_engine(Box::new(Noop), Priority::Medium, PanelScope::Toplevel(wid));
+
+        let fw = s.engines_for_scope(PanelScope::Framework);
+        let tl = s.engines_for_scope(PanelScope::Toplevel(wid));
+        assert_eq!(fw, vec![e1]);
+        assert_eq!(tl.len(), 2);
+        assert!(tl.contains(&e2));
+        assert!(tl.contains(&e3));
+
+        s.remove_engine(e1);
+        s.remove_engine(e2);
+        s.remove_engine(e3);
     }
 }
