@@ -371,4 +371,17 @@ pub trait PanelBehavior: AsAny {
     fn as_sub_view_panel_mut(&mut self) -> Option<&mut crate::emSubViewPanel::emSubViewPanel> {
         None
     }
+
+    /// Downcast to `emDialog::DlgPanel` without `Any`. Used by
+    /// `DialogPrivateEngine::Cycle` (phase 3.5 task 4) to reach the dialog's
+    /// mutable state (pending_result, finalized_result, finish_state, …) via
+    /// the standard `take_behavior` / `put_behavior` cycle-path — Rust analog
+    /// of the C++ `PrivateEngineClass::Dlg&` back-reference.
+    ///
+    /// The default returns `None`; only `DlgPanel` (cfg(test)-gated until
+    /// task 5) overrides this to return `Some(self)`.
+    #[cfg(test)]
+    fn as_dlg_panel_mut(&mut self) -> Option<&mut crate::emDialog::DlgPanel> {
+        None
+    }
 }

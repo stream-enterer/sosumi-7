@@ -62,7 +62,7 @@ const BOTTOM_MARGIN: f64 = 4.0;
 /// DialogPrivateEngine becomes the real consumer. Without the gate, the
 /// lib build's dead-code lint would fire on fields unused until Task 5.
 #[cfg(test)]
-pub(crate) struct DlgPanel {
+pub struct DlgPanel {
     border: emBorder,
     look: Rc<emLook>,
     /// Dialog buttons: (caption string, result payload). Rendered in the
@@ -73,9 +73,13 @@ pub(crate) struct DlgPanel {
     pub(crate) pending_result: Option<DialogResult>,
     /// Stored after the finish signal has fired. Read via `GetResult`.
     pub(crate) finalized_result: Option<DialogResult>,
-    /// Incremented by `DialogPrivateEngine::Cycle` after close_signal fires,
-    /// when auto_delete is enabled. At 3, the engine emits
-    /// `DeferredAction::CloseWindow`. C++ parity: emDialog.cpp FinishState.
+    /// Mirrors C++ `emDialog::FinishState` (emDialog.cpp:146-223). 0 = no
+    /// finish pending; 1 = Finish has been called and accepted (the next
+    /// `DialogPrivateEngine::Cycle` fires `finish_signal` and invokes
+    /// `on_finish`/`on_finished`, advancing to 2); 2..3 = auto-delete
+    /// countdown; at 3 the engine emits `DeferredAction::CloseWindow`
+    /// (C++ `delete this`). If `auto_delete` is false, state returns to
+    /// 0 after firing (C++ `!ADEnabled` branch).
     pub(crate) finish_state: u8,
     pub(crate) auto_delete: bool,
     pub(crate) finish_signal: SignalId,
@@ -89,6 +93,12 @@ pub(crate) struct DlgPanel {
     pub(crate) content_panel_id: Option<crate::emPanelTree::PanelId>,
     /// PanelId of the emLinearLayout button-row panel, set by Task 7.
     pub(crate) buttons_panel_id: Option<crate::emPanelTree::PanelId>,
+    /// Parallel `(click_signal, result)` pairs for the dialog's buttons.
+    /// Populated by Task 7 when `DlgButton` children are materialized;
+    /// empty for Task 4. `DialogPrivateEngine::Cycle` iterates these to
+    /// observe button clicks, mirroring C++ `emDialog::PrivateEngineClass`
+    /// observing button signals via `AddWakeUpSignal` (emDialog.cpp:38).
+    pub(crate) button_signals: Vec<(SignalId, DialogResult)>,
 }
 
 #[cfg(test)]
@@ -108,6 +118,7 @@ impl DlgPanel {
             on_finished: None,
             content_panel_id: None,
             buttons_panel_id: None,
+            button_signals: Vec::new(),
         }
     }
 
@@ -118,6 +129,10 @@ impl DlgPanel {
 
 #[cfg(test)]
 impl PanelBehavior for DlgPanel {
+    fn as_dlg_panel_mut(&mut self) -> Option<&mut DlgPanel> {
+        Some(self)
+    }
+
     fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
         let pixel_scale = 1.0; // DlgPanel is the view root; no enclosing scaling
         self.border
@@ -293,6 +308,188 @@ impl PanelBehavior for DlgButton {
 
     fn GetCursor(&self) -> emCursor {
         self.button.GetCursor()
+    }
+}
+
+/// Port of C++ `emDialog::PrivateEngineClass` (emDialog.h:203-210,
+/// emDialog.cpp:194-224). Installed at `Priority::High` and wired to
+/// `close_signal` (C++: `AddWakeUpSignal(GetCloseSignal())` in the
+/// `emDialog` ctor, emDialog.cpp:38). `Cycle` ports `PrivateCycle`
+/// (emDialog.cpp:194-224) beat-for-beat:
+///   1. Close signal observed ⇒ `pending_result = Cancel` (C++ Finish(NEGATIVE)).
+///   2. Iterate button click signals ⇒ `pending_result = button.result`
+///      (C++ `DlgButton::Clicked` calls `GetWindow()->Finish(Result)`; in
+///      Rust the engine observes the signal — see `DlgButton` doc comment).
+///   3. If `pending_result` set and not yet finalized, run `on_check_finish`
+///      veto → finalize, fire `finish_signal`, invoke `on_finish`/`on_finished`
+///      (C++ `Finish` + `FinishState==1` branch).
+///   4. Auto-delete countdown: 3 slices after finalize, emit
+///      `DeferredAction::CloseWindow` (C++ `delete this` at FinishState==4).
+///
+/// `#[cfg(test)]`-gated until Task 5 wires it into emDialog construction.
+/// The `install` associated function mirrors the ctor's "create + priority +
+/// wake-up-signal + connect" sequence (emDialog.cpp:37-38).
+#[cfg(test)]
+pub(crate) struct DialogPrivateEngine {
+    pub(crate) root_panel_id: crate::emPanelTree::PanelId,
+    pub(crate) window_id: Option<winit::window::WindowId>,
+    pub(crate) close_signal: SignalId,
+}
+
+#[cfg(test)]
+impl DialogPrivateEngine {
+    /// Register the engine at `Priority::High` and connect `close_signal` to
+    /// its wake-up set. Ports the C++ ctor sequence
+    /// (emDialog.cpp:37-38: `SetEnginePriority(HIGH_PRIORITY)` +
+    /// `AddWakeUpSignal(GetCloseSignal())`).
+    pub(crate) fn install(
+        self,
+        scheduler: &mut crate::emScheduler::EngineScheduler,
+        tree_location: crate::emEngine::TreeLocation,
+    ) -> crate::emEngine::EngineId {
+        let close_signal = self.close_signal;
+        let engine_id = scheduler.register_engine(
+            Box::new(self),
+            crate::emEngine::Priority::High,
+            tree_location,
+        );
+        scheduler.connect(close_signal, engine_id);
+        engine_id
+    }
+}
+
+#[cfg(test)]
+impl crate::emEngine::emEngine for DialogPrivateEngine {
+    fn Cycle(&mut self, ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
+        // Port of emDialog::PrivateCycle (emDialog.cpp:194-224).
+        //
+        // Step 0: detach DlgPanel behavior — Rust analog of the C++
+        // `PrivateEngineClass::Dlg&` back-reference. After `take_behavior`,
+        // `tree`'s borrow is returned and we may freely call `as_sched_ctx`
+        // on `ctx` to invoke widget callbacks. No `unsafe` needed.
+        let Some(mut behavior) = ctx.tree.take_behavior(self.root_panel_id) else {
+            // Panel gone — nothing to do.
+            return false;
+        };
+
+        let stay_awake = {
+            let Some(dlg) = behavior.as_dlg_panel_mut() else {
+                // Non-DlgPanel at root_panel_id: wiring bug. Put it back and
+                // go to sleep — defensive no-op.
+                ctx.tree.put_behavior(self.root_panel_id, behavior);
+                return false;
+            };
+
+            // Step 1: close_signal → Cancel (emDialog.cpp:196-198
+            // `if (IsSignaled(GetCloseSignal())) Finish(NEGATIVE);`).
+            // Guard on `pending_result.is_none() && finalized_result.is_none()`
+            // matches `Finish`'s "no-op once result is set" semantics
+            // (emDialog.cpp: once Result is Finalized, subsequent Finish calls
+            // through PrivateCycle short-circuit via FinishState>0 branches).
+            if ctx.IsSignaled(self.close_signal)
+                && dlg.pending_result.is_none()
+                && dlg.finalized_result.is_none()
+            {
+                dlg.pending_result = Some(DialogResult::Cancel);
+            }
+
+            // Step 2: button click signals (Task 7 populates button_signals).
+            // Iterated by value to avoid aliasing `dlg.button_signals` with
+            // `dlg.pending_result` writes.
+            let button_fires: Vec<DialogResult> = dlg
+                .button_signals
+                .iter()
+                .filter_map(|(sig, result)| {
+                    if ctx.IsSignaled(*sig) {
+                        Some(result.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for result in button_fires {
+                if dlg.pending_result.is_none() && dlg.finalized_result.is_none() {
+                    dlg.pending_result = Some(result);
+                }
+            }
+
+            // Step 3: pending_result set → check_finish veto → finalize
+            // (sets finish_state=1). Ports the body of C++ emDialog::Finish
+            // (emDialog.cpp:146-153): if CheckFinish accepts, Result=r and
+            // FinishState=1. The signal fire + Finished invocation live in
+            // the FinishState==1 branch below, matching C++ structure.
+            if let Some(pending) = dlg.pending_result.take() {
+                let vetoed = if let Some(cb) = dlg.on_check_finish.as_mut() {
+                    !cb(&pending)
+                } else {
+                    false
+                };
+                if !vetoed && dlg.finish_state == 0 {
+                    dlg.finalized_result = Some(pending);
+                    dlg.finish_state = 1;
+                }
+            }
+
+            // Step 4: state-machine dispatch. Ports emDialog.cpp:200-223
+            // (PrivateCycle if/else chain) one-to-one.
+            //
+            // C++:
+            //   if (FinishState<=0) return false;
+            //   else if (FinishState==1) { FinishState=2; Signal(FinishSignal); Finished(Result); return true; }
+            //   else if (!ADEnabled) { FinishState=0; return false; }
+            //   else if (FinishState<3) { FinishState++; return true; }
+            //   else { delete this; return false; }
+            //
+            // DIVERGED: `delete this` becomes a deferred
+            // `DeferredAction::CloseWindow`, because emWindow lifetime is
+            // owned by emGUIFramework rather than self-destructed.
+            let state = dlg.finish_state;
+            if state == 0 {
+                false
+            } else if state == 1 {
+                // Advance first, then fire + invoke callbacks. Matches C++
+                // ordering: FinishState=2 is observable to any code the
+                // Signal/Finished call chain reaches (emDialog.cpp:204-206).
+                dlg.finish_state = 2;
+                let finish_signal = dlg.finish_signal;
+                let result = dlg
+                    .finalized_result
+                    .clone()
+                    .expect("finish_state==1 implies finalized_result is set");
+                // Take callbacks to avoid aliasing with ctx.as_sched_ctx();
+                // leave None afterwards — C++ invokes `Finished(Result)`
+                // exactly once per dialog (virtual dispatch, no re-arm).
+                let mut on_finish = dlg.on_finish.take();
+                let mut on_finished = dlg.on_finished.take();
+                let mut sched = ctx.as_sched_ctx();
+                sched.fire(finish_signal);
+                if let Some(cb) = on_finish.as_mut() {
+                    cb(&result, &mut sched);
+                }
+                if let Some(cb) = on_finished.as_mut() {
+                    cb(&result, &mut sched);
+                }
+                true
+            } else if !dlg.auto_delete {
+                dlg.finish_state = 0;
+                false
+            } else if dlg.finish_state < 3 {
+                dlg.finish_state += 1;
+                true
+            } else {
+                // state == 3 (or greater): `delete this` in C++.
+                if let Some(wid) = self.window_id {
+                    ctx.framework_action(crate::emEngineCtx::DeferredAction::CloseWindow(wid));
+                }
+                false
+            }
+        };
+
+        // Step 5: put DlgPanel behavior back.
+        if ctx.tree.panels.contains_key(self.root_panel_id) {
+            ctx.tree.put_behavior(self.root_panel_id, behavior);
+        }
+        stay_awake
     }
 }
 
@@ -807,6 +1004,7 @@ mod tests {
         assert!(panel.on_finished.is_none());
         assert!(panel.content_panel_id.is_none());
         assert!(panel.buttons_panel_id.is_none());
+        assert!(panel.button_signals.is_empty());
         panel.SetTitle("New");
     }
 
@@ -958,5 +1156,145 @@ mod tests {
         // Verify the dialog still functions after title change.
         dlg.Finish(DialogResult::Ok, &mut ctx);
         assert_eq!(dlg.GetResult(), Some(&DialogResult::Ok));
+    }
+
+    #[test]
+    fn private_engine_observes_close_signal_sets_pending_cancel() {
+        // Ports the C++ PrivateCycle close-signal branch (emDialog.cpp:196-198):
+        //   if (IsSignaled(GetCloseSignal())) Finish(NEGATIVE);
+        // Expectation after one DoTimeSlice: finalized_result == Cancel,
+        // finish_state == 2 (C++ FinishState==1 branch advances to 2 after
+        // firing FinishSignal, emDialog.cpp:203-206), and a probe engine
+        // connected to finish_signal has been awoken exactly once.
+        use crate::emEngine::TreeLocation;
+        use std::collections::HashMap;
+        use winit::window::WindowId;
+
+        let mut sched = EngineScheduler::new();
+        let mut tree = PanelTree::new();
+        let root_id = tree.create_root("dlg", false);
+
+        let finish_sig = sched.create_signal();
+        let close_sig = sched.create_signal();
+
+        // Attach DlgPanel behavior to the root panel.
+        let dlg_panel = DlgPanel::new("Test", emLook::new(), finish_sig);
+        tree.set_behavior(root_id, Box::new(dlg_panel));
+
+        // Probe engine: counts its own Cycle invocations. Connected to
+        // `finish_sig`, it will be woken in the slice where the signal
+        // fires — a direct observation of `Signal(FinishSignal)`.
+        struct FinishProbe {
+            hits: Rc<RefCell<u32>>,
+        }
+        impl crate::emEngine::emEngine for FinishProbe {
+            fn Cycle(&mut self, _ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
+                *self.hits.borrow_mut() += 1;
+                false
+            }
+        }
+        let hits: Rc<RefCell<u32>> = Rc::new(RefCell::new(0));
+        let probe_id = sched.register_engine(
+            Box::new(FinishProbe {
+                hits: Rc::clone(&hits),
+            }),
+            crate::emEngine::Priority::Medium,
+            TreeLocation::Outer,
+        );
+        sched.connect(finish_sig, probe_id);
+
+        // Install the private engine (High priority + wake-up connection).
+        let engine = DialogPrivateEngine {
+            root_panel_id: root_id,
+            window_id: None,
+            close_signal: close_sig,
+        };
+        let engine_id = engine.install(&mut sched, TreeLocation::Outer);
+
+        // Fire close signal and run one slice.
+        sched.fire(close_sig);
+
+        let mut windows: HashMap<WindowId, crate::emWindow::emWindow> = HashMap::new();
+        let root_context = crate::emContext::emContext::NewRoot();
+        let mut framework_actions: Vec<DeferredAction> = Vec::new();
+        let mut pending_inputs: Vec<(WindowId, emInputEvent)> = Vec::new();
+        let mut input_state = emInputState::new();
+        let fc: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+
+        sched.DoTimeSlice(
+            &mut tree,
+            &mut windows,
+            &root_context,
+            &mut framework_actions,
+            &mut pending_inputs,
+            &mut input_state,
+            &fc,
+        );
+
+        // Direct probe: finish_signal fired exactly once during the slice.
+        assert_eq!(
+            *hits.borrow(),
+            1,
+            "finish_signal must fire exactly once when close_signal is observed",
+        );
+
+        // Inspect DlgPanel state after the cycle.
+        let mut behavior = tree.take_behavior(root_id).expect("behavior reinstated");
+        {
+            let dlg = behavior.as_dlg_panel_mut().expect("is DlgPanel");
+            assert_eq!(
+                dlg.finalized_result,
+                Some(DialogResult::Cancel),
+                "close_signal should finalize to Cancel"
+            );
+            assert_eq!(
+                dlg.finish_state, 2,
+                "FinishState==1 branch advances to 2 after firing FinishSignal",
+            );
+            assert!(
+                dlg.pending_result.is_none(),
+                "pending_result consumed by finalize"
+            );
+        }
+        tree.put_behavior(root_id, behavior);
+
+        // Without auto_delete, the next Cycle hits the C++ `!ADEnabled`
+        // branch: FinishState=0, return false. finish_signal must NOT
+        // fire again. Re-fire close_signal too — the engine is already
+        // finalized and must ignore it.
+        sched.fire(close_sig);
+        sched.DoTimeSlice(
+            &mut tree,
+            &mut windows,
+            &root_context,
+            &mut framework_actions,
+            &mut pending_inputs,
+            &mut input_state,
+            &fc,
+        );
+        assert_eq!(
+            *hits.borrow(),
+            1,
+            "finish_signal must not re-fire on subsequent slices",
+        );
+        let mut behavior = tree.take_behavior(root_id).expect("still present");
+        {
+            let dlg = behavior.as_dlg_panel_mut().unwrap();
+            assert_eq!(
+                dlg.finalized_result,
+                Some(DialogResult::Cancel),
+                "repeated close_signal must not re-finalize"
+            );
+            assert_eq!(
+                dlg.finish_state, 0,
+                "!ADEnabled branch resets FinishState to 0",
+            );
+        }
+        tree.put_behavior(root_id, behavior);
+
+        // Teardown.
+        sched.remove_engine(engine_id);
+        sched.remove_engine(probe_id);
+        sched.clear_pending_for_tests();
     }
 }

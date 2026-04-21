@@ -59,3 +59,34 @@ See plan §"Bootstrap decisions" (B3.5a–B3.5e).
     `look` is required by `emButton::new`'s actual signature
     (`emButton.rs:46`). Plan text (line 674) predicted only `ctx`; adjusted
     to match real signature.
+- **Task 4 — DialogPrivateEngine:** this commit. `DialogPrivateEngine`
+  struct + `impl emEngine` added to emDialog.rs (`#[cfg(test)]`-gated until
+  Task 5 wires it into emDialog construction). `install` associated
+  function registers at `Priority::High` + connects `close_signal` (C++
+  emDialog.cpp:37-38: `SetEnginePriority(HIGH_PRIORITY)` +
+  `AddWakeUpSignal(GetCloseSignal())`). `Cycle` ports `PrivateCycle`
+  (emDialog.cpp:194-224) beat-for-beat: close_signal → Cancel; iterate
+  button click signals (Task 7 populates `DlgPanel.button_signals`, empty
+  for Task 4); on_check_finish veto → finalize + fire finish_signal +
+  on_finish/on_finished; auto-delete countdown emits
+  `DeferredAction::CloseWindow` at finish_state ≥ 3. Trait method
+  `PanelBehavior::as_dlg_panel_mut(&mut self) -> Option<&mut DlgPanel>`
+  added next to `as_sub_view_panel_mut` (cfg(test)-gated because its
+  return type is cfg(test)-gated); DlgPanel overrides to `Some(self)`.
+  DlgPanel gained `button_signals: Vec<(SignalId, DialogResult)>` field
+  (Task 7 populates). One new test
+  (`private_engine_observes_close_signal_sets_pending_cancel`) drives
+  the full close → finalize → signal path via one `DoTimeSlice`. Gate
+  green — nextest 2483/0/9.
+  - No `unsafe` needed: `tree.take_behavior(root_panel_id)` returns
+    owned `Box<dyn PanelBehavior>`, releasing `&mut tree`; subsequent
+    `ctx.as_sched_ctx()` and `ctx.framework_action(...)` calls on
+    `EngineCtx` borrow disjoint fields. Diverges from plan text lines
+    828-847, which proposed an `unsafe { &mut *sched_sched }` mirror of
+    `emPanelCycleEngine::Cycle` — that pattern is only needed when tree
+    aliases scheduler, which is not our situation.
+  - DlgPanel's struct-level visibility bumped from `pub(crate)` to `pub`
+    (still cfg(test)-gated) because the trait method signature on public
+    trait `PanelBehavior` would otherwise trigger `private_interfaces`.
+    Task 5 removes the cfg gate; at that point DlgPanel is legitimately
+    part of the public surface of the dialog (widget types are pub).
