@@ -1379,6 +1379,15 @@
       "context": "Task 3's livelock fix (commit d99cedea) ensures OD POSITIVE promotes overwrite_asked→overwrite_confirmed + sets outer pending_result=Ok. Mechanical-arbiter end-to-end test deferred because install_pending_top_level_headless takes no WindowId parameter and collides when two dialogs (outer + OD) both try to install headlessly. Source-read evidence exists; end-to-end test requires parameterizing headless-install with a caller-supplied WindowId.",
       "resolution_path": "Parameterize install_pending_top_level_headless with WindowId argument; write end-to-end test that (1) builds Save-mode FD on an existing file, (2) drives CheckFinish to spawn OD, (3) drives OD POSITIVE via a helper that sets OD-DlgPanel.pending_result, (4) runs slices, (5) asserts outer.finish_signal pending + outer.GetResult == Ok + outer.DlgPanel.overwrite_confirmed == asked-text.",
       "phase_3_6_progress": "Task 5 wrote scheduler-driven tests for fsb-trigger, OD-finish observation + teardown, OD-NEGATIVE, and no-signal baseline. POSITIVE path covered by source-read only."
+    },
+    {
+      "id": "E041",
+      "title": "emFileDialog::CheckFinish / run_file_dialog_check_finish duplication",
+      "origin": "Phase 3.6.1 Task 2",
+      "status": "open",
+      "context": "Task 2 installed run_file_dialog_check_finish (free fn, post-show closure path) but left emFileDialog::CheckFinish (pre-show public method) with the validation body duplicated. Two call sites encode the C++ algorithm; drift risk if C++ updates. Reviewer flagged.",
+      "resolution_path": "Refactor emFileDialog::CheckFinish to dispatch to run_file_dialog_check_finish based on self.dialog.pending state. Migrate 4 call sites (2 unit tests + 2 e024 tests) to the new return shape if it changes.",
+      "phase_3_6_1_progress": "Task 2 shipped with duplication; acknowledged and deferred."
     }
   ]
 }

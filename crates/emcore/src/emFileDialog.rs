@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use super::emDialog::{emDialog, DialogResult};
-use crate::emEngineCtx::ConstructCtx;
+use super::emDialog::{emDialog, DialogResult, DlgPanel};
+use crate::emEngineCtx::{ConstructCtx, EngineCtx};
 use crate::emFileSelectionBox::emFileSelectionBox;
 use crate::emLook::emLook;
 use crate::emPanelTree::PanelId;
@@ -132,18 +132,10 @@ impl emFileDialog {
                 //       }
                 //   }
                 //
-                // DIVERGED (validation-funnel, Phase 3.6 Task 3, P3):
-                // C++ `Finish(POSITIVE)` on the fsb file-trigger path
-                // re-enters `CheckFinish` for validation. Rust shape sets
-                // `pending_result` directly without that re-entry because
-                // `DialogCheckFinishCb`'s signature (`&DialogResult -> bool`)
-                // lacks the ctx needed for an OD spawn. Widening the
-                // check-finish callback signature is a later phase. The
-                // OD-POSITIVE path (below) now matches C++: the closure
-                // reads OD's `finalized_result`, promotes
-                // `overwrite_asked → overwrite_confirmed` on POSITIVE,
-                // tears down OD, and sets `pending_result = Ok` so the
-                // outer dialog finalizes.
+                // Phase 3.6.1 Task 2: P3 divergence closed. Setting
+                // `pending_result = Some(Ok)` on file-trigger now re-enters
+                // the widened `on_check_finish` closure via base cycle
+                // step 3 — single funnel, matches C++.
 
                 // DIVERGED: Rust-specific re-wake. The base
                 // `DialogPrivateEngine::Cycle` body runs BEFORE on_cycle_ext
@@ -235,7 +227,41 @@ impl emFileDialog {
             },
         );
 
-        // Install the extension on DlgPanel via the pre-show tree reach.
+        // Phase 3.6.1 Task 2: install on_check_finish closure — the
+        // validation funnel for both fsb-trigger and button-click OK
+        // paths. Captures nothing; reads fsb_panel_id + mode +
+        // dir_allowed fresh from `outer_dlg` each fire (fields mirrored
+        // onto DlgPanel below). Delegates to `run_file_dialog_check_finish`
+        // which performs the dir-check + Open-existence + Save-overwrite
+        // logic and spawns the overwrite-confirmation OD on demand.
+        let on_check_finish: crate::emDialog::DialogCheckFinishCb = Box::new(
+            move |result: &DialogResult,
+                  outer_dlg: &mut DlgPanel,
+                  ctx: &mut EngineCtx<'_>|
+                  -> bool {
+                let fsb_id = outer_dlg
+                    .fsb_panel_id_for_check_finish
+                    .expect("emFileDialog fsb_panel_id_for_check_finish set");
+                let mode = outer_dlg
+                    .file_dialog_mode
+                    .expect("emFileDialog file_dialog_mode set");
+                let dir_allowed = outer_dlg.file_dialog_dir_allowed;
+                let look_rc = outer_dlg.look.clone();
+                run_file_dialog_check_finish(
+                    ctx,
+                    outer_dlg,
+                    fsb_id,
+                    mode,
+                    dir_allowed,
+                    look_rc,
+                    result,
+                )
+                .is_ok()
+            },
+        );
+
+        // Install extension + check-finish + mirror DlgPanel fields via
+        // one pre-show tree reach.
         let root_panel_id = dialog.root_panel_id();
         {
             let pending = dialog.pending_mut();
@@ -243,6 +269,10 @@ impl emFileDialog {
             if let Some(mut behavior) = tree.take_behavior(root_panel_id) {
                 if let Some(dlg_panel) = behavior.as_dlg_panel_mut() {
                     dlg_panel.on_cycle_ext = Some(on_cycle_ext);
+                    dlg_panel.on_check_finish = Some(on_check_finish);
+                    dlg_panel.file_dialog_mode = Some(mode);
+                    dlg_panel.file_dialog_dir_allowed = false;
+                    dlg_panel.fsb_panel_id_for_check_finish = Some(fsb_panel_id);
                 }
                 tree.put_behavior(root_panel_id, behavior);
             }
@@ -279,6 +309,23 @@ impl emFileDialog {
 
     pub fn set_directory_result_allowed(&mut self, allowed: bool) {
         self.dir_allowed = allowed;
+        // Phase 3.6.1 Task 2: mirror onto DlgPanel for the on_check_finish
+        // closure's read path. Pre-show: tree reach; post-show: deferred
+        // via pending_actions → mutate_dialog_by_id.
+        if self.dialog.pending.is_some() {
+            let root_panel_id = self.dialog.root_panel_id();
+            let pending = self.dialog.pending_mut();
+            let tree = pending.window.tree_mut();
+            if let Some(mut behavior) = tree.take_behavior(root_panel_id) {
+                if let Some(p) = behavior.as_dlg_panel_mut() {
+                    p.file_dialog_dir_allowed = allowed;
+                }
+                tree.put_behavior(root_panel_id, behavior);
+            }
+        }
+        // NOTE: post-show branch omitted — requires `&mut App` / ctx which
+        // this setter doesn't take. No in-tree caller flips dir_allowed
+        // post-show today. Scope-expand if/when such a caller arrives.
     }
 
     pub fn dialog(&self) -> &emDialog {
@@ -580,6 +627,146 @@ impl emFileDialog {
         }
 
         FileDialogCheckResult::Allow
+    }
+}
+
+/// DIVERGED (Phase 3.6.1 Task 2): shared validation body for the
+/// widened `DialogCheckFinishCb` closure installed by `emFileDialog::new`.
+/// Post-show-only. Ports C++ `emFileDialog::CheckFinish`
+/// (emFileDialog.cpp:110-199): dir-check, Open existence, Save overwrite
+/// detection + OD spawn.
+///
+/// C++'s `CheckFinish` is a virtual method that reaches into `this`
+/// directly; Rust's `'static + FnMut` closure can't capture `&mut emFileDialog`,
+/// so the read path (fsb_panel_id + mode + dir_allowed + look) is passed
+/// as explicit arguments or reached through `&mut DlgPanel`.
+///
+/// Returns `Ok(())` to allow finalization; `Err(reason)` to veto. On a
+/// Save-mode overwrite conflict the function spawns the "File Exists"
+/// sub-dialog inline (parks it on `outer_dlg.overwrite_dialog`, subscribes
+/// its finish_signal to the caller engine) before returning
+/// `Err(ConfirmOverwrite(..))`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_file_dialog_check_finish(
+    ctx: &mut EngineCtx<'_>,
+    outer_dlg: &mut DlgPanel,
+    fsb_panel_id: PanelId,
+    mode: FileDialogMode,
+    dir_allowed: bool,
+    look: Rc<emLook>,
+    result: &DialogResult,
+) -> Result<(), FileDialogCheckResult> {
+    // Cancel always allowed (C++ emFileDialog.cpp:117).
+    if *result == DialogResult::Cancel {
+        return Ok(());
+    }
+
+    // Read fsb state via ctx.tree take/put.
+    let (names, parent) = {
+        let tree = ctx
+            .tree
+            .as_deref_mut()
+            .expect("run_file_dialog_check_finish: tree present");
+        let mut fsb_behavior = tree
+            .take_behavior(fsb_panel_id)
+            .expect("fsb panel behavior present");
+        let (n, p) = {
+            let fsb = fsb_behavior
+                .as_file_selection_box_mut()
+                .expect("fsb behavior is emFileSelectionBox");
+            (
+                fsb.GetSelectedNames().to_vec(),
+                fsb.GetParentDirectory().to_path_buf(),
+            )
+        };
+        tree.put_behavior(fsb_panel_id, fsb_behavior);
+        (n, p)
+    };
+
+    // C++ emFileDialog.cpp:119-146 — dir-check.
+    if !dir_allowed {
+        if names.is_empty() {
+            return Err(FileDialogCheckResult::Error("No file selected".to_string()));
+        }
+        for name in &names {
+            let path = parent.join(name);
+            if path.is_dir() {
+                if names.len() == 1 {
+                    return Err(FileDialogCheckResult::EnterDirectory(name.clone()));
+                }
+                return Err(FileDialogCheckResult::Error(format!(
+                    "Directory selected: {}",
+                    name
+                )));
+            }
+        }
+    }
+
+    match mode {
+        FileDialogMode::Open => {
+            // C++ emFileDialog.cpp:148-163 — existence check.
+            for name in &names {
+                let path = parent.join(name);
+                if !path.exists() {
+                    return Err(FileDialogCheckResult::Error(format!(
+                        "The following file cannot be opened, because it does not exist:\n\n{}",
+                        path.display()
+                    )));
+                }
+            }
+            Ok(())
+        }
+        FileDialogMode::Save => {
+            // C++ emFileDialog.cpp:165-199 — overwrite detection + OD spawn.
+            let mut paths_to_overwrite = Vec::new();
+            for name in &names {
+                let path = parent.join(name);
+                if path.exists() {
+                    paths_to_overwrite.push(path);
+                }
+            }
+            if paths_to_overwrite.is_empty() {
+                // No conflict — clear any stale overwrite_confirmed.
+                outer_dlg.overwrite_confirmed.clear();
+                return Ok(());
+            }
+            let text = if paths_to_overwrite.len() == 1 {
+                format!(
+                    "Are you sure to overwrite the following already existing file?\n\n{}",
+                    paths_to_overwrite[0].display()
+                )
+            } else {
+                let mut msg =
+                    "Are you sure to overwrite the following already existing files?\n".to_string();
+                for p in &paths_to_overwrite {
+                    msg.push('\n');
+                    msg.push_str(&p.display().to_string());
+                }
+                msg
+            };
+            if text == outer_dlg.overwrite_confirmed {
+                // C++ emFileDialog.cpp:185 — already confirmed; allow.
+                return Ok(());
+            }
+            // Spawn OD. Port of C++ emFileDialog.cpp:186-197:
+            //   if (OverwriteDialog) delete OverwriteDialog.Get();
+            //   OverwriteAsked=text;
+            //   OverwriteDialog=new emDialog(...);
+            //   ... AddOKCancelButtons ...
+            //   AddWakeUpSignal(OverwriteDialog->GetFinishSignal());
+            let mut od = emDialog::new(ctx, "File Exists", look);
+            od.AddCustomButton(ctx, "OK", DialogResult::Ok);
+            od.AddCustomButton(ctx, "Cancel", DialogResult::Cancel);
+            let od_finish_sig = od.finish_signal;
+            // Subscribe outer engine to OD's finish_signal.
+            let outer_engine_id = ctx.engine_id;
+            ctx.scheduler.connect(od_finish_sig, outer_engine_id);
+            od.show(ctx);
+            outer_dlg.overwrite_dialog = Some(od);
+            outer_dlg.overwrite_asked = text;
+            Err(FileDialogCheckResult::ConfirmOverwrite(paths_to_overwrite))
+        }
+        FileDialogMode::Select => Ok(()),
     }
 }
 

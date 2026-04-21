@@ -31,11 +31,14 @@ pub enum DialogResult {
 }
 
 type DialogFinishCb = crate::emEngineCtx::WidgetCallbackRef<DialogResult>;
-// DIVERGED: `DialogCheckFinishCb` returns `bool` (veto semantics),
-// which is structurally incompatible with both `WidgetCallback<Args>` and
-// `WidgetCallbackRef<T>` (both return `()`). The divergence is the return
-// value, not the payload lifetime. Remains a plain `Box<dyn FnMut>`.
-type DialogCheckFinishCb = Box<dyn FnMut(&DialogResult) -> bool>;
+/// DIVERGED: C++ `emDialog::CheckFinish` is a virtual method with no
+/// extra args — subclasses reach into self's fields directly. Rust uses
+/// a callback slot on `DlgPanel`; the closure needs `&mut DlgPanel` +
+/// `&mut EngineCtx<'_>` to read tree state (e.g. emFileDialog's fsb
+/// child panel) and spawn transient sub-dialogs. Matches `DialogCycleExt`
+/// (Phase 3.6 Task 2).
+pub(crate) type DialogCheckFinishCb =
+    Box<dyn FnMut(&DialogResult, &mut DlgPanel, &mut crate::emEngineCtx::EngineCtx<'_>) -> bool>;
 
 /// Modal dialog handle.
 ///
@@ -484,7 +487,7 @@ impl emDialog {
 ///
 pub struct DlgPanel {
     pub(crate) border: emBorder,
-    look: Rc<emLook>,
+    pub(crate) look: Rc<emLook>,
     /// Set by `DlgPanel::on_finish` once `CheckFinish` permits. `DialogPrivateEngine`
     /// observes this on Cycle and fires `finish_signal`.
     pub(crate) pending_result: Option<DialogResult>,
@@ -571,6 +574,28 @@ pub struct DlgPanel {
     /// without reaching back into `emFileDialog`. Placement rationale
     /// matches `overwrite_dialog` / `overwrite_asked`.
     pub(crate) overwrite_confirmed: String,
+    /// DIVERGED (Phase 3.6.1 Task 2): file-dialog mode mirrored from
+    /// `emFileDialog::mode` onto DlgPanel so the `'static + FnMut`
+    /// `on_check_finish` closure — which has only `&mut DlgPanel` +
+    /// `&mut EngineCtx`, not `&mut emFileDialog` — reads fresh state per
+    /// fire. `None` for plain emDialogs (no file-dialog validation).
+    /// Rust-only consolidation: C++ subclass `emFileDialog` stores `Mode`
+    /// directly on itself and reaches it via `this` inside virtual
+    /// `CheckFinish`; Rust callback slot can't reach across struct
+    /// boundaries, so the read path lives on DlgPanel. Writes are mirrored
+    /// from `emFileDialog` (authoritative outward API) via
+    /// `with_dlg_panel_mut` pre-show / `App::mutate_dialog_by_id` post-show.
+    pub(crate) file_dialog_mode: Option<crate::emFileDialog::FileDialogMode>,
+    /// DIVERGED (Phase 3.6.1 Task 2): mirrors `emFileDialog::dir_allowed`
+    /// onto DlgPanel for the `on_check_finish` closure's read path. Same
+    /// rationale as `file_dialog_mode` above. `false` default matches
+    /// `emFileDialog::new` default.
+    pub(crate) file_dialog_dir_allowed: bool,
+    /// DIVERGED (Phase 3.6.1 Task 2): mirrors `emFileDialog::fsb_panel_id`
+    /// onto DlgPanel so the `on_check_finish` closure can reach the
+    /// emFileSelectionBox child via `take_behavior(fsb_panel_id)` through
+    /// its `&mut EngineCtx` tree. `None` for plain emDialogs.
+    pub(crate) fsb_panel_id_for_check_finish: Option<crate::emPanelTree::PanelId>,
 }
 
 impl DlgPanel {
@@ -594,6 +619,9 @@ impl DlgPanel {
             private_engine_id: None,
             overwrite_asked: String::new(),
             overwrite_confirmed: String::new(),
+            file_dialog_mode: None,
+            file_dialog_dir_allowed: false,
+            fsb_panel_id_for_check_finish: None,
         }
     }
 
@@ -887,8 +915,10 @@ impl crate::emEngine::emEngine for DialogPrivateEngine {
             // FinishState=1. The signal fire + Finished invocation live in
             // the FinishState==1 branch below, matching C++ structure.
             if let Some(pending) = dlg.pending_result.take() {
-                let vetoed = if let Some(cb) = dlg.on_check_finish.as_mut() {
-                    !cb(&pending)
+                let vetoed = if let Some(mut cb) = dlg.on_check_finish.take() {
+                    let vetoed = !cb(&pending, dlg, ctx);
+                    dlg.on_check_finish = Some(cb);
+                    vetoed
                 } else {
                     false
                 };
@@ -1810,7 +1840,7 @@ mod tests {
         let mut init = TestInit::new();
         let look = emLook::new();
         let mut dlg = emDialog::new(&mut init.ctx(), "Test", look);
-        dlg.set_on_check_finish(Box::new(|_r| true));
+        dlg.set_on_check_finish(Box::new(|_r, _dlg, _ctx| true));
 
         let pending = dlg.pending.as_mut().unwrap();
         let tree = pending.window.tree_mut();
@@ -1831,7 +1861,7 @@ mod tests {
         let look = emLook::new();
         let mut dlg = emDialog::new(&mut init.ctx(), "Test", look);
         let _ = dlg.pending.take();
-        dlg.set_on_check_finish(Box::new(|_r| true));
+        dlg.set_on_check_finish(Box::new(|_r, _dlg, _ctx| true));
     }
 
     // ─── Task 9 tests ────────────────────────────────────────────────────────
@@ -2116,7 +2146,7 @@ mod tests {
             };
             let look = emLook::new();
             let mut dlg = emDialog::new(&mut ctx, "Veto", look);
-            dlg.set_on_check_finish(Box::new(move |_r| {
+            dlg.set_on_check_finish(Box::new(move |_r, _dlg, _ctx| {
                 let mut n = veto_clone.borrow_mut();
                 *n += 1;
                 *n > 1 // false on first call, true on subsequent
@@ -2470,6 +2500,113 @@ mod tests {
 
         // Teardown.
         app.pending_actions.borrow_mut().clear();
+        app.scheduler.remove_engine(engine_id);
+        app.scheduler.clear_pending_for_tests();
+    }
+
+    // ─── Phase 3.6.1 Task 1 test ─────────────────────────────────────────────
+
+    /// Asserts that the widened `DialogCheckFinishCb` receives a live
+    /// `&mut DlgPanel` and a live `&mut EngineCtx<'_>`.
+    ///
+    /// - Reads `ctx.engine_id` to prove `EngineCtx` is accessible.
+    /// - Mutates `dlg.auto_delete` to prove `DlgPanel` is mutably reachable
+    ///   (and observes the mutation after the Cycle).
+    /// - Captures `Rc<Cell<bool>>` flag; asserts it is set after the Cycle.
+    /// - Returns `true` (don't veto) so finalization proceeds normally.
+    #[test]
+    fn check_finish_widened_args_reachable() {
+        use crate::emEngineCtx::InitCtx;
+        use crate::emGUIFramework::App;
+        use std::cell::Cell;
+        use winit::window::WindowId;
+
+        let mut app = App::new(Box::new(|_app, _el| {}));
+
+        let ran_flag: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        let ran_clone = Rc::clone(&ran_flag);
+        let engine_id_cell: Rc<Cell<Option<crate::emEngine::EngineId>>> = Rc::new(Cell::new(None));
+        let eid_clone = Rc::clone(&engine_id_cell);
+
+        let (close_sig, root_id, wid) = {
+            let mut ctx = InitCtx {
+                scheduler: &mut app.scheduler,
+                framework_actions: &mut app.framework_actions,
+                root_context: &app.context,
+                pending_actions: &app.pending_actions,
+            };
+            let look = emLook::new();
+            let mut dlg = emDialog::new(&mut ctx, "WidenedArgs", look);
+            // Ensure auto_delete starts true (default) so we can flip it to false
+            // as the DlgPanel mutation proof.
+            dlg.set_on_check_finish(Box::new(
+                move |_r, dlg_panel: &mut DlgPanel, ctx: &mut crate::emEngineCtx::EngineCtx<'_>| {
+                    // Read EngineCtx — proves the ctx arg is live.
+                    eid_clone.set(Some(ctx.engine_id));
+                    // Mutate DlgPanel — proves the dlg_panel arg is mutable.
+                    dlg_panel.auto_delete = false;
+                    ran_clone.set(true);
+                    true // don't veto
+                },
+            ));
+
+            let close_sig = dlg.close_signal;
+            let root_id = dlg.root_panel_id;
+            app.pending_top_level.push(dlg.pending.unwrap());
+            (close_sig, root_id, WindowId::dummy())
+        };
+
+        let engine_id = app
+            .install_pending_top_level_headless(wid)
+            .expect("install");
+
+        // Fire close_signal → pending_result = Cancel → step 3 → on_check_finish.
+        app.scheduler.fire(close_sig);
+        let mut pending_inputs: Vec<(WindowId, emInputEvent)> = Vec::new();
+        let mut input_state = emInputState::new();
+        let fc: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        app.scheduler.DoTimeSlice(
+            &mut app.windows,
+            &app.context,
+            &mut app.framework_actions,
+            &mut pending_inputs,
+            &mut input_state,
+            &fc,
+            &app.pending_actions,
+        );
+
+        // Closure must have run.
+        assert!(ran_flag.get(), "on_check_finish closure must have run");
+
+        // EngineCtx arg must have been a valid engine id (non-zero check is
+        // just a sanity guard — the specific value is opaque).
+        assert!(
+            engine_id_cell.get().is_some(),
+            "ctx.engine_id must be readable inside on_check_finish"
+        );
+
+        // DlgPanel mutation must be observable: auto_delete was flipped to false.
+        {
+            let win = app.windows.get_mut(&wid).unwrap();
+            let mut tree = win.take_tree();
+            let mut beh = tree.take_behavior(root_id).unwrap();
+            let dlg = beh.as_dlg_panel_mut().unwrap();
+            assert!(
+                !dlg.auto_delete,
+                "auto_delete must be false — mutation via &mut DlgPanel must persist"
+            );
+            tree.put_behavior(root_id, beh);
+            win.put_tree(tree);
+        }
+
+        // The engine_id observed inside the closure must match the installed id.
+        assert_eq!(
+            engine_id_cell.get(),
+            Some(engine_id),
+            "ctx.engine_id inside on_check_finish must match installed engine"
+        );
+
+        // Teardown.
         app.scheduler.remove_engine(engine_id);
         app.scheduler.clear_pending_for_tests();
     }
