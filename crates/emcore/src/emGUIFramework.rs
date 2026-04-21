@@ -164,6 +164,13 @@ pub struct App {
     /// callers that hold a `DialogId` locate the materialized `emWindow`
     /// in `self.windows`.
     pub dialog_windows: HashMap<DialogId, WindowId>,
+    /// Phase 3.6 Prereq A: `DialogId` → root `PanelId` of that dialog's
+    /// `DlgPanel`. Populated in `install_pending_top_level` (and its
+    /// headless test analog) alongside `dialog_windows`; cleared in
+    /// `close_dialog_by_id`. Required by `mutate_dialog_by_id` because
+    /// the `emDialog` handle (which carries `root_panel_id`) may be
+    /// long-gone when the App-side mutator fires.
+    pub(crate) dialog_roots: HashMap<DialogId, crate::emPanelTree::PanelId>,
     /// Framework-level deferred actions produced by scheduler/view code that
     /// need to run back on `App` between time slices. Spec §3.1 / §3.7 —
     /// passed as `&mut Vec<DeferredAction>` into `EngineScheduler::DoTimeSlice`.
@@ -227,6 +234,7 @@ impl App {
             home_window_id: None,
             pending_top_level: Vec::new(),
             dialog_windows: HashMap::new(),
+            dialog_roots: HashMap::new(),
             framework_actions: Vec::new(),
             input_state: emInputState::new(),
             pending_inputs: Vec::new(),
@@ -602,9 +610,12 @@ impl App {
         pending.window.put_tree(tree);
 
         // Move the emWindow into App::windows under its real WindowId,
-        // and record the DialogId → WindowId mapping.
+        // and record the DialogId → WindowId + root-panel mappings.
+        let did = pending.dialog_id;
+        let root_pid = pending.private_engine_root_panel_id;
         self.windows.insert(new_wid, pending.window);
-        self.dialog_windows.insert(pending.dialog_id, new_wid);
+        self.dialog_windows.insert(did, new_wid);
+        self.dialog_roots.insert(did, root_pid);
 
         winit_window.request_redraw();
     }
@@ -647,7 +658,10 @@ impl App {
             self.scheduler
                 .register_engine(engine, Priority::High, PanelScope::Toplevel(wid));
         self.scheduler.connect(pending.close_signal, engine_id);
-        self.dialog_windows.insert(pending.dialog_id, wid);
+        let did = pending.dialog_id;
+        let root_pid = pending.private_engine_root_panel_id;
+        self.dialog_windows.insert(did, wid);
+        self.dialog_roots.insert(did, root_pid);
         self.windows.insert(wid, pending.window);
         Some(engine_id)
     }
@@ -709,6 +723,7 @@ impl App {
         if let Some(wid) = self.dialog_windows.remove(&did) {
             // Post-materialize: unregister all engines scoped to this window
             // then drop the emWindow.
+            self.dialog_roots.remove(&did);
             let engine_ids = self
                 .scheduler
                 .engines_for_scope(crate::emPanelScope::PanelScope::Toplevel(wid));
@@ -726,6 +741,58 @@ impl App {
             self.pending_top_level.swap_remove(idx);
         }
         // Else: unknown DialogId — idempotent no-op.
+    }
+
+    /// Apply a closure to the `DlgPanel` rooted at the dialog identified by
+    /// `did`. Silently no-ops if `did` is unknown, the window is absent, or
+    /// the root panel is not a `DlgPanel` (callers race with close).
+    ///
+    /// Rust-only consolidation of the "look up wid + root_panel_id → take_tree
+    /// → take_behavior → apply → put → put → wake" walk that `emDialog::
+    /// finish_post_show` inlines. No direct C++ counterpart — the C++ analogs
+    /// are the direct `emDialog::SetTitle` / `emDialog::SetAutoDeletion` / etc.
+    /// calls that mutate the `emDialog` object directly (which owns its state).
+    /// `Prereq C` (Phase 3.6) will retire `finish_post_show`'s inlined walk in
+    /// favour of this method.
+    ///
+    /// Wakes all engines scoped to `PanelScope::Toplevel(wid)` after mutation
+    /// so `DialogPrivateEngine` observes the change on the next tick.
+    pub fn mutate_dialog_by_id(
+        &mut self,
+        did: DialogId,
+        f: impl FnOnce(&mut crate::emDialog::DlgPanel),
+    ) {
+        // 1. Look up wid from dialog_windows; silently no-op if missing.
+        let wid = match self.dialog_windows.get(&did).copied() {
+            Some(w) => w,
+            None => return,
+        };
+        // 2. Look up root_panel_id from dialog_roots; silently no-op if missing.
+        let root_panel_id = match self.dialog_roots.get(&did).copied() {
+            Some(p) => p,
+            None => return,
+        };
+        // 3. Look up the emWindow; silently no-op if missing.
+        let win = match self.windows.get_mut(&wid) {
+            Some(w) => w,
+            None => return,
+        };
+        // 4–8. Take tree, take behavior, apply closure, put behavior, put tree.
+        let mut tree = win.take_tree();
+        if let Some(mut behavior) = tree.take_behavior(root_panel_id) {
+            if let Some(dlg) = behavior.as_dlg_panel_mut() {
+                f(dlg);
+            }
+            tree.put_behavior(root_panel_id, behavior);
+        }
+        win.put_tree(tree);
+        // 9. Wake all engines scoped to Toplevel(wid).
+        let eids = self
+            .scheduler
+            .engines_for_scope(crate::emPanelScope::PanelScope::Toplevel(wid));
+        for eid in eids {
+            self.scheduler.wake_up(eid);
+        }
     }
 }
 
@@ -1445,6 +1512,130 @@ mod tests {
             // Never enqueued, never materialized.
             app.close_dialog_by_id(did); // must not panic
             assert_eq!(app.pending_top_level.len(), 0);
+        }
+
+        // ─── Phase 3.6 Prereq A tests — mutate_dialog_by_id ─────────────────
+
+        /// Stand up App + materialized dialog headlessly, call
+        /// `mutate_dialog_by_id`, and verify:
+        ///   (a) the title mutation lands on the DlgPanel, and
+        ///   (b) engines scoped to Toplevel(wid) are woken by the call.
+        ///
+        /// NOTE: a fully-initialised App (with GPU) cannot be constructed in a
+        /// unit test. We use `install_pending_top_level_headless`, which skips
+        /// OS surface creation and `SetGeometry`, but fully registers the
+        /// `DialogPrivateEngine` at `PanelScope::Toplevel(wid)` and populates
+        /// `dialog_windows` + `dialog_roots`. This is the same harness shape
+        /// used by the existing `close_dialog_by_id_post_materialize_*` test.
+        ///
+        /// We build the PendingTopLevel manually (not via `push_pending`) so
+        /// the window's tree contains the DlgPanel behavior at `root_id` —
+        /// `push_pending` creates a PanelTree that is separate from the
+        /// window's own tree, which would leave the behavior absent after
+        /// install.
+        #[test]
+        fn mutate_dialog_by_id_applies_closure_and_wakes_engines() {
+            use crate::emDialog::{DialogResult, DlgPanel};
+            use crate::emLook::emLook;
+            use crate::emPanelScope::PanelScope;
+            use crate::emPanelTree::PanelTree;
+            use winit::window::WindowId;
+
+            let mut app = test_app();
+            let did = app.allocate_dialog_id();
+            let close_sig = app.scheduler.create_signal();
+            let finish_sig = app.scheduler.create_signal();
+
+            // Build a PanelTree with a real DlgPanel behavior at the root,
+            // mirroring what `emDialog::new` does.
+            let mut tree = PanelTree::new();
+            let root_id = tree.create_root("dlg", false);
+            let look = std::rc::Rc::new(emLook::new());
+            let dlg_panel = DlgPanel::new("Original", std::rc::Rc::clone(&look), finish_sig);
+            tree.set_behavior(root_id, Box::new(dlg_panel));
+
+            // Build the window with the populated tree installed.
+            let mut window = make_pending_window(&mut app);
+            let _ = window.take_tree();
+            window.put_tree(tree);
+
+            app.pending_top_level.push(PendingTopLevel {
+                dialog_id: did,
+                window,
+                close_signal: close_sig,
+                private_engine_root_panel_id: root_id,
+            });
+
+            let wid = WindowId::dummy();
+            let engine_id = app
+                .install_pending_top_level_headless(wid)
+                .expect("install registers DialogPrivateEngine");
+
+            // Confirm dialog_roots bookkeeping was populated.
+            assert!(
+                app.dialog_roots.contains_key(&did),
+                "dialog_roots must be populated after install"
+            );
+
+            // Confirm exactly one engine is scoped to Toplevel(wid).
+            let eids_before = app.scheduler.engines_for_scope(PanelScope::Toplevel(wid));
+            assert_eq!(
+                eids_before.len(),
+                1,
+                "exactly one engine scoped to Toplevel(wid)"
+            );
+
+            // Apply the mutation.
+            app.mutate_dialog_by_id(did, |p: &mut DlgPanel| {
+                p.SetTitle("Changed");
+            });
+
+            // Read back the title via tree take/put.
+            let root_pid = *app.dialog_roots.get(&did).unwrap();
+            let win = app.windows.get_mut(&wid).unwrap();
+            let mut tree = win.take_tree();
+            let mut b = tree
+                .take_behavior(root_pid)
+                .expect("DlgPanel must be present");
+            let title = b
+                .as_dlg_panel_mut()
+                .expect("root must be DlgPanel")
+                .border
+                .caption
+                .clone();
+            tree.put_behavior(root_pid, b);
+            win.put_tree(tree);
+
+            assert_eq!(title, "Changed", "title mutation must land on DlgPanel");
+
+            // Engines scoped to Toplevel(wid) must still be registered (wake,
+            // not removal). engines_for_scope returning non-empty confirms the
+            // engine is still alive after the wake call.
+            let eids_after = app.scheduler.engines_for_scope(PanelScope::Toplevel(wid));
+            assert_eq!(
+                eids_after.len(),
+                1,
+                "engine must still be registered after mutate_dialog_by_id"
+            );
+
+            // Teardown: remove the DialogPrivateEngine so EngineScheduler
+            // drop-assert passes. Same pattern as
+            // `close_dialog_by_id_post_materialize_removes_window_and_engines`.
+            app.close_dialog_by_id(did);
+
+            let _ = engine_id;
+            let _ = finish_sig; // finish_signal is not connected to any engine in this test
+            let _ = DialogResult::Ok; // silence unused import
+            app.scheduler.clear_pending_for_tests();
+        }
+
+        #[test]
+        fn mutate_dialog_by_id_unknown_id_is_noop() {
+            let mut app = test_app();
+            // Neither pending nor materialized — must not panic.
+            app.mutate_dialog_by_id(DialogId(999), |_p| {
+                panic!("closure must not fire for unknown DialogId");
+            });
         }
     }
 }

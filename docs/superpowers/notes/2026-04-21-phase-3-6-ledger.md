@@ -53,4 +53,16 @@ See plan §"Bootstrap decisions" (B3.6a–B3.6d).
 
 ## Task log
 
-(Entries appended by each task's commit.)
+- **Prereq Task A — App::mutate_dialog_by_id:** COMPLETE. Added `pub fn
+  mutate_dialog_by_id(&mut self, did: DialogId, f: impl FnOnce(&mut DlgPanel))`
+  that walks (wid, root_panel_id) → take_tree → take_behavior → apply closure
+  → put_behavior → put_tree → wake all engines at Toplevel(wid). Root-panel id
+  bookkeeping via `dialog_roots: HashMap<DialogId, PanelId>` (parallel to
+  `dialog_windows`) populated in both `install_pending_top_level` and
+  `install_pending_top_level_headless`, cleared in `close_dialog_by_id`.
+  Consolidates the inlined walk that `emDialog::finish_post_show` currently
+  duplicates; `finish_post_show` not yet retired — Prereq C does that. Two
+  unit tests added: `mutate_dialog_by_id_applies_closure_and_wakes_engines`
+  (title mutation lands + engine still registered after wake) and
+  `mutate_dialog_by_id_unknown_id_is_noop` (silent no-op guard).
+  Gate green — nextest 2512/0/9.
