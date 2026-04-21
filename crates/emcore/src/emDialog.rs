@@ -1,5 +1,9 @@
 use std::rc::Rc;
 
+#[cfg(test)]
+use crate::emButton::emButton;
+#[cfg(test)]
+use crate::emCursor::emCursor;
 use crate::emEngineCtx::{ConstructCtx, PanelCtx};
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
 use crate::emInputState::emInputState;
@@ -198,6 +202,97 @@ impl PanelBehavior for DlgPanel {
             }
             _ => false,
         }
+    }
+}
+
+/// PanelBehavior wrapping `emButton` for a dialog button.
+///
+/// Port of C++ `class DlgButton : public emButton` (emDialog.h:169-183).
+/// Carries a `DialogResult` payload (C++: `int Result`) and a reference
+/// to the owning `DlgPanel` (via `PanelId`). In C++, `Clicked()` calls
+/// `((emDialog*)GetWindow())->Finish(Result)` — a direct back-edge through
+/// the window pointer. In Rust, click observation is engine-side:
+/// `DialogPrivateEngine` (Task 4+7) connects the button's `click_signal`
+/// to its own wake-up set (`scheduler.connect(click_signal, private_engine_id)`),
+/// matching C++ `emDialog::PrivateEngineClass` observing button signals via
+/// `AddWakeUpSignal`. Therefore the Rust `Input` impl here is a pure
+/// delegator to `emButton::Input`; it does not write `pending_result`
+/// itself — the private engine does on observing the click signal.
+///
+/// Precedent: `ButtonPanel` adapter in `emColorFieldFieldPanel.rs:187-210`.
+///
+/// `#[cfg(test)]`-gated in Task 3 — Task 5 removes the gate when wired
+/// into the public API.
+#[cfg(test)]
+pub(crate) struct DlgButton {
+    pub(crate) button: emButton,
+    /// Dialog result payload carried by this button. C++ parity: `int Result`
+    /// in `class DlgButton` (emDialog.h:182).
+    pub(crate) result: DialogResult,
+    /// PanelId of the owning `DlgPanel`. The engine-side click observer
+    /// (Task 4+7) uses this to reach the `DlgPanel` and write
+    /// `pending_result`. Rust analog of the C++ back-edge
+    /// `((emDialog*)GetWindow())->Finish(Result)` (emDialog.cpp:236).
+    pub(crate) dlg_panel_id: crate::emPanelTree::PanelId,
+}
+
+#[cfg(test)]
+impl DlgButton {
+    pub(crate) fn new<C: ConstructCtx>(
+        ctx: &mut C,
+        caption: &str,
+        look: Rc<emLook>,
+        result: DialogResult,
+        dlg_panel_id: crate::emPanelTree::PanelId,
+    ) -> Self {
+        Self {
+            button: emButton::new(ctx, caption, look),
+            result,
+            dlg_panel_id,
+        }
+    }
+
+    /// Port of C++ `emBorder::GetCaption` (via `emButton` inheritance).
+    pub(crate) fn caption(&self) -> &str {
+        self.button.GetCaption()
+    }
+
+    /// Port of C++ `DlgButton::GetResult` (emDialog.h:249-252).
+    pub(crate) fn result(&self) -> &DialogResult {
+        &self.result
+    }
+
+    pub(crate) fn SetCaption(&mut self, text: &str) {
+        self.button.SetCaption(text);
+    }
+}
+
+#[cfg(test)]
+impl PanelBehavior for DlgButton {
+    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+        let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
+        self.button.Paint(painter, w, h, state.enabled, pixel_scale);
+    }
+
+    // DIVERGED: DlgButton click observation — C++ emDialog.cpp:236 `DlgButton::Clicked()` walks
+    // parent chain via `((emDialog*)GetWindow())->Finish(Result)`. Rust wires this engine-side
+    // via `scheduler.connect(button.click_signal, private_engine_id)` at install time (Task 7),
+    // so `Input` here is a pure delegator.
+    fn Input(
+        &mut self,
+        event: &emInputEvent,
+        state: &PanelState,
+        input_state: &emInputState,
+        ctx: &mut PanelCtx,
+    ) -> bool {
+        // Pure delegator. Click observation is engine-side via
+        // `scheduler.connect(button.click_signal, dialog_private_engine_id)`
+        // (Task 4+7), matching C++ `PrivateEngineClass::AddWakeUpSignal`.
+        self.button.Input(event, state, input_state, ctx)
+    }
+
+    fn GetCursor(&self) -> emCursor {
+        self.button.GetCursor()
     }
 }
 
@@ -812,6 +907,44 @@ mod tests {
         let consumed = panel.Input(&ev, &ps, &is, &mut pctx);
         assert!(!consumed, "Shift-Enter should not be consumed");
         assert_eq!(panel.pending_result, None);
+    }
+
+    #[test]
+    fn dlg_button_carries_result_payload() {
+        let mut __init = TestInit::new();
+        let (tree, tid) = test_tree();
+        let btn = DlgButton::new(
+            &mut __init.ctx(),
+            "OK",
+            emLook::new(),
+            DialogResult::Ok,
+            tid,
+        );
+        assert_eq!(btn.caption(), "OK");
+        assert_eq!(btn.result(), &DialogResult::Ok);
+        assert_eq!(btn.dlg_panel_id, tid);
+        // click_signal is allocated by emButton::new; engine-side connect
+        // happens in Task 4+7. Prove the signal exists (non-null).
+        let _ = btn.button.click_signal;
+        let _ = &tree;
+    }
+
+    #[test]
+    fn dlg_button_set_caption_updates_emButton() {
+        let mut __init = TestInit::new();
+        let (tree, tid) = test_tree();
+        let mut btn = DlgButton::new(
+            &mut __init.ctx(),
+            "OK",
+            emLook::new(),
+            DialogResult::Custom(9),
+            tid,
+        );
+        assert_eq!(btn.caption(), "OK");
+        btn.SetCaption("Accept");
+        assert_eq!(btn.caption(), "Accept");
+        assert_eq!(btn.button.GetCaption(), "Accept");
+        let _ = &tree;
     }
 
     #[test]

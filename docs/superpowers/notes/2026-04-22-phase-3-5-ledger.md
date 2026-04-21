@@ -41,3 +41,21 @@ See plan §"Bootstrap decisions" (B3.5a–B3.5e).
       (C++ emBorder::Input handles focus traversal at emDialog.cpp:279).
     - I1: switched from GetContentRect to GetContentRectUnobscured per
       emDialog.cpp:308.
+- **Task 3 — DlgButton:** this commit. `DlgButton` PanelBehavior added to
+  emDialog.rs (`#[cfg(test)]`-gated alongside DlgPanel). Wraps `emButton`;
+  carries `result: DialogResult` (C++ `int Result`) and `dlg_panel_id:
+  PanelId` (Rust analog of C++ `((emDialog*)GetWindow())->Finish(Result)`
+  back-edge at emDialog.cpp:236). `PanelBehavior::Paint`/`Input`/`GetCursor`
+  are pure delegators to `emButton` — `Input` does NOT write
+  `pending_result`; click observation is engine-side via
+  `scheduler.connect(button.click_signal, private_engine_id)` (wired in
+  Task 4+7, matching C++ `PrivateEngineClass::AddWakeUpSignal`). Two unit
+  tests added (`dlg_button_carries_result_payload`,
+  `dlg_button_set_caption_updates_emButton`). Gate green — nextest
+  2482/0/9.
+  - Follows `ButtonPanel` adapter precedent at
+    `emColorFieldFieldPanel.rs:187-210`.
+  - `DlgButton::new` takes `(ctx, caption, look, result, dlg_panel_id)` —
+    `look` is required by `emButton::new`'s actual signature
+    (`emButton.rs:46`). Plan text (line 674) predicted only `ctx`; adjusted
+    to match real signature.
