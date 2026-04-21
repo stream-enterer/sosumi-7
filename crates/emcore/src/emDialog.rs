@@ -112,6 +112,7 @@ impl emDialog {
                 window,
                 close_signal,
                 private_engine_root_panel_id: root_panel_id,
+                wake_up_signals: Vec::new(),
             }),
         }
     }
@@ -359,6 +360,85 @@ impl emDialog {
         unimplemented!("emDialog::ShowMessage — Phase 3.6 impl; no live caller in 3.5")
     }
 
+    /// Stable PanelId of the DlgPanel root. Always valid (pre-show and
+    /// post-show) — captured at construction in `emDialog::new`.
+    pub fn root_panel_id(&self) -> crate::emPanelTree::PanelId {
+        self.root_panel_id
+    }
+
+    /// Mutable access to the pre-show builder state. Panics post-show
+    /// (after `show()` has consumed `self.pending`). Used by subclass-like
+    /// consumers (e.g. `emFileDialog`) to reach into the pending tree and
+    /// install child panels before the dialog materializes.
+    pub(crate) fn pending_mut(&mut self) -> &mut crate::emGUIFramework::PendingTopLevel {
+        self.pending
+            .as_mut()
+            .expect("pending_mut after show: emDialog pre-show state consumed")
+    }
+
+    /// Subscribe an arbitrary signal to the to-be-built `DialogPrivateEngine`
+    /// at install time. Pre-show only; panics if called after `show()`.
+    ///
+    /// Port of C++ `emFileDialog` ctor calling
+    /// `AddWakeUpSignal(Fsb->GetFileTriggerSignal())` (emFileDialog.cpp:41).
+    /// In C++ the private engine exists in the ctor and takes subscriptions
+    /// directly; in Rust the engine is built deferred, so subscribers stash
+    /// signals on `PendingTopLevel.wake_up_signals` for the installer to
+    /// drain post-register_engine.
+    pub fn add_pre_show_wake_up_signal(&mut self, sig: SignalId) {
+        self.pending
+            .as_mut()
+            .expect("add_pre_show_wake_up_signal after show")
+            .wake_up_signals
+            .push(sig);
+    }
+
+    /// Lazily create (or return) the content panel of this dialog.
+    ///
+    /// Port of C++ `emDialog::GetContentPanel` (emDialog.cpp:67-73). In C++
+    /// the content panel is an `emLinearGroup` lazy-created on first call;
+    /// in Rust we create a plain child panel named "content" under the
+    /// DlgPanel root and record it in `DlgPanel.content_panel_id` so
+    /// subsequent calls return the same id.
+    ///
+    /// DIVERGED: Rust's lazy-create is simpler (plain child) because the
+    /// layout contract in `DlgPanel::LayoutChildren` already rects-out
+    /// `content_panel_id` against the computed content area — the C++
+    /// emLinearGroup wrapper is an idiom adaptation since the wrapper
+    /// layer is not yet ported. Consumers install their own child behavior
+    /// via the returned PanelId (see `emFileDialog::new`).
+    ///
+    /// Pre-show only. Panics post-show: content panel must be installed
+    /// before `show()` because the pre-show tree-reach pattern is the only
+    /// mutation path for the dialog's PanelTree before materialization.
+    pub fn GetContentPanel<C: ConstructCtx>(
+        &mut self,
+        _ctx: &mut C,
+    ) -> crate::emPanelTree::PanelId {
+        let root_panel_id = self.root_panel_id;
+        let pending = self.pending.as_mut().expect("GetContentPanel after show");
+        let tree = pending.window.tree_mut();
+
+        // Check existing id cached on DlgPanel.
+        if let Some(mut behavior) = tree.take_behavior(root_panel_id) {
+            let existing = behavior.as_dlg_panel_mut().and_then(|p| p.content_panel_id);
+            tree.put_behavior(root_panel_id, behavior);
+            if let Some(id) = existing {
+                return id;
+            }
+        }
+
+        // Lazy-create a "content" child under the DlgPanel root.
+        let content_id = tree.create_child(root_panel_id, "content", None);
+        if let Some(mut behavior) = tree.take_behavior(root_panel_id) {
+            if let Some(dlg) = behavior.as_dlg_panel_mut() {
+                dlg.content_panel_id = Some(content_id);
+            }
+            tree.put_behavior(root_panel_id, behavior);
+        }
+        content_id
+    }
+
     /// Programmatically finish the dialog post-show with the given result.
     ///
     /// Port of C++ `emDialog::Finish(int)` (emDialog.cpp:146-153) for the
@@ -455,6 +535,34 @@ pub struct DlgPanel {
     ///
     /// Populated by emFileDialog::new in Task 3. `None` for plain emDialog.
     pub(crate) on_cycle_ext: Option<DialogCycleExt>,
+    /// DIVERGED (Phase 3.6 Task 3): file-dialog overwrite-confirmation
+    /// sub-dialog. Set by `emFileDialog::CheckFinish` when Save-mode detects
+    /// overwrite conflicts; consumed + torn down by the file-dialog
+    /// on_cycle_ext closure at next Cycle. Port of C++
+    /// `emCrossPtr<emDialog> emFileDialog::OverwriteDialog`
+    /// (emFileDialog.h:204); the `emCrossPtr` auto-null semantics are
+    /// captured by the Option's None state combined with on_cycle_ext's
+    /// take-deregister-drop pattern on finish observation.
+    ///
+    /// Placement rationale: this field lives on DlgPanel (not on
+    /// emFileDialog) so the `'static + FnMut` `on_cycle_ext` closure can
+    /// reach it through its `&mut DlgPanel` argument — avoiding
+    /// `Rc<RefCell<Option<emDialog>>>` which would be a Do-NOT violation
+    /// per CLAUDE.md.
+    pub(crate) overwrite_dialog: Option<emDialog>,
+    /// DIVERGED (Phase 3.6 Task 3): `EngineId` of this dialog's
+    /// `DialogPrivateEngine`, populated at install time (after register).
+    /// Lets `emFileDialog::CheckFinish` subscribe the overwrite dialog's
+    /// finish signal to this engine without a scheduler-scope walk. Port
+    /// of the C++ member-pointer that `emFileDialog::CheckFinish` uses via
+    /// inheritance to reach its own private engine
+    /// (emFileDialog.cpp:168 `AddWakeUpSignal(OverwriteDialog->GetFinishSignal())`).
+    pub(crate) private_engine_id: Option<crate::emEngine::EngineId>,
+    /// DIVERGED (Phase 3.6 Task 3): text being confirmed for overwrite.
+    /// Matches C++ `OverwriteAsked` in emFileDialog.h:202. Placement on
+    /// DlgPanel mirrors `overwrite_dialog` for the same closure-reach
+    /// reason.
+    pub(crate) overwrite_asked: String,
 }
 
 impl DlgPanel {
@@ -474,6 +582,9 @@ impl DlgPanel {
             buttons_panel_id: None,
             button_signals: Vec::new(),
             on_cycle_ext: None,
+            overwrite_dialog: None,
+            private_engine_id: None,
+            overwrite_asked: String::new(),
         }
     }
 
@@ -1203,6 +1314,7 @@ mod tests {
             window,
             close_signal: close_sig,
             private_engine_root_panel_id: root_id,
+            wake_up_signals: Vec::new(),
         });
         let engine_id = app
             .install_pending_top_level_headless(wid)
@@ -1787,6 +1899,7 @@ mod tests {
             window,
             close_signal: close_sig,
             private_engine_root_panel_id: root_id,
+            wake_up_signals: Vec::new(),
         });
         let engine_id = app
             .install_pending_top_level_headless(wid)
@@ -2315,6 +2428,7 @@ mod tests {
             window,
             close_signal: close_sig,
             private_engine_root_panel_id: root_id,
+            wake_up_signals: Vec::new(),
         });
         let engine_id = app
             .install_pending_top_level_headless(wid)

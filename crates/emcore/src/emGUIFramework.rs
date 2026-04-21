@@ -51,6 +51,15 @@ pub struct PendingTopLevel {
     /// build it at `install_pending_top_level` time with the known
     /// `materialized_wid`.
     pub private_engine_root_panel_id: crate::emPanelTree::PanelId,
+    /// DIVERGED (Phase 3.6 Task 3): additional wake-up signals to connect
+    /// to the `DialogPrivateEngine` at install time. Port of C++
+    /// `emFileDialog` ctor calling `AddWakeUpSignal(Fsb->GetFileTriggerSignal())`
+    /// (emFileDialog.cpp:41). In C++ the dialog subclass calls this on the
+    /// already-constructed private engine; in Rust the engine is built
+    /// deferred at `install_pending_top_level` time, so pre-show
+    /// subscribers queue their signals here and the installer drains them
+    /// immediately after `register_engine` + connecting `close_signal`.
+    pub wake_up_signals: Vec<SignalId>,
 }
 
 /// Result of `App::dialog_window_mut`: the dialog's `emWindow` may either
@@ -579,6 +588,25 @@ impl App {
                 PanelScope::Toplevel(new_wid),
             );
             self.scheduler.connect(pending.close_signal, engine_id);
+            // Phase 3.6 Task 3: drain pre-show wake-up signal subscriptions.
+            // Port of C++ emFileDialog ctor `AddWakeUpSignal(...)` idiom
+            // (emFileDialog.cpp:41). Rust builds the engine deferred, so
+            // subscribers queue signals on PendingTopLevel.wake_up_signals
+            // pre-show; we connect them here now that engine_id exists.
+            for sig in pending.wake_up_signals.drain(..) {
+                self.scheduler.connect(sig, engine_id);
+            }
+            // Phase 3.6 Task 3: record the engine id on DlgPanel so
+            // post-show callers (e.g. emFileDialog::CheckFinish) can
+            // subscribe transient signals (e.g. overwrite dialog's
+            // finish_signal) to this engine without a scope walk.
+            let tree = pending.window.tree_mut();
+            if let Some(mut behavior) = tree.take_behavior(pending.private_engine_root_panel_id) {
+                if let Some(dlg) = behavior.as_dlg_panel_mut() {
+                    dlg.private_engine_id = Some(engine_id);
+                }
+                tree.put_behavior(pending.private_engine_root_panel_id, behavior);
+            }
         }
 
         // Set initial view geometry. Take the dialog's tree out for the
@@ -644,7 +672,7 @@ impl App {
         if self.pending_top_level.is_empty() {
             return None;
         }
-        let pending = self.pending_top_level.remove(0);
+        let mut pending = self.pending_top_level.remove(0);
         pending.window.wire_viewport_window_id(wid);
         // Phase 3.5 Task 5: construct DialogPrivateEngine here, not in emDialog::new.
         // Mirrors `install_pending_top_level` but skips winit surface creation.
@@ -658,6 +686,21 @@ impl App {
             self.scheduler
                 .register_engine(engine, Priority::High, PanelScope::Toplevel(wid));
         self.scheduler.connect(pending.close_signal, engine_id);
+        // Phase 3.6 Task 3: drain pre-show wake-up signal subscriptions.
+        // Mirrors the production installer above.
+        for sig in pending.wake_up_signals.drain(..) {
+            self.scheduler.connect(sig, engine_id);
+        }
+        // Phase 3.6 Task 3: record engine id on DlgPanel (mirrors production).
+        {
+            let tree = pending.window.tree_mut();
+            if let Some(mut behavior) = tree.take_behavior(pending.private_engine_root_panel_id) {
+                if let Some(dlg) = behavior.as_dlg_panel_mut() {
+                    dlg.private_engine_id = Some(engine_id);
+                }
+                tree.put_behavior(pending.private_engine_root_panel_id, behavior);
+            }
+        }
         let did = pending.dialog_id;
         let root_pid = pending.private_engine_root_panel_id;
         self.dialog_windows.insert(did, wid);
@@ -1344,6 +1387,7 @@ mod tests {
                 window,
                 close_signal: close_sig,
                 private_engine_root_panel_id: root_id,
+                wake_up_signals: Vec::new(),
             });
 
             match app.dialog_window_mut(did) {
@@ -1413,6 +1457,7 @@ mod tests {
                 window,
                 close_signal: close_sig,
                 private_engine_root_panel_id: root_id,
+                wake_up_signals: Vec::new(),
             });
             assert_eq!(
                 app.pending_top_level[0].private_engine_root_panel_id,
@@ -1437,6 +1482,7 @@ mod tests {
                 window,
                 close_signal: close_sig,
                 private_engine_root_panel_id: root_id,
+                wake_up_signals: Vec::new(),
             });
             (did, root_id)
         }
@@ -1566,6 +1612,7 @@ mod tests {
                 window,
                 close_signal: close_sig,
                 private_engine_root_panel_id: root_id,
+                wake_up_signals: Vec::new(),
             });
 
             let wid = WindowId::dummy();

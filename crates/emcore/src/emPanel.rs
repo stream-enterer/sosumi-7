@@ -396,4 +396,17 @@ pub trait PanelBehavior: AsAny {
     fn as_dlg_button_mut(&mut self) -> Option<&mut crate::emDialog::DlgButton> {
         None
     }
+
+    /// Downcast to `emFileSelectionBox::emFileSelectionBox` without `Any`.
+    /// Used by `emFileDialog` (Phase 3.6 Task 3) to reach the fsb's mutable
+    /// state via the standard `take_behavior` / `put_behavior` cycle-path —
+    /// Rust analog of the C++ `emFileDialog::Fsb` direct member access
+    /// (emFileDialog.h:190). Pattern mirrors `as_dlg_panel_mut`.
+    ///
+    /// The default returns `None`; only `emFileSelectionBox` overrides this.
+    fn as_file_selection_box_mut(
+        &mut self,
+    ) -> Option<&mut crate::emFileSelectionBox::emFileSelectionBox> {
+        None
+    }
 }
