@@ -22,3 +22,13 @@ See plan §"Bootstrap decisions" (B3.5a.a–B3.5a.g).
   - Precondition C (PopupWindow single-slot) confirmed.
   - Precondition D (no runtime top-level install path) confirmed.
   - Spec matches current code state — no drift correction needed.
+- **Task 2 — Engine classification audit:** COMPLETE.
+  - Deliverable: docs/superpowers/notes/2026-04-22-phase-3-5-a-engine-classification.md
+  - Production engines classified: 12 (plus DialogPrivateEngine — impl currently `#[cfg(test)]`, production registration deferred per §B3.5a.f).
+  - Test engines classified: 27 (16 emcore src + 1 emfileman + 4 eaglemode integration + 3 eaglemode unit + 2 eaglemode golden + 1 examples).
+  - Framework count: 32 (8 production + 24 test).
+  - Toplevel count: 5 (2 production [StartupEngine, DialogPrivateEngine] + 3 test [ProbePointerEngine, ChildSpawnEngine, SpawnEngineWithProbe]).
+  - scope-based (Toplevel or SubView per registered scope) count: 3 production (PanelCycleEngine, UpdateEngineClass, VisitingVAEngineClass).
+  - Total `impl emEngine for` sites: 39 (matches `rg` at HEAD 75ae0428).
+  - Total `register_engine` call-sites counted: 69 (code + tests).
+  - Deviations from plan's starting-point tables: EOIEngineClass reclassified Toplevel→Framework (no tree access in Cycle); ProbePointerEngine reclassified Framework→Toplevel (Cycle captures `ctx.tree as *mut PanelTree`); added StartupEngine / MainWindowEngine / ControlPanelBridge / emStocksPricesFetcher to production table; added 11 test engines outside emcore. See sheet §Deviations for full rationale.
