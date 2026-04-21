@@ -8,7 +8,7 @@ use emcore::emContext::emContext;
 use emcore::emImage::emImage;
 use emcore::emImageFile::load_image_from_file;
 use emcore::emInstallInfo::{emGetInstallPath, InstallDirType, InstallInfoError};
-use emcore::emRec::{RecError, RecStruct, RecValue};
+use emcore::emRecParser::{RecError, RecStruct, RecValue};
 use emcore::emRecRecTypes::{emAlignmentRec, emColorRec};
 use emcore::emRecRecord::Record;
 use emcore::emSignal::SignalId;

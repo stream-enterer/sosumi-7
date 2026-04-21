@@ -5,7 +5,7 @@ use winit::window::WindowId;
 use crate::emConfigModel::emConfigModel;
 use crate::emEngine::emEngine;
 use crate::emEngineCtx::EngineCtx;
-use crate::emRec::{RecError, RecStruct};
+use crate::emRecParser::{RecError, RecStruct};
 use crate::emRecRecord::Record;
 use crate::emSignal::SignalId;
 use crate::emWindow::WindowFlags;

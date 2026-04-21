@@ -4,7 +4,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use emcore::emCrossPtr::emCrossPtrList;
-use emcore::emRec::{RecStruct, RecValue};
+use emcore::emRecParser::{RecStruct, RecValue};
 use emcore::emRecRecord::{RecError, Record};
 
 // ─── Interest ────────────────────────────────────────────────────────────────

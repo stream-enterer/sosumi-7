@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use emcore::emContext::emContext;
-use emcore::emRec::RecStruct;
+use emcore::emRecParser::RecStruct;
 
 use emcore::emFileModel::{emFileModel, FileModelOps, FileState};
 
-use emcore::emRec::RecError;
+use emcore::emRecParser::RecError;
 
 use emcore::emRecFileModel::emRecFileModel;
 
@@ -52,7 +52,7 @@ fn write_test_rec(path: &std::path::Path, name: &str, count: i32) {
     let mut r = RecStruct::new();
     r.set_str("name", name);
     r.set_int("count", count);
-    let content = emcore::emRec::write_rec(&r);
+    let content = emcore::emRecParser::write_rec(&r);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, content).unwrap();
 }
@@ -181,7 +181,7 @@ fn file_model_too_costly() {
 
 #[test]
 fn rec_round_trip() {
-    use emcore::emRec::RecError;
+    use emcore::emRecParser::RecError;
 
     let missing = RecError::MissingField("test".into());
     assert!(format!("{missing}").contains("test"));

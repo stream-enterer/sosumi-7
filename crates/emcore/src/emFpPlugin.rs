@@ -8,7 +8,7 @@ use crate::emEngineCtx::ConstructCtx;
 use crate::emInstallInfo::emGetConfigDirOverloadable;
 use crate::emPanel::PanelBehavior;
 use crate::emPanelTree::PanelId;
-use crate::emRec::{RecError, RecStruct, RecValue};
+use crate::emRecParser::{RecError, RecStruct, RecValue};
 use crate::emRecRecord::Record;
 
 // ── Plugin function types ───────────────────────────────────────────

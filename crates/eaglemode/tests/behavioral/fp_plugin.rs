@@ -1,5 +1,5 @@
 use emcore::emFpPlugin::{emFpPlugin, emFpPluginList, FileStatMode, FpPluginProperty};
-use emcore::emRec::RecStruct;
+use emcore::emRecParser::RecStruct;
 use emcore::emRecRecord::Record;
 
 // ── Helper ──────────────────────────────────────────────────────────

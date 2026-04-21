@@ -14,7 +14,7 @@ use crate::emColor::emColor;
 use crate::emCursor::emCursor;
 use crate::emPainter::{emPainter, TextAlignment, VAlign};
 use crate::emPanel::Rect;
-use crate::emRec::{write_rec_with_format, RecStruct, RecValue};
+use crate::emRecParser::{write_rec_with_format, RecStruct, RecValue};
 
 bitflags! {
     /// Flags controlling view behavior.
@@ -6118,7 +6118,7 @@ mod tests {
 
     #[test]
     fn tree_dump_produces_valid_emrec() {
-        use crate::emRec::parse_rec_with_format;
+        use crate::emRecParser::parse_rec_with_format;
 
         let (mut tree, root, _child1, _child2) = setup_tree();
         let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);

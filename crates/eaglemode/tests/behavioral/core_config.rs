@@ -3,7 +3,7 @@ use std::rc::Rc;
 use emcore::emContext::emContext;
 use emcore::emCoreConfig::emCoreConfig;
 use emcore::emPanelTree::PanelTree;
-use emcore::emRec::RecStruct;
+use emcore::emRecParser::RecStruct;
 use emcore::emRecRecord::Record;
 use emcore::emView::emView;
 

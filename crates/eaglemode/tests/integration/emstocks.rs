@@ -1,7 +1,7 @@
 use emStocks::emStocksConfig::{emStocksConfig, ChartPeriod, Sorting};
 use emStocks::emStocksListBox::emStocksListBox;
 use emStocks::emStocksRec::{emStocksRec, Interest, StockRec};
-use emcore::emRec::{parse_rec_with_format, write_rec_with_format};
+use emcore::emRecParser::{parse_rec_with_format, write_rec_with_format};
 use emcore::emRecRecord::Record;
 
 #[test]
