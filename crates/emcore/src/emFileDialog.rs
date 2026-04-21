@@ -89,14 +89,6 @@ impl emFileDialog {
         self.mode
     }
 
-    pub fn set_mode(&mut self, mode: FileDialogMode) {
-        self.mode = mode;
-        let (title, ok_label) = mode_title_and_ok(mode);
-        self.dialog.SetRootTitle(title);
-        self.dialog
-            .set_button_label_for_result(&DialogResult::Ok, ok_label);
-    }
-
     pub fn is_directory_result_allowed(&self) -> bool {
         self.dir_allowed
     }
@@ -175,10 +167,6 @@ impl emFileDialog {
 
     pub fn dialog(&self) -> &emDialog {
         &self.dialog
-    }
-
-    pub fn dialog_mut(&mut self) -> &mut emDialog {
-        &mut self.dialog
     }
 
     pub fn file_selection_box(&self) -> &emFileSelectionBox {
@@ -616,18 +604,8 @@ mod tests {
         // Simulate the user clicking OK on the overwrite dialog: set its
         // result to Ok and fire its finish_signal.
         let finish = dlg.finish_signal();
-        // Drive overwrite dialog's Finish via its internal API. We set the
-        // result directly by invoking Finish on a &mut borrow of the inner
-        // emDialog field. Use the public accessor + internal route:
-        {
-            // We need &mut access to the inner overwrite emDialog. It's
-            // private — tunnel through a mini helper: manually mimic what
-            // the UI does by just firing the signal and setting the result.
-            // Since overwrite_dialog is private, we use the Finish path:
-            // build a PanelCtx and call dlg.dialog_mut() — no, that's the
-            // outer. Use a dedicated test helper.
-            dlg.test_force_overwrite_result(DialogResult::Ok);
-        }
+        // Simulate OK on the overwrite dialog via the cfg(any())-gated helper.
+        dlg.test_force_overwrite_result(DialogResult::Ok);
         __init.sched.fire(od_sig);
 
         let (mut tree, tid) = test_panel_tree();
