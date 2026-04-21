@@ -1375,19 +1375,19 @@
       "id": "E040",
       "title": "emFileDialog POSITIVE overwrite-confirm end-to-end test deferred",
       "origin": "Phase 3.6 Task 5",
-      "status": "open",
+      "status": "resolved-phase-3-6-2",
       "context": "Task 3's livelock fix (commit d99cedea) ensures OD POSITIVE promotes overwrite_asked→overwrite_confirmed + sets outer pending_result=Ok. Mechanical-arbiter end-to-end test deferred because install_pending_top_level_headless takes no WindowId parameter and collides when two dialogs (outer + OD) both try to install headlessly. Source-read evidence exists; end-to-end test requires parameterizing headless-install with a caller-supplied WindowId.",
-      "resolution_path": "Parameterize install_pending_top_level_headless with WindowId argument; write end-to-end test that (1) builds Save-mode FD on an existing file, (2) drives CheckFinish to spawn OD, (3) drives OD POSITIVE via a helper that sets OD-DlgPanel.pending_result, (4) runs slices, (5) asserts outer.finish_signal pending + outer.GetResult == Ok + outer.DlgPanel.overwrite_confirmed == asked-text.",
-      "phase_3_6_progress": "Task 5 wrote scheduler-driven tests for fsb-trigger, OD-finish observation + teardown, OD-NEGATIVE, and no-signal baseline. POSITIVE path covered by source-read only."
+      "resolution_path": "Phase 3.6.2 rejected the WindowKey refactor (181 WindowId sites across 18 files) after audit: no queued phase 4–5 work needs multi-headless-window infra. Landed a narrow test-only sidecar instead — `App::headless_dialog_results: HashMap<DialogId, DialogResult>` (#[cfg(test)]) + `App::read_dialog_finalized_result` helper. The OD's POSITIVE pending_action closure reads od_result through the helper; production semantics unchanged (#[cfg(not(test))] still walks dialog_windows → windows → tree). New test `save_mode_overwrite_positive_finishes_outer_dialog_via_scheduler` covers the POSITIVE branch at emFileDialog.rs lines 187-205 (C++ emFileDialog.cpp:93-96).",
+      "phase_3_6_progress": "Task 5 wrote scheduler-driven tests for fsb-trigger, OD-finish observation + teardown, OD-NEGATIVE, and no-signal baseline. POSITIVE path closed in Phase 3.6.2."
     },
     {
       "id": "E041",
       "title": "emFileDialog::CheckFinish / run_file_dialog_check_finish duplication",
       "origin": "Phase 3.6.1 Task 2",
-      "status": "open",
+      "status": "resolved-phase-3-6-2",
       "context": "Task 2 installed run_file_dialog_check_finish (free fn, post-show closure path) but left emFileDialog::CheckFinish (pre-show public method) with the validation body duplicated. Two call sites encode the C++ algorithm; drift risk if C++ updates. Reviewer flagged.",
-      "resolution_path": "Refactor emFileDialog::CheckFinish to dispatch to run_file_dialog_check_finish based on self.dialog.pending state. Migrate 4 call sites (2 unit tests + 2 e024 tests) to the new return shape if it changes.",
-      "phase_3_6_1_progress": "Task 2 shipped with duplication; acknowledged and deferred."
+      "resolution_path": "Phase 3.6.2 factored three shared helpers: `check_finish_dir_and_open` (C++ :119-163), `classify_save_overwrite` (C++ :165-185) returning a `SaveOverwriteOutcome` enum, and `build_overwrite_dialog` (C++ :186-191). Both CheckFinish (pre-show, tree-reach on self.dialog.pending) and run_file_dialog_check_finish (post-show, ctx.tree + outer_dlg) now dispatch through the shared helpers; the remaining wrapper code is strictly the pre/post-show tree-access shape plus OD subscription routing (wake_up_signals vs scheduler.connect). Behavioral convergence: CheckFinish no longer clears overwrite_confirmed when text == confirmed (C++-faithful; prior Rust-only clear was over-zealous).",
+      "phase_3_6_1_progress": "Task 2 shipped with duplication; dedup landed Phase 3.6.2."
     }
   ]
 }

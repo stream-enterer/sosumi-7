@@ -178,12 +178,14 @@ impl emFileDialog {
 
                         ctx.pending_actions().borrow_mut().push(Box::new(
                             move |app: &mut crate::emGUIFramework::App, _el| {
-                                // Read OD's finalized_result by walking
-                                // its own window's tree.
-                                let mut od_result: Option<DialogResult> = None;
-                                app.mutate_dialog_by_id(od_did, |od_dlg, _tree| {
-                                    od_result = od_dlg.finalized_result;
-                                });
+                                // Read OD's finalized_result via the
+                                // App helper: production walks the OD's
+                                // window tree; #[cfg(test)] first consults
+                                // `headless_dialog_results` so a test that
+                                // could not install OD as a second
+                                // headless top-level (winit WindowId::dummy()
+                                // collision) can pre-seed a result.
+                                let od_result = app.read_dialog_finalized_result(od_did);
                                 match od_result {
                                     Some(DialogResult::Ok) => {
                                         // C++ emFileDialog.cpp:93-96:
@@ -448,8 +450,15 @@ impl emFileDialog {
     /// based on the dialog mode (Open checks existence, Save confirms
     /// overwrite). On Save-mode overwrite detection, spawns a transient
     /// "File Exists" `emDialog` and parks it on the outer dialog's
-    /// `DlgPanel.overwrite_dialog` via the pre-show or post-show reach
-    /// pattern.
+    /// `DlgPanel.overwrite_dialog`.
+    ///
+    /// Phase 3.6.2 (E041) dedup: the core validation logic (dir-check,
+    /// Open existence, Save classification, OD build) is shared with
+    /// [`run_file_dialog_check_finish`] via the `check_finish_*` helpers
+    /// below. This wrapper only handles the pre-show tree-reach shape
+    /// (reads `overwrite_confirmed` and parks OD via
+    /// `self.dialog.pending.window.tree_mut()`). Post-show calls go
+    /// directly through `run_file_dialog_check_finish`.
     pub fn CheckFinish<C: ConstructCtx>(
         &mut self,
         ctx: &mut C,
@@ -466,168 +475,182 @@ impl emFileDialog {
             )
         });
 
-        if !self.dir_allowed {
-            if names.is_empty() {
-                return FileDialogCheckResult::Error("No file selected".to_string());
-            }
-            for name in &names {
-                let path = parent.join(name);
-                if path.is_dir() {
-                    if names.len() == 1 {
-                        return FileDialogCheckResult::EnterDirectory(name.clone());
-                    }
-                    return FileDialogCheckResult::Error(format!("Directory selected: {}", name));
-                }
-            }
+        if let Err(early) = check_finish_dir_and_open(self.mode, self.dir_allowed, &names, &parent)
+        {
+            return early;
         }
 
-        match self.mode {
-            FileDialogMode::Open => {
-                for name in &names {
-                    let path = parent.join(name);
-                    if !path.exists() {
-                        return FileDialogCheckResult::Error(format!(
-                            "The following file cannot be opened, because it does not exist:\n\n{}",
-                            path.display()
-                        ));
-                    }
+        if self.mode != FileDialogMode::Save {
+            return FileDialogCheckResult::Allow;
+        }
+
+        // Save-mode: read overwrite_confirmed via pre-show tree-take.
+        let confirmed = if self.dialog.pending.is_some() {
+            let root_panel_id = self.dialog.root_panel_id();
+            let pending = self.dialog.pending_mut();
+            let tree = pending.window.tree_mut();
+            let mut s = String::new();
+            if let Some(behavior) = tree.take_behavior(root_panel_id) {
+                if let Some(p) = behavior.as_dlg_panel() {
+                    s = p.overwrite_confirmed.clone();
                 }
+                tree.put_behavior(root_panel_id, behavior);
             }
-            FileDialogMode::Save => {
-                let mut paths_to_overwrite = Vec::new();
-                for name in &names {
-                    let path = parent.join(name);
-                    if path.exists() {
-                        paths_to_overwrite.push(path);
-                    }
-                }
-                if !paths_to_overwrite.is_empty() {
-                    let text = if paths_to_overwrite.len() == 1 {
-                        format!(
-                            "Are you sure to overwrite the following already existing file?\n\n{}",
-                            paths_to_overwrite[0].display()
-                        )
-                    } else {
-                        let mut msg =
-                            "Are you sure to overwrite the following already existing files?\n"
-                                .to_string();
-                        for p in &paths_to_overwrite {
-                            msg.push('\n');
-                            msg.push_str(&p.display().to_string());
-                        }
-                        msg
-                    };
-                    // Read `overwrite_confirmed` from the outer DlgPanel
-                    // via the pre-show tree-take pattern (Phase 3.6 Task 3
-                    // fix: field moved from emFileDialog to DlgPanel so
-                    // the on_cycle_ext closure can promote it on OD
-                    // POSITIVE). Post-show read is not a sync path here;
-                    // the post-show OD parking below is already deferred
-                    // via pending_actions / mutate_dialog_by_id.
-                    let confirmed: String = if self.dialog.pending.is_some() {
-                        let root_panel_id = self.dialog.root_panel_id();
-                        let pending = self.dialog.pending_mut();
-                        let tree = pending.window.tree_mut();
-                        let mut s = String::new();
-                        if let Some(behavior) = tree.take_behavior(root_panel_id) {
-                            if let Some(p) = behavior.as_dlg_panel() {
-                                s = p.overwrite_confirmed.clone();
-                            }
-                            tree.put_behavior(root_panel_id, behavior);
-                        }
-                        s
-                    } else {
-                        // Post-show sync read is unavailable here (no
-                        // &mut App). Conservative: treat as empty so the
-                        // OD respawns; the OD-POSITIVE closure path will
-                        // promote on confirm. Task 5 exercises end-to-end.
-                        String::new()
-                    };
-                    if text != confirmed {
-                        // Spawn a transient "File Exists" emDialog.
-                        let mut od = emDialog::new(ctx, "File Exists", self.look.clone());
-                        od.AddCustomButton(ctx, "OK", DialogResult::Ok);
-                        od.AddCustomButton(ctx, "Cancel", DialogResult::Cancel);
-                        // Queue OD.finish_signal to be connected to the
-                        // OUTER dialog's private engine at install time.
-                        //
-                        // DIVERGED: CheckFinish may be invoked pre-show
-                        // (test path) or post-show (production). In the
-                        // pre-show path the outer's private engine doesn't
-                        // exist yet, so we park the subscription on the
-                        // outer's `wake_up_signals` (same mechanism as the
-                        // fsb subscription above). In the post-show path
-                        // we'd need to connect directly — not exercised in
-                        // Task 3 tests, deferred to a later phase.
-                        if self.dialog.pending.is_some() {
-                            self.dialog.add_pre_show_wake_up_signal(od.finish_signal);
-                        }
-                        od.show(ctx);
+            s
+        } else {
+            // Post-show sync read is unavailable here (no &mut App).
+            // Conservative: treat as empty so OD respawns; the
+            // OD-POSITIVE closure path will promote on confirm.
+            String::new()
+        };
 
-                        // Park OD on outer DlgPanel.overwrite_dialog via
-                        // pre-show reach (tests exercise only this path).
-                        if self.dialog.pending.is_some() {
-                            let root_panel_id = self.dialog.root_panel_id();
-                            let pending = self.dialog.pending_mut();
-                            let tree = pending.window.tree_mut();
-                            if let Some(mut behavior) = tree.take_behavior(root_panel_id) {
-                                if let Some(dlg_panel) = behavior.as_dlg_panel_mut() {
-                                    dlg_panel.overwrite_dialog = Some(od);
-                                    dlg_panel.overwrite_asked = text;
-                                }
-                                tree.put_behavior(root_panel_id, behavior);
-                            }
-                        } else {
-                            // Post-show: route through App::mutate_dialog_by_id.
-                            let outer_did = self.dialog.dialog_id;
-                            ctx.pending_actions().borrow_mut().push(Box::new(
-                                move |app: &mut crate::emGUIFramework::App, _el| {
-                                    app.mutate_dialog_by_id(outer_did, move |p, _tree| {
-                                        p.overwrite_dialog = Some(od);
-                                        p.overwrite_asked = text;
-                                    });
-                                },
-                            ));
-                        }
-
-                        return FileDialogCheckResult::ConfirmOverwrite(paths_to_overwrite);
-                    }
+        match classify_save_overwrite(&names, &parent, &confirmed) {
+            SaveOverwriteOutcome::NoConflict | SaveOverwriteOutcome::AlreadyConfirmed => {
+                FileDialogCheckResult::Allow
+            }
+            SaveOverwriteOutcome::NeedOverwriteDialog { paths, text } => {
+                let mut od = build_overwrite_dialog(ctx, self.look.clone());
+                // Pre-show: the outer's private engine doesn't exist yet,
+                // so park OD.finish_signal on the outer's wake_up_signals.
+                if self.dialog.pending.is_some() {
+                    self.dialog.add_pre_show_wake_up_signal(od.finish_signal);
                 }
-                // No conflicts: clear overwrite_confirmed on outer
-                // DlgPanel (C++ emFileDialog.cpp: OverwriteConfirmed is
-                // not re-cleared there because CheckFinish returns
-                // Allow without touching it; Rust keeps the explicit
-                // clear for safety when a prior save-session left stale
-                // state — matches the legacy `self.overwrite_confirmed
-                // .clear()` write site). Route through the same pre-show
-                // tree-take / post-show mutate_dialog_by_id as OD
-                // parking.
+                od.show(ctx);
+
+                // Park OD on outer DlgPanel via the pre-show tree reach.
                 if self.dialog.pending.is_some() {
                     let root_panel_id = self.dialog.root_panel_id();
                     let pending = self.dialog.pending_mut();
                     let tree = pending.window.tree_mut();
                     if let Some(mut behavior) = tree.take_behavior(root_panel_id) {
-                        if let Some(p) = behavior.as_dlg_panel_mut() {
-                            p.overwrite_confirmed.clear();
+                        if let Some(dlg_panel) = behavior.as_dlg_panel_mut() {
+                            dlg_panel.overwrite_dialog = Some(od);
+                            dlg_panel.overwrite_asked = text;
                         }
                         tree.put_behavior(root_panel_id, behavior);
                     }
                 } else {
+                    // Post-show: route through App::mutate_dialog_by_id.
                     let outer_did = self.dialog.dialog_id;
                     ctx.pending_actions().borrow_mut().push(Box::new(
                         move |app: &mut crate::emGUIFramework::App, _el| {
-                            app.mutate_dialog_by_id(outer_did, |p, _tree| {
-                                p.overwrite_confirmed.clear();
+                            app.mutate_dialog_by_id(outer_did, move |p, _tree| {
+                                p.overwrite_dialog = Some(od);
+                                p.overwrite_asked = text;
                             });
                         },
                     ));
                 }
-            }
-            FileDialogMode::Select => {}
-        }
 
-        FileDialogCheckResult::Allow
+                FileDialogCheckResult::ConfirmOverwrite(paths)
+            }
+        }
     }
+}
+
+/// Shared with [`emFileDialog::CheckFinish`] (Phase 3.6.2 E041): dir-check
+/// (C++ emFileDialog.cpp:119-146) and Open-mode existence check
+/// (C++ :148-163). Returns `Ok(())` on pass, `Err(reason)` otherwise.
+/// Does not touch Save-mode overwrite logic — that's handled by
+/// [`classify_save_overwrite`].
+fn check_finish_dir_and_open(
+    mode: FileDialogMode,
+    dir_allowed: bool,
+    names: &[String],
+    parent: &Path,
+) -> Result<(), FileDialogCheckResult> {
+    if !dir_allowed {
+        if names.is_empty() {
+            return Err(FileDialogCheckResult::Error("No file selected".to_string()));
+        }
+        for name in names {
+            let path = parent.join(name);
+            if path.is_dir() {
+                if names.len() == 1 {
+                    return Err(FileDialogCheckResult::EnterDirectory(name.clone()));
+                }
+                return Err(FileDialogCheckResult::Error(format!(
+                    "Directory selected: {}",
+                    name
+                )));
+            }
+        }
+    }
+    if mode == FileDialogMode::Open {
+        for name in names {
+            let path = parent.join(name);
+            if !path.exists() {
+                return Err(FileDialogCheckResult::Error(format!(
+                    "The following file cannot be opened, because it does not exist:\n\n{}",
+                    path.display()
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Shared with [`emFileDialog::CheckFinish`] (Phase 3.6.2 E041): Save-mode
+/// overwrite classification (C++ emFileDialog.cpp:165-185). Outcome tells
+/// the caller whether to allow, allow-because-already-confirmed, or build
+/// a new overwrite dialog and park it.
+enum SaveOverwriteOutcome {
+    /// No existing files collide with the selection.
+    NoConflict,
+    /// Collisions exist but the asked text equals `overwrite_confirmed`
+    /// — the user already confirmed this exact prompt. Allow. Ports
+    /// C++ emFileDialog.cpp:185 (`if (text==OverwriteConfirmed) return;`).
+    AlreadyConfirmed,
+    /// Collisions exist and text differs from `overwrite_confirmed` —
+    /// caller must build the OD and park it. Ports C++ :186-197.
+    NeedOverwriteDialog { paths: Vec<PathBuf>, text: String },
+}
+
+fn classify_save_overwrite(
+    names: &[String],
+    parent: &Path,
+    overwrite_confirmed: &str,
+) -> SaveOverwriteOutcome {
+    let paths: Vec<PathBuf> = names
+        .iter()
+        .map(|n| parent.join(n))
+        .filter(|p| p.exists())
+        .collect();
+    if paths.is_empty() {
+        return SaveOverwriteOutcome::NoConflict;
+    }
+    let text = if paths.len() == 1 {
+        format!(
+            "Are you sure to overwrite the following already existing file?\n\n{}",
+            paths[0].display()
+        )
+    } else {
+        let mut msg =
+            "Are you sure to overwrite the following already existing files?\n".to_string();
+        for p in &paths {
+            msg.push('\n');
+            msg.push_str(&p.display().to_string());
+        }
+        msg
+    };
+    if text == overwrite_confirmed {
+        SaveOverwriteOutcome::AlreadyConfirmed
+    } else {
+        SaveOverwriteOutcome::NeedOverwriteDialog { paths, text }
+    }
+}
+
+/// Shared with [`emFileDialog::CheckFinish`] (Phase 3.6.2 E041): build
+/// the "File Exists" `emDialog` with OK/Cancel buttons. Caller is
+/// responsible for subscribing `od.finish_signal` (pre-show wake-up
+/// rail vs post-show `scheduler.connect`) and for parking the dialog
+/// on `DlgPanel.overwrite_dialog` (along with the asked text). Ports
+/// C++ emFileDialog.cpp:186-191.
+fn build_overwrite_dialog<C: ConstructCtx>(ctx: &mut C, look: Rc<emLook>) -> emDialog {
+    let mut od = emDialog::new(ctx, "File Exists", look);
+    od.AddCustomButton(ctx, "OK", DialogResult::Ok);
+    od.AddCustomButton(ctx, "Cancel", DialogResult::Cancel);
+    od
 }
 
 /// DIVERGED (Phase 3.6.1 Task 2): shared validation body for the
@@ -646,6 +669,10 @@ impl emFileDialog {
 /// sub-dialog inline (parks it on `outer_dlg.overwrite_dialog`, subscribes
 /// its finish_signal to the caller engine) before returning
 /// `Err(ConfirmOverwrite(..))`.
+///
+/// Phase 3.6.2 (E041): core logic shared with [`emFileDialog::CheckFinish`]
+/// via `check_finish_dir_and_open`, `classify_save_overwrite`, and
+/// `build_overwrite_dialog`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_file_dialog_check_finish(
     ctx: &mut EngineCtx<'_>,
@@ -683,80 +710,23 @@ pub(crate) fn run_file_dialog_check_finish(
         (n, p)
     };
 
-    // C++ emFileDialog.cpp:119-146 — dir-check.
-    if !dir_allowed {
-        if names.is_empty() {
-            return Err(FileDialogCheckResult::Error("No file selected".to_string()));
-        }
-        for name in &names {
-            let path = parent.join(name);
-            if path.is_dir() {
-                if names.len() == 1 {
-                    return Err(FileDialogCheckResult::EnterDirectory(name.clone()));
-                }
-                return Err(FileDialogCheckResult::Error(format!(
-                    "Directory selected: {}",
-                    name
-                )));
-            }
-        }
+    check_finish_dir_and_open(mode, dir_allowed, &names, &parent)?;
+
+    if mode != FileDialogMode::Save {
+        return Ok(());
     }
 
-    match mode {
-        FileDialogMode::Open => {
-            // C++ emFileDialog.cpp:148-163 — existence check.
-            for name in &names {
-                let path = parent.join(name);
-                if !path.exists() {
-                    return Err(FileDialogCheckResult::Error(format!(
-                        "The following file cannot be opened, because it does not exist:\n\n{}",
-                        path.display()
-                    )));
-                }
-            }
+    match classify_save_overwrite(&names, &parent, &outer_dlg.overwrite_confirmed) {
+        SaveOverwriteOutcome::NoConflict => {
+            // C++ does not explicitly clear OverwriteConfirmed here, but
+            // Rust keeps the clear as a safety belt against stale state
+            // from a prior save session (legacy write site).
+            outer_dlg.overwrite_confirmed.clear();
             Ok(())
         }
-        FileDialogMode::Save => {
-            // C++ emFileDialog.cpp:165-199 — overwrite detection + OD spawn.
-            let mut paths_to_overwrite = Vec::new();
-            for name in &names {
-                let path = parent.join(name);
-                if path.exists() {
-                    paths_to_overwrite.push(path);
-                }
-            }
-            if paths_to_overwrite.is_empty() {
-                // No conflict — clear any stale overwrite_confirmed.
-                outer_dlg.overwrite_confirmed.clear();
-                return Ok(());
-            }
-            let text = if paths_to_overwrite.len() == 1 {
-                format!(
-                    "Are you sure to overwrite the following already existing file?\n\n{}",
-                    paths_to_overwrite[0].display()
-                )
-            } else {
-                let mut msg =
-                    "Are you sure to overwrite the following already existing files?\n".to_string();
-                for p in &paths_to_overwrite {
-                    msg.push('\n');
-                    msg.push_str(&p.display().to_string());
-                }
-                msg
-            };
-            if text == outer_dlg.overwrite_confirmed {
-                // C++ emFileDialog.cpp:185 — already confirmed; allow.
-                return Ok(());
-            }
-            // Spawn OD. Port of C++ emFileDialog.cpp:186-197:
-            //   if (OverwriteDialog) delete OverwriteDialog.Get();
-            //   OverwriteAsked=text;
-            //   OverwriteDialog=new emDialog(...);
-            //   ... AddOKCancelButtons ...
-            //   AddWakeUpSignal(OverwriteDialog->GetFinishSignal());
-            let mut od = emDialog::new(ctx, "File Exists", look);
-            od.AddCustomButton(ctx, "OK", DialogResult::Ok);
-            od.AddCustomButton(ctx, "Cancel", DialogResult::Cancel);
+        SaveOverwriteOutcome::AlreadyConfirmed => Ok(()),
+        SaveOverwriteOutcome::NeedOverwriteDialog { paths, text } => {
+            let mut od = build_overwrite_dialog(ctx, look);
             let od_finish_sig = od.finish_signal;
             // Subscribe outer engine to OD's finish_signal.
             let outer_engine_id = ctx.engine_id;
@@ -764,9 +734,8 @@ pub(crate) fn run_file_dialog_check_finish(
             od.show(ctx);
             outer_dlg.overwrite_dialog = Some(od);
             outer_dlg.overwrite_asked = text;
-            Err(FileDialogCheckResult::ConfirmOverwrite(paths_to_overwrite))
+            Err(FileDialogCheckResult::ConfirmOverwrite(paths))
         }
-        FileDialogMode::Select => Ok(()),
     }
 }
 
@@ -1313,6 +1282,144 @@ mod e024_closure_tests {
                 "NEGATIVE: outer pending_result NOT set"
             );
         });
+    }
+
+    // ─── Test 3b: overwrite-POSITIVE path (E040, Phase 3.6.2) ─────────────
+
+    /// Save-mode overwrite POSITIVE: user confirms OD → outer dialog
+    /// promotes `overwrite_confirmed`, sets `pending_result = Some(Ok)`,
+    /// and the outer engine commits it to `finalized_result` on the
+    /// next slice.
+    ///
+    /// Historical context: this test was deferred in Phase 3.6 as E040
+    /// because OD cannot be installed as a second headless top-level —
+    /// `winit::window::WindowId::dummy()` is the only stable headless id
+    /// and would collide with outer's entry in `App::windows`. Phase 3.6.2
+    /// closes the hole with a narrow test-only sidecar:
+    /// `App::headless_dialog_results` pre-seeds the OD's
+    /// `DialogResult::Ok`; the pending_action closure reads it through
+    /// `App::read_dialog_finalized_result` and drives the POSITIVE branch
+    /// in the closure at emFileDialog.rs (see the `Some(DialogResult::Ok)`
+    /// arm that maps to C++ emFileDialog.cpp:93-96).
+    #[test]
+    fn save_mode_overwrite_positive_finishes_outer_dialog_via_scheduler() {
+        let mut h = FileDialogTestHarness::new();
+        h.write_test_file("doc.txt", b"existing");
+
+        let look = emLook::new();
+        let mut fd = {
+            let mut ctx = crate::emEngineCtx::InitCtx {
+                scheduler: &mut h.app.scheduler,
+                framework_actions: &mut h.app.framework_actions,
+                root_context: &h.app.context,
+                pending_actions: &h.app.pending_actions,
+            };
+            emFileDialog::new(&mut ctx, FileDialogMode::Save, look)
+        };
+        fd.set_parent_directory(&h.tmp_dir);
+        fd.set_selected_name("doc.txt");
+
+        // CheckFinish parks OD on outer DlgPanel, sets overwrite_asked,
+        // and queues OD.show as a pending_action (which would crash
+        // headless). Discard the pending_action after capturing OD state.
+        let _check = {
+            let mut ctx = crate::emEngineCtx::InitCtx {
+                scheduler: &mut h.app.scheduler,
+                framework_actions: &mut h.app.framework_actions,
+                root_context: &h.app.context,
+                pending_actions: &h.app.pending_actions,
+            };
+            fd.CheckFinish(&mut ctx, &DialogResult::Ok)
+        };
+        h.app.pending_actions.borrow_mut().clear();
+
+        // Capture OD's dialog_id + finish_signal from the parked OD,
+        // and record the expected overwrite_asked text.
+        let outer_root = fd.dialog.root_panel_id;
+        let outer_finish_sig = fd.finish_signal();
+        let (od_did, od_finish_sig, asked_text) = {
+            let pending = fd.dialog.pending_mut();
+            let tree = pending.window.tree_mut();
+            let beh = tree.take_behavior(outer_root).expect("outer root");
+            let tuple = beh
+                .as_dlg_panel()
+                .and_then(|p| {
+                    p.overwrite_dialog
+                        .as_ref()
+                        .map(|od| (od.dialog_id, od.finish_signal, p.overwrite_asked.clone()))
+                })
+                .expect("OD parked");
+            tree.put_behavior(outer_root, beh);
+            tuple
+        };
+
+        // Install outer headless.
+        let outer_pending = fd.dialog.pending.take().expect("outer pending");
+        h.app.pending_top_level.push(outer_pending);
+        let outer_wid = WindowId::dummy();
+        h.app
+            .install_pending_top_level_headless(outer_wid)
+            .expect("outer install");
+
+        // Pre-seed OD's finalized_result via the E040 sidecar. The
+        // pending_action drained below calls
+        // `read_dialog_finalized_result(od_did)` which returns this
+        // value directly, bypassing the WindowId::dummy() collision.
+        h.app
+            .headless_dialog_results
+            .insert(od_did, DialogResult::Ok);
+
+        // USER ACTION: fire OD.finish_signal. Scheduler wakes outer
+        // engine via wake_up_signals subscription; on_cycle_ext observes
+        // od_finish_sig pending, takes OD out of DlgPanel, pushes a
+        // pending_action.
+        h.app.scheduler.fire(od_finish_sig);
+        h.run_n_slices(1);
+        assert_eq!(
+            h.app.pending_actions.borrow().len(),
+            1,
+            "on_cycle_ext must push exactly one pending_action on OD.finish_signal"
+        );
+
+        // Drain: the closure reads od_result via the sidecar, runs the
+        // POSITIVE branch — `overwrite_confirmed = asked`,
+        // `pending_result = Some(Ok)` — and calls close_dialog_by_id(od_did)
+        // which is a no-op (OD was never installed).
+        h.app.drain_pending_actions_headless();
+
+        // Post-drain: outer DlgPanel must reflect POSITIVE commit.
+        with_dlg_panel(&mut h.app, outer_wid, outer_root, |p| {
+            assert!(
+                p.overwrite_dialog.is_none(),
+                "POSITIVE: OD handle dropped from DlgPanel"
+            );
+            assert_eq!(
+                p.overwrite_asked, "",
+                "POSITIVE: overwrite_asked cleared by mem::take"
+            );
+            assert_eq!(
+                p.overwrite_confirmed, asked_text,
+                "POSITIVE: overwrite_confirmed promoted from overwrite_asked"
+            );
+            assert_eq!(
+                p.pending_result,
+                Some(DialogResult::Ok),
+                "POSITIVE: pending_result = Ok (commits on next base slice)"
+            );
+        });
+
+        // One more slice: outer engine base body commits pending_result
+        // → finalized_result, fires outer.finish_signal.
+        h.run_n_slices(1);
+        assert_eq!(
+            read_result(&mut h.app, outer_wid, outer_root),
+            Some(DialogResult::Ok),
+            "POSITIVE: outer finalized_result = Ok after engine commit slice"
+        );
+        // Bind outer_finish_sig to document that it exists in the
+        // scheduler; firing state has already been consumed by the
+        // engine's internal processing.
+        let _ = outer_finish_sig;
     }
 
     // ─── Test 4: no-signals one-slice is no-op ────────────────────────────

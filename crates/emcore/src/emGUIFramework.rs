@@ -215,6 +215,18 @@ pub struct App {
     /// Global file-update signal. Port of C++ `emFileModel::AcquireUpdateSignalModel`.
     /// When fired, all file models that listen to it will reload from disk.
     pub file_update_signal: SignalId,
+    /// Phase 3.6.2 E040 sidecar (`.rust_only`): maps a `DialogId` to a
+    /// pre-seeded `DialogResult` that `read_dialog_finalized_result` will
+    /// return without walking `dialog_windows → windows → tree`. Exists
+    /// because `winit::window::WindowId::dummy()` is the only headless
+    /// `WindowId` available, so a second headless top-level (e.g. the
+    /// overwrite `emDialog` installed alongside an outer `emFileDialog`)
+    /// cannot be materialized at a distinct id. Tests that need to drive
+    /// a POSITIVE `DialogResult::Ok` branch without installing the inner
+    /// dialog seed an entry here. Production (`cfg(not(test))`) ignores
+    /// this field — the regular lookup path is unchanged.
+    #[cfg(test)]
+    pub(crate) headless_dialog_results: HashMap<DialogId, crate::emDialog::DialogResult>,
     setup_fn: Option<SetupFn>,
     initialized: bool,
     last_frame_time: Instant,
@@ -251,6 +263,8 @@ impl App {
             pending_actions: Rc::new(RefCell::new(Vec::new())),
             clipboard: RefCell::new(None),
             file_update_signal,
+            #[cfg(test)]
+            headless_dialog_results: HashMap::new(),
             setup_fn: Some(setup),
             initialized: false,
             last_frame_time: Instant::now(),
@@ -838,6 +852,25 @@ impl App {
         for eid in eids {
             self.scheduler.wake_up(eid);
         }
+    }
+
+    /// Read `DlgPanel.finalized_result` for the dialog identified by
+    /// `did`. Production path walks `dialog_windows → windows → tree`
+    /// via `mutate_dialog_by_id`. Tests may first seed
+    /// [`Self::headless_dialog_results`] so a dialog that could not be
+    /// installed at a distinct headless `WindowId` still returns a
+    /// deterministic result. Returns `None` if neither source resolves.
+    pub(crate) fn read_dialog_finalized_result(
+        &mut self,
+        did: DialogId,
+    ) -> Option<crate::emDialog::DialogResult> {
+        #[cfg(test)]
+        if let Some(r) = self.headless_dialog_results.get(&did).copied() {
+            return Some(r);
+        }
+        let mut out = None;
+        self.mutate_dialog_by_id(did, |dlg, _tree| out = dlg.finalized_result);
+        out
     }
 }
 
