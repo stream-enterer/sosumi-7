@@ -603,6 +603,49 @@ impl App {
         winit_window.request_redraw();
     }
 
+    /// Phase 3.5.A Task 10: test-only analog of
+    /// [`install_pending_top_level`] that skips winit surface creation.
+    ///
+    /// `install_pending_top_level` requires an `ActiveEventLoop` to
+    /// construct the OS window, so it cannot run in unit tests. This
+    /// helper reproduces the installer's scheduler + bookkeeping
+    /// operations under a caller-supplied `WindowId` (typically
+    /// [`WindowId::dummy()`]): the deferred `DialogPrivateEngine`
+    /// behavior is registered at
+    /// [`PanelScope::Toplevel(wid)`](crate::emPanelScope::PanelScope::Toplevel),
+    /// its wake-up is connected to `close_signal`, the `emWindow` is
+    /// moved into [`App::windows`] under `wid`, and the
+    /// `DialogId → WindowId` mapping is recorded. Winit surface
+    /// creation and initial `SetGeometry` are skipped (the emWindow
+    /// retains its `OsSurface::Pending` state, which is acceptable for
+    /// engine-driven tests that do not paint).
+    #[cfg(test)]
+    pub(crate) fn install_pending_top_level_headless(
+        &mut self,
+        wid: WindowId,
+    ) -> Option<crate::emEngine::EngineId> {
+        if self.pending_top_level.is_empty() {
+            return None;
+        }
+        let mut pending = self.pending_top_level.remove(0);
+        pending.window.wire_viewport_window_id(wid);
+        let engine_id = pending
+            .pending_private_engine
+            .take()
+            .map(|engine_behavior| {
+                let id = self.scheduler.register_engine(
+                    engine_behavior,
+                    Priority::High,
+                    PanelScope::Toplevel(wid),
+                );
+                self.scheduler.connect(pending.close_signal, id);
+                id
+            });
+        self.dialog_windows.insert(pending.dialog_id, wid);
+        self.windows.insert(wid, pending.window);
+        engine_id
+    }
+
     /// Look up the `emWindow` backing a `DialogId`. Returns `Pending` if
     /// the dialog is still queued in `pending_top_level`, or
     /// `Materialized` once `install_pending_top_level` has moved it

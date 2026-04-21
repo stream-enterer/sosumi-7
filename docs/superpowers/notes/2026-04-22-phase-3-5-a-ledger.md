@@ -228,3 +228,31 @@ See plan §"Bootstrap decisions" (B3.5a.a–B3.5a.g).
   (baseline 2487 + 4 new = 2491), clippy clean, fmt clean. Goldens not
   re-run — Task 9 only adds new code paths; no change to existing popup
   or home install flow.
+- **Task 10 — DialogPrivateEngine registration fix:** COMPLETE.
+  Phase 3.5 Task 4's `private_engine_observes_close_signal_sets_pending_cancel`
+  test un-ignored. Rewritten to build an `App`, wrap the populated dialog
+  tree (DlgPanel-on-root) in an `emWindow::new_top_level_pending` (discarding
+  the ctor's internal default tree via `take_tree`), push a
+  `PendingTopLevel` with a deferred `DialogPrivateEngine` behavior, and
+  drive registration through the new
+  `App::install_pending_top_level_headless(wid)` test helper (cfg(test)).
+  That helper mirrors `install_pending_top_level`'s scheduler +
+  bookkeeping ops without winit surface creation: registers the engine
+  at `PanelScope::Toplevel(wid)`, connects `close_signal`, records
+  `dialog_windows[did] = wid`, and moves `emWindow` into `App::windows`.
+  Returns the registered `EngineId` so test teardown can remove it
+  (drop-time no-engines invariant). Stale `DialogPrivateEngine::install`
+  helper removed (Task 6.2 placeholder-register path) — the production +
+  test install paths both now go through the pending → install flow.
+  `DialogPrivateEngine::Cycle` comment updated: the "Framework
+  placeholder, will panic" note is replaced with a "Toplevel scope,
+  ctx.tree is always Some" statement matching actual registration.
+  `ctx.tree.as_deref_mut().expect(...)` sites unchanged (they were
+  already the correct Toplevel-scope pattern). All assertion semantics
+  of the original test preserved (finalized_result == Cancel,
+  finish_state==2 after first slice, finish_signal fired exactly once,
+  re-fire of close_signal is no-op, !ADEnabled branch resets state to
+  0). Skip count returned to baseline 9. Gate green — nextest 2492/0/9,
+  clippy clean, fmt clean. Goldens not re-run — change is test-only +
+  a cfg(test) helper; no paint or scheduler-dispatch runtime code
+  touched.

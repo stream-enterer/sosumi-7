@@ -337,25 +337,6 @@ pub(crate) struct DialogPrivateEngine {
 }
 
 #[cfg(test)]
-impl DialogPrivateEngine {
-    /// Register the engine at `Priority::High` and connect `close_signal` to
-    /// its wake-up set. Ports the C++ ctor sequence
-    /// (emDialog.cpp:37-38: `SetEnginePriority(HIGH_PRIORITY)` +
-    /// `AddWakeUpSignal(GetCloseSignal())`).
-    pub(crate) fn install(
-        self,
-        scheduler: &mut crate::emScheduler::EngineScheduler,
-        scope: crate::emPanelScope::PanelScope,
-    ) -> crate::emEngine::EngineId {
-        let close_signal = self.close_signal;
-        let engine_id =
-            scheduler.register_engine(Box::new(self), crate::emEngine::Priority::High, scope);
-        scheduler.connect(close_signal, engine_id);
-        engine_id
-    }
-}
-
-#[cfg(test)]
 impl crate::emEngine::emEngine for DialogPrivateEngine {
     fn Cycle(&mut self, ctx: &mut crate::emEngineCtx::EngineCtx<'_>) -> bool {
         // Port of emDialog::PrivateCycle (emDialog.cpp:194-224).
@@ -365,16 +346,15 @@ impl crate::emEngine::emEngine for DialogPrivateEngine {
         // `tree`'s borrow is returned and we may freely call `as_sched_ctx`
         // on `ctx` to invoke widget callbacks. No `unsafe` needed.
         //
-        // Phase 3.5.A Task 6.2: DialogPrivateEngine is TEMPORARILY
-        // registered as `PanelScope::Framework` (ctx.tree will be None at
-        // runtime; `as_deref_mut().expect()` will panic). Task 10
-        // re-registers it as `Toplevel(dialog_window_id)` post-
-        // materialize. The only test exercising this path is marked
-        // `#[ignore]` so this panic is unreachable at Task-6 test time.
+        // Phase 3.5.A Task 10: DialogPrivateEngine is registered at
+        // `PanelScope::Toplevel(dialog_window_id)` via
+        // `App::install_pending_top_level` (production) or
+        // `install_pending_top_level_headless` (tests), so `ctx.tree` is
+        // always `Some` during Cycle.
         let Some(mut behavior) = ctx
             .tree
             .as_deref_mut()
-            .expect("DialogPrivateEngine: tree is Some (Task 10 will wire real Toplevel scope)")
+            .expect("DialogPrivateEngine: tree is Some (Toplevel scope)")
             .take_behavior(self.root_panel_id)
         else {
             // Panel gone — nothing to do.
@@ -1175,7 +1155,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Task 10: DialogPrivateEngine registration becomes Toplevel(dialog_window_id) post-materialize; Task 6.2 registers Framework as a placeholder which panics on ctx.tree dereference"]
     fn private_engine_observes_close_signal_sets_pending_cancel() {
         // Ports the C++ PrivateCycle close-signal branch (emDialog.cpp:196-198):
         //   if (IsSignaled(GetCloseSignal())) Finish(NEGATIVE);
@@ -1183,20 +1162,44 @@ mod tests {
         // finish_state == 2 (C++ FinishState==1 branch advances to 2 after
         // firing FinishSignal, emDialog.cpp:203-206), and a probe engine
         // connected to finish_signal has been awoken exactly once.
+        //
+        // Phase 3.5.A Task 10: registration flows through
+        // `App::install_pending_top_level_headless`, which mirrors the
+        // production `install_pending_top_level` path (deferred engine
+        // register at `PanelScope::Toplevel(wid)` post-materialize).
+        use crate::emGUIFramework::{App, PendingTopLevel};
         use crate::emPanelScope::PanelScope;
-        use std::collections::HashMap;
+        use crate::emWindow::WindowFlags;
         use winit::window::WindowId;
 
-        let mut sched = EngineScheduler::new();
+        let mut app = App::new(Box::new(|_app, _el| {}));
+
+        // Build the dialog's populated PanelTree out-of-band, then wrap it
+        // in a pending top-level emWindow (whose default empty tree we
+        // discard). Matches the production shape where `emDialog::new`
+        // builds the tree before enqueueing the `PendingTopLevel`.
         let mut tree = PanelTree::new();
         let root_id = tree.create_root("dlg", false);
-
-        let finish_sig = sched.create_signal();
-        let close_sig = sched.create_signal();
-
-        // Attach DlgPanel behavior to the root panel.
+        let finish_sig = app.scheduler.create_signal();
+        let close_sig = app.scheduler.create_signal();
+        let flags_sig = app.scheduler.create_signal();
+        let focus_sig = app.scheduler.create_signal();
+        let geom_sig = app.scheduler.create_signal();
         let dlg_panel = DlgPanel::new("Test", emLook::new(), finish_sig);
         tree.set_behavior(root_id, Box::new(dlg_panel));
+
+        let mut window = crate::emWindow::emWindow::new_top_level_pending(
+            Rc::clone(&app.context),
+            WindowFlags::empty(),
+            "test-dialog".to_string(),
+            close_sig,
+            flags_sig,
+            focus_sig,
+            geom_sig,
+            crate::emColor::emColor::TRANSPARENT,
+        );
+        let _discarded_internal = window.take_tree();
+        window.put_tree(tree);
 
         // Probe engine: counts its own Cycle invocations. Connected to
         // `finish_sig`, it will be woken in the slice where the signal
@@ -1211,37 +1214,52 @@ mod tests {
             }
         }
         let hits: Rc<RefCell<u32>> = Rc::new(RefCell::new(0));
-        let probe_id = sched.register_engine(
+        let probe_id = app.scheduler.register_engine(
             Box::new(FinishProbe {
                 hits: Rc::clone(&hits),
             }),
             crate::emEngine::Priority::Medium,
             PanelScope::Framework,
         );
-        sched.connect(finish_sig, probe_id);
+        app.scheduler.connect(finish_sig, probe_id);
 
-        // Install the private engine (High priority + wake-up connection).
-        let engine = DialogPrivateEngine {
+        // Enqueue the pending top-level + deferred DialogPrivateEngine
+        // behavior and drive the headless install path.
+        let wid = WindowId::dummy();
+        let dialog_id = app.allocate_dialog_id();
+        let private_engine = Box::new(DialogPrivateEngine {
             root_panel_id: root_id,
-            window_id: None,
+            window_id: Some(wid),
             close_signal: close_sig,
-        };
-        let engine_id = engine.install(&mut sched, PanelScope::Framework);
+        });
+        app.pending_top_level.push(PendingTopLevel {
+            dialog_id,
+            window,
+            close_signal: close_sig,
+            pending_private_engine: Some(private_engine),
+        });
+        let engine_id = app
+            .install_pending_top_level_headless(wid)
+            .expect("install registers DialogPrivateEngine");
+        assert!(
+            app.windows.contains_key(&wid),
+            "install_pending_top_level_headless must move emWindow into App::windows",
+        );
+        assert_eq!(
+            app.dialog_windows.get(&dialog_id).copied(),
+            Some(wid),
+            "DialogId → WindowId mapping must be recorded",
+        );
 
-        // Fire close signal and run one slice.
-        sched.fire(close_sig);
-
-        let mut windows: HashMap<WindowId, crate::emWindow::emWindow> = HashMap::new();
-        let root_context = crate::emContext::emContext::NewRoot();
-        let mut framework_actions: Vec<DeferredAction> = Vec::new();
+        // Fire close signal and run one slice against the per-window tree.
+        app.scheduler.fire(close_sig);
         let mut pending_inputs: Vec<(WindowId, emInputEvent)> = Vec::new();
         let mut input_state = emInputState::new();
         let fc: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
-
-        sched.DoTimeSlice(
-            &mut windows,
-            &root_context,
-            &mut framework_actions,
+        app.scheduler.DoTimeSlice(
+            &mut app.windows,
+            &app.context,
+            &mut app.framework_actions,
             &mut pending_inputs,
             &mut input_state,
             &fc,
@@ -1254,35 +1272,40 @@ mod tests {
             "finish_signal must fire exactly once when close_signal is observed",
         );
 
-        // Inspect DlgPanel state after the cycle.
-        let mut behavior = tree.take_behavior(root_id).expect("behavior reinstated");
+        // Inspect DlgPanel state via the window's tree after the cycle.
         {
-            let dlg = behavior.as_dlg_panel_mut().expect("is DlgPanel");
-            assert_eq!(
-                dlg.finalized_result,
-                Some(DialogResult::Cancel),
-                "close_signal should finalize to Cancel"
-            );
-            assert_eq!(
-                dlg.finish_state, 2,
-                "FinishState==1 branch advances to 2 after firing FinishSignal",
-            );
-            assert!(
-                dlg.pending_result.is_none(),
-                "pending_result consumed by finalize"
-            );
+            let win = app.windows.get_mut(&wid).expect("window present");
+            let mut tree = win.take_tree();
+            let mut behavior = tree.take_behavior(root_id).expect("behavior reinstated");
+            {
+                let dlg = behavior.as_dlg_panel_mut().expect("is DlgPanel");
+                assert_eq!(
+                    dlg.finalized_result,
+                    Some(DialogResult::Cancel),
+                    "close_signal should finalize to Cancel"
+                );
+                assert_eq!(
+                    dlg.finish_state, 2,
+                    "FinishState==1 branch advances to 2 after firing FinishSignal",
+                );
+                assert!(
+                    dlg.pending_result.is_none(),
+                    "pending_result consumed by finalize"
+                );
+            }
+            tree.put_behavior(root_id, behavior);
+            win.put_tree(tree);
         }
-        tree.put_behavior(root_id, behavior);
 
         // Without auto_delete, the next Cycle hits the C++ `!ADEnabled`
         // branch: FinishState=0, return false. finish_signal must NOT
         // fire again. Re-fire close_signal too — the engine is already
         // finalized and must ignore it.
-        sched.fire(close_sig);
-        sched.DoTimeSlice(
-            &mut windows,
-            &root_context,
-            &mut framework_actions,
+        app.scheduler.fire(close_sig);
+        app.scheduler.DoTimeSlice(
+            &mut app.windows,
+            &app.context,
+            &mut app.framework_actions,
             &mut pending_inputs,
             &mut input_state,
             &fc,
@@ -1292,24 +1315,29 @@ mod tests {
             1,
             "finish_signal must not re-fire on subsequent slices",
         );
-        let mut behavior = tree.take_behavior(root_id).expect("still present");
         {
-            let dlg = behavior.as_dlg_panel_mut().unwrap();
-            assert_eq!(
-                dlg.finalized_result,
-                Some(DialogResult::Cancel),
-                "repeated close_signal must not re-finalize"
-            );
-            assert_eq!(
-                dlg.finish_state, 0,
-                "!ADEnabled branch resets FinishState to 0",
-            );
+            let win = app.windows.get_mut(&wid).expect("window still present");
+            let mut tree = win.take_tree();
+            let mut behavior = tree.take_behavior(root_id).expect("still present");
+            {
+                let dlg = behavior.as_dlg_panel_mut().unwrap();
+                assert_eq!(
+                    dlg.finalized_result,
+                    Some(DialogResult::Cancel),
+                    "repeated close_signal must not re-finalize"
+                );
+                assert_eq!(
+                    dlg.finish_state, 0,
+                    "!ADEnabled branch resets FinishState to 0",
+                );
+            }
+            tree.put_behavior(root_id, behavior);
+            win.put_tree(tree);
         }
-        tree.put_behavior(root_id, behavior);
 
-        // Teardown.
-        sched.remove_engine(engine_id);
-        sched.remove_engine(probe_id);
-        sched.clear_pending_for_tests();
+        // Teardown. InputDispatchEngine is removed by App::drop.
+        app.scheduler.remove_engine(engine_id);
+        app.scheduler.remove_engine(probe_id);
+        app.scheduler.clear_pending_for_tests();
     }
 }
