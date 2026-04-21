@@ -80,3 +80,10 @@ See plan §"Bootstrap decisions" (B3.6a–B3.6d).
   button label read back after one DoTimeSlice). AddCustomButton /
   set_on_finish / set_on_check_finish untouched per plan. Gate green —
   nextest 2512/0/9.
+
+- **Prereq Task B rework — single-rail post-show:** COMPLETE. Widened
+  `App::mutate_dialog_by_id` closure to `FnOnce(&mut DlgPanel, &mut PanelTree)`.
+  Dropped DlgPanel::pending_label_updates queue + DialogPrivateEngine::Cycle
+  step 0.5 drain. `set_button_label_for_result` post-show walks DlgButton
+  children inline through the tree arg. Single post-show rail restored.
+  Gate green — nextest 2512/0/9.

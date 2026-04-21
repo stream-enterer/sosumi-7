@@ -760,7 +760,7 @@ impl App {
     pub fn mutate_dialog_by_id(
         &mut self,
         did: DialogId,
-        f: impl FnOnce(&mut crate::emDialog::DlgPanel),
+        f: impl FnOnce(&mut crate::emDialog::DlgPanel, &mut crate::emPanelTree::PanelTree),
     ) {
         // 1. Look up wid from dialog_windows; silently no-op if missing.
         let wid = match self.dialog_windows.get(&did).copied() {
@@ -778,10 +778,12 @@ impl App {
             None => return,
         };
         // 4–8. Take tree, take behavior, apply closure, put behavior, put tree.
+        // Root panel is taken out of the tree during the closure — children
+        // remain in the tree, so the closure can walk them via `&mut tree`.
         let mut tree = win.take_tree();
         if let Some(mut behavior) = tree.take_behavior(root_panel_id) {
             if let Some(dlg) = behavior.as_dlg_panel_mut() {
-                f(dlg);
+                f(dlg, &mut tree);
             }
             tree.put_behavior(root_panel_id, behavior);
         }
@@ -1586,7 +1588,7 @@ mod tests {
             );
 
             // Apply the mutation.
-            app.mutate_dialog_by_id(did, |p: &mut DlgPanel| {
+            app.mutate_dialog_by_id(did, |p: &mut DlgPanel, _tree| {
                 p.SetTitle("Changed");
             });
 
@@ -1633,7 +1635,7 @@ mod tests {
         fn mutate_dialog_by_id_unknown_id_is_noop() {
             let mut app = test_app();
             // Neither pending nor materialized — must not panic.
-            app.mutate_dialog_by_id(DialogId(999), |_p| {
+            app.mutate_dialog_by_id(DialogId(999), |_p, _tree| {
                 panic!("closure must not fire for unknown DialogId");
             });
         }
