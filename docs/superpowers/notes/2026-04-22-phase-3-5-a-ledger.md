@@ -37,3 +37,10 @@ See plan §"Bootstrap decisions" (B3.5a.a–B3.5a.g).
   as the mem::take sentinel. One unit test (default_produces_empty_tree —
   populate, mem::take, assert source empty + dest populated). Gate green —
   nextest 2484/0/9.
+- **Task 4 — emWindow::tree field + take/put:** COMPLETE. Added
+  tree: PanelTree field to emWindow struct; all ctors construct
+  PanelTree::default() (empty, unused). take_tree (mem::take) / put_tree
+  helpers added with dispatch-invariant doc. Field not yet consumed —
+  Task 6 wires into scheduler dispatch, Task 7 migrates home tree into it,
+  Task 8 migrates popup tree into it. One roundtrip unit test. Gate
+  green — nextest 2485/0/9.

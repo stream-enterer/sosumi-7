@@ -120,6 +120,17 @@ pub struct emWindow {
     pub focus_signal: SignalId,
     pub geometry_signal: SignalId,
     root_panel: PanelId,
+    /// The panel tree owned by this emWindow. Matches C++ emView::RootPanel
+    /// ownership (each emView has its own root panel). Phase 3.5.A precedent:
+    /// lifts emSubViewPanel::sub_tree (emSubViewPanel.rs:23) from sub-view
+    /// container to window container.
+    ///
+    /// Task 4: field added, constructed by every ctor via
+    /// `PanelTree::default()` (an empty sentinel); not yet used.
+    /// Task 6: scheduler dispatch take/put uses this field.
+    /// Task 7: home window starts building its real tree here on startup.
+    /// Task 8: popup path migrates to own this tree.
+    pub tree: PanelTree,
     vif_chain: Vec<Box<dyn emViewInputFilter>>,
     cheat_vif: emCheatVIF,
     touch_vif: emDefaultTouchVIF,
@@ -229,6 +240,7 @@ impl emWindow {
             focus_signal,
             geometry_signal,
             root_panel,
+            tree: PanelTree::default(),
             vif_chain,
             cheat_vif: emCheatVIF::new(),
             touch_vif: emDefaultTouchVIF::new(),
@@ -358,6 +370,7 @@ impl emWindow {
             focus_signal,
             geometry_signal,
             root_panel,
+            tree: PanelTree::default(),
             vif_chain,
             cheat_vif: emCheatVIF::new(),
             touch_vif: emDefaultTouchVIF::new(),
@@ -1330,6 +1343,25 @@ impl emWindow {
         self.root_panel
     }
 
+    /// Take the panel tree out of this window, leaving an empty sentinel
+    /// behind. Used exclusively by the scheduler's per-window dispatch
+    /// (Phase 3.5.A Task 6) to let engine Cycles access the tree without
+    /// aliasing `ctx.windows`. Callers outside the scheduler MUST pair this
+    /// with a `put_tree` call before returning control to App code.
+    ///
+    /// Invariant: between `take_tree` and `put_tree`, no code reads
+    /// `self.tree` on this window. Mirrors the `tree.take_behavior` /
+    /// `tree.put_behavior` invariant already used for SubView dispatch
+    /// (emScheduler.rs:138-169).
+    pub fn take_tree(&mut self) -> PanelTree {
+        std::mem::take(&mut self.tree)
+    }
+
+    /// Restore a panel tree previously taken via `take_tree`.
+    pub fn put_tree(&mut self, tree: PanelTree) {
+        self.tree = tree;
+    }
+
     pub fn request_redraw(&self) {
         if let Some(w) = self.winit_window_if_materialized() {
             w.request_redraw();
@@ -1956,5 +1988,52 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Task 4 (Phase 3.5.A): verifies take_tree/put_tree roundtrip.
+    /// - take on an empty-sentinel window returns an empty tree.
+    /// - put_tree then take_tree round-trips a populated tree.
+    ///
+    /// Uses public API (GetRootPanel) for emptiness checks — matching
+    /// Task 3 pattern in emPanelTree tests.
+    #[test]
+    fn take_tree_put_tree_roundtrip() {
+        let mut scheduler = EngineScheduler::new();
+        let mut dummy_tree = PanelTree::new();
+        let root = dummy_tree.create_root_deferred_view("root");
+        let close_sig = scheduler.create_signal();
+        let flags_sig = scheduler.create_signal();
+        let focus_sig = scheduler.create_signal();
+        let geom_sig = scheduler.create_signal();
+        let mut win = emWindow::new_popup_pending(
+            crate::emContext::emContext::NewRoot(),
+            root,
+            WindowFlags::empty(),
+            "test".to_string(),
+            close_sig,
+            flags_sig,
+            focus_sig,
+            geom_sig,
+            crate::emColor::emColor::TRANSPARENT,
+        );
+
+        // Initial tree is the empty sentinel — GetRootPanel() returns None.
+        let taken = win.take_tree();
+        assert!(
+            taken.GetRootPanel().is_none(),
+            "default sentinel tree must be empty"
+        );
+        win.put_tree(taken);
+
+        // Build a populated tree, put it in, take it out — root must survive.
+        let mut populated = PanelTree::new();
+        let _r = populated.create_root_deferred_view("populated_root");
+        win.put_tree(populated);
+        let taken2 = win.take_tree();
+        assert!(
+            taken2.GetRootPanel().is_some(),
+            "populated tree must have a root after roundtrip"
+        );
+        win.put_tree(taken2);
     }
 }
