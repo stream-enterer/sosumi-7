@@ -152,11 +152,10 @@ Per project plan-tool rules: phased, gated, commit-per-task, gate commands named
 - `DIVERGED:` at the struct: "C++ `emFileDialog : public emDialog`; Rust composition. Idiom adaptation — observable behavior identical."
 - Gate: cargo check / clippy / nextest. Existing emFileDialog tests still run but with minimal adjustment (no Cycle changes yet — 3.6 Task 2 ports Cycle).
 
-**Task 2 — `FileDialogPrivateEngine` ports C++ `emFileDialog::Cycle` (1 commit).**
+**Task 2 — emFileDialog's root DlgPanel gets a file-dialog cycle hook; shared `DialogPrivateEngine` drives it (1 commit).**
 
-- Specialise `DialogPrivateEngine` for file-dialog behavior, or introduce `FileDialogPrivateEngine` that registers in place of the inner `emDialog`'s DialogPrivateEngine (C++ pattern: emFileDialog's `Cycle()` chains to `emDialog::Cycle()` — Rust can mirror by composing: FileDialogPrivateEngine's Cycle calls the base dialog engine's Cycle logic first, then runs file-dialog-specific logic).
-- Subscribe engine to `fsb.file_trigger_signal` at construction via `scheduler.connect`. Matches C++ `AddWakeUpSignal(Fsb->GetFileTriggerSignal())`.
-- Cycle body ports emFileDialog.cpp:80-106 beat-for-beat: IsSignaled(fsb_file_trigger) → Finish(POSITIVE); overwrite_dialog handling on its finish_signal.
+- emFileDialog's root panel (installed in Task 1) is a DlgPanel whose PanelBehavior provides a specialised cycle-hook body (per D2: single engine type, per-behavior hook). Hook body ports emFileDialog.cpp:80-106 beat-for-beat: IsSignaled(fsb_file_trigger) → Finish(POSITIVE); overwrite_dialog handling on its finish_signal.
+- Subscribe the existing (3.5-created) `DialogPrivateEngine` to `fsb.file_trigger_signal` via `scheduler.connect(fsb.file_trigger_signal, dialog.private_engine_id)`. Matches C++ `AddWakeUpSignal(Fsb->GetFileTriggerSignal())`. The same engine is already subscribed to close_signal from 3.5.
 - DELETE `emFileDialog::Cycle(&mut self, ctx)` and `fsb_file_trigger_signal` cached field and `test_force_overwrite_result` helper.
 - Gate: cargo check / clippy / nextest.
 
@@ -186,8 +185,8 @@ Must hold at exit of Phase 3.6:
 | ID | Assertion | Command |
 |---|---|---|
 | I5a | `emDialog` composes an `emWindow` | `rg -n 'window: emWindow\|window: crate::emWindow::emWindow' crates/emcore/src/emDialog.rs` → ≥1 match |
-| I5b | `DialogPrivateEngine` exists and is an `emEngine` | `rg -n 'impl emEngine for DialogPrivateEngine\|impl emEngine for FileDialogPrivateEngine' crates/emcore/src/emDialog.rs crates/emcore/src/emFileDialog.rs` → ≥1 match |
-| I5c | dialog private engine is registered at construction with wake-up subscription | `rg -nU 'register_engine\([\s\S]*?DialogPrivateEngine\|DialogPrivateEngine::install' crates/emcore/src/emDialog.rs` → ≥1 match; `rg -n 'scheduler.connect' crates/emcore/src/emDialog.rs crates/emcore/src/emFileDialog.rs` → ≥2 matches (close_signal + fsb_file_trigger_signal) |
+| I5b | `DialogPrivateEngine` exists and is an `emEngine` (one type, per D2) | `rg -n 'impl emEngine for DialogPrivateEngine' crates/emcore/src/emDialog.rs` → exactly 1 match |
+| I5c | dialog private engine is registered at construction with wake-up subscription | `rg -nU 'register_engine\([\s\S]*?DialogPrivateEngine\|DialogPrivateEngine::install' crates/emcore/src/emDialog.rs` → ≥1 match; `rg -n 'scheduler\.connect\|\.connect\(' crates/emcore/src/emDialog.rs crates/emcore/src/emFileDialog.rs` → ≥2 matches (close_signal + fsb_file_trigger_signal) |
 | I5d | no caller-invoked dialog `Cycle` method | `rg -n 'pub fn Cycle\s*\(.*PanelCtx' crates/emcore/src/emDialog.rs crates/emcore/src/emFileDialog.rs` → 0 matches |
 | I5e | `test_force_overwrite_result` is deleted | `rg -n 'test_force_overwrite_result' crates/` → 0 matches |
 | I5f | no new `Rc<RefCell<` in the touched files | `rg -n 'Rc<RefCell<' crates/emcore/src/emDialog.rs crates/emcore/src/emFileDialog.rs` → 0 matches (≤ pre-phase baseline) |
@@ -205,7 +204,7 @@ E024 is `resolved-phase-3-6` when **all** of the following are true:
 1. **Structural evidence in code:**
    - `emFileDialog` no longer has a `pub fn Cycle(&mut self, ctx: &mut PanelCtx) -> bool` method (grep I5d).
    - The `DIVERGED:` block at today's `emFileDialog::Cycle` (emFileDialog.rs:307-321) is deleted alongside the method.
-   - A `FileDialogPrivateEngine` (or equivalently-named `DialogPrivateEngine` reused) is registered at construction and subscribed via `scheduler.connect` to `fsb.file_trigger_signal` (I5c).
+   - The single `DialogPrivateEngine` (per D2) is subscribed via `scheduler.connect` to `fsb.file_trigger_signal` in addition to its 3.5-established close_signal subscription (I5c).
 
 2. **Behavioural evidence in tests** — the following test compiles and passes without any code path invoking `*.Cycle(...)` or `dlg.Cycle(...)`:
 
@@ -237,28 +236,46 @@ E024 is `resolved-phase-3-6` when **all** of the following are true:
 
 3. **Raw-material status flip:** `E024.status = "resolved-phase-3-6"` in `port-divergence-raw-material.json`, `resolution_commit` = Phase 3.6 Task 4's SHA.
 
-4. **The name correspondence invariant** at `emFileDialog::Cycle` no longer appears on a `pub fn` — but is honoured by `impl emEngine for FileDialogPrivateEngine { fn Cycle(...) }`, which *is* the C++ emFileDialog::Cycle semantically (a PrivateEngine Cycle that is dispatched when the fsb_file_trigger signal fires).
+4. **The name correspondence invariant** at `emFileDialog::Cycle` no longer appears on a `pub fn` — the emFileDialog-specific cycle logic is honoured by the DlgPanel behavior's cycle hook body (reached by `DialogPrivateEngine::Cycle` via `tree.take_behavior(root_panel_id)`), which *is* the C++ `emFileDialog::Cycle` virtual-override semantic in Rust form.
 
-## 7. Open questions for user
+## 7. Decisions (resolved via CLAUDE.md authority order + audits)
 
-Q1 — **Finished hook shape.** §3 Task 1c proposes `on_finished: Option<WidgetCallbackRef<DialogResult>>` matching the B3.4a callback idiom, rather than a trait method. This aligns with how `emDialog::on_finish` / `on_check_finish` already work in the Rust port. Confirm OK, or do you want `Finished` ported as a trait-method on a `DialogBehavior` trait for closer structural match to C++ `virtual void Finished()`?
+Each decision cites the rule that settled it + a fallback to take if the choice fails during implementation.
 
-Q2 — **Shared vs. specialised private engine for emFileDialog.** Two options:
-- (a) `DialogPrivateEngine` is extensible — holds a `Box<dyn DialogCycleExt>` or similar that emFileDialog supplies file-specific logic through. One engine type; composition inside Cycle.
-- (b) `FileDialogPrivateEngine` is a distinct engine struct that replaces (or wraps) `DialogPrivateEngine` in an emFileDialog. Two engine types; mirrors C++ `emFileDialog::Cycle` overriding `emDialog::Cycle`.
+**D1 — `Finished` hook shape: callback, not trait method.**
+- *Decision:* `on_finished: Option<WidgetCallbackRef<DialogResult>>` on `emDialog`, mirroring the established Rust port pattern where C++ virtuals become callbacks (see `emDialog::on_check_finish` replacing C++ `virtual bool CheckFinish(int)`, `emButton::on_click` replacing C++ `virtual void Clicked()`). The callback fires at the C++-matching beat from `DialogPrivateEngine::Cycle` after `Finish` completes.
+- *Why the rule lands here:* Port Ideology classifies "virtual method → Option<callback>" as **idiom adaptation**, not divergence, because the behavior is identical (subclass hook point). CLAUDE.md Authority Order: Rust idiom applies below the observable surface — `Finished`'s observable behavior is "a function runs when the dialog finishes"; caller's override-vs-callback is not observable.
+- *Fallback:* if a consumer needs features a callback can't express (e.g., access to protected emDialog state the way a C++ subclass has), promote `Finished` to a trait method on a `DialogBehavior` trait. Low risk — callbacks are strictly more permissive than virtuals for non-super-calling overrides.
 
-(b) is closer to C++ structure (virtual override ≡ two engine types). (a) is Rust-idiomatic. Recommend (b) — port-ideology authority order says match C++. Confirm or override.
+**D2 — Single `DialogPrivateEngine` type; per-dialog Cycle specialisation lives on the dialog's PanelBehavior.**
+- *Decision:* One engine type — `DialogPrivateEngine` — registered at emDialog construction. Its `Cycle` reaches the dialog's root behavior via `tree.take_behavior(self.root_panel_id)` and invokes a PanelBehavior-side cycle hook (`DlgPanel::on_private_cycle(ctx) -> bool` or similar). emFileDialog provides its Cycle specialisation by giving its root DlgPanel a different cycle-hook body (ported from emFileDialog.cpp:80-106), not by registering a different engine type.
+- *Why the rule lands here:* CLAUDE.md Authority Order. C++ `class emDialog` has a **single** `PrivateEngineClass PrivateEngine` member instance — ONE engine, not two. C++'s `emFileDialog::Cycle()` at emFileDialog.h:195 is a virtual on `emFileDialog` itself (not on `PrivateEngineClass`); the engine's Cycle reaches the dialog via `Dlg&` and virtual-dispatches to the derived dialog's override. Rust's faithful port: one engine type, reaching the dialog behavior via the tree, calling a PanelBehavior cycle hook that the specific dialog type implements. Introducing a second engine struct (`FileDialogPrivateEngine`) would be a Rust-convenience divergence from C++ with **no forced necessity** — CLAUDE.md forbids divergences that aren't strictly forced.
+- *Fallback:* if the PanelBehavior cycle-hook signature can't be made to work cleanly (borrow conflicts between engine's scheduler reach and behavior's PanelCtx reach), add an internal dispatch trait `DialogCycleHook` on a marker trait all dialog behaviors implement, then `DialogPrivateEngine` holds `panel_id` only and resolves the hook through the tree. Still one engine type.
 
-Q3 — **Overwrite dialog replacement semantics.** Current `emStocksListBox` uses `silent_cancel()` when replacing an in-flight dialog. In the new model, the right shape is "tear down the old dialog's window + deregister its engine." Confirm this matches what you want as the C++-parity shape, or is there a user-visible semantic the silent-cancel was capturing that tear-down loses?
+**D3 — Overwrite-dialog replacement: explicit `deregister(scheduler)` helper called before drop.**
+- *Decision:* Adding `emDialog::deregister(&mut self, scheduler: &mut EngineScheduler)` which calls `scheduler.remove_engine(self.private_engine_id)` and any panel-tree cleanup required. Migrated `emStocksListBox` sites call `old_dialog.deregister(sched); drop(old_dialog);` when replacing an in-flight dialog. `emDialog::silent_cancel()` is deleted.
+- *Why the rule lands here:* Drop-time auto-teardown fails on a hard constraint: Rust's `Drop` takes no arguments and has no scheduler reach, yet the registered `DialogPrivateEngine` must be removed from the scheduler (otherwise its next `Cycle` hits a stale `root_panel_id` pointing into a dropped tree — a crash, not a leak). The C++ equivalent works because `emEngine::~emEngine` has a captured scheduler handle via the emContext pointer its constructor stored; Rust's Do-NOT list forbids the `Rc<RefCell<Scheduler>>` / `Weak<Scheduler>` / raw-pointer patterns that would allow an equivalent captured handle. Explicit deregister is therefore **the only shape consistent with both C++-parity tear-down semantics and Do-NOT constraints** — the explicit-call cost is a forced-divergence concession, documented with a `DIVERGED:` at the method.
+- *Fallback:* if pattern proves too easy to forget at call sites, introduce a `DialogOwnedHandle` newtype that wraps the dialog + deregisters on its Drop (the handle captures the scheduler via a `&'a mut EngineScheduler` lifetime-bound slot). This shifts the forced cost from "remember to call deregister" to "lifetime-annotate the handle" — tradeoff evaluated at 3.5 Task 4 if the explicit-call shape feels error-prone.
 
-Q4 — **Dialog-as-panel-in-outer-tree vs dialog-as-own-view.** C++ emDialog *is* an emWindow — it has its own view/root, not a panel somewhere in a parent view's tree. §2 Phase 3.5 Task 4 proposes matching C++: emDialog constructs its own `emWindow` via `new_popup_pending`. Confirm that's the target (rather than installing DlgPanel into an existing tree). This is the key C++-structural commitment.
+**D4 — Dialog is its own view (owns `emWindow` via `new_popup_pending`), not a panel installed in a parent tree.**
+- *Decision:* `emDialog::new` constructs its own `emWindow` via `emWindow::new_popup_pending(parent_context, root_panel, close_signal, view_flags, window_flags, wm_res_name)` with `WindowFlags::MODAL | WindowFlags::POPUP` and `VF_POPUP_ZOOM|VF_ROOT_SAME_TALLNESS`-equivalent view flags. Matches C++ `class emDialog : public emWindow` with its C++ default `VF_POPUP_ZOOM|VF_ROOT_SAME_TALLNESS, WF_MODAL`.
+- *Why the rule lands here:* CLAUDE.md Authority Order top: C++ source is ground truth for structure. emDialog IS an emWindow in C++ — any other Rust shape is a structural divergence. Rust's `emWindow::new_popup_pending` was built exactly for this pattern (popup-zoom already consumes it).
+- *Fallback:* if `new_popup_pending` turns out to be insufficient for modal-dialog semantics (e.g., modal input-blocking isn't wired through for arbitrary popup owners), extend the popup path as a prerequisite sub-phase rather than abandoning dialog-as-own-view. The framing here is non-negotiable per CLAUDE.md; the implementation rail can be extended if needed.
 
-Q5 — **Phase 3.5 vs Phase 3.6 commit-to-main cadence.** Do 3.5 and 3.6 land on separate branches (merge after each closeout), or on a single long-lived `port-rewrite/phase-3-5-through-3-6` branch that merges once both are done? Recommend separate branches with tags at each closeout, matching the Phase 3 cadence. Confirm or override.
+**D5 — Separate branches per sub-phase, tags at each closeout.**
+- *Decision:* `port-rewrite/phase-3-5-emdialog-as-emwindow` merges after 3.5 closeout with tag `port-rewrite-phase-3-5-complete`. `port-rewrite/phase-3-6-emfiledialog-e024` branches from main after 3.5 merge, merges with tag `port-rewrite-phase-3-6-complete`.
+- *Why the rule lands here:* Project convention (Phase 3 used this exact cadence — `port-rewrite-phase-3-complete` tag at `d0f1cc7b`). Not a CLAUDE.md rule but a durable observed pattern.
+- *Fallback:* if 3.6 turns out trivially small (< 200 LOC) at 3.5 closeout, inline into the 3.5 branch with a combined tag. Decision revisited at 3.5 closeout, not now.
 
-Q6 — **`Finished` virtual subclass overrides in C++** — any emCore/emfileman/emstocks site overrides `emDialog::Finished`? If yes, those callers need migration to the callback idiom in 3.5. (Grep: `rg 'virtual void Finished\|void Finished\(int' ~/git/eaglemode-0.96.4/`.) I didn't grep this during research; flagging as an open item for the 3.5 Task 1c audit.
+**D6 — `Finished` subclass-override audit (RESOLVED).**
+- *Audit result:* emCore contains `emDialog::Finished` default impl only (`emDialog.cpp:189`). Zero emCore-side subclass overrides. One override exists in `emShowStdDlg.cpp:99` (the `emShowStdDlg` command-line tool), which is NOT ported to Rust — it is outside emCore entirely.
+- *Consequence:* Phase 3.5 Task 1c can use `on_finished` callback with no migration cost. If `emShowStdDlg` is ever ported, its `Finished` override becomes a closure installed into `on_finished`.
+- *CLAUDE.md tie-in:* File and Name Correspondence is honoured — `emDialog.rs::on_finished` carries the callback-for-virtual comment naming C++ `Finished` per the idiom-adaptation convention.
 
-Q7 — **E-entries that depend on this work.** Not surfaced during research, but worth a post-brainstorm scan: any *other* open E-entries in `port-divergence-raw-material.json` that name `emDialog`, `emWindow`, `AddWakeUpSignal`, or caller-driven Cycle? If so, they may resolve alongside E024 or want to be flagged as also-closed-by-3.5/3.6.
+**D7 — Other dialog/window E-entries dependent on this work (RESOLVED).**
+- *Audit result:* Open E-entries matching `emDialog|emWindow|AddWakeUpSignal|caller-driven Cycle` in `port-divergence-raw-material.json`: **only E024.** Other partial matches (E018 — emScreen/emWindow inheritance, E020 — dummy-base-class pattern, E030 — screensaver timer) are unrelated to dialog Cycle dispatch.
+- *Consequence:* Phase 3.5/3.6 closes E024 only. No co-resolution expected. If any new E-entry is created during implementation that names a dialog-or-window structural divergence surfaced by the work, flag in the phase ledger and resolve in-phase if cheap.
 
 ---
 
-**End of brainstorm output.** Awaiting user review before proceeding to `writing-plans` skill for the full detailed Phase 3.5 and Phase 3.6 implementation plans.
+**End of brainstorm output.** All open questions resolved by CLAUDE.md authority order + cited audits; fallbacks named where the primary choice could fail. Ready for user review before proceeding to `writing-plans` for the full detailed Phase 3.5 and Phase 3.6 implementation plans.
