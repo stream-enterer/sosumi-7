@@ -1372,6 +1372,8 @@ Each of these previously-plain-struct methods now routes through `tree.take_beha
 - `GetFinishSignal(&self) -> SignalId` — direct return `self.finish_signal`.
 - `CheckFinish(&self, tree) -> bool` — true iff `DlgPanel.finalized_result.is_some()`.
 - `set_button_label_for_result(&mut self, tree, result, label)` — mutate DlgPanel.buttons + propagate caption to the installed DlgButton via tree.
+- `private_engine_id(&self) -> EngineId` — return `self.private_engine_id`. `pub(crate)` visibility. Consumed by Phase 3.6 (emFileDialog calls `scheduler.connect(fsb.file_trigger_signal, dialog.private_engine_id())`).
+- `root_panel_id(&self) -> PanelId` — return `self.root_panel_id`. `pub(crate)` visibility. Consumed by Phase 3.6 (emFileDialog accesses outer DlgPanel via `tree.take_behavior(dialog.root_panel_id())`).
 
 Each method follows the template:
 
