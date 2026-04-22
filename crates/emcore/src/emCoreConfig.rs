@@ -392,6 +392,7 @@ mod tests {
         assert!(!sc.is_signaled(sig));
         config.VisitSpeed.SetValue(0.5, &mut sc);
         assert!(sc.is_signaled(sig), "VisitSpeed::SetValue must fire the field signal");
+        assert!(sc.is_signaled(agg), "SetValue must propagate to the struct aggregate signal");
         assert_eq!(*config.VisitSpeed.GetValue(), 0.5);
 
         // Clean up: abort pending then remove all config signals.
