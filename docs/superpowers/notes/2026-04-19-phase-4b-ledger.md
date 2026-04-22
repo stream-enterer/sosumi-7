@@ -14,6 +14,14 @@
 
 Pre-Task-1 audit found legacy `emAlignmentRec` and `emColorRec` in `crates/emcore/src/emRecRecTypes.rs` with three production consumers (`emVirtualCosmos`, `emBookmarks`, `emFileManTheme`) plus generated kani harnesses. These conflict with adding canonical files at the same logical names. Migration deferred to **Phase 4b'** (`docs/superpowers/plans/2026-04-21-port-rewrite-phase-4b-prime-color-alignment-rec.md`); Phase 4b plan revised in commit `713b5743`. Phase 4b now ships: `emFlagsRec` (Task 1), `emStructRec` (Task 4), `emUnionRec` (Task 5), `emTArrayRec<T>` (Task 6), gate (Task 7).
 
+## Scope amendment #2 (2026-04-21, post-Task-1)
+
+Pre-Task-4 C++ audit (`emRec.h:36-246`, `:930-1006`) found the original Task 4 sketch ("struct owns children + dedicated `aggregate_signal`") contradicts the C++ design: aggregate change propagates via the `emRecNode` parent-pointer listener tree (`UpperNode` + `IsListener` + `ChildChanged` virtuals), not via owned-children forwarding. Phase 4a's closeout already anticipated this: *"Landing parent pointers will retroactively change observable behavior at every currently-isolated SchedCtx fire site — capture as a Phase 4b invariant."*
+
+Phase 4b rescoped to ship the listener-tree machinery + emRecListener + retrofit parent-aware ctors onto all six primitives (including the already-shipped emFlagsRec). The structural compounds (emStructRec, emUnionRec, emTArrayRec) move to **Phase 4c** (`docs/superpowers/plans/2026-04-21-port-rewrite-phase-4c-emrec-compound-types.md`), where they will be built C++-faithfully on top of the listener tree.
+
+Plan rewritten in this commit. Bootstrap remains valid (commit `2b2bae56`); Task 1 stays shipped.
+
 ## Task log
 
 - **Task 1 (emFlagsRec):** COMPLETE.
