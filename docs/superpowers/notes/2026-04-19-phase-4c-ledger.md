@@ -20,4 +20,4 @@ Pre-commit hook remains active throughout Phase 4c.
 
 ## Task log
 
-<empty — tasks append here as they complete>
+- **Task 1** (sha fc6566cf) — retrofit aggregate_signals on 8 primitives. +16 tests (fire + no-op per primitive). `register_aggregate` placed on `emRecNode` trait (not `emRec<T>`) — generic-free + dyn-compatible so compounds can forward via `&mut dyn emRecNode`.
