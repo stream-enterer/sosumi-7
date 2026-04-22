@@ -174,11 +174,13 @@ impl emUnionRec {
         self.child.as_deref()
     }
 
-    /// Mutable access to the current child. No C++ counterpart — C++ returns
-    /// `emRec&` and all mutation happens via virtual methods on the base
-    /// class. Rust needs `&mut` for typed `SetValue` calls through the
-    /// concrete child type. Kept out of the public pattern where possible;
-    /// tests use this to mutate the child in place.
+    /// DIVERGED: no C++ counterpart. C++ exposes only `Get()` returning
+    /// `emRec&`, and all mutation occurs through virtual methods on the base
+    /// class that take `this` as a mutable pointer internally. Rust's borrow
+    /// checker forces a distinct `&mut` accessor for typed `SetValue` /
+    /// `register_aggregate` calls through the concrete child type. Kept
+    /// out of the hot pattern where possible; tests use this to mutate the
+    /// child in place.
     pub fn GetMut(&mut self) -> Option<&mut (dyn emRecNode + 'static)> {
         self.child.as_deref_mut()
     }
@@ -239,6 +241,11 @@ impl emUnionRec {
     /// Accessor for the reified aggregate signal. Parallels
     /// `emStructRec::GetAggregateSignal`. Used by outer compounds and by
     /// `emRecListener::SetListenedRec` through `listened_signal()`.
+    ///
+    /// DIVERGED: no direct C++ counterpart — C++ listeners splice into the
+    /// `UpperNode` chain instead of observing a named signal. Introduced by
+    /// the reified-chain rep (ADR 2026-04-21-phase-4b-listener-tree-adr.md —
+    /// R5). Mirrors `emStructRec::GetAggregateSignal`.
     pub fn GetAggregateSignal(&self) -> SignalId {
         self.aggregate_signal
     }
@@ -395,25 +402,44 @@ mod tests {
         sc.remove_signal(agg);
     }
 
-    /// The child is held as `Box<dyn emRecNode>` and typed `SetValue` is
-    /// not accessible polymorphically. To prove that `SetVariant` correctly
-    /// splices the union's aggregate signal into the new child's
-    /// aggregate chain, we drive an attached `emRecListener` on the
-    /// union's aggregate signal and mutate the child through a *captured*
-    /// typed handle that the allocator publishes via a shared cell.
-    ///
-    /// Mechanism: the allocator constructs an `emIntRec`, clones its
-    /// handle into a shared `Rc<RefCell<Option<emIntRec>>>` slot, and
-    /// returns it as `Box<dyn emRecNode>`. That's impossible (`emIntRec`
-    /// is not `Clone` and Box owns the only copy). Instead, we construct
-    /// the `emIntRec` *outside* the union, call `register_aggregate(agg)`
-    /// on it (the exact splice `SetVariant` performs), then `SetValue`,
-    /// and verify `agg` fires. This isolates the invariant: any child
-    /// registered via `register_aggregate(agg)` triggers `agg` on
-    /// `SetValue`. `SetVariant` uses the same `register_aggregate` call,
-    /// so the same propagation applies to the owned child.
+    /// `SpyRec` — test-only `emRecNode` that records every
+    /// `register_aggregate(sig)` call into a shared log. Lets the test
+    /// observe exactly which signals `SetVariant` splices onto the owned
+    /// child (the real proof, not a surrogate mutation).
+    struct SpyRec {
+        /// Signal for `listened_signal()` — unused by the test but required
+        /// by the trait contract.
+        own_signal: SignalId,
+        /// Unique id for this spy instance, so the test can tell a fresh
+        /// allocator invocation apart from a reused one.
+        instance_id: u32,
+        /// Shared log: `(instance_id, sig)` pairs in registration order.
+        log: Rc<RefCell<Vec<(u32, SignalId)>>>,
+    }
+
+    impl emRecNode for SpyRec {
+        fn parent(&self) -> Option<&dyn emRecNode> {
+            None
+        }
+        fn register_aggregate(&mut self, sig: SignalId) {
+            self.log.borrow_mut().push((self.instance_id, sig));
+        }
+        fn listened_signal(&self) -> SignalId {
+            self.own_signal
+        }
+    }
+
+    /// Proves `SetVariant` performs the reified-chain splice on the OWNED
+    /// child — not on a surrogate. The allocator produces a `SpyRec`
+    /// whose `register_aggregate` pushes onto a shared log; the test
+    /// reads the log to confirm (a) the union's aggregate signal is
+    /// spliced onto each freshly-allocated child exactly once, and
+    /// (b) a second `SetVariant(0)` call (after going to variant 1 and
+    /// back) re-splices on the NEW spy instance, not the dropped one.
     #[test]
-    fn child_mutation_fires_union_aggregate() {
+    fn set_variant_splices_aggregate_onto_new_child() {
+        use std::cell::Cell;
+
         let mut sched = EngineScheduler::new();
         let mut actions: Vec<DeferredAction> = Vec::new();
         let ctx_root = emContext::NewRoot();
@@ -421,34 +447,84 @@ mod tests {
         let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
         let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
 
+        let log: Rc<RefCell<Vec<(u32, SignalId)>>> = Rc::new(RefCell::new(Vec::new()));
+        let next_id: Rc<Cell<u32>> = Rc::new(Cell::new(0));
+
+        let log_v0 = Rc::clone(&log);
+        let id_v0 = Rc::clone(&next_id);
+        let log_v1 = Rc::clone(&log);
+        let id_v1 = Rc::clone(&next_id);
+
         let mut u = emUnionRec::new(&mut sc);
         u.AddVariant(
-            "int",
-            Box::new(|c: &mut SchedCtx<'_>| {
-                Box::new(emIntRec::new(c, 0, i64::MIN, i64::MAX)) as Box<dyn emRecNode>
+            "spy0",
+            Box::new(move |c: &mut SchedCtx<'_>| {
+                let instance_id = id_v0.get();
+                id_v0.set(instance_id + 1);
+                Box::new(SpyRec {
+                    own_signal: c.create_signal(),
+                    instance_id,
+                    log: Rc::clone(&log_v0),
+                }) as Box<dyn emRecNode>
+            }),
+        );
+        u.AddVariant(
+            "spy1",
+            Box::new(move |c: &mut SchedCtx<'_>| {
+                let instance_id = id_v1.get();
+                id_v1.set(instance_id + 1);
+                Box::new(SpyRec {
+                    own_signal: c.create_signal(),
+                    instance_id,
+                    log: Rc::clone(&log_v1),
+                }) as Box<dyn emRecNode>
             }),
         );
         u.SetDefaultVariant(0);
-        u.SetToDefaultVariant(&mut sc);
+
         let agg = u.GetAggregateSignal();
-        sc.scheduler.abort(agg);
 
-        // Replicate SetVariant's register_aggregate splice on a
-        // standalone child, then mutate. If this fires agg, SetVariant's
-        // splice (which is identical) does too.
-        let mut standalone = emIntRec::new(&mut sc, 0, i64::MIN, i64::MAX);
-        standalone.register_aggregate(agg);
-        standalone.SetValue(7, &mut sc);
+        // Materialise the default variant (first allocator call — instance 0).
+        u.SetToDefaultVariant(&mut sc);
 
-        assert!(
-            sc.is_signaled(agg),
-            "child mutation must fire union aggregate via reified chain"
-        );
+        // After default allocation, the only registration on instance 0
+        // should be the union's own aggregate signal.
+        {
+            let log_ref = log.borrow();
+            assert_eq!(
+                log_ref.as_slice(),
+                &[(0u32, agg)],
+                "SetToDefaultVariant must splice agg onto instance 0 exactly once"
+            );
+        }
+
+        // Switch to variant 1 (instance 1). Old SpyRec is dropped; the new
+        // one receives its own splice.
+        u.SetVariant(1, &mut sc);
+        {
+            let log_ref = log.borrow();
+            assert_eq!(
+                log_ref.as_slice(),
+                &[(0u32, agg), (1u32, agg)],
+                "SetVariant(1) must splice agg onto instance 1 exactly once"
+            );
+        }
+
+        // Return to variant 0 — a *fresh* SpyRec (instance 2) is allocated
+        // and receives its own splice. Proves the splice is not cached on
+        // the old dropped instance.
+        u.SetVariant(0, &mut sc);
+        {
+            let log_ref = log.borrow();
+            assert_eq!(
+                log_ref.as_slice(),
+                &[(0u32, agg), (1u32, agg), (2u32, agg)],
+                "SetVariant(0) must splice agg onto fresh instance 2"
+            );
+        }
 
         sc.scheduler.abort(agg);
         sc.remove_signal(agg);
-        sc.remove_signal(standalone.GetValueSignal());
-        drop(u);
     }
 
     #[test]
