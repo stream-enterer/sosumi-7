@@ -618,7 +618,7 @@ impl PanelBehavior for AboutPanel {
 
 // ── CoreConfigPlaceholder ────────────────────────────────────────────────────
 // Placeholder for emCoreConfigPanel.
-// DIVERGED: (upstream-gap-forced) C++ creates a full emCoreConfigPanel here. Rust defers to a
+// BLOCKED: C++ creates a full emCoreConfigPanel here. Rust defers to a
 // placeholder until the core config panel is wired into emmain's panel tree.
 
 struct CoreConfigPlaceholder;

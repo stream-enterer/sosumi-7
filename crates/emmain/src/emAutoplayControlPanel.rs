@@ -166,8 +166,8 @@ impl PanelBehavior for AutoplayCheckButtonPanel {
         self.check_button
             .Paint(painter, w, h, state.enabled, pixel_scale);
 
-        // DIVERGED: (upstream-gap-forced) C++ AutoplayButton::PaintLabel draws ellipse-arc progress indicator.
-        // Rust uses a simple rectangle overlay — PaintEllipseArc not yet ported.
+        // BLOCKED: C++ AutoplayButton::PaintLabel draws ellipse-arc progress indicator using PaintEllipseArc.
+        // Rust uses a simple rectangle overlay — AutoplayButton::PaintLabel has not been ported yet.
         let progress = self.progress.get();
         if progress > 0.0 {
             let bar_color = emColor::from_packed(0x00AA0080); // green, 50% alpha

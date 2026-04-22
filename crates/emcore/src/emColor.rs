@@ -28,8 +28,8 @@ impl std::error::Error for ColorParseError {}
 // channel can have a different range and bit-shift in the packed pixel. Since
 // the Rust port always uses 4-byte RGBA with range=255 for all channels, the
 // unshifted table values are identical across channels. One table suffices.
-// DIVERGED: (language-forced) SharedPixelFormat — single table instead of three, because
-// range=255 for all channels makes them identical when unshifted.
+// SharedPixelFormat — single table instead of C++'s three (RedHash, GreenHash, BlueHash), because
+// range=255 for all channels makes them identical when unshifted in the fixed RGBA layout.
 
 static BLEND_HASH: LazyLock<Box<[u8; 65536]>> = LazyLock::new(|| {
     let mut hash = Box::new([0u8; 65536]);

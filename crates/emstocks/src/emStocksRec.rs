@@ -10,7 +10,7 @@ use emcore::emRecRecord::{RecError, Record};
 // ─── Interest ────────────────────────────────────────────────────────────────
 
 /// Port of C++ emStocksRec::InterestType + InterestRec.
-/// DIVERGED: (language-forced) Rust enum replaces C++ int enum + emEnumRec subclass — Rust enums are the idiomatic equivalent of C++ int enums with associated string tables.
+/// Rust enum replaces C++ int enum + emEnumRec subclass — Rust enums are the idiomatic equivalent of C++ int enums with associated string tables.
 /// Deprecated identifier handling via explicit methods rather than virtual TryStartReading.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Interest {
@@ -228,7 +228,7 @@ pub fn GetDateDifferenceParts(
 }
 
 /// Get difference in days between two date strings.
-/// DIVERGED: (language-forced) Returns (i32, bool) tuple instead of C++ bool* out-param — Rust has no out-parameters; tuples are the idiomatic equivalent.
+/// Returns (i32, bool) tuple instead of C++ bool* out-param — Rust has no out-parameters; tuples are the idiomatic equivalent.
 pub fn GetDateDifference(from_date: &str, to_date: &str) -> (i32, bool) {
     let from_parsed = ParseDate(from_date);
     let to_parsed = ParseDate(to_date);

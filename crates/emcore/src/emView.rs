@@ -1264,7 +1264,7 @@ impl emView {
 
     /// Returns the current home viewport size (width, height).
     ///
-    /// DIVERGED: (language-forced) replaces Rust-invention `viewport_width`/`viewport_height` fields
+    /// Replaces Rust-invention `viewport_width`/`viewport_height` fields
     /// removed in Phase 6. Returns `(HomeWidth, HomeHeight)`.
     pub fn viewport_size(&self) -> (f64, f64) {
         (self.HomeWidth, self.HomeHeight)
@@ -1276,7 +1276,7 @@ impl emView {
     /// Fix-point zoom: keeps the viewport point (center_x, center_y) mapped to the
     /// same panel-space point before and after zoom. Calls RawVisit(..., true) directly.
     ///
-    /// DIVERGED: (language-forced) C++ signature is `Zoom(fixX, fixY, factor)`; Rust keeps factor first
+    /// C++ signature is `Zoom(fixX, fixY, factor)`; Rust keeps factor first
     /// for call-site consistency with earlier Rust API — marked here for record.
     pub fn Zoom(
         &mut self,
@@ -4532,7 +4532,7 @@ impl emView {
 
     /// Mark the SVP choice as invalid, triggering Update to recompute viewed coords.
     ///
-    /// DIVERGED: (language-forced) was `mark_viewing_dirty()` (set `viewing_dirty`). Phase 3 removes
+    /// Was `mark_viewing_dirty()` (set `viewing_dirty`). Phase 3 removes
     /// `viewing_dirty`; callers now set `SVPChoiceInvalid` via this wrapper so that
     /// `Update` picks it up in the drain loop.
     pub fn mark_viewing_dirty(&mut self) {

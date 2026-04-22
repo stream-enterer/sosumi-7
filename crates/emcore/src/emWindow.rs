@@ -503,7 +503,7 @@ impl emWindow {
         vp.borrow_mut().window_id = Some(window_id);
     }
 
-    // DIVERGED: (language-forced) Plan listed `materialized()`/`materialized_mut()` returning 6-tuple borrows; inlined as match in callers because the multi-borrow signature is awkward in Rust.
+    // C++ accessor methods returning multi-field borrows are inlined as match in callers (Rust borrow checker prevents returning multiple simultaneous borrows from self).
     /// Public accessor for the materialized winit window.
     ///
     /// Panics if the window is still in `OsSurface::Pending`. External

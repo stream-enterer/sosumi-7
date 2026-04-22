@@ -269,7 +269,7 @@ impl emBookmarkEntryUnion {
 
 // ── emBookmarksRec ────────────────────────────────────────────────────────────
 
-// DIVERGED: (upstream-gap-forced) C++ emBookmarksRec also has InsertNewBookmark, InsertNewGroup,
+// BLOCKED: C++ emBookmarksRec also has InsertNewBookmark, InsertNewGroup,
 // CopyToClipboard, TryInsertFromClipboard, BookmarkNameFromPanelTitle.
 // These editing-UI methods are not ported — the Rust implementation is
 // read-only for now.
@@ -514,7 +514,7 @@ impl emBookmarksModel {
     }
 }
 
-// DIVERGED: (upstream-gap-forced) C++ emBookmarkEntryAuxPanel and emBookmarksAuxPanel are editing
+// BLOCKED: C++ emBookmarkEntryAuxPanel and emBookmarksAuxPanel are editing
 // panels (cut/copy/paste/new bookmark/new group, color editing, location
 // setting, hotkey editing). Not ported — the Rust implementation is read-only.
 

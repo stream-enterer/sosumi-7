@@ -304,7 +304,7 @@ impl emMainWindow {
             let hotkey_str = hotkey.to_string();
             let bm = bm_model.borrow();
             if let Some(rec) = bm.GetRec().SearchBookmarkByHotkey(&hotkey_str) {
-                // DIVERGED: (upstream-gap-forced) C++ calls MainPanel->GetContentView().Visit() with
+                // BLOCKED: C++ calls MainPanel->GetContentView().Visit() with
                 // identity-based navigation. Rust uses the visiting animator
                 // directly on the window. Full wiring requires identity-based
                 // Visit on emView (not yet ported).
