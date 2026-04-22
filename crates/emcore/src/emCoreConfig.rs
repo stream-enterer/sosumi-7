@@ -20,6 +20,9 @@ use crate::emStructRec::emStructRec;
 /// src/emCore/emCoreConfig.cpp). Holds navigation speeds, rendering quality,
 /// and resource limits. Backed by an `emRecNodeConfigModel` for file persistence.
 pub struct emCoreConfig {
+    /// DIVERGED: C++ `emCoreConfig` inherits `emStructRec` via multiple
+    /// inheritance (`class emCoreConfig : public emConfigModel, public
+    /// emStructRec`). Rust has no MI; `emStructRec` is composed as a field.
     pub inner: emStructRec,
     pub StickMouseWhenNavigating: emBoolRec,
     pub EmulateMiddleButton: emBoolRec,
