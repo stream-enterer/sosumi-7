@@ -32,6 +32,7 @@
 //! ships in Phase 4d.
 
 use crate::emEngineCtx::ConstructCtx;
+use crate::emRec::CheckIdentifier;
 use crate::emRecNode::emRecNode;
 use crate::emSignal::SignalId;
 
@@ -98,6 +99,7 @@ impl emStructRec {
     /// Rust fires the reified aggregate chain registered here. See ADR
     /// 2026-04-21-phase-4b-listener-tree-adr.md.
     pub fn AddMember<R: emRecNode + ?Sized>(&mut self, child: &mut R, identifier: &str) {
+        CheckIdentifier(identifier);
         child.register_aggregate(self.aggregate_signal);
         self.members.push(MemberInfo {
             identifier: identifier.to_string(),
@@ -189,12 +191,6 @@ impl emRecNode for emStructRec {
         self.aggregate_signal
     }
 }
-
-// Internal hook: descendants of the struct should call this after registering
-// their own signal fires, so that the aggregate chain propagates upward when
-// `emStructRec` itself is nested. Currently unused because compound-on-compound
-// aggregation is handled by the user's derived `emRecNode::register_aggregate`
-// impl; kept here as documentation of the intended rep.
 
 #[cfg(test)]
 mod tests {
@@ -438,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn aggregate_signal_does_not_fire_on_no_op_mutation() {
+    fn aggregate_signal_does_not_fire_on_no_op_mutation_through_chain() {
         let mut sched = EngineScheduler::new();
         let mut actions: Vec<DeferredAction> = Vec::new();
         let ctx_root = emContext::NewRoot();
@@ -446,18 +442,71 @@ mod tests {
         let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
         let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
 
-        let mut person = Person::new(&mut sc);
-        let agg = person.inner.GetAggregateSignal();
+        // Multi-level chain: PersonWithAddr { addr: Address { zip, .. }, .. }.
+        // Setting zip to its existing default value must not fire the inner
+        // Address aggregate nor the outer PersonWithAddr aggregate.
+        let mut pwa = PersonWithAddr::new(&mut sc);
+        let outer_agg = pwa.inner.GetAggregateSignal();
+        let inner_agg = pwa.addr.inner.GetAggregateSignal();
 
-        // Set to the already-default value — no-change-skip must suppress fires.
-        person.male.SetValue(false, &mut sc);
+        pwa.addr.zip.SetValue(0, &mut sc);
+
         assert!(
-            !sc.is_signaled(agg),
-            "aggregate must NOT fire on no-op SetValue"
-        );
-        assert!(
-            !sc.is_signaled(person.male.GetValueSignal()),
+            !sc.is_signaled(pwa.addr.zip.GetValueSignal()),
             "leaf signal must NOT fire on no-op SetValue"
         );
+        assert!(
+            !sc.is_signaled(inner_agg),
+            "inner (Address) aggregate must NOT fire on no-op chain propagation"
+        );
+        assert!(
+            !sc.is_signaled(outer_agg),
+            "outer (PersonWithAddr) aggregate must NOT fire on no-op chain propagation"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "is not a valid identifier")]
+    fn add_member_rejects_invalid_identifier_with_space() {
+        let mut sched = EngineScheduler::new();
+        let mut actions: Vec<DeferredAction> = Vec::new();
+        let ctx_root = emContext::NewRoot();
+        let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+
+        let mut inner = emStructRec::new(&mut sc);
+        let mut leaf = emIntRec::new(&mut sc, 0, i64::MIN, i64::MAX);
+        inner.AddMember(&mut leaf, "has space");
+    }
+
+    #[test]
+    #[should_panic(expected = "is not a valid identifier")]
+    fn add_member_rejects_identifier_with_leading_digit() {
+        let mut sched = EngineScheduler::new();
+        let mut actions: Vec<DeferredAction> = Vec::new();
+        let ctx_root = emContext::NewRoot();
+        let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+
+        let mut inner = emStructRec::new(&mut sc);
+        let mut leaf = emIntRec::new(&mut sc, 0, i64::MIN, i64::MAX);
+        inner.AddMember(&mut leaf, "1leading_digit");
+    }
+
+    #[test]
+    #[should_panic(expected = "is not a valid identifier")]
+    fn add_member_rejects_empty_identifier() {
+        let mut sched = EngineScheduler::new();
+        let mut actions: Vec<DeferredAction> = Vec::new();
+        let ctx_root = emContext::NewRoot();
+        let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+
+        let mut inner = emStructRec::new(&mut sc);
+        let mut leaf = emIntRec::new(&mut sc, 0, i64::MIN, i64::MAX);
+        inner.AddMember(&mut leaf, "");
     }
 }
