@@ -88,6 +88,7 @@ pub mod emRecListener;
 pub mod emRecMemReader;
 pub mod emRecMemWriter;
 pub mod emRecNode;
+pub mod emRecNodeConfigModel;
 pub mod emRecParser;
 pub mod emRecReader;
 pub mod emRecRecTypes;
