@@ -274,12 +274,10 @@ impl<T> emFileModel<T> {
             FileState::LoadError(_) | FileState::TooCostly => {
                 self.state = FileState::Waiting;
             }
-            FileState::Loaded => {
-                if self.out_of_date {
-                    self.data = None;
-                    self.state = FileState::Waiting;
-                    self.out_of_date = false;
-                }
+            FileState::Loaded if self.out_of_date => {
+                self.data = None;
+                self.state = FileState::Waiting;
+                self.out_of_date = false;
             }
             _ => {}
         }

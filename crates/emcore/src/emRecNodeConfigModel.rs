@@ -29,19 +29,20 @@
 //! contract: `TrySave(force)` saves iff dirty-or-forced, `TryLoad` reads from
 //! disk, `TryLoadOrInstall` installs defaults on first run.
 //!
-//! DIVERGED: dirty tracking is manual via [`Self::mark_unsaved`] +
-//! [`Self::modify`]. C++ uses an `emRecListener` (`RecLink::OnRecChanged`) to
-//! auto-flip `Unsaved` on any signalled mutation. Wiring an observer through
-//! the `emRecNode::listened_signal` / aggregate-signal plumbing is a
-//! follow-up — TODO(phase-4d-followup): replace manual `mark_unsaved` with an
-//! auto-listener so `model.GetRecMut().field.SetValue(…)` transparently marks
-//! the model dirty.
+//! Dirty tracking uses [`emRecListener`]: a listener engine connects to the
+//! record's `listened_signal()` at construction time and sets an
+//! `Rc<Cell<bool>>` flag on the next scheduler cycle after any field mutates.
+//! `modify()` additionally sets the flag synchronously for immediate
+//! `IsUnsaved()` accuracy within the same call.
 
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use crate::emEngineCtx::SchedCtx;
 use crate::emRecFileReader::emRecFileReader;
 use crate::emRecFileWriter::emRecFileWriter;
+use crate::emRecListener::emRecListener;
 use crate::emRecNode::emRecNode;
 use crate::emRecReader::RecIoError;
 
@@ -50,19 +51,30 @@ use crate::emRecReader::RecIoError;
 pub struct emRecNodeConfigModel<T: emRecNode> {
     value: T,
     install_path: PathBuf,
-    unsaved: bool,
+    unsaved_flag: Rc<Cell<bool>>,
+    listener: emRecListener,
     format_name: Option<String>,
 }
 
 impl<T: emRecNode> emRecNodeConfigModel<T> {
     /// Construct a model wrapping `value`, with `install_path` as the disk
-    /// location. No IO happens here — call [`Self::TryLoad`] or
+    /// location. `ctx` is required to register the internal listener engine
+    /// that auto-marks the model dirty when any field in `value` signals a
+    /// change. No IO happens here — call [`Self::TryLoad`] or
     /// [`Self::TryLoadOrInstall`] to populate.
-    pub fn new(value: T, install_path: PathBuf) -> Self {
+    pub fn new(value: T, install_path: PathBuf, ctx: &mut SchedCtx<'_>) -> Self {
+        let unsaved_flag = Rc::new(Cell::new(false));
+        let flag_cb = Rc::clone(&unsaved_flag);
+        let listener = emRecListener::new(
+            Some(&value as &dyn emRecNode),
+            Box::new(move |_sc| flag_cb.set(true)),
+            ctx,
+        );
         Self {
             value,
             install_path,
-            unsaved: false,
+            unsaved_flag,
+            listener,
             format_name: None,
         }
     }
@@ -84,29 +96,24 @@ impl<T: emRecNode> emRecNodeConfigModel<T> {
         &self.value
     }
 
-    /// Mutable access. Does NOT auto-mark dirty — callers who bypass
-    /// [`Self::modify`] must call [`Self::mark_unsaved`] themselves.
+    /// Mutable access. Mutations fired through the returned reference
+    /// auto-mark dirty after the next scheduler cycle via the listener.
     pub fn GetRecMut(&mut self) -> &mut T {
         &mut self.value
     }
 
-    /// Run `f` against the record and mark the model unsaved.
+    /// Run `f` against the record and mark the model unsaved immediately.
     ///
-    /// DIVERGED: C++ relies on `emRecListener` to observe mutation signals.
-    /// The Rust port exposes a closure sugar that mirrors the legacy
-    /// `emConfigModel::modify` until auto-listener wiring lands.
+    /// DIVERGED: `modify()` sets `unsaved_flag` synchronously rather than
+    /// waiting for the listener engine to wake on the next scheduler cycle.
+    /// This matches the observable C++ contract (IsUnsaved true immediately
+    /// after mutation) even though the underlying mechanism differs.
     pub fn modify<F>(&mut self, f: F, ctx: &mut SchedCtx<'_>)
     where
         F: FnOnce(&mut T, &mut SchedCtx<'_>),
     {
         f(&mut self.value, ctx);
-        self.unsaved = true;
-    }
-
-    /// Explicitly flip the dirty flag. Mirrors the effect of C++
-    /// `RecLink::OnRecChanged` setting `Unsaved=true`.
-    pub fn mark_unsaved(&mut self) {
-        self.unsaved = true;
+        self.unsaved_flag.set(true);
     }
 
     /// Install path of the configuration file. C++
@@ -118,7 +125,7 @@ impl<T: emRecNode> emRecNodeConfigModel<T> {
     /// Whether the record has in-memory changes not yet flushed to disk.
     /// C++ `emConfigModel::IsUnsaved` (emConfigModel.h:49,142-145).
     pub fn IsUnsaved(&self) -> bool {
-        self.unsaved
+        self.unsaved_flag.get()
     }
 
     /// Load the record from [`Self::GetInstallPath`]. Mirrors C++
@@ -139,7 +146,7 @@ impl<T: emRecNode> emRecNodeConfigModel<T> {
                 Box::new(emRecFileReader::new(&self.install_path)?)
             };
         self.value.TryRead(reader.as_mut(), ctx)?;
-        self.unsaved = false;
+        self.unsaved_flag.set(false);
         Ok(())
     }
 
@@ -150,7 +157,7 @@ impl<T: emRecNode> emRecNodeConfigModel<T> {
     /// `TryLoadOrInstall`-era expectation that the first save lands even in
     /// a fresh config directory (emConfigModel.cpp:104).
     pub fn TrySave(&mut self, force: bool) -> Result<(), RecIoError> {
-        if !self.unsaved && !force {
+        if !self.unsaved_flag.get() && !force {
             return Ok(());
         }
         if let Some(parent) = self.install_path.parent() {
@@ -184,7 +191,7 @@ impl<T: emRecNode> emRecNodeConfigModel<T> {
             writer.TryWriteNewLine()?;
         }
         writer.finalize()?;
-        self.unsaved = false;
+        self.unsaved_flag.set(false);
         Ok(())
     }
 
@@ -203,9 +210,19 @@ impl<T: emRecNode> emRecNodeConfigModel<T> {
         if self.install_path.exists() {
             self.TryLoad(ctx)
         } else {
-            self.unsaved = true;
+            self.unsaved_flag.set(true);
             self.TrySave(true)
         }
+    }
+
+    /// Disconnect the listener engine and remove it from the scheduler.
+    /// Must be called before drop to avoid leaking the engine. Mirrors C++
+    /// `~emConfigModel` / `~emRecListener` teardown.
+    ///
+    /// Non-consuming: record fields remain accessible after `detach` for
+    /// signal teardown (abort + remove_signal on each field's SignalId).
+    pub fn detach(&mut self, ctx: &mut SchedCtx<'_>) {
+        self.listener.detach_mut(ctx);
     }
 }
 
@@ -320,6 +337,29 @@ mod tests {
         }
     }
 
+    fn run_slice(sched: &mut EngineScheduler) {
+        use std::collections::HashMap;
+        let mut windows = HashMap::new();
+        let root = emContext::NewRoot();
+        let mut actions: Vec<DeferredAction> = Vec::new();
+        let mut pending_inputs: Vec<(
+            winit::window::WindowId,
+            crate::emInput::emInputEvent,
+        )> = Vec::new();
+        let mut input_state = crate::emInputState::emInputState::new();
+        let fc: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
+        sched.DoTimeSlice(
+            &mut windows,
+            &root,
+            &mut actions,
+            &mut pending_inputs,
+            &mut input_state,
+            &fc,
+            &pa,
+        );
+    }
+
     #[test]
     fn install_on_first_run_writes_header_and_body() {
         let dir = tempfile::tempdir().unwrap();
@@ -333,7 +373,8 @@ mod tests {
         let mut sc = make_sc(&mut sched, &mut actions, &ctx_root, &cb, &pa);
 
         let cfg = MiniConfig::new(&mut sc);
-        let mut model = emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("MiniConfig");
+        let mut model =
+            emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("MiniConfig");
 
         assert!(!path.exists());
         model.TryLoadOrInstall(&mut sc).unwrap();
@@ -348,6 +389,7 @@ mod tests {
         assert!(contents.contains("Count = 0"), "contents: {contents:?}");
         assert!(contents.contains("Enabled = no"), "contents: {contents:?}");
 
+        model.detach(&mut sc);
         teardown(&model.value, &mut sc);
     }
 
@@ -371,13 +413,15 @@ mod tests {
         let mut sc = make_sc(&mut sched, &mut actions, &ctx_root, &cb, &pa);
 
         let cfg = MiniConfig::new(&mut sc);
-        let mut model = emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("MiniConfig");
+        let mut model =
+            emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("MiniConfig");
 
         model.TryLoad(&mut sc).unwrap();
         assert_eq!(*model.GetRec().count.GetValue(), 42);
         assert!(*model.GetRec().enabled.GetValue());
         assert!(!model.IsUnsaved());
 
+        model.detach(&mut sc);
         teardown(&model.value, &mut sc);
     }
 
@@ -394,7 +438,8 @@ mod tests {
         let mut sc = make_sc(&mut sched, &mut actions, &ctx_root, &cb, &pa);
 
         let cfg = MiniConfig::new(&mut sc);
-        let mut model = emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("MiniConfig");
+        let mut model =
+            emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("MiniConfig");
         // Install defaults.
         model.TryLoadOrInstall(&mut sc).unwrap();
         assert!(!model.IsUnsaved());
@@ -423,12 +468,14 @@ mod tests {
         // Re-read from disk via a fresh model — assert values persisted.
         let cfg2 = MiniConfig::new(&mut sc);
         let mut model2 =
-            emRecNodeConfigModel::new(cfg2, path.clone()).with_format_name("MiniConfig");
+            emRecNodeConfigModel::new(cfg2, path.clone(), &mut sc).with_format_name("MiniConfig");
         model2.TryLoad(&mut sc).unwrap();
         assert_eq!(*model2.GetRec().count.GetValue(), 7);
         assert!(*model2.GetRec().enabled.GetValue());
 
+        model.detach(&mut sc);
         teardown(&model.value, &mut sc);
+        model2.detach(&mut sc);
         teardown(&model2.value, &mut sc);
     }
 
@@ -447,7 +494,7 @@ mod tests {
         {
             let cfg = MiniConfig::new(&mut sc);
             let mut model =
-                emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("MiniConfig");
+                emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("MiniConfig");
             model.TryLoadOrInstall(&mut sc).unwrap();
             model.modify(
                 |cfg, ctx| {
@@ -457,17 +504,19 @@ mod tests {
                 &mut sc,
             );
             model.TrySave(false).unwrap();
+            model.detach(&mut sc);
             teardown(&model.value, &mut sc);
         }
 
         {
             let cfg = MiniConfig::new(&mut sc);
             let mut model =
-                emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("MiniConfig");
+                emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("MiniConfig");
             model.TryLoadOrInstall(&mut sc).unwrap();
             assert_eq!(*model.GetRec().count.GetValue(), -123);
             assert!(*model.GetRec().enabled.GetValue());
             assert!(!model.IsUnsaved());
+            model.detach(&mut sc);
             teardown(&model.value, &mut sc);
         }
     }
@@ -487,9 +536,36 @@ mod tests {
         let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
         let mut sc = make_sc(&mut sched, &mut actions, &ctx_root, &cb, &pa);
         let cfg = MiniConfig::new(&mut sc);
-        let model = emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("Foo");
+        let mut model =
+            emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("Foo");
         assert_eq!(model.GetInstallPath(), path.as_path());
         assert!(!model.IsUnsaved());
+        model.detach(&mut sc);
+        teardown(&model.value, &mut sc);
+    }
+
+    #[test]
+    fn listener_auto_marks_dirty_after_scheduler_cycle() {
+        let mut sched = EngineScheduler::new();
+        let mut actions: Vec<DeferredAction> = Vec::new();
+        let ctx_root = emContext::NewRoot();
+        let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
+        let mut sc = make_sc(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+
+        let cfg = MiniConfig::new(&mut sc);
+        let mut model = emRecNodeConfigModel::new(
+            cfg,
+            std::path::PathBuf::from("/tmp/unused_listener_test.cfg"),
+            &mut sc,
+        );
+        model.GetRecMut().count.SetValue(42, &mut sc);
+        assert!(!model.IsUnsaved(), "dirty not yet set before scheduler cycle");
+        let _ = sc;
+        run_slice(&mut sched);
+        assert!(model.IsUnsaved(), "dirty must be set after scheduler cycle");
+        let mut sc = make_sc(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+        model.detach(&mut sc);
         teardown(&model.value, &mut sc);
     }
 }

@@ -130,7 +130,8 @@ fn install_on_first_run() {
     let mut sc = make_sc(&mut sched, &mut actions, &ctx_root, &cb, &pa);
 
     let cfg = AppConfig::new(&mut sc);
-    let mut model = emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("AppConfig");
+    let mut model =
+        emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("AppConfig");
 
     assert!(!path.exists());
     model.TryLoadOrInstall(&mut sc).unwrap();
@@ -143,11 +144,8 @@ fn install_on_first_run() {
         "{contents:?}"
     );
 
-    let sigs = model.GetRec().signals();
-    for sig in sigs {
-        sc.scheduler.abort(sig);
-        sc.remove_signal(sig);
-    }
+    model.detach(&mut sc);
+    teardown(model.GetRec(), &mut sc);
 }
 
 /// Test 2 — load existing file: write known bytes, construct fresh model,
@@ -170,13 +168,15 @@ fn load_existing_file() {
     let mut sc = make_sc(&mut sched, &mut actions, &ctx_root, &cb, &pa);
 
     let cfg = AppConfig::new(&mut sc);
-    let mut model = emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("AppConfig");
+    let mut model =
+        emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("AppConfig");
 
     model.TryLoad(&mut sc).unwrap();
     assert_eq!(*model.GetRec().count.GetValue(), -17);
     assert!(*model.GetRec().enabled.GetValue());
     assert!(!model.IsUnsaved());
 
+    model.detach(&mut sc);
     teardown(model.GetRec(), &mut sc);
 }
 
@@ -194,7 +194,8 @@ fn modify_marks_dirty_and_try_save_clears_it() {
     let mut sc = make_sc(&mut sched, &mut actions, &ctx_root, &cb, &pa);
 
     let cfg = AppConfig::new(&mut sc);
-    let mut model = emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("AppConfig");
+    let mut model =
+        emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("AppConfig");
     model.TryLoadOrInstall(&mut sc).unwrap();
 
     model.modify(
@@ -210,6 +211,7 @@ fn modify_marks_dirty_and_try_save_clears_it() {
     let reread = std::fs::read_to_string(&path).unwrap();
     assert!(reread.contains("Count = 99"), "{reread:?}");
 
+    model.detach(&mut sc);
     teardown(model.GetRec(), &mut sc);
 }
 
@@ -229,7 +231,8 @@ fn end_to_end_round_trip() {
 
     {
         let cfg = AppConfig::new(&mut sc);
-        let mut model = emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("AppConfig");
+        let mut model =
+            emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("AppConfig");
         model.TryLoadOrInstall(&mut sc).unwrap();
         model.modify(
             |cfg, ctx| {
@@ -239,15 +242,18 @@ fn end_to_end_round_trip() {
             &mut sc,
         );
         model.TrySave(false).unwrap();
+        model.detach(&mut sc);
         teardown(model.GetRec(), &mut sc);
     }
 
     {
         let cfg = AppConfig::new(&mut sc);
-        let mut model = emRecNodeConfigModel::new(cfg, path.clone()).with_format_name("AppConfig");
+        let mut model =
+            emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("AppConfig");
         model.TryLoadOrInstall(&mut sc).unwrap();
         assert_eq!(*model.GetRec().count.GetValue(), 12345);
         assert!(*model.GetRec().enabled.GetValue());
+        model.detach(&mut sc);
         teardown(model.GetRec(), &mut sc);
     }
 }
