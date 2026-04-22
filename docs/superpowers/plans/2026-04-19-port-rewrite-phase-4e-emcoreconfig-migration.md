@@ -16,8 +16,13 @@
 - **I4e-3.** `rg 'Rc<RefCell<emConfigModel' crates/ --glob '!*/tests/*'` returns zero matches in production code.
 - **I4e-4.** `VisitSpeed` change-notification fires its signal on `SetValue`.
 - **I4e-5.** `emRef.no_rs` mapping note updated to describe `emRef<T> → Rc<T>` default + chartered exceptions.
+- **I4e-6.** Alignment drift resolved: `emTiling::Alignment` either (a) replaced by `emAlignment` (u8 bitmask) at consumer sites with the stopgap persistence helpers `em_alignment_{to,from}_rec_value` retired, or (b) explicitly chartered via a `DIVERGED:` annotation with the C++-bitmask → Rust-single-axis mismatch reason recorded at the type definition.
 
 **Entry-precondition.** Phase 4d Closeout COMPLETE.
+
+**Pre-existing drift to audit (inherited from Phase 4b.1):**
+
+- **Alignment drift audit (from Phase 4b.1):** Phase 4b.1 shipped the new C++-faithful `emAlignmentRec` (u8 bitmask) but did not migrate consumers. `emfileman::emFileManTheme` uses a pre-existing Rust `emTiling::Alignment` single-axis enum (Start|Center|End|Stretch), and the stopgap serialization (free functions `em_alignment_{to,from}_rec_value` in `emRecRecTypes.rs`) retains a lossy C++-bitmask-to-Rust-enum mapping. Phase 4e must audit this drift: either migrate `emFileManTheme` + any widget-layout consumers to `emAlignment` u8 (C++-faithful), or charter the Rust single-axis simplification with a `DIVERGED:` annotation and retire the lossy mapping at the persistence boundary. Invariant I4e-6 gates closeout.
 
 ---
 
