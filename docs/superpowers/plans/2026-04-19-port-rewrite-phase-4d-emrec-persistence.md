@@ -1,22 +1,22 @@
-# Phase 4c — emRec Persistence IO — Implementation Plan
+# Phase 4d — emRec Persistence IO — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans.
 
 **Goal:** Port the emRec persistence stack: `emRecReader`, `emRecWriter`, `emRecFileReader`, `emRecFileWriter`, `emRecMemReader`, `emRecMemWriter`. Wire `emConfigModel::LoadAndSave` through the IO classes.
 
-**Architecture:** Each `emRec` concrete type ported in Phase 4a/4b gains `TryRead(&mut dyn emRecReader, ctx) -> Result<()>` and `TryWrite(&mut dyn emRecWriter) -> Result<()>` methods. The reader/writer pair serializes to a textual format byte-for-byte compatible with C++ `emRec`-file format.
+**Architecture:** Each `emRec` concrete type ported in Phases 4a through 4c gains `TryRead(&mut dyn emRecReader, ctx) -> Result<()>` and `TryWrite(&mut dyn emRecWriter) -> Result<()>` methods. The reader/writer pair serializes to a textual format byte-for-byte compatible with C++ `emRec`-file format.
 
-**Companion:** spec §7 D7.1 (Phase 4c scope). C++ reference: `emRec.h` / `emRec.cpp` for the IO classes.
+**Companion:** spec §7 D7.1 (Phase 4d scope). C++ reference: `emRec.h` / `emRec.cpp` for the IO classes.
 
-**JSON entries closed:** none (E026 at Phase 4d).
+**JSON entries closed:** none (E026 at Phase 4e).
 
 **Phase-specific invariants (C4):**
-- **I4c-1.** Files `emRecReader.rs`, `emRecWriter.rs`, `emRecFileReader.rs`, `emRecFileWriter.rs`, `emRecMemReader.rs`, `emRecMemWriter.rs` exist.
-- **I4c-2.** Round-trip test: serialize → parse → re-serialize produces identical bytes for every concrete type from Phase 4a/4b.
-- **I4c-3.** A compatibility test reads a known C++-produced `emRec` file (committed fixture from `/home/a0/git/eaglemode-0.96.4/` test data) and asserts the parsed values match an expected set.
-- **I4c-4.** `emConfigModel::LoadAndSave` method exists and wires through the IO classes.
+- **I4d-1.** Files `emRecReader.rs`, `emRecWriter.rs`, `emRecFileReader.rs`, `emRecFileWriter.rs`, `emRecMemReader.rs`, `emRecMemWriter.rs` exist.
+- **I4d-2.** Round-trip test: serialize → parse → re-serialize produces identical bytes for every concrete type from Phases 4a through 4c (primitives, listener tree, Color/Alignment migration, structural compounds).
+- **I4d-3.** A compatibility test reads a known C++-produced `emRec` file (committed fixture from `/home/a0/git/eaglemode-0.96.4/` test data) and asserts the parsed values match an expected set.
+- **I4d-4.** `emConfigModel::LoadAndSave` method exists and wires through the IO classes.
 
-**Entry-precondition.** Phase 4b Closeout COMPLETE.
+**Entry-precondition.** Phase 4c Closeout COMPLETE.
 
 > **Drift note (2026-04-20, post-phase-1.76):** Significant pre-existing Rust persistence code exists that this plan was written without knowledge of:
 > - `crates/emcore/src/emRec.rs` already implements C++-text-format parsing (`parse_rec`, `write_rec`).
@@ -29,7 +29,7 @@
 
 ## Bootstrap
 
-Run B1–B12 with `<N>` = `4c`. At B3 read C++ `emRec.cpp` sections for reader/writer.
+Run B1–B12 with `<N>` = `4d`. At B3 read C++ `emRec.cpp` sections for reader/writer.
 
 ---
 
@@ -143,4 +143,4 @@ Wraps the Mem variants with a file handle. Buffers to memory, reads from disk on
 
 ## Closeout
 
-Run C1–C11 with `<N>` = `4c`. No JSON entries close yet.
+Run C1–C11 with `<N>` = `4d`. No JSON entries close yet.

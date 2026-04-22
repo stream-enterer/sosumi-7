@@ -1,124 +1,54 @@
-# Phase 4b — emRec Compound Types — Implementation Plan
+# Phase 4b — emFlagsRec — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans.
 
-**Goal:** Port the compound emRec concrete types: `emFlagsRec`, `emAlignmentRec`, `emColorRec`, `emStructRec`, `emUnionRec`, `emTArrayRec<T>`. Each composes change-notification from child recs (structural) or maintains its own signal (atomic).
+**Goal (final, 2026-04-21).** Ship `emFlagsRec` and close Phase 4b. The listener-tree machinery, parent-aware ctors, and `emRecListener` all move into Phase 4c, where they are bundled with the structural compounds that consume them.
 
-**Architecture:** Compound types are nodes that own child `emRec`s (structural: `emStructRec`, `emUnionRec`, `emTArrayRec<T>`) or are themselves atomic values with structured representation (`emFlagsRec`, `emAlignmentRec`, `emColorRec`). Atomic compounds behave like primitives with typed value. Structural compounds propagate child-signals upward per C++ `emRec::SetValue` composite behavior.
+> **Scope evolution.** This plan changed shape twice during pre-execution audit. First (`713b5743`) Color/AlignmentRec migration was carved out into Phase 4b.1 because of legacy collisions. Second (`46efd0ad`) the structural compounds (`emStructRec`, `emUnionRec`, `emTArrayRec`) were carved out into Phase 4c after the C++ audit found the original "owned children + dedicated `aggregate_signal`" sketch contradicted the C++ design. At that point Phase 4b was rewritten to ship the listener-tree machinery as standalone infrastructure. Then a precedent survey of the codebase (Explore-agent report, see ADR `2026-04-21-phase-4b-listener-tree-adr.md`) found that the listener-tree machinery, when implemented per the ADR's chosen rep (reified `Vec<SignalId>` chain), collapses to a few fields per primitive and one trait method — small enough that bundling it with its consumers (Phase 4c compounds) is cleaner than shipping it as standalone infrastructure. Phase 4b therefore now ships only `emFlagsRec`, which is already complete, and proceeds straight to Closeout.
 
-**Companion:** spec §7 D7.1. C++ reference: `emRec.h` for each of the compound types.
+**Companion:** spec §7 D7.1 (continued). C++ reference: `emRec.h:643-728`, `emRec.cpp:755-915` (`emFlagsRec`).
 
-**JSON entries closed:** none (E026 at Phase 4d).
+**JSON entries closed:** none (E026 closes at Phase 4e, E027 closes at Phase 4e).
 
 **Phase-specific invariants (C4):**
-- **I4b-1.** Files `emFlagsRec.rs`, `emAlignmentRec.rs`, `emColorRec.rs`, `emStructRec.rs`, `emUnionRec.rs`, `emTArrayRec.rs` exist with concrete impls.
-- **I4b-2.** For each, a signal-fire test parallel to Phase 4a's pattern.
-- **I4b-3.** For `emStructRec`, a composition test: setting a child value fires the child signal *and* propagates an aggregate-change signal (matching C++ behaviour — confirm against emRec.cpp).
-- **I4b-4.** No golden regressions.
+- **I4b-1.** `crates/emcore/src/emFlagsRec.rs` exists and registers in `lib.rs`.
+- **I4b-2.** `emFlagsRec` mirrors the Phase 4a primitive shape exactly (struct fields, impl `emRecNode`/`emRec<i32>`, `make_sched_ctx` helper duplicated locally).
+- **I4b-3.** Identifier validation is byte-faithful to C++ `emRec::CheckIdentifier` (`emRec.cpp:173-194`): `[A-Za-z_][A-Za-z0-9_]*`, `panic!` on violation. Tests cover positive and negative grammar paths.
+- **I4b-4.** `SetValue` masks via `value &= (1<<count)-1` BEFORE the no-change comparison (`emRec.cpp:787-792`). Test `mask_then_compare_no_spurious_fire` pins this.
+- **I4b-5.** `try_borrow_total` remains `0`. Phase 4b adds no `Rc<RefCell<>>` anywhere.
+- **I4b-6.** No golden regressions.
+- **I4b-7.** Listener-tree work + structural compounds + `emRecListener` are deferred to Phase 4c per ADR `2026-04-21-phase-4b-listener-tree-adr.md`. Phase 4b explicitly does NOT ship parent wiring; the `parent() -> None` stub on each Phase 4a primitive remains in place at exit.
 
 **Entry-precondition.** Phase 4a Closeout COMPLETE.
-
-> **Drift note (2026-04-20, post-phase-1.76):** Two pre-execution verifications required at Bootstrap B3:
-> 1. The plan assumes a standalone `emAlignment` type for `emAlignmentRec: value: emAlignment`. No `crates/emcore/src/emAlignment.rs` currently exists — alignment is split across `emBorderAlignment.rs`, `emBorder.rs`, and `emTiling::Alignment`. Before Task 1, confirm C++ `emAlignmentRec`'s actual stored type (check `include/emCore/emAlignmentRec.h` and `src/emCore/emAlignmentRec.cpp`) and identify or create the matching Rust type.
-> 2. Task 4's `emStructRec` typed-index API sketch (`s.add_field::<emBoolRec>(...)`, `s.SetChildBool(idx, ...)`) presumes a specific resolution of spec §13 Q2 (erasure vs monomorphization). Phase 3 is expected to resolve Q2. At Phase 4b Bootstrap, inherit Phase 3's Q2 resolution and re-validate the Task 4 sketch against it. If Phase 3 chooses differently, Task 4's design must be revised before execution.
 
 ---
 
 ## Bootstrap
 
-Run B1–B12 with `<N>` = `4b`.
+Already executed on 2026-04-21 at commit `2b2bae56`. Branch: `port-rewrite/phase-4b`. Baseline captured at `docs/superpowers/notes/2026-04-19-phase-4b-baseline.md`.
 
 ---
 
-## File Structure
+## Task log (executed)
 
-**New files** (1:1 with C++):
-- `crates/emcore/src/emFlagsRec.rs` — bitset: u32 value with identifier table.
-- `crates/emcore/src/emAlignmentRec.rs` — emAlignment value (a u32 packed alignment).
-- `crates/emcore/src/emColorRec.rs` — emColor value.
-- `crates/emcore/src/emStructRec.rs` — named field collection of child emRecs.
-- `crates/emcore/src/emUnionRec.rs` — tagged union of alternative child emRecs.
-- `crates/emcore/src/emTArrayRec.rs` — `emTArrayRec<T: emRec>` dynamic list of child recs.
+| # | Task | Commits | Status |
+|---|---|---|---|
+| 1 | `emFlagsRec` initial implementation | `280a23b3` | ✅ done |
+| 2 | `emFlagsRec` `CheckIdentifier` predicate fix (code review) | `7223846c` | ✅ done |
 
-**Modified:** `crates/emcore/src/lib.rs`.
+Nextest delta: 2535 → 2550 (+15: 8 emFlagsRec primary tests + 7 grammar tests).
 
----
-
-## Task 1–3: Atomic compounds (`emFlagsRec`, `emAlignmentRec`, `emColorRec`)
-
-Each follows the Phase-4a primitive pattern.
-
-- [ ] **For each:**
-    - **Step 1:** Failing signal-fire + no-fire-on-no-change tests.
-    - **Step 2:** Implement parallel to `emBoolRec`, substituting the value type:
-      - `emFlagsRec`: `value: u32`, `identifiers: Vec<String>`, `GetFlagId/SetFlag` helpers.
-      - `emAlignmentRec`: `value: emAlignment` (ported type from `emAlignment.rs`).
-      - `emColorRec`: `value: emColor` (existing `Color` type in `emColor.rs`).
-    - **Step 3:** Tests pass.
-    - **Step 4:** Commit.
-
-```bash
-git add crates/emcore/src/emFlagsRec.rs crates/emcore/src/emAlignmentRec.rs crates/emcore/src/emColorRec.rs crates/emcore/src/lib.rs
-git commit -m "phase-4b: atomic compound recs (Flags/Alignment/Color)"
-```
-
----
-
-## Task 4: `emStructRec`
-
-**Files:**
-- Create: `crates/emcore/src/emStructRec.rs`.
-
-**Design (C++ reference):** `emStructRec` owns named children of type `Box<dyn emRec<?>>`. When any child's `SetValue` fires, the struct's aggregate `GetValueSignal` must also fire. C++ does this by chaining signals.
-
-- [ ] **Step 1: Failing test.**
-```rust
-#[test]
-fn struct_fires_aggregate_on_child_change() {
-    let mut fixture = TestFixture::new();
-    let mut s = emStructRec::new(&mut fixture.init_ctx());
-    let bool_field = s.add_field::<emBoolRec>(&mut fixture.init_ctx(), "flag", false);
-    let agg_sig = s.GetValueSignal();
-    fixture.clear_signals();
-    s.SetChildBool(bool_field, true, &mut fixture.sched_ctx());
-    assert!(fixture.is_signaled(agg_sig));
-}
-```
-
-- [ ] **Step 2: FAIL.**
-- [ ] **Step 3: Implement.** The struct keeps a `Vec<Box<dyn emRec<?>>>` of children *plus* a dedicated `aggregate_signal: SignalId`. Child `SetValue` calls go through the struct, which forwards to the child then fires `aggregate_signal` if the child fired.
-
-Because child rec types are heterogeneous, expose a typed-index API that returns a typed `&mut dyn emRec<T>` through downcast; or — simpler — the struct exposes typed getters/setters (`SetChildBool(idx, val, ctx)`, `GetChildDouble(idx)`, etc.) that statically match the declared field type.
-
-Implementation choice per Q2 of spec: monomorphize — use generic `SetChild<T: emRec<V>, V>(idx, val, ctx)`. The struct stores children in a heterogeneous container keyed by `TypeId`; downcast at access.
-
-- [ ] **Step 4: PASS.**
-- [ ] **Step 5: Commit.**
-
----
-
-## Task 5: `emUnionRec`
-
-Tagged union: the active child variant changes on `SetTag(new_tag, ctx)`, which fires the aggregate signal. C++ reference: `emUnionRec`.
-
-- [ ] **Step 1–5:** Failing test (set tag fires), implement, pass, commit.
-
----
-
-## Task 6: `emTArrayRec<T>`
-
-C++ template array of recs. Rust port: `emTArrayRec<T: emRec<V>, V>` with `Vec<T>` backing. Methods: `SetCount(n, ctx)` grows/shrinks; `GetItem(i)` / `SetItem(i, value, ctx)` proxies to child. Aggregate signal fires on any child write or on length change.
-
-- [ ] **Step 1–5.**
-
----
-
-## Task 7: Full gate + invariants
-
-Same shape as Phase 4a Task 8.
+The original Tasks 0a, 0b, 2 (`emRecListener`), 3 (parent-aware ctors), 4 (e2e listener-tree tests) and 5 (gate) from the rewritten plan are no longer Phase 4b work. The ADR superseded them; Phase 4c now owns that work.
 
 ---
 
 ## Closeout
 
-Run C1–C11 with `<N>` = `4b`. No JSON entries close yet.
+Run C1–C11 with `<N>` = `4b`. The phase merges back to `main` carrying the renumber commit (`c91b9fa0`) plus the ADR commit and the emFlagsRec commits. JSON resolution: none in this phase (E026/E027 still at Phase 4e per the family overview).
+
+**Closeout-specific invariants to assert at C4:**
+- I4b-1 through I4b-7 above.
+- Specifically grep that no `parent_signals: Vec<SignalId>` field landed in Phase 4b primitives (it lands in Phase 4c per ADR).
+- Specifically grep that `crates/emcore/src/emRecListener.rs` does NOT exist in Phase 4b (it lands in Phase 4c).
+
+After Closeout completes, Phase 4b.1 (Color/AlignmentRec migration) becomes the next executable phase, with Phase 4c (listener tree + structural compounds) following.

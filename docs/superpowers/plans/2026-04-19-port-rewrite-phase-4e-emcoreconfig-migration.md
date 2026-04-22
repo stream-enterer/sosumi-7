@@ -1,4 +1,4 @@
-# Phase 4d — Migrate emCoreConfig + emCoreConfigPanel — Implementation Plan
+# Phase 4e — Migrate emCoreConfig + emCoreConfigPanel — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans.
 
@@ -11,31 +11,31 @@
 **JSON entries closed:** E026 (fully), E027.
 
 **Phase-specific invariants (C4):**
-- **I4d-1.** The DIVERGED block currently at `emCoreConfig.rs` ~lines 237–252 (locate by symbol; verified 2026-04-19) is deleted; `VISIT_SPEED_MAX` constant absent; `VisitSpeed_GetMaxValue` absent.
-- **I4d-2.** `grep "emDoubleRec\|emBoolRec\|emIntRec\|emEnumRec\|emFlagsRec\|emAlignmentRec\|emColorRec\|emStringRec" crates/emcore/src/emCoreConfig.rs` returns matches for every typed field C++ declares.
-- **I4d-3.** `rg 'Rc<RefCell<emConfigModel' crates/ --glob '!*/tests/*'` returns zero matches in production code.
-- **I4d-4.** `VisitSpeed` change-notification fires its signal on `SetValue`.
-- **I4d-5.** `emRef.no_rs` mapping note updated to describe `emRef<T> → Rc<T>` default + chartered exceptions.
+- **I4e-1.** The DIVERGED block currently at `emCoreConfig.rs` ~lines 237–252 (locate by symbol; verified 2026-04-19) is deleted; `VISIT_SPEED_MAX` constant absent; `VisitSpeed_GetMaxValue` absent.
+- **I4e-2.** `grep "emDoubleRec\|emBoolRec\|emIntRec\|emEnumRec\|emFlagsRec\|emAlignmentRec\|emColorRec\|emStringRec" crates/emcore/src/emCoreConfig.rs` returns matches for every typed field C++ declares.
+- **I4e-3.** `rg 'Rc<RefCell<emConfigModel' crates/ --glob '!*/tests/*'` returns zero matches in production code.
+- **I4e-4.** `VisitSpeed` change-notification fires its signal on `SetValue`.
+- **I4e-5.** `emRef.no_rs` mapping note updated to describe `emRef<T> → Rc<T>` default + chartered exceptions.
 
-**Entry-precondition.** Phase 4c Closeout COMPLETE.
+**Entry-precondition.** Phase 4d Closeout COMPLETE.
 
 ---
 
 ## Bootstrap
 
-Run B1–B12 with `<N>` = `4d`. At B3 read `/home/a0/git/eaglemode-0.96.4/include/emCore/emCoreConfig.h` in full.
+Run B1–B12 with `<N>` = `4e`. At B3 read `/home/a0/git/eaglemode-0.96.4/include/emCore/emCoreConfig.h` in full.
 
 ---
 
 ## File Structure
 
 **Heavy modifications:**
-- `crates/emcore/src/emCoreConfig.rs` — replace every flattened-scalar field with its emRec typed field. Delete `VISIT_SPEED_MAX` and `VisitSpeed_GetMaxValue`. Delete the DIVERGED block at ~lines 237–252 (locate by symbol). `load_from_rec`/`save_to_rec` methods (lines ~141, ~192) migrate to using the emRec TryRead/TryWrite shape ported in Phase 4c.
+- `crates/emcore/src/emCoreConfig.rs` — replace every flattened-scalar field with its emRec typed field. Delete `VISIT_SPEED_MAX` and `VisitSpeed_GetMaxValue`. Delete the DIVERGED block at ~lines 237–252 (locate by symbol). `load_from_rec`/`save_to_rec` methods (lines ~141, ~192) migrate to using the emRec TryRead/TryWrite shape ported in Phase 4d.
 - `crates/emcore/src/emCoreConfigPanel.rs` — migrate the `config_ref.borrow_mut()` call sites (measured 2026-04-19: **19 occurrences**, not the original spec estimate of ~40 — the figure was based on a stale draft) to `config.VisitSpeed.SetValue(new_val, ctx)` form.
 - `crates/emcore/src/emRef.no_rs` — update mapping note.
 
 **Possibly created:**
-- `crates/emcore/src/emConfigModel.rs` if Phase 4c did not create it yet. The type becomes generic: `struct emConfigModel<T: emStructRec + ...>` with a `register(&Rc<emContext>, T) -> Rc<Self>` constructor and a `save_on_change` wiring that fires persistence on the aggregate signal.
+- `crates/emcore/src/emConfigModel.rs` if Phase 4d did not create it yet. The type becomes generic: `struct emConfigModel<T: emStructRec + ...>` with a `register(&Rc<emContext>, T) -> Rc<Self>` constructor and a `save_on_change` wiring that fires persistence on the aggregate signal.
 
 ---
 
@@ -204,15 +204,15 @@ fn visit_speed_set_fires_signal() {
 - [ ] **Step 1: Gate.**
 - [ ] **Step 2: Invariants.**
 ```bash
-# I4d-1
-rg 'VISIT_SPEED_MAX|VisitSpeed_GetMaxValue' crates/emcore/src/ && echo "I4d-1 FAIL" || echo "I4d-1 PASS"
-rg -n 'DIVERGED:' crates/emcore/src/emCoreConfig.rs | grep -q 237 && echo "I4d-1-block FAIL" || echo "I4d-1-block PASS"
+# I4e-1
+rg 'VISIT_SPEED_MAX|VisitSpeed_GetMaxValue' crates/emcore/src/ && echo "I4e-1 FAIL" || echo "I4e-1 PASS"
+rg -n 'DIVERGED:' crates/emcore/src/emCoreConfig.rs | grep -q 237 && echo "I4e-1-block FAIL" || echo "I4e-1-block PASS"
 
-# I4d-2
-grep -q 'VisitSpeed:\s*emDoubleRec' crates/emcore/src/emCoreConfig.rs && echo "I4d-2 PASS" || echo "I4d-2 FAIL"
+# I4e-2
+grep -q 'VisitSpeed:\s*emDoubleRec' crates/emcore/src/emCoreConfig.rs && echo "I4e-2 PASS" || echo "I4e-2 FAIL"
 
-# I4d-3
-rg 'Rc<RefCell<emConfigModel' crates/ --glob '!*/tests/*' && echo "I4d-3 FAIL" || echo "I4d-3 PASS"
+# I4e-3
+rg 'Rc<RefCell<emConfigModel' crates/ --glob '!*/tests/*' && echo "I4e-3 FAIL" || echo "I4e-3 PASS"
 ```
 
 - [ ] **Step 3: Proceed to Closeout.**
@@ -221,4 +221,4 @@ rg 'Rc<RefCell<emConfigModel' crates/ --glob '!*/tests/*' && echo "I4d-3 FAIL" |
 
 ## Closeout
 
-Run C1–C11 with `<N>` = `4d`. At C5 close **E026** (Phase 4a/4b/4c/4d complete) and **E027** (Task 3 updated the mapping note; Rc<RefCell> residual count reduced by ~40 via the panel migration).
+Run C1–C11 with `<N>` = `4e`. At C5 close **E026** (Phases 4a through 4e complete) and **E027** (Task 3 updated the mapping note; Rc<RefCell> residual count reduced by ~40 via the panel migration).
