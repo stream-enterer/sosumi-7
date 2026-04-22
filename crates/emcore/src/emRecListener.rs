@@ -75,6 +75,8 @@ impl emRecListener {
         callback: Box<dyn FnMut(&mut SchedCtx<'_>)>,
         ctx: &mut SchedCtx<'_>,
     ) -> Self {
+        // Framework scope: the listener isn't bound to a panel tree.
+        // Priority::Low: user callbacks shouldn't preempt rendering / input dispatch.
         let engine_id = ctx.register_engine(
             Box::new(ListenerEngine { callback }),
             Priority::Low,
@@ -123,14 +125,26 @@ impl emRecListener {
         self.signal
     }
 
-    /// Explicit teardown: disconnects the signal and removes the internal
-    /// engine. Must be called before drop to avoid leaking the engine in
-    /// the scheduler. See module-level DIVERGED note on `Drop`.
-    pub fn detach(mut self, ctx: &mut SchedCtx<'_>) {
+    /// Non-consuming teardown: disconnects the currently observed signal (if
+    /// any) and removes the internal engine from the scheduler. The listener
+    /// is left in a "detached zombie" state — safe to drop, but calling
+    /// `SetListenedRec` afterwards is a logic bug because `engine_id` is now
+    /// stale and points at a removed engine. Intended for struct-field
+    /// listeners (e.g. compound records in Tasks 3-5) that must survive
+    /// their owner's lifetime cycles without an `Option<_>` + `.take()` dance.
+    pub fn detach_mut(&mut self, ctx: &mut SchedCtx<'_>) {
         if let Some(sig) = self.signal.take() {
             ctx.disconnect(sig, self.engine_id);
         }
         ctx.remove_engine(self.engine_id);
+        // engine_id is now stale — any further SetListenedRec would be a logic bug.
+    }
+
+    /// Explicit teardown: disconnects the signal and removes the internal
+    /// engine. Must be called before drop to avoid leaking the engine in
+    /// the scheduler. See module-level DIVERGED note on `Drop`.
+    pub fn detach(mut self, ctx: &mut SchedCtx<'_>) {
+        self.detach_mut(ctx);
     }
 }
 
@@ -295,6 +309,51 @@ mod tests {
         listener.detach(&mut sc);
         sc.remove_signal(rec_a.GetValueSignal());
         sc.remove_signal(rec_b.GetValueSignal());
+    }
+
+    #[test]
+    fn attach_via_set_listened_rec_after_none_construction() {
+        let mut sched = EngineScheduler::new();
+        let mut actions: Vec<DeferredAction> = Vec::new();
+        let ctx_root = emContext::NewRoot();
+        let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+
+        let hits = Rc::new(Cell::new(0u32));
+        let hits_cb = Rc::clone(&hits);
+        let mut listener = emRecListener::new(
+            None,
+            Box::new(move |_sc| hits_cb.set(hits_cb.get() + 1)),
+            &mut sc,
+        );
+        assert!(
+            listener.GetListenedSignal().is_none(),
+            "None-construction leaves listener detached"
+        );
+
+        // Mutating an unrelated rec must not fire the callback.
+        let mut unrelated = emBoolRec::new(&mut sc, false);
+        unrelated.SetValue(true, &mut sc);
+        let _ = sc;
+        run_slice(&mut sched);
+        assert_eq!(hits.get(), 0, "unattached listener must not fire");
+
+        // Attach after construction.
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+        let mut rec = emBoolRec::new(&mut sc, false);
+        listener.SetListenedRec(Some(&rec), &mut sc);
+        assert_eq!(listener.GetListenedSignal(), Some(rec.GetValueSignal()));
+
+        rec.SetValue(true, &mut sc);
+        let _ = sc;
+        run_slice(&mut sched);
+        assert_eq!(hits.get(), 1, "after attach, mutation must fire callback");
+
+        let mut sc = make_sched_ctx(&mut sched, &mut actions, &ctx_root, &cb, &pa);
+        listener.detach(&mut sc);
+        sc.remove_signal(rec.GetValueSignal());
+        sc.remove_signal(unrelated.GetValueSignal());
     }
 
     #[test]
