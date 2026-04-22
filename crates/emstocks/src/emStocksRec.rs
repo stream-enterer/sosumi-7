@@ -626,7 +626,7 @@ impl StockRec {
     }
 
     /// Port of C++ GetTradeValue.
-    /// DIVERGED: (language-forced) Returns Option<f64> instead of C++ bool + *pResult — Option is Rust's idiomatic replacement for success bool + out-pointer.
+    /// Idiom adaptation: returns Option<f64> instead of C++ bool + *pResult out-pointer.
     pub fn GetTradeValue(&self) -> Option<f64> {
         if !self.owning_shares || self.trade_price.is_empty() || self.own_shares.is_empty() {
             return None;
@@ -921,7 +921,7 @@ impl emStocksRec {
     }
 
     /// Port of C++ GetStockIndexById.
-    /// DIVERGED: (language-forced) Returns Option<usize> instead of C++ -1 sentinel — Option<usize> is Rust's idiomatic replacement for signed-int sentinel values.
+    /// Idiom adaptation: returns Option<usize> instead of C++ -1 sentinel.
     pub fn GetStockIndexById(&self, id: &str) -> Option<usize> {
         (0..self.stocks.len())
             .rev()
@@ -930,7 +930,7 @@ impl emStocksRec {
 
     /// Port of C++ GetStockIndexByStock.
     /// Uses std::ptr::eq for pointer comparison.
-    /// DIVERGED: (language-forced) Returns Option<usize> instead of C++ -1 sentinel — Option<usize> is Rust's idiomatic replacement for signed-int sentinel values.
+    /// Idiom adaptation: returns Option<usize> instead of C++ -1 sentinel.
     pub fn GetStockIndexByStock(&self, stock_rec: &StockRec) -> Option<usize> {
         (0..self.stocks.len())
             .rev()
