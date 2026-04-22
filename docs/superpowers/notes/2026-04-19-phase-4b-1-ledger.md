@@ -12,7 +12,7 @@
 - **Task 2** — port emAlignmentRec (new concrete emRec type) — `965ec395`
 - **Task 3** — port emColorRec (new concrete emRec type) — `b1f328c5`
 - **Task 3b** — emColorRec: remove non-C++ HaveAlpha getter — `2e30b528`
-- **Task 4** — migrate consumers (emVirtualCosmos, emBookmarks, emFileManTheme) to stopgap free helpers (`em_color_to_rec_struct`, `em_color_from_rec_struct`, `em_alignment_to_rec_value`, `em_alignment_from_rec_value`) in `emRecRecTypes.rs`; delete legacy value-typed `emColorRec` / `emAlignmentRec` structs + impls + `Default for emAlignmentRec`; remove dead `RecListenerList` (no remaining consumers); delete 7 kani harnesses + 8 provable_functions.json entries + 1 constructible_types entry targeting legacy `emColorRec`. — *SHA: TBD (this commit)*
+- **Task 4** — migrate consumers (emVirtualCosmos, emBookmarks, emFileManTheme) to stopgap free helpers (`em_color_to_rec_struct`, `em_color_from_rec_struct`, `em_alignment_to_rec_value`, `em_alignment_from_rec_value`) in `emRecRecTypes.rs`; delete legacy value-typed `emColorRec` / `emAlignmentRec` structs + impls + `Default for emAlignmentRec`; remove dead `RecListenerList` (no remaining consumers); delete 7 kani harnesses + 8 provable_functions.json entries + 1 constructible_types entry targeting legacy `emColorRec`. — `71a1efdc`
 
 ## Deferred / Tracking
 
