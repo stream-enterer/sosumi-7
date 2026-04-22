@@ -1,4 +1,59 @@
 pub fn run(_args: impl Iterator<Item = String>) -> std::process::ExitCode {
-    // Placeholder — full implementation in Task 2.
-    std::process::ExitCode::from(1)
+    let mut failures = Vec::new();
+    for hit in scan("DIVERGED:", DIVERGED_CATEGORIES) {
+        failures.push(hit);
+    }
+    for hit in scan("RUST_ONLY:", RUST_ONLY_CATEGORIES) {
+        failures.push(hit);
+    }
+    if failures.is_empty() {
+        std::process::ExitCode::SUCCESS
+    } else {
+        for f in &failures {
+            eprintln!("{}", f);
+        }
+        std::process::ExitCode::from(1)
+    }
+}
+
+const DIVERGED_CATEGORIES: &[&str] = &[
+    "language-forced",
+    "dependency-forced",
+    "upstream-gap-forced",
+    "performance-forced",
+];
+
+const RUST_ONLY_CATEGORIES: &[&str] = &[
+    "language-forced-utility",
+    "performance-forced-alternative",
+    "dependency-forced",
+];
+
+fn scan(tag: &str, valid_categories: &[&str]) -> Vec<String> {
+    let mut failures = Vec::new();
+    let walker = walkdir::WalkDir::new("crates")
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().map_or(false, |x| x == "rs"));
+    for entry in walker {
+        let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
+        let lines: Vec<_> = text.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if line.contains(tag) {
+                let window = lines[i..(i + 4).min(lines.len())].join("\n");
+                if !valid_categories
+                    .iter()
+                    .any(|c| window.contains(&format!("({c})")))
+                {
+                    failures.push(format!(
+                        "{}:{} {} missing category tag",
+                        entry.path().display(),
+                        i + 1,
+                        tag
+                    ));
+                }
+            }
+        }
+    }
+    failures
 }
