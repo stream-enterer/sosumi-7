@@ -2,6 +2,7 @@
 #![allow(non_camel_case_types)]
 
 pub mod emATMatrix;
+pub mod emAlignment;
 pub mod emArray;
 pub mod emAvlTreeMap;
 pub mod emAvlTreeSet;
