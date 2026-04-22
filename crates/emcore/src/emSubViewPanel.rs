@@ -10,6 +10,7 @@ use super::emEngineCtx::PanelCtx;
 use super::emPanel::{NoticeFlags, PanelBehavior, PanelState, ParentInvalidation};
 use super::emPanelTree::{PanelId, PanelTree};
 use super::emView::{emView, ViewFlags};
+use super::emViewInputFilter::{emKeyboardZoomScrollVIF, emMouseZoomScrollVIF, emViewInputFilter};
 
 /// A panel that embeds a sub-view within the parent view's panel tree.
 ///
@@ -35,6 +36,9 @@ pub struct emSubViewPanel {
     pub active_animator: Option<Box<dyn emViewAnimator>>,
     /// Wall-clock timestamp of previous Cycle, used for active_animator dt.
     last_cycle: Option<std::time::Instant>,
+    /// VIF chain for this sub-view. C++ gives every emView its own VIF chain
+    /// (emView::emView lines 91-94); Rust stores it here alongside the view.
+    vif_chain: Vec<Box<dyn emViewInputFilter>>,
 }
 
 impl emSubViewPanel {
@@ -85,6 +89,17 @@ impl emSubViewPanel {
         // shared queue (spec §3.3) — no per-sub-view scheduler exists.
         sub_view.RegisterEngines(ctx, &mut sub_tree, sub_scope);
 
+        let vif_chain: Vec<Box<dyn emViewInputFilter>> = {
+            let mut mouse_vif = emMouseZoomScrollVIF::new();
+            let zflpp = sub_view.GetZoomFactorLogarithmPerPixel();
+            mouse_vif.set_mouse_anim_params(1.0, 0.25, zflpp);
+            mouse_vif.set_wheel_anim_params(1.0, 0.25, zflpp);
+            vec![
+                Box::new(mouse_vif),
+                Box::new(emKeyboardZoomScrollVIF::new()),
+            ]
+        };
+
         Self {
             sub_tree,
             sub_view,
@@ -94,6 +109,7 @@ impl emSubViewPanel {
             viewed_height: 1.0,
             active_animator: None,
             last_cycle: None,
+            vif_chain,
         }
     }
 
@@ -339,6 +355,50 @@ impl PanelBehavior for emSubViewPanel {
             self.sub_view.Update(&mut self.sub_tree, &mut sc);
         }
 
+        // Run VIF chain for this sub-view — C++ SubViewPort->InputToView dispatches
+        // the sub-view's VIF chain before RecurseInput (emView::emView lines 91-94).
+        {
+            let mut vif_event = event.clone();
+            vif_event.mouse_x = sub_vx;
+            vif_event.mouse_y = sub_vy;
+            // Translate outer-window cursor position to sub-view pixel coords.
+            // VIFs use state.mouse_x/y as focal point (wheel_fix, grip_fix);
+            // the sub-view's RawScrollAndZoom expects coords in sub-view space.
+            let mut sub_input_state = input_state.clone();
+            sub_input_state.mouse_x = input_state.mouse_x - self.viewed_x;
+            sub_input_state.mouse_y = input_state.mouse_y - self.viewed_y;
+
+            let mut vif_consumed = false;
+            for vif in self.vif_chain.iter_mut() {
+                let mut sc = crate::emEngineCtx::SchedCtx {
+                    scheduler: ctx.scheduler.as_deref_mut().expect(
+                        "emSubViewPanel::Input requires PanelCtx with a scheduler (VIF chain)",
+                    ),
+                    framework_actions: &mut fw_input,
+                    root_context: &root_ctx_for_input,
+                    framework_clipboard: cb_ref,
+                    current_engine: None,
+                    pending_actions: pa_ref,
+                };
+                if vif.filter(&vif_event, &sub_input_state, &mut self.sub_view, &mut self.sub_tree, &mut sc) {
+                    vif_consumed = true;
+                    break;
+                }
+            }
+
+            if vif_consumed {
+                // Wake our PanelCycleEngine so Cycle() runs to animate the VIF
+                // spring physics — mirrors C++ WakeUp() in emMouseZoomScrollVIF
+                // (emViewInputFilter.cpp:212) after a wheel event.
+                if let (Some(eng_id), Some(sched)) =
+                    (ctx.tree.panel_engine_id(ctx.id), ctx.scheduler.as_deref_mut())
+                {
+                    sched.wake_up(eng_id);
+                }
+                return true;
+            }
+        }
+
         // Dispatch to sub-tree panels (DFS order, matching C++ RecurseInput).
         let wf = self.sub_view.IsFocused();
         let pixel_tallness = self.sub_view.GetCurrentPixelTallness();
@@ -407,6 +467,7 @@ impl PanelBehavior for emSubViewPanel {
         // §5.1 item 3) and returns whether the animator wants to stay awake.
         // Wake-status for sub-tree engines is tracked natively on the outer
         // scheduler's own `has_awake_engines()`.
+
         let now = std::time::Instant::now();
         let dt = self
             .last_cycle
@@ -426,7 +487,26 @@ impl PanelBehavior for emSubViewPanel {
             false
         };
 
-        animator_active
+        // Tick sub-view VIF animations (wheel zoom spring, grip pan spring).
+        // Mirrors emWindow::tick_vif_animations for the outer window's VIF chain.
+        let vif_active = {
+            let Self {
+                ref mut sub_view,
+                ref mut sub_tree,
+                ref mut vif_chain,
+                ..
+            } = *self;
+            let mut sc = ectx.as_sched_ctx();
+            let mut active = false;
+            for vif in vif_chain.iter_mut() {
+                if vif.animate(sub_view, sub_tree, dt, &mut sc) {
+                    active = true;
+                }
+            }
+            active
+        };
+
+        animator_active || vif_active
     }
 
     fn notice(&mut self, flags: NoticeFlags, state: &PanelState, ctx: &mut PanelCtx) {

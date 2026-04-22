@@ -542,15 +542,16 @@ impl emEngine for StartupEngine {
                         .with_behavior_as::<emSubViewPanel, _>(ctrl_id, |svp| {
                             let sub_tree = svp.sub_tree_mut();
                             let sub_root = sub_tree.GetRootPanel().expect("sub-view has root");
-                            let child_id = sub_tree.create_child(sub_root, "ctrl", None);
+                            // C++ creates emMainControlPanel as the root panel of the
+                            // control view — set behavior on sub-tree root directly,
+                            // matching C++ emMainWindow.cpp:408-413 and state 6 pattern.
+                            // ROOT_SAME_TALLNESS on the sub-view will update sub_root
+                            // height to ControlTallness via SetGeometry.
                             sub_tree.set_behavior(
-                                child_id,
+                                sub_root,
                                 Box::new(emMainControlPanel::new(ctrl_ctx, content_view_id)),
                             );
-                            // C++ control tallness matches the parent's control_tallness
-                            // C++ control panel fills the control view; tallness matches
-                            // ControlTallness (0.0538) set on emMainPanel.
-                            sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 0.0538, 1.0, None);
+                            sub_tree.fire_init_notices(sub_root, None);
                         });
                 }
 
@@ -928,6 +929,43 @@ pub fn create_main_window(
     // First top-level emMainWindow owns the home panel tree.
     if app.home_window_id.is_none() {
         app.home_window_id = Some(window_id);
+    }
+
+    // Set outer-view flags — C++ emMainWindow ctor (emMainWindow.cpp:52-57).
+    // NO_ZOOM implies NO_USER_NAVIGATION via SetViewFlags invariant.
+    {
+        let App {
+            ref mut scheduler,
+            ref mut windows,
+            ref clipboard,
+            ref pending_actions,
+            ..
+        } = *app;
+        if let Some(win) = windows.get_mut(&window_id) {
+            let mut tree = win.take_tree();
+            {
+                let v = win.view_mut();
+                let root_ctx = v.GetRootContext();
+                let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+                let mut sc = emcore::emEngineCtx::SchedCtx {
+                    scheduler,
+                    framework_actions: &mut fw,
+                    root_context: &root_ctx,
+                    framework_clipboard: clipboard,
+                    current_engine: None,
+                    pending_actions,
+                };
+                v.SetViewFlags(
+                    ViewFlags::ROOT_SAME_TALLNESS
+                        | ViewFlags::NO_ZOOM
+                        | ViewFlags::NO_FOCUS_HIGHLIGHT
+                        | ViewFlags::NO_ACTIVE_HIGHLIGHT,
+                    &mut tree,
+                    &mut sc,
+                );
+            }
+            win.put_tree(tree);
+        }
     }
 
     // Acquire bookmarks model.

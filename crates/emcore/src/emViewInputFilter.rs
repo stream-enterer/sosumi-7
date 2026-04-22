@@ -759,12 +759,6 @@ impl emViewInputFilter for emMouseZoomScrollVIF {
             return false;
         }
 
-        // D-PANEL-13: Abort drag on window focus loss (C++ parity)
-        if !view.IsFocused() {
-            self.panning = false;
-            return false;
-        }
-
         if event.key == InputKey::MouseMiddle {
             match event.variant {
                 InputVariant::Press => {

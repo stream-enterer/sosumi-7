@@ -3273,6 +3273,13 @@ impl emView {
         // Cache engine_id on the tree so `add_to_notice_list` can wake the
         // engine without needing a view reference.
         tree.set_update_engine_id(Some(engine_id));
+        // Update the tree's scope so the catch-up loop below registers each
+        // PanelCycleEngine with the correct `Toplevel(window_id)` (or SubView)
+        // scope. PanelTree::new() defaults to `Toplevel(dummy_id)` so that the
+        // tree can be constructed before the window_id is known; this call
+        // fixes the scope before any engines are registered against the real
+        // scheduler.
+        tree.set_scope(scope);
         // Register any panels that were created before the scheduler existed
         // (e.g. deferred-view test roots, sub-view roots created pre-register).
         // Phase 1.75 Task 5 (continuation): replaces the deleted

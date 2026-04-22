@@ -378,6 +378,16 @@ impl PanelTree {
         }
     }
 
+    /// Update the tree's scope so subsequently registered `PanelCycleEngine`
+    /// adapters use the correct `PanelScope`. Called by `emView::RegisterEngines`
+    /// so that engines registered during the catch-up loop (for panels that
+    /// pre-exist the scheduler, e.g. created before `RegisterEngines` runs)
+    /// carry the real `Toplevel(window_id)` scope rather than the dummy used at
+    /// `PanelTree::new` time.
+    pub fn set_scope(&mut self, scope: PanelScope) {
+        self.scope = scope;
+    }
+
     /// Set the cached update-engine id so `add_to_notice_list` can wake the
     /// view's update engine without a scheduler call through the view.
     /// Called by `emView::RegisterEngines`; cleared on view detach.
@@ -760,9 +770,8 @@ impl PanelTree {
         self.panels.get(id)
     }
 
-    /// Read a panel's scheduler engine id (test-only helper).
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn panel_engine_id(&self, id: PanelId) -> Option<EngineId> {
+    /// Read a panel's scheduler engine id.
+    pub(crate) fn panel_engine_id(&self, id: PanelId) -> Option<EngineId> {
         self.panels.get(id).and_then(|p| p.engine_id)
     }
 
