@@ -21,7 +21,7 @@ use std::rc::Rc;
 ///
 /// Port of C++ `emAutoplayConfig` data fields. Holds autoplay timing and
 /// navigation options.
-// DIVERGED: C++ `emAutoplayConfig` is a single class; Rust splits the record data into
+// DIVERGED: (language-forced) C++ `emAutoplayConfig` is a single class; Rust splits the record data into
 // `emAutoplayConfigRec` and the model wrapper into `emAutoplayConfig` (one primary type per file).
 #[derive(Debug, Clone, PartialEq)]
 pub struct emAutoplayConfigRec {
@@ -167,7 +167,7 @@ impl emAutoplayConfig {
         // We return from the borrowed record — the model is not mutably accessed
         // while this reference lives.
         let rec = self.config_model.GetRec();
-        // DIVERGED: C++ returns const emString&; Rust borrows &str from the model.
+        // DIVERGED: (language-forced) C++ returns const emString&; Rust borrows &str from the model.
         // We can't return a borrow of the inner data directly because GetRec() returns
         // a reference. We return an owned &str via a static-lifetime-alike trick:
         // actually, GetRec() returns &T so this is fine.

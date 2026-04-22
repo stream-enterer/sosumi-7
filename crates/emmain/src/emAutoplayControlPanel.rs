@@ -1,6 +1,6 @@
 // Port of C++ emAutoplayControlPanel (emAutoplay.h:333-398).
 //
-// DIVERGED: C++ emAutoplayControlPanel extends emPackGroup and uses signal-based
+// DIVERGED: (language-forced) C++ emAutoplayControlPanel extends emPackGroup and uses signal-based
 // wiring (AddWakeUpSignal/IsSignaled). Rust uses emPackGroup for layout/border,
 // Rc<Cell<...>> flags for action communication (polled by the parent), and
 // on_click/on_check/on_value callbacks on widgets.
@@ -81,7 +81,7 @@ fn DurationTextOfValue(value: i64, _mark_interval: u64) -> String {
 }
 
 // ── AutoplayFlags ──────────────────────────────────────────────────────────
-// DIVERGED: C++ uses AddWakeUpSignal/IsSignaled. Rust uses Rc<Cell<...>>
+// DIVERGED: (language-forced) C++ uses AddWakeUpSignal/IsSignaled. Rust uses Rc<Cell<...>>
 // flags set by widget callbacks and polled by the parent panel's Cycle.
 
 /// Shared state for autoplay control actions.
@@ -153,7 +153,7 @@ impl PanelBehavior for AutoplayButtonPanel {
 }
 
 /// PanelBehavior wrapper for emCheckButton (autoplay toggle).
-/// DIVERGED: C++ AutoplayButton overrides PaintLabel to draw a progress bar.
+/// DIVERGED: (language-forced) C++ AutoplayButton overrides PaintLabel to draw a progress bar.
 /// Rust draws the progress bar overlay after painting the check button.
 struct AutoplayCheckButtonPanel {
     check_button: emCheckButton,
@@ -166,8 +166,8 @@ impl PanelBehavior for AutoplayCheckButtonPanel {
         self.check_button
             .Paint(painter, w, h, state.enabled, pixel_scale);
 
-        // DIVERGED: C++ AutoplayButton::PaintLabel draws ellipse-arc progress indicator.
-        // Rust uses a simple rectangle overlay — PaintEllipseArc not yet ported.
+        // BLOCKED: C++ AutoplayButton::PaintLabel draws ellipse-arc progress indicator using PaintEllipseArc.
+        // Rust uses a simple rectangle overlay — AutoplayButton::PaintLabel has not been ported yet.
         let progress = self.progress.get();
         if progress > 0.0 {
             let bar_color = emColor::from_packed(0x00AA0080); // green, 50% alpha

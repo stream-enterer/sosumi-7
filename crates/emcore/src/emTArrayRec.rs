@@ -72,7 +72,7 @@ impl<T: emRecNode + 'static> emTArrayRec<T> {
     /// constructor shape has no portable Rust equivalent when `T`'s
     /// constructor needs a `SchedCtx`.
     ///
-    /// DIVERGED: C++ constructor immediately materialises `MinCount`
+    /// DIVERGED: (language-forced) C++ constructor immediately materialises `MinCount`
     /// elements via `SetToDefault`; Rust defers that to an explicit
     /// `SetCount(min_count)` call (same staged pattern as `emArrayRec`).
     pub fn new<C: ConstructCtx>(

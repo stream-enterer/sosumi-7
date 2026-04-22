@@ -2,7 +2,7 @@
 // emEngine trait Cycle cannot drive the fetch loop because it needs a
 // &mut emStocksRec parameter that the trait signature doesn't provide. This is a structural
 // limitation of the trait pattern. The direct Cycle(&mut rec) method is used instead.
-// DIVERGED: Uses BTreeMap<String, Option<usize>> instead of C++ emAvlTreeMap<String, emCrossPtr<StockRec>> — BTreeMap is Rust's idiomatic ordered map; cross-pointers don't apply when StockRecs live in a Vec.
+// Uses BTreeMap<String, Option<usize>> instead of C++ emAvlTreeMap<String, emCrossPtr<StockRec>> — BTreeMap is Rust's idiomatic ordered map; cross-pointers don't apply when StockRecs live in a Vec.
 
 use std::collections::{BTreeMap, HashMap};
 

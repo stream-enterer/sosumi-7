@@ -40,7 +40,7 @@ impl emAlignmentRec {
 
     /// Port of C++ `emAlignmentRec::TryStartWriting` (emRec.cpp:1001-1026).
     ///
-    // DIVERGED: atomic fusion; see `emBoolRec::TryWrite` for rationale.
+    // DIVERGED: (language-forced) atomic fusion; see `emBoolRec::TryWrite` for rationale.
     // Format: one or more of {top, bottom, left, right} joined by `-`, or the
     // single identifier `center` when no bits are set.
     pub fn TryWrite(&self, writer: &mut dyn emRecWriter) -> Result<(), RecIoError> {
@@ -146,7 +146,7 @@ impl emRec<emAlignment> for emAlignmentRec {
         if value != self.value {
             self.value = value;
             ctx.fire(self.signal);
-            // DIVERGED: C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
+            // DIVERGED: (language-forced) C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
             // per-fire; Rust fires the reified aggregate chain. See ADR
             // 2026-04-21-phase-4b-listener-tree-adr.md.
             for sig in &self.aggregate_signals {

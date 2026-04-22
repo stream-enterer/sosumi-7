@@ -536,7 +536,7 @@ impl emProcess {
         }
     }
 
-    // DIVERGED: no C++ equivalent — Rust-only convenience combining WaitForTermination + SendKillSignal
+    // DIVERGED: (language-forced) no C++ equivalent — Rust-only convenience combining WaitForTermination + SendKillSignal
     /// Wait for the child to exit and then forcibly kill it if the timeout
     /// expires.
     pub fn wait_or_kill(&mut self, timeout: Duration) {

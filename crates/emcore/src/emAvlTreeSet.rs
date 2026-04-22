@@ -3,23 +3,23 @@
 // C++ emAvlTreeSet is a copy-on-write sorted set backed by an intrusive AVL
 // tree. Rust wraps BTreeSet in Rc for COW + ordered access.
 //
-// DIVERGED: Element struct — C++ exposes `Element { Obj, AvlNode }`.
+// DIVERGED: (language-forced) Element struct — C++ exposes `Element { Obj, AvlNode }`.
 // Rust returns `&T` references or `Option<&T>` directly since there is no
 // intrusive AVL node to expose.
 //
-// DIVERGED: Iterator inner class — C++ Iterator is a stable cursor with AVL
+// DIVERGED: (language-forced) Iterator inner class — C++ Iterator is a stable cursor with AVL
 // node stack and auto-adjustment on mutation (auto-advances past removed
 // elements). Rust provides SetCursor, which tracks position by value clone and
 // returns None (not auto-advance) when the pointed-to element is removed.
 //
-// DIVERGED: GetWritable — omitted. C++ returns a mutable pointer with the
+// DIVERGED: (language-forced) GetWritable — omitted. C++ returns a mutable pointer with the
 // caveat "must not disturb order". Rust prevents this at the API level since
 // mutating elements in a sorted set can break ordering invariants.
 //
-// DIVERGED: Element-pointer overloads of Remove — omitted. C++ uses raw
+// DIVERGED: (language-forced) Element-pointer overloads of Remove — omitted. C++ uses raw
 // pointers to elements; Rust API uses value references instead.
 //
-// DIVERGED: begin/end — omitted. C++ provides range-based for loop support
+// DIVERGED: (language-forced) begin/end — omitted. C++ provides range-based for loop support
 // via begin/end returning Iterator. Rust uses SetCursor for iteration.
 
 use std::collections::BTreeSet;
@@ -198,7 +198,7 @@ impl<T: Ord + Clone> emAvlTreeSet<T> {
 
 /// Stable cursor for emAvlTreeSet. Tracks position by cloned value.
 ///
-/// DIVERGED: C++ `Iterator` auto-advances when the pointed-to element is
+/// DIVERGED: (language-forced) C++ `Iterator` auto-advances when the pointed-to element is
 /// removed. This cursor returns `None` from `Get` instead. C++ `Iterator` is
 /// nullified on `operator=`; this cursor holds a value copy independent of set
 /// identity so it can be compared against any set with the same element type.

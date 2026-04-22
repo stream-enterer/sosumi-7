@@ -116,7 +116,7 @@ mod platform {
     fn ipc_dir() -> PathBuf {
         let uid = unsafe { libc::getuid() };
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        // DIVERGED: C++ `emMiniIpc` uses `~/.emMiniIpc-<uid>`. eaglemode-rs
+        // DIVERGED: (language-forced) C++ `emMiniIpc` uses `~/.emMiniIpc-<uid>`. eaglemode-rs
         // uses `~/.emMiniIpc-rs-<uid>` so a running C++ server is not mistaken
         // for a Rust server (and vice-versa) — the two builds must not share
         // the IPC namespace even though the protocol would collide on names.
@@ -435,7 +435,7 @@ mod platform {
             self.inner.borrow().server_name.clone()
         }
 
-        // DIVERGED: no C++ equivalent — Rust-only resource cleanup (C++ uses destructor)
+        // DIVERGED: (language-forced) no C++ equivalent — Rust-only resource cleanup (C++ uses destructor)
         /// Remove engine/timer from scheduler. Call before dropping.
         pub fn cleanup(&mut self, scheduler: &mut EngineScheduler) {
             if self.IsServing() {

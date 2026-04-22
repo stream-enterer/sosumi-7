@@ -468,7 +468,7 @@ impl emVirtualCosmosItemPanel {
 }
 
 impl PanelBehavior for emVirtualCosmosItemPanel {
-    // DIVERGED: C++ Paint(const emPainter&, emColor canvasColor)
+    // DIVERGED: (language-forced) C++ Paint(const emPainter&, emColor canvasColor)
     // Rust PanelBehavior::Paint doesn't receive canvasColor; use painter.GetCanvasColor().
     fn Paint(&mut self, painter: &mut emPainter, _w: f64, h: f64, _state: &PanelState) {
         let Some(rec) = &self.item_rec else {

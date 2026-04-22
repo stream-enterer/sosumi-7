@@ -28,8 +28,8 @@ impl std::error::Error for ColorParseError {}
 // channel can have a different range and bit-shift in the packed pixel. Since
 // the Rust port always uses 4-byte RGBA with range=255 for all channels, the
 // unshifted table values are identical across channels. One table suffices.
-// DIVERGED: SharedPixelFormat — single table instead of three, because
-// range=255 for all channels makes them identical when unshifted.
+// SharedPixelFormat — single table instead of C++'s three (RedHash, GreenHash, BlueHash), because
+// range=255 for all channels makes them identical when unshifted in the fixed RGBA layout.
 
 static BLEND_HASH: LazyLock<Box<[u8; 65536]>> = LazyLock::new(|| {
     let mut hash = Box::new([0u8; 65536]);
@@ -84,8 +84,8 @@ pub(crate) fn mulhrs_scale(value: u8, opacity: i32) -> u8 {
     ((value as i32 * 8 * opacity + 0x4000) >> 15) as u8
 }
 
-// DIVERGED: Get — renamed to GetPacked because Rust has no implicit u32 conversion operator
-// DIVERGED: Set (all overloads) — not ported (emColor is Copy; use constructors rgba/rgb/SetAlpha instead of mutation)
+// DIVERGED: (language-forced) Get — renamed to GetPacked because Rust has no implicit u32 conversion operator
+// DIVERGED: (language-forced) Set (all overloads) — not ported (emColor is Copy; use constructors rgba/rgb/SetAlpha instead of mutation)
 
 /// RGBA color packed into a `u32` with layout R[31:24] G[23:16] B[15:8] A[7:0].
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -139,13 +139,13 @@ impl emColor {
         self.0 as u8
     }
 
-    // DIVERGED: Get — renamed to GetPacked because Rust has no implicit u32 conversion operator
+    // DIVERGED: (language-forced) Get — renamed to GetPacked because Rust has no implicit u32 conversion operator
     #[inline]
     pub const fn GetPacked(self) -> u32 {
         self.0
     }
 
-    // DIVERGED: SetHSVA — constructor instead of mutator (emColor is Copy);
+    // DIVERGED: (language-forced) SetHSVA — constructor instead of mutator (emColor is Copy);
     // 4-param variant available as SetHSVA_with_alpha. s/v scale matches C++ [0,100].
     /// Create a color from HSV values. `h` in [0, 360), `s` and `v` in [0, 100].
     ///
@@ -292,7 +292,7 @@ impl emColor {
         emColor::rgba(r as u8, g as u8, b as u8, out_a as u8)
     }
 
-    // DIVERGED: SetAlpha — returns new value instead of mutating (emColor is Copy)
+    // DIVERGED: (language-forced) SetAlpha — returns new value instead of mutating (emColor is Copy)
     /// Return a copy with the alpha channel replaced.
     #[inline]
     pub const fn SetAlpha(self, a: u8) -> emColor {
@@ -341,21 +341,21 @@ impl emColor {
         )
     }
 
-    // DIVERGED: SetRed — returns new value instead of mutating (emColor is Copy)
+    // DIVERGED: (language-forced) SetRed — returns new value instead of mutating (emColor is Copy)
     /// Return a copy with the red channel replaced.
     #[inline]
     pub const fn SetRed(self, r: u8) -> emColor {
         emColor::rgba(r, self.GetGreen(), self.GetBlue(), self.GetAlpha())
     }
 
-    // DIVERGED: SetGreen — returns new value instead of mutating (emColor is Copy)
+    // DIVERGED: (language-forced) SetGreen — returns new value instead of mutating (emColor is Copy)
     /// Return a copy with the green channel replaced.
     #[inline]
     pub const fn SetGreen(self, g: u8) -> emColor {
         emColor::rgba(self.GetRed(), g, self.GetBlue(), self.GetAlpha())
     }
 
-    // DIVERGED: SetBlue — returns new value instead of mutating (emColor is Copy)
+    // DIVERGED: (language-forced) SetBlue — returns new value instead of mutating (emColor is Copy)
     /// Return a copy with the blue channel replaced.
     #[inline]
     pub const fn SetBlue(self, b: u8) -> emColor {
@@ -386,7 +386,7 @@ impl emColor {
         ((self.GetRed() as u16 + self.GetGreen() as u16 + self.GetBlue() as u16 + 1) / 3) as u8
     }
 
-    // DIVERGED: SetGrey — constructor instead of mutator (emColor is Copy);
+    // DIVERGED: (language-forced) SetGrey — constructor instead of mutator (emColor is Copy);
     // 2-param variant available as SetGrey_with_alpha.
     /// Construct a grey color with `a=255`.
     #[inline]
@@ -400,21 +400,21 @@ impl emColor {
         emColor::rgba(val, val, val, alpha)
     }
 
-    // DIVERGED: SetHue — returns new value instead of mutating (emColor is Copy)
+    // DIVERGED: (language-forced) SetHue — returns new value instead of mutating (emColor is Copy)
     /// Return a copy with the HSV hue replaced, preserving saturation, value, and alpha.
     pub fn SetHue(self, h: f32) -> emColor {
         let (_old_h, s, v) = self.GetHSV();
         emColor::SetHSVA(h, s, v).SetAlpha(self.GetAlpha())
     }
 
-    // DIVERGED: SetSat — returns new value instead of mutating (emColor is Copy)
+    // DIVERGED: (language-forced) SetSat — returns new value instead of mutating (emColor is Copy)
     /// Return a copy with the HSV saturation replaced, preserving hue, value, and alpha.
     pub fn SetSat(self, s: f32) -> emColor {
         let (h, _old_s, v) = self.GetHSV();
         emColor::SetHSVA(h, s, v).SetAlpha(self.GetAlpha())
     }
 
-    // DIVERGED: SetVal — returns new value instead of mutating (emColor is Copy)
+    // DIVERGED: (language-forced) SetVal — returns new value instead of mutating (emColor is Copy)
     /// Return a copy with the HSV value replaced, preserving hue, saturation, and alpha.
     pub fn SetVal(self, v: f32) -> emColor {
         let (h, s, _old_v) = self.GetHSV();
@@ -545,7 +545,7 @@ impl emColor {
     }
 }
 
-// DIVERGED: ToString — implemented as fmt::Display trait (Rust convention)
+// DIVERGED: (language-forced) ToString — implemented as fmt::Display trait (Rust convention)
 impl fmt::Display for emColor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.IsOpaque() {

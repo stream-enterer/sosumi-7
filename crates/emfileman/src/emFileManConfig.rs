@@ -9,7 +9,7 @@ use emcore::emRecRecord::Record;
 use emcore::emSignal::SignalId;
 use slotmap::Key as _;
 
-/// DIVERGED: C++ uses anonymous enum constants inside `emFileManConfig`.
+/// DIVERGED: (language-forced) C++ uses anonymous enum constants inside `emFileManConfig`.
 /// Rust uses a standalone enum for type safety.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
@@ -50,7 +50,7 @@ impl SortCriterion {
     }
 }
 
-/// DIVERGED: C++ uses anonymous enum constants inside `emFileManConfig`.
+/// DIVERGED: (language-forced) C++ uses anonymous enum constants inside `emFileManConfig`.
 /// Rust uses a standalone enum for type safety.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]

@@ -6,6 +6,7 @@ members = [
     "crates/emmain",
     "crates/eaglemode",
     "crates/test_plugin",
+    "crates/xtask",
     "harness",
 ]
 resolver = "2"

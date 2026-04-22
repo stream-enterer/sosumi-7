@@ -20,7 +20,7 @@ use crate::emStructRec::emStructRec;
 /// src/emCore/emCoreConfig.cpp). Holds navigation speeds, rendering quality,
 /// and resource limits. Backed by an `emRecNodeConfigModel` for file persistence.
 pub struct emCoreConfig {
-    /// DIVERGED: C++ `emCoreConfig` inherits `emStructRec` via multiple
+    /// DIVERGED: (language-forced) C++ `emCoreConfig` inherits `emStructRec` via multiple
     /// inheritance (`class emCoreConfig : public emConfigModel, public
     /// emStructRec`). Rust has no MI; `emStructRec` is composed as a field.
     pub inner: emStructRec,
@@ -125,7 +125,7 @@ impl emCoreConfig {
 
         let root = ctx.GetRootContext();
         root.acquire::<emRecNodeConfigModel<Self>>("", || {
-            // DIVERGED: `emRecNodeConfigModel::new` requires `SchedCtx` for
+            // DIVERGED: (language-forced) `emRecNodeConfigModel::new` requires `SchedCtx` for
             // signal allocation and listener registration. `emContext::acquire`
             // provides no context parameter to this closure.
             //

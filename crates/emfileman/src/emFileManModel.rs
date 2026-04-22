@@ -9,7 +9,6 @@ use std::rc::Rc;
 use emcore::emColor::emColor;
 use emcore::emContext::emContext;
 use emcore::emImage::emImage;
-use emcore::emImageFile::load_image_from_file;
 use emcore::emLook::emLook;
 use emcore::emProcess;
 use emcore::emStd2::emCalcHashCode;
@@ -190,7 +189,9 @@ pub fn parse_command_properties(content: &str, cmd_path: &str) -> Result<Command
                         .unwrap_or(Path::new(""))
                         .join(value)
                 };
-                node.icon = load_image_from_file(&icon_path);
+                node.icon = std::fs::read(&icon_path)
+                    .ok()
+                    .and_then(|d| emcore::emResTga::load_tga(&d).ok());
             }
             _ => {}
         }

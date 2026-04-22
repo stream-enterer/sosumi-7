@@ -4,13 +4,13 @@
 //! efficient small reads/writes. Rust wraps std::fs::File with a
 //! manual byte buffer.
 //!
-//! DIVERGED: File paths use PathBuf/&Path (not String) to handle
+//! DIVERGED: (language-forced) File paths use PathBuf/&Path (not String) to handle
 //! non-UTF-8 file paths safely. C++ uses emString (byte-oriented).
 //!
-//! DIVERGED: C++ mode strings ("rb", "wb") mapped to Rust
+//! DIVERGED: (language-forced) C++ mode strings ("rb", "wb") mapped to Rust
 //! OpenOptions. Only "rb", "wb", "r+b", "w+b" supported.
 //!
-//! DIVERGED: TryGetFile() omitted — no safe way to expose the
+//! DIVERGED: (language-forced) TryGetFile() omitted — no safe way to expose the
 //! underlying File without breaking buffer invariants.
 
 use std::fmt;
@@ -126,7 +126,7 @@ impl emFileStream {
         Ok(())
     }
 
-    /// DIVERGED: C++ Close() ignores errors; Rust version does the same.
+    /// DIVERGED: (language-forced) C++ Close() ignores errors; Rust version does the same.
     pub fn Close(&mut self) {
         let _ = self.TryClose();
     }
@@ -255,7 +255,7 @@ impl emFileStream {
         Ok(b as i32)
     }
 
-    /// DIVERGED: C++ TryReadInt8 returns emInt8. Rust uses i8.
+    /// DIVERGED: (language-forced) C++ TryReadInt8 returns emInt8. Rust uses i8.
     pub fn TryReadInt8(&mut self) -> Result<i8> {
         Ok(self.TryReadUInt8()? as i8)
     }
@@ -294,7 +294,7 @@ impl emFileStream {
         Ok(())
     }
 
-    /// DIVERGED: C++ TryWrite(const char*) takes a C string. Rust uses &str.
+    /// DIVERGED: (language-forced) C++ TryWrite(const char*) takes a C string. Rust uses &str.
     pub fn TryWriteStr(&mut self, s: &str) -> Result<()> {
         self.TryWrite(s.as_bytes())
     }
@@ -303,7 +303,7 @@ impl emFileStream {
         self.TryWrite(&[value])
     }
 
-    /// DIVERGED: C++ TryWriteInt8 takes emInt8. Rust uses i8.
+    /// DIVERGED: (language-forced) C++ TryWriteInt8 takes emInt8. Rust uses i8.
     pub fn TryWriteInt8(&mut self, value: i8) -> Result<()> {
         self.TryWriteUInt8(value as u8)
     }

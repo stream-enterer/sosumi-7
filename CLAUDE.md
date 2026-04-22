@@ -13,7 +13,13 @@ eaglemode-rs is an **observational port** of emCore. From a user's seat — visi
 4. LLM judgment / convenience — lowest. Never outranks the above.
 
 **Classify every difference from C++** (the first two are *divergences* — observable or structural departures. The third is not):
-- **Forced divergence** — Rust or a required dependency (winit/wgpu) makes the C++ shape literally impossible. Not "awkward", not "would require refactoring" — impossible. Minimize the concession.
+- **Forced divergence** — one of the following four categories applies:
+  1. **Language-forced.** Try writing the C++ shape in Rust under the project's canonical ownership model (CLAUDE.md §Ownership). If it does not compile, language-forced.
+  2. **Dependency-forced.** A required dependency (wgpu, winit) cannot be made to admit the C++ shape through its public API.
+  3. **Upstream-gap-forced.** C++ emCore itself ships the shape as a no-op.
+  4. **Performance-forced.** Benchmark demonstrates the C++-mirrored shape crossing a documented degradation threshold; the alternative must ship the benchmark and threshold.
+
+  "Idiom adaptation *forced by* a project-internal ownership choice" is not a valid framing. If a Rust choice makes a C++ shape impossible, revisit the Rust choice before marking forced.
 - **Preserved design intent** — a deliberate architectural choice by the C++ author. Preserve; it is load-bearing.
 - **Idiom adaptation** — below the observable surface, outside name correspondence. Adapt syntax and ownership freely; behavior stays identical. Not a divergence.
 
@@ -43,7 +49,7 @@ For "identify/filter/classify code by property P" tasks where P is computed exac
 
 - **Types & coordinates**: `f64` logical, `i32` pixel, `u32` image dims, `u8` color channels.
 - **Color**: `Color` (packed u32 RGBA) for storage. Intermediate blend math in `i32` or wider.
-- **Ownership**: `Rc`/`RefCell` shared state, `Weak` parent refs.
+- **Ownership**: Plain owned values are the default. `Rc<T>` (immutable) where the value is shared-read after init. `Rc<RefCell<T>>` requires a justification comment citing one of: (a) cross-closure reference held by winit/wgpu callbacks, or (b) context-registry typed singleton. `Weak<RefCell<T>>` is acceptable only as the pair of an (a)-justified `Rc<RefCell<T>>`. Engine and panel back-references to their owning view or window are IDs (`WindowId`, `PanelId`) resolved through `EngineCtx`, not `Weak<>`.
 - **Strings**: `String` owned, `&str` params. Convert with `.to_string()`.
 - **Errors**: Per-module `Result` with custom error enums (`Display` + `Error`). `assert!` only for logic-error invariants.
 - **Imports**: std → external → `crate::`. Explicit names. `use super::*` only in `#[cfg(test)]`.
@@ -65,6 +71,16 @@ The codebase is a transparent overlay on the C++ original: a developer with `emF
 Filesystem markers in `src/emCore/`:
 - C++ headers with no Rust equivalent (e.g., `emArray.h` → `Vec<T>`) get an empty marker file: `emArray.no_rust_equivalent`. Lists all exempt headers visibly on the filesystem.
 - Rust files with no C++ header get an empty marker file alongside them: `rect.rust_only`. Identifies Rust-only code visibly on the filesystem.
+
+## Annotation Vocabulary
+
+- `DIVERGED:` marks a forced divergence per Port Ideology §"Forced divergence". Every block must name which forced category applies (language-forced, dependency-forced, upstream-gap-forced, performance-forced) and cite the test result. Blocks without a category are treated as fidelity-bugs and are fixed, not annotated.
+- `RUST_ONLY:` marks code with no C++ analogue with a chartered justification: language-forced utility (typed wrapper that C++ inline code implicitly provides), dependency-forced alternative, or performance-forced alternative (with benchmark).
+- `IDIOM:` is retired. Below-surface adaptations that preserve observable behavior and introduce no structural commitment are unannotated. If the adaptation needs a comment, write prose explaining the rationale without the tag.
+- `UPSTREAM-GAP:` marks code that mirrors a C++ no-op/stub because upstream itself is a no-op. Preserves upstream semantics.
+- `SPLIT:` marks file splits forced by "one primary type per file". Unchanged.
+
+Annotation lint runs as a standalone `cargo xtask annotations` binary (stable-rustc compatible; text-scan over `rg -n 'DIVERGED:'` / `RUST_ONLY:` matches, validating each hit carries a required category tag). Invoked from the pre-commit hook and from CI. Not a clippy lint — stable Rust does not admit custom clippy lints without switching to nightly, which is out of scope.
 
 ## Port Fidelity
 

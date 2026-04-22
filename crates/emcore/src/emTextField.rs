@@ -18,7 +18,7 @@ const DOUBLE_CLICK_MS: u128 = 500;
 const DOUBLE_CLICK_DIST: f64 = 3.0;
 
 type TextChangeCb = crate::emEngineCtx::WidgetCallbackRef<str>;
-// DIVERGED: `ValidateCb` returns `bool` (veto semantics) which is
+// DIVERGED: (language-forced) `ValidateCb` returns `bool` (veto semantics) which is
 // structurally incompatible with both `WidgetCallback<Args>` and
 // `WidgetCallbackRef<T>` (both return `()`). The divergence is the return
 // value, not the payload lifetime. Remains a plain `Box<dyn FnMut>`.
@@ -1847,7 +1847,7 @@ impl emTextField {
         }
         let tallness = self.last_h / self.last_w;
         let (rect, r) = self.border.GetContentRoundRect(1.0, tallness, &self.look);
-        // RUST_ONLY: widget_utils.rs -- C++ inlines this formula per widget
+        // RUST_ONLY: (language-forced-utility) widget_utils.rs -- C++ inlines this formula per widget
         let dx = ((rect.x - mx).max(mx - rect.x - rect.w) + r).max(0.0);
         let dy = ((rect.y - my).max(my - rect.y - rect.h) + r).max(0.0);
         dx * dx + dy * dy <= r * r

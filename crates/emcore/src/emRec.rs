@@ -17,7 +17,7 @@ use crate::emSignal::SignalId;
 /// (one shared allocator for every element). Both call it at allocation
 /// time to materialise a fresh child record.
 ///
-/// DIVERGED: Rust needs `&mut SchedCtx` so the constructed child can register
+/// DIVERGED: (language-forced) Rust needs `&mut SchedCtx` so the constructed child can register
 /// its own value signal through `ConstructCtx::create_signal`. The C++
 /// function-pointer shape has no such parameter because `emRec` base
 /// constructors walk out to a static signal-allocator singleton. See ADR

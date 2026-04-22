@@ -61,7 +61,7 @@ impl emDoubleRec {
 
     /// Port of C++ `emDoubleRec::TryStartWriting` (emRec.cpp:574-577).
     ///
-    // DIVERGED: atomic fusion of TryStartWriting + TryContinueWriting; see
+    // DIVERGED: (language-forced) atomic fusion of TryStartWriting + TryContinueWriting; see
     // `emBoolRec::TryWrite` for rationale.
     pub fn TryWrite(&self, writer: &mut dyn emRecWriter) -> Result<(), RecIoError> {
         writer.TryWriteDouble(self.value)
@@ -69,7 +69,7 @@ impl emDoubleRec {
 
     /// Port of C++ `emDoubleRec::TryStartReading` (emRec.cpp:552-560).
     ///
-    // DIVERGED: atomic fusion; bounds-checks `[min, max]` with C++'s error
+    // DIVERGED: (language-forced) atomic fusion; bounds-checks `[min, max]` with C++'s error
     // strings preserved verbatim.
     pub fn TryRead(
         &mut self,
@@ -133,7 +133,7 @@ impl emRec<f64> for emDoubleRec {
         if value != self.value {
             self.value = value;
             ctx.fire(self.signal);
-            // DIVERGED: C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
+            // DIVERGED: (language-forced) C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
             // per-fire; Rust fires the reified aggregate chain. See ADR
             // 2026-04-21-phase-4b-listener-tree-adr.md.
             for sig in &self.aggregate_signals {

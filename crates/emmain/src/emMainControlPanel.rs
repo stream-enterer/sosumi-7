@@ -32,7 +32,7 @@ use crate::emMainConfig::emMainConfig;
 
 // ── Click flags ──────────────────────────────────────────────────────────────
 // Shared state between button on_click callbacks and the Cycle method.
-// DIVERGED: C++ uses AddWakeUpSignal / IsSignaled. Rust uses Rc<Cell<bool>>
+// DIVERGED: (language-forced) C++ uses AddWakeUpSignal / IsSignaled. Rust uses Rc<Cell<bool>>
 // flags set by on_click callbacks and polled in Cycle.
 
 #[derive(Default)]
@@ -263,7 +263,7 @@ impl PanelBehavior for emMainControlPanel {
 
         if flags.fullscreen.take() {
             crate::emMainWindow::with_main_window(|mw| {
-                // DIVERGED: C++ has direct MainWin reference; Rust uses
+                // DIVERGED: (language-forced) C++ has direct MainWin reference; Rust uses
                 // thread_local. ToggleFullscreen requires &mut App which
                 // we don't have in Cycle. Log for now.
                 log::info!("emMainControlPanel: Fullscreen toggle requested (requires App access)");
@@ -280,7 +280,7 @@ impl PanelBehavior for emMainControlPanel {
         }
 
         if flags.reload.take() {
-            // DIVERGED: C++ calls MainWin.ReloadFiles() directly via signal.
+            // DIVERGED: (language-forced) C++ calls MainWin.ReloadFiles() directly via signal.
             // Rust sets a flag on emMainWindow, polled by MainWindowEngine which
             // has EngineCtx access to fire the file_update_signal.
             crate::emMainWindow::with_main_window(|mw| {
@@ -618,7 +618,7 @@ impl PanelBehavior for AboutPanel {
 
 // ── CoreConfigPlaceholder ────────────────────────────────────────────────────
 // Placeholder for emCoreConfigPanel.
-// DIVERGED: C++ creates a full emCoreConfigPanel here. Rust defers to a
+// BLOCKED: C++ creates a full emCoreConfigPanel here. Rust defers to a
 // placeholder until the core config panel is wired into emmain's panel tree.
 
 struct CoreConfigPlaceholder;
@@ -672,7 +672,7 @@ impl CommandsPanel {
             border: emBorder::new(OuterBorderType::Group)
                 .with_inner(InnerBorderType::Group)
                 .with_caption("Main Commands"),
-            // DIVERGED: C++ uses emPackGroup with PrefChildTallness(0.7).
+            // DIVERGED: (language-forced) C++ uses emPackGroup with PrefChildTallness(0.7).
             // Rust uses emLinearLayout vertical since emPackLayout doesn't
             // support tallness preferences in the same way.
             layout: emLinearLayout::vertical(),

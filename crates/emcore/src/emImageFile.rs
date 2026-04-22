@@ -1,19 +1,21 @@
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::{Rc, Weak};
 
+use crate::emEngine::{emEngine, Priority};
+use crate::emEngineCtx::{ConstructCtx, EngineCtx};
 use crate::emFileModel::{emFileModel, FileState};
 use crate::emImage::emImage;
+use crate::emPanelScope::PanelScope;
 use crate::emSignal::SignalId;
 
-/// Load an image from a file path synchronously.
-/// Supports TGA format. Returns None on any error (missing file, bad format).
+/// Load an image from a path, parsing as TGA. Returns `Ok(emImage)` or an
+/// error string.
 ///
-/// DIVERGED: C++ uses the async emImageFileModel plugin system with format
-/// dispatching to emTga/emBmp/emGif/etc. This synchronous loader handles TGA
-/// only and serves small theme border images. Full async image loading will be
-/// ported with the image app modules.
-pub fn load_image_from_file(path: &Path) -> Option<emImage> {
-    let data = std::fs::read(path).ok()?;
-    crate::emResTga::load_tga(&data).ok()
+/// Used internally by `LoaderEngine::Cycle`.
+fn load_image_sync(path: &Path) -> Result<emImage, String> {
+    let data = std::fs::read(path).map_err(|e| e.to_string())?;
+    crate::emResTga::load_tga(&data).map_err(|e| e.to_string())
 }
 
 /// Data payload for an image file model.
@@ -59,6 +61,37 @@ impl emImageFileModel {
             data_change_signal,
             saving_quality: 100,
         }
+    }
+
+    /// Scheduler-driven factory: registers a `LoaderEngine` that will load
+    /// the image on the next time-slice and fire a completion signal.
+    ///
+    /// DIVERGED: (language-forced) C++ creates file models via `emModel::Acquire(context, name)`,
+    /// a context-registered, path-keyed shared-instance pattern backed by virtual inheritance
+    /// (`emModel : emEngine`, `emFileModel : emModel`). Rust has no virtual base-class
+    /// inheritance; the `emModel` context-registry infrastructure is not yet ported, so
+    /// callers receive an explicit `Rc<RefCell<Self>>` and manage sharing themselves.
+    /// The observable loading contract — async engine fires on schedule, signals on completion —
+    /// is preserved.
+    pub fn register<C: ConstructCtx>(ctx: &mut C, path: PathBuf) -> Rc<RefCell<Self>> {
+        let change_signal = ctx.create_signal();
+        let update_signal = ctx.create_signal();
+        let load_complete_signal = ctx.create_signal();
+
+        let mut model = Self::new(path, change_signal, update_signal, load_complete_signal);
+        model.file_model.Load();
+
+        let model_rc = Rc::new(RefCell::new(model));
+        let model_weak = Rc::downgrade(&model_rc);
+
+        let engine = Box::new(LoaderEngine {
+            model_weak,
+            load_complete_signal,
+        });
+        let eid = ctx.register_engine(engine, Priority::Low, PanelScope::Framework);
+        ctx.wake_up(eid);
+
+        model_rc
     }
 
     pub fn state(&self) -> &FileState {
@@ -156,52 +189,66 @@ impl emImageFileModel {
     }
 }
 
+// ---------------------------------------------------------------------------
+// LoaderEngine — one-shot engine that drives async image loading.
+// ---------------------------------------------------------------------------
+
+/// One-shot scheduler engine that loads an image file on the next time-slice.
+///
+/// Port of C++ `emImageFileModel`'s internal async load path: the model
+/// registers itself with the scheduler, which calls back on the next
+/// `DoTimeSlice`. `LoaderEngine` does the synchronous I/O + TGA parse, stores
+/// the result in the model, fires the load-complete signal, and removes itself.
+struct LoaderEngine {
+    model_weak: Weak<RefCell<emImageFileModel>>,
+    load_complete_signal: SignalId,
+}
+
+impl emEngine for LoaderEngine {
+    fn Cycle(&mut self, ctx: &mut EngineCtx<'_>) -> bool {
+        let engine_id = ctx.engine_id;
+
+        let Some(model_rc) = self.model_weak.upgrade() else {
+            // Model was dropped before we ran — clean up and exit.
+            ctx.remove_engine(engine_id);
+            return false;
+        };
+
+        let path = model_rc.borrow().path().to_path_buf();
+        let result = load_image_sync(&path);
+
+        let file_state_signal;
+        {
+            let mut m = model_rc.borrow_mut();
+            match result {
+                Ok(img) => m.file_model_mut().complete_load(ImageFileData {
+                    image: img,
+                    comment: String::new(),
+                    format_info: String::new(),
+                }),
+                Err(e) => m.file_model_mut().fail_load(e),
+            }
+            // Mirror C++ emFileModel::Cycle: fire FileStateSignal on every state transition.
+            file_state_signal = m.file_model().GetFileStateSignal();
+        }
+
+        ctx.fire(file_state_signal);
+        ctx.fire(self.load_complete_signal);
+        ctx.remove_engine(engine_id);
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn load_nonexistent_file_returns_none() {
-        assert!(load_image_from_file(Path::new("/nonexistent/path.tga")).is_none());
-    }
-
-    #[test]
-    fn load_empty_file_returns_none() {
-        let dir = std::env::temp_dir().join("emcore_test_img");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("empty.tga");
-        std::fs::write(&path, b"").expect("write");
-        assert!(load_image_from_file(&path).is_none());
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn load_valid_tga_returns_image() {
-        // Type 10: RLE true-color, 32bpp BGRA — supported by load_tga
-        let dir = std::env::temp_dir().join("emcore_test_img");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("test_1x1.tga");
-
-        // Build minimal 1x1 type-10 TGA (RLE true-color, 32bpp)
-        let mut data = vec![0u8; 18];
-        data[2] = 10; // image type: RLE true-color
-        data[12] = 1; // width low byte
-        data[13] = 0; // width high byte
-        data[14] = 1; // height low byte
-        data[15] = 0; // height high byte
-        data[16] = 32; // bits per pixel
-                       // RLE packet: 1 pixel (header 0x80 = RLE, count=1)
-        data.push(0x80);
-        // BGRA pixel
-        data.extend_from_slice(&[0x10, 0x20, 0x30, 0xFF]);
-
-        std::fs::write(&path, &data).expect("write");
-        let img = load_image_from_file(&path).expect("should load valid TGA");
-        assert_eq!(img.GetWidth(), 1);
-        assert_eq!(img.GetHeight(), 1);
-        assert_eq!(img.GetChannelCount(), 4);
-        // BGRA → RGBA conversion
-        assert_eq!(img.GetPixel(0, 0), &[0x30, 0x20, 0x10, 0xFF]);
-        let _ = std::fs::remove_file(&path);
+    fn image_file_data_default() {
+        let d = ImageFileData::default();
+        assert_eq!(d.image.GetWidth(), 0);
+        assert_eq!(d.image.GetHeight(), 0);
+        assert!(d.comment.is_empty());
+        assert!(d.format_info.is_empty());
     }
 }

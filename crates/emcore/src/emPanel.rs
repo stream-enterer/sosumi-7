@@ -12,7 +12,7 @@ use super::emPanelTree::{PanelId, PlaybackState};
 use crate::emEngineCtx::EngineCtx;
 use crate::emEngineCtx::PanelCtx;
 
-// RUST_ONLY: rect.rs -- Consolidates C++ pattern of passing 4 separate
+// RUST_ONLY: (language-forced-utility) rect.rs -- Consolidates C++ pattern of passing 4 separate
 // doubles (GetLayoutX/Y/Width/Height in emPanel.h) into a typed struct.
 // C++ has no dedicated layout rect type.
 

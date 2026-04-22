@@ -50,7 +50,7 @@ pub struct emArrayRec {
     max_count: i32,
     /// Owned child records. C++: `emRec** Array` + `Count` (emRec.h:1215-1217).
     ///
-    /// DIVERGED: `Vec<Box<dyn emRecNode>>` replaces `emRec**` + manual
+    /// DIVERGED: (language-forced) `Vec<Box<dyn emRecNode>>` replaces `emRec**` + manual
     /// capacity/count bookkeeping. `Count` is `items.len()`; `Capacity` is
     /// elided (Vec manages it). RWPos / RWChildReady belong to the
     /// persistence state machine, deferred to Phase 4d.
@@ -63,7 +63,7 @@ impl emArrayRec {
     /// `emArrayRec(emRecAllocator, int minCount, int maxCount)`
     /// (emRec.h:1152, emRec.cpp:1702-1705).
     ///
-    /// DIVERGED from C++: the C++ constructor immediately calls
+    /// DIVERGED: (language-forced) C++ constructor immediately calls
     /// `SetToDefault()` to materialise `MinCount` elements. Rust defers that
     /// to `SetToDefault` / `SetCount(min_count)` called explicitly by the
     /// user, matching the staged construction pattern used by emUnionRec
@@ -109,7 +109,7 @@ impl emArrayRec {
     /// end, so the aggregate fires exactly once per resize — not once per
     /// added/removed item.
     ///
-    /// DIVERGED (near `register_aggregate` loop): C++ `emRec::Changed()`
+    /// DIVERGED: (language-forced) (near `register_aggregate` loop): C++ `emRec::Changed()`
     /// (emRec.h:243 inline, delegates to `emRec::ChildChanged` at
     /// emRec.cpp:217) walks `UpperNode`. Rust fires the reified aggregate
     /// chain. See ADR 2026-04-21-phase-4b-listener-tree-adr.md.
@@ -135,7 +135,7 @@ impl emArrayRec {
                 // own aggregate signal, then every outer-compound signal
                 // already registered on this array.
                 //
-                // DIVERGED: C++ `BeTheParentOf` (emRec.cpp:217 `ChildChanged`)
+                // DIVERGED: (language-forced) C++ `BeTheParentOf` (emRec.cpp:217 `ChildChanged`)
                 // walks `UpperNode`. Rust registers every ancestor aggregate
                 // signal directly on the new child. See ADR
                 // 2026-04-21-phase-4b-listener-tree-adr.md.
@@ -162,7 +162,7 @@ impl emArrayRec {
 
     /// Immutable access to element `i`, or `None` if out of range.
     ///
-    /// DIVERGED: C++ `Get(int)` / `operator[]` (emRec.h:1184-1191, inline at
+    /// DIVERGED: (language-forced) C++ `Get(int)` / `operator[]` (emRec.h:1184-1191, inline at
     /// emRec.h:1237-1252) panic on out-of-range via raw pointer indexing.
     /// Rust returns `Option` to stay safe without `unsafe`; callers that
     /// preserve the C++ precondition (`0 <= i < GetCount()`) see `Some(_)`
@@ -178,7 +178,7 @@ impl emArrayRec {
         self.items.get(i as usize).map(|b| &**b as &dyn emRecNode)
     }
 
-    /// DIVERGED: no C++ counterpart. C++ `Get(int)` returns `emRec&` which
+    /// DIVERGED: (language-forced) no C++ counterpart. C++ `Get(int)` returns `emRec&` which
     /// callers freely mutate through virtual methods. Rust's borrow checker
     /// needs a distinct `&mut` accessor. Kept minimal for tests and typed
     /// access through user-derived arrays. Callers that need typed mutation
@@ -195,7 +195,7 @@ impl emArrayRec {
 
     /// Reified aggregate signal accessor.
     ///
-    /// DIVERGED: no direct C++ counterpart — C++ listeners splice into the
+    /// DIVERGED: (language-forced) no direct C++ counterpart — C++ listeners splice into the
     /// `UpperNode` chain instead of observing a named signal. Introduced by
     /// the reified-chain rep (ADR 2026-04-21-phase-4b-listener-tree-adr.md —
     /// R5). Mirrors `emStructRec::GetAggregateSignal` / `emUnionRec::GetAggregateSignal`.
@@ -211,7 +211,7 @@ impl emArrayRec {
 }
 
 impl emRecNode for emArrayRec {
-    /// DIVERGED: parent tracked only through the aggregate chain (no
+    /// DIVERGED: (language-forced) parent tracked only through the aggregate chain (no
     /// `UpperNode`). Matches emStructRec / emUnionRec / primitive rep.
     fn parent(&self) -> Option<&dyn emRecNode> {
         None
@@ -222,7 +222,7 @@ impl emRecNode for emArrayRec {
     /// reach outer compounds. Future `SetCount` growths replay
     /// `self.aggregate_signals` onto each new item.
     ///
-    /// DIVERGED: C++ `emRec::Changed()` (emRec.h:243, delegates to
+    /// DIVERGED: (language-forced) C++ `emRec::Changed()` (emRec.h:243, delegates to
     /// emRec.cpp:217 `ChildChanged`) walks `UpperNode`. Rust fires the
     /// reified aggregate chain. See ADR
     /// 2026-04-21-phase-4b-listener-tree-adr.md.
@@ -241,7 +241,7 @@ impl emRecNode for emArrayRec {
     /// (emRec.cpp:1820-1874). Reset to min_count, consume `{`, loop reading
     /// each child body until `}`, enforcing min/max element count.
     ///
-    // DIVERGED: fusion into one atomic call. The C++ driver yields between
+    // DIVERGED: (language-forced) fusion into one atomic call. The C++ driver yields between
     // elements; Rust runs the whole body synchronously.
     fn TryRead(
         &mut self,

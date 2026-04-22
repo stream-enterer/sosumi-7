@@ -311,7 +311,7 @@ impl emButton {
         let d = (14.0 / 264.0) * r;
         let face = Rect::new(cr.x + d, cr.y + d, cr.w - 2.0 * d, cr.h - 2.0 * d);
         let fr = r - d;
-        // RUST_ONLY: widget_utils.rs -- C++ inlines this formula per widget
+        // RUST_ONLY: (language-forced-utility) widget_utils.rs -- C++ inlines this formula per widget
         let dx = ((face.x - mx).max(mx - face.x - face.w) + fr).max(0.0);
         let dy = ((face.y - my).max(my - face.y - face.h) + fr).max(0.0);
         dx * dx + dy * dy <= fr * fr
@@ -327,7 +327,7 @@ impl emButton {
         if !self.enabled {
             return false;
         }
-        // RUST_ONLY: widget_utils.rs -- debug trace aid, no C++ equivalent
+        // RUST_ONLY: (language-forced-utility) widget_utils.rs -- debug trace aid, no C++ equivalent
         let trace = {
             use std::sync::OnceLock;
             static ENABLED: OnceLock<bool> = OnceLock::new();

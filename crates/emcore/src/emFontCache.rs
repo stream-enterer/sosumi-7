@@ -27,7 +27,7 @@ pub(crate) const CHAR_BOX_TALLNESS: f64 = 1.77;
 
 static ATLAS: OnceLock<emImage> = OnceLock::new();
 
-// DIVERGED: Acquire — Rust uses a global OnceLock instead of emModel/emRef
+// DIVERGED: (language-forced) Acquire — Rust uses a global OnceLock instead of emModel/emRef
 /// Returns a reference to the decoded font atlas (single-channel grayscale).
 pub(crate) fn atlas() -> &'static emImage {
     ATLAS.get_or_init(|| decode_tga_rle_grayscale(TGA_DATA))

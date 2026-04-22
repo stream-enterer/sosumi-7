@@ -36,7 +36,7 @@ impl emBoolRec {
 
     /// Port of C++ `emBoolRec::TryStartWriting` (emRec.cpp:369-372).
     ///
-    // DIVERGED: name — C++ splits persistence into the protected virtual
+    // DIVERGED: (language-forced) name — C++ splits persistence into the protected virtual
     // pair `TryStartWriting` + `TryContinueWriting` that the `emRecWriter`
     // base-class driver calls in turn. For atomic types (bool, int, double,
     // string) the Start step writes the value and the Continue step
@@ -52,7 +52,7 @@ impl emBoolRec {
 
     /// Port of C++ `emBoolRec::TryStartReading` (emRec.cpp:334-355).
     ///
-    // DIVERGED: name + fusion with TryContinueReading; see `TryWrite` above
+    // DIVERGED: (language-forced) name + fusion with TryContinueReading; see `TryWrite` above
     // for the rationale. The C++ method mutates through `Set(…)`, which is
     // `emBoolRec::Set` (emRec.cpp:306-312) — it skips the fire-and-mutate
     // step when the new value equals the old. Rust routes through
@@ -129,7 +129,7 @@ impl emRec<bool> for emBoolRec {
         if value != self.value {
             self.value = value;
             ctx.fire(self.signal);
-            // DIVERGED: C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
+            // DIVERGED: (language-forced) C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
             // per-fire; Rust fires the reified aggregate chain. See ADR
             // 2026-04-21-phase-4b-listener-tree-adr.md.
             for sig in &self.aggregate_signals {

@@ -30,7 +30,7 @@ impl emErrorPanel {
 }
 
 impl PanelBehavior for emErrorPanel {
-    // DIVERGED: IsOpaque — implemented as PanelBehavior::is_opaque trait method
+    // DIVERGED: (language-forced) IsOpaque — implemented as PanelBehavior::is_opaque trait method
     fn IsOpaque(&self) -> bool {
         true
     }
@@ -39,7 +39,7 @@ impl PanelBehavior for emErrorPanel {
         BG_COLOR
     }
 
-    // DIVERGED: Paint — implemented as PanelBehavior::paint trait method
+    // DIVERGED: (language-forced) Paint — implemented as PanelBehavior::paint trait method
     fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
         let canvas_color = painter.GetCanvasColor();
 

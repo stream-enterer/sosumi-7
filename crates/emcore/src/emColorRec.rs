@@ -46,7 +46,7 @@ impl emColorRec {
 
     /// Port of C++ `emColorRec::TryStartWriting` (emRec.cpp:1238-1251).
     ///
-    // DIVERGED: atomic fusion; see `emBoolRec::TryWrite` for rationale.
+    // DIVERGED: (language-forced) atomic fusion; see `emBoolRec::TryWrite` for rationale.
     // Format: `{` R ` ` G ` ` B (` ` A when have_alpha) `}`.
     pub fn TryWrite(&self, writer: &mut dyn emRecWriter) -> Result<(), RecIoError> {
         writer.TryWriteDelimiter('{')?;
@@ -142,7 +142,7 @@ impl emRec<emColor> for emColorRec {
         if value != self.value {
             self.value = value;
             ctx.fire(self.signal);
-            // DIVERGED: C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
+            // DIVERGED: (language-forced) C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
             // per-fire; Rust fires the reified aggregate chain. Lives INSIDE
             // the change-check branch, AFTER the own-signal fire, so that the
             // alpha-normalized no-op path (alpha forced to 255 matches current

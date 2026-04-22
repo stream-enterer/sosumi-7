@@ -14,7 +14,7 @@ use emcore::emRecRecord::Record;
 use emcore::emSignal::SignalId;
 use slotmap::Key as _;
 
-// DIVERGED: C++ uses class inheritance (emBookmarkEntryRec → emBookmarkRec,
+// DIVERGED: (language-forced) C++ uses class inheritance (emBookmarkEntryRec → emBookmarkRec,
 // emBookmarkGroupRec). Rust flattens to struct composition — `emBookmarkEntryBase`
 // is embedded by value in each concrete struct. The field names and default
 // colors are identical to the C++ originals.
@@ -269,7 +269,7 @@ impl emBookmarkEntryUnion {
 
 // ── emBookmarksRec ────────────────────────────────────────────────────────────
 
-// DIVERGED: C++ emBookmarksRec also has InsertNewBookmark, InsertNewGroup,
+// BLOCKED: C++ emBookmarksRec also has InsertNewBookmark, InsertNewGroup,
 // CopyToClipboard, TryInsertFromClipboard, BookmarkNameFromPanelTitle.
 // These editing-UI methods are not ported — the Rust implementation is
 // read-only for now.
@@ -514,7 +514,7 @@ impl emBookmarksModel {
     }
 }
 
-// DIVERGED: C++ emBookmarkEntryAuxPanel and emBookmarksAuxPanel are editing
+// BLOCKED: C++ emBookmarkEntryAuxPanel and emBookmarksAuxPanel are editing
 // panels (cut/copy/paste/new bookmark/new group, color editing, location
 // setting, hotkey editing). Not ported — the Rust implementation is read-only.
 
@@ -700,7 +700,7 @@ impl PanelBehavior for emBookmarksPanel {
 
 /// Panel rendering a single bookmark group's children.
 ///
-/// DIVERGED: C++ uses recursive emBookmarksPanel for groups.  In Rust we use
+/// DIVERGED: (language-forced) C++ uses recursive emBookmarksPanel for groups.  In Rust we use
 /// a separate struct `emBookmarksGroupPanel` to avoid ownership issues when
 /// recursively creating child panels from within `LayoutChildren`.  The
 /// behavior is identical; only the type name differs.

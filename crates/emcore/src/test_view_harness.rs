@@ -1,4 +1,4 @@
-// RUST_ONLY: test harness for Phase 1.5 keystone migration.
+// RUST_ONLY: (language-forced-utility) test harness for Phase 1.5 keystone migration.
 //
 // Bundles `EngineScheduler`, `Vec<DeferredAction>`, `Rc<emContext>`,
 // `PanelTree`, and `HashMap<WindowId, emWindow>` so unit tests can

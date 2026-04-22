@@ -3,20 +3,20 @@
 // C++ emAvlTreeMap is a copy-on-write sorted map backed by an intrusive AVL
 // tree. Rust wraps BTreeMap in Rc for COW + ordered access.
 //
-// DIVERGED: Element struct — C++ exposes `Element { Key, Value, AvlNode }`.
+// DIVERGED: (language-forced) Element struct — C++ exposes `Element { Key, Value, AvlNode }`.
 // Rust returns `(&K, &V)` tuples or `Option<&V>` directly since there is no
 // intrusive AVL node to expose.
 //
-// DIVERGED: Iterator inner class — C++ Iterator is a stable cursor with AVL
+// DIVERGED: (language-forced) Iterator inner class — C++ Iterator is a stable cursor with AVL
 // node stack and auto-adjustment on mutation (auto-advances past removed
 // elements). Rust provides MapCursor, which tracks position by key clone and
 // returns None (not auto-advance) when the pointed-to element is removed.
 //
-// DIVERGED: GetKeyWritable — omitted. Mutating keys in a sorted map is
+// DIVERGED: (language-forced) GetKeyWritable — omitted. Mutating keys in a sorted map is
 // inherently dangerous (can break ordering). C++ documents "must not disturb
 // order". Rust prevents this at the API level.
 //
-// DIVERGED: Element-pointer overloads of Get, GetKey, GetValue, GetValueWritable,
+// DIVERGED: (language-forced) Element-pointer overloads of Get, GetKey, GetValue, GetValueWritable,
 // SetValue, Remove — omitted. C++ uses raw pointers to elements; Rust API
 // uses key references instead.
 
@@ -185,7 +185,7 @@ impl<K: Ord + Clone, V: Clone + Default> emAvlTreeMap<K, V> {
 
 /// Stable cursor for emAvlTreeMap. Tracks position by cloned key.
 ///
-/// DIVERGED: C++ `Iterator` auto-advances when the pointed-to element is
+/// DIVERGED: (language-forced) C++ `Iterator` auto-advances when the pointed-to element is
 /// removed. This cursor returns `None` from `Get` instead. C++ `Iterator` is
 /// nullified on `operator=`; this cursor holds a key copy independent of map
 /// identity so it can be compared against any map with the same key type.
@@ -268,7 +268,7 @@ impl<K: Ord + Clone, V: Clone> Default for emAvlTreeMap<K, V> {
     }
 }
 
-/// DIVERGED: C++ `operator[]` creates a default entry if missing.
+/// DIVERGED: (language-forced) C++ `operator[]` creates a default entry if missing.
 /// Rust panics if key not found (no `Default` bound on `V`).
 impl<K: Clone + Ord, V: Clone> Index<&K> for emAvlTreeMap<K, V> {
     type Output = V;

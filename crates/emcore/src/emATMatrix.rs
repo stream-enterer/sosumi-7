@@ -284,7 +284,7 @@ impl AffineMatrix {
         )
     }
 
-    // DIVERGED: TransX, TransY — also available as individual methods below;
+    // DIVERGED: (language-forced) TransX, TransY — also available as individual methods below;
     // tuple-returning method added for idiomatic Rust use.
     /// Transform source coordinates to target coordinates.
     pub fn transform_point(&self, sx: f64, sy: f64) -> (f64, f64) {
@@ -304,7 +304,7 @@ impl AffineMatrix {
         self.a[0][1] * sx + self.a[1][1] * sy + self.a[2][1]
     }
 
-    // DIVERGED: InverseTransX, InverseTransY — also available as individual methods below;
+    // DIVERGED: (language-forced) InverseTransX, InverseTransY — also available as individual methods below;
     // tuple-returning method added for idiomatic Rust use.
     /// Transform target coordinates back to source coordinates.
     ///

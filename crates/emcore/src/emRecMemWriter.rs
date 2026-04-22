@@ -39,7 +39,7 @@ impl Emitter {
 /// wants to retain ownership. The Rust port collapses that indirection:
 /// call [`into_bytes`](emRecMemWriter::into_bytes) at end of writing.
 ///
-/// DIVERGED: The C++ split `emRecMemWriter::TryStartWriting(root, buf)` into
+/// DIVERGED: (language-forced) The C++ split `emRecMemWriter::TryStartWriting(root, buf)` into
 /// external-buf + base-class orchestration isn't useful in Rust. Callers
 /// drive writes directly through the concrete rec type's `TryWrite` method;
 /// the state-machine driver (`TryStartWriting` / `TryContinueWriting`) is
@@ -105,7 +105,7 @@ impl emRecWriter for emRecMemWriter {
         Ok(())
     }
 
-    // DIVERGED: C++ `TryWriteQuoted(const char*)` truncates at the first NUL
+    // DIVERGED: (language-forced) C++ `TryWriteQuoted(const char*)` truncates at the first NUL
     // (C-string convention). Rust `&str` is UTF-8 and may legitimately carry
     // embedded NUL bytes, so we preserve them by emitting `\000` — the same
     // octal escape path that handles any other 0x00-0x1F control byte.

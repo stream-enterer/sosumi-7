@@ -19,10 +19,10 @@ use crate::emRecRecord::Record;
 
 /// Type of the plugin function for creating a file panel.
 /// Port of C++ `emFpPluginFunc`.
-/// DIVERGED: C++ returns emPanel* (raw pointer to Rc-managed panel). Rust returns
+/// DIVERGED: (language-forced) C++ returns emPanel* (raw pointer to Rc-managed panel). Rust returns
 /// Box<dyn PanelBehavior> — ownership transfers to caller who installs it in the
 /// panel tree via set_behavior.
-/// DIVERGED: added `ctx: &mut dyn ConstructCtx` first parameter — Phase-3 Task 5
+/// DIVERGED: (language-forced) added `ctx: &mut dyn ConstructCtx` first parameter — Phase-3 Task 5
 /// (I3d). C++ constructs widgets under the implicit scheduler singleton; the
 /// Rust ownership rewrite (spec §4 D4.9 / §6 D6.1) threads the
 /// scheduler/signal/engine surface through ConstructCtx so plugin-created
@@ -42,7 +42,7 @@ pub type emFpPluginFunc = fn(
 
 /// Type of the plugin model function for acquiring file models.
 /// Port of C++ `emFpPluginModelFunc`.
-/// DIVERGED: added `ctx: &mut dyn ConstructCtx` first parameter — see
+/// DIVERGED: (language-forced) added `ctx: &mut dyn ConstructCtx` first parameter — see
 /// `emFpPluginFunc` above for rationale (Phase-3 Task 5 / I3d). Current
 /// model-function implementations prefix the arg `_ctx` for the same
 /// reason: model constructors do not yet allocate signals at construction
@@ -59,7 +59,7 @@ pub type emFpPluginModelFunc = fn(
 ) -> Option<Rc<RefCell<dyn Any>>>;
 
 /// Parent argument for panel creation.
-/// DIVERGED: C++ emPanel::ParentArg carries full parent panel reference with
+/// DIVERGED: (language-forced) C++ emPanel::ParentArg carries full parent panel reference with
 /// layout constraint forwarding. This version carries parent panel ID for tree
 /// integration but does not forward layout constraints. Full constraint
 /// forwarding deferred to panel framework completion.

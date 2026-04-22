@@ -12,7 +12,7 @@ use slotmap::Key as _;
 /// Record type for emMainConfig fields.
 ///
 /// Port of C++ `emMainConfig` data fields. Holds auto-hide and panel sizing options.
-// DIVERGED: C++ `emMainConfig` is a single class; Rust splits the record data into
+// DIVERGED: (language-forced) C++ `emMainConfig` is a single class; Rust splits the record data into
 // `emMainConfigRec` and the model wrapper into `emMainConfig` (one primary type per file).
 #[derive(Debug, Clone, PartialEq)]
 pub struct emMainConfigRec {

@@ -15,13 +15,13 @@ use crate::emRecWriter::emRecWriter;
 use crate::emSignal::SignalId;
 
 pub trait emRecNode {
-    /// DIVERGED: C++ `emRecNode::UpperNode` is a private field accessed via
+    /// DIVERGED: (language-forced) C++ `emRecNode::UpperNode` is a private field accessed via
     /// friend `emRec`. Rust traits cannot express friend scope, so we expose
     /// a trait accessor instead. C++ has no public `GetParent` on `emRecNode`
     /// (only on the derived `emRec`, emRec.h:140).
     fn parent(&self) -> Option<&dyn emRecNode>;
 
-    /// DIVERGED: C++ `emRec::Changed()` (emRec.h:243-246) walks the parent
+    /// DIVERGED: (language-forced) C++ `emRec::Changed()` (emRec.h:243-246) walks the parent
     /// chain per-fire via `UpperNode->ChildChanged()`. Rust reifies that chain
     /// as a `Vec<SignalId>` per primitive (see ADR
     /// 2026-04-21-phase-4b-listener-tree-adr.md — R5 reified signal chain).
@@ -32,7 +32,7 @@ pub trait emRecNode {
     /// into object-safety.
     fn register_aggregate(&mut self, sig: SignalId);
 
-    /// DIVERGED: C++ has no single accessor — `emRecListener::SetListenedRec`
+    /// DIVERGED: (language-forced) C++ has no single accessor — `emRecListener::SetListenedRec`
     /// (emRec.cpp:242-268) splices itself into `UpperNode` directly, observing
     /// every `ChildChanged()` walk without identifying a specific signal.
     /// Rust reifies the observed channel as a single `SignalId`: for a

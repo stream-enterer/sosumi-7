@@ -21,7 +21,7 @@ use super::emView::{emView, ViewFlags};
 /// Corresponds to C++ `emSubViewPanel`.
 pub struct emSubViewPanel {
     sub_tree: PanelTree,
-    // DIVERGED: C++ `SubViewPort` is a pointer to a heap-allocated emViewPort
+    // DIVERGED: (language-forced) C++ `SubViewPort` is a pointer to a heap-allocated emViewPort
     // subclass that holds the emView inline. Rust uses a plain owned value
     // (`emView` directly) rather than a pointer-to-subclass.
     pub sub_view: emView,

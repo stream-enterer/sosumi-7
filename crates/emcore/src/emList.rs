@@ -1,20 +1,20 @@
 // emList.rs — COW doubly-linked list, ported from emList.h
 //
-// DIVERGED: C++ emList uses intrusive doubly-linked list with O(1) splice.
+// DIVERGED: (language-forced) C++ emList uses intrusive doubly-linked list with O(1) splice.
 // Rust uses Vec<T> backing for cache locality. Navigation uses index (not
 // pointer). Move operations between lists are O(n) copies, not O(1) splices.
 // C++ pointer-based API (GetNext(const OBJ*)) becomes index-based
 // (GetNext(usize) -> Option<(usize, &T)>).
 //
-// DIVERGED: C++ overloaded methods are split into distinct names
+// DIVERGED: (language-forced) C++ overloaded methods are split into distinct names
 // (InsertAtBeg_one, InsertAtEnd_one, Add_one, etc.) because Rust has no
 // overloading.
 //
-// DIVERGED: Iterator inner class renamed to ListCursor with index-based
+// DIVERGED: (language-forced) Iterator inner class renamed to ListCursor with index-based
 // tracking (same pattern as emArray::Cursor), since Rust Iterator is a
 // standard trait with different semantics.
 //
-// DIVERGED: GetIndexOf searches by value equality (PartialEq) rather than
+// DIVERGED: (language-forced) GetIndexOf searches by value equality (PartialEq) rather than
 // by pointer identity, since elements are stored in a Vec, not as
 // individually-allocated nodes.
 
@@ -22,7 +22,7 @@ use std::rc::Rc;
 
 /// Stable cursor for emList. Tracks position by index.
 ///
-/// DIVERGED: C++ emList::Iterator auto-adjusts when elements are
+/// DIVERGED: (language-forced) C++ emList::Iterator auto-adjusts when elements are
 /// inserted/removed and tracks pointer identity through COW copies.
 /// This Rust cursor uses a plain index like emArray::Cursor.
 pub struct ListCursor {
@@ -139,7 +139,7 @@ impl<T: Clone> emList<T> {
 
     /// Search for an element by value and return its index.
     ///
-    /// DIVERGED: C++ searches by pointer identity within the linked list.
+    /// DIVERGED: (language-forced) C++ searches by pointer identity within the linked list.
     /// Rust searches by value equality since elements are in a Vec.
     pub fn GetIndexOf(&self, elem: &T) -> Option<usize>
     where
@@ -334,7 +334,7 @@ impl<T: Clone> emList<T> {
     // --- Move ---
 
     /// Move the element at `index` to the beginning.
-    // DIVERGED: C++ O(1) pointer relinks vs Rust O(n) Vec operations.
+    // DIVERGED: (language-forced) C++ O(1) pointer relinks vs Rust O(n) Vec operations.
     pub fn MoveToBeg(&mut self, index: usize) {
         if index == 0 {
             return;
@@ -345,7 +345,7 @@ impl<T: Clone> emList<T> {
     }
 
     /// Move the element at `index` to the end.
-    // DIVERGED: C++ O(1) pointer relinks vs Rust O(n) Vec operations.
+    // DIVERGED: (language-forced) C++ O(1) pointer relinks vs Rust O(n) Vec operations.
     pub fn MoveToEnd(&mut self, index: usize) {
         let v = Rc::make_mut(&mut self.data);
         if index >= v.len() - 1 {
@@ -356,7 +356,7 @@ impl<T: Clone> emList<T> {
     }
 
     /// Move the element at `src` to just before `dst`.
-    // DIVERGED: C++ O(1) pointer relinks vs Rust O(n) Vec operations.
+    // DIVERGED: (language-forced) C++ O(1) pointer relinks vs Rust O(n) Vec operations.
     pub fn MoveBefore(&mut self, src: usize, dst: usize) {
         let v = Rc::make_mut(&mut self.data);
         let elem = v.remove(src);
@@ -365,7 +365,7 @@ impl<T: Clone> emList<T> {
     }
 
     /// Move the element at `src` to just after `dst`.
-    // DIVERGED: C++ O(1) pointer relinks vs Rust O(n) Vec operations.
+    // DIVERGED: (language-forced) C++ O(1) pointer relinks vs Rust O(n) Vec operations.
     pub fn MoveAfter(&mut self, src: usize, dst: usize) {
         let v = Rc::make_mut(&mut self.data);
         let elem = v.remove(src);

@@ -10,7 +10,7 @@ use emcore::emRecRecord::{RecError, Record};
 // ─── Interest ────────────────────────────────────────────────────────────────
 
 /// Port of C++ emStocksRec::InterestType + InterestRec.
-/// DIVERGED: Rust enum replaces C++ int enum + emEnumRec subclass — Rust enums are the idiomatic equivalent of C++ int enums with associated string tables.
+/// Rust enum replaces C++ int enum + emEnumRec subclass — Rust enums are the idiomatic equivalent of C++ int enums with associated string tables.
 /// Deprecated identifier handling via explicit methods rather than virtual TryStartReading.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Interest {
@@ -228,7 +228,7 @@ pub fn GetDateDifferenceParts(
 }
 
 /// Get difference in days between two date strings.
-/// DIVERGED: Returns (i32, bool) tuple instead of C++ bool* out-param — Rust has no out-parameters; tuples are the idiomatic equivalent.
+/// Returns (i32, bool) tuple instead of C++ bool* out-param — Rust has no out-parameters; tuples are the idiomatic equivalent.
 pub fn GetDateDifference(from_date: &str, to_date: &str) -> (i32, bool) {
     let from_parsed = ParseDate(from_date);
     let to_parsed = ParseDate(to_date);
@@ -286,7 +286,7 @@ pub fn PaymentPriceToString(price: f64) -> String {
 // ─── StockRec ────────────────────────────────────────────────────────────────
 
 /// Port of C++ emStocksRec::StockRec.
-/// DIVERGED: Rust struct fields use snake_case — required by Rust naming conventions (clippy::non_snake_case). Method names preserve C++ names per File and Name Correspondence.
+/// DIVERGED: (language-forced) Rust struct fields use snake_case — required by Rust naming conventions (clippy::non_snake_case). Method names preserve C++ names per File and Name Correspondence.
 #[derive(Default)]
 pub struct StockRec {
     pub id: String,
@@ -626,7 +626,7 @@ impl StockRec {
     }
 
     /// Port of C++ GetTradeValue.
-    /// DIVERGED: Returns Option<f64> instead of C++ bool + *pResult — Option is Rust's idiomatic replacement for success bool + out-pointer.
+    /// Idiom adaptation: returns Option<f64> instead of C++ bool + *pResult out-pointer.
     pub fn GetTradeValue(&self) -> Option<f64> {
         if !self.owning_shares || self.trade_price.is_empty() || self.own_shares.is_empty() {
             return None;
@@ -921,7 +921,7 @@ impl emStocksRec {
     }
 
     /// Port of C++ GetStockIndexById.
-    /// DIVERGED: Returns Option<usize> instead of C++ -1 sentinel — Option<usize> is Rust's idiomatic replacement for signed-int sentinel values.
+    /// Idiom adaptation: returns Option<usize> instead of C++ -1 sentinel.
     pub fn GetStockIndexById(&self, id: &str) -> Option<usize> {
         (0..self.stocks.len())
             .rev()
@@ -930,7 +930,7 @@ impl emStocksRec {
 
     /// Port of C++ GetStockIndexByStock.
     /// Uses std::ptr::eq for pointer comparison.
-    /// DIVERGED: Returns Option<usize> instead of C++ -1 sentinel — Option<usize> is Rust's idiomatic replacement for signed-int sentinel values.
+    /// Idiom adaptation: returns Option<usize> instead of C++ -1 sentinel.
     pub fn GetStockIndexByStock(&self, stock_rec: &StockRec) -> Option<usize> {
         (0..self.stocks.len())
             .rev()

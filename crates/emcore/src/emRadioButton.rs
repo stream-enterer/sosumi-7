@@ -473,7 +473,7 @@ impl emRadioButton {
         if !self.enabled {
             return false;
         }
-        // RUST_ONLY: widget_utils.rs -- debug trace aid, no C++ equivalent
+        // RUST_ONLY: (language-forced-utility) widget_utils.rs -- debug trace aid, no C++ equivalent
         let trace = {
             use std::sync::OnceLock;
             static ENABLED: OnceLock<bool> = OnceLock::new();

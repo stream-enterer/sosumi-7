@@ -26,7 +26,7 @@ use crate::emMainConfig::emMainConfig;
 ///
 /// Port of C++ `emMainPanel::SliderPanel` (emMainPanel.cpp:377-502).
 ///
-/// DIVERGED: C++ SliderPanel holds a `MainPanel&` and calls
+/// DIVERGED: (language-forced) C++ SliderPanel holds a `MainPanel&` and calls
 /// `MainPanel.DragSlider(dy)` / `MainPanel.DoubleClickSlider()` directly.
 /// Rust cannot hold parent references in the panel tree. Instead, the parent
 /// (`emMainPanel`) reads `pending_drag_delta` and `double_clicked` from this

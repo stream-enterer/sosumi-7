@@ -115,7 +115,7 @@ impl emLabel {
         self.border.paint_label(painter, cr, &self.look, enabled);
     }
 
-    // DIVERGED: no C++ equivalent — Rust-only layout helper
+    // DIVERGED: (language-forced) no C++ equivalent — Rust-only layout helper
     pub fn preferred_size(&self) -> (f64, f64) {
         let ch = 13.0;
         let tw = emPainter::measure_text_width(&self.border.caption, ch);

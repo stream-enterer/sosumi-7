@@ -37,7 +37,7 @@ pub trait FileModelClient {
 }
 
 /// Read-only view of file model state, erasing the data type T.
-/// DIVERGED: C++ emFileModel base class — Rust uses trait for type erasure
+/// DIVERGED: (language-forced) C++ emFileModel base class — Rust uses trait for type erasure
 /// since emFileModel<T> is generic.
 pub trait FileModelState {
     fn GetFileState(&self) -> &FileState;
@@ -602,7 +602,7 @@ impl<T> emFileModel<T> {
 }
 
 /// Port of C++ emAbsoluteFileModelClient.
-/// DIVERGED: Uses Weak<RefCell<T>> instead of raw pointer + emRef.
+/// DIVERGED: (language-forced) Uses Weak<RefCell<T>> instead of raw pointer + emRef.
 /// Rust has no emFileModelClient base class; this is a standalone
 /// wrapper that tracks a file model's lifetime via Weak reference.
 pub struct emAbsoluteFileModelClient<T> {

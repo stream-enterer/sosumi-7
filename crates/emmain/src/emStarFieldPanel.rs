@@ -68,7 +68,7 @@ fn hsv_to_color(h: f64, s: f64, v: f64) -> emColor {
 /// Radius is a fraction of the panel width.
 #[derive(Clone, Debug)]
 pub struct Star {
-    // DIVERGED: field names uppercase to match C++ struct member names
+    // DIVERGED: (language-forced) field names uppercase to match C++ struct member names
     pub X: f64,
     pub Y: f64,
     pub Radius: f64,
@@ -193,7 +193,7 @@ impl PanelBehavior for emStarFieldPanel {
         let src_w = self.star_shape.GetWidth();
         let src_h = self.star_shape.GetHeight();
 
-        // DIVERGED: OverlayPanel — C++ emStarFieldPanel creates a child OverlayPanel("o")
+        // DIVERGED: (language-forced) OverlayPanel — C++ emStarFieldPanel creates a child OverlayPanel("o")
         // that covers the whole panel, intercepts all Input (empty handler), and calls
         // parent->PaintOverlay() to draw stars on top of child quadrants. Rust has no
         // equivalent architecture; stars are rendered here in Paint() instead, which is

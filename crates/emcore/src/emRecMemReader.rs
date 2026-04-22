@@ -431,7 +431,7 @@ fn hex_digit(b: Option<u8>) -> Option<u8> {
 /// Byte-buffer-backed emRecReader. Equivalent to C++ `emRecMemReader`
 /// (emRec.cpp:2862-2901).
 ///
-/// DIVERGED: C++ exposes `TryStartReading(root, buf, len)` which hands the
+/// DIVERGED: (language-forced) C++ exposes `TryStartReading(root, buf, len)` which hands the
 /// buffer off to `emRecReader::TryStartReading`, which then optionally
 /// consumes the `#%rec:<name>%` magic when `root->GetFormatName()` is
 /// non-null. The Rust port constructs the reader with the byte slice and

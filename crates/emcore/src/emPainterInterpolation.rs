@@ -995,7 +995,7 @@ fn avx2_adaptive_factors() -> &'static [[i16; 4]; 257] {
 }
 
 /// Adaptive 4-value interpolation with anti-ringing slope/peak adaptation.
-/// DIVERGED: C++ scalar uses 1024-factor table with `v1*f + v2*f + ...` multiply.
+/// DIVERGED: (language-forced) C++ scalar uses 1024-factor table with `v1*f + v2*f + ...` multiply.
 /// This matches C++ AVX2 `InterpolateFourVectorsAdaptive` which uses -32768-factor
 /// table with per-term `mulhrs` rounding and a sign-negation trick.
 fn interpolate_four_values_adaptive(v0: i32, v1: i32, v2: i32, v3: i32, o: u32) -> i32 {
@@ -1047,7 +1047,7 @@ fn interpolate_four_values_adaptive(v0: i32, v1: i32, v2: i32, v3: i32, o: u32) 
 }
 
 /// Adaptive sampling with premultiplied alpha, 24-bit fixed-point coordinates.
-/// DIVERGED: C++ scalar premultiplies as `ch * alpha` (range 0-65025) and divides
+/// DIVERGED: (language-forced) C++ scalar premultiplies as `ch * alpha` (range 0-65025) and divides
 /// by 255 between Y/X passes. This matches C++ AVX2 which premultiplies as
 /// `fast_div255(ch * alpha) << 5` (range 0-8160) with no inter-pass division.
 /// Full-image adaptive sampling (no section bounds). Kept for harness tests.
@@ -1176,7 +1176,7 @@ pub(crate) fn sample_adaptive_premul_fp_section(
 
 /// Adaptive single-channel sampling within a section.
 ///
-/// DIVERGED: C++ scalar uses 1024-factor table with >>20 output. This matches
+/// DIVERGED: (language-forced) C++ scalar uses 1024-factor table with >>20 output. This matches
 /// C++ AVX2 which uses -32768-factor mulhrs with <<5/>>5 scaling.
 /// For 1-channel images, PREMULFIN_SHL_COLOR_VEC16 is just `C <<= 5` (no alpha premul).
 pub fn sample_adaptive_lum_section(

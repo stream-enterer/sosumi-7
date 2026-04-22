@@ -81,7 +81,7 @@ impl emFlagsRec {
 
     /// Port of C++ `emFlagsRec::TryStartWriting` (emRec.cpp:862-877).
     ///
-    // DIVERGED: atomic fusion; see `emBoolRec::TryWrite` for rationale.
+    // DIVERGED: (language-forced) atomic fusion; see `emBoolRec::TryWrite` for rationale.
     // Format: `{` then set-bit identifiers separated by a single space, then
     // `}`. Empty (no bits set) yields `{}`.
     pub fn TryWrite(&self, writer: &mut dyn emRecWriter) -> Result<(), RecIoError> {
@@ -191,7 +191,7 @@ impl emRec<i32> for emFlagsRec {
         if value != self.value {
             self.value = value;
             ctx.fire(self.signal);
-            // DIVERGED: C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
+            // DIVERGED: (language-forced) C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
             // per-fire; Rust fires the reified aggregate chain. See ADR
             // 2026-04-21-phase-4b-listener-tree-adr.md.
             for sig in &self.aggregate_signals {

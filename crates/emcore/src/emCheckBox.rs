@@ -287,7 +287,7 @@ impl emCheckBox {
         let tallness = self.last_h / self.last_w;
         let rect = self.border.GetContentRect(1.0, tallness, &self.look);
         let r = rect.h * 0.2;
-        // RUST_ONLY: widget_utils.rs -- C++ inlines this formula per widget
+        // RUST_ONLY: (language-forced-utility) widget_utils.rs -- C++ inlines this formula per widget
         let dx = ((rect.x - mx).max(mx - rect.x - rect.w) + r).max(0.0);
         let dy = ((rect.y - my).max(my - rect.y - rect.h) + r).max(0.0);
         dx * dx + dy * dy <= r * r
@@ -335,7 +335,7 @@ impl emCheckBox {
         if !self.enabled {
             return false;
         }
-        // RUST_ONLY: widget_utils.rs -- debug trace aid, no C++ equivalent
+        // RUST_ONLY: (language-forced-utility) widget_utils.rs -- debug trace aid, no C++ equivalent
         let trace = {
             use std::sync::OnceLock;
             static ENABLED: OnceLock<bool> = OnceLock::new();

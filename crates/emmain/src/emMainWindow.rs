@@ -1,6 +1,6 @@
 // Port of C++ emMainWindow.
 //
-// DIVERGED: C++ emMainWindow creates an OS window + emMainPanel + detached
+// DIVERGED: (language-forced) C++ emMainWindow creates an OS window + emMainPanel + detached
 // control window + StartupEngine.  Rust creates a single emWindow with
 // emMainPanel as the root panel.  StartupEngine drives staged panel creation,
 // autoplay input is wired via emAutoplayViewModel, and the window is persisted
@@ -226,7 +226,7 @@ impl emMainWindow {
 
     /// Port of C++ `emMainWindow::Input` (emMainWindow.cpp:193-263).
     ///
-    /// DIVERGED: C++ Input uses emInputEvent, Rust uses the same struct but
+    /// DIVERGED: (language-forced) C++ Input uses emInputEvent, Rust uses the same struct but
     /// reads modifier state from emInputState (matching C++ behavior of
     /// checking the global input state rather than per-event modifiers).
     pub fn handle_input(
@@ -304,7 +304,7 @@ impl emMainWindow {
             let hotkey_str = hotkey.to_string();
             let bm = bm_model.borrow();
             if let Some(rec) = bm.GetRec().SearchBookmarkByHotkey(&hotkey_str) {
-                // DIVERGED: C++ calls MainPanel->GetContentView().Visit() with
+                // BLOCKED: C++ calls MainPanel->GetContentView().Visit() with
                 // identity-based navigation. Rust uses the visiting animator
                 // directly on the window. Full wiring requires identity-based
                 // Visit on emView (not yet ported).
@@ -429,7 +429,7 @@ impl StartupEngine {
         window_id: winit::window::WindowId,
         config: &emMainWindowConfig,
     ) -> Self {
-        // DIVERGED: C++ parses visit string into identity/relX/relY/relA fields
+        // DIVERGED: (language-forced) C++ parses visit string into identity/relX/relY/relA fields
         // at construction time (emMainWindow.cpp:338-361).  Rust stores the raw
         // visit string as identity; bookmark-based visit is filled in at state 4.
         let (visit_valid, visit_identity) = match config.visit {
@@ -1160,7 +1160,7 @@ pub fn do_custom_cheat(cheat: &str, app: &mut App, event_loop: &ActiveEventLoop)
 
 /// Port of C++ `emMainWindow::RecreateContentPanels` (emMainWindow.cpp:280-306).
 ///
-/// DIVERGED: RecreateContentPanels — C++ iterates all windows on the screen,
+/// DIVERGED: (language-forced) RecreateContentPanels — C++ iterates all windows on the screen,
 /// finds emMainWindow instances, and recreates each one's content panel while
 /// preserving the visited location.  Rust has a single-window architecture with
 /// thread-local storage, so we operate on the single main window instead.

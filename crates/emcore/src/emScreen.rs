@@ -117,7 +117,7 @@ impl emScreen {
 
     /// Move the mouse pointer by (dx, dy) pixels.
     ///
-    /// DIVERGED: C++ emScreen inherits from emWindow and implements this directly.
+    /// DIVERGED: (language-forced) C++ emScreen inherits from emWindow and implements this directly.
     /// In Rust, emScreen is a monitor model without a window reference. The actual
     /// implementation is on `emWindow::MoveMousePointer` which uses winit's
     /// `set_cursor_position`. Callers with window access should use that instead.

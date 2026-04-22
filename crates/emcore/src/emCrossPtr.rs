@@ -71,7 +71,7 @@ impl<T> emCrossPtr<T> {
     }
 
     /// Rebind to a different target and list.
-    // DIVERGED: C++ Set(CLS* obj = NULL) allows null. Rust splits into
+    // DIVERGED: (language-forced) C++ Set(CLS* obj = NULL) allows null. Rust splits into
     // Set() for non-null and Reset() for null, because Rust references
     // cannot be null.
     pub fn Set(&mut self, target: &Rc<RefCell<T>>, list: &mut emCrossPtrList) {

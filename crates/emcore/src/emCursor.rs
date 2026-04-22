@@ -25,8 +25,8 @@ pub enum emCursor {
 }
 
 impl emCursor {
-    // DIVERGED: Get — returns Self (identity for enum); C++ returns int id
-    // DIVERGED: ToString — renamed to `as_str`; `ToString` conflicts with Rust std::string::ToString trait
+    // DIVERGED: (language-forced) Get — returns Self (identity for enum); C++ returns int id
+    // DIVERGED: (language-forced) ToString — renamed to `as_str`; `ToString` conflicts with Rust std::string::ToString trait
 
     /// Return this cursor variant. C++ `emCursor::Get()` returns the int id;
     /// Rust returns the enum variant itself.

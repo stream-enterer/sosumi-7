@@ -202,7 +202,7 @@ impl Default for emDirModelData {
 /// Directory model wrapper.
 /// Port of C++ `emDirModel` (extends emFileModel).
 ///
-/// DIVERGED: Does not compose emFileModel<T> because emFileModel requires
+/// DIVERGED: (language-forced) Does not compose emFileModel<T> because emFileModel requires
 /// SignalId and update_signal from the scheduler, which are not needed for
 /// the data-layer-only port. Wraps emDirModelData directly. The panel layer
 /// drives the loading state machine by calling these methods in its Cycle.

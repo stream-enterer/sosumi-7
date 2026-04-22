@@ -1,6 +1,6 @@
 // Port of C++ emViewPort (emView.h:719-794). View↔OS connection class.
 //
-// DIVERGED: not a class hierarchy but a concrete struct with optional backend
+// DIVERGED: (language-forced) not a class hierarchy but a concrete struct with optional backend
 // hooks. Rust has no dummy-base-class pattern; the "default implementation
 // connects to nothing" model becomes an `Option<WindowId>` back-reference
 // (resolved through `EngineCtx::windows` / `App::windows`) which is `None`
@@ -10,7 +10,7 @@
 //   emViewPort(emView & homeView) — real port, registers itself on the view
 //   emViewPort()                  — dummy port (private, used for DummyViewPort)
 //
-// DIVERGED: Rust uses two named constructors: `new_dummy()` (connects to
+// DIVERGED: (language-forced) Rust uses two named constructors: `new_dummy()` (connects to
 // nothing) and `new_for_view(home_x, home_y, home_w, home_h, home_pt)`.
 // The C++ constructor-registers-on-view side-effect is handled by the call
 // site (emView::new and emWindow::new_popup) rather than inside emViewPort.
@@ -38,7 +38,7 @@ use winit::window::WindowId;
 pub struct emViewPort {
     // === C++ private fields (emView.h:789-793) ===
     // HomeView pointer — in C++ a raw *emView.
-    // DIVERGED: stores the home geometry on the port (plain f64 fields)
+    // DIVERGED: (language-forced) stores the home geometry on the port (plain f64 fields)
     // rather than following a back-reference to the emView. C++ reads these
     // through a raw `HomeView*` pointer (emViewPort reaches the view's
     // HomeX/Y/Width/Height/HomePixelTallness). Storing the geometry on the
@@ -105,7 +105,7 @@ impl emViewPort {
     /// Port of C++ `emViewPort::emViewPort(emView & homeView)`
     /// (emView.cpp:2623-2633): registers the port on the view.
     ///
-    /// DIVERGED: registration side-effect moved to call site; geometry
+    /// DIVERGED: (language-forced) registration side-effect moved to call site; geometry
     /// passed explicitly instead of read from homeView on construction.
     pub fn new_with_geometry(
         home_x: f64,
@@ -210,7 +210,7 @@ impl emViewPort {
     /// This stub exists to satisfy the C++ name correspondence requirement;
     /// it is a no-op because the port no longer stores a focused field.
     ///
-    /// DIVERGED: C++ mutates the view through a raw `CurrentView*` pointer;
+    /// DIVERGED: (language-forced) C++ mutates the view through a raw `CurrentView*` pointer;
     /// Rust drops the forwarding because the port has no back-reference to
     /// `emView`. All known call sites have been migrated to `emView::SetFocused`.
     pub fn SetViewFocused(&mut self, _focused: bool) {}
@@ -305,7 +305,7 @@ impl emViewPort {
     /// Called by `emWindow::SetViewPosSize` when the popup window is
     /// repositioned, and by `SwapViewPorts` geometry updates.
     ///
-    /// DIVERGED: no direct C++ emViewPort method with this name;
+    /// DIVERGED: (language-forced) no direct C++ emViewPort method with this name;
     /// the equivalent in C++ is the `emWindowPort` override of
     /// `SetViewGeometry` triggered by the windowing system. Phase 4
     /// implements this as a direct setter on the stub.

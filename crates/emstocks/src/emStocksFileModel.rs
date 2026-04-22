@@ -14,7 +14,7 @@ use super::emStocksRec::emStocksRec;
 const AUTOSAVE_DELAY: Duration = Duration::from_millis(15000);
 
 /// Port of C++ emStocksFileModel.
-/// DIVERGED: Composition instead of C++ multiple inheritance — Rust has no MI; composition with delegation is the idiomatic equivalent.
+/// DIVERGED: (language-forced) Composition instead of C++ multiple inheritance — Rust has no MI; composition with delegation is the idiomatic equivalent.
 /// Save timer uses std::time::Instant instead of emTimer — emTimer::TimerCentral is
 /// internal to emcore; Instant provides the same delayed-save behavior.
 pub struct emStocksFileModel {

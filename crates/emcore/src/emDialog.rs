@@ -31,7 +31,7 @@ pub enum DialogResult {
 }
 
 type DialogFinishCb = crate::emEngineCtx::WidgetCallbackRef<DialogResult>;
-/// DIVERGED: C++ `emDialog::CheckFinish` is a virtual method with no
+/// DIVERGED: (language-forced) C++ `emDialog::CheckFinish` is a virtual method with no
 /// extra args — subclasses reach into self's fields directly. Rust uses
 /// a callback slot on `DlgPanel`; the closure needs `&mut DlgPanel` +
 /// `&mut EngineCtx<'_>` to read tree state (e.g. emFileDialog's fsb
@@ -404,7 +404,7 @@ impl emDialog {
     /// DlgPanel root and record it in `DlgPanel.content_panel_id` so
     /// subsequent calls return the same id.
     ///
-    /// DIVERGED: Rust's lazy-create is simpler (plain child) because the
+    /// DIVERGED: (language-forced) Rust's lazy-create is simpler (plain child) because the
     /// layout contract in `DlgPanel::LayoutChildren` already rects-out
     /// `content_panel_id` against the computed content area — the C++
     /// emLinearGroup wrapper is an idiom adaptation since the wrapper
@@ -519,7 +519,7 @@ pub struct DlgPanel {
     /// observe button clicks, mirroring C++ `emDialog::PrivateEngineClass`
     /// observing button signals via `AddWakeUpSignal` (emDialog.cpp:38).
     pub(crate) button_signals: Vec<(SignalId, DialogResult)>,
-    /// DIVERGED: Rust mechanism for the C++ "emFileDialog::Cycle calls
+    /// DIVERGED: (language-forced) Rust mechanism for the C++ "emFileDialog::Cycle calls
     /// emDialog::Cycle() first then runs its own logic" inheritance pattern
     /// (emFileDialog.cpp:82). In C++, `emFileDialog` is a subclass and its
     /// `Cycle()` override calls `emDialog::Cycle()` then continues. In Rust
@@ -698,7 +698,7 @@ impl PanelBehavior for DlgPanel {
         _ctx: &mut PanelCtx,
     ) -> bool {
         // Port of C++ emDialog::DlgPanel::Input (emDialog.cpp:277-299).
-        // DIVERGED: emBorder has no Input in Rust; C++ emBorder::Input called
+        // DIVERGED: (language-forced) emBorder has no Input in Rust; C++ emBorder::Input called
         // here handles focus traversal. Track as latent gap — revisit if
         // emBorder gains Input.
         if event.variant != InputVariant::Press {
@@ -791,7 +791,7 @@ impl PanelBehavior for DlgButton {
         self.button.Paint(painter, w, h, state.enabled, pixel_scale);
     }
 
-    // DIVERGED: DlgButton click observation — C++ emDialog.cpp:236 `DlgButton::Clicked()` walks
+    // DIVERGED: (language-forced) DlgButton click observation — C++ emDialog.cpp:236 `DlgButton::Clicked()` walks
     // parent chain via `((emDialog*)GetWindow())->Finish(Result)`. Rust wires this engine-side
     // via `scheduler.connect(button.click_signal, private_engine_id)` at install time (Task 7),
     // so `Input` here is a pure delegator.
@@ -938,7 +938,7 @@ impl crate::emEngine::emEngine for DialogPrivateEngine {
             //   else if (FinishState<3) { FinishState++; return true; }
             //   else { delete this; return false; }
             //
-            // DIVERGED: `delete this` becomes a deferred
+            // DIVERGED: (language-forced) `delete this` becomes a deferred
             // `DeferredAction::CloseWindow`, because emWindow lifetime is
             // owned by emGUIFramework rather than self-destructed.
             let state = dlg.finish_state;

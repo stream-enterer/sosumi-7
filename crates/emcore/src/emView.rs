@@ -564,7 +564,7 @@ pub struct emView {
     // pointer), so Box preserves the "heap-allocated, optionally-present"
     // shape of the C++ field exactly.
     pub PopupWindow: Option<Box<crate::emWindow::emWindow>>,
-    /// DIVERGED: no C++ analogue — C++ reads the close-signal directly off
+    /// DIVERGED: (language-forced) no C++ analogue — C++ reads the close-signal directly off
     /// `PopupWindow->GetCloseSignal()`. Rust mirrors it here so that
     /// `Update`'s close-signal probe and `RawVisitAbs` teardown avoid
     /// borrowing `PopupWindow: Option<emWindow>` (which would conflict with
@@ -605,7 +605,7 @@ pub struct emView {
     /// panels; per-panel ring linkage (`notice_prev/next_in_ring`) stays on
     /// `PanelData` in `PanelTree`.
     ///
-    /// DIVERGED: data structure only (*idiom adaptation*, below the observable
+    /// DIVERGED: (language-forced) data structure only (*idiom adaptation*, below the observable
     /// surface).  `Option<PanelId>` arena-index vs `PanelRingNode*` sentinel;
     /// no raw-pointer arithmetic.  Dispatch driver (per-view, per-view
     /// `CurrentPixelTallness`) matches C++ exactly.
@@ -613,7 +613,7 @@ pub struct emView {
     /// Tail of the notice-delivery ring.  See `notice_ring_head_next`.
     pub(crate) notice_ring_head_prev: Option<PanelId>,
 
-    // DIVERGED: C++ `class emView : public emContext` — Rust has no
+    // DIVERGED: (language-forced) C++ `class emView : public emContext` — Rust has no
     // inheritance; store the context by composition. `GetContext` /
     // `GetRootContext` accessors below delegate, giving callers the same
     // observable access the C++ inheritance grants.
@@ -797,7 +797,7 @@ impl emView {
 
     /// Show or hide the soft keyboard.
     /// C++ `emView::ShowSoftKeyboard(bool show)`.
-    /// DIVERGED: C++ delegates to CurrentViewPort which delegates to the
+    /// DIVERGED: (upstream-gap-forced) C++ delegates to CurrentViewPort which delegates to the
     /// platform window. Desktop stub stores flag only — no actual keyboard
     /// is shown until a platform-specific viewport implements this.
     pub fn ShowSoftKeyboard(&mut self, show: bool) {
@@ -891,7 +891,7 @@ impl emView {
     /// If `rel_a <= 0.0`, CalcVisitFullsizedCoords is called to get proper coords
     /// (matching C++ `if (relA<=0.0) CalcVisitFullsizedCoords(..., relA<-0.9)`).
     ///
-    /// DIVERGED: C++ has public `RawVisit(panel, relX, relY, relA)` + private
+    /// DIVERGED: (language-forced) C++ has public `RawVisit(panel, relX, relY, relA)` + private
     /// overload with extra `forceViewingUpdate` bool. Rust has no
     /// overloading — single method; existing no-arg callers pass `false`.
     /// Port of C++ `emView::RawVisit(panel, relX, relY, relA, forceViewingUpdate)`
@@ -1090,7 +1090,7 @@ impl emView {
         self.VisitFullsizedByIdentity(&identity, adherent, utilize_view, &subject);
     }
 
-    /// DIVERGED: C++ overload `emView::VisitFullsized(identity, adherent, utilizeView, subject)` (emView.cpp:531-541)
+    /// DIVERGED: (language-forced) C++ overload `emView::VisitFullsized(identity, adherent, utilizeView, subject)` (emView.cpp:531-541)
     /// — Rust cannot overload by name; panel-form keeps `VisitFullsized`, identity-form renamed to
     /// `VisitFullsizedByIdentity`.
     ///
@@ -1110,7 +1110,7 @@ impl emView {
         va.Activate();
     }
 
-    /// DIVERGED: C++ overload `emView::Visit(panel, adherent)` (emView.cpp:511-514)
+    /// DIVERGED: (language-forced) C++ overload `emView::Visit(panel, adherent)` (emView.cpp:511-514)
     /// — Rust cannot overload by arity; renamed `VisitPanel` to disambiguate from
     /// the canonical 6-arg `Visit` added in Task 3.1.
     ///
@@ -1121,7 +1121,7 @@ impl emView {
         self.VisitByIdentityBare(&identity, adherent, &subject);
     }
 
-    /// DIVERGED: C++ overload `emView::Visit(identity, adherent, subject)` (emView.cpp:517-523)
+    /// DIVERGED: (language-forced) C++ overload `emView::Visit(identity, adherent, subject)` (emView.cpp:517-523)
     /// — Rust cannot overload by arity; renamed `VisitByIdentityBare` ("bare" = without
     /// relX/relY/relA coords) to disambiguate from the 7-arg `VisitByIdentity`.
     ///
@@ -1141,7 +1141,7 @@ impl emView {
     /// preserve zoom state on resize. Signature extended to accept explicit
     /// (x, y, width, height, pixel_tallness) matching C++ emView.cpp:1238.
     ///
-    /// DIVERGED: C++ `SetGeometry(x,y,w,h,pt)` — Rust signature identical.
+    /// DIVERGED: (language-forced) C++ `SetGeometry(x,y,w,h,pt)` — Rust signature identical.
     /// Internally writes both Home* and Current* (home = current when no popup).
     #[allow(clippy::too_many_arguments)]
     pub fn SetGeometry(
@@ -1264,7 +1264,7 @@ impl emView {
 
     /// Returns the current home viewport size (width, height).
     ///
-    /// DIVERGED: replaces Rust-invention `viewport_width`/`viewport_height` fields
+    /// Replaces Rust-invention `viewport_width`/`viewport_height` fields
     /// removed in Phase 6. Returns `(HomeWidth, HomeHeight)`.
     pub fn viewport_size(&self) -> (f64, f64) {
         (self.HomeWidth, self.HomeHeight)
@@ -1276,7 +1276,7 @@ impl emView {
     /// Fix-point zoom: keeps the viewport point (center_x, center_y) mapped to the
     /// same panel-space point before and after zoom. Calls RawVisit(..., true) directly.
     ///
-    /// DIVERGED: C++ signature is `Zoom(fixX, fixY, factor)`; Rust keeps factor first
+    /// C++ signature is `Zoom(fixX, fixY, factor)`; Rust keeps factor first
     /// for call-site consistency with earlier Rust API — marked here for record.
     pub fn Zoom(
         &mut self,
@@ -1468,7 +1468,7 @@ impl emView {
         self.SetActivePanelBestPossible(tree, ctx);
     }
 
-    /// DIVERGED: C++ has public `RawZoomOut()` + private overload
+    /// DIVERGED: (language-forced) C++ has public `RawZoomOut()` + private overload
     /// `RawZoomOut(forceViewingUpdate)`. Rust: single method, callers pass bool.
     pub fn RawZoomOut(
         &mut self,
@@ -1516,7 +1516,7 @@ impl emView {
 
     /// Compute optimal (rel_x, rel_y, rel_a) to view `panel` well.
     ///
-    /// DIVERGED: C++ (emView.cpp:1373-1487) uses SupremeViewedPanel's viewed
+    /// DIVERGED: (language-forced) C++ (emView.cpp:1373-1487) uses SupremeViewedPanel's viewed
     /// coords for precise placement. Rust uses a simplified layout-walk approach
     /// that targets an 80% viewport fill, returning relA in C++ convention
     /// `HomeW*HomeH/(vw*vh)`. Behavioral contract preserved: returns coords that
@@ -1812,7 +1812,7 @@ impl emView {
     /// old and new SVP chains, and fires the CursorInvalid/WakeUp/
     /// InvalidatePainting side effects.
     ///
-    /// DIVERGED: C++ `RawVisitAbs` is a private overload. Rust has no
+    /// DIVERGED: (language-forced) C++ `RawVisitAbs` is a private overload. Rust has no
     /// overloading — this is the sole entry point and public callers
     /// (RawVisit, Update) pass explicit bools.
     #[allow(clippy::too_many_arguments)]
@@ -2637,7 +2637,7 @@ impl emView {
             break;
         }
 
-        // DIVERGED: Rust-only navigation request drain. C++ uses callbacks;
+        // DIVERGED: (language-forced) Rust-only navigation request drain. C++ uses callbacks;
         // Rust panels post requests via PanelCtx::request_visit and emView drains
         // them here (after the main loop so SVP is up to date).
         let nav_requests = tree.drain_navigation_requests();
@@ -3242,7 +3242,7 @@ impl emView {
     /// Register `UpdateEngineClass`, `EOISignal`, and `VisitingVAEngineClass`
     /// with the scheduler and wake `UpdateEngineClass`.
     ///
-    /// DIVERGED: C++ performs this work inline in `emView::emView` (emView.cpp:75–84).
+    /// DIVERGED: (language-forced) C++ performs this work inline in `emView::emView` (emView.cpp:75–84).
     /// Rust separates it into a named method because construction happens before the
     /// caller owns the `Rc<RefCell<emView>>` needed for `Weak` engine references.
     ///
@@ -3448,7 +3448,7 @@ impl emView {
     /// `HashMap::get_disjoint_mut` is not applicable here; both targets live
     /// under a single `&mut emView` borrow.
     ///
-    /// DIVERGED: C++ stores `HomeView*` back-refs on `emViewPort` and reads
+    /// DIVERGED: (language-forced) C++ stores `HomeView*` back-refs on `emViewPort` and reads
     /// geometry as `CurrentViewPort->HomeView->HomeX` etc. Rust stores the
     /// geometry directly on the port (`home_x`, `home_y`, `home_width`,
     /// `home_height`, `home_pixel_tallness`) to avoid re-entrancy: the
@@ -3457,7 +3457,7 @@ impl emView {
     /// `SetGeometry` keeps `home_pixel_tallness` on the `HomeViewPort` in
     /// sync so the swap reads the correct value.
     ///
-    /// DIVERGED: C++ `emViewPort::CurrentView` pointers (emView.cpp:1984-1985)
+    /// DIVERGED: (language-forced) C++ `emViewPort::CurrentView` pointers (emView.cpp:1984-1985)
     /// are updated to point to the new owning view after the swap. Rust does
     /// not have `CurrentView` on `emViewPort` (it uses `WindowId` instead);
     /// this per-port update is not needed.
@@ -4067,7 +4067,7 @@ impl emView {
     /// Port of C++ `emView::RecurseInput` (public overload + private panel overload,
     /// emView.cpp:2004-2134).
     ///
-    /// DIVERGED: C++ has `RecurseInput(e, s)` (public) and
+    /// DIVERGED: (language-forced) C++ has `RecurseInput(e, s)` (public) and
     /// `RecurseInput(panel, e, s)` (private).  Rust merges them into a single
     /// method; callers pass `start_panel: None` for the public entry point.
     ///
@@ -4455,7 +4455,7 @@ impl emView {
     ///
     /// Port of C++ `emView::Input` (emView.cpp:1004).
     ///
-    /// DIVERGED: animator-forward location. C++ `emView::Input` begins with
+    /// DIVERGED: (language-forced) animator-forward location. C++ `emView::Input` begins with
     /// `ActiveAnimator->Input(event, state)` at emView.cpp:1004, because
     /// C++ `emView` owns the `ActiveAnimator` field. In the Rust port the
     /// active animator instead lives on the input-dispatch *owner* —
@@ -4532,7 +4532,7 @@ impl emView {
 
     /// Mark the SVP choice as invalid, triggering Update to recompute viewed coords.
     ///
-    /// DIVERGED: was `mark_viewing_dirty()` (set `viewing_dirty`). Phase 3 removes
+    /// Was `mark_viewing_dirty()` (set `viewing_dirty`). Phase 3 removes
     /// `viewing_dirty`; callers now set `SVPChoiceInvalid` via this wrapper so that
     /// `Update` picks it up in the drain loop.
     pub fn mark_viewing_dirty(&mut self) {
@@ -5119,7 +5119,7 @@ impl emView {
     /// Handle a custom cheat code. Override in subclasses for app-specific cheats.
     /// C++ `emView::DoCustomCheat(const char* func)`.
     pub(crate) fn DoCustomCheat(&self, func: &str) {
-        // DIVERGED: C++ default walks GetParentContext() chain to find ancestor
+        // DIVERGED: (language-forced) C++ default walks GetParentContext() chain to find ancestor
         // emView and delegates. Needs emContext parent traversal to be ported.
         log::debug!("Unknown cheat code: {}", func);
     }

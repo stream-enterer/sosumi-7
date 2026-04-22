@@ -41,7 +41,7 @@ use crate::emSignal::SignalId;
 /// Member registry entry. Stores only the identifier — the child record
 /// itself is owned by the user's derived struct as a sibling field.
 ///
-/// DIVERGED: C++ `emStructRec::MemberType` (emRec.h:1000-1003) holds an
+/// DIVERGED: (language-forced) C++ `emStructRec::MemberType` (emRec.h:1000-1003) holds an
 /// `emRec* Record` pointer alongside the identifier. Rust cannot safely
 /// store a back-pointer to a sibling field without `unsafe` or interior
 /// mutability, so the Rust rep keeps only the identifier; the `Get(i)`
@@ -70,7 +70,7 @@ impl emStructRec {
     /// Construct an empty struct record. Equivalent to the C++ default
     /// constructor `emStructRec::emStructRec()` (emRec.h:940).
     ///
-    /// DIVERGED: C++ also exposes `emStructRec(emStructRec* parent, const
+    /// DIVERGED: (language-forced) C++ also exposes `emStructRec(emStructRec* parent, const
     /// char* varIdentifier)` (emRec.h:941-948) which immediately splices the
     /// new struct into a parent as a named member. Rust splits this: users
     /// construct the inner struct with `new`, then the outer struct calls
@@ -96,7 +96,7 @@ impl emStructRec {
     /// constructor. Here we just push the parent's aggregate signal into the
     /// child's reified chain.
     ///
-    /// DIVERGED: C++ `emRec::Changed()` (emRec.h:243 inline, delegates to
+    /// DIVERGED: (language-forced) C++ `emRec::Changed()` (emRec.h:243 inline, delegates to
     /// `emRec::ChildChanged` at emRec.cpp:217) walks `UpperNode` per-fire.
     /// Rust fires the reified aggregate chain registered here. See ADR
     /// 2026-04-21-phase-4b-listener-tree-adr.md.
@@ -133,7 +133,7 @@ impl emStructRec {
     /// C++: `emStructRec::GetIndexOf(const char* identifier)` (emRec.h:973-974).
     /// Returns `-1` per C++ contract.
     ///
-    /// DIVERGED: C++ also exposes `GetIndexOf(const emRec* member)`
+    /// DIVERGED: (language-forced) C++ also exposes `GetIndexOf(const emRec* member)`
     /// (emRec.h:969-970) which linear-scans the stored `Record` pointers.
     /// Rust cannot port that overload because the Rust rep does not store
     /// back-pointers to sibling fields. Name correspondence preserved for
@@ -150,7 +150,7 @@ impl emStructRec {
     /// (via `AddMember`) and by `emRecListener::SetListenedRec` through
     /// `listened_signal()`.
     ///
-    /// DIVERGED: no direct C++ counterpart — C++ listeners splice into the
+    /// DIVERGED: (language-forced) no direct C++ counterpart — C++ listeners splice into the
     /// `UpperNode` chain instead. Exposed for the reified-chain rep (ADR
     /// 2026-04-21-phase-4b-listener-tree-adr.md).
     pub fn GetAggregateSignal(&self) -> SignalId {
@@ -159,7 +159,7 @@ impl emStructRec {
 
     /// Snapshot of the registered member identifiers in insertion order.
     ///
-    /// DIVERGED: new-to-Rust accessor. C++ reads `Members[i].Identifier`
+    /// DIVERGED: (language-forced) new-to-Rust accessor. C++ reads `Members[i].Identifier`
     /// directly from the linear array; Rust cannot lend `&[String]` while
     /// also calling user closures that may borrow the outer derived struct
     /// (borrow-checker conflict — see `try_read_body` / `try_write_body`
@@ -183,7 +183,7 @@ impl emStructRec {
     /// Re-assignment to the same member raises `"re-assignment"`, matching
     /// C++ emRec.cpp:1407.
     ///
-    // DIVERGED: fused Start/Continue, associated function taking an explicit
+    // DIVERGED: (language-forced) fused Start/Continue, associated function taking an explicit
     // identifier slice (see sibling-field architecture note in module docs).
     pub fn try_read_body(
         members: &[String],
@@ -259,7 +259,7 @@ impl emStructRec {
     // TODO(phase-4d): ShallWriteOptionalOnly, SetToDefault, IsSetToDefault,
     // QuitReading, QuitWriting, CalcRecMemNeed per emRec.h:980-991.
     //
-    // DIVERGED: C++ `Get(int)` / `operator[]` (emRec.h:957-962) return
+    // DIVERGED: (language-forced) C++ `Get(int)` / `operator[]` (emRec.h:957-962) return
     // `emRec&` by index. Rust cannot port this overload because the struct
     // does not own the children (no back-pointers to sibling fields).
     // Callers access members through the user's derived struct fields
@@ -268,7 +268,7 @@ impl emStructRec {
 }
 
 impl emRecNode for emStructRec {
-    /// DIVERGED: parent is tracked only through the aggregate chain; no
+    /// DIVERGED: (language-forced) parent is tracked only through the aggregate chain; no
     /// `UpperNode` pointer is stored (C1: no new `Rc<RefCell>`, C7: no new
     /// `unsafe`). Derived-struct impls returning `None` is consistent with
     /// the other emRec nodes in the current tree (all return `None` until
@@ -277,7 +277,7 @@ impl emRecNode for emStructRec {
         None
     }
 
-    /// DIVERGED: forwards only to this struct's own `aggregate_signals`.
+    /// DIVERGED: (language-forced) forwards only to this struct's own `aggregate_signals`.
     /// When `emStructRec` is used inside a user's derived struct, the user's
     /// derived `emRecNode::register_aggregate` impl must additionally
     /// forward the signal to every sibling field record so descendant leaf

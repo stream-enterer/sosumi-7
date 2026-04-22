@@ -4,7 +4,7 @@
 //! C++ emTmpFile.h provides emTmpFile (RAII path holder) and
 //! emTmpFileMaster (IPC-based singleton for crash-resilient cleanup).
 //!
-//! DIVERGED: C++ emTmpFileMaster uses emMiniIpc for the singleton.
+//! DIVERGED: (language-forced) C++ emTmpFileMaster uses emMiniIpc for the singleton.
 //! Rust uses flock-based file locking instead.
 
 use std::collections::HashSet;
@@ -68,7 +68,7 @@ impl Drop for emTmpFile {
 /// Singleton manager for temporary file cleanup.
 /// Uses file locking to ensure only one master per temp directory.
 ///
-/// DIVERGED: C++ emTmpFileMaster uses emMiniIpc for the singleton.
+/// DIVERGED: (language-forced) C++ emTmpFileMaster uses emMiniIpc for the singleton.
 /// Rust uses flock-based file locking instead.
 pub struct emTmpFileMaster {
     /// Held open to maintain the flock; not read or written after acquisition.

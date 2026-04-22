@@ -435,7 +435,7 @@ impl PainterModel {
                     .join("config.rec")
             });
 
-        // DIVERGED: no SchedCtx available in this static method; use a private
+        // DIVERGED: (language-forced) no SchedCtx available in this static method; use a private
         // scheduler for signal allocation (orphaned — not ticked by framework).
         let mut priv_sched = EngineScheduler::new();
         let root_ctx = emContext::NewRoot();
@@ -1889,7 +1889,7 @@ impl<'a> emPainter<'a> {
     /// Draw a polyline with full stroke support (joins, caps, dashes, arrows).
     /// Matches C++ `PaintPolyline(xy, n, thickness, stroke, strokeStart, strokeEnd, canvasColor)`.
     /// Records as a compound op: PaintPolyline at depth N, sub-ops at depth N+1.
-    // DIVERGED: PaintPolyline — takes &emStroke with start_end/finish_end fields and closed param; C++ takes separate thickness, strokeStart, strokeEnd args
+    // DIVERGED: (language-forced) PaintPolyline — takes &emStroke with start_end/finish_end fields and closed param; C++ takes separate thickness, strokeStart, strokeEnd args
     pub fn PaintPolyline(
         &mut self,
         vertices: &[(f64, f64)],
@@ -2037,7 +2037,7 @@ impl<'a> emPainter<'a> {
     /// Draw a source image scaled to fill a destination rectangle with alpha
     /// modulation and canvas color support. Matches C++ `PaintImage`.
     #[allow(clippy::too_many_arguments)]
-    /// DIVERGED: C++ `PaintImage` inlines to `PaintRect(emImageTexture)`.
+    /// DIVERGED: (language-forced) C++ `PaintImage` inlines to `PaintRect(emImageTexture)`.
     /// Rust records as `PaintImageFull` for DrawList replay but serializes as
     /// `"PaintRect"` in draw-op dumps to match C++ logging.
     pub fn paint_image_full(
@@ -4451,7 +4451,7 @@ impl<'a> emPainter<'a> {
 
     /// Draw a 9-slice border image from a sub-rectangle of the source image.
     ///
-    /// DIVERGED: C++ `PaintBorderImage` (overload with srcX,srcY,srcW,srcH).
+    /// DIVERGED: (language-forced) C++ `PaintBorderImage` (overload with srcX,srcY,srcW,srcH).
     /// Rust cannot overload, so this is a separate method.
     ///
     /// `src_x,src_y,src_w,src_h` select a sub-rectangle within `image`.
@@ -6310,7 +6310,7 @@ impl<'a> emPainter<'a> {
         }
 
         let thickness = stroke.width;
-        // DIVERGED: C++ stroke.Rounded is a single bool; Rust has separate join/cap enums.
+        // DIVERGED: (language-forced) C++ stroke.Rounded is a single bool; Rust has separate join/cap enums.
         let rounded = stroke.join == super::emStroke::LineJoin::Round
             || stroke.cap == super::emStroke::LineCap::Round;
 
@@ -7212,7 +7212,7 @@ impl<'a> emPainter<'a> {
     /// `(nx, ny)`: along-line direction pointing INTO the body (matches C++ PaintArrow params).
     /// Perpendicular computed as `(ny, -nx)`.
     #[allow(clippy::too_many_arguments)]
-    // DIVERGED: PaintArrow — renamed paint_stroke_end; C++ name is PaintArrow
+    // DIVERGED: (language-forced) PaintArrow — renamed paint_stroke_end; C++ name is PaintArrow
     fn paint_stroke_end(
         &mut self,
         x: f64,
@@ -9750,7 +9750,7 @@ mod tests {
 }
 
 // ---------------------------------------------------------------------------
-// RUST_ONLY: fixed.rs -- Fixed-point newtype for sub-pixel rasterization.
+// RUST_ONLY: (language-forced-utility) fixed.rs -- Fixed-point newtype for sub-pixel rasterization.
 // C++ uses bare int with inline shifts (emPainter.cpp:358-374). Rust wraps
 // in a newtype to prevent mixing fixed and integer values. ceil() and round()
 // use i64 promotion to fix signed-overflow UB present in C++.
@@ -9815,7 +9815,7 @@ impl Fixed12 {
 
     #[inline]
     pub fn ceil(self) -> Self {
-        // DIVERGED: C++ uses `(raw + 0xFFF) & ~0xFFF` which is signed overflow UB for
+        // DIVERGED: (language-forced) C++ uses `(raw + 0xFFF) & ~0xFFF` which is signed overflow UB for
         // raw > i32::MAX - 4095 (coordinates > 524,287 px). Rust promotes to i64 to
         // compute the correct answer instead of wrapping to a garbage value.
         Self(((self.0 as i64 + FRAC_MASK as i64) & !(FRAC_MASK as i64)) as i32)
@@ -9823,7 +9823,7 @@ impl Fixed12 {
 
     #[inline]
     pub fn round(self) -> Self {
-        // DIVERGED: C++ uses `(raw + 2048) & ~0xFFF` which is signed overflow UB for
+        // DIVERGED: (language-forced) C++ uses `(raw + 2048) & ~0xFFF` which is signed overflow UB for
         // raw > i32::MAX - 2048 (coordinates > 524,287 px). Rust promotes to i64 to
         // compute the correct answer instead of wrapping to a garbage value.
         Self(((self.0 as i64 + (SCALE >> 1) as i64) & !(FRAC_MASK as i64)) as i32)

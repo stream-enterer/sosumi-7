@@ -19,7 +19,7 @@
 //!   - Reified `aggregate_signal` + `aggregate_signals` chain mirrors primitive
 //!     and emStructRec rep — ADR 2026-04-21-phase-4b-listener-tree-adr.md (R5).
 //!
-//! DIVERGED: C++ variadic constructor `emUnionRec(defaultVariant, id0, alloc0,
+//! DIVERGED: (language-forced) C++ variadic constructor `emUnionRec(defaultVariant, id0, alloc0,
 //! id1, alloc1, ..., NULL)` is not portable to Rust without a builder. Rust
 //! exposes `new` (empty) + `AddVariant(identifier, allocator)` (per-variant) +
 //! `SetToDefaultVariant` to materialise the default. Observable outcome
@@ -58,7 +58,7 @@ pub struct emUnionRec {
     variant: i32,
     /// Current child record. C++: `emOwnPtr<emRec> Record` (emRec.h:1116).
     ///
-    /// DIVERGED: `Option<Box<...>>` instead of raw pointer so
+    /// DIVERGED: (language-forced) `Option<Box<...>>` instead of raw pointer so
     /// `SetVariant` can `take()` the old child before constructing the new
     /// one (avoids aliasing mutable borrows). `None` is transient during
     /// variant swap and during the empty window before the default variant
@@ -73,7 +73,7 @@ impl emUnionRec {
     /// `AddVariant` for each variant, then `SetToDefaultVariant` to
     /// materialise the default child.
     ///
-    /// DIVERGED: C++ constructor `emUnionRec(defaultVariant, id0, alloc0,
+    /// DIVERGED: (language-forced) C++ constructor `emUnionRec(defaultVariant, id0, alloc0,
     /// ..., NULL)` (emRec.h:1046-1050) takes all variants at once as a
     /// variadic list and materialises the default immediately. Rust splits
     /// this into three steps (`new`, `AddVariant`, `SetToDefaultVariant`)
@@ -94,7 +94,7 @@ impl emUnionRec {
     /// in the C++ variadic constructor (emRec.h:1047). Variants are indexed
     /// in insertion order starting at 0.
     ///
-    /// DIVERGED: new-to-Rust (see module-level note). C++ folds variant
+    /// DIVERGED: (language-forced) new-to-Rust (see module-level note). C++ folds variant
     /// registration into its variadic constructor.
     pub fn AddVariant(&mut self, identifier: &str, allocator: emRecAllocator) {
         CheckIdentifier(identifier);
@@ -107,7 +107,7 @@ impl emUnionRec {
     /// Set the default variant index. Used by `SetToDefaultVariant` (and,
     /// Phase 4d, by `SetToDefault` persistence hook).
     ///
-    /// DIVERGED: C++ takes the default variant as a constructor argument
+    /// DIVERGED: (language-forced) C++ takes the default variant as a constructor argument
     /// (emRec.h:1046). Rust separates registration from default-selection
     /// to match the multi-step builder shape.
     pub fn SetDefaultVariant(&mut self, default_variant: i32) {
@@ -161,7 +161,7 @@ impl emUnionRec {
     /// inline at emRec.h:1124-1132) returns `emRec&` — panics if called
     /// when no child exists.
     ///
-    /// DIVERGED: returns `Option<&dyn emRecNode>` because the Rust rep
+    /// DIVERGED: (language-forced) returns `Option<&dyn emRecNode>` because the Rust rep
     /// transiently holds `None` before the first `SetVariant` /
     /// `SetToDefaultVariant`. C++ invariant is that `Record` is always
     /// non-null after construction; callers that preserve that discipline
@@ -170,7 +170,7 @@ impl emUnionRec {
         self.child.as_deref()
     }
 
-    /// DIVERGED: no C++ counterpart. C++ exposes only `Get()` returning
+    /// DIVERGED: (language-forced) no C++ counterpart. C++ exposes only `Get()` returning
     /// `emRec&`, and all mutation occurs through virtual methods on the base
     /// class that take `this` as a mutable pointer internally. Rust's borrow
     /// checker forces a distinct `&mut` accessor for typed `SetValue` /
@@ -225,7 +225,7 @@ impl emUnionRec {
         //   - every outer-compound signal already registered on this union
         //     (so child-subtree mutations propagate to ancestors too).
         //
-        // DIVERGED: C++ `emRec::Changed()` (emRec.h:243 inline, delegates to
+        // DIVERGED: (language-forced) C++ `emRec::Changed()` (emRec.h:243 inline, delegates to
         // `emRec::ChildChanged` at emRec.cpp:217) walks `UpperNode` per-fire.
         // Rust fires the reified aggregate chain registered here. See ADR
         // 2026-04-21-phase-4b-listener-tree-adr.md.
@@ -249,7 +249,7 @@ impl emUnionRec {
     /// `emStructRec::GetAggregateSignal`. Used by outer compounds and by
     /// `emRecListener::SetListenedRec` through `listened_signal()`.
     ///
-    /// DIVERGED: no direct C++ counterpart — C++ listeners splice into the
+    /// DIVERGED: (language-forced) no direct C++ counterpart — C++ listeners splice into the
     /// `UpperNode` chain instead of observing a named signal. Introduced by
     /// the reified-chain rep (ADR 2026-04-21-phase-4b-listener-tree-adr.md —
     /// R5). Mirrors `emStructRec::GetAggregateSignal`.
@@ -264,7 +264,7 @@ impl emUnionRec {
 }
 
 impl emRecNode for emUnionRec {
-    /// DIVERGED: parent tracked only through the aggregate chain (no
+    /// DIVERGED: (language-forced) parent tracked only through the aggregate chain (no
     /// `UpperNode`). Matches emStructRec / primitive rep.
     fn parent(&self) -> Option<&dyn emRecNode> {
         None
@@ -276,7 +276,7 @@ impl emRecNode for emUnionRec {
     /// `self.aggregate_signals` onto the new child, so switching variants
     /// does not drop ancestor listeners.
     ///
-    /// DIVERGED: C++ `emRec::Changed()` (emRec.h:243 inline, delegates to
+    /// DIVERGED: (language-forced) C++ `emRec::Changed()` (emRec.h:243 inline, delegates to
     /// `emRec::ChildChanged` at emRec.cpp:217) walks `UpperNode`. Rust
     /// fires the reified aggregate chain. See ADR
     /// 2026-04-21-phase-4b-listener-tree-adr.md.
@@ -297,7 +297,7 @@ impl emRecNode for emUnionRec {
     /// consume the `:` delimiter, then dispatch the child body through
     /// `dyn emRecNode::TryRead`.
     ///
-    // DIVERGED: fusion of TryStartReading / TryContinueReading into one
+    // DIVERGED: (language-forced) fusion of TryStartReading / TryContinueReading into one
     // atomic call, same rationale as primitive TryRead.
     fn TryRead(
         &mut self,

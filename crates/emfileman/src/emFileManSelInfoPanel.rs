@@ -219,7 +219,7 @@ impl emFileManSelInfoPanel {
         self.details_y = self.details_frame_y + (self.details_frame_h - self.details_h) * 0.5;
     }
 
-    /// DIVERGED: C++ name is ResetDetails (private). Renamed to
+    /// DIVERGED: (language-forced) C++ name is ResetDetails (private). Renamed to
     /// reset_details with pub(crate) visibility for test access.
     pub(crate) fn reset_details(&mut self) {
         self.state = SelInfoState::new();

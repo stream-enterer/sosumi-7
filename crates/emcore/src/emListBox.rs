@@ -1110,7 +1110,7 @@ impl emListBox {
             return;
         }
 
-        // DIVERGED: C++ emListBox::PaintContent — no C++ equivalent; inline
+        // DIVERGED: (language-forced) C++ emListBox::PaintContent — no C++ equivalent; inline
         // painting is Rust-only. This guard reproduces the C++ effect where
         // tiny (non-expanded) listboxes show only the border frame.
         let pixel_area = pixel_scale * w * h;
@@ -1262,7 +1262,7 @@ impl emListBox {
         }
         let tallness = self.last_h / self.last_w * pixel_tallness;
         let (rect, r) = self.border.GetContentRoundRect(1.0, tallness, &self.look);
-        // RUST_ONLY: widget_utils.rs -- C++ inlines this formula per widget
+        // RUST_ONLY: (language-forced-utility) widget_utils.rs -- C++ inlines this formula per widget
         let dx = ((rect.x - mx).max(mx - rect.x - rect.w) + r).max(0.0);
         let dy = ((rect.y - my).max(my - rect.y - rect.h) + r).max(0.0);
         dx * dx + dy * dy <= r * r

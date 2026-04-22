@@ -147,7 +147,7 @@ mod inner {
         }
     }
 
-    /// DIVERGED: C++ calls `system("xscreensaver-command -deactivate >&- 2>&- &")`
+    /// DIVERGED: (language-forced) C++ calls `system("xscreensaver-command -deactivate >&- 2>&- &")`
     /// in emX11Screen.cpp:711-765. Rust spawns the process directly.
     fn poke_xscreensaver() {
         use std::process::Command;
@@ -160,7 +160,7 @@ mod inner {
     }
 
     /// Keepalive state for periodic screensaver re-inhibition.
-    /// DIVERGED: C++ uses emX11Screen::ScreensaverUpdateTimer (59s) with
+    /// DIVERGED: (dependency-forced) C++ uses emX11Screen::ScreensaverUpdateTimer (59s) with
     /// XResetScreenSaver + xscreensaver-command. Rust uses thread-local state
     /// ticked from the event loop since we don't have an X11 display handle.
     /// `active_count` ref-counts callers so multi-window support is correct:

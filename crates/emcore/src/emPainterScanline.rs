@@ -707,7 +707,7 @@ fn generate_spans_edge_crossing(aet: &[Edge], clip_x_start: i32, clip_x_end: i32
 }
 
 /// Create a span from fixed-point enter/exit x coordinates with AA coverage.
-// DIVERGED: C++ uses i32 subtraction for `x_exit.raw() - x_enter.raw()` and
+// DIVERGED: (language-forced) C++ uses i32 subtraction for `x_exit.raw() - x_enter.raw()` and
 // `px_end - px_start` which are signed overflow UB for extreme Fixed12 values.
 // Rust uses i64 promotion for the coverage difference and saturating_sub for
 // span width. In practice coordinates are bounded by viewport pixels.

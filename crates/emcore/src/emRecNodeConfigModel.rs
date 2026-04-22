@@ -22,7 +22,7 @@
 //! will be deleted and this type renamed to `emConfigModel` in line with the
 //! CLAUDE.md File and Name Correspondence rule.
 //!
-//! DIVERGED: `emRecNodeConfigModel` does not derive from `emModel` — the Rust
+//! DIVERGED: (language-forced) `emRecNodeConfigModel` does not derive from `emModel` — the Rust
 //! port carries no engine/model runtime at this layer (the C++
 //! `emModel`/`emContext` lifetime-plumbing is handled by higher-level
 //! callers). What is preserved from C++ is the observable load/save/dirty
@@ -104,7 +104,7 @@ impl<T: emRecNode> emRecNodeConfigModel<T> {
 
     /// Run `f` against the record and mark the model unsaved immediately.
     ///
-    /// DIVERGED: `modify()` sets `unsaved_flag` synchronously rather than
+    /// DIVERGED: (language-forced) `modify()` sets `unsaved_flag` synchronously rather than
     /// waiting for the listener engine to wake on the next scheduler cycle.
     /// This matches the observable C++ contract (IsUnsaved true immediately
     /// after mutation) even though the underlying mechanism differs.
@@ -200,7 +200,7 @@ impl<T: emRecNode> emRecNodeConfigModel<T> {
     /// without the optional `insSrcPath` copy-from-template branch
     /// (emConfigModel.cpp:98-114).
     ///
-    /// DIVERGED: C++ invokes `GetRec().SetToDefault()` on the install branch
+    /// DIVERGED: (language-forced) C++ invokes `GetRec().SetToDefault()` on the install branch
     /// so the saved file reflects canonical defaults regardless of prior
     /// mutation. The Rust port expects callers to construct the model with a
     /// default-valued record — a `SetToDefault` method on `emRecNode` is not
@@ -215,7 +215,7 @@ impl<T: emRecNode> emRecNodeConfigModel<T> {
         }
     }
 
-    /// DIVERGED: no C++ counterpart. C++ `emConfigModel` destroys the
+    /// DIVERGED: (language-forced) no C++ counterpart. C++ `emConfigModel` destroys the
     /// `RecLink` (its embedded listener) in `~emConfigModel`; in Rust the
     /// lifetime of `emRecListener` is managed explicitly. Call before drop
     /// to remove the listener engine from the scheduler.

@@ -37,7 +37,7 @@ pub enum FileDialogCheckResult {
 /// File-open / file-save dialog composing an `emDialog` + `emFileSelectionBox`.
 ///
 /// Port of C++ `class emFileDialog : public emDialog` (emFileDialog.h:37).
-/// DIVERGED: Rust uses composition for C++ inheritance (idiom adaptation —
+/// DIVERGED: (language-forced) Rust uses composition for C++ inheritance (idiom adaptation —
 /// observable behavior identical). The owned `dialog: emDialog` provides the
 /// window/root-panel/private-engine infrastructure from Phase 3.5; the
 /// `emFileSelectionBox` is installed as a child panel under
@@ -65,7 +65,7 @@ pub struct emFileDialog {
     fsb_panel_id: PanelId,
     /// Cached `fsb.file_trigger_signal` — `SignalId` is `Copy`, stable
     /// across fsb lifetime. Used by the `file_trigger_signal()` test
-    /// accessor. DIVERGED: C++ `emFileDialog` does not expose a
+    /// accessor. DIVERGED: (language-forced) C++ `emFileDialog` does not expose a
     /// `GetFileTriggerSignal` accessor; this cache exists solely because
     /// Rust tests need to fire the signal externally without walking the
     /// tree. The closure in `on_cycle_ext` captures the same SignalId via
@@ -137,7 +137,7 @@ impl emFileDialog {
                 // the widened `on_check_finish` closure via base cycle
                 // step 3 — single funnel, matches C++.
 
-                // DIVERGED: Rust-specific re-wake. The base
+                // DIVERGED: (language-forced) Rust-specific re-wake. The base
                 // `DialogPrivateEngine::Cycle` body runs BEFORE on_cycle_ext
                 // (Phase-3.6 Task 2 ordering). State mutations this closure
                 // makes — setting `dlg.pending_result`, pushing

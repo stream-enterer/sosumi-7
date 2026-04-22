@@ -927,8 +927,8 @@ impl emStocksItemChart {
 
     /// Port of C++ CalculateYScaleLevelRange. Computes price grid spacing
     /// using 1-2-5 progression (logarithmic).
-    /// DIVERGED: Returns (min_level, min_dist, max_level) tuple instead of C++ output
-    /// pointers — Rust has no out-parameters; tuples are the idiomatic equivalent.
+    /// Idiom adaptation: returns (min_level, min_dist, max_level) tuple instead of C++ output
+    /// pointers.
     pub(crate) fn CalculateYScaleLevelRange(&self) -> (i32, f64, i32) {
         let mut max_level: i32 = 0;
         let mut max_dist: f64 = 1.0;

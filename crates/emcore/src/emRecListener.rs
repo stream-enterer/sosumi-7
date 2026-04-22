@@ -3,7 +3,7 @@
 //! C++ reference: `include/emCore/emRec.h:253-290` (class) and
 //! `src/emCore/emRec.cpp:227-280` (impl).
 //!
-//! DIVERGED: C++ `emRecListener` is an abstract base with a pure-virtual
+//! DIVERGED: (language-forced) C++ `emRecListener` is an abstract base with a pure-virtual
 //! `OnRecChanged()` and splices itself into the `UpperNode` chain synchronously
 //! (`ChildChanged` walks up and calls `OnRecChanged` inline). Rust replaces
 //! inheritance + synchronous walk with:
@@ -16,7 +16,7 @@
 //!      2026-04-21-phase-4b-listener-tree-adr.md (R5) without requiring
 //!      a second mutable-graph walk during mutation.
 //!
-//! DIVERGED: `Drop` cannot access the scheduler to `disconnect` the signal or
+//! DIVERGED: (language-forced) `Drop` cannot access the scheduler to `disconnect` the signal or
 //! `remove_engine` the owned engine. Callers must invoke
 //! `detach(self, &mut SchedCtx<'_>)` before drop. If `detach` is not called,
 //! the engine remains registered until the `EngineScheduler` itself is
@@ -64,7 +64,7 @@ impl emRecListener {
     /// `SetValue` mutation on a primitive, or on any aggregate-signal fire
     /// for a compound.
     ///
-    /// DIVERGED: C++ `emRecListener::emRecListener(emRec*)` (emRec.cpp:228-233)
+    /// DIVERGED: (language-forced) C++ `emRecListener::emRecListener(emRec*)` (emRec.cpp:228-233)
     /// takes a raw `emRec*`. Rust takes `Option<&dyn emRecNode>` so the same
     /// API handles primitives and (Phase 4c Tasks 3-5) compounds without a
     /// value-type generic. Also takes `&mut SchedCtx` rather than constructing
@@ -117,7 +117,7 @@ impl emRecListener {
     /// the `emRec*` itself, since Rust does not store a back-pointer (the
     /// rec's ownership lifetime is not tied to the listener in our rep).
     ///
-    /// DIVERGED: C++ returns `emRec*`; Rust returns `Option<SignalId>`
+    /// DIVERGED: (language-forced) C++ returns `emRec*`; Rust returns `Option<SignalId>`
     /// because the listener only retains the observed signal, not a
     /// pointer back to the rec. Callers that need the rec track it
     /// externally (idiomatic in our ownership model).

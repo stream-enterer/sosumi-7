@@ -64,7 +64,7 @@ pub struct emBorder {
     pub label_in_border: bool,
     /// Name of the auxiliary child panel, if any.
     ///
-    /// DIVERGED: C++ `AuxData` — the C++ `emBorder::AuxData` struct (with
+    /// DIVERGED: (language-forced) C++ `AuxData` — the C++ `emBorder::AuxData` struct (with
     /// `PanelName`, `Tallness`, `PanelPointerCache`) is flattened into
     /// `emBorder` fields.  `PanelPointerCache` (`emCrossPtr<emPanel>`) is
     /// omitted because Rust `emBorder` is not a panel and has no child tree
@@ -283,7 +283,7 @@ impl emBorder {
 
     /// Return whether an auxiliary panel is configured.
     ///
-    /// DIVERGED: `emBorder::GetAuxPanel` — C++ returned a cached
+    /// DIVERGED: (language-forced) `emBorder::GetAuxPanel` — C++ returned a cached
     /// `emPanel*` via `PanelPointerCache` (an `emCrossPtr` that
     /// auto-nullifies when the child is deleted).  Rust `emBorder` is not a
     /// panel and owns no child tree, so this method returns a bool instead.
@@ -2355,7 +2355,7 @@ How to move or set the focus:\n\
     }
 }
 
-// RUST_ONLY: toolkit_images.rs -- compile-time TGA atlas extracted from C++ emBorder::TkResources
+// RUST_ONLY: (language-forced-utility) toolkit_images.rs -- compile-time TGA atlas extracted from C++ emBorder::TkResources
 // (emBorder.h:321-341). C++ loads images at runtime via emGetResImage(); Rust embeds them via
 // include_bytes!().
 

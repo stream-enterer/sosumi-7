@@ -14,7 +14,7 @@
 //! Clamp-before-compare: value is clamped to [min, max] FIRST, then compared
 //! to the current value; mutation + signal only when the clamped value differs.
 //!
-//! DIVERGED: C++ uses `int` (32-bit). Rust uses `i64` per plan. No existing
+//! DIVERGED: (language-forced) C++ uses `int` (32-bit). Rust uses `i64` per plan. No existing
 //! Rust usage of emIntRec at this point; i64 is the plan-specified width.
 
 use crate::emEngineCtx::{ConstructCtx, SchedCtx};
@@ -53,10 +53,10 @@ impl emIntRec {
 
     /// Port of C++ `emIntRec::TryStartWriting` (emRec.cpp:469-472).
     ///
-    // DIVERGED: C++ splits persistence into the protected virtual pair
+    // DIVERGED: (language-forced) C++ splits persistence into the protected virtual pair
     // `TryStartWriting` + `TryContinueWriting`. Rust collapses into one
     // atomic call — same rationale as `emBoolRec::TryWrite`.
-    // DIVERGED: Rust stores `i64` while C++ stores `int` (32-bit) and the
+    // DIVERGED: (language-forced) Rust stores `i64` while C++ stores `int` (32-bit) and the
     // emRecWriter primitive writes `i32`. Values outside `i32` are clamped
     // to `i32::MIN..=i32::MAX` on write. In the current tree no emIntRec is
     // constructed with bounds outside the i32 range, so this clamp is
@@ -68,7 +68,7 @@ impl emIntRec {
 
     /// Port of C++ `emIntRec::TryStartReading` (emRec.cpp:447-455).
     ///
-    // DIVERGED: name + fusion with TryContinueReading; see `TryWrite` above
+    // DIVERGED: (language-forced) name + fusion with TryContinueReading; see `TryWrite` above
     // for rationale. C++ bounds-checks the read value against `[MinValue,
     // MaxValue]` and calls `ThrowElemError("Number too small.")` /
     // `"Number too large."`; Rust mirrors those two error paths.
@@ -127,7 +127,7 @@ impl emRec<i64> for emIntRec {
         if value != self.value {
             self.value = value;
             ctx.fire(self.signal);
-            // DIVERGED: C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
+            // DIVERGED: (language-forced) C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
             // per-fire; Rust fires the reified aggregate chain. See ADR
             // 2026-04-21-phase-4b-listener-tree-adr.md.
             for sig in &self.aggregate_signals {

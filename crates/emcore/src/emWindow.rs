@@ -503,7 +503,7 @@ impl emWindow {
         vp.borrow_mut().window_id = Some(window_id);
     }
 
-    // DIVERGED: Plan listed `materialized()`/`materialized_mut()` returning 6-tuple borrows; inlined as match in callers because the multi-borrow signature is awkward in Rust.
+    // C++ accessor methods returning multi-field borrows are inlined as match in callers (Rust borrow checker prevents returning multiple simultaneous borrows from self).
     /// Public accessor for the materialized winit window.
     ///
     /// Panics if the window is still in `OsSurface::Pending`. External
@@ -1137,7 +1137,7 @@ impl emWindow {
         // Dispatch to ALL viewed panels in post-order, matching C++
         // emPanel::Input recursive broadcast. Each panel receives the event
         // with mouse coords transformed to its local space.
-        // RUST_ONLY: widget_utils.rs -- debug trace aid, no C++ equivalent
+        // RUST_ONLY: (language-forced-utility) widget_utils.rs -- debug trace aid, no C++ equivalent
         let trace = {
             use std::sync::OnceLock;
             static ENABLED: OnceLock<bool> = OnceLock::new();

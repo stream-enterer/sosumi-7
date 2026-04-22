@@ -1,4 +1,4 @@
-// RUST_ONLY: no C++ header counterpart. The C++ reference dispatches input
+// RUST_ONLY: (dependency-forced) no C++ header counterpart. The C++ reference dispatches input
 // events directly from the X11 event loop into emView::Input (synchronous,
 // in-thread). winit's async-callback model requires bridging into emCore's
 // cycle-driven scheduler. This engine is registered at top priority during

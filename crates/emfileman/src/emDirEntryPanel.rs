@@ -311,7 +311,7 @@ impl emDirEntryPanel {
     }
 
     /// Port of C++ emDirEntryPanel::Select
-    /// DIVERGED: C++ walks sibling panels via parent panel tree traversal.
+    /// DIVERGED: (language-forced) C++ walks sibling panels via parent panel tree traversal.
     /// Rust accesses the emDirModel directly to enumerate entries in display
     /// order, since panel tree parent traversal is not available.
     fn select(&mut self, shift: bool, ctrl: bool) {

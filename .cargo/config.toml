@@ -1,3 +1,6 @@
+[alias]
+xtask = "run -p xtask --"
+
 [env]
 # Direct LLVM coverage profiling data (from Kani harness runs) into target/
 # instead of polluting the project root.

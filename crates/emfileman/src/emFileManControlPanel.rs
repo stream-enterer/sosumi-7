@@ -40,7 +40,7 @@ const NSS_LABELS: [&str; 3] = ["Per Locale", "Case Sensitive", "Case Insensitive
 /// Control panel for file manager settings.
 /// Port of C++ `emFileManControlPanel` (extends emLinearLayout).
 ///
-/// DIVERGED: C++ uses emLinearLayout composition with emPackGroup/
+/// DIVERGED: (language-forced) C++ uses emLinearLayout composition with emPackGroup/
 /// emRasterLayout for widget tree. Rust uses manual painting with
 /// computed y offsets — widgets are painted directly rather than
 /// composed as child panels in a layout tree.
@@ -242,7 +242,7 @@ impl emFileManControlPanel {
         self
     }
 
-    /// DIVERGED: C++ SelectAll finds active DirPanel by walking from
+    /// DIVERGED: (language-forced) C++ SelectAll finds active DirPanel by walking from
     /// content_view's focused panel. Rust receives the dir_path from the
     /// creating DirPanel and accesses the emDirModel directly.
     fn select_all(&self) {

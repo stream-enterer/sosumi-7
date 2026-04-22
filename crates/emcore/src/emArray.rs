@@ -4,22 +4,22 @@
 // mutation deep-copies if shared. Rust equivalent wraps Vec<T> in Rc
 // with clone-on-mutate via Rc::make_mut.
 //
-// DIVERGED: TuningLevel — stored for API correspondence but has no effect
+// DIVERGED: (language-forced) TuningLevel — stored for API correspondence but has no effect
 // on behavior. Rust ownership handles the optimization concerns that
 // TuningLevel addressed in C++.
 //
-// DIVERGED: C++ overloaded methods are split into distinct names
+// DIVERGED: (language-forced) C++ overloaded methods are split into distinct names
 // (Add_one, Add_fill, Add_slice, etc.) because Rust has no overloading.
 //
-// DIVERGED: BinarySearch returns Result<usize, usize> instead of
+// DIVERGED: (language-forced) BinarySearch returns Result<usize, usize> instead of
 // C++ int (negative = bitwise-inverted insertion point). Rust's
 // slice::binary_search convention is used.
 //
-// DIVERGED: PointerToIndex — requires pointer arithmetic into Vec backing.
+// DIVERGED: (language-forced) PointerToIndex — requires pointer arithmetic into Vec backing.
 //
 // AddNew, InsertNew, ReplaceByNew require T: Default (separate impl block).
 //
-// DIVERGED: Sort() skips COW clone if array is already sorted. C++ calls
+// DIVERGED: (language-forced) Sort() skips COW clone if array is already sorted. C++ calls
 // MakeWritable() unconditionally. No behavioral difference for callers.
 
 use std::cell::RefCell;
@@ -96,7 +96,7 @@ impl Cursor {
 pub struct emArray<T: Clone> {
     data: Rc<Vec<T>>,
     /// C++ TuningLevel — stored for API correspondence, no effect on behavior.
-    /// DIVERGED: Rust ownership model makes COW tuning unnecessary; field
+    /// DIVERGED: (language-forced) Rust ownership model makes COW tuning unnecessary; field
     /// exists for API correspondence only.
     tuning_level: u8,
     /// Adjustment log for cursor auto-adjustment.
@@ -477,7 +477,7 @@ impl<T: Clone + Ord> emArray<T> {
     /// Binary search for `obj`. Returns `Ok(index)` if found,
     /// `Err(index)` with the insertion point if not found.
     ///
-    /// DIVERGED: C++ returns int (negative = ~insertion_index).
+    /// DIVERGED: (language-forced) C++ returns int (negative = ~insertion_index).
     /// Rust uses `Result<usize, usize>` matching slice::binary_search.
     pub fn BinarySearch(&self, obj: &T) -> Result<usize, usize> {
         self.data.binary_search(obj)

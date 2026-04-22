@@ -113,7 +113,7 @@ struct KeyWalkState {
 /// Displays directory entries in a grid layout. Lazily acquires emDirModel
 /// when viewed. Creates/updates emDirEntryPanel children from model entries.
 ///
-/// DIVERGED: C++ emDirPanel connects emDirModel as a FileModelState via
+/// DIVERGED: (language-forced) C++ emDirPanel connects emDirModel as a FileModelState via
 /// SetFileModel. Rust drives loading directly in Cycle using
 /// `get_file_state()` to query the model's phase, because emDirModel does
 /// not implement FileModelState — it wraps emDirModelData directly without
@@ -266,7 +266,7 @@ impl emDirPanel {
                 self.content_complete = true;
 
                 // Check for pending scroll target
-                // DIVERGED: C++ uses View.Visit() from Input handler. Rust queues
+                // DIVERGED: (language-forced) C++ uses View.Visit() from Input handler. Rust queues
                 // navigation via PanelCtx::request_visit, drained by emView each frame.
                 if let Some(target) = self.scroll_target.take() {
                     if let Some(child_id) = ctx.find_child_by_name(&target) {

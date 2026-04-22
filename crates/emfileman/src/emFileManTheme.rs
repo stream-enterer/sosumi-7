@@ -6,7 +6,6 @@ use emcore::emColor::emColor;
 use emcore::emConfigModel::emConfigModel;
 use emcore::emContext::emContext;
 use emcore::emImage::emImage;
-use emcore::emImageFile::load_image_from_file;
 use emcore::emInstallInfo::{emGetInstallPath, InstallDirType, InstallInfoError};
 use emcore::emRecParser::{RecError, RecStruct, RecValue};
 use emcore::emRecRecTypes::{
@@ -711,8 +710,8 @@ impl Record for emFileManThemeData {
 }
 
 /// Lazy-loading image record. Stores a path and caches the loaded image.
-/// DIVERGED: C++ ImageFileRec extends emStringRec + emRecListener with async
-/// emImageFileModel loading. This loads synchronously via load_image_from_file.
+/// DIVERGED: (language-forced) C++ ImageFileRec extends emStringRec + emRecListener with async
+/// emImageFileModel loading. This loads synchronously via inline TGA read.
 pub struct ImageFileRec {
     path: String,
     theme_dir: PathBuf,
@@ -735,7 +734,9 @@ impl ImageFileRec {
             let image = if self.path.is_empty() {
                 None
             } else {
-                load_image_from_file(&self.theme_dir.join(&self.path))
+                std::fs::read(self.theme_dir.join(&self.path))
+                    .ok()
+                    .and_then(|d| emcore::emResTga::load_tga(&d).ok())
             };
             *self.cached.borrow_mut() = Some(image.unwrap_or_else(|| emImage::new(1, 1, 4)));
         }

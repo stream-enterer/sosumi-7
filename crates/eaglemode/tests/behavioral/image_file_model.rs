@@ -1,10 +1,14 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use emcore::emFileModel::FileState;
 use emcore::emImage::emImage;
 use emcore::emImageFile::{emImageFileModel, ImageFileData};
 use emcore::emImageFileImageFilePanel::emImageFilePanel;
 use emcore::emScheduler::EngineScheduler;
+use winit::window::WindowId;
 
 fn make_model() -> emImageFileModel {
     let mut sched = EngineScheduler::new();
@@ -210,4 +214,116 @@ fn essence_rect_zero_dim_image() {
     let mut panel = emImageFilePanel::new();
     panel.set_current_image(Some(emImage::new(0, 0, 4)));
     assert!(panel.GetEssenceRect(100.0, 100.0).is_none());
+}
+
+// ── async loading test ─────────────────────────────────────────────
+
+/// Build a minimal 1×1 Type-10 (RLE true-colour 32 bpp) TGA.
+fn make_test_tga() -> Vec<u8> {
+    let mut data = vec![0u8; 18];
+    data[2] = 10; // image type: RLE true-color
+    data[12] = 1; // width low byte
+    data[13] = 0; // width high byte
+    data[14] = 1; // height low byte
+    data[15] = 0; // height high byte
+    data[16] = 32; // bits per pixel
+                   // RLE packet: 1 pixel (header 0x80 = RLE, count=1)
+    data.push(0x80);
+    // BGRA pixel
+    data.extend_from_slice(&[0x10, 0x20, 0x30, 0xFF]);
+    data
+}
+
+/// Run one scheduler time-slice (mirrors the `slice()` helper in
+/// pri_sched_agent.rs).
+fn do_slice(sched: &mut EngineScheduler) {
+    let mut windows: HashMap<WindowId, emcore::emWindow::emWindow> = HashMap::new();
+    let root_ctx = emcore::emContext::emContext::NewRoot();
+    let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+    let mut pending_inputs: Vec<(WindowId, emcore::emInput::emInputEvent)> = Vec::new();
+    let mut input_state = emcore::emInputState::emInputState::new();
+    let cb: RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> = RefCell::new(None);
+    let pa: Rc<RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+        Rc::new(RefCell::new(Vec::new()));
+    sched.DoTimeSlice(
+        &mut windows,
+        &root_ctx,
+        &mut fw,
+        &mut pending_inputs,
+        &mut input_state,
+        &cb,
+        &pa,
+    );
+}
+
+#[test]
+fn image_model_loads_asynchronously_via_engine() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("async_test.tga");
+    std::fs::write(&path, make_test_tga()).expect("write tga");
+
+    let mut sched = EngineScheduler::new();
+    let model = {
+        // InitCtx borrows &mut sched, so it must be dropped before do_slice.
+        let root_ctx = emcore::emContext::emContext::NewRoot();
+        let mut fw_actions: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+        let pa: Rc<RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
+        let mut ctx = emcore::emEngineCtx::InitCtx {
+            scheduler: &mut sched,
+            framework_actions: &mut fw_actions,
+            root_context: &root_ctx,
+            pending_actions: &pa,
+        };
+        emImageFileModel::register(&mut ctx, path)
+    };
+
+    assert!(
+        matches!(model.borrow().state(), FileState::Loading { .. }),
+        "expected Loading after register(), got {:?}",
+        model.borrow().state()
+    );
+
+    do_slice(&mut sched);
+
+    assert!(
+        matches!(model.borrow().state(), &FileState::Loaded),
+        "expected Loaded after one slice, got {:?}",
+        model.borrow().state()
+    );
+    assert!(
+        model.borrow().GetImage().is_some(),
+        "GetImage() should be Some after load"
+    );
+}
+
+#[test]
+fn image_model_fails_for_nonexistent_path() {
+    let mut sched = EngineScheduler::new();
+    let model = {
+        let root_ctx = emcore::emContext::emContext::NewRoot();
+        let mut fw_actions: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+        let pa: Rc<RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
+        let mut ctx = emcore::emEngineCtx::InitCtx {
+            scheduler: &mut sched,
+            framework_actions: &mut fw_actions,
+            root_context: &root_ctx,
+            pending_actions: &pa,
+        };
+        emImageFileModel::register(&mut ctx, std::path::PathBuf::from("/nonexistent/no.tga"))
+    };
+
+    assert!(
+        matches!(model.borrow().state(), FileState::Loading { .. }),
+        "expected Loading before slice"
+    );
+
+    do_slice(&mut sched);
+
+    assert!(
+        matches!(model.borrow().state(), FileState::LoadError(_)),
+        "expected LoadError after slice for nonexistent path, got {:?}",
+        model.borrow().state()
+    );
 }

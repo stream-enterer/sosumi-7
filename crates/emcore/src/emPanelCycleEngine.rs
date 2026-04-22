@@ -1,4 +1,4 @@
-// DIVERGED: C++ emPanel inherits from emEngine directly (emPanel.h:33 —
+// DIVERGED: (language-forced) C++ emPanel inherits from emEngine directly (emPanel.h:33 —
 // `class emPanel : public emEngine`). In Rust, `PanelBehavior` trait
 // objects are owned by `PanelTree::panels` and are `take`n during cycling
 // so the tree can lend a `PanelCtx`; a `PanelBehavior` therefore cannot

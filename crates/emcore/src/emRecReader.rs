@@ -20,7 +20,7 @@ use std::fmt;
 
 /// Kind of syntactical element peeked at the reader cursor.
 ///
-// DIVERGED: C++ `emRecReader::TryPeekNext(char *pDelimiter=NULL)` returns the
+// DIVERGED: (language-forced) C++ `emRecReader::TryPeekNext(char *pDelimiter=NULL)` returns the
 // `ElementType` enum and uses an output pointer to optionally receive the
 // delimiter character. Rust folds the out-parameter into the `Delimiter`
 // variant via [`PeekResult`]; the `ElementType` enum mirrors the C++ enum
@@ -45,7 +45,7 @@ pub enum ElementType {
 /// Result of `TryPeekNext`. Folds C++'s `ET_DELIMITER`-plus-out-pointer pair
 /// into a single Rust value.
 ///
-// DIVERGED: C++ uses a `char *pDelimiter` out-param alongside the returned
+// DIVERGED: (language-forced) C++ uses a `char *pDelimiter` out-param alongside the returned
 // `ElementType`; Rust attaches the delimiter character to the `Delimiter`
 // variant instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,7 +155,7 @@ pub trait emRecReader {
     /// `void emRecReader::ThrowElemError(const char *text) const` —
     /// construct an error tagged with the current source name + line.
     ///
-    // DIVERGED: C++ throws; Rust returns the constructed error so callers
+    // DIVERGED: (language-forced) C++ throws; Rust returns the constructed error so callers
     // can `?` it. The helper is still named `ThrowElemError` for File and
     // Name Correspondence.
     fn ThrowElemError(&self, text: &str) -> RecIoError;
@@ -163,7 +163,7 @@ pub trait emRecReader {
     /// `void emRecReader::ThrowSyntaxError() const` — shorthand for
     /// `ThrowElemError("syntax error")`.
     ///
-    // DIVERGED: returns instead of throwing; see `ThrowElemError`.
+    // DIVERGED: (language-forced) returns instead of throwing; see `ThrowElemError`.
     fn ThrowSyntaxError(&self) -> RecIoError;
 }
 
