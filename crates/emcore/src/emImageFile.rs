@@ -66,11 +66,13 @@ impl emImageFileModel {
     /// Scheduler-driven factory: registers a `LoaderEngine` that will load
     /// the image on the next time-slice and fire a completion signal.
     ///
-    /// DIVERGED: (language-forced) C++ uses `emModel::Acquire` which looks up
-    /// or creates a shared model instance in a process-wide registry keyed by
-    /// path. Rust's single-owner type system has no equivalent registry without
-    /// `Rc`+`HashMap`; callers that need sharing must manage the `Rc` themselves.
-    /// The observable contract (async load, signal on completion) is preserved.
+    /// DIVERGED: (language-forced) C++ creates file models via `emModel::Acquire(context, name)`,
+    /// a context-registered, path-keyed shared-instance pattern backed by virtual inheritance
+    /// (`emModel : emEngine`, `emFileModel : emModel`). Rust has no virtual base-class
+    /// inheritance; the `emModel` context-registry infrastructure is not yet ported, so
+    /// callers receive an explicit `Rc<RefCell<Self>>` and manage sharing themselves.
+    /// The observable loading contract — async engine fires on schedule, signals on completion —
+    /// is preserved.
     pub fn register<C: ConstructCtx>(ctx: &mut C, path: PathBuf) -> Rc<RefCell<Self>> {
         let change_signal = ctx.create_signal();
         let update_signal = ctx.create_signal();
@@ -215,6 +217,7 @@ impl emEngine for LoaderEngine {
         let path = model_rc.borrow().path().to_path_buf();
         let result = load_image_sync(&path);
 
+        let file_state_signal;
         {
             let mut m = model_rc.borrow_mut();
             match result {
@@ -225,8 +228,11 @@ impl emEngine for LoaderEngine {
                 }),
                 Err(e) => m.file_model_mut().fail_load(e),
             }
+            // Mirror C++ emFileModel::Cycle: fire FileStateSignal on every state transition.
+            file_state_signal = m.file_model().GetFileStateSignal();
         }
 
+        ctx.fire(file_state_signal);
         ctx.fire(self.load_complete_signal);
         ctx.remove_engine(engine_id);
         false
