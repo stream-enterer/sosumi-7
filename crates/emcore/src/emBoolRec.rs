@@ -52,7 +52,7 @@ impl emRec<bool> for emBoolRec {
         if value != self.value {
             self.value = value;
             ctx.fire(self.signal);
-            // DIVERGED: C++ emRec::Changed() (emRec.cpp:245) walks UpperNode
+            // DIVERGED: C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
             // per-fire; Rust fires the reified aggregate chain. See ADR
             // 2026-04-21-phase-4b-listener-tree-adr.md.
             for sig in &self.aggregate_signals {

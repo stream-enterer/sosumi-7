@@ -72,7 +72,7 @@ impl emRec<i64> for emIntRec {
         if value != self.value {
             self.value = value;
             ctx.fire(self.signal);
-            // DIVERGED: C++ emRec::Changed() (emRec.cpp:245) walks UpperNode
+            // DIVERGED: C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
             // per-fire; Rust fires the reified aggregate chain. See ADR
             // 2026-04-21-phase-4b-listener-tree-adr.md.
             for sig in &self.aggregate_signals {
@@ -183,8 +183,6 @@ mod tests {
         let agg = sc.create_signal();
         rec.register_aggregate(agg);
 
-        // Clamped no-op: SetValue(20) with current=max=... actually current is 5.
-        // Use the same-value path.
         rec.SetValue(5, &mut sc);
 
         assert!(!sc.is_signaled(sig));

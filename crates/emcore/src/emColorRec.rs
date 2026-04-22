@@ -69,7 +69,7 @@ impl emRec<emColor> for emColorRec {
         if value != self.value {
             self.value = value;
             ctx.fire(self.signal);
-            // DIVERGED: C++ emRec::Changed() (emRec.cpp:245) walks UpperNode
+            // DIVERGED: C++ emRec::Changed() (emRec.h:243 inline, delegates to emRec::ChildChanged at emRec.cpp:217) walks UpperNode
             // per-fire; Rust fires the reified aggregate chain. Lives INSIDE
             // the change-check branch, AFTER the own-signal fire, so that the
             // alpha-normalized no-op path (alpha forced to 255 matches current
