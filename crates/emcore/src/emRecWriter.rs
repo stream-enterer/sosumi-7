@@ -98,12 +98,12 @@ mod tests {
         }
     }
 
-    fn _assert_dyn_safe(_w: &mut dyn emRecWriter) {}
+    fn assert_dyn_safe(_w: &mut dyn emRecWriter) {}
 
     #[test]
     fn trait_is_dyn_safe_and_method_list_compiles() {
         let mut w = DummyWriter { indent: 0 };
-        _assert_dyn_safe(&mut w);
+        assert_dyn_safe(&mut w);
         w.IncIndent();
         w.IncIndent();
         w.DecIndent();

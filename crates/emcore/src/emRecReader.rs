@@ -50,6 +50,8 @@ pub enum ElementType {
 // variant instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PeekResult {
+    /// ASCII-only delimiter, per C++ `emRecReader` lexer (non-ASCII input is
+    /// rejected earlier in the lex).
     Delimiter(char),
     Identifier,
     Int,
@@ -81,20 +83,12 @@ impl PeekResult {
 /// `RecValue`/`RecStruct` text parser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecIoError {
-    pub source_name: Option<String>,
-    pub line: Option<usize>,
-    pub message: String,
+    pub(crate) source_name: Option<String>,
+    pub(crate) line: Option<usize>,
+    pub(crate) message: String,
 }
 
 impl RecIoError {
-    pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            source_name: None,
-            line: None,
-            message: message.into(),
-        }
-    }
-
     pub fn with_location(
         source_name: Option<String>,
         line: Option<usize>,
@@ -131,8 +125,7 @@ pub trait emRecReader {
     /// type of the next syntactical element without consuming it.
     fn TryPeekNext(&mut self) -> Result<PeekResult, RecIoError>;
 
-    /// `char emRecReader::TryReadDelimiter()` — consume and return the next
-    /// element as a delimiter character.
+    /// `char emRecReader::TryReadDelimiter()`.
     fn TryReadDelimiter(&mut self) -> Result<char, RecIoError>;
 
     /// `void emRecReader::TryReadCertainDelimiter(char delimiter)` — consume
@@ -152,13 +145,11 @@ pub trait emRecReader {
     /// targets), per the pixel-arithmetic fidelity rule.
     fn TryReadInt(&mut self) -> Result<i32, RecIoError>;
 
-    /// `double emRecReader::TryReadDouble()` — consume and return the next
-    /// element as a double.
+    /// `double emRecReader::TryReadDouble()`.
     fn TryReadDouble(&mut self) -> Result<f64, RecIoError>;
 
-    /// `const char * emRecReader::TryReadQuoted()` — consume and return the
-    /// next element as an unquoted string (owned `String` in Rust, same
-    /// idiom note as `TryReadIdentifier`).
+    /// `const char * emRecReader::TryReadQuoted()` — owned `String` in Rust,
+    /// same idiom note as `TryReadIdentifier`.
     fn TryReadQuoted(&mut self) -> Result<String, RecIoError>;
 
     /// `void emRecReader::ThrowElemError(const char *text) const` —
@@ -205,19 +196,19 @@ mod tests {
             unimplemented!()
         }
         fn ThrowElemError(&self, text: &str) -> RecIoError {
-            RecIoError::new(text)
+            RecIoError::with_location(None, None, text)
         }
         fn ThrowSyntaxError(&self) -> RecIoError {
             self.ThrowElemError("syntax error")
         }
     }
 
-    fn _assert_dyn_safe(_r: &mut dyn emRecReader) {}
+    fn assert_dyn_safe(_r: &mut dyn emRecReader) {}
 
     #[test]
     fn trait_is_dyn_safe_and_method_list_compiles() {
         let mut d = DummyReader;
-        _assert_dyn_safe(&mut d);
+        assert_dyn_safe(&mut d);
         // Exercise the default-to-error helpers (safe — no unimplemented!()).
         let err = d.ThrowSyntaxError();
         assert_eq!(err.message, "syntax error");
@@ -247,7 +238,7 @@ mod tests {
         assert_eq!(format!("{}", e), "foo.rec: bad");
         let e = RecIoError::with_location(None, Some(7), "bad");
         assert_eq!(format!("{}", e), "line 7: bad");
-        let e = RecIoError::new("bad");
+        let e = RecIoError::with_location(None, None, "bad");
         assert_eq!(format!("{}", e), "bad");
     }
 }
