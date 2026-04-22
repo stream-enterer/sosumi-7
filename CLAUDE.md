@@ -7,7 +7,7 @@ A zoomable UI framework — reimplementation of Eagle Mode's emCore in Rust.
 eaglemode-rs is an **observational port** of emCore. From a user's seat — visible behavior, event order, timing, signals, focus, input, pixel output — Rust and C++ must be indistinguishable. Not "same output": same what-fires-when, same what-is-true-at-each-observable-moment.
 
 **Authority order** (higher wins):
-1. C++ source — ground truth for behavior, algorithms, and design. Eagle Mode 0.96.4 at `~/git/eaglemode-0.96.4/` (headers in `include/emCore/`, implementation in `src/emCore/`).
+1. C++ source — ground truth for behavior, algorithms, and design. Eagle Mode 0.96.4 at `~/Projects/eaglemode-0.96.4/` (headers in `include/emCore/`, implementation in `src/emCore/`).
 2. Golden tests — the mechanical arbiter of observable equivalence.
 3. Rust idiom — applies only below the observable surface, and only where C++ structure is not load-bearing.
 4. LLM judgment / convenience — lowest. Never outranks the above.
