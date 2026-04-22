@@ -18,6 +18,7 @@ pub mod emClipboard;
 pub mod emColor;
 pub mod emColorField;
 pub mod emColorFieldFieldPanel;
+pub mod emColorRec;
 pub mod emColorX11Colors;
 pub mod emConfigModel;
 pub mod emContext;
