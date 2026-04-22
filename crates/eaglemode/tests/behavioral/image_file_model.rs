@@ -296,3 +296,34 @@ fn image_model_loads_asynchronously_via_engine() {
         "GetImage() should be Some after load"
     );
 }
+
+#[test]
+fn image_model_fails_for_nonexistent_path() {
+    let mut sched = EngineScheduler::new();
+    let model = {
+        let root_ctx = emcore::emContext::emContext::NewRoot();
+        let mut fw_actions: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+        let pa: Rc<RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
+        let mut ctx = emcore::emEngineCtx::InitCtx {
+            scheduler: &mut sched,
+            framework_actions: &mut fw_actions,
+            root_context: &root_ctx,
+            pending_actions: &pa,
+        };
+        emImageFileModel::register(&mut ctx, std::path::PathBuf::from("/nonexistent/no.tga"))
+    };
+
+    assert!(
+        matches!(model.borrow().state(), FileState::Loading { .. }),
+        "expected Loading before slice"
+    );
+
+    do_slice(&mut sched);
+
+    assert!(
+        matches!(model.borrow().state(), FileState::LoadError(_)),
+        "expected LoadError after slice for nonexistent path, got {:?}",
+        model.borrow().state()
+    );
+}
