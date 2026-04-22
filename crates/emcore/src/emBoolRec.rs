@@ -9,6 +9,8 @@
 use crate::emEngineCtx::{ConstructCtx, SchedCtx};
 use crate::emRec::emRec;
 use crate::emRecNode::emRecNode;
+use crate::emRecReader::{emRecReader, ElementType, RecIoError};
+use crate::emRecWriter::emRecWriter;
 use crate::emSignal::SignalId;
 
 pub struct emBoolRec {
@@ -17,7 +19,8 @@ pub struct emBoolRec {
     signal: SignalId,
     /// Reified aggregate-signal chain; see ADR 2026-04-21-phase-4b-listener-tree-adr.md.
     aggregate_signals: Vec<SignalId>,
-    // TODO(phase-4b+): SetToDefault, IsSetToDefault, TryStartReading, serialization hooks per emRec.h.
+    // TODO(phase-4d+): SetToDefault, IsSetToDefault per emRec.h:322-330;
+    // high-level save/load wrapping deferred to Phase 4d Task 6 or later.
 }
 
 impl emBoolRec {
@@ -29,6 +32,64 @@ impl emBoolRec {
             signal: ctx.create_signal(),
             aggregate_signals: Vec::new(),
         }
+    }
+
+    /// Port of C++ `emBoolRec::TryStartWriting` (emRec.cpp:369-372).
+    ///
+    // DIVERGED: name — C++ splits persistence into the protected virtual
+    // pair `TryStartWriting` + `TryContinueWriting` that the `emRecWriter`
+    // base-class driver calls in turn. For atomic types (bool, int, double,
+    // string) the Start step writes the value and the Continue step
+    // immediately returns `true`; the two phases only matter for compound
+    // types that want to yield. Rust collapses the pair into one
+    // synchronous `TryWrite` — the scheduler is cooperative at a coarser
+    // granularity, so incremental yielding inside a single rec write is
+    // unnecessary. Compound types introduced in later Phase 4d tasks may
+    // revisit this decision.
+    pub fn TryWrite(&self, writer: &mut dyn emRecWriter) -> Result<(), RecIoError> {
+        writer.TryWriteIdentifier(if self.value { "yes" } else { "no" })
+    }
+
+    /// Port of C++ `emBoolRec::TryStartReading` (emRec.cpp:334-355).
+    ///
+    // DIVERGED: name + fusion with TryContinueReading; see `TryWrite` above
+    // for the rationale. The C++ method mutates through `Set(…)`, which is
+    // `emBoolRec::Set` (emRec.cpp:306-312) — it skips the fire-and-mutate
+    // step when the new value equals the old. Rust routes through
+    // `SetValue` on the `emRec<bool>` trait which preserves that contract.
+    pub fn TryRead(
+        &mut self,
+        reader: &mut dyn emRecReader,
+        ctx: &mut SchedCtx<'_>,
+    ) -> Result<(), RecIoError> {
+        if reader.TryPeekNext()?.element_type() == ElementType::Int {
+            let i = reader.TryReadInt()?;
+            match i {
+                1 => self.SetValue(true, ctx),
+                0 => self.SetValue(false, ctx),
+                _ => return Err(reader.ThrowSyntaxError()),
+            }
+        } else {
+            let idf = reader.TryReadIdentifier()?;
+            // C++ uses `strcasecmp` — ASCII-only by the identifier lexer
+            // contract (`[A-Za-z_][A-Za-z0-9_]*`), so
+            // `eq_ignore_ascii_case` is an exact match.
+            let value = if idf.eq_ignore_ascii_case("yes")
+                || idf.eq_ignore_ascii_case("y")
+                || idf.eq_ignore_ascii_case("true")
+            {
+                true
+            } else if idf.eq_ignore_ascii_case("no")
+                || idf.eq_ignore_ascii_case("n")
+                || idf.eq_ignore_ascii_case("false")
+            {
+                false
+            } else {
+                return Err(reader.ThrowSyntaxError());
+            };
+            self.SetValue(value, ctx);
+        }
+        Ok(())
     }
 }
 

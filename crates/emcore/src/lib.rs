@@ -83,6 +83,8 @@ pub mod emRasterLayout;
 pub mod emRec;
 pub mod emRecFileModel;
 pub mod emRecListener;
+pub mod emRecMemReader;
+pub mod emRecMemWriter;
 pub mod emRecNode;
 pub mod emRecParser;
 pub mod emRecReader;
