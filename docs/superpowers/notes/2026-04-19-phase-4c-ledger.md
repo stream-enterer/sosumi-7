@@ -21,3 +21,4 @@ Pre-commit hook remains active throughout Phase 4c.
 ## Task log
 
 - **Task 1** (sha fc6566cf) — retrofit aggregate_signals on 8 primitives. +16 tests (fire + no-op per primitive). `register_aggregate` placed on `emRecNode` trait (not `emRec<T>`) — generic-free + dyn-compatible so compounds can forward via `&mut dyn emRecNode`.
+- **Task 1 fixup** (sha 63146184) — corrected DIVERGED citation across 8 files from `emRec.cpp:245` (wrong — inside `SetListenedRec`) to `emRec.h:243 inline + emRec.cpp:217 (ChildChanged)`. Dropped vestigial mid-edit comment in emIntRec no-op test. Code-review issue #1 (Important).
