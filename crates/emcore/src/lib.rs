@@ -3,6 +3,7 @@
 
 pub mod emATMatrix;
 pub mod emAlignment;
+pub mod emAlignmentRec;
 pub mod emArray;
 pub mod emAvlTreeMap;
 pub mod emAvlTreeSet;
