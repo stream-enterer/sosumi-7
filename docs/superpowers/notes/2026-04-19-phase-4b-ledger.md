@@ -14,6 +14,16 @@
 
 Pre-Task-1 audit found legacy `emAlignmentRec` and `emColorRec` in `crates/emcore/src/emRecRecTypes.rs` with three production consumers (`emVirtualCosmos`, `emBookmarks`, `emFileManTheme`) plus generated kani harnesses. These conflict with adding canonical files at the same logical names. Migration deferred to **Phase 4b'** (`docs/superpowers/plans/2026-04-21-port-rewrite-phase-4b-prime-color-alignment-rec.md`); Phase 4b plan revised in commit `713b5743`. Phase 4b now ships: `emFlagsRec` (Task 1), `emStructRec` (Task 4), `emUnionRec` (Task 5), `emTArrayRec<T>` (Task 6), gate (Task 7).
 
+## Phase 4 family renumber (2026-04-21)
+
+To remove the collision between my newly-carved compound-types plan and the pre-existing persistence/config plans, the Phase 4 family now executes as: **4a → 4b → 4b.1 → 4c → 4d → 4e**. Renames in the same commit as scope amendment #2:
+- Phase 4b' (Color/AlignmentRec migration) → Phase 4b.1 (decimal-subphase, matching project convention).
+- Pre-existing Phase 4c (emRec persistence IO) → Phase 4d.
+- Pre-existing Phase 4d (emCoreConfig migration; closes E026 + E027) → Phase 4e.
+- New Phase 4c slot now holds the carved-out structural compounds (emStructRec, emUnionRec, emArrayRec, emTArrayRec).
+
+Canonical execution chain documented at `docs/superpowers/plans/2026-04-21-port-rewrite-phase-4-overview.md`. Future agents must consult that overview before resuming work in the Phase 4 series.
+
 ## Scope amendment #2 (2026-04-21, post-Task-1)
 
 Pre-Task-4 C++ audit (`emRec.h:36-246`, `:930-1006`) found the original Task 4 sketch ("struct owns children + dedicated `aggregate_signal`") contradicts the C++ design: aggregate change propagates via the `emRecNode` parent-pointer listener tree (`UpperNode` + `IsListener` + `ChildChanged` virtuals), not via owned-children forwarding. Phase 4a's closeout already anticipated this: *"Landing parent pointers will retroactively change observable behavior at every currently-isolated SchedCtx fire site — capture as a Phase 4b invariant."*

@@ -11,7 +11,7 @@
 - `emRec.h:1038-1100` (`emUnionRec`).
 - `emRec.h:1271+` (`emTArrayRec<T>`) — note this is a template extending `emArrayRec`, not directly `emRec`.
 
-**JSON entries closed:** none yet (E026 persistence at Phase 4d).
+**JSON entries closed:** none yet. Persistence stack ships at Phase 4d; E026 and E027 close at Phase 4e (the emCoreConfig migration that consumes the full stack).
 
 **Phase-specific invariants (C4):**
 - **I4c-1.** Files `emStructRec.rs`, `emUnionRec.rs`, `emArrayRec.rs`, `emTArrayRec.rs` exist with concrete impls. (`emArrayRec` is the dynamic-size base; `emTArrayRec<T>` parameterizes over element type per `emRec.h:1271`.)

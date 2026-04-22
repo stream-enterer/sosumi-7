@@ -1,4 +1,4 @@
-# Phase 4b' — emColorRec / emAlignmentRec Migration — Implementation Plan
+# Phase 4b.1 — emColorRec / emAlignmentRec Migration — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans.
 
@@ -18,16 +18,16 @@ The no-backcompat-shims rule (CLAUDE.md feedback) forbids parking a "legacy" nam
 
 **Companion:** spec §7 D7.1 (continued from Phase 4b). C++ reference: `emRec.h:735` (`emAlignmentRec`), `emRec.h:864` (`emColorRec`), `emRec.cpp:920` ff., `emStd1.h:478` (`typedef emByte emAlignment`).
 
-**JSON entries closed:** none (E026 still at Phase 4d).
+**JSON entries closed:** none (E026 still at Phase 4e).
 
 **Phase-specific invariants (C4):**
-- **I4b'-1.** Files `emAlignmentRec.rs` and `emColorRec.rs` exist in `crates/emcore/src/` with concrete `impl emRec<…>`.
-- **I4b'-2.** `crates/emcore/src/emAlignment.rs` exists, holding a Rust port of C++ `emAlignment` (newtype around `u8`, with const `EM_ALIGN_*` discriminants and the bitwise OR/AND idioms preserved). `emAlignmentToString`/`emStringToAlignment` (`emStd1.h:483-485`) ported alongside.
-- **I4b'-3.** Signal-fire + no-fire-on-no-change tests for both, parallel to Phase 4a primitives.
-- **I4b'-4.** All three production consumers compile and pass against the new types; no `emRecRecTypes::emAlignmentRec` or `emRecRecTypes::emColorRec` references remain anywhere in `crates/`.
-- **I4b'-5.** Legacy `emAlignmentRec` and `emColorRec` stub-types removed from `emRecRecTypes.rs`. `RecListenerList` may stay if other types still use it; if it becomes unused, remove it too.
-- **I4b'-6.** `proofs_generated.rs` regenerated against the new `emColorRec` (or, if regeneration is out-of-band, the old harnesses are deleted and a tracking note added — verify with the user before deleting kani coverage).
-- **I4b'-7.** No golden regressions.
+- **I4b1-1.** Files `emAlignmentRec.rs` and `emColorRec.rs` exist in `crates/emcore/src/` with concrete `impl emRec<…>`.
+- **I4b1-2.** `crates/emcore/src/emAlignment.rs` exists, holding a Rust port of C++ `emAlignment` (newtype around `u8`, with const `EM_ALIGN_*` discriminants and the bitwise OR/AND idioms preserved). `emAlignmentToString`/`emStringToAlignment` (`emStd1.h:483-485`) ported alongside.
+- **I4b1-3.** Signal-fire + no-fire-on-no-change tests for both, parallel to Phase 4a primitives.
+- **I4b1-4.** All three production consumers compile and pass against the new types; no `emRecRecTypes::emAlignmentRec` or `emRecRecTypes::emColorRec` references remain anywhere in `crates/`.
+- **I4b1-5.** Legacy `emAlignmentRec` and `emColorRec` stub-types removed from `emRecRecTypes.rs`. `RecListenerList` may stay if other types still use it; if it becomes unused, remove it too.
+- **I4b1-6.** `proofs_generated.rs` regenerated against the new `emColorRec` (or, if regeneration is out-of-band, the old harnesses are deleted and a tracking note added — verify with the user before deleting kani coverage).
+- **I4b1-7.** No golden regressions.
 
 **Entry-precondition.** Phase 4b Closeout COMPLETE.
 
@@ -35,7 +35,7 @@ The no-backcompat-shims rule (CLAUDE.md feedback) forbids parking a "legacy" nam
 
 ## Bootstrap
 
-Run B1–B12 with `<N>` = `4b-prime`. **B11a:** scan this plan — Tasks 1–4 each end with their own commit, no stage-only tasks, **skip B11a**.
+Run B1–B12 with `<N>` = `4b-1`. **B11a:** scan this plan — Tasks 1–4 each end with their own commit, no stage-only tasks, **skip B11a**.
 
 ---
 
@@ -66,7 +66,7 @@ Run B1–B12 with `<N>` = `4b-prime`. **B11a:** scan this plan — Tasks 1–4 e
 
 **Step 4:** Commit:
 ```
-phase-4b-prime: port emAlignment u8 typedef + string conversions
+phase-4b-1: port emAlignment u8 typedef + string conversions
 ```
 
 ## Task 2: `emAlignmentRec`
@@ -83,11 +83,11 @@ Parallel to `emBoolRec`. Value type `emColor`. Adds the `have_alpha: bool` field
 - Constructors now take `&mut C: ConstructCtx`.
 - Mutation now takes `&mut SchedCtx`.
 - Listener registration replaced with signal observation via the standard `WidgetCallback` / engine-level `Observe(signal)` pattern (consult Phase 3 widget code for the canonical adoption shape).
-- For consumers that currently re-serialize via `ToRecStruct` / `FromRecStruct`, the persistence path is **NOT** ported in 4b' — those call sites must be temporarily routed through a stopgap. Acceptable stopgap: keep the read/write paths against the parser API by retaining the *free functions* in `emRecRecTypes.rs` (operating on `emColor` and `emAlignment` directly, not on the legacy rec types) until persistence lands at Phase 4d.
+- For consumers that currently re-serialize via `ToRecStruct` / `FromRecStruct`, the persistence path is **NOT** ported in 4b.1 — those call sites must be temporarily routed through a stopgap. Acceptable stopgap: keep the read/write paths against the parser API by retaining the *free functions* in `emRecRecTypes.rs` (operating on `emColor` and `emAlignment` directly, not on the legacy rec types) until persistence lands at Phase 4e.
 
 **Step 2:** Decide kani harness fate with the user. Options:
 - (a) Regenerate `proofs_generated.rs` from the new `emColorRec` (preferred if the kani generator is in tree and runnable).
-- (b) Delete affected harnesses + record a tracking item to regenerate at Phase 4d.
+- (b) Delete affected harnesses + record a tracking item to regenerate at Phase 4e.
 
 **Step 3:** Delete legacy `emAlignmentRec` and `emColorRec` from `emRecRecTypes.rs`. Run `rg "emRecRecTypes::em(Alignment|Color)Rec\b"` — must return empty.
 
@@ -95,18 +95,18 @@ Parallel to `emBoolRec`. Value type `emColor`. Adds the `have_alpha: bool` field
 
 **Step 5:** Commit:
 ```
-phase-4b-prime: migrate consumers; delete legacy Color/AlignmentRec
+phase-4b-1: migrate consumers; delete legacy Color/AlignmentRec
 ```
 
 ---
 
 ## Closeout
 
-Run C1–C11 with `<N>` = `4b-prime`. No JSON entries close yet.
+Run C1–C11 with `<N>` = `4b-1`. No JSON entries close yet.
 
 ---
 
 ## Open questions for the executor
 
-- **Persistence stopgap shape.** Task 4 Step 1's "free functions on `emColor`/`emAlignment`" stopgap is a structural choice that bridges Phase 4b' and Phase 4d. Confirm at Bootstrap that no better option emerged from Phase 4b's experience.
+- **Persistence stopgap shape.** Task 4 Step 1's "free functions on `emColor`/`emAlignment`" stopgap is a structural choice that bridges Phase 4b.1 and Phase 4e. Confirm at Bootstrap that no better option emerged from Phase 4b.1's experience.
 - **Kani regeneration tooling.** Confirm whether `tests/kani/` has a regeneration script in tree before committing to option (a) above.

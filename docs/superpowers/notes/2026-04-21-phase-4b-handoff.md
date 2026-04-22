@@ -4,7 +4,7 @@ Paste the block below into a fresh session.
 
 ---
 
-You are resuming the eaglemode-rs port-ownership rewrite at **Phase 4b — emRec compound types**.
+You are resuming the eaglemode-rs port-ownership rewrite at **Phase 4b — emRec listener tree + emFlagsRec (revised 2026-04-21; see Phase 4 overview note)**.
 
 ## State at handoff
 
@@ -26,7 +26,7 @@ You are resuming the eaglemode-rs port-ownership rewrite at **Phase 4b — emRec
 - `SetToDefault`, `IsSetToDefault`, `TryStartReading`, serialization hooks on all 5 primitives.
 - Parent wiring on all 5 concretes (`parent() -> None` currently). Landing parent pointers will retroactively change observable behavior at every currently-isolated `SchedCtx` fire site — capture as a Phase 4b invariant.
 - `emEnumRec._identifiers` field has a leading underscore to suppress dead-code lint; **drop the underscore the moment `GetIdentifier(index)` lands** or the accessor will read a misnamed field silently.
-- JSON entries E026 (persistence) + E027 (compound types) remain open; close at Phase 4d gate.
+- JSON entries E026 (persistence) + E027 (compound types) remain open; close at Phase 4e gate (renumbered 2026-04-21; see docs/superpowers/plans/2026-04-21-port-rewrite-phase-4-overview.md).
 
 ## How to proceed
 

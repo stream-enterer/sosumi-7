@@ -5,7 +5,7 @@
 **Goal (revised 2026-04-21).** Wire the C++ `emRecNode` listener tree (parent pointers, `IsListener`, `ChildChanged`, `Changed`, `BeTheParentOf`) onto the Phase 4a primitives, plus port `emRecListener`. Ship `emFlagsRec` (atomic compound — does not need the listener tree) as part of the same phase. Compound types that NEED the listener tree (`emStructRec`, `emUnionRec`, `emTArrayRec<T>`) move to **Phase 4c**.
 
 > **Scope amendment (2026-04-21).** This plan was originally titled "emRec Compound Types" and bundled six concrete types (Tasks 1–6). Pre-execution analysis reclassified the work:
-> - **Tasks 2 (emAlignmentRec) and 3 (emColorRec)** were deferred to **Phase 4b'** (`docs/superpowers/plans/2026-04-21-port-rewrite-phase-4b-prime-color-alignment-rec.md`) because legacy parser-era counterparts already live in `crates/emcore/src/emRecRecTypes.rs` with three production consumers, requiring a focused migration phase.
+> - **Tasks 2 (emAlignmentRec) and 3 (emColorRec)** were deferred to **Phase 4b.1** (`docs/superpowers/plans/2026-04-21-port-rewrite-phase-4b-1-color-alignment-rec.md`) because legacy parser-era counterparts already live in `crates/emcore/src/emRecRecTypes.rs` with three production consumers, requiring a focused migration phase.
 > - **Tasks 4–6 (emStructRec, emUnionRec, emTArrayRec\<T\>)** were deferred to **Phase 4c** (`docs/superpowers/plans/2026-04-21-port-rewrite-phase-4c-emrec-compound-types.md`) once it became clear that the original sketch (struct owns children + dedicated `aggregate_signal`) contradicted the C++ design (`emRec.h:36-246`, `emRec.h:930-1006`): C++ propagates aggregate change via a parent-pointer listener tree (`emRecNode::UpperNode` + `ChildChanged` virtual), not via owned-children forwarding. Building the compound types correctly requires the listener-tree mechanism to exist first. Phase 4a's closeout note already anticipated this: *"Landing parent pointers will retroactively change observable behavior at every currently-isolated SchedCtx fire site — capture as a Phase 4b invariant."*
 >
 > Phase 4b therefore now ships:
@@ -17,7 +17,7 @@
 
 **Companion:** spec §7 D7.1 (continued). C++ reference: `emRec.h:36-246` (`emRecNode`, `emRec`, `emRecListener` declarations) and `emRec.cpp:120-280` (their implementations, especially `BeTheParentOf` at :195, `IsListener`/`ChildChanged` at :211/:217, `emRecListener::SetListenedRec` at :241).
 
-**JSON entries closed:** none (E026 still at Phase 4d, E027 still at Phase 4d).
+**JSON entries closed:** none (E026 closes at Phase 4e, E027 closes at Phase 4e).
 
 **Phase-specific invariants (C4):**
 - **I4b-1.** `crates/emcore/src/emRecListener.rs` exists with the `emRecListener` struct + `OnRecChanged` virtual hook (Rust expression: trait method or `Box<dyn Fn>` closure — see Task 0 brainstorm output).
@@ -190,8 +190,8 @@ git commit -m "phase-4b: gate green, invariants verified"
 
 ## Closeout
 
-Run C1–C11 with `<N>` = `4b`. No JSON entries close yet (E026/E027 land at Phase 4d).
+Run C1–C11 with `<N>` = `4b`. No JSON entries close yet (E026/E027 land at Phase 4e).
 
-Update Phase 4b' (Color/AlignmentRec migration) to inherit the listener-tree wiring from this phase — its `emColorRec.rs` and `emAlignmentRec.rs` files will use the parent-aware ctor pattern from Task 3.
+Update Phase 4b.1 (Color/AlignmentRec migration) to inherit the listener-tree wiring from this phase — its `emColorRec.rs` and `emAlignmentRec.rs` files will use the parent-aware ctor pattern from Task 3.
 
 Update Phase 4c plan header to confirm: emStructRec, emUnionRec, emTArrayRec build on the now-existing listener tree; their internal `aggregate_signal` is no longer in the plan — aggregate observation works via attached emRecListeners.
