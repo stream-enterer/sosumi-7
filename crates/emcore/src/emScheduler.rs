@@ -249,6 +249,20 @@ impl EngineScheduler {
         self.inner.pending_signals.retain(|&s| s != id);
     }
 
+    /// Clear the pending-signal queue without firing the signals.
+    ///
+    /// Sets `pending = false` on every queued signal then empties the queue.
+    /// Intended for test teardown when compound records have allocated internal
+    /// signals with no external handle. Not for production use.
+    pub fn abort_all_pending(&mut self) {
+        for &id in &self.inner.pending_signals {
+            if let Some(sig) = self.inner.signals.get_mut(id) {
+                sig.pending = false;
+            }
+        }
+        self.inner.pending_signals.clear();
+    }
+
     /// Remove a signal entirely.
     pub fn remove_signal(&mut self, id: SignalId) {
         self.inner.remove_signal_inner(id);
@@ -1430,5 +1444,19 @@ mod tests {
         s.remove_engine(e1);
         s.remove_engine(e2);
         s.remove_engine(e3);
+    }
+
+    #[test]
+    fn abort_all_pending_clears_queue_and_allows_clean_drop() {
+        let mut sched = EngineScheduler::new();
+        let s1 = sched.create_signal();
+        let s2 = sched.create_signal();
+        sched.fire(s1);
+        sched.fire(s2);
+        // abort_all_pending does not exist yet — test will fail to compile.
+        sched.abort_all_pending();
+        sched.remove_signal(s1);
+        sched.remove_signal(s2);
+        // sched drops here — pending_signals empty, no assertion fires.
     }
 }
