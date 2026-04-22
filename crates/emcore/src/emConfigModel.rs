@@ -10,6 +10,16 @@ use crate::emRecRecord::Record;
 /// Tracks a dirty flag for unsaved changes. `load()` reads from disk,
 /// `save()` writes to disk. `load_or_install()` handles first-run by
 /// creating a default config file if none exists.
+///
+/// TODO(phase-4d-followup): retire this type in favour of
+/// `emRecNodeConfigModel<T: emRecNode>` (see `emRecNodeConfigModel.rs`).
+/// Migrate callers (emView, emWindowStateSaver, emCoreConfigPanel,
+/// emMainConfig, emBookmarks, emAutoplay, emFileManConfig,
+/// emFileManTheme, emCoreConfig, emFileLinkModel, emStocksFileModel)
+/// one-by-one, then delete this file + its companion `emRecRecord`
+/// `Record` trait + the legacy `emRecParser::parse_rec`/`write_rec`
+/// tree parser. Blocked until every caller is ported; Phase 4e starts
+/// with emCoreConfig.
 pub struct emConfigModel<T: Record> {
     value: T,
     path: PathBuf,

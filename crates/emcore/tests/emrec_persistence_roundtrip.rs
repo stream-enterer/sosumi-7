@@ -609,6 +609,11 @@ fn union_rec_roundtrip() {
     // Compound types allocate many internal signals (one per child per
     // variant switch) that the test has no handle to; leak the Fixture
     // to suppress the scheduler-drop pending-signals assert.
+    //
+    // TODO(phase-4d-followup): replace with `SchedCtx::drain_pending()`
+    // or `scheduler.abort_all()` once a helper exists; `mem::forget` is
+    // a test-plumbing shortcut, not a production leak (verified by Task
+    // 3 review — SetVariant/SetCount drop the owning Boxes correctly).
     std::mem::forget(u);
     std::mem::forget(u2);
     std::mem::forget(fx);
@@ -652,6 +657,8 @@ fn array_rec_roundtrip() {
     arr2.TryWrite(&mut w2).unwrap();
     assert_eq!(w2.into_bytes(), bytes);
 
+    // TODO(phase-4d-followup): see union_rec_roundtrip above for the
+    // `SchedCtx::drain_pending()` replacement rationale.
     std::mem::forget(arr);
     std::mem::forget(arr2);
     std::mem::forget(fx);

@@ -273,7 +273,7 @@ fn license_vcitem_loads_from_cpp_fixture() {
 /// C++ uses `.10434` (no leading zero in emDoubleRec::TryWrite output) and
 /// integer-triplet color emission `{153 153 136}` where the source file
 /// used short-hex `"#998"`. Those format-level re-serialization differences
-/// are a known follow-up (TODO phase-4d-followup: byte-stable emit that
+/// are a known follow-up (TODO(phase-4d-followup): byte-stable emit that
 /// preserves the input's numeric and color spelling).
 #[test]
 fn license_vcitem_round_trips_field_values_through_writer() {
