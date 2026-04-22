@@ -140,8 +140,7 @@ impl emCoreConfig {
             let root_ctx = ctx.GetRootContext();
             let mut actions: Vec<DeferredAction> = Vec::new();
             let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
-            let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> =
-                Rc::new(RefCell::new(Vec::new()));
+            let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
             let mut sc = SchedCtx {
                 scheduler: &mut priv_sched,
                 framework_actions: &mut actions,
@@ -151,20 +150,17 @@ impl emCoreConfig {
                 pending_actions: &pa,
             };
 
-            let path =
-                emGetInstallPath(InstallDirType::UserConfig, "emCore", Some("config.rec"))
-                    .unwrap_or_else(|_| {
-                        let home =
-                            std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-                        std::path::PathBuf::from(home)
-                            .join(".eaglemode-rs")
-                            .join("emCore")
-                            .join("config.rec")
-                    });
+            let path = emGetInstallPath(InstallDirType::UserConfig, "emCore", Some("config.rec"))
+                .unwrap_or_else(|_| {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+                    std::path::PathBuf::from(home)
+                        .join(".eaglemode-rs")
+                        .join("emCore")
+                        .join("config.rec")
+                });
 
-            let mut model =
-                emRecNodeConfigModel::new(Self::new(&mut sc), path, &mut sc)
-                    .with_format_name("emCoreConfig");
+            let mut model = emRecNodeConfigModel::new(Self::new(&mut sc), path, &mut sc)
+                .with_format_name("emCoreConfig");
             if let Err(e) = model.TryLoadOrInstall(&mut sc) {
                 log::warn!("CoreConfig: failed to load or install config: {e}");
             }
@@ -249,27 +245,32 @@ impl emRecNode for emCoreConfig {
 
     fn TryWrite(&self, writer: &mut dyn emRecWriter) -> Result<(), RecIoError> {
         let members = self.inner.member_identifiers();
-        emStructRec::try_write_body(&members, writer, |_| true, |idx, w| match idx {
-            0 => self.StickMouseWhenNavigating.TryWrite(w),
-            1 => self.EmulateMiddleButton.TryWrite(w),
-            2 => self.PanFunction.TryWrite(w),
-            3 => self.MouseZoomSpeed.TryWrite(w),
-            4 => self.MouseScrollSpeed.TryWrite(w),
-            5 => self.MouseWheelZoomSpeed.TryWrite(w),
-            6 => self.MouseWheelZoomAcceleration.TryWrite(w),
-            7 => self.KeyboardZoomSpeed.TryWrite(w),
-            8 => self.KeyboardScrollSpeed.TryWrite(w),
-            9 => self.KineticZoomingAndScrolling.TryWrite(w),
-            10 => self.MagnetismRadius.TryWrite(w),
-            11 => self.MagnetismSpeed.TryWrite(w),
-            12 => self.VisitSpeed.TryWrite(w),
-            13 => self.MaxMegabytesPerView.TryWrite(w),
-            14 => self.MaxRenderThreads.TryWrite(w),
-            15 => self.AllowSIMD.TryWrite(w),
-            16 => self.DownscaleQuality.TryWrite(w),
-            17 => self.UpscaleQuality.TryWrite(w),
-            _ => unreachable!(),
-        })
+        emStructRec::try_write_body(
+            &members,
+            writer,
+            |_| true,
+            |idx, w| match idx {
+                0 => self.StickMouseWhenNavigating.TryWrite(w),
+                1 => self.EmulateMiddleButton.TryWrite(w),
+                2 => self.PanFunction.TryWrite(w),
+                3 => self.MouseZoomSpeed.TryWrite(w),
+                4 => self.MouseScrollSpeed.TryWrite(w),
+                5 => self.MouseWheelZoomSpeed.TryWrite(w),
+                6 => self.MouseWheelZoomAcceleration.TryWrite(w),
+                7 => self.KeyboardZoomSpeed.TryWrite(w),
+                8 => self.KeyboardScrollSpeed.TryWrite(w),
+                9 => self.KineticZoomingAndScrolling.TryWrite(w),
+                10 => self.MagnetismRadius.TryWrite(w),
+                11 => self.MagnetismSpeed.TryWrite(w),
+                12 => self.VisitSpeed.TryWrite(w),
+                13 => self.MaxMegabytesPerView.TryWrite(w),
+                14 => self.MaxRenderThreads.TryWrite(w),
+                15 => self.AllowSIMD.TryWrite(w),
+                16 => self.DownscaleQuality.TryWrite(w),
+                17 => self.UpscaleQuality.TryWrite(w),
+                _ => unreachable!(),
+            },
+        )
     }
 }
 
@@ -372,7 +373,10 @@ mod tests {
 
         let config = emCoreConfig::new(&mut sc);
         assert_eq!(config.inner.GetCount(), 18);
-        assert_eq!(config.inner.GetIdentifierOf(0), Some("StickMouseWhenNavigating"));
+        assert_eq!(
+            config.inner.GetIdentifierOf(0),
+            Some("StickMouseWhenNavigating")
+        );
         assert_eq!(config.inner.GetIdentifierOf(17), Some("UpscaleQuality"));
     }
 
@@ -391,8 +395,14 @@ mod tests {
 
         assert!(!sc.is_signaled(sig));
         config.VisitSpeed.SetValue(0.5, &mut sc);
-        assert!(sc.is_signaled(sig), "VisitSpeed::SetValue must fire the field signal");
-        assert!(sc.is_signaled(agg), "SetValue must propagate to the struct aggregate signal");
+        assert!(
+            sc.is_signaled(sig),
+            "VisitSpeed::SetValue must fire the field signal"
+        );
+        assert!(
+            sc.is_signaled(agg),
+            "SetValue must propagate to the struct aggregate signal"
+        );
         assert_eq!(*config.VisitSpeed.GetValue(), 0.5);
 
         // Clean up: abort pending then remove all config signals.

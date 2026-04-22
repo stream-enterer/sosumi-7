@@ -451,8 +451,9 @@ impl PainterModel {
             pending_actions: &pa,
         };
 
-        let mut model_cfg = emRecNodeConfigModel::new(emCoreConfig::new(&mut sc), config_path, &mut sc)
-            .with_format_name("emCoreConfig");
+        let mut model_cfg =
+            emRecNodeConfigModel::new(emCoreConfig::new(&mut sc), config_path, &mut sc)
+                .with_format_name("emCoreConfig");
         let result = if model_cfg.TryLoadOrInstall(&mut sc).is_ok() {
             Self::from_core_config(model_cfg.GetRec())
         } else {

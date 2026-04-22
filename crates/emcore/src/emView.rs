@@ -589,8 +589,11 @@ pub struct emView {
 
     /// Port of C++ `emView.h:664` — `emRef<emCoreConfig> CoreConfig`.
     /// Acquired at construction (`emView.cpp:35`).
-    pub CoreConfig:
-        Rc<RefCell<crate::emRecNodeConfigModel::emRecNodeConfigModel<crate::emCoreConfig::emCoreConfig>>>,
+    pub CoreConfig: Rc<
+        RefCell<
+            crate::emRecNodeConfigModel::emRecNodeConfigModel<crate::emCoreConfig::emCoreConfig>,
+        >,
+    >,
 
     // === C++ emView::NoticeList (emView.h:707) ===
     /// Head of the notice-delivery ring.

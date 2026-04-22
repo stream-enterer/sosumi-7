@@ -5,9 +5,9 @@ use bitflags::bitflags;
 
 use crate::emImage::emImage;
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
-use crate::emRec::emRec;
 use crate::emInputState::emInputState;
 use crate::emPanelTree::{PanelId, PanelTree};
+use crate::emRec::emRec;
 use crate::emRenderThreadPool::emRenderThreadPool;
 use crate::emSignal::SignalId;
 use crate::emView::emView;
@@ -219,7 +219,12 @@ impl emWindow {
         let w = materialized.surface_config.width;
         let h = materialized.surface_config.height;
         let view = emView::new(parent_context, root_panel, w as f64, h as f64);
-        let max_render_threads = *view.CoreConfig.borrow().GetRec().MaxRenderThreads.GetValue() as i32;
+        let max_render_threads = *view
+            .CoreConfig
+            .borrow()
+            .GetRec()
+            .MaxRenderThreads
+            .GetValue() as i32;
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
             {
@@ -360,7 +365,12 @@ impl emWindow {
         // `SetViewPosSize` before materialization.
         let mut view = emView::new(parent_context, root_panel, 1.0, 1.0);
         view.SetBackgroundColor(background_color);
-        let max_render_threads = *view.CoreConfig.borrow().GetRec().MaxRenderThreads.GetValue() as i32;
+        let max_render_threads = *view
+            .CoreConfig
+            .borrow()
+            .GetRec()
+            .MaxRenderThreads
+            .GetValue() as i32;
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
             {
@@ -437,7 +447,12 @@ impl emWindow {
         let root_panel = tree.create_root("dialog_root", false);
         let mut view = emView::new(parent_context, root_panel, 1.0, 1.0);
         view.SetBackgroundColor(background_color);
-        let max_render_threads = *view.CoreConfig.borrow().GetRec().MaxRenderThreads.GetValue() as i32;
+        let max_render_threads = *view
+            .CoreConfig
+            .borrow()
+            .GetRec()
+            .MaxRenderThreads
+            .GetValue() as i32;
 
         let vif_chain: Vec<Box<dyn emViewInputFilter>> = vec![
             {

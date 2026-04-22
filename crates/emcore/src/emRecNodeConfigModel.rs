@@ -343,10 +343,8 @@ mod tests {
         let mut windows = HashMap::new();
         let root = emContext::NewRoot();
         let mut actions: Vec<DeferredAction> = Vec::new();
-        let mut pending_inputs: Vec<(
-            winit::window::WindowId,
-            crate::emInput::emInputEvent,
-        )> = Vec::new();
+        let mut pending_inputs: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> =
+            Vec::new();
         let mut input_state = crate::emInputState::emInputState::new();
         let fc: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
         let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
@@ -494,8 +492,8 @@ mod tests {
 
         {
             let cfg = MiniConfig::new(&mut sc);
-            let mut model =
-                emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("MiniConfig");
+            let mut model = emRecNodeConfigModel::new(cfg, path.clone(), &mut sc)
+                .with_format_name("MiniConfig");
             model.TryLoadOrInstall(&mut sc).unwrap();
             model.modify(
                 |cfg, ctx| {
@@ -511,8 +509,8 @@ mod tests {
 
         {
             let cfg = MiniConfig::new(&mut sc);
-            let mut model =
-                emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("MiniConfig");
+            let mut model = emRecNodeConfigModel::new(cfg, path.clone(), &mut sc)
+                .with_format_name("MiniConfig");
             model.TryLoadOrInstall(&mut sc).unwrap();
             assert_eq!(*model.GetRec().count.GetValue(), -123);
             assert!(*model.GetRec().enabled.GetValue());
@@ -561,7 +559,10 @@ mod tests {
             &mut sc,
         );
         model.GetRecMut().count.SetValue(42, &mut sc);
-        assert!(!model.IsUnsaved(), "dirty not yet set before scheduler cycle");
+        assert!(
+            !model.IsUnsaved(),
+            "dirty not yet set before scheduler cycle"
+        );
         let _ = sc;
         run_slice(&mut sched);
         assert!(model.IsUnsaved(), "dirty must be set after scheduler cycle");

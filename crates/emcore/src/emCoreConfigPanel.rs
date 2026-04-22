@@ -2,13 +2,13 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::emCoreConfig::emCoreConfig;
-use crate::emRec::emRec;
-use crate::emRecNodeConfigModel::emRecNodeConfigModel;
 use crate::emEngineCtx::PanelCtx;
 use crate::emLinearLayout::emLinearLayout;
 use crate::emPainter::emPainter;
 use crate::emPanel::{PanelBehavior, PanelState};
 use crate::emRasterLayout::emRasterLayout;
+use crate::emRec::emRec;
+use crate::emRecNodeConfigModel::emRecNodeConfigModel;
 use crate::emTiling::{AlignmentH, AlignmentV, ChildConstraint, Spacing};
 
 use super::emBorder::{emBorder, InnerBorderType, OuterBorderType};
@@ -332,7 +332,10 @@ impl MouseMiscGroup {
         stick.on_check = Some(Box::new(
             move |checked, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                 let mut cm = config.borrow_mut();
-                cm.modify(|c, sc| c.StickMouseWhenNavigating.SetValue(checked, sc), sched);
+                cm.modify(
+                    |c, sc| c.StickMouseWhenNavigating.SetValue(checked, sc),
+                    sched,
+                );
                 let _ = cm.TrySave(false);
             },
         ));
@@ -476,7 +479,10 @@ impl KineticGroup {
             move |val, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                 let cfg_val = factor_val_to_cfg(val, 0.25, 2.0);
                 let mut cm = config.borrow_mut();
-                cm.modify(|c, sc| c.KineticZoomingAndScrolling.SetValue(cfg_val, sc), sched);
+                cm.modify(
+                    |c, sc| c.KineticZoomingAndScrolling.SetValue(cfg_val, sc),
+                    sched,
+                );
                 let _ = cm.TrySave(false);
             },
         ));
@@ -1303,7 +1309,10 @@ impl MouseGroup {
             move |val, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
                 let cfg_val = factor_val_to_cfg(val, 0.25, 2.0);
                 let mut cm = config.borrow_mut();
-                cm.modify(|c, sc| c.MouseWheelZoomAcceleration.SetValue(cfg_val, sc), sched);
+                cm.modify(
+                    |c, sc| c.MouseWheelZoomAcceleration.SetValue(cfg_val, sc),
+                    sched,
+                );
                 let _ = cm.TrySave(false);
             },
         ));

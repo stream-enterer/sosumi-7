@@ -95,8 +95,8 @@ fn round_trip_all_fields() {
         // Drain pending signals fired by SetValue.
         sc.scheduler.abort_all_pending();
 
-        let mut model = emRecNodeConfigModel::new(cfg, path.clone(), &mut sc)
-            .with_format_name("emCoreConfig");
+        let mut model =
+            emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("emCoreConfig");
         model.TrySave(true).unwrap();
         model.detach(&mut sc);
     }
@@ -104,8 +104,8 @@ fn round_trip_all_fields() {
     // Read back and verify.
     {
         let cfg2 = emCoreConfig::new(&mut sc);
-        let mut model2 = emRecNodeConfigModel::new(cfg2, path.clone(), &mut sc)
-            .with_format_name("emCoreConfig");
+        let mut model2 =
+            emRecNodeConfigModel::new(cfg2, path.clone(), &mut sc).with_format_name("emCoreConfig");
         model2.TryLoad(&mut sc).unwrap();
         // Drain pending signals fired by TryRead's SetValue calls.
         sc.scheduler.abort_all_pending();
@@ -158,8 +158,8 @@ fn out_of_range_double_fields_rejected() {
     .unwrap();
 
     let cfg = emCoreConfig::new(&mut sc);
-    let mut model = emRecNodeConfigModel::new(cfg, path.clone(), &mut sc)
-        .with_format_name("emCoreConfig");
+    let mut model =
+        emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("emCoreConfig");
     // emDoubleRec::TryRead returns Err("Number too large.") for values above max.
     assert!(
         model.TryLoad(&mut sc).is_err(),
@@ -192,8 +192,8 @@ fn out_of_range_int_fields_rejected() {
     .unwrap();
 
     let cfg = emCoreConfig::new(&mut sc);
-    let mut model = emRecNodeConfigModel::new(cfg, path.clone(), &mut sc)
-        .with_format_name("emCoreConfig");
+    let mut model =
+        emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("emCoreConfig");
     assert!(
         model.TryLoad(&mut sc).is_err(),
         "out-of-range int should be rejected"
@@ -219,8 +219,8 @@ fn missing_fields_use_defaults() {
     std::fs::write(&path, b"#%rec:emCoreConfig%#\n\n{\n}\n").unwrap();
 
     let cfg = emCoreConfig::new(&mut sc);
-    let mut model = emRecNodeConfigModel::new(cfg, path.clone(), &mut sc)
-        .with_format_name("emCoreConfig");
+    let mut model =
+        emRecNodeConfigModel::new(cfg, path.clone(), &mut sc).with_format_name("emCoreConfig");
     model.TryLoad(&mut sc).unwrap();
     let c = model.GetRec();
     // All fields must remain at their C++ defaults.
