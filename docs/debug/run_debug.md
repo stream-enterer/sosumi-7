@@ -2,6 +2,8 @@
 
 This file is the prompt for a ralph-loop debugging pass. It is read and executed by an LLM agent. It is not documentation for humans.
 
+**Skill usage:** The only skill invoked in this harness is `superpowers:systematic-debugging` at Step 4. Do not invoke any other skill at any point.
+
 ---
 
 ## How to Start a Debug Run
