@@ -552,15 +552,24 @@ impl PanelBehavior for emSubViewPanel {
         if !state.viewed {
             return;
         }
-        // C++ emSubViewPanel::Paint (src/emCore/emSubViewPanel.cpp:94) just
-        // delegates to SubViewPort->PaintView. No settlement inside Paint —
-        // sub-view settlement happens across frames via the outer scheduler's
-        // priority-queue dispatch of `PanelScope::SubView` engines.
-        let base_offset = painter.origin();
+        // C++ emSubViewPanel::Paint (src/emCore/emSubViewPanel.cpp:94-115):
+        //   Creates a new emPainter with scale=1.0, origin shifted by
+        //   -(GetViewedX, GetViewedY), then calls SubViewPort->PaintView()
+        //   which delegates to CurrentView->Paint (emView::Paint).
+        //
+        // emView::Paint starts from supreme_viewed_panel (not necessarily the
+        // root panel). At high zoom the SVP descends to a child panel; starting
+        // from root would call paint_panel_recursive on a node with viewed=false
+        // which returns immediately, producing a black frame.
+        //
+        // Reset scale to 1.0 (outer paint_panel_recursive has set it to the
+        // sub-panel's virtual scale). origin is already correct: the outer
+        // painter's origin encodes the sub-view's position on screen, matching
+        // C++'s painter.GetOriginX()-GetViewedX().
+        let (ox, oy) = painter.origin();
+        painter.SetTransformation(ox, oy, 1.0, 1.0);
         let bg = self.sub_view.GetBackgroundColor();
-        let root = self.sub_root();
-        self.sub_view
-            .paint_sub_tree(&mut self.sub_tree, painter, root, base_offset, bg);
+        self.sub_view.Paint(&mut self.sub_tree, painter, bg);
     }
 
     fn GetCursor(&self) -> emCursor {
