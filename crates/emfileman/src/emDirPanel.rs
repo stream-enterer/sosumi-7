@@ -318,11 +318,16 @@ impl PanelBehavior for emDirPanel {
                     match dm.try_start_loading() {
                         Ok(()) => {
                             dm.state = emcore::emFileModel::FileState::Loading { progress: 0.0 };
+                            // drop dm before accessing file_panel: both share the same
+                            // RefCell<emDirModel>, so holding borrow_mut() while
+                            // clear_custom_error() calls borrow() would panic.
+                            drop(dm);
                             self.loading_done = false;
                             self.loading_error = None;
                             self.file_panel.clear_custom_error();
                         }
                         Err(e) => {
+                            drop(dm);
                             self.loading_error = Some(e.clone());
                             self.file_panel.set_custom_error(&e);
                         }
@@ -334,8 +339,8 @@ impl PanelBehavior for emDirPanel {
                         dm.state = emcore::emFileModel::FileState::Loaded;
                         dm.quit_loading();
                         self.loading_done = true;
-                        self.file_panel.clear_custom_error();
                         drop(dm);
+                        self.file_panel.clear_custom_error();
                         self.update_children(ctx);
                         changed = true;
                     }
@@ -346,6 +351,7 @@ impl PanelBehavior for emDirPanel {
                         changed = true;
                     }
                     Err(e) => {
+                        drop(dm);
                         self.loading_error = Some(e.clone());
                         self.file_panel.set_custom_error(&e);
                         changed = true;
@@ -583,6 +589,52 @@ mod tests {
             panel.file_panel.GetVirFileState(),
             VirtualFileState::NoFileModel,
             "file_panel must be Waiting after model acquired, not NoFileModel"
+        );
+    }
+
+    #[test]
+    fn cycle_waiting_to_loading_advances_vir_state() {
+        // Regression: emDirPanel::Cycle called clear_custom_error() while
+        // dm (RefMut<emDirModel>) was still live. Since file_panel.model and
+        // dir_model share the same Rc<RefCell<emDirModel>>, compute_vir_file_state
+        // tried borrow() on the same RefCell that held borrow_mut() → panic.
+        // Fix: drop(dm) before any file_panel.* calls. This test verifies the
+        // Waiting→Loading transition completes without panic and the VirtualFileState
+        // advances from Waiting to Loading.
+        use emcore::emFileModel::{FileModelState, FileState};
+        use emcore::emFilePanel::VirtualFileState;
+
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let dm_rc = emDirModel::Acquire(&ctx, "/tmp");
+
+        let mut panel = emDirPanel::new(Rc::clone(&ctx), "/tmp".to_string());
+        panel.file_panel.SetFileModel(Some(
+            Rc::clone(&dm_rc) as Rc<RefCell<dyn FileModelState>>,
+        ));
+        panel.dir_model = Some(Rc::clone(&dm_rc));
+
+        // Execute the Waiting→Loading transition exactly as Cycle does it
+        // after the fix (drop dm before file_panel ops).
+        {
+            let mut dm = dm_rc.borrow_mut();
+            assert!(
+                matches!(dm.get_file_state(), FileState::Waiting),
+                "model must start in Waiting state"
+            );
+            dm.try_start_loading().expect("/tmp must be readable");
+            dm.state = FileState::Loading { progress: 0.0 };
+        } // dm dropped here — borrow_mut released
+        panel.loading_done = false;
+        panel.loading_error = None;
+        panel.file_panel.clear_custom_error(); // would panic before fix
+        panel.file_panel.refresh_vir_file_state();
+
+        assert!(
+            matches!(
+                panel.file_panel.GetVirFileState(),
+                VirtualFileState::Loading { .. }
+            ),
+            "VirtualFileState must advance to Loading after Waiting→Loading transition"
         );
     }
 
