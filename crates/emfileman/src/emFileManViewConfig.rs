@@ -383,7 +383,10 @@ impl emFileManViewConfig {
                     c.GetAutosave(),
                 )
             };
-            let theme = emFileManTheme::Acquire(ctx, if tn.is_empty() { "default" } else { &tn });
+            // Port of C++ emFileManViewConfig constructor line 278:
+            // Theme=emFileManTheme::Acquire(GetRootContext(),ThemeName)
+            // ThemeName is already validated by emFileManConfig::Acquire.
+            let theme = emFileManTheme::Acquire(ctx, &tn);
             Self {
                 ctx: Rc::clone(ctx),
                 config,
@@ -631,6 +634,29 @@ mod tests {
         let e2 = emDirEntry::from_path("/dev/null");
         let cmp = CompareDirEntries(&e1, &e2, &cfg);
         assert_eq!(cmp, 0); // same file = same size
+    }
+
+    #[test]
+    fn theme_has_nonzero_dir_content_dimensions() {
+        // Regression: emFileManConfig was falling back to a nonexistent "default"
+        // theme, leaving DirContentW/H at 0.0 and making directory listings
+        // invisible. emFileManConfig must validate ThemeName against available
+        // themes and fall back to GetDefaultThemeName() (= "Glass1").
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let vc = emFileManViewConfig::Acquire(&ctx);
+        let vc = vc.borrow();
+        let theme = vc.GetTheme();
+        let rec = theme.GetRec();
+        assert!(
+            rec.DirContentW > 0.0,
+            "DirContentW must be non-zero; theme likely failed to load (got {})",
+            rec.DirContentW
+        );
+        assert!(
+            rec.DirContentH > 0.0,
+            "DirContentH must be non-zero; theme likely failed to load (got {})",
+            rec.DirContentH
+        );
     }
 
     #[test]

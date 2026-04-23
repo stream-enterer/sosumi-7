@@ -9,6 +9,8 @@ use emcore::emRecRecord::Record;
 use emcore::emSignal::SignalId;
 use slotmap::Key as _;
 
+use crate::emFileManThemeNames::emFileManThemeNames;
+
 /// DIVERGED: (language-forced) C++ uses anonymous enum constants inside `emFileManConfig`.
 /// Rust uses a standalone enum for type safety.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,6 +177,25 @@ impl emFileManConfig {
                     e
                 );
             }
+
+            // Port of C++ emFileManConfig constructor lines 75-79:
+            // if (!themeNames->IsExistingThemeName(ThemeName.Get())) {
+            //     ThemeName=themeNames->GetDefaultThemeName();
+            //     Save();
+            // }
+            let theme_names = emFileManThemeNames::Acquire(ctx);
+            let theme_names = theme_names.borrow();
+            if !theme_names.IsExistingThemeName(config_model.GetRec().theme_name.as_str()) {
+                let default_name = theme_names.GetDefaultThemeName();
+                config_model.modify(|d| d.theme_name = default_name);
+                if let Err(e) = config_model.Save() {
+                    log::warn!(
+                        "emFileManConfig::Acquire: Save after theme fallback failed: {}",
+                        e
+                    );
+                }
+            }
+
             Self { config_model }
         })
     }
