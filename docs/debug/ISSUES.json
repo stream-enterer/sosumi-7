@@ -1,0 +1,142 @@
+{
+  "schema": {
+    "note": "This file is read and edited exclusively by LLMs. All fields documented here are always present on every entry of the matching kind — null when unknown or not yet applicable. Never omit a field that belongs to a kind's shape. Some fields are only non-null in specific statuses — see status_semantics for which fields apply to which statuses.",
+    "universal_fields": {
+      "id":                   "string — F### for fix, D### for design, P### for perf. Zero-padded to three digits. ID prefix reflects kind at time of filing; if kind is reclassified, the ID prefix does not change (reclassification is recorded in fix_note).",
+      "kind":                 "fix | design | perf. fix: agent can autonomously investigate and resolve. design: requires human architectural or planning decisions before a fix can be written — out of scope for the debug harness. perf: measurement-driven, requires a separate protocol. Issues are filed as fix by default; the debug harness reclassifies to design if investigation reveals the fix requires human decisions (see run_debug.md).",
+      "status":               "open | investigating | root-cause-found | needs-design | blocked | needs-manual-verification | closed. See status_semantics for meaning of each value.",
+      "priority":             "high | medium | low",
+      "title":                "string — one line, plain English",
+      "description":          "string — what is observed to be wrong and why it matters. Updated by the debug harness if investigation reveals a more precise understanding.",
+      "location":             "string? — code address: file:line or subsystem name. null when not yet pinpointed.",
+      "caused_by":            "string? — issue ID this is a direct downstream consequence of. null if independent.",
+      "introduced_commit":    "string? — full or short git SHA where this was introduced. null if unknown.",
+      "introduced_date":      "string? — ISO 8601 (YYYY-MM-DD) when first observed or committed. null if unknown.",
+      "fix_note":             "string? — current best understanding of fix direction or design requirement. Updated by the debug harness as investigation progresses. For design issues: describes what human decision is required. null if not yet investigated.",
+      "investigation_file":   "string? — path to active investigation scratchpad, e.g. docs/debug/investigations/F001.md. Set when investigation begins; cleared (set to null) when issue is closed.",
+      "root_cause_file":      "string? — path to final root-cause narrative, e.g. docs/debug/investigations/F001-root-cause.md. Set when root cause is confirmed; never cleared.",
+      "blocked_question":     "string? — the specific question a human must answer before investigation can continue. Only non-null when status is blocked. Human recovery: answer the question in fix_note and set status back to investigating.",
+      "fixed_in_commit":      "string? — git SHA of the commit that resolved this issue. null until closed.",
+      "fixed_date":           "string? — ISO 8601 date the fix landed. null until closed."
+    },
+    "status_semantics": {
+      "open":                      "Not yet touched by the debug harness.",
+      "investigating":             "Active or paused investigation. Scratchpad exists at investigation_file. Resumable by the harness.",
+      "root-cause-found":          "An agent (possibly from a prior run) concluded the root cause is known. This is a belief, not a verified fact. A resuming agent should read root_cause_file and verify the diagnosis before committing to fix mode. If the fix attempt fails, downgrade back to investigating. Scratchpad and root_cause_file are both populated.",
+      "needs-design":              "Investigation revealed the fix requires human architectural or planning decisions — the agent cannot autonomously resolve this. fix_note describes what the design session must decide. kind has been updated to design. Human recovery: run a brainstorming or planning session, then either set kind back to fix and status to investigating if a concrete fix emerges, or leave as design.",
+      "blocked":                   "Investigation stalled: 3+ distinct hypotheses ruled out with evidence, cannot proceed without human input. blocked_question states what the human must answer. Human recovery: answer in fix_note and set status to investigating.",
+      "needs-manual-verification": "A fix has been committed and tests pass, but the issue requires human runtime confirmation (e.g. UI/input behaviour not covered by cargo-nextest). Human recovery: if runtime check confirms fix, set status to closed. If fix did not work, set status back to investigating and clear fixed_in_commit/fixed_date.",
+      "closed":                    "Resolved and verified. fixed_in_commit and fixed_date are populated."
+    },
+    "kind_specific_fields": {
+      "fix": {
+        "repro": "string? — reproduction steps. null if not yet documented."
+      },
+      "design": {
+        "repro": "string? — reproduction steps or description of the undesired behaviour that motivated filing. null if not applicable.",
+        "details": {
+          "audit_source": "string? — original E### ID from docs/superpowers/notes/2026-04-19-port-divergence-raw-material.json if this issue originated from the port divergence audit. null otherwise."
+        }
+      },
+      "perf": {
+        "repro": "string? — reproduction steps. null if not yet documented.",
+        "details": {
+          "metric":    "string? — what is measured, e.g. frame_time_ms, paint_throughput_mpx_per_sec. null if not yet defined.",
+          "observed":  "string? — measured value at time of filing. null if not yet measured.",
+          "target":    "string? — threshold or C++ baseline this should meet. null if not yet defined.",
+          "benchmark": "string? — command to reproduce the measurement. null if not yet written."
+        }
+      }
+    }
+  },
+  "issues": [
+    {
+      "id": "D001",
+      "kind": "design",
+      "status": "open",
+      "priority": "high",
+      "title": "Rc<RefCell<EngineScheduler>> — crosscutting architectural divergence",
+      "description": "C++ emGUIFramework owns the scheduler directly; engines reach it via a raw pointer threaded through Cycle/EngineCtx. Rust uses Rc<RefCell<EngineScheduler>> introduced pre-Port-Ideology (2026-03-04), unannotated. All 12 B01 workarounds (pending queues, try_borrow guards, SchedOp variants) are downstream consequences.",
+      "location": "crates/emcore/src/emGUIFramework.rs:89",
+      "caused_by": null,
+      "introduced_commit": "78c113b",
+      "introduced_date": "2026-03-04",
+      "fix_note": "Requires architectural design decision: choose among three alternatives documented in docs/superpowers/notes/2026-04-19-scheduler-refcell-workaround-ledger.md §6 — (1) event loop owns &mut EngineScheduler threaded through Cycle/EngineCtx, (2) interior sharding, (3) other. Design session required before implementation.",
+      "investigation_file": null,
+      "root_cause_file": null,
+      "blocked_question": null,
+      "fixed_in_commit": null,
+      "fixed_date": null,
+      "repro": null,
+      "details": {
+        "audit_source": "E002"
+      }
+    },
+    {
+      "id": "D002",
+      "kind": "design",
+      "status": "open",
+      "priority": "low",
+      "title": "try_borrow re-entrancy guard in SVPUpdSlice throttle",
+      "description": "C++ reads GetTimeSliceCounter() inline with no guard. Rust SVPUpdSlice::DoTimeSlice reads the scheduler's time-slice counter via scheduler.try_borrow().ok() with a cached-field fallback because plain borrow() panics re-entrantly inside DoTimeSlice. Exists only because of D001.",
+      "location": "crates/emcore/src/emView.rs:2082-2095",
+      "caused_by": "D001",
+      "introduced_commit": null,
+      "introduced_date": "2026-04-18",
+      "fix_note": "Resolves automatically when D001 is resolved — direct &mut access eliminates the re-entrancy. No independent design work required.",
+      "investigation_file": null,
+      "root_cause_file": null,
+      "blocked_question": null,
+      "fixed_in_commit": null,
+      "fixed_date": null,
+      "repro": null,
+      "details": {
+        "audit_source": "E009"
+      }
+    },
+    {
+      "id": "F001",
+      "kind": "fix",
+      "status": "open",
+      "priority": "medium",
+      "title": "Tabbing out and back in disables zoom",
+      "description": "After losing and regaining window focus (Alt+Tab), scroll-wheel zoom stops working. Zoom was functional before the focus round-trip. Suspected cause: input state or VIF state not reset/restored correctly on WindowEvent::Focused transitions.",
+      "location": "crates/emcore/src/emGUIFramework.rs — Focused event handler; crates/emcore/src/emView.rs — SetFocused",
+      "caused_by": null,
+      "introduced_commit": null,
+      "introduced_date": "2026-04-23",
+      "fix_note": "Not yet investigated. Need runtime instrumentation at focus-change boundary (emGUIFramework::Focused handler, emView::SetFocused, emInputState, VIF chain).",
+      "investigation_file": null,
+      "root_cause_file": null,
+      "blocked_question": null,
+      "fixed_in_commit": null,
+      "fixed_date": null,
+      "repro": "Launch app. Scroll-wheel zoom in/out to confirm it works. Alt+Tab away. Alt+Tab back. Attempt scroll-wheel zoom — broken."
+    },
+    {
+      "id": "P001",
+      "kind": "perf",
+      "status": "open",
+      "priority": "medium",
+      "title": "Zoom is choppy",
+      "description": "Scroll-wheel zoom feels choppy compared to the expected smooth spring animation. Likely a frame-rate or animation-step issue, but root cause not yet investigated.",
+      "location": null,
+      "caused_by": null,
+      "introduced_commit": null,
+      "introduced_date": "2026-04-23",
+      "fix_note": null,
+      "investigation_file": null,
+      "root_cause_file": null,
+      "blocked_question": null,
+      "fixed_in_commit": null,
+      "fixed_date": null,
+      "repro": "Launch app. Scroll wheel to zoom in or out. Motion is choppy rather than smooth.",
+      "details": {
+        "metric": null,
+        "observed": null,
+        "target": null,
+        "benchmark": null
+      }
+    }
+  ]
+}
