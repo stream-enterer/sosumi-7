@@ -1,4 +1,4 @@
 #%rec:emFileLink%#
 
-Path="~"
+BasePathType="home"
 HaveDirEntry=yes
