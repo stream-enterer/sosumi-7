@@ -1,7 +1,9 @@
 fn main() {
-    // Set RPATH to $ORIGIN so the binary finds plugin .so files
-    // in the same directory (target/debug/ or target/release/).
-    // This supplements .cargo/config.toml's LD_LIBRARY_PATH which
-    // only applies to cargo-invoked commands.
-    println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
+    // $ORIGIN        — finds .so files next to the binary (target/{profile}/).
+    // $ORIGIN/deps   — finds plugin cdylibs where cargo places them when they
+    //                  are listed as [dependencies] (target/{profile}/deps/).
+    //                  Both paths are needed: workspace builds copy the final .so
+    //                  to the profile root, but per-package builds (cargo run -p)
+    //                  leave them only in deps/.
+    println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN:$ORIGIN/deps");
 }

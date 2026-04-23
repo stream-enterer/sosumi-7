@@ -11,11 +11,15 @@ workspace = true
 emcore = { workspace = true }
 emmain = { path = "../emmain" }
 winit = { workspace = true }
+# Plugin cdylibs. Each plugin crate must be listed here so cargo builds it
+# for all profiles (including --release). The binary finds the .so at runtime
+# via RUNPATH=$ORIGIN:$ORIGIN/deps (set in build.rs). When adding a new plugin
+# crate, add it here.
+emfileman = { path = "../emfileman" }
+emstocks = { path = "../emstocks" }
 
 [dev-dependencies]
 emcore = { workspace = true, features = ["test-support"] }
-emfileman = { path = "../emfileman" }
-emstocks = { path = "../emstocks" }
 rand = { workspace = true }
 slotmap = { workspace = true }
 criterion = { workspace = true }

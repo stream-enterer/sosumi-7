@@ -135,21 +135,21 @@
     {
       "id": "F008",
       "kind": "fix",
-      "status": "open",
+      "status": "needs-manual-verification",
       "priority": "high",
       "title": "All app panels fail to load: dlopen error on libemFileMan.so",
-      "description": "Every app panel inside the cosmos (File System, Home, emStocks) fails to load with the error: \"failed to load library 'libemFileMan.so': dlopen failed\". This affects all panels that depend on native plugin libraries. Suspected cause: the plugin loader is broken and cannot locate or open shared libraries at runtime.",
-      "location": null,
+      "description": "Every app panel inside the cosmos (File System, Home, emStocks) fails to load with the error: \"failed to load library 'libemFileMan.so': dlopen failed\". Root cause: plugin crates were [dev-dependencies] only, so cargo never built their cdylibs for release; RUNPATH also only covered target/release/ not target/release/deps/ where cargo places cdylib deps.",
+      "location": "crates/eaglemode/Cargo.toml and crates/eaglemode/build.rs",
       "caused_by": null,
       "introduced_commit": null,
       "introduced_date": "2026-04-23",
-      "fix_note": null,
-      "investigation_file": null,
+      "fix_note": "Moved emfileman and emstocks from [dev-dependencies] to [dependencies] in eaglemode/Cargo.toml. Extended RUNPATH in build.rs from $ORIGIN to $ORIGIN:$ORIGIN/deps. New plugins follow same convention: add to [dependencies].",
+      "investigation_file": "docs/debug/investigations/F008.md",
       "root_cause_file": null,
       "blocked_question": null,
       "fixed_in_commit": null,
       "fixed_date": null,
-      "repro": "Launch app. Navigate into the cosmos. Click any app panel (File System, Home, emStocks). Observe error: \"failed to load library 'libemFileMan.so': dlopen failed\"."
+      "repro": "Launch app (release profile). Navigate into the cosmos. Click any app panel (File System, Home, emStocks). Observe error: \"failed to load library 'libemFileMan.so': dlopen failed\"."
     },
     {
       "id": "F007",
