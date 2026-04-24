@@ -2129,9 +2129,13 @@ impl PanelTree {
             std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
         >,
     ) -> Option<PanelId> {
+        eprintln!(
+            "[F013] create_control_panel_in: id={id:?} target_parent={parent_arg:?} name={name}"
+        );
         let mut cur = id;
         loop {
             if let Some(mut behavior) = self.take_behavior(cur) {
+                eprintln!("[F013]   walking panel={cur:?}");
                 let mut ctx = PanelCtx::with_sched_reach(
                     target_tree,
                     parent_arg,
@@ -2141,6 +2145,10 @@ impl PanelTree {
                     root_context,
                     framework_clipboard,
                     pending_actions,
+                );
+                eprintln!(
+                    "[F013]   ctx.as_sched_ctx().is_some() = {}",
+                    ctx.as_sched_ctx().is_some()
                 );
                 let result = behavior.CreateControlPanel(&mut ctx, name);
                 self.put_behavior(cur, behavior);
