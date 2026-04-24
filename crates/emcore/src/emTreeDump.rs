@@ -10,8 +10,11 @@
 
 #![allow(non_snake_case)]
 
+use crate::emContext::emContext;
 use crate::emPanelTree::{PanelId, PanelTree};
 use crate::emRecParser::{RecStruct, RecValue};
+use crate::emView::{emView, ViewFlags};
+use crate::emWindow::{emWindow, WindowFlags};
 
 /// C++ `emTreeDumpRec::FrameType` (include/emTreeDump/emTreeDumpRec.h).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -290,6 +293,211 @@ pub fn dump_panel(
     }
     set_children(&mut rec, children);
 
+    rec
+}
+
+/// Full emView branch. Mirrors C++ `emTreeDumpFromObject`'s emView cascade
+/// at `src/emTreeDump/emTreeDumpUtil.cpp:144-215`. Caller-owned `tree` is
+/// required so the root-panel recursion can re-enter `dump_panel`.
+///
+/// `window_focused` is threaded through to `dump_panel` for its
+/// update-priority/memory-limit calculations; callers without a window
+/// should pass `view.IsFocused()` (best-effort proxy — matches what
+/// `emView` itself uses when there's no containing window).
+///
+/// Visibility is `pub` pending wiring to real consumers (the `td!`
+/// cheat / `emCtrlSocket` `dump`) — see `dump_panel` for rationale.
+pub fn dump_view(view: &emView, tree: &mut PanelTree, window_focused: bool) -> RecStruct {
+    // --- Context-branch fields (C++ emView IS-A emContext). ---
+    // The C++ cascade for a View first runs the Context branch (lines
+    // 109-142) which emits Common/Private Models, *then* the View branch.
+    // In Rust, emView holds an Rc<emContext> — access it via GetContext.
+    let ctx = view.GetContext();
+    let common = ctx.common_model_count();
+
+    // --- Build Text body in C++ order. ---
+    let mut text = String::new();
+
+    // Context fields first (C++ cascade order). Private-model count is
+    // UPSTREAM-GAP: Rust's emContext does not track per-context
+    // `emModel`-like private instances the same way C++ does (no unified
+    // model base type; see emContext.rs). Emit `0 (not listed)` to keep
+    // the dump format stable for cross-implementation diff.
+    text.push_str(&format!("\nCommon Models: {}", common));
+    text.push_str("\nPrivate Models: 0 (not listed)");
+
+    // View flags.
+    text.push_str("\nView Flags: ");
+    text.push_str(&fmt_view_flags(view.flags));
+    text.push_str(&format!("\nTitle: {}", view.title));
+    text.push_str(&format!("\nFocused: {}", yes_no(view.IsFocused())));
+    text.push_str(&format!(
+        "\nActivation Adherent: {}",
+        yes_no(view.IsActivationAdherent())
+    ));
+    text.push_str(&format!("\nPopped Up: {}", yes_no(view.IsPoppedUp())));
+    let bg = view.GetBackgroundColor();
+    // C++ formats Background Color as "0x%08X" of the packed emColor
+    // value; emColor in C++ packs as 0xAABBGGRR in memory but the cast
+    // `(unsigned int)asView->GetBackgroundColor()` yields the raw
+    // packed word. Rust emColor accessors yield channels; pack as
+    // 0xRRGGBBAA for a stable human-readable form (matches the C++
+    // visual intent even if the exact word differs — noted for the
+    // cross-impl diff).
+    let packed = ((bg.GetRed() as u32) << 24)
+        | ((bg.GetGreen() as u32) << 16)
+        | ((bg.GetBlue() as u32) << 8)
+        | (bg.GetAlpha() as u32);
+    text.push_str(&format!("\nBackground Color: 0x{:08X}", packed));
+    text.push_str(&format!(
+        "\nHome XYWH: {}",
+        fmt_xywh(view.HomeX, view.HomeY, view.HomeWidth, view.HomeHeight)
+    ));
+    text.push_str(&format!(
+        "\nCurrent XYWH: {}",
+        fmt_xywh(
+            view.CurrentX,
+            view.CurrentY,
+            view.CurrentWidth,
+            view.CurrentHeight
+        )
+    ));
+
+    // --- Compose rec. ---
+    let style = VisualStyle::view(view.IsFocused());
+    let title = "View (Context):\nemView".to_string();
+    let mut rec = empty_rec(title, text, style);
+
+    // --- Recurse into root panel. ---
+    let root_id = view.GetRootPanel();
+    let focused_id = view.GetFocusedPanel();
+    let current_frame = view.current_frame.get();
+    let view_home_w = view.HomeWidth;
+    let view_home_h = view.HomeHeight;
+    let panel_rec = dump_panel(
+        tree,
+        root_id,
+        current_frame,
+        focused_id,
+        view_home_w,
+        view_home_h,
+        window_focused,
+    );
+    set_children(&mut rec, vec![RecValue::Struct(panel_rec)]);
+    rec
+}
+
+fn fmt_view_flags(flags: ViewFlags) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    if flags.contains(ViewFlags::POPUP_ZOOM) {
+        parts.push("VF_POPUP_ZOOM");
+    }
+    if flags.contains(ViewFlags::ROOT_SAME_TALLNESS) {
+        parts.push("VF_ROOT_SAME_TALLNESS");
+    }
+    if flags.contains(ViewFlags::NO_ZOOM) {
+        parts.push("VF_NO_ZOOM");
+    }
+    if flags.contains(ViewFlags::NO_USER_NAVIGATION) {
+        parts.push("VF_NO_USER_NAVIGATION");
+    }
+    if flags.contains(ViewFlags::NO_FOCUS_HIGHLIGHT) {
+        parts.push("VF_NO_FOCUS_HIGHLIGHT");
+    }
+    if flags.contains(ViewFlags::NO_ACTIVE_HIGHLIGHT) {
+        parts.push("VF_NO_ACTIVE_HIGHLIGHT");
+    }
+    if flags.contains(ViewFlags::EGO_MODE) {
+        parts.push("VF_EGO_MODE");
+    }
+    if flags.contains(ViewFlags::STRESS_TEST) {
+        parts.push("VF_STRESS_TEST");
+    }
+    // NO_SCROLL, NO_NAVIGATE, FULLSCREEN are Rust-only — omit from the
+    // dump so the output matches the C++ VF set exactly. Emitting them
+    // would confuse cross-implementation diff.
+    if parts.is_empty() {
+        "0".to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
+/// emWindow branch. Mirrors C++ `emTreeDumpFromObject`'s emWindow cascade
+/// at `src/emTreeDump/emTreeDumpUtil.cpp:217-244`. In C++ this branch
+/// overlays the View branch (emWindow IS-A emView); here the caller is
+/// expected to have already produced the view rec via `dump_view` and
+/// then apply the window overlay — but in practice the dump emits one
+/// rec per object. This function returns a standalone window rec whose
+/// children should be populated with a single view rec by the caller
+/// (Task 1.7/1.8 wiring).
+///
+/// Visibility is `pub` pending real consumers.
+pub fn dump_window(window: &emWindow) -> RecStruct {
+    let mut text = String::new();
+    text.push_str("\nWindow Flags: ");
+    text.push_str(&fmt_window_flags(window.flags));
+    text.push_str(&format!("\nWMResName: {}", window.GetWMResName()));
+
+    let style = VisualStyle::window();
+    let title = "Window (View, Context):\nemWindow".to_string();
+    let mut rec = empty_rec(title, text, style);
+    set_children(&mut rec, Vec::new());
+    rec
+}
+
+fn fmt_window_flags(flags: WindowFlags) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    if flags.contains(WindowFlags::MODAL) {
+        parts.push("WF_MODAL");
+    }
+    if flags.contains(WindowFlags::UNDECORATED) {
+        parts.push("WF_UNDECORATED");
+    }
+    if flags.contains(WindowFlags::POPUP) {
+        parts.push("WF_POPUP");
+    }
+    if flags.contains(WindowFlags::FULLSCREEN) {
+        parts.push("WF_FULLSCREEN");
+    }
+    // MAXIMIZED and AUTO_DELETE are Rust-only window flags — omit from
+    // the dump so the emitted set matches the C++ WF_* enumeration.
+    if parts.is_empty() {
+        "0".to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
+/// emContext branch. Mirrors C++ `emTreeDumpFromObject`'s emContext
+/// cascade at `src/emTreeDump/emTreeDumpUtil.cpp:109-142`. `is_root`
+/// selects between "Root Context:" and "Context:" titles (C++ uses
+/// `GetParentContext() ? "Context:" : "Root Context:"`).
+///
+/// Child contexts and common models are NOT enumerated here:
+/// - DIVERGED: (upstream-gap-forced) Rust's emContext does not expose a
+///   child-context iterator equivalent to C++ `GetFirstChildContext` /
+///   `GetNextContext`, and its named-model registry yields
+///   `(name, type_info)` pairs (`GetListing`) rather than the
+///   emModel-like trait objects required to recurse into model
+///   sub-records via `emTreeDumpFromObject`. Emit counts only; a
+///   future task can extend this with a listing once the missing
+///   accessors land.
+///
+/// Visibility is `pub` pending real consumers.
+pub fn dump_context(ctx: &emContext, is_root: bool) -> RecStruct {
+    let mut text = String::new();
+    text.push_str(&format!("\nCommon Models: {}", ctx.common_model_count()));
+    text.push_str("\nPrivate Models: 0 (not listed)");
+
+    let style = VisualStyle::context(is_root);
+    let title = if is_root {
+        "Root Context:\nemRootContext".to_string()
+    } else {
+        "Context:\nemContext".to_string()
+    };
+    let mut rec = empty_rec(title, text, style);
+    set_children(&mut rec, Vec::new());
     rec
 }
 
@@ -593,6 +801,123 @@ mod tests {
         }
         names.sort();
         assert_eq!(names, vec!["alpha".to_string(), "beta".to_string()]);
+    }
+
+    // --- dump_view / dump_window / dump_context tests ---
+
+    use crate::emView::emView;
+
+    #[test]
+    fn dump_view_emits_required_labels() {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("root");
+        tree.put_behavior(root, Box::new(NoopBehavior));
+
+        let ctx = crate::emContext::emContext::NewRoot();
+        let view = emView::new(ctx, root, 800.0, 600.0);
+
+        let rec = dump_view(&view, &mut tree, false);
+
+        let title = rec.get_str("Title").expect("Title exists").to_string();
+        assert_eq!(title, "View (Context):\nemView");
+
+        let text = rec.get_str("Text").expect("Text exists").to_string();
+        for label in [
+            "Common Models:",
+            "Private Models: 0 (not listed)",
+            "View Flags:",
+            "Title:",
+            "Focused:",
+            "Activation Adherent:",
+            "Popped Up:",
+            "Background Color:",
+            "Home XYWH:",
+            "Current XYWH:",
+        ] {
+            assert!(text.contains(label), "Text missing `{}`:\n{}", label, text);
+        }
+
+        let children = rec.get_array("Children").expect("Children exists");
+        assert_eq!(children.len(), 1, "view rec must have one (root-panel) child");
+        assert!(matches!(children[0], RecValue::Struct(_)));
+    }
+
+    #[test]
+    fn dump_view_no_flags_emits_zero() {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("root");
+        tree.put_behavior(root, Box::new(NoopBehavior));
+
+        let ctx = crate::emContext::emContext::NewRoot();
+        let view = emView::new(ctx, root, 100.0, 100.0);
+
+        let rec = dump_view(&view, &mut tree, false);
+        let text = rec.get_str("Text").expect("Text").to_string();
+        assert!(
+            text.contains("View Flags: 0"),
+            "empty ViewFlags should render as `0`:\n{}",
+            text
+        );
+    }
+
+    #[test]
+    fn dump_window_emits_flags_and_wmresname() {
+        use crate::emColor::emColor;
+        use crate::emScheduler::EngineScheduler;
+        use crate::emWindow::WindowFlags;
+
+        let ctx = crate::emContext::emContext::NewRoot();
+        let mut scheduler = EngineScheduler::new();
+        let close_sig = scheduler.create_signal();
+        let flags_sig = scheduler.create_signal();
+        let focus_sig = scheduler.create_signal();
+        let geom_sig = scheduler.create_signal();
+
+        let win = crate::emWindow::emWindow::new_popup_pending(
+            ctx,
+            WindowFlags::POPUP | WindowFlags::UNDECORATED,
+            "caption".to_string(),
+            close_sig,
+            flags_sig,
+            focus_sig,
+            geom_sig,
+            emColor::TRANSPARENT,
+        );
+
+        let rec = dump_window(&win);
+
+        let title = rec.get_str("Title").expect("Title").to_string();
+        assert_eq!(title, "Window (View, Context):\nemWindow");
+
+        let text = rec.get_str("Text").expect("Text").to_string();
+        assert!(text.contains("Window Flags:"), "missing `Window Flags:`:\n{}", text);
+        assert!(text.contains("WF_POPUP"), "missing WF_POPUP:\n{}", text);
+        assert!(text.contains("WF_UNDECORATED"), "missing WF_UNDECORATED:\n{}", text);
+        assert!(text.contains("WMResName:"), "missing `WMResName:`:\n{}", text);
+
+        // MAXIMIZED / AUTO_DELETE are Rust-only and must NOT appear.
+        assert!(!text.contains("WF_MAXIMIZED"), "Rust-only flag leaked:\n{}", text);
+        assert!(!text.contains("WF_AUTO_DELETE"), "Rust-only flag leaked:\n{}", text);
+    }
+
+    #[test]
+    fn dump_context_root_vs_child_titles() {
+        let root = crate::emContext::emContext::NewRoot();
+        let child = crate::emContext::emContext::NewChild(&root);
+
+        let root_rec = dump_context(&root, true);
+        let child_rec = dump_context(&child, false);
+
+        assert_eq!(
+            root_rec.get_str("Title"),
+            Some("Root Context:\nemRootContext")
+        );
+        assert_eq!(child_rec.get_str("Title"), Some("Context:\nemContext"));
+
+        // Both should carry Common/Private Models lines.
+        let rtxt = root_rec.get_str("Text").unwrap();
+        assert!(rtxt.contains("Common Models:"));
+        assert!(rtxt.contains("Private Models: 0 (not listed)"));
     }
 
     #[test]
