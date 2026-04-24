@@ -14,7 +14,7 @@ use emMain::emMainControlPanel::emMainControlPanel;
 #[test]
 fn control_panel_layout_children() {
     let ctx = emContext::NewRoot();
-    let mut panel = emMainControlPanel::new(Rc::clone(&ctx), None);
+    let mut panel = emMainControlPanel::new(Rc::clone(&ctx));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("ctrl_root");
@@ -49,7 +49,7 @@ fn control_panel_layout_children() {
 #[test]
 fn control_panel_child_names() {
     let ctx = emContext::NewRoot();
-    let mut panel = emMainControlPanel::new(Rc::clone(&ctx), None);
+    let mut panel = emMainControlPanel::new(Rc::clone(&ctx));
 
     let mut tree = PanelTree::new();
     let root = tree.create_root_deferred_view("ctrl_root");
