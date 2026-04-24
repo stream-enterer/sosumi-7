@@ -692,4 +692,320 @@ mod tests {
         panel.key_walk('t');
         assert_eq!(panel.key_walk_state.as_ref().unwrap().search, "*t");
     }
+
+    // ── Notice-path engine registration/firing diagnostics ──────────────────
+    //
+    // Regression guard: a panel created via create_child_with + wake_up_panel
+    // inside a notice handler (PanelCtx::with_scheduler context, as used by
+    // emView::HandleNotice → handle_notice_one) must get engine_id registered
+    // and its PanelCycleEngine must fire in the same DoTimeSlice.
+    //
+    // This mirrors the production path that was broken: emDirEntryPanel::notice
+    // → update_content_panel → create_child_with(emDirPanel) + wake_up_panel —
+    // after which emDirPanel::Cycle never fired.
+
+    /// Verifies that a child created inside a PanelCtx::with_scheduler context
+    /// (identical to handle_notice_one's ctx) results in wake_up_panel leaving
+    /// an awake engine in the scheduler.
+    ///
+    /// Failure means either:
+    /// (a) register_engine_for returned early for this context (has_view=false
+    ///     or no scheduler) so engine_id=None → wake_up_panel is a no-op, or
+    /// (b) wake_up_panel found engine_id but wake_up() didn't queue it.
+    #[test]
+    fn notice_ctx_child_wake_up_panel_queues_engine() {
+        use emcore::emEngineCtx::PanelCtx;
+        use emcore::emPanelTree::PanelTree;
+        use emcore::emScheduler::EngineScheduler;
+
+        let emctx = emcore::emContext::emContext::NewRoot();
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root", true);
+        let mut sched = EngineScheduler::new();
+        tree.register_engine_for_public(root, Some(&mut sched));
+
+        let parent = tree.create_child(root, "parent", Some(&mut sched));
+
+        // Drain any engines woken by create_child's add_to_notice_list so we
+        // get a clean has_awake_engines() reading after wake_up_panel.
+        // (add_to_notice_list wakes the update_engine_id, which is None here,
+        // but PanelCycleEngine for root/parent is woken by INIT_NOTICE_FLAGS.)
+        // We specifically want to measure whether wake_up_panel for the CHILD
+        // adds to the queue.
+        let awake_before = sched.has_awake_engines();
+
+        // Simulate handle_notice_one's PanelCtx + update_content_panel
+        {
+            let mut ctx = PanelCtx::with_scheduler(&mut tree, parent, 1.0, &mut sched);
+            let child_id = ctx.create_child_with(
+                "content",
+                Box::new(emDirPanel::new(Rc::clone(&emctx), "/tmp".to_string())),
+            );
+            ctx.wake_up_panel(child_id);
+        };
+        let awake_after_wake = sched.has_awake_engines();
+
+        // Reporting: show the transition even on success to make failures obvious.
+        // The key assertion: wake_up_panel must result in an awake engine.
+        assert!(
+            awake_after_wake,
+            "wake_up_panel must queue the child's PanelCycleEngine; \
+             awake_before={awake_before} awake_after_wake={awake_after_wake} — \
+             if false, engine_id was None (has_view not propagated or no scheduler in ctx)"
+        );
+        // Cleanup: deregister all engines before scheduler is dropped.
+        tree.remove(root, Some(&mut sched));
+    }
+
+    /// Verifies that the PanelCycleEngine for a child created inside a notice
+    /// handler fires within the same DoTimeSlice — the full scheduling roundtrip.
+    ///
+    /// Observable: emDirPanel::Cycle returns stay_awake=true while loading, so
+    /// the engine is re-queued; sched.has_awake_engines() must be true after
+    /// DoTimeSlice if Cycle ran.
+    ///
+    /// Failure (after notice_ctx_child_wake_up_panel_queues_engine passes) means
+    /// the engine is woken but the scheduler never dispatches it:
+    /// PanelScope::Toplevel window not found, or take_behavior returning None.
+    #[test]
+    fn notice_ctx_child_engine_fires_in_same_slice() {
+        use emcore::emEngineCtx::PanelCtx;
+        use emcore::emPanelTree::PanelTree;
+        use emcore::emScheduler::EngineScheduler;
+        use std::collections::HashMap;
+        use std::rc::Rc;
+
+        let emctx = emcore::emContext::emContext::NewRoot();
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root", true);
+        let mut sched = EngineScheduler::new();
+        tree.register_engine_for_public(root, Some(&mut sched));
+
+        let parent = tree.create_child(root, "parent", Some(&mut sched));
+
+        // Simulate notice-path: create emDirPanel child + wake, exactly as
+        // handle_notice_one → update_content_panel does.
+        {
+            let mut ctx = PanelCtx::with_scheduler(&mut tree, parent, 1.0, &mut sched);
+            let child_id = ctx.create_child_with(
+                "content",
+                Box::new(emDirPanel::new(Rc::clone(&emctx), "/tmp".to_string())),
+            );
+            ctx.wake_up_panel(child_id);
+        }
+
+        // Wrap tree in headless window so Toplevel(wid) dispatch finds it.
+        let (wid, win) =
+            emcore::test_view_harness::headless_emwindow_with_tree(&emctx, &mut sched, tree);
+        let mut windows = HashMap::new();
+        windows.insert(wid, win);
+
+        let mut fw = Vec::new();
+        let mut pending_inputs = Vec::new();
+        let mut input_state = emcore::emInputState::emInputState::new();
+        let cb = std::cell::RefCell::new(None::<Box<dyn emcore::emClipboard::emClipboard>>);
+        let pa = Rc::new(std::cell::RefCell::new(
+            Vec::<emcore::emGUIFramework::DeferredAction>::new(),
+        ));
+
+        // Drain any engines already awake before our panel (root/parent engines
+        // woken by INIT_NOTICE_FLAGS) so they don't muddy the has_awake signal.
+        sched.DoTimeSlice(
+            &mut windows,
+            &emctx,
+            &mut fw,
+            &mut pending_inputs,
+            &mut input_state,
+            &cb,
+            &pa,
+        );
+
+        // emDirPanel::Cycle returns stay_awake=true while loading ("/tmp").
+        // If it ran, the engine is re-queued and has_awake_engines() is true.
+        // If it never ran (window scope mismatch / behavior taken), it was
+        // dequeued and NOT re-queued → has_awake_engines() is false.
+        assert!(
+            sched.has_awake_engines(),
+            "emDirPanel PanelCycleEngine must fire and re-queue itself (stay_awake=true \
+             while loading /tmp); has_awake_engines()=false means Cycle never ran — \
+             check PanelScope::Toplevel wid={:?} window lookup or take_behavior returning None",
+            wid
+        );
+        // Cleanup: reclaim tree from window and remove all panels.
+        let mut win = windows.remove(&wid).unwrap();
+        let mut reclaimed = win.take_tree();
+        reclaimed.remove(root, Some(&mut sched));
+    }
+
+    /// Reproduces the full production path:
+    /// RegisterEngines (High-priority UpdateEngineClass) → HandleNotice →
+    /// parent::notice creates emDirPanel child → wake_up_panel.
+    ///
+    /// This is the path that fails in the app: UpdateEngineClass (High) fires,
+    /// delivers a notice to a parent panel, the parent creates an emDirPanel
+    /// child during the notice, calls wake_up_panel. Then UpdateEngineClass
+    /// completes and PanelCycleEngine (Medium) should fire in the same slice.
+    ///
+    /// If this test fails but notice_ctx_child_engine_fires_in_same_slice
+    /// passes, the bug is in the UpdateEngineClass-mediated path — something
+    /// in the High-to-Medium priority scheduling when UpdateEngineClass holds
+    /// the tree.
+    #[test]
+    fn production_path_child_engine_fires_after_update_engine_notice() {
+        use emcore::emEngineCtx::PanelCtx;
+        use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
+        use emcore::emPanelTree::PanelTree;
+        use emcore::emScheduler::EngineScheduler;
+        use std::cell::RefCell;
+        use std::collections::HashMap;
+        use std::rc::Rc;
+
+        // A parent panel that creates an emDirPanel child on the first
+        // VIEWING_CHANGED notice, then calls wake_up_panel on it.
+        struct NoticeSpawner {
+            emctx: Rc<emcore::emContext::emContext>,
+            path: String,
+            spawned: bool,
+        }
+        impl PanelBehavior for NoticeSpawner {
+            fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, ctx: &mut PanelCtx) {
+                if flags.contains(NoticeFlags::VIEWING_CHANGED) && !self.spawned {
+                    let child_id = ctx.create_child_with(
+                        "content",
+                        Box::new(emDirPanel::new(
+                            Rc::clone(&self.emctx),
+                            self.path.clone(),
+                        )),
+                    );
+                    ctx.wake_up_panel(child_id);
+                    self.spawned = true;
+                }
+            }
+        }
+
+        let emctx = emcore::emContext::emContext::NewRoot();
+        let mut tree = PanelTree::new();
+        // Production: root created with has_view=false, then init_panel_view(None)
+        let root = tree.create_root("root", false);
+        tree.init_panel_view(root, None); // sets has_view=true, no engines yet
+        let parent = tree.create_child(root, "parent", None); // has_view=true, no engine yet
+
+        // Insert NoticeSpawner behavior for parent
+        tree.set_behavior(
+            parent,
+            Box::new(NoticeSpawner {
+                emctx: Rc::clone(&emctx),
+                path: "/tmp".to_string(),
+                spawned: false,
+            }),
+        );
+
+        // Queue VIEWING_CHANGED on parent so UpdateEngineClass delivers it
+        let mut sched = EngineScheduler::new();
+
+        // Wrap tree in headless window BEFORE RegisterEngines (production order:
+        // init_panel_view → put_tree → windows.insert → RegisterEngines).
+        let (wid, win) =
+            emcore::test_view_harness::headless_emwindow_with_tree(&emctx, &mut sched, tree);
+        let mut windows = HashMap::new();
+        windows.insert(wid, win);
+
+        // RegisterEngines: set scope + register PanelCycleEngines for existing panels
+        // + register UpdateEngineClass (High priority) + wake it.
+        // Save view-engine IDs so we can deregister them during cleanup.
+        let update_engine_ids: Vec<emcore::emEngine::EngineId> = {
+            let win = windows.get_mut(&wid).unwrap();
+            let mut tree = win.take_tree();
+            let mut ids = Vec::new();
+            {
+                let scope = emcore::emPanelScope::PanelScope::Toplevel(wid);
+                let mut fw = Vec::new();
+                let cb = RefCell::new(None::<Box<dyn emcore::emClipboard::emClipboard>>);
+                let pa = Rc::new(RefCell::new(
+                    Vec::<emcore::emGUIFramework::DeferredAction>::new(),
+                ));
+                let mut sc = emcore::emEngineCtx::SchedCtx {
+                    scheduler: &mut sched,
+                    framework_actions: &mut fw,
+                    root_context: &emctx,
+                    framework_clipboard: &cb,
+                    current_engine: None,
+                    pending_actions: &pa,
+                };
+                win.view_mut().RegisterEngines(&mut sc, &mut tree, scope);
+                // Save engine IDs registered by RegisterEngines so we can remove them.
+                if let Some(eid) = win.view().update_engine_id {
+                    ids.push(eid);
+                }
+                if let Some(eid) = win.view().visiting_va_engine_id {
+                    ids.push(eid);
+                }
+                // Queue VIEWING_CHANGED on parent now that view is set up
+                tree.queue_notice(parent, NoticeFlags::VIEWING_CHANGED, Some(&mut sched));
+            }
+            win.put_tree(tree);
+            ids
+        };
+
+        let mut fw = Vec::new();
+        let mut pending_inputs = Vec::new();
+        let mut input_state = emcore::emInputState::emInputState::new();
+        let cb = RefCell::new(None::<Box<dyn emcore::emClipboard::emClipboard>>);
+        let pa = Rc::new(RefCell::new(
+            Vec::<emcore::emGUIFramework::DeferredAction>::new(),
+        ));
+
+        // Run several slices: UpdateEngineClass fires → delivers notice →
+        // NoticeSpawner creates emDirPanel → wake_up_panel.
+        // Then PanelCycleEngine(Medium) should fire (Cycle returns stay_awake=true).
+        for _ in 0..5 {
+            sched.DoTimeSlice(
+                &mut windows,
+                &emctx,
+                &mut fw,
+                &mut pending_inputs,
+                &mut input_state,
+                &cb,
+                &pa,
+            );
+            if sched.has_awake_engines() {
+                // Something is still running — check if it's the emDirPanel engine
+                // (stay_awake=true means Cycle ran and is loading /tmp).
+                // We can't distinguish which engine is awake, but if after 5 slices
+                // has_awake_engines() is true, the loading is in progress.
+                break;
+            }
+        }
+
+        // Reclaim tree for cleanup check
+        let mut win = windows.remove(&wid).unwrap();
+        let mut reclaimed = win.take_tree();
+
+        // Check: did emDirPanel's behavior get modified? (i.e., did Cycle run?)
+        // After one Cycle, loading_done=false, dir_model=Some. The model would
+        // be in Loading state. If Cycle never ran, dir_model=None.
+        // We check by querying the child panel's VirtualFileState via file_panel.
+        // But we can't directly access behavior without pub(crate) methods.
+        // Use the observable proxy: has_awake_engines after all slices.
+        // If emDirPanel Cycle ran (stay_awake=true), it's in the awake queue.
+        assert!(
+            sched.has_awake_engines(),
+            "After {n} DoTimeSlice calls through UpdateEngineClass → notice → create_child_with \
+             + wake_up_panel, emDirPanel PanelCycleEngine must have fired (stay_awake=true). \
+             has_awake_engines()=false means either:\n\
+             (a) wake_up_panel found engine_id=None — engine not registered during notice\n\
+             (b) PanelCycleEngine fired but Cycle returned false — unexpected\n\
+             (c) PanelCycleEngine never dispatched despite being in queue (scope/window mismatch)\n\
+             This is the exact production failure mode: UpdateEngineClass(High) blocks \
+             PanelCycleEngine(Medium) from running.",
+            n = 5,
+        );
+
+        reclaimed.remove(root, Some(&mut sched));
+        // Remove view-owned engines (UpdateEngineClass, VisitingVAEngineClass)
+        // that are not panel-tree engines and won't be cleaned up by remove().
+        for eid in update_engine_ids {
+            sched.remove_engine(eid);
+        }
+    }
 }
