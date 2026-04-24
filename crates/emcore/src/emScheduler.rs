@@ -726,6 +726,16 @@ impl EngineScheduler {
         self.inner.wake_queues.iter().any(|q| !q.is_empty())
     }
 
+    /// True when the scheduler has no work pending: no queued signals,
+    /// no wake queue entries. Does NOT consider view animators, pending
+    /// per-panel notices, or AutoExpand work — those live outside the
+    /// scheduler. Callers (e.g., emCtrlSocket's `wait_idle`) compose
+    /// this check with view-side predicates.
+    pub fn is_idle(&self) -> bool {
+        self.inner.pending_signals.is_empty()
+            && self.inner.wake_queues.iter().all(|q| q.is_empty())
+    }
+
     /// Signal the scheduler to stop after the current time slice.
     ///
     /// Port of C++ `emScheduler::InitiateTermination`.
@@ -1446,6 +1456,38 @@ mod tests {
         s.remove_engine(e1);
         s.remove_engine(e2);
         s.remove_engine(e3);
+    }
+
+    #[test]
+    fn is_idle_true_for_fresh_scheduler() {
+        let s = EngineScheduler::new();
+        assert!(s.is_idle());
+    }
+
+    #[test]
+    fn is_idle_false_with_pending_signal() {
+        let mut s = EngineScheduler::new();
+        let sig = s.create_signal();
+        s.fire(sig);
+        assert!(!s.is_idle());
+        // Clean up so Drop-asserts don't panic.
+        s.abort(sig);
+        s.remove_signal(sig);
+    }
+
+    #[test]
+    fn is_idle_false_with_wake_queue_entry() {
+        let mut s = EngineScheduler::new();
+        let id = s.register_engine(
+            Box::new(CountingEngine {
+                count: Rc::new(RefCell::new(0)),
+            }),
+            Priority::Medium,
+            PanelScope::Framework,
+        );
+        s.wake_up(id);
+        assert!(!s.is_idle());
+        s.remove_engine(id);
     }
 
     #[test]
