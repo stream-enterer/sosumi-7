@@ -19,6 +19,50 @@ use std::sync::mpsc::SyncSender;
 use winit::event_loop::ActiveEventLoop;
 
 use crate::emGUIFramework::App;
+use crate::emPanelTree::{PanelId, PanelTree};
+
+/// Resolve a `/`-separated panel path to a PanelId, starting from `root`.
+/// `"/"` returns `root`. `"/a/b"` walks root → child("a") → child("b").
+/// Returns Err with a human-readable message for missing segments.
+///
+/// Naming caveat: emCore panel names can technically contain `/`, but
+/// this resolver assumes they don't. If a child name contains `/` and a
+/// path attempts to traverse through it, behavior is undefined (the
+/// segment after the embedded `/` will be searched as a separate child
+/// of the wrong parent). Future enhancement: escape syntax. For now,
+/// callers using this resolver must avoid panel names containing `/`.
+pub(crate) fn resolve_panel_path(
+    tree: &PanelTree,
+    root: PanelId,
+    path: &str,
+) -> Result<PanelId, String> {
+    if path == "/" || path.is_empty() {
+        return Ok(root);
+    }
+    let stripped = path.strip_prefix('/').unwrap_or(path);
+    let mut current = root;
+    for segment in stripped.split('/') {
+        if segment.is_empty() {
+            // Trailing slash or `//` — treat as no-op.
+            continue;
+        }
+        let children: Vec<PanelId> = tree.children(current).collect();
+        let matched = children
+            .into_iter()
+            .find(|&c| tree.name(c) == Some(segment));
+        match matched {
+            Some(c) => current = c,
+            None => {
+                let parent_name = tree.name(current).unwrap_or("<unnamed>").to_string();
+                return Err(format!(
+                    "no such panel: {} (segment '{}' not found under '{}')",
+                    path, segment, parent_name,
+                ));
+            }
+        }
+    }
+    Ok(current)
+}
 
 /// Top-level command tag — wire format `{"cmd":"<name>", ...}`.
 #[derive(Debug, Deserialize, Serialize)]
@@ -161,11 +205,33 @@ pub fn handle_main_thread(app: &mut App, event_loop: &ActiveEventLoop, msg: Ctrl
         CtrlCmd::Dump => handle_dump(app),
         CtrlCmd::Quit => handle_quit(event_loop),
         CtrlCmd::GetState => handle_get_state(app),
-        CtrlCmd::Visit { .. }
-        | CtrlCmd::VisitFullsized { .. }
-        | CtrlCmd::SetFocus { .. }
-        | CtrlCmd::SeekTo { .. }
-        | CtrlCmd::WaitIdle { .. }
+        CtrlCmd::Visit { ref panel_path, .. }
+        | CtrlCmd::VisitFullsized { ref panel_path }
+        | CtrlCmd::SetFocus { ref panel_path }
+        | CtrlCmd::SeekTo { ref panel_path } => {
+            // Resolve the path now to surface a useful error early; the
+            // operation itself lands in a later task. If resolution
+            // succeeds, fall through to the documented phase-3 placeholder.
+            if let Some(home_id) = app.home_window_id {
+                if let Some(win) = app.windows.get(&home_id) {
+                    let tree = win.tree();
+                    if let Some(root) = tree.GetRootPanel() {
+                        if let Err(e) = resolve_panel_path(tree, root, panel_path) {
+                            CtrlReply::err(e)
+                        } else {
+                            CtrlReply::err("not implemented in phase 3 skeleton")
+                        }
+                    } else {
+                        CtrlReply::err("not implemented in phase 3 skeleton")
+                    }
+                } else {
+                    CtrlReply::err("not implemented in phase 3 skeleton")
+                }
+            } else {
+                CtrlReply::err("not implemented in phase 3 skeleton")
+            }
+        }
+        CtrlCmd::WaitIdle { .. }
         | CtrlCmd::Input { .. }
         | CtrlCmd::InputBatch { .. } => CtrlReply::err("not implemented in phase 3 skeleton"),
     };
@@ -611,6 +677,44 @@ mod tests {
             r.error.as_deref(),
             Some("not implemented in phase 3 skeleton")
         );
+    }
+
+    #[test]
+    fn resolve_root_returns_root() {
+        use crate::emPanelTree::PanelTree;
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("root");
+        assert_eq!(resolve_panel_path(&tree, root, "/").unwrap(), root);
+        assert_eq!(resolve_panel_path(&tree, root, "").unwrap(), root);
+    }
+
+    #[test]
+    fn resolve_one_segment() {
+        use crate::emPanelTree::PanelTree;
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("root");
+        let a = tree.create_child(root, "a", None);
+        assert_eq!(resolve_panel_path(&tree, root, "/a").unwrap(), a);
+    }
+
+    #[test]
+    fn resolve_nested_segments() {
+        use crate::emPanelTree::PanelTree;
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("root");
+        let a = tree.create_child(root, "a", None);
+        let b = tree.create_child(a, "b", None);
+        assert_eq!(resolve_panel_path(&tree, root, "/a/b").unwrap(), b);
+    }
+
+    #[test]
+    fn resolve_missing_segment_returns_error() {
+        use crate::emPanelTree::PanelTree;
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("root");
+        let err = resolve_panel_path(&tree, root, "/nonexistent").unwrap_err();
+        assert!(err.contains("no such panel"));
+        assert!(err.contains("nonexistent"));
     }
 
     #[test]
