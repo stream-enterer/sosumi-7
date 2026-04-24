@@ -617,6 +617,143 @@ impl PanelBehavior for emSubViewPanel {
 }
 
 #[cfg(test)]
+mod subview_dispatch_tests {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    /// Integration test: a panel in an emSubViewPanel's sub-tree must have its
+    /// PanelCycleEngine dispatched when the outer scheduler runs DoTimeSlice.
+    ///
+    /// Failure means PanelCycleEngine::Cycle looks in the outer tree for
+    /// self.panel_id (which is a sub-tree id) and returns false — the
+    /// sub-tree panel's Cycle is never called.
+    #[test]
+    fn sub_tree_panel_cycle_engine_dispatched_via_outer_scheduler() {
+        let emctx = crate::emContext::emContext::NewRoot();
+        let mut sched = crate::emScheduler::EngineScheduler::new();
+
+        // Outer tree: root + one child slot for the emSubViewPanel.
+        let mut outer_tree = crate::emPanelTree::PanelTree::new();
+        let outer_root = outer_tree.create_root("outer_root", false);
+        outer_tree.init_panel_view(outer_root, None);
+        let outer_panel_id =
+            outer_tree.create_child(outer_root, "svp_slot", None);
+
+        // wid must match what we use as the windows-map key below.
+        let wid = winit::window::WindowId::dummy();
+
+        // Build emSubViewPanel. Sub-tree engines register on `sched` with
+        // scope SubView{wid, outer_panel_id}.
+        let mut svp = {
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                RefCell::new(None);
+            let pa: Rc<RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
+                Rc::new(RefCell::new(Vec::new()));
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut sched,
+                framework_actions: &mut fw,
+                root_context: &emctx,
+                framework_clipboard: &cb,
+                current_engine: None,
+                pending_actions: &pa,
+            };
+            emSubViewPanel::new(Rc::clone(&emctx), outer_panel_id, wid, &mut sc)
+        };
+
+        // Add a child panel to the sub-tree. Its PanelCycleEngine is
+        // registered on `sched` (outer scheduler) with SubView scope.
+        let sub_root = svp.sub_root();
+        let sub_child_id = svp
+            .sub_tree_mut()
+            .create_child(sub_root, "test_panel", Some(&mut sched));
+
+        // Verify the engine was registered before continuing.
+        let child_eid = svp
+            .sub_tree()
+            .panel_engine_id_pub(sub_child_id)
+            .expect("sub-tree child must have PanelCycleEngine after create_child with sched");
+
+        // Wake the engine — register_engine starts it sleeping.
+        sched.wake_up(child_eid);
+
+        // Attach probe to detect first Cycle dispatch.
+        let probe: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
+        sched.attach_first_cycle_probe(child_eid, Rc::clone(&probe));
+
+        // Install emSubViewPanel as behavior on the outer slot.
+        outer_tree.set_behavior(outer_panel_id, Box::new(svp));
+
+        // Wrap outer tree in a headless emWindow keyed by wid.
+        // headless_emwindow_with_tree returns (WindowId::dummy(), win) which
+        // equals wid here — the scheduler's SubView dispatch will find it.
+        let (map_wid, win) = crate::test_view_harness::headless_emwindow_with_tree(
+            &emctx, &mut sched, outer_tree,
+        );
+        assert_eq!(map_wid, wid, "headless window must use same id as SubView scope");
+        let mut windows = HashMap::new();
+        windows.insert(map_wid, win);
+
+        let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+        let mut pending_inputs = Vec::new();
+        let mut input_state = crate::emInputState::emInputState::new();
+        let cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
+
+        // Run up to 20 slices. PanelCycleEngine (Medium) should fire quickly.
+        for _ in 0..20 {
+            sched.DoTimeSlice(
+                &mut windows,
+                &emctx,
+                &mut fw,
+                &mut pending_inputs,
+                &mut input_state,
+                &cb,
+                &pa,
+            );
+            if probe.get().is_some() {
+                break;
+            }
+        }
+        let dispatched = probe.get().is_some();
+
+        // Teardown BEFORE assert so scheduler Drop doesn't panic on failure.
+        let mut win = windows.remove(&map_wid).unwrap();
+        let mut tree = win.take_tree();
+        // Extract svp from the outer tree to run inner cleanup.
+        if let Some(p) = tree.panels.get_mut(outer_panel_id) {
+            if let Some(mut b) = p.behavior.take() {
+                if let Some(svp_ref) = b.as_sub_view_panel_mut() {
+                    let sub_root = svp_ref.sub_root();
+                    svp_ref.sub_tree.remove(sub_root, Some(&mut sched));
+                    if let Some(eid) = svp_ref.sub_view.update_engine_id.take() {
+                        sched.remove_engine(eid);
+                    }
+                    if let Some(eid) = svp_ref.sub_view.visiting_va_engine_id.take() {
+                        sched.remove_engine(eid);
+                    }
+                    if let Some(sig) = svp_ref.sub_view.EOISignal.take() {
+                        sched.remove_signal(sig);
+                    }
+                }
+            }
+        }
+        tree.remove(outer_root, Some(&mut sched));
+
+        assert!(
+            dispatched,
+            "sub-tree panel's PanelCycleEngine must be dispatched within 20 slices. \
+             probe=None means PanelCycleEngine::Cycle is looking in the outer tree \
+             for self.panel_id (a sub-tree id) and returning false — the SubView \
+             tree-navigation branch is not implemented."
+        );
+    }
+}
+
+#[cfg(test)]
 mod sp8_tests {
     use super::*;
 
