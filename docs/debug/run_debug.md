@@ -30,7 +30,13 @@ Execute the steps below in order every iteration. Do not skip steps. Do not reor
 
 ### Step 1 — Check for dirty working tree
 
-Run `git status`. If there are uncommitted changes of any kind (scratchpad, source files, ISSUES.json, or any combination), stage everything currently modified and commit with message `debug: recover uncommitted work from interrupted iteration`. Then continue to Step 2.
+Run `git status` and `git branch --show-current`.
+
+**If on a `fix/*` branch with uncommitted changes:** stage all modified files and commit to the fix branch with message `debug: recover uncommitted work from interrupted iteration`. Then run `git checkout main` and continue to Step 2.
+
+**If on `main` with uncommitted changes:** stage all modified files and commit to `main` with message `debug: recover uncommitted work from interrupted iteration`. Then continue to Step 2.
+
+**If working tree is clean:** continue to Step 2 regardless of which branch you are on. If you are on a `fix/*` branch (interrupted after code work but before switching back), run `git checkout main` first.
 
 ### Step 2 — Select the target issue
 
