@@ -10,6 +10,7 @@
 
 #![allow(non_snake_case)]
 
+use crate::emPanelTree::{PanelId, PanelTree};
 use crate::emRecParser::{RecStruct, RecValue};
 
 /// C++ `emTreeDumpRec::FrameType` (include/emTreeDump/emTreeDumpRec.h).
@@ -119,6 +120,202 @@ pub fn empty_rec(title: String, text: String, style: VisualStyle) -> RecStruct {
 /// children should still call with an empty Vec for schema completeness.
 pub fn set_children(rec: &mut RecStruct, children: Vec<RecValue>) {
     rec.SetValue("Children", RecValue::Array(children));
+}
+
+/// Full emPanel branch. Mirrors C++ `emTreeDumpFromObject`'s emPanel cascade
+/// at `src/emTreeDump/emTreeDumpUtil.cpp:246-315`. Appends engine + context
+/// fields first (C++ order), then emPanel fields, then recurses into
+/// children.
+///
+/// Arguments:
+///   `tree`:            mutable — needed for `take_behavior`/`put_behavior`.
+///   `id`:              panel to dump.
+///   `current_frame`:   view's current frame counter (for `LastPaintFrame` output).
+///   `focused_id`:      id of the currently focused panel, or `None`.
+///   `view_home_w` / `view_home_h`: view's home dimensions (for
+///                      `GetUpdatePriority` / `GetMemoryLimit`).
+///   `window_focused`:  the view's parent window's focused flag.
+///
+/// Visibility is `pub` rather than `pub(crate)` pending wiring to a real
+/// consumer (the `td!` cheat / `emCtrlSocket` `dump`). Downgrading now
+/// trips `dead_code` under `-D warnings` because all current callers are
+/// `#[cfg(test)]`.
+#[allow(clippy::too_many_arguments)]
+pub fn dump_panel(
+    tree: &mut PanelTree,
+    id: PanelId,
+    current_frame: u64,
+    focused_id: Option<PanelId>,
+    view_home_w: f64,
+    view_home_h: f64,
+    window_focused: bool,
+) -> RecStruct {
+    // --- Derive all read-only state first (avoids borrow conflicts) ---
+
+    // in_focused_path: walk parent chain from focused_id, check membership.
+    let in_focused_path = match focused_id {
+        Some(fid) => {
+            let mut cur = Some(fid);
+            let mut found = false;
+            while let Some(c) = cur {
+                if c == id {
+                    found = true;
+                    break;
+                }
+                cur = tree.panels[c].parent;
+            }
+            found
+        }
+        None => false,
+    };
+
+    let height = tree.get_height(id);
+    let (ex, ey, ew, eh) = tree.GetEssenceRect(id);
+    let update_priority = tree.GetUpdatePriority(id, view_home_w, view_home_h, window_focused);
+    let memory_limit = tree.GetMemoryLimit(id, view_home_w, view_home_h, 2_048_000_000, None);
+
+    // take_behavior to extract subtype fields and type_name.
+    let (type_name, subtype_pairs) = if let Some(behavior) = tree.take_behavior(id) {
+        let n = behavior.type_name().to_string();
+        let p = behavior.dump_state();
+        tree.put_behavior(id, behavior);
+        (n, p)
+    } else {
+        ("(no behavior)".to_string(), Vec::new())
+    };
+
+    let panel_title = tree.get_title(id);
+    // Snapshot PanelData fields we need after this point.
+    let data = &tree.panels[id];
+    let name = data.name.clone();
+    let layout = data.layout_rect;
+    let is_viewed = data.viewed;
+    let is_in_viewed_path = data.in_viewed_path;
+    let in_active_path = data.in_active_path;
+    let is_active = data.is_active;
+    let focusable = data.focusable;
+    let enable_switch = data.enable_switch;
+    let enabled = data.enabled;
+    let paint_count = data.paint_count;
+    let last_paint_frame = data.last_paint_frame;
+    let viewed_xywh = if is_viewed {
+        Some((data.viewed_x, data.viewed_y, data.viewed_width, data.viewed_height))
+    } else {
+        None
+    };
+    let clip_x1y1x2y2 = if is_viewed {
+        Some((data.clip_x, data.clip_y, data.clip_x + data.clip_w, data.clip_y + data.clip_h))
+    } else {
+        None
+    };
+    let is_focused = focused_id == Some(id);
+
+    // --- Build the Text body (C++ emTreeDumpUtil.cpp:256-307 order) ---
+
+    let mut text = String::new();
+
+    // Engine Priority — C++ emEngine branch (always appended first because
+    // emPanel inherits emEngine; see emTreeDumpUtil.cpp:98-107).
+    //
+    // DIVERGED: (upstream-gap-forced) per-panel engine priority is not
+    // accessible from PanelTree in Rust; C++ emits
+    // asEngine->GetEnginePriority() at emTreeDumpUtil.cpp:103. Placeholder
+    // 0 preserves the field presence; future panel-as-engine wiring should
+    // fill this in.
+    text.push_str("\nEngine Priority: 0");
+
+    // Name, Title, Layout/Height/Essence, Viewed flags, Clip, Enable, etc.
+    text.push_str(&format!("\nName: {}", name));
+    text.push_str(&format!("\nTitle: {}", panel_title));
+    text.push_str(&format!(
+        "\nLayout XYWH: {}",
+        fmt_xywh(layout.x, layout.y, layout.w, layout.h)
+    ));
+    text.push_str(&format!("\nHeight: {}", fmt_g(height)));
+    text.push_str(&format!("\nEssence XYWH: {}", fmt_xywh(ex, ey, ew, eh)));
+    text.push_str(&format!("\nViewed: {}", yes_no(is_viewed)));
+    text.push_str(&format!("\nInViewedPath: {}", yes_no(is_in_viewed_path)));
+    text.push_str("\nViewed XYWH: ");
+    text.push_str(&match viewed_xywh {
+        Some((x, y, w, h)) => fmt_xywh(x, y, w, h),
+        None => "-".to_string(),
+    });
+    text.push_str("\nClip X1Y1X2Y2: ");
+    text.push_str(&match clip_x1y1x2y2 {
+        Some((x1, y1, x2, y2)) => fmt_xywh(x1, y1, x2, y2),
+        None => "-".to_string(),
+    });
+    text.push_str(&format!("\nEnableSwitch: {}", yes_no(enable_switch)));
+    text.push_str(&format!("\nEnabled: {}", yes_no(enabled)));
+    text.push_str(&format!("\nFocusable: {}", yes_no(focusable)));
+    text.push_str(&format!("\nActive: {}", yes_no(is_active)));
+    text.push_str(&format!("\nInActivePath: {}", yes_no(in_active_path)));
+    text.push_str(&format!("\nFocused: {}", yes_no(is_focused)));
+    text.push_str(&format!("\nInFocusedPath: {}", yes_no(in_focused_path)));
+    text.push_str(&format!("\nUpdate Priority: {}", fmt_g(update_priority)));
+    text.push_str(&format!("\nMemory Limit: {}", memory_limit));
+
+    // RUST_ONLY: (language-forced-utility) paint-counter fields — not
+    // present in C++ dump. C++ uses gdb for per-panel paint inspection;
+    // the Rust port lacks an equivalent live-inspection path, so paint
+    // attribution is baked into the data model and surfaced here.
+    text.push_str(&format!("\nPaintCount: {}", paint_count));
+    text.push_str(&format!(
+        "\nLastPaintFrame: {} (current: {})",
+        last_paint_frame, current_frame
+    ));
+
+    // Subtype fields (PanelBehavior::dump_state).
+    for (label, value) in &subtype_pairs {
+        text.push_str(&format!("\n{}: {}", label, value));
+    }
+
+    // --- Compose rec ---
+
+    let title = format!("Panel:\n{}\n\"{}\"", type_name, name);
+    let style = VisualStyle::panel(is_viewed, is_in_viewed_path, in_focused_path, in_active_path);
+    let mut rec = empty_rec(title, text, style);
+
+    // --- Recurse into children ---
+
+    let child_ids: Vec<PanelId> = tree.children(id).collect();
+    let mut children: Vec<RecValue> = Vec::with_capacity(child_ids.len());
+    for child_id in child_ids {
+        let child_rec = dump_panel(
+            tree,
+            child_id,
+            current_frame,
+            focused_id,
+            view_home_w,
+            view_home_h,
+            window_focused,
+        );
+        children.push(RecValue::Struct(child_rec));
+    }
+    set_children(&mut rec, children);
+
+    rec
+}
+
+fn yes_no(b: bool) -> &'static str {
+    if b {
+        "yes"
+    } else {
+        "no"
+    }
+}
+
+/// Format a single f64 in C++ `%.9G` style. Rust's `{:.9}` is the closest
+/// built-in — it uses fixed precision, which can diverge from C++ `%G`'s
+/// smart choice between `%E` and `%F`, but for the dump's purpose
+/// (human-readable snapshot) this is acceptable. If full byte-fidelity
+/// with C++ dumps becomes required, reimplement as a `%G` clone.
+fn fmt_g(v: f64) -> String {
+    format!("{:.9}", v)
+}
+
+fn fmt_xywh(x: f64, y: f64, w: f64, h: f64) -> String {
+    format!("{}, {}, {}, {}", fmt_g(x), fmt_g(y), fmt_g(w), fmt_g(h))
 }
 
 #[cfg(test)]
@@ -236,5 +433,92 @@ mod tests {
         let arr = rec.get_array("Children").expect("Children exists");
         assert_eq!(arr.len(), 1);
         assert!(matches!(arr[0], RecValue::Int(7)));
+    }
+
+    // --- dump_panel tests ---
+
+    use crate::emPanel::PanelBehavior;
+
+    /// Minimal no-op behavior for exercising the `take_behavior` path in
+    /// `dump_panel`. All trait methods use defaults.
+    struct NoopBehavior;
+    impl PanelBehavior for NoopBehavior {}
+
+    #[test]
+    fn dump_panel_leaf_has_all_labels() {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("root");
+        tree.put_behavior(root, Box::new(NoopBehavior));
+
+        let rec = dump_panel(&mut tree, root, 0, None, 1.0, 1.0, false);
+
+        let title = rec.get_str("Title").expect("Title exists").to_string();
+        let text = rec.get_str("Text").expect("Text exists").to_string();
+
+        assert!(title.starts_with("Panel:\n"), "Title: {}", title);
+        assert!(title.contains("\"root\""), "Title: {}", title);
+
+        for label in [
+            "Engine Priority",
+            "Name:",
+            "Title:",
+            "Layout XYWH",
+            "Height:",
+            "Essence XYWH",
+            "Viewed: no",
+            "InViewedPath: no",
+            "Viewed XYWH: -",
+            "Clip X1Y1X2Y2: -",
+            "EnableSwitch",
+            "Enabled",
+            "Focusable",
+            "Active",
+            "InActivePath",
+            "Focused: no",
+            "InFocusedPath: no",
+            "Update Priority",
+            "Memory Limit:",
+            "PaintCount: 0",
+            "LastPaintFrame: 0 (current: 0)",
+        ] {
+            assert!(text.contains(label), "Text missing label `{}`:\n{}", label, text);
+        }
+
+        let children = rec.get_array("Children").expect("Children exists");
+        assert!(children.is_empty());
+    }
+
+    #[test]
+    fn dump_panel_recurses_into_children() {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("root");
+        tree.put_behavior(root, Box::new(NoopBehavior));
+        let c1 = tree.create_child(root, "alpha", None);
+        tree.put_behavior(c1, Box::new(NoopBehavior));
+        let c2 = tree.create_child(root, "beta", None);
+        tree.put_behavior(c2, Box::new(NoopBehavior));
+
+        let rec = dump_panel(&mut tree, root, 0, None, 1.0, 1.0, false);
+
+        let children = rec.get_array("Children").expect("Children exists");
+        assert_eq!(children.len(), 2);
+
+        // Each child rec's Text must contain its own Name: line.
+        let mut names: Vec<String> = Vec::new();
+        for child in children {
+            let s = match child {
+                RecValue::Struct(s) => s,
+                other => panic!("child is not Struct: {:?}", other),
+            };
+            let text = s.get_str("Text").expect("child Text exists");
+            if text.contains("\nName: alpha") {
+                names.push("alpha".into());
+            }
+            if text.contains("\nName: beta") {
+                names.push("beta".into());
+            }
+        }
+        names.sort();
+        assert_eq!(names, vec!["alpha".to_string(), "beta".to_string()]);
     }
 }
