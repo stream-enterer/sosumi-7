@@ -185,8 +185,8 @@
       "investigation_file": "docs/debug/investigations/F006.md",
       "root_cause_file": null,
       "blocked_question": null,
-      "fixed_in_commit": null,
-      "fixed_date": null,
+      "fixed_in_commit": "b304b1f2",
+      "fixed_date": "2026-04-24",
       "repro": "Launch app. Observe the top control panel \u2014 no app icons are visible. In C++ Eagle Mode the same panel shows app icons at every zoom level."
     },
     {
