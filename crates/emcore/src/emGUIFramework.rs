@@ -1126,6 +1126,8 @@ impl ApplicationHandler<CtrlMsg> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        crate::emCtrlSocket::check_pending_wait_idle(self);
+
         // Tick screensaver keepalive (pokes xscreensaver every 59s when inhibited).
         super::emWindowPlatform::tick_screensaver_keepalive();
 
