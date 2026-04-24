@@ -614,11 +614,6 @@ impl PanelBehavior for emDirEntryPanel {
     }
 
     fn CreateControlPanel(&mut self, parent_ctx: &mut PanelCtx, name: &str) -> Option<PanelId> {
-        eprintln!(
-            "[F013] emDirEntryPanel::CreateControlPanel called: path={} sched_reach={}",
-            self.dir_entry.GetPath(),
-            parent_ctx.as_sched_ctx().is_some()
-        );
         let parent_dir = std::path::Path::new(self.dir_entry.GetPath())
             .parent()
             .and_then(|p| p.to_str())
