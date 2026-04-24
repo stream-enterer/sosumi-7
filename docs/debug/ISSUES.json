@@ -323,6 +323,25 @@
       "repro": "Launch app. Zoom into the file system panel. The right portion of the control panel (where emFileManControlPanel would appear: Select Files, Help, etc.) is absent. In C++ Eagle Mode, the right half of the control panel changes context-sensitively based on what is zoomed into."
     },
     {
+      "id": "F013",
+      "kind": "fix",
+      "status": "open",
+      "priority": "high",
+      "title": "Panic when zooming into file manager: CreateControlPanel requires scheduler-reach PanelCtx",
+      "description": "Zooming into the file system panel triggers a panic at crates/emfileman/src/emDirPanel.rs:529 — emDirPanel::CreateControlPanel calls parent_ctx.as_sched_ctx().expect(\"CreateControlPanel requires scheduler-reach PanelCtx\") and the provided PanelCtx does not have scheduler reach, so the expect fires and the process aborts (SIGSEGV follows the panic). Likely surfaced by the F012 ContentControlPanel wiring — the new cross-tree CreateControlPanel dispatch is handing emDirPanel a PanelCtx without scheduler access, whereas emDirPanel's C++ analogue can construct emFileManControlPanel unconditionally.",
+      "location": "crates/emfileman/src/emDirPanel.rs:525-537 (CreateControlPanel); cross-reference F012 ControlPanelBridge in crates/emmain/src/emMainWindow.rs",
+      "caused_by": "F012",
+      "introduced_commit": null,
+      "introduced_date": "2026-04-24",
+      "fix_note": null,
+      "investigation_file": null,
+      "root_cause_file": null,
+      "blocked_question": null,
+      "fixed_in_commit": null,
+      "fixed_date": null,
+      "repro": "cargo run -p eaglemode --release. Zoom into the file manager panel. Process panics with 'CreateControlPanel requires scheduler-reach PanelCtx' at emDirPanel.rs:529, then SIGSEGV."
+    },
+    {
       "id": "P001",
       "kind": "perf",
       "status": "open",
