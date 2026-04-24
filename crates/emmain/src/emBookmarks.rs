@@ -5,6 +5,7 @@ use emcore::emColor::emColor;
 use emcore::emConfigModel::emConfigModel;
 use emcore::emContext::emContext;
 use emcore::emEngineCtx::PanelCtx;
+use emcore::emImage::emImage;
 use emcore::emInstallInfo::{InstallDirType, emGetInstallPath};
 use emcore::emPainter::{TextAlignment, VAlign, emPainter};
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
@@ -526,11 +527,42 @@ impl emBookmarksModel {
 /// widgets embedded in the raster group; Rust gives each a named type).
 pub struct emBookmarkButton {
     bookmark: emBookmarkRec,
+    // Lazy-loaded icon image: None = not yet attempted; Some(None) = load failed;
+    // Some(Some(img)) = loaded.  C++ emBookmarkButton::Update loads via
+    // emTryGetResImage then calls SetIcon(img) on the emBorder.
+    icon_load_attempted: bool,
+    icon: Option<emImage>,
 }
 
 impl emBookmarkButton {
     pub fn new(bookmark: emBookmarkRec) -> Self {
-        Self { bookmark }
+        Self {
+            bookmark,
+            icon_load_attempted: false,
+            icon: None,
+        }
+    }
+
+    // Port of C++ emBookmarkButton::Update's icon-load section.
+    // Loads the TGA from <em>/res/icons/<icon_name> once and caches the result.
+    fn load_icon(&mut self) {
+        self.icon_load_attempted = true;
+        let icon_name = &self.bookmark.entry.Icon;
+        if icon_name.is_empty() {
+            return;
+        }
+        let path = emBookmarksModel::GetDefaultIconDir().join(icon_name);
+        match std::fs::read(&path) {
+            Ok(data) => match emcore::emResTga::load_tga(&data) {
+                Ok(img) => self.icon = Some(img),
+                Err(e) => {
+                    log::warn!("emBookmarkButton: TGA decode failed for {:?}: {:?}", path, e);
+                }
+            },
+            Err(e) => {
+                log::warn!("emBookmarkButton: cannot read {:?}: {}", path, e);
+            }
+        }
     }
 }
 
@@ -544,18 +576,40 @@ impl PanelBehavior for emBookmarkButton {
     }
 
     fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+        if !self.icon_load_attempted {
+            self.load_icon();
+        }
         let bg = self.bookmark.entry.BgColor;
         let fg = self.bookmark.entry.FgColor;
-        // Draw background.
         painter.PaintRect(0.0, 0.0, w, h, bg, emColor::TRANSPARENT);
-        // Draw bookmark name centered in the button.
+
+        // Icon above caption — port of C++ SetIconAboveCaption() +
+        // SetMaxIconAreaTallness(9.0/16.0).
+        let (text_y, text_h) = if let Some(ref icon) = self.icon {
+            // C++ SetMaxIconAreaTallness(9.0/16.0): icon area h/w ≤ 9/16.
+            let icon_area_h = (w * (9.0 / 16.0)).min(h * 0.65);
+            let iw = icon.GetWidth() as f64;
+            let ih = icon.GetHeight() as f64;
+            if iw > 0.0 && ih > 0.0 {
+                let scale = (w / iw).min(icon_area_h / ih);
+                let dw = iw * scale;
+                let dh = ih * scale;
+                let dx = (w - dw) * 0.5;
+                let dy = (icon_area_h - dh) * 0.5;
+                painter.paint_image_full(dx, dy, dw, dh, icon, 255, bg);
+            }
+            (icon_area_h, h - icon_area_h)
+        } else {
+            (0.0, h)
+        };
+
         if !self.bookmark.entry.Name.is_empty() {
-            let font_h = h * 0.4;
+            let font_h = (text_h * 0.5).max(0.01);
             painter.PaintTextBoxed(
                 0.0,
-                0.0,
+                text_y,
                 w,
-                h,
+                text_h,
                 &self.bookmark.entry.Name,
                 font_h,
                 fg,
