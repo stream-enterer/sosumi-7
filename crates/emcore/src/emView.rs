@@ -4500,12 +4500,22 @@ impl emView {
     /// a behavior that creates a control panel, but creates the panel in
     /// `control_tree` as a child of `parent`. Matches C++
     /// `emView::CreateControlPanel`.
+    #[allow(clippy::too_many_arguments)]
     pub fn CreateControlPanel(
         &self,
         content_tree: &mut PanelTree,
         control_tree: &mut PanelTree,
         parent: PanelId,
         name: &str,
+        scheduler: &mut crate::emScheduler::EngineScheduler,
+        framework_actions: &mut Vec<crate::emEngineCtx::DeferredAction>,
+        root_context: &std::rc::Rc<crate::emContext::emContext>,
+        framework_clipboard: &std::cell::RefCell<
+            Option<Box<dyn crate::emClipboard::emClipboard>>,
+        >,
+        pending_actions: &std::rc::Rc<
+            std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+        >,
     ) -> Option<PanelId> {
         let active = self.active?;
         content_tree.create_control_panel_in(
@@ -4514,6 +4524,11 @@ impl emView {
             parent,
             name,
             self.CurrentPixelTallness,
+            scheduler,
+            framework_actions,
+            root_context,
+            framework_clipboard,
+            pending_actions,
         )
     }
 

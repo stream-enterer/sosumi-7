@@ -848,6 +848,10 @@ impl emEngine for ControlPanelBridge {
 
         // Create new ContentControlPanel via cross-tree call
         // (C++ ContentView.CreateControlPanel(*this, "context")).
+        // F013: thread scheduler-reach handles through so the inner
+        // PanelCtx can hand behaviors (e.g. emDirPanel::CreateControlPanel)
+        // a full SchedCtx when they need to construct engine-registering
+        // control-panel widgets.
         let new_ccp = match active_panel {
             Some(active) => {
                 let ctrl_sub_tree = ctrl_svp.sub_tree_mut();
@@ -858,6 +862,11 @@ impl emEngine for ControlPanelBridge {
                     ctrl_root,
                     "context",
                     tallness,
+                    ctx.scheduler,
+                    ctx.framework_actions,
+                    ctx.root_context,
+                    ctx.framework_clipboard,
+                    ctx.pending_actions,
                 )
             }
             None => None,
