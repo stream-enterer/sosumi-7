@@ -582,6 +582,13 @@ impl<'a> PanelCtx<'a> {
     /// Wake another panel's scheduler engine.
     /// C++ equivalent: panel->GetView().UpdateEngine->WakeUp().
     pub fn wake_up_panel(&mut self, id: PanelId) {
+        if std::env::var("DEBUG_F011").is_ok() {
+            let engine_id = self.tree.GetRec(id).and_then(|p| p.engine_id);
+            let has_sched = self.scheduler.is_some();
+            eprintln!(
+                "[F011] wake_up_panel: panel={id:?} engine_id={engine_id:?} has_sched={has_sched}"
+            );
+        }
         let Some(panel) = self.tree.GetRec(id) else {
             return;
         };
