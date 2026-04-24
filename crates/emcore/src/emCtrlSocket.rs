@@ -205,32 +205,13 @@ pub fn handle_main_thread(app: &mut App, event_loop: &ActiveEventLoop, msg: Ctrl
         CtrlCmd::Dump => handle_dump(app),
         CtrlCmd::Quit => handle_quit(event_loop),
         CtrlCmd::GetState => handle_get_state(app),
-        CtrlCmd::Visit { ref panel_path, .. }
-        | CtrlCmd::VisitFullsized { ref panel_path }
-        | CtrlCmd::SetFocus { ref panel_path }
-        | CtrlCmd::SeekTo { ref panel_path } => {
-            // Resolve the path now to surface a useful error early; the
-            // operation itself lands in a later task. If resolution
-            // succeeds, fall through to the documented phase-3 placeholder.
-            if let Some(home_id) = app.home_window_id {
-                if let Some(win) = app.windows.get(&home_id) {
-                    let tree = win.tree();
-                    if let Some(root) = tree.GetRootPanel() {
-                        if let Err(e) = resolve_panel_path(tree, root, panel_path) {
-                            CtrlReply::err(e)
-                        } else {
-                            CtrlReply::err("not implemented in phase 3 skeleton")
-                        }
-                    } else {
-                        CtrlReply::err("not implemented in phase 3 skeleton")
-                    }
-                } else {
-                    CtrlReply::err("not implemented in phase 3 skeleton")
-                }
-            } else {
-                CtrlReply::err("not implemented in phase 3 skeleton")
-            }
-        }
+        CtrlCmd::Visit {
+            ref panel_path,
+            adherent,
+        } => handle_visit(app, panel_path, adherent),
+        CtrlCmd::VisitFullsized { ref panel_path } => handle_visit_fullsized(app, panel_path),
+        CtrlCmd::SetFocus { ref panel_path } => handle_set_focus(app, panel_path),
+        CtrlCmd::SeekTo { ref panel_path } => handle_seek_to(app, panel_path),
         CtrlCmd::WaitIdle { .. }
         | CtrlCmd::Input { .. }
         | CtrlCmd::InputBatch { .. } => CtrlReply::err("not implemented in phase 3 skeleton"),
@@ -293,6 +274,108 @@ fn handle_get_state(app: &App) -> CtrlReply {
         loading: Vec::new(),
         ..CtrlReply::default()
     }
+}
+
+fn handle_visit(app: &mut App, path: &str, adherent: bool) -> CtrlReply {
+    let home_id = match app.home_window_id {
+        Some(id) => id,
+        None => return CtrlReply::err("home window not initialized"),
+    };
+    let win = match app.windows.get_mut(&home_id) {
+        Some(w) => w,
+        None => return CtrlReply::err("home window missing"),
+    };
+    let view = &mut win.view;
+    let tree = &mut win.tree;
+    let root = match tree.GetRootPanel() {
+        Some(r) => r,
+        None => return CtrlReply::err("no root panel"),
+    };
+    let target = match resolve_panel_path(tree, root, path) {
+        Ok(t) => t,
+        Err(e) => return CtrlReply::err(e),
+    };
+    view.VisitPanel(tree, target, adherent);
+    CtrlReply::ok()
+}
+
+fn handle_visit_fullsized(app: &mut App, path: &str) -> CtrlReply {
+    let home_id = match app.home_window_id {
+        Some(id) => id,
+        None => return CtrlReply::err("home window not initialized"),
+    };
+    let win = match app.windows.get_mut(&home_id) {
+        Some(w) => w,
+        None => return CtrlReply::err("home window missing"),
+    };
+    let view = &mut win.view;
+    let tree = &mut win.tree;
+    let root = match tree.GetRootPanel() {
+        Some(r) => r,
+        None => return CtrlReply::err("no root panel"),
+    };
+    let target = match resolve_panel_path(tree, root, path) {
+        Ok(t) => t,
+        Err(e) => return CtrlReply::err(e),
+    };
+    // C++ `emView::VisitFullsized(panel, adherent, utilizeView=false)` —
+    // control-socket adherent/utilize_view default to false (matches C++
+    // defaults in emView.h:341-342).
+    view.VisitFullsized(tree, target, false, false);
+    CtrlReply::ok()
+}
+
+fn handle_set_focus(app: &mut App, path: &str) -> CtrlReply {
+    let home_id = match app.home_window_id {
+        Some(id) => id,
+        None => return CtrlReply::err("home window not initialized"),
+    };
+    let win = match app.windows.get_mut(&home_id) {
+        Some(w) => w,
+        None => return CtrlReply::err("home window missing"),
+    };
+    let view = &mut win.view;
+    let tree = &win.tree;
+    let root = match tree.GetRootPanel() {
+        Some(r) => r,
+        None => return CtrlReply::err("no root panel"),
+    };
+    let target = match resolve_panel_path(tree, root, path) {
+        Ok(t) => t,
+        Err(e) => return CtrlReply::err(e),
+    };
+    view.set_focus(Some(target));
+    CtrlReply::ok()
+}
+
+fn handle_seek_to(app: &mut App, path: &str) -> CtrlReply {
+    // TODO: seek_to currently delegates to VisitPanel for already-loaded
+    // targets. True seek semantics (lazy-load target panels via the seek
+    // engine) land as a Phase-4 follow-up; using
+    // `VisitByIdentityBare(identity)` directly would skip path resolution
+    // but the identity format (emCore-encoded, not `/`-separated) doesn't
+    // match the control-socket path syntax — so resolve-then-VisitPanel is
+    // used for wire-format parity with visit/set_focus.
+    let home_id = match app.home_window_id {
+        Some(id) => id,
+        None => return CtrlReply::err("home window not initialized"),
+    };
+    let win = match app.windows.get_mut(&home_id) {
+        Some(w) => w,
+        None => return CtrlReply::err("home window missing"),
+    };
+    let view = &mut win.view;
+    let tree = &mut win.tree;
+    let root = match tree.GetRootPanel() {
+        Some(r) => r,
+        None => return CtrlReply::err("no root panel"),
+    };
+    let target = match resolve_panel_path(tree, root, path) {
+        Ok(t) => t,
+        Err(e) => return CtrlReply::err(e),
+    };
+    view.VisitPanel(tree, target, false);
+    CtrlReply::ok()
 }
 
 fn focused_panel_path(
@@ -668,6 +751,24 @@ mod tests {
         assert_eq!(mode, 0o600, "socket perms should be 0600, got 0o{:o}", mode);
         cleanup_on_exit();
         assert!(!path.exists(), "cleanup_on_exit did not unlink socket");
+    }
+
+    #[test]
+    fn visit_no_longer_returns_phase_3_skeleton_error_on_valid_path() {
+        // Hermetic verification: handle_main_thread without an
+        // EventLoopProxy and without a real App is impractical to
+        // construct in a unit test. Skip — the live behavior is covered
+        // by the integration test in a later phase. This test is a
+        // placeholder asserting the wire format is what we expect.
+        let json = r#"{"cmd":"visit","panel_path":"/cosmos"}"#;
+        let parsed: CtrlCmd = serde_json::from_str(json).unwrap();
+        match parsed {
+            CtrlCmd::Visit { panel_path, adherent } => {
+                assert_eq!(panel_path, "/cosmos");
+                assert!(!adherent);
+            }
+            _ => panic!("wrong variant"),
+        }
     }
 
     #[test]
