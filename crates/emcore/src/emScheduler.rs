@@ -581,6 +581,12 @@ impl EngineScheduler {
                     // would silently drop any work the engine did in
                     // Cycle.
                     let Some(win) = windows.get_mut(&wid) else {
+                        if std::env::var("DEBUG_F011").is_ok() {
+                            eprintln!(
+                                "[F011] scheduler: Toplevel engine {engine_id:?} skipped — \
+                                 window {wid:?} not in windows map (engine re-sleeps)"
+                            );
+                        }
                         if let Some(eng) = self.inner.engines.get_mut(engine_id) {
                             eng.behavior = Some(behavior);
                             eng.clock = self.inner.clock;

@@ -578,6 +578,23 @@ impl PanelTree {
         self.register_engine_for(id, sched);
     }
 
+    /// Return the `EngineId` of the `PanelCycleEngine` registered for `id`, if any.
+    /// Test-support only — use to attach `first_cycle_probe` via
+    /// `EngineScheduler::attach_first_cycle_probe`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn panel_engine_id_pub(&self, id: PanelId) -> Option<crate::emEngine::EngineId> {
+        self.panel_engine_id(id)
+    }
+
+    /// Set the seek-position state (panel + child name) directly.
+    /// Test-support only — bypasses `emView::VisitPath` so headless tests can
+    /// set `is_seek_target()` without a live view animator.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_seek_pos_pub(&mut self, panel: PanelId, child_name: &str) {
+        self.seek_pos_panel = Some(panel);
+        self.seek_pos_child_name = child_name.to_string();
+    }
+
     fn register_engine_for(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
         if self.panels.get(id).and_then(|p| p.engine_id).is_some() {
             return; // idempotent re-attachment guard

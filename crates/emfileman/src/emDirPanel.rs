@@ -285,6 +285,14 @@ impl PanelBehavior for emDirPanel {
         _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
         ctx: &mut PanelCtx,
     ) -> bool {
+        if std::env::var("DEBUG_F011").is_ok() {
+            eprintln!(
+                "[F011] Cycle path={} dir_model={} loading_done={}",
+                self.path,
+                self.dir_model.is_some(),
+                self.loading_done
+            );
+        }
         let mut changed = false;
 
         if self.dir_model.is_none() {
@@ -1005,6 +1013,349 @@ mod tests {
         // Remove view-owned engines (UpdateEngineClass, VisitingVAEngineClass)
         // that are not panel-tree engines and won't be cleaned up by remove().
         for eid in update_engine_ids {
+            sched.remove_engine(eid);
+        }
+    }
+
+    /// Probe-based version of `production_path_child_engine_fires_after_update_engine_notice`.
+    ///
+    /// The earlier test uses `has_awake_engines()` which is true whenever ANY engine
+    /// is awake — including UpdateEngineClass itself. It does not prove that the
+    /// emDirPanel's PanelCycleEngine was dispatched.
+    ///
+    /// This test attaches a `first_cycle_probe` to the child's engine BEFORE the
+    /// slices run, so we can distinguish:
+    ///   - `probe.get() == None`  → PanelCycleEngine was never dispatched (scope/wake bug)
+    ///   - `probe.get() == Some(n)` → dispatched at time-slice n (Cycle ran)
+    #[test]
+    fn probe_confirms_dir_panel_cycle_dispatched_via_notice_spawner() {
+        use emcore::emEngineCtx::PanelCtx;
+        use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
+        use emcore::emPanelTree::PanelTree;
+        use emcore::emScheduler::EngineScheduler;
+        use std::cell::{Cell, RefCell};
+        use std::collections::HashMap;
+        use std::rc::Rc;
+
+        struct NoticeSpawner {
+            emctx: Rc<emcore::emContext::emContext>,
+            path: String,
+            child_id: Option<emcore::emPanelTree::PanelId>,
+        }
+        impl PanelBehavior for NoticeSpawner {
+            fn notice(&mut self, flags: NoticeFlags, _state: &PanelState, ctx: &mut PanelCtx) {
+                if flags.contains(NoticeFlags::VIEWING_CHANGED) && self.child_id.is_none() {
+                    let id = ctx.create_child_with(
+                        "content",
+                        Box::new(emDirPanel::new(Rc::clone(&self.emctx), self.path.clone())),
+                    );
+                    ctx.wake_up_panel(id);
+                    self.child_id = Some(id);
+                }
+            }
+        }
+
+        let emctx = emcore::emContext::emContext::NewRoot();
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("root", false);
+        tree.init_panel_view(root, None);
+        let parent = tree.create_child(root, "parent", None);
+        tree.set_behavior(
+            parent,
+            Box::new(NoticeSpawner {
+                emctx: Rc::clone(&emctx),
+                path: "/tmp".to_string(),
+                child_id: None,
+            }),
+        );
+
+        let mut sched = EngineScheduler::new();
+        let (wid, win) =
+            emcore::test_view_harness::headless_emwindow_with_tree(&emctx, &mut sched, tree);
+        let mut windows = HashMap::new();
+        windows.insert(wid, win);
+
+        let scope = emcore::emPanelScope::PanelScope::Toplevel(wid);
+        let view_engine_ids: Vec<emcore::emEngine::EngineId> = {
+            let win = windows.get_mut(&wid).unwrap();
+            let mut tree = win.take_tree();
+            let mut ids = Vec::new();
+            {
+                let mut fw = Vec::new();
+                let cb = RefCell::new(None::<Box<dyn emcore::emClipboard::emClipboard>>);
+                let pa = Rc::new(RefCell::new(
+                    Vec::<emcore::emGUIFramework::DeferredAction>::new(),
+                ));
+                let mut sc = emcore::emEngineCtx::SchedCtx {
+                    scheduler: &mut sched,
+                    framework_actions: &mut fw,
+                    root_context: &emctx,
+                    framework_clipboard: &cb,
+                    current_engine: None,
+                    pending_actions: &pa,
+                };
+                win.view_mut().RegisterEngines(&mut sc, &mut tree, scope);
+                if let Some(eid) = win.view().update_engine_id {
+                    ids.push(eid);
+                }
+                if let Some(eid) = win.view().visiting_va_engine_id {
+                    ids.push(eid);
+                }
+                tree.queue_notice(parent, NoticeFlags::VIEWING_CHANGED, Some(&mut sched));
+            }
+            win.put_tree(tree);
+            ids
+        };
+
+        let mut fw = Vec::new();
+        let mut pending_inputs = Vec::new();
+        let mut input_state = emcore::emInputState::emInputState::new();
+        let cb = RefCell::new(None::<Box<dyn emcore::emClipboard::emClipboard>>);
+        let pa = Rc::new(RefCell::new(
+            Vec::<emcore::emGUIFramework::DeferredAction>::new(),
+        ));
+
+        // Slice 1: UpdateEngineClass fires → notice → NoticeSpawner creates child + wakes engine
+        sched.DoTimeSlice(
+            &mut windows,
+            &emctx,
+            &mut fw,
+            &mut pending_inputs,
+            &mut input_state,
+            &cb,
+            &pa,
+        );
+
+        // After slice 1: find the child engine and attach probe BEFORE more slices run.
+        let probe_cell: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
+        let child_engine_found = {
+            let win = windows.get_mut(&wid).unwrap();
+            let tree = win.take_tree();
+            let child_id = tree.find_child_by_name(parent, "content");
+            let found = if let Some(cid) = child_id {
+                if let Some(eid) = tree.panel_engine_id_pub(cid) {
+                    sched.attach_first_cycle_probe(eid, Rc::clone(&probe_cell));
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            win.put_tree(tree);
+            found
+        };
+
+        assert!(
+            child_engine_found,
+            "After slice 1, content child must exist and have a registered PanelCycleEngine. \
+             child_engine_found=false means either the child was not created (notice did not fire \
+             or create_child_with failed) or the engine was not registered (has_view=false)."
+        );
+
+        // Slices 2-11: PanelCycleEngine (Medium) should now fire.
+        for _ in 0..10 {
+            sched.DoTimeSlice(
+                &mut windows,
+                &emctx,
+                &mut fw,
+                &mut pending_inputs,
+                &mut input_state,
+                &cb,
+                &pa,
+            );
+            if probe_cell.get().is_some() {
+                break;
+            }
+        }
+
+        assert!(
+            probe_cell.get().is_some(),
+            "emDirPanel PanelCycleEngine must be dispatched within 10 slices after the child \
+             is created and woken via wake_up_panel. probe=None means:\n\
+             (a) scope mismatch — engine registered with wrong WindowId, scheduler skips it\n\
+             (b) engine deregistered between wake and dispatch (panel deleted)\n\
+             (c) scheduler priority inversion — UpdateEngineClass permanently blocks Medium\n\
+             If this test passes but the app still shows Wait..., the issue is in the \
+             real emDirEntryPanel path, not the NoticeSpawner stub."
+        );
+
+        // Cleanup
+        let mut win = windows.remove(&wid).unwrap();
+        let mut tree = win.take_tree();
+        tree.remove(root, Some(&mut sched));
+        for eid in view_engine_ids {
+            sched.remove_engine(eid);
+        }
+    }
+
+    /// End-to-end test using the real `emDirEntryPanel` hierarchy.
+    ///
+    /// Unlike `probe_confirms_dir_panel_cycle_dispatched_via_notice_spawner` (which uses a
+    /// NoticeSpawner stub), this test instantiates the actual production stack:
+    ///
+    ///   emDirEntryPanel (parent) → update_content_panel → emDirFpPlugin → emDirPanel (child)
+    ///
+    /// `is_sought=true` (via `set_seek_pos_pub`) bypasses geometry conditions so the child is
+    /// created in a headless environment.
+    ///
+    /// If this test FAILS but `probe_confirms_dir_panel_cycle_dispatched_via_notice_spawner`
+    /// PASSES, the bug is in the real `emDirEntryPanel::update_content_panel` path vs the stub.
+    /// If both PASS but the app shows Wait..., the issue is in the real window setup or event loop.
+    #[test]
+    fn real_stack_dir_entry_panel_cycle_dispatched() {
+        use emcore::emPanel::NoticeFlags;
+        use emcore::emPanelTree::PanelTree;
+        use emcore::emScheduler::EngineScheduler;
+        use std::cell::{Cell, RefCell};
+        use std::collections::HashMap;
+        use std::rc::Rc;
+
+        use crate::emDirEntry::emDirEntry;
+        use crate::emDirEntryPanel::emDirEntryPanel;
+        use crate::emDirEntryPanel::CONTENT_NAME;
+
+        // Register emDirFpPlugin so CreateFilePanelWithStat returns emDirPanel.
+        let emctx = emcore::emContext::emContext::NewRoot();
+        {
+            use emcore::emFpPlugin::{emFpPlugin, emFpPluginList};
+            let dir_plugin = emFpPlugin::for_test_directory_handler(
+                "emDir",
+                crate::emDirFpPlugin::emDirFpPluginFunc,
+            );
+            emctx.acquire::<emFpPluginList>("", || {
+                emFpPluginList::from_plugins(vec![dir_plugin])
+            });
+        }
+
+        // Build tree: root→emDirEntryPanel for /tmp
+        let entry = emDirEntry::from_parent_and_name("", "/tmp");
+        let dep = emDirEntryPanel::new(Rc::clone(&emctx), entry);
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("dep_root", false);
+        tree.init_panel_view(root, None);
+        tree.set_behavior(root, Box::new(dep));
+        // Set seek so should_create bypasses geometry check
+        tree.set_seek_pos_pub(root, CONTENT_NAME);
+
+        let mut sched = EngineScheduler::new();
+        let (wid, win) =
+            emcore::test_view_harness::headless_emwindow_with_tree(&emctx, &mut sched, tree);
+        let mut windows = HashMap::new();
+        windows.insert(wid, win);
+
+        let scope = emcore::emPanelScope::PanelScope::Toplevel(wid);
+        let view_engine_ids: Vec<emcore::emEngine::EngineId> = {
+            let win = windows.get_mut(&wid).unwrap();
+            let mut tree = win.take_tree();
+            let mut ids = Vec::new();
+            {
+                let mut fw = Vec::new();
+                let cb = RefCell::new(None::<Box<dyn emcore::emClipboard::emClipboard>>);
+                let pa = Rc::new(RefCell::new(
+                    Vec::<emcore::emGUIFramework::DeferredAction>::new(),
+                ));
+                let mut sc = emcore::emEngineCtx::SchedCtx {
+                    scheduler: &mut sched,
+                    framework_actions: &mut fw,
+                    root_context: &emctx,
+                    framework_clipboard: &cb,
+                    current_engine: None,
+                    pending_actions: &pa,
+                };
+                win.view_mut().RegisterEngines(&mut sc, &mut tree, scope);
+                if let Some(eid) = win.view().update_engine_id {
+                    ids.push(eid);
+                }
+                if let Some(eid) = win.view().visiting_va_engine_id {
+                    ids.push(eid);
+                }
+                // Queue SOUGHT_NAME_CHANGED so update_content_panel fires and sees is_sought=true
+                tree.queue_notice(
+                    root,
+                    NoticeFlags::SOUGHT_NAME_CHANGED,
+                    Some(&mut sched),
+                );
+            }
+            win.put_tree(tree);
+            ids
+        };
+
+        let mut fw = Vec::new();
+        let mut pending_inputs = Vec::new();
+        let mut input_state = emcore::emInputState::emInputState::new();
+        let cb = RefCell::new(None::<Box<dyn emcore::emClipboard::emClipboard>>);
+        let pa = Rc::new(RefCell::new(
+            Vec::<emcore::emGUIFramework::DeferredAction>::new(),
+        ));
+
+        // Slice 1: UpdateEngineClass → notice → emDirEntryPanel creates emDirPanel child
+        sched.DoTimeSlice(
+            &mut windows,
+            &emctx,
+            &mut fw,
+            &mut pending_inputs,
+            &mut input_state,
+            &cb,
+            &pa,
+        );
+
+        // Find child and attach probe
+        let probe_cell: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
+        let child_engine_found = {
+            let win = windows.get_mut(&wid).unwrap();
+            let tree = win.take_tree();
+            let child_id = tree.find_child_by_name(root, CONTENT_NAME);
+            let found = if let Some(cid) = child_id {
+                if let Some(eid) = tree.panel_engine_id_pub(cid) {
+                    sched.attach_first_cycle_probe(eid, Rc::clone(&probe_cell));
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            win.put_tree(tree);
+            found
+        };
+
+        assert!(
+            child_engine_found,
+            "emDirEntryPanel must create a content child with a registered PanelCycleEngine \
+             when is_sought=true. child_engine_found=false means either the plugin system did \
+             not return emDirPanel (emDirFpPlugin not registered) or the engine was not \
+             registered (has_view=false propagation broken)."
+        );
+
+        // Run slices: emDirPanel PanelCycleEngine (Medium) must fire
+        for _ in 0..10 {
+            sched.DoTimeSlice(
+                &mut windows,
+                &emctx,
+                &mut fw,
+                &mut pending_inputs,
+                &mut input_state,
+                &cb,
+                &pa,
+            );
+            if probe_cell.get().is_some() {
+                break;
+            }
+        }
+
+        assert!(
+            probe_cell.get().is_some(),
+            "emDirPanel PanelCycleEngine must be dispatched via the real emDirEntryPanel path. \
+             probe=None means Cycle was never called. This is the production failure mode: \
+             the app shows Wait... indefinitely because Cycle never advances loading state."
+        );
+
+        // Cleanup
+        let mut win = windows.remove(&wid).unwrap();
+        let mut tree = win.take_tree();
+        tree.remove(root, Some(&mut sched));
+        for eid in view_engine_ids {
             sched.remove_engine(eid);
         }
     }

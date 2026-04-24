@@ -188,6 +188,31 @@ impl emFpPlugin {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Test-support constructor: create a plugin that handles "directory" file types
+    /// and invokes a statically-linked function directly (no dlopen).
+    ///
+    /// Pre-populates the function cache so `TryCreateFilePanel` never tries to
+    /// resolve a dynamic library. Use this in tests to inject emDirFpPlugin without
+    /// a .emFpPlugin config file on disk.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test_directory_handler(
+        function_name: &str,
+        func: emFpPluginFunc,
+    ) -> Self {
+        let mut p = Self::default();
+        p.file_types = vec!["directory".to_string()];
+        p.function = function_name.to_string();
+        p.library = "__test__".to_string();
+        *p.cached.borrow_mut() = CachedFunctions {
+            lib_name: "__test__".to_string(),
+            func_name: function_name.to_string(),
+            func: Some(func),
+            model_func_name: String::new(),
+            model_func: None,
+        };
+        p
+    }
 }
 
 impl Clone for emFpPlugin {
