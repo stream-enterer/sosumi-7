@@ -366,11 +366,12 @@ pub trait PanelBehavior: AsAny {
     /// Text block. Each pair is formatted as `"\n<label>: <value>"` in
     /// insertion order. Default: empty (no subtype state).
     ///
-    /// Rust analog of C++'s dynamic_cast cascade in
-    /// `emTreeDumpFromObject` — each concrete panel class in C++ adds
-    /// its own fields via a centralized cascade; Rust decentralizes this
-    /// because PanelBehavior is the unifying trait C++ lacks. Preserves
-    /// observable output; differs only in internal dispatch.
+    /// Implements the panel-subtype branch of C++'s `emTreeDumpFromObject`
+    /// cascade (`src/emTreeDump/emTreeDumpUtil.cpp`), which uses
+    /// `dynamic_cast` specifically because it dispatches across unrelated
+    /// hierarchies (emEngine, emContext, emView, emPanel, emModel). For
+    /// panel-only subtype data, virtual dispatch through the trait is the
+    /// natural mirror — observable output preserved.
     fn dump_state(&self) -> Vec<(&'static str, String)> {
         Vec::new()
     }
@@ -455,5 +456,6 @@ mod tests {
         let s = b.dump_state();
         assert_eq!(s.len(), 2);
         assert_eq!(s[0], ("loading_pct", "42".to_string()));
+        assert_eq!(s[1], ("loading_done", "false".to_string()));
     }
 }
