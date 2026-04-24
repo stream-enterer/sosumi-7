@@ -535,6 +535,12 @@ impl EngineScheduler {
             if let Some(eng) = self.inner.engines.get_mut(engine_id) {
                 eng.awake_state = -1;
             } else {
+                if std::env::var("DEBUG_F011").is_ok() {
+                    eprintln!(
+                        "[F011] scheduler: engine {engine_id:?} dequeued but already removed \
+                         (panel was deleted while engine was in wake queue)"
+                    );
+                }
                 continue; // emEngine was removed
             }
 
@@ -542,7 +548,15 @@ impl EngineScheduler {
             let mut behavior = match self.inner.engines.get_mut(engine_id) {
                 Some(eng) => match eng.behavior.take() {
                     Some(b) => b,
-                    None => continue,
+                    None => {
+                        if std::env::var("DEBUG_F011").is_ok() {
+                            eprintln!(
+                                "[F011] scheduler: engine {engine_id:?} behavior is None \
+                                 (re-entrant dispatch or engine in mid-Cycle)"
+                            );
+                        }
+                        continue;
+                    }
                 },
                 None => continue,
             };
