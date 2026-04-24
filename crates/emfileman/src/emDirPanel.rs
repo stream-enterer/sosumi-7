@@ -1351,4 +1351,168 @@ mod tests {
             sched.remove_engine(eid);
         }
     }
+
+    /// Hypothesis B test (F010): after loading completes, does the inner emDirPanel
+    /// actually have entry children with non-zero layout rects?
+    ///
+    /// Drives the full real_stack pipeline (emDirEntryPanel → emDirFpPlugin → emDirPanel)
+    /// with a populated temp directory, runs DoTimeSlice until loading finishes,
+    /// then asserts:
+    ///   (a) the emDirPanel has one emDirEntryPanel child per visible entry
+    ///   (b) each child's layout_rect is non-zero (LayoutChildren ran and sized it)
+    ///
+    /// Failure (a) confirms Hypothesis B(i): entries never created.
+    /// Failure (b) confirms Hypothesis B(ii): created but clipped/zero-sized.
+    #[test]
+    fn real_stack_dir_panel_children_created_with_nonzero_rects_after_load() {
+        use emcore::emPanel::NoticeFlags;
+        use emcore::emPanelTree::PanelTree;
+        use emcore::emScheduler::EngineScheduler;
+        use std::cell::RefCell;
+        use std::collections::HashMap;
+        use std::rc::Rc;
+
+        use crate::emDirEntry::emDirEntry;
+        use crate::emDirEntryPanel::emDirEntryPanel;
+        use crate::emDirEntryPanel::CONTENT_NAME;
+
+        // Populated temp directory with known entry count.
+        let tmpdir = std::env::temp_dir().join("emfileman_f010_hyp_b");
+        let _ = std::fs::remove_dir_all(&tmpdir);
+        std::fs::create_dir_all(&tmpdir).unwrap();
+        for name in &["a.txt", "b.txt", "c.txt", "d.txt"] {
+            std::fs::write(tmpdir.join(name), b"x").unwrap();
+        }
+        let path = tmpdir.to_string_lossy().to_string();
+        let expected_entries = 4;
+
+        let emctx = emcore::emContext::emContext::NewRoot();
+        {
+            use emcore::emFpPlugin::{emFpPlugin, emFpPluginList};
+            let dir_plugin = emFpPlugin::for_test_directory_handler(
+                "emDir",
+                crate::emDirFpPlugin::emDirFpPluginFunc,
+            );
+            emctx.acquire::<emFpPluginList>("", || {
+                emFpPluginList::from_plugins(vec![dir_plugin])
+            });
+        }
+
+        let entry = emDirEntry::from_parent_and_name("", &path);
+        let dep = emDirEntryPanel::new(Rc::clone(&emctx), entry);
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("dep_root", false);
+        tree.init_panel_view(root, None);
+        tree.set_behavior(root, Box::new(dep));
+        tree.set_seek_pos_pub(root, CONTENT_NAME);
+
+        let mut sched = EngineScheduler::new();
+        let (wid, win) =
+            emcore::test_view_harness::headless_emwindow_with_tree(&emctx, &mut sched, tree);
+        let mut windows = HashMap::new();
+        windows.insert(wid, win);
+
+        let scope = emcore::emPanelScope::PanelScope::Toplevel(wid);
+        let view_engine_ids: Vec<emcore::emEngine::EngineId> = {
+            let win = windows.get_mut(&wid).unwrap();
+            let mut tree = win.take_tree();
+            let mut ids = Vec::new();
+            {
+                let mut fw = Vec::new();
+                let cb = RefCell::new(None::<Box<dyn emcore::emClipboard::emClipboard>>);
+                let pa = Rc::new(RefCell::new(
+                    Vec::<emcore::emGUIFramework::DeferredAction>::new(),
+                ));
+                let mut sc = emcore::emEngineCtx::SchedCtx {
+                    scheduler: &mut sched,
+                    framework_actions: &mut fw,
+                    root_context: &emctx,
+                    framework_clipboard: &cb,
+                    current_engine: None,
+                    pending_actions: &pa,
+                };
+                win.view_mut().RegisterEngines(&mut sc, &mut tree, scope);
+                if let Some(eid) = win.view().update_engine_id {
+                    ids.push(eid);
+                }
+                if let Some(eid) = win.view().visiting_va_engine_id {
+                    ids.push(eid);
+                }
+                tree.queue_notice(
+                    root,
+                    NoticeFlags::SOUGHT_NAME_CHANGED,
+                    Some(&mut sched),
+                );
+            }
+            win.put_tree(tree);
+            ids
+        };
+
+        let mut fw = Vec::new();
+        let mut pending_inputs = Vec::new();
+        let mut input_state = emcore::emInputState::emInputState::new();
+        let cb = RefCell::new(None::<Box<dyn emcore::emClipboard::emClipboard>>);
+        let pa = Rc::new(RefCell::new(
+            Vec::<emcore::emGUIFramework::DeferredAction>::new(),
+        ));
+
+        // Drive enough slices to:
+        //   1. notice → create emDirPanel child
+        //   2. emDirPanel::Cycle: acquire model → Waiting → Loading
+        //   3. N ReadingNames slices (one per dir entry)
+        //   4. 1 Sorting slice
+        //   5. N LoadingEntries slices (one per entry)
+        //   6. Final slice: Ok(true) → Loaded → update_children → create entry panels
+        //   7. LayoutChildren on emDirPanel → assign rects
+        // 200 slices is far more than needed for 4 entries.
+        for _ in 0..200 {
+            sched.DoTimeSlice(
+                &mut windows,
+                &emctx,
+                &mut fw,
+                &mut pending_inputs,
+                &mut input_state,
+                &cb,
+                &pa,
+            );
+            if !sched.has_awake_engines() {
+                break;
+            }
+        }
+
+        // Inspect tree state.
+        let mut win = windows.remove(&wid).unwrap();
+        let mut tree = win.take_tree();
+
+        let dir_panel_id = tree
+            .find_child_by_name(root, CONTENT_NAME)
+            .expect("emDirPanel content child must exist after loading");
+
+        let entry_children: Vec<_> = tree.children(dir_panel_id).collect();
+        assert_eq!(
+            entry_children.len(),
+            expected_entries,
+            "emDirPanel must have {expected_entries} entry children after loading {path}; \
+             got {}. Hypothesis B(i) confirmed: entries not created.",
+            entry_children.len(),
+        );
+
+        for cid in &entry_children {
+            let name = tree.get_panel_name(*cid);
+            let rect = tree.layout_rect(*cid).expect("child layout rect");
+            assert!(
+                rect.w > 0.0 && rect.h > 0.0,
+                "Entry child {name:?} has zero-sized layout_rect: w={} h={}. \
+                 Hypothesis B(ii) confirmed: LayoutChildren never ran or produced zero rects.",
+                rect.w, rect.h,
+            );
+        }
+
+        // Cleanup
+        tree.remove(root, Some(&mut sched));
+        for eid in view_engine_ids {
+            sched.remove_engine(eid);
+        }
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
 }
