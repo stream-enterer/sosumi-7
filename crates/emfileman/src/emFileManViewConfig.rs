@@ -660,6 +660,48 @@ mod tests {
     }
 
     #[test]
+    fn theme_all_layout_critical_fields_nonzero() {
+        // F010 rollback hypothesis A: theme-name fix resolved the "always black"
+        // symptom but blank-after-loading remains. Test that every layout field
+        // required by compute_grid_layout, emDirPanel::Paint, and
+        // emDirEntryPanel::Paint parses to a non-zero value from Glass1.
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let vc = emFileManViewConfig::Acquire(&ctx);
+        let vc = vc.borrow();
+        let theme = vc.GetTheme();
+        let rec = theme.GetRec();
+
+        let fields: &[(&str, f64)] = &[
+            ("Height", rec.Height),
+            ("BackgroundW", rec.BackgroundW),
+            ("BackgroundH", rec.BackgroundH),
+            ("NameW", rec.NameW),
+            ("NameH", rec.NameH),
+            ("PathW", rec.PathW),
+            ("PathH", rec.PathH),
+            ("InfoW", rec.InfoW),
+            ("InfoH", rec.InfoH),
+            ("DirContentW", rec.DirContentW),
+            ("DirContentH", rec.DirContentH),
+            ("FileContentW", rec.FileContentW),
+            ("FileContentH", rec.FileContentH),
+            ("MinContentVW", rec.MinContentVW),
+        ];
+        let zero: Vec<&str> = fields
+            .iter()
+            .filter(|(_, v)| *v == 0.0)
+            .map(|(n, _)| *n)
+            .collect();
+        assert!(
+            zero.is_empty(),
+            "These layout-critical theme fields are zero (theme likely parsed \
+             partially): {:?}. All values: {:?}",
+            zero,
+            fields
+        );
+    }
+
+    #[test]
     fn view_config_acquire_returns_same() {
         let ctx = emcore::emContext::emContext::NewRoot();
         let v1 = emFileManViewConfig::Acquire(&ctx);
