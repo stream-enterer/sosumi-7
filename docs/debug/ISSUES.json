@@ -325,7 +325,7 @@
     {
       "id": "F013",
       "kind": "fix",
-      "status": "needs-manual-verification",
+      "status": "closed",
       "priority": "high",
       "title": "Panic when zooming into file manager: CreateControlPanel requires scheduler-reach PanelCtx",
       "description": "Zooming into the file system panel triggers a panic at crates/emfileman/src/emDirPanel.rs:529 — emDirPanel::CreateControlPanel calls parent_ctx.as_sched_ctx().expect(\"CreateControlPanel requires scheduler-reach PanelCtx\") and the provided PanelCtx does not have scheduler reach, so the expect fires and the process aborts (SIGSEGV follows the panic). Likely surfaced by the F012 ContentControlPanel wiring — the new cross-tree CreateControlPanel dispatch is handing emDirPanel a PanelCtx without scheduler access, whereas emDirPanel's C++ analogue can construct emFileManControlPanel unconditionally.",
