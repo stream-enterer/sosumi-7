@@ -325,7 +325,7 @@
     {
       "id": "F013",
       "kind": "fix",
-      "status": "investigating",
+      "status": "needs-manual-verification",
       "priority": "high",
       "title": "Panic when zooming into file manager: CreateControlPanel requires scheduler-reach PanelCtx",
       "description": "Zooming into the file system panel triggers a panic at crates/emfileman/src/emDirPanel.rs:529 — emDirPanel::CreateControlPanel calls parent_ctx.as_sched_ctx().expect(\"CreateControlPanel requires scheduler-reach PanelCtx\") and the provided PanelCtx does not have scheduler reach, so the expect fires and the process aborts (SIGSEGV follows the panic). Likely surfaced by the F012 ContentControlPanel wiring — the new cross-tree CreateControlPanel dispatch is handing emDirPanel a PanelCtx without scheduler access, whereas emDirPanel's C++ analogue can construct emFileManControlPanel unconditionally.",
@@ -333,12 +333,12 @@
       "caused_by": "F012",
       "introduced_commit": "851ca26b",
       "introduced_date": "2026-04-24",
-      "fix_note": "Root cause: PanelTree::create_control_panel_in (emPanelTree.rs:2120) constructs PanelCtx via the bare PanelCtx::new, so scheduler/framework_actions/root_context/framework_clipboard/pending_actions are all None. Inner CreateControlPanel behaviors (emDirPanel, emDirEntryPanel) require scheduler reach to build emFileManControlPanel. Fix direction: thread the five sched-reach handles through create_control_panel_in (and emView::CreateControlPanel); ControlPanelBridge::Cycle already has them available on EngineCtx.",
+      "fix_note": "Fixed in f8fac99a on fix/F013: threaded the five scheduler-reach handles (scheduler, framework_actions, root_context, framework_clipboard, pending_actions) through PanelTree::create_control_panel_in so the inner PanelCtx is built via with_sched_reach instead of the no-reach PanelCtx::new. emView::CreateControlPanel wrapper and ControlPanelBridge::Cycle call site updated accordingly. Regression test test_create_control_panel_in_threads_scheduler_reach added. 2696 tests pass. Requires runtime verification that zooming into the file manager no longer panics and that the emFileManControlPanel (Select Files / Help / etc.) now appears in the ContentControlPanel.",
       "investigation_file": "docs/debug/investigations/F013.md",
       "root_cause_file": null,
       "blocked_question": null,
-      "fixed_in_commit": null,
-      "fixed_date": null,
+      "fixed_in_commit": "f8fac99a",
+      "fixed_date": "2026-04-24",
       "repro": "cargo run -p eaglemode --release. Zoom into the file manager panel. Process panics with 'CreateControlPanel requires scheduler-reach PanelCtx' at emDirPanel.rs:529, then SIGSEGV."
     },
     {
