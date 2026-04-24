@@ -358,6 +358,8 @@ The agent needs `eaglemode` to launch without a human-attended desktop. Approach
 
 This verification happens as the first implementation milestone of piece (C) — before any control-channel code is written, confirm the binary launches under Xvfb. If (1) fails, the design adds `--headless` as a required piece of (C); if (1) works, `--headless` is out of scope.
 
+**Verification status (2026-04-24):** Xvfb is **not installed** on the development machine where Phase 3 implementation is occurring. Verification deferred — phase 3 control-channel code lands without runtime gating, and integration tests that spawn the binary are marked `#[ignore]` so they can be enabled by anyone who has Xvfb (or a real display) available. If a future session reaches the runtime-driving stage and Xvfb is still unavailable, escalate to a `--headless` decision then. For the immediate goal (F010 unblocking), the agent can drive the app from a desktop session — Xvfb is a CI-friendly nice-to-have, not a blocker.
+
 ---
 
 ## Annotation summary
