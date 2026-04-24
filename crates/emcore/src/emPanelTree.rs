@@ -197,6 +197,13 @@ pub(crate) struct PanelData {
     pub(crate) in_viewed_path: bool,
     pub(crate) in_active_path: bool,
     pub(crate) is_active: bool,
+    // RUST_ONLY: (language-forced utility)
+    // C++ relies on gdb for per-panel paint inspection; the Rust port
+    // lacks an equivalent live-inspection path, so paint attribution is
+    // baked into the data model. Bumped by the paint driver at
+    // emView::paint_one_panel, never by behaviors.
+    pub(crate) paint_count: u64,
+    pub(crate) last_paint_frame: u64,
     pub(crate) viewed_x: f64,
     pub(crate) viewed_y: f64,
     pub(crate) viewed_width: f64,
@@ -271,6 +278,8 @@ impl PanelData {
             in_viewed_path: false,
             in_active_path: false,
             is_active: false,
+            paint_count: 0,
+            last_paint_frame: 0,
             viewed_x: 0.0,
             viewed_y: 0.0,
             viewed_width: 0.0,
@@ -4119,5 +4128,18 @@ mod tests {
             taken.GetRootPanel().is_some(),
             "after mem::take, destination holds the original content"
         );
+    }
+}
+
+#[cfg(test)]
+mod paint_counter_tests {
+    use super::*;
+    #[test]
+    fn new_panel_has_zero_paint_counters() {
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("root");
+        let data = &tree.panels[root];
+        assert_eq!(data.paint_count, 0);
+        assert_eq!(data.last_paint_frame, 0);
     }
 }
