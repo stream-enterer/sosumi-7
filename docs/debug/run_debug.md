@@ -145,18 +145,10 @@ issue_id: <ID>
 current_phase: 1
 head_sha: <output of `git rev-parse HEAD`>
 phases:
-  1_root_cause_investigation:
-    complete: false
-    gate: "Root cause chain traced to a specific file:line. Evidence recorded in Phase 1 section. No fix proposed."
-  2_pattern_analysis:
-    complete: false
-    gate: "C++ reference behaviour confirmed at ~/Projects/eaglemode-0.96.4/. Difference from Rust identified and recorded."
-  3_hypothesis_and_testing:
-    complete: false
-    gate: "Root cause confirmed by a passing hypothesis. At least one hypothesis tested and recorded with CONFIRMED or RULED OUT outcome."
-  4_implementation:
-    complete: false
-    gate: "Fix committed. cargo check, cargo clippy -- -D warnings, and cargo-nextest ntr all pass."
+  1_root_cause_investigation: { complete: false }
+  2_pattern_analysis: { complete: false }
+  3_hypothesis_and_testing: { complete: false }
+  4_implementation: { complete: false }
 ---
 
 ## Issue
@@ -169,23 +161,38 @@ phases:
 
 ## Phase 1 — Root Cause Investigation
 
-(empty — fill as gathered)
+(empty — fill as gathered. Cite evidence as `E1.N (path:line)`; end with a
+numbered root-cause chain from symptom to source.)
 
 ## Phase 2 — Pattern Analysis
 
-(empty — fill when phase 1 gate passes)
+(empty — cite C++ reference at `~/Projects/eaglemode-0.96.4/` and name the
+Rust divergence. One or two `E2.N` entries, not a third summary entry.)
 
 ## Phase 3 — Hypotheses
 
-(empty — fill when phase 2 gate passes)
-<!-- Format: HYPOTHESIS: <description> / OUTCOME: CONFIRMED | RULED OUT: <reason> / EVIDENCE: <ref to Phase 1 or Phase 2 entry> -->
-
-## Root Cause
-
-(empty — fill when phase 3 gate passes)
+(empty — one bullet per hypothesis, format below. No prose restatement of
+the gate; the frontmatter `complete: true` is the gate.)
+<!-- Format: - HYPOTHESIS: <description> / OUTCOME: CONFIRMED | RULED OUT — <reason> / EVIDENCE: E1.N, E2.N -->
 ```
 
-**Phase gate discipline:** Before advancing from one phase to the next, verify the gate condition is met. Set `complete: true` in the frontmatter and commit before starting the next phase. Do not begin Phase 2 with Phase 1's gate unmet. If a gate cannot be met because investigation is stalled, go to Step 6 (Blocked). If a gate cannot be met because the fix requires a human decision, follow the `needs-design` path in Step 5.
+**Phase gates** — a phase's `complete: true` means its gate is met. Gates:
+
+1. Root cause chain traced to a specific file:line, evidence recorded.
+2. C++ reference behaviour confirmed, Rust divergence named.
+3. At least one hypothesis tested with CONFIRMED or RULED OUT outcome.
+4. Fix committed. `cargo check`, `cargo clippy -- -D warnings`, `cargo-nextest ntr` all pass.
+
+Advance only when the current gate is met. Do not write a "Phase N gate"
+prose section inside the scratchpad — the frontmatter `complete` flag is
+sufficient. If a gate cannot be met because investigation is stalled, go
+to Step 6 (Blocked). If a gate cannot be met because the fix requires a
+human decision, follow the `needs-design` path in Step 5.
+
+**Do not duplicate the root cause.** Phase 1's root-cause chain is the
+single source of truth. Do not add a trailing "## Root Cause" section,
+and do not restate the fix in the scratchpad — the commit message and
+ISSUES.json `fix_note` already carry it.
 
 **next_steps discipline:** Each item must be specific enough to execute without interpretation. Not "check the VIF chain" — instead "read `crates/emcore/src/emVIF.rs:100-150` to verify input forwarding on WindowEvent::Focused". Check off completed items with `[x]`. Add new items as they are discovered. The first unchecked item is always the next action to execute, whether within this invocation or on resume after a crash.
 
