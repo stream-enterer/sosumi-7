@@ -94,14 +94,13 @@ impl VisualStyle {
 }
 
 /// Construct an `emTreeDumpRec`-shaped `RecStruct` with Frame / BgColor /
-/// FgColor / Title / Text populated. `Commands`, `Files`, `Children` are
-/// NOT populated — they are left for the caller to add at the end if
-/// non-empty, to avoid the cost of allocating empty arrays for every
-/// rec.
+/// FgColor / Title / Text populated, plus empty `Commands` and `Files`
+/// arrays. `Children` is NOT inserted here — callers must call
+/// `set_children` explicitly (even with an empty Vec) to populate it.
 ///
-/// The `Children` array is typically added via `with_children` (see
-/// below). `Commands` and `Files` are always empty in this port (see
-/// spec §(A) Schema — keep in mind for future emTreeDumpFilePanel port).
+/// Commands and Files are always empty in this port (see spec §(A)
+/// Schema — keep in mind for future emTreeDumpFilePanel port); Children
+/// must be added by the caller via `set_children`.
 pub fn empty_rec(title: String, text: String, style: VisualStyle) -> RecStruct {
     let mut rec = RecStruct::new();
     rec.set_ident("Frame", style.frame.as_str());
@@ -109,33 +108,16 @@ pub fn empty_rec(title: String, text: String, style: VisualStyle) -> RecStruct {
     rec.set_int("FgColor", style.fg);
     rec.set_str("Title", &title);
     rec.set_str("Text", &text);
-    // Empty Commands, Files, Children — callers set Children later.
+    // Empty Commands and Files — Children is deferred to `set_children`.
     rec.SetValue("Commands", RecValue::Array(Vec::new()));
     rec.SetValue("Files", RecValue::Array(Vec::new()));
-    rec.SetValue("Children", RecValue::Array(Vec::new()));
     rec
 }
 
-/// Replace the Children field of `rec` with `children`. This is the helper
-/// Tasks 1.5–1.8 use to attach recursively-walked sub-recs to their parent.
-/// Using replacement (rather than "push into existing") sidesteps the
-/// missing `get_mut_or_insert_array` on `RecStruct` — callers accumulate
-/// children in a `Vec<RecValue>` locally, then call this once at the end.
+/// Sets the Children field of `rec`. Must be called exactly once per rec;
+/// `empty_rec` does not pre-populate Children. Callers that have no
+/// children should still call with an empty Vec for schema completeness.
 pub fn set_children(rec: &mut RecStruct, children: Vec<RecValue>) {
-    // Find the existing "children" field and replace its value. Since
-    // empty_rec always inserts it, simply push a fresh entry — the reader
-    // side uses case-insensitive first-match, so the newer entry wins if
-    // duplicated, but cleaner is to rebuild. Simplest: RecStruct stores
-    // fields as a Vec, so just append the replacement; lookups are
-    // first-match. To be correct rather than lucky, use SetValue which
-    // appends a fresh entry; however the existing empty Children field
-    // will shadow. Workaround: construct the rec from scratch without
-    // the empty Children when children are present.
-    //
-    // For this skeleton we accept the duplicate-field side-effect because
-    // RecStruct doesn't expose remove/replace; the serializer writes every
-    // field, but first-entry wins on read. If this proves too ugly in
-    // Task 1.5, we add a replace helper in emRecParser then.
     rec.SetValue("Children", RecValue::Array(children));
 }
 
@@ -162,7 +144,18 @@ mod tests {
         assert_eq!(rec.get_str("Text"), Some("txt"));
         assert!(rec.get_array("Commands").is_some());
         assert!(rec.get_array("Files").is_some());
-        assert!(rec.get_array("Children").is_some());
+        // Children is NOT populated by empty_rec — callers must call
+        // set_children explicitly.
+        assert!(rec.get_array("Children").is_none());
+    }
+
+    #[test]
+    fn set_children_populates_children_field() {
+        let mut rec = empty_rec("t".into(), "".into(), VisualStyle::engine());
+        assert!(rec.get_array("Children").is_none());
+        set_children(&mut rec, Vec::new());
+        let arr = rec.get_array("Children").expect("Children exists");
+        assert!(arr.is_empty());
     }
 
     #[test]
@@ -239,13 +232,9 @@ mod tests {
     #[test]
     fn set_children_replaces_children_array() {
         let mut rec = empty_rec("t".into(), "".into(), VisualStyle::engine());
-        let child = empty_rec("c".into(), "".into(), VisualStyle::model());
-        set_children(&mut rec, vec![RecValue::Struct(child)]);
-        // First-match lookup returns the original empty array (duplicate-
-        // field side-effect documented at set_children). This test pins
-        // the behavior so Task 1.5 knows to revisit if a replace helper
-        // is added to emRecParser.
+        set_children(&mut rec, vec![RecValue::Int(7)]);
         let arr = rec.get_array("Children").expect("Children exists");
-        assert!(arr.is_empty() || arr.len() == 1);
+        assert_eq!(arr.len(), 1);
+        assert!(matches!(arr[0], RecValue::Int(7)));
     }
 }
