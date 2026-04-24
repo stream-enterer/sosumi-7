@@ -116,6 +116,7 @@ pub mod emTexture;
 pub mod emTiling;
 pub mod emTimer;
 pub mod emTmpFile;
+pub mod emTreeDump;
 pub mod emTunnel;
 pub mod emUnionRec;
 pub mod emVarModel;
