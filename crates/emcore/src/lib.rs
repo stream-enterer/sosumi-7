@@ -26,6 +26,7 @@ pub mod emContext;
 pub mod emCoreConfig;
 pub mod emCoreConfigPanel;
 pub mod emCrossPtr;
+pub mod emCtrlSocket;
 pub mod emCursor;
 pub mod emDialog;
 pub mod emDoubleRec;

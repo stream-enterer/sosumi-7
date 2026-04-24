@@ -1,0 +1,9 @@
+crates/emcore/src/emCtrlSocket.rs — RUST_ONLY, language-forced utility.
+
+Agent-driven debugging requires a programmatic control channel that C++
+emCore does not provide (C++ ships only in-GUI cheat codes). Gated
+behind EMCORE_DEBUG_CONTROL=1.
+
+Wire types defined here; acceptor/worker/dispatch land in Tasks 3.3-3.6.
+Schema documented in docs/superpowers/specs/2026-04-24-treedump-port-design.md
+section (C).
