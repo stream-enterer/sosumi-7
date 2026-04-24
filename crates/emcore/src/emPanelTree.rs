@@ -2106,6 +2106,12 @@ impl PanelTree {
     ///
     /// This enables cross-tree creation: behaviors live in the content tree,
     /// but the control panel is created in the control tree.
+    ///
+    /// Scheduler-reach handles are threaded in so the inner `PanelCtx` can
+    /// hand behaviors a full `SchedCtx` via `as_sched_ctx`. C++ parity: every
+    /// `emPanel` carries its `emContext` implicitly; Rust conveys the same
+    /// reach through these five borrows.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_control_panel_in(
         &mut self,
         id: PanelId,
@@ -2113,11 +2119,29 @@ impl PanelTree {
         parent_arg: PanelId,
         name: &str,
         current_pixel_tallness: f64,
+        scheduler: &mut crate::emScheduler::EngineScheduler,
+        framework_actions: &mut Vec<crate::emEngineCtx::DeferredAction>,
+        root_context: &std::rc::Rc<crate::emContext::emContext>,
+        framework_clipboard: &std::cell::RefCell<
+            Option<Box<dyn crate::emClipboard::emClipboard>>,
+        >,
+        pending_actions: &std::rc::Rc<
+            std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
+        >,
     ) -> Option<PanelId> {
         let mut cur = id;
         loop {
             if let Some(mut behavior) = self.take_behavior(cur) {
-                let mut ctx = PanelCtx::new(target_tree, parent_arg, current_pixel_tallness);
+                let mut ctx = PanelCtx::with_sched_reach(
+                    target_tree,
+                    parent_arg,
+                    current_pixel_tallness,
+                    scheduler,
+                    framework_actions,
+                    root_context,
+                    framework_clipboard,
+                    pending_actions,
+                );
                 let result = behavior.CreateControlPanel(&mut ctx, name);
                 self.put_behavior(cur, behavior);
                 if result.is_some() {
@@ -3067,6 +3091,67 @@ mod tests {
         assert_eq!(t.name(ctrl_id), Some("ctrl"));
         // The control panel is created as a child of root (parent_arg).
         assert_eq!(t.GetParentContext(ctrl_id), Some(root));
+    }
+
+    #[test]
+    fn test_create_control_panel_in_threads_scheduler_reach() {
+        // F013 regression: `create_control_panel_in` must hand the inner
+        // behavior a PanelCtx with full scheduler reach so `as_sched_ctx()`
+        // returns `Some`. Before the fix, the PanelCtx was built via the
+        // bare `PanelCtx::new` and `as_sched_ctx()` always returned `None`,
+        // causing emDirPanel::CreateControlPanel to panic at runtime.
+        use std::cell::{Cell, RefCell};
+        use std::rc::Rc;
+
+        struct SchedReachProbe(Rc<Cell<bool>>);
+        impl PanelBehavior for SchedReachProbe {
+            fn CreateControlPanel(
+                &mut self,
+                ctx: &mut PanelCtx,
+                name: &str,
+            ) -> Option<PanelId> {
+                // Record whether sched reach was plumbed through.
+                self.0.set(ctx.as_sched_ctx().is_some());
+                Some(ctx.create_child(name))
+            }
+        }
+
+        let had_reach = Rc::new(Cell::new(false));
+        let mut content = PanelTree::new();
+        let content_root = content.create_root_deferred_view("content_root");
+        let active = content.create_child(content_root, "active", None);
+        content.set_behavior(content_root, Box::new(SchedReachProbe(had_reach.clone())));
+
+        let mut ctrl = PanelTree::new();
+        let ctrl_root = ctrl.create_root_deferred_view("ctrl_root");
+
+        let mut sched = crate::emScheduler::EngineScheduler::new();
+        let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+        let root_ctx = crate::emContext::emContext::NewRoot();
+        let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            RefCell::new(None);
+        let pa: Rc<RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
+
+        let ctrl_id = content
+            .create_control_panel_in(
+                active,
+                &mut ctrl,
+                ctrl_root,
+                "ctrl",
+                1.0,
+                &mut sched,
+                &mut fw,
+                &root_ctx,
+                &fw_cb,
+                &pa,
+            )
+            .expect("create_control_panel_in should succeed");
+        assert_eq!(ctrl.name(ctrl_id), Some("ctrl"));
+        assert!(
+            had_reach.get(),
+            "PanelCtx passed to inner CreateControlPanel must have scheduler reach",
+        );
     }
 
     #[test]
