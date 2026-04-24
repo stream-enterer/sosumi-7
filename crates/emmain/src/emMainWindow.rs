@@ -526,14 +526,6 @@ impl emEngine for StartupEngine {
                         mp.GetControlViewPanelId()
                     })
                     .flatten();
-                let content_view_id = ctx
-                    .tree
-                    .as_deref_mut()
-                    .expect("StartupEngine: Toplevel scope")
-                    .with_behavior_as::<emMainPanel, _>(self.main_panel_id, |mp| {
-                        mp.GetContentViewPanelId()
-                    })
-                    .flatten();
                 if let Some(ctrl_id) = ctrl_view_id {
                     let ctrl_ctx = Rc::clone(&self.context);
                     ctx.tree
@@ -549,7 +541,7 @@ impl emEngine for StartupEngine {
                             // height to ControlTallness via SetGeometry.
                             sub_tree.set_behavior(
                                 sub_root,
-                                Box::new(emMainControlPanel::new(ctrl_ctx, content_view_id)),
+                                Box::new(emMainControlPanel::new(ctrl_ctx)),
                             );
                             sub_tree.fire_init_notices(sub_root, None);
                         });
@@ -792,22 +784,99 @@ impl emEngine for StartupEngine {
     }
 }
 
-/// Engine that bridges control panel signal to control sub-view.
+/// Engine that bridges content-view active-panel changes to the control sub-view.
 ///
-/// When the active panel changes in the content view, the control panel signal
-/// fires. This engine reacts by logging the change (full wiring to recreate
-/// the content control panel will be added later).
+/// When the active panel changes in the content sub-view, `control_panel_signal`
+/// fires. This engine reacts by recreating the ContentControlPanel child inside
+/// emMainControlPanel using cross-tree `create_control_panel_in`.
+///
+/// DIVERGED: (language-forced) C++ emMainControlPanel directly subscribes to
+/// ContentView.GetControlPanelSignal() and calls ContentView.CreateControlPanel()
+/// from its own Cycle(). In Rust, the outer tree is taken by the scheduler before
+/// SubView-scope panel engines dispatch, so emMainControlPanel::Cycle cannot reach
+/// the content sub-view. This Framework-scope engine performs the cross-tree
+/// recreation instead.
 pub(crate) struct ControlPanelBridge {
     control_panel_signal: SignalId,
-    _ctrl_view_id: PanelId,
-    _content_view_id: PanelId,
+    window_id: winit::window::WindowId,
+    ctrl_panel_id: PanelId,
+    content_panel_id: PanelId,
+    content_ctrl_panel: Option<PanelId>,
 }
 
 impl emEngine for ControlPanelBridge {
     fn Cycle(&mut self, ctx: &mut EngineCtx<'_>) -> bool {
-        if ctx.IsSignaled(self.control_panel_signal) {
-            log::debug!("ControlPanelBridge: control panel signal fired");
+        if !ctx.IsSignaled(self.control_panel_signal) {
+            return false;
         }
+        let Some(win) = ctx.windows.get_mut(&self.window_id) else {
+            return false;
+        };
+        let mut tree = win.take_tree();
+
+        // Take both sub-view panel behaviors from the outer tree.
+        let Some(mut ctrl_box) = tree.take_behavior(self.ctrl_panel_id) else {
+            win.put_tree(tree);
+            return false;
+        };
+        let Some(mut content_box) = tree.take_behavior(self.content_panel_id) else {
+            tree.put_behavior(self.ctrl_panel_id, ctrl_box);
+            win.put_tree(tree);
+            return false;
+        };
+
+        let ctrl_svp = ctrl_box
+            .as_any_mut()
+            .downcast_mut::<emSubViewPanel>()
+            .expect("ctrl panel must be emSubViewPanel");
+        let content_svp = content_box
+            .as_any_mut()
+            .downcast_mut::<emSubViewPanel>()
+            .expect("content panel must be emSubViewPanel");
+
+        let ctrl_root = ctrl_svp
+            .sub_tree()
+            .GetRootPanel()
+            .expect("ctrl sub-tree must have a root panel");
+        let active_panel = content_svp.GetSubView().GetActivePanel();
+        let tallness = content_svp.GetSubView().CurrentPixelTallness;
+
+        // Delete old ContentControlPanel from ctrl sub-tree (C++ `delete ContentControlPanel`).
+        if let Some(old_ccp) = self.content_ctrl_panel.take() {
+            ctrl_svp.sub_tree_mut().remove(old_ccp, None);
+        }
+
+        // Create new ContentControlPanel via cross-tree call
+        // (C++ ContentView.CreateControlPanel(*this, "context")).
+        let new_ccp = match active_panel {
+            Some(active) => {
+                let ctrl_sub_tree = ctrl_svp.sub_tree_mut();
+                let content_sub_tree = content_svp.sub_tree_mut();
+                content_sub_tree.create_control_panel_in(
+                    active,
+                    ctrl_sub_tree,
+                    ctrl_root,
+                    "context",
+                    tallness,
+                )
+            }
+            None => None,
+        };
+
+        // Notify emMainControlPanel about the new child (sets layout weight 21.32).
+        if let Some(ccp_id) = new_ccp {
+            ctrl_svp
+                .sub_tree_mut()
+                .with_behavior_as::<emMainControlPanel, _>(ctrl_root, |mcp| {
+                    mcp.set_content_control_panel(ccp_id);
+                });
+            self.content_ctrl_panel = Some(ccp_id);
+        }
+
+        // Put behaviors back.
+        tree.put_behavior(self.ctrl_panel_id, ctrl_box);
+        tree.put_behavior(self.content_panel_id, content_box);
+        win.put_tree(tree);
         false
     }
 }
@@ -1036,18 +1105,23 @@ pub fn create_main_window(
                 v.RegisterEngines(&mut sc, &mut tree, scope);
             }
             win.put_tree(tree);
-            win.view_mut().set_control_panel_signal(cp_signal);
+            // Wire cp_signal to the content sub-view's emView so it fires when
+            // the active panel changes (C++ ContentView.GetControlPanelSignal()).
+            // The outer window's view is NOT the right target — active panel
+            // changes happen in content_svp.sub_view, a separate emView object.
+            let mut tree = win.take_tree();
+            tree.with_behavior_as::<emSubViewPanel, _>(content_id, |svp| {
+                svp.sub_view_mut().set_control_panel_signal(cp_signal);
+            });
+            win.put_tree(tree);
         }
     }
-    // Phase 1.75 Task 5 (continuation): RegisterEngines now registers any
-    // pre-existing panels' adapters inline via tree.register_engine_for_public,
-    // subsuming the old post-slice adapter-registration catch-up pass.
-    // We don't yet have the sub-view panel IDs (created during LayoutChildren),
-    // so use a dummy PanelId(0) for now — the bridge only uses the signal.
     let bridge = ControlPanelBridge {
         control_panel_signal: cp_signal,
-        _ctrl_view_id: root_id,
-        _content_view_id: root_id,
+        window_id,
+        ctrl_panel_id: ctrl_id,
+        content_panel_id: content_id,
+        content_ctrl_panel: None,
     };
     let bridge_id =
         app.scheduler
@@ -1126,17 +1200,9 @@ pub fn create_control_window(
     }
 
     // C++ emMainWindow.cpp:315-326: Create new control window if MainPanel exists.
-    let main_panel_id = with_main_window(|mw| mw.main_panel_id).flatten()?;
+    with_main_window(|mw| mw.main_panel_id).flatten()?;
 
-    // Get the content sub-view panel ID from emMainPanel (from the home
-    // window's tree — the control window is a detached peer but reads the
-    // main panel's state).
-    let content_view_id = app
-        .home_tree_mut()
-        .with_behavior_as::<emMainPanel, _>(main_panel_id, |mp| mp.GetContentViewPanelId())
-        .flatten();
-
-    let ctrl_panel = emMainControlPanel::new(Rc::clone(&app.context), content_view_id);
+    let ctrl_panel = emMainControlPanel::new(Rc::clone(&app.context));
 
     // Phase 3.5.A Task 7: the control window owns its own tree (detached peer
     // of the home window — follows the same per-window pattern). Build locally,

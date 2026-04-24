@@ -126,18 +126,13 @@ pub struct emMainControlPanel {
     autoplay_flags: Rc<AutoplayFlags>,
     // Panel IDs for child widgets (used for layout weight assignment).
     lmain_panel: Option<PanelId>,
-    _content_control_panel: Option<PanelId>,
-    /// PanelId of the content sub-view, used for wiring content control panel.
-    _content_view_id: Option<PanelId>,
+    content_ctrl_panel: Option<PanelId>,
     children_created: bool,
 }
 
 impl emMainControlPanel {
     /// Port of C++ `emMainControlPanel` constructor.
-    ///
-    /// `content_view_id` is the PanelId of the content sub-view panel, used
-    /// for wiring the content control panel (C++ contentControlPanel).
-    pub fn new(ctx: Rc<emContext>, content_view_id: Option<PanelId>) -> Self {
+    pub fn new(ctx: Rc<emContext>) -> Self {
         let config = emMainConfig::Acquire(&ctx);
 
         // C++ emMainControlPanel constructor:
@@ -173,10 +168,22 @@ impl emMainControlPanel {
             click_flags: Rc::new(ClickFlags::default()),
             autoplay_flags: Rc::new(AutoplayFlags::default()),
             lmain_panel: None,
-            _content_control_panel: None,
-            _content_view_id: content_view_id,
+            content_ctrl_panel: None,
             children_created: false,
         }
+    }
+
+    /// Called by ControlPanelBridge after cross-tree CreateControlPanel.
+    /// Sets the content control panel child with weight 21.32.
+    pub(crate) fn set_content_control_panel(&mut self, id: PanelId) {
+        self.content_ctrl_panel = Some(id);
+        self.layout_main.set_child_constraint(
+            id,
+            ChildConstraint {
+                weight: 21.32,
+                ..Default::default()
+            },
+        );
     }
 
     /// Create the full child widget tree matching C++ constructor.
@@ -867,21 +874,21 @@ mod tests {
     #[test]
     fn test_control_panel_new() {
         let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emMainControlPanel::new(Rc::clone(&ctx), None);
+        let panel = emMainControlPanel::new(Rc::clone(&ctx));
         assert_eq!(panel.get_title(), Some("emMainControl".to_string()));
     }
 
     #[test]
     fn test_control_panel_opaque() {
         let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emMainControlPanel::new(Rc::clone(&ctx), None);
+        let panel = emMainControlPanel::new(Rc::clone(&ctx));
         assert!(panel.IsOpaque());
     }
 
     #[test]
     fn test_control_panel_behavior() {
         let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emMainControlPanel::new(Rc::clone(&ctx), None);
+        let panel = emMainControlPanel::new(Rc::clone(&ctx));
         let _: Box<dyn PanelBehavior> = Box::new(panel);
     }
 
@@ -907,7 +914,7 @@ mod tests {
     fn test_title_matches_cpp() {
         // C++ GetTitle returns "emMainControl"
         let ctx = emcore::emContext::emContext::NewRoot();
-        let panel = emMainControlPanel::new(ctx, None);
+        let panel = emMainControlPanel::new(ctx);
         assert_eq!(panel.get_title(), Some("emMainControl".to_string()));
     }
 }
