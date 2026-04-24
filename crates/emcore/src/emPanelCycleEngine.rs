@@ -64,6 +64,14 @@ impl emEngine for PanelCycleEngine {
                 .expect("PanelCycleEngine: tree is Some for window-scoped engines");
             let tallness = ctx_tree.cached_pixel_tallness;
             let Some(behavior) = ctx_tree.take_behavior(self.panel_id) else {
+                if std::env::var("DEBUG_F011").is_ok() {
+                    let panel_exists = ctx_tree.panels.contains_key(self.panel_id);
+                    eprintln!(
+                        "[F011] PanelCycleEngine: take_behavior({:?}) returned None \
+                         (panel_exists={panel_exists}) — panel deleted or behavior slot empty",
+                        self.panel_id
+                    );
+                }
                 return false;
             };
             (tallness, behavior)
