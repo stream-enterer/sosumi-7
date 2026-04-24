@@ -362,6 +362,19 @@ pub trait PanelBehavior: AsAny {
         std::any::type_name_of_val(self)
     }
 
+    /// Return subtype-specific fields to append to the tree dump's emPanel
+    /// Text block. Each pair is formatted as `"\n<label>: <value>"` in
+    /// insertion order. Default: empty (no subtype state).
+    ///
+    /// Rust analog of C++'s dynamic_cast cascade in
+    /// `emTreeDumpFromObject` — each concrete panel class in C++ adds
+    /// its own fields via a centralized cascade; Rust decentralizes this
+    /// because PanelBehavior is the unifying trait C++ lacks. Preserves
+    /// observable output; differs only in internal dispatch.
+    fn dump_state(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+
     /// Downcast to `emSubViewPanel` without `Any`. Phase 1.75 uses this in
     /// the scheduler dispatch walk to reach a sub-view's `sub_tree` when
     /// resolving a `PanelScope::SubView` owner.
@@ -415,5 +428,32 @@ pub trait PanelBehavior: AsAny {
         &mut self,
     ) -> Option<&mut crate::emFileSelectionBox::emFileSelectionBox> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_dump_state_is_empty() {
+        struct NoopBehavior;
+        impl PanelBehavior for NoopBehavior {}
+        let b = NoopBehavior;
+        assert!(b.dump_state().is_empty());
+    }
+
+    #[test]
+    fn override_dump_state_returns_pairs() {
+        struct HasState;
+        impl PanelBehavior for HasState {
+            fn dump_state(&self) -> Vec<(&'static str, String)> {
+                vec![("loading_pct", "42".to_string()), ("loading_done", "false".to_string())]
+            }
+        }
+        let b = HasState;
+        let s = b.dump_state();
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0], ("loading_pct", "42".to_string()));
     }
 }
