@@ -52,12 +52,14 @@ Issues of kind `design` or `perf` are out of scope for this harness. Skip them.
 ```
 git branch --list "fix/F###"
 ```
-If this returns a non-empty result, a prior run already completed the code work for this issue and the fix branch is waiting for human review. Skip this issue and move to the next candidate.
+If this returns a non-empty result AND the issue's status is `needs-manual-verification` or `closed`, the fix is complete and awaiting human review — skip this issue and move to the next candidate.
+
+If the branch exists AND status is `investigating` or `root-cause-found`, this is a resumable in-progress fix — the issue is eligible and Step 2.5 will check out the existing branch rather than creating a new one.
 
 An issue is eligible if and only if:
 - Kind is `fix`
 - Status is `open`, `investigating`, or `root-cause-found`
-- No `fix/F###` branch exists
+- If status is `needs-manual-verification` or `closed`: always skip (regardless of branch state)
 
 If no eligible issue exists, output the completion promise and stop:
 
@@ -65,17 +67,25 @@ If no eligible issue exists, output the completion promise and stop:
 <promise>DEBUG_PASS_COMPLETE</promise>
 ```
 
-### Step 2.5 — Create fix branch
+### Step 2.5 — Create or resume fix branch
 
-Now that an eligible issue is selected (ID = `F###`), create the fix branch off current `main` HEAD:
+Check whether `fix/F###` already exists:
 
+```
+git branch --list "fix/F###"
+```
+
+**If the branch does not exist** (fresh start or first iteration on this issue):
 ```
 git checkout -b fix/F###
 ```
 
-All code changes (source files, test files) for this issue will be committed to this branch. ISSUES.json and investigation scratchpad files are committed to `main`, not to this branch — that separation is enforced in Step 7.
+**If the branch already exists** (resuming a multi-iteration fix — status is `investigating` or `root-cause-found`):
+```
+git checkout fix/F###
+```
 
-Do not create the branch if it already exists (the branch-guard in Step 2 prevents reaching this step in that case).
+All code changes (source files, test files) for this issue will be committed to this branch. ISSUES.json and investigation scratchpad files are committed to `main`, not to this branch — that separation is enforced in Step 7.
 
 ### Step 3 — Load investigation state
 
