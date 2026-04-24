@@ -85,6 +85,14 @@ git checkout -b fix/F###
 git checkout fix/F###
 ```
 
+After checking out the fix branch, restore the investigation scratchpad from `main` if one exists. The scratchpad is committed to `main`, not the fix branch, so git removes it from the working directory during checkout:
+
+```
+git show main:docs/debug/investigations/F###.md > docs/debug/investigations/F###.md
+```
+
+Skip this restore if `investigation_file` is not set in ISSUES.json (fresh start — no scratchpad exists yet on main either).
+
 All code changes (source files, test files) for this issue will be committed to this branch. ISSUES.json and investigation scratchpad files are committed to `main`, not to this branch — that separation is enforced in Step 7.
 
 ### Step 3 — Load investigation state
@@ -174,18 +182,20 @@ Examples:
 
 **Step 7c — Update head_sha:**
 
-After the `main` commit, update `head_sha` in the scratchpad frontmatter to the new HEAD SHA:
+Capture the fix branch HEAD **before** switching to main in Step 7b. The fix branch HEAD is the correct value for head_sha — on the next iteration, after `git checkout fix/F###`, HEAD will equal this SHA, so the stale check only triggers if commits were made to the fix branch outside the harness.
 
+Concretely: before running `git checkout main` in Step 7b, run:
 ```
 git rev-parse HEAD
 ```
-
-Write that SHA into `docs/debug/investigations/F###.md` frontmatter and commit:
+Save that SHA. After the Step 7b state commit lands on main, write the saved fix-branch SHA into `docs/debug/investigations/F###.md` frontmatter as `head_sha` and commit:
 
 ```
 git add docs/debug/investigations/F###.md
 git commit -m "debug(F###): update head_sha (scratchpad only)"
 ```
+
+If Step 7a was skipped (no code commit this iteration), the fix branch HEAD equals the previous iteration's fix branch HEAD — write it anyway so the scratchpad stays current.
 
 The iteration always ends on `main`.
 
