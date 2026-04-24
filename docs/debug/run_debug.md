@@ -10,72 +10,33 @@ This file is the prompt for a debugging pass. It is read and executed by an LLM 
 
 **Scope constraint: this harness processes exactly one issue per invocation. Once a terminal state is reached for the selected issue, no further work is performed — not even reading the next issue. Stop immediately.**
 
-Steps 1–3 (including Step 2.5) run once at the start of the invocation. Steps 4–8 drive the phase work: proceed through Phases 1–4, invoking Step 5 (ISSUES.json update) and Step 7 (commit) at each phase boundary, and checking Step 8 after every commit. Stop when Step 8 observes a terminal state or Step 6 routes to a blocked exit. Do not skip steps. Do not reorder them.
+Steps 1–3 run once at the start of the invocation. Steps 4–8 drive the phase work: proceed through Phases 1–4, invoking Step 5 (ISSUES.json update) and Step 7 (commit) at each phase boundary, and checking Step 8 after every commit. Stop when Step 8 observes a terminal state or Step 6 routes to a blocked exit. Do not skip steps. Do not reorder them.
+
+All work happens on `main`. The harness does not create, check out, or merge branches.
 
 ### Step 1 — Check for dirty working tree
 
-Run `git status` and `git branch --show-current`.
+Run `git status`.
 
-**If on a `fix/*` branch with uncommitted changes:** stage all modified files and commit to the fix branch with message `debug: recover uncommitted work from interrupted prior run`. Then run `git checkout main` and continue to Step 2.
-
-**If on `main` with uncommitted changes:** stage all modified files and commit to `main` with message `debug: recover uncommitted work from interrupted prior run`. Then continue to Step 2.
-
-**If working tree is clean:** continue to Step 2 regardless of which branch you are on. If you are on a `fix/*` branch (interrupted after code work but before switching back), run `git checkout main` first.
+If the working tree has uncommitted changes, stage all modified files and commit to `main` with message `debug: recover uncommitted work from interrupted prior run`. Then continue to Step 2. If the tree is clean, continue to Step 2.
 
 ### Step 2 — Select the target issue
 
-Check the user message that invoked this harness for a phrase matching `for issue [A-Z]\d{3}` (e.g. "for issue F001"). If found, use that ID — but still apply the branch-guard check below before proceeding.
+Check the user message that invoked this harness for a phrase matching `for issue [A-Z]\d{3}` (e.g. "for issue F001"). If found, use that ID (subject to eligibility below).
 
-Otherwise, select from `docs/debug/ISSUES.json` using this priority order, skipping any issue that fails the branch-guard check:
+Otherwise, select from `docs/debug/ISSUES.json` using this priority order:
 1. Among issues with status `investigating` or `root-cause-found` and kind `fix`, pick the highest priority one (`high` before `medium` before `low`). These resume in-progress work first.
 2. Among `open` issues of kind `fix`, pick the highest priority one.
 
 Issues of kind `design` or `perf` are out of scope for this harness. Skip them.
 
-**Branch-guard check:** For each candidate issue with ID `F###`, run:
-```
-git branch --list "fix/F###"
-```
-If this returns a non-empty result AND the issue's status is `needs-manual-verification` or `closed`, the fix is complete and awaiting human review — skip this issue and move to the next candidate.
-
-If the branch exists AND status is `investigating` or `root-cause-found`, this is a resumable in-progress fix — the issue is eligible and Step 2.5 will check out the existing branch rather than creating a new one.
-
 An issue is eligible if and only if:
 - Kind is `fix`
 - Status is `open`, `investigating`, or `root-cause-found`
-- If status is `needs-manual-verification` or `closed`: always skip (regardless of branch state)
+
+Skip any issue whose status is `needs-manual-verification` or `closed`.
 
 If no eligible issue exists, stop immediately.
-
-### Step 2.5 — Create or resume fix branch
-
-Check whether `fix/F###` already exists:
-
-```
-git branch --list "fix/F###"
-```
-
-**If the branch does not exist** (fresh start or first run on this issue):
-```
-git checkout -b fix/F###
-```
-
-**If the branch already exists** (resuming a prior run's in-progress work — status is `investigating` or `root-cause-found`):
-```
-git checkout fix/F###
-```
-
-After checking out the fix branch, restore the investigation scratchpad from `main` if one exists. The scratchpad is committed to `main`, not the fix branch, so git removes it from the working directory during checkout:
-
-```
-git show main:docs/debug/investigations/F###.md > docs/debug/investigations/F###.md
-```
-
-Skip this restore if `investigation_file` is not set in ISSUES.json (fresh start — no scratchpad exists yet on main either).
-
-All code changes (source files, test files) for this issue will be committed to this branch. ISSUES.json and investigation scratchpad files are committed to `main`, not to this branch — that separation is enforced in Step 7.
-
-Note: during Phases 1–3 (investigation), no source files are modified. The harness operates on the fix branch but every phase's scratchpad and ISSUES.json writes land on `main` via Step 7b. The fix branch accumulates no commits until Phase 4 produces a code change.
 
 ### Step 3 — Load investigation state
 
@@ -85,7 +46,7 @@ Check whether `investigation_file` is set on the selected issue in ISSUES.json, 
 - Read the scratchpad fully.
 - Before executing anything, verify internal consistency: all phases prior to `current_phase` must have `complete: true`. If any prior phase has `complete: false`, the scratchpad is inconsistent from a crashed prior run — resume from the last phase that has `complete: true` rather than from `current_phase`.
 - **Rollback detection:** If all four phases have `complete: true` but the current status in ISSUES.json is `investigating`, this means a runtime-verified fix was rejected by the human and rolled back. Do not re-execute Phase 4. Instead, re-enter Phase 3: form a new hypothesis based on the runtime failure, add it to the Phase 3 section of the scratchpad (with the failure as evidence), and proceed to a new implementation attempt. Update `current_phase` to `3` in the scratchpad frontmatter and set Phase 4's `complete` back to `false`.
-- Check `head_sha` in the scratchpad against current HEAD (`git rev-parse HEAD`). If they differ, run `git diff <scratchpad_head_sha>..HEAD -- <files listed in next_steps>`. For each file that changed: re-read it, verify the intended action in `next_steps` is still feasible. If the target symbol or structure still exists at a new line, update the line reference. If the structure has fundamentally changed, mark the step `STALE: <reason>` and regenerate it from the current phase goals before executing.
+- Check `head_sha` in the scratchpad against current HEAD on `main` (`git rev-parse HEAD`). If they differ, run `git diff <scratchpad_head_sha>..HEAD -- <files listed in next_steps>`. For each file that changed: re-read it, verify the intended action in `next_steps` is still feasible. If the target symbol or structure still exists at a new line, update the line reference. If the structure has fundamentally changed, mark the step `STALE: <reason>` and regenerate it from the current phase goals before executing.
 - Execute the first unchecked item in `next_steps`.
 
 **If no scratchpad exists (fresh start):**
@@ -128,30 +89,18 @@ If 3+ distinct hypotheses have been ruled out with concrete evidence and you can
 
 ### Step 7 — Commit
 
-Commits are split between the fix branch (code) and `main` (state). Execute in this order:
+All commits land on `main`.
 
-**Step 7a — Commit code to fix branch (if any source files changed):**
+**Step 7a — Commit phase work:**
 
-You should currently be on `fix/F###`. Stage and commit only source and test files:
-
-```
-git add <source files> <test files>
-git commit -m "fix(F###): <summary of what the fix does>"
-```
-
-Do not stage ISSUES.json or `docs/debug/investigations/` here. If no source files changed during this phase (investigation-only work), skip 7a.
-
-**Step 7b — Switch to main and commit state:**
+Stage source files, test files, `docs/debug/ISSUES.json`, and the scratchpad together, and commit:
 
 ```
-git checkout main
-git add docs/debug/ISSUES.json docs/debug/investigations/F###.md
+git add <source files> <test files> docs/debug/ISSUES.json docs/debug/investigations/F###.md
 git commit -m "debug(F###): <summary of what happened>"
 ```
 
-Format for the state commit message: `debug(<ID>): <summary of what happened>`
-
-Append `(scratchpad only)` if no code was committed in 7a.
+Commit message format: `debug(<ID>): <summary of what happened>`. If no source files changed during this phase (investigation-only work), append `(scratchpad only)`.
 
 Examples:
 - `debug(F001): phase 1 complete — root cause in emGUIFramework Focused handler (scratchpad only)`
@@ -159,24 +108,16 @@ Examples:
 - `debug(F001): fix committed, needs manual verification`
 - `debug(F001): wip — gathering phase 2 evidence (scratchpad only)`
 
-**Step 7c — Update head_sha:**
+**Step 7b — Update head_sha:**
 
-Capture the fix branch HEAD **before** switching to main in Step 7b. The fix branch HEAD is the correct value for head_sha — on resume (next phase's work, or next invocation after `git checkout fix/F###`), HEAD will equal this SHA, so the stale check only triggers if commits were made to the fix branch outside the harness.
-
-Concretely: before running `git checkout main` in Step 7b, run:
-```
-git rev-parse HEAD
-```
-Save that SHA. After the Step 7b state commit lands on main, write the saved fix-branch SHA into `docs/debug/investigations/F###.md` frontmatter as `head_sha` and commit:
+Run `git rev-parse HEAD` and write the result into the scratchpad frontmatter as `head_sha`. Commit:
 
 ```
 git add docs/debug/investigations/F###.md
 git commit -m "debug(F###): update head_sha (scratchpad only)"
 ```
 
-If Step 7a was skipped (no code commit during this phase), the fix branch HEAD equals the previous phase's fix branch HEAD — write it anyway so the scratchpad stays current.
-
-Each commit cycle ends on `main`. If Step 8 determines phase work should continue, re-check out the fix branch (`git checkout fix/F###`) and restore the scratchpad from main (`git show main:docs/debug/investigations/F###.md > docs/debug/investigations/F###.md`) before returning to Step 4.
+This keeps the scratchpad's `head_sha` aligned with `main` HEAD between phases so the stale check in Step 3 triggers only when commits are made to `main` outside the harness.
 
 ### Step 8 — Terminal state check
 
@@ -190,7 +131,7 @@ After committing, check if a terminal state has been reached:
 
 In all five cases, stop immediately after the commit. Do not summarise, do not plan next steps.
 
-If no terminal state has been reached, return to Step 4 and continue the phase work (re-checking out the fix branch per Step 7c's closing note).
+If no terminal state has been reached, return to Step 4 and continue the phase work.
 
 ---
 
