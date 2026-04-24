@@ -1,0 +1,27 @@
+================================================================================
+REVIEWED SUMMARY
+================================================================================
+
+C++ header:         include/emTreeDump/emTreeDumpRecPanel.h
+C++ implementation: src/emTreeDump/emTreeDumpRecPanel.cpp
+
+Purpose: emPanel subclass that renders a single emTreeDumpRec node —
+draws the node's Frame shape in BgColor/FgColor, paints the Title and
+Text, and on AutoExpand creates a child emTreeDumpRecPanel for each
+entry in the rec's Children array. Holds the rec via emCrossPtr so
+the rec can be deleted before the panel. Also exposes
+CreateControlPanel returning an emTreeDumpControlPanel for the
+node's Commands.
+
+Status: NOT PORTED — in-app dump-renderer subsystem out of scope for
+the current dump-producer work (Phase 1 of
+docs/superpowers/specs/2026-04-24-treedump-port-design.md).
+
+Paired with emTreeDumpFilePanel above — the recursive node-rendering
+half of the in-app viewer. Not needed to produce .emTreeDump files.
+
+Rust equivalent for now: none.
+
+Future port path: ports together with emTreeDumpFilePanel and
+emTreeDumpControlPanel. Depends on emTreeDumpRec (typed schema) and
+emCrossPtr being available in the Rust port.

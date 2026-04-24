@@ -1,0 +1,29 @@
+================================================================================
+REVIEWED SUMMARY
+================================================================================
+
+C++ header:         include/emTreeDump/emTreeDumpFileModel.h
+C++ implementation: src/emTreeDump/emTreeDumpFileModel.cpp
+
+Purpose: emRecFileModel subclass that loads a saved .emTreeDump file
+into an emTreeDumpRec tree, suitable for consumption by
+emTreeDumpFilePanel as the model half of the in-app renderer's
+model/panel pair. Acquired via the context registry keyed by file
+path, shared across panels viewing the same file.
+
+Status: NOT PORTED — in-app dump-renderer subsystem out of scope for
+the current dump-producer work (Phase 1 of
+docs/superpowers/specs/2026-04-24-treedump-port-design.md).
+
+The Rust port has no model that loads .emTreeDump files for in-app
+rendering. Nothing in the Rust port references emTreeDumpFileModel
+or would consume its output — the producer-only work lands in
+emTreeDump.rs and writes files that C++ Eagle Mode (or a future Rust
+renderer port) can open.
+
+Rust equivalent for now: none. No file-model type exists for this
+format in the Rust port.
+
+Future port path: paired with emTreeDumpFilePanel; ports together
+if/when the in-app dump viewer is ported. Depends on emTreeDumpRec
+being ported first so the model has a typed tree to populate.

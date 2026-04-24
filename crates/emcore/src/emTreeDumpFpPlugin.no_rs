@@ -1,0 +1,27 @@
+================================================================================
+REVIEWED SUMMARY
+================================================================================
+
+C++ header:         (none — .cpp only)
+C++ implementation: src/emTreeDump/emTreeDumpFpPlugin.cpp
+
+Purpose: emFpPlugin entry point (extern "C" emTreeDumpFpPluginFunc)
+that registers emTreeDumpFilePanel with Eagle Mode's file-panel
+plugin system so that opening a .emTreeDump file in the running app
+constructs an emTreeDumpFilePanel bound to an emTreeDumpFileModel for
+that path. The glue that wires the file extension into the in-app
+renderer.
+
+Status: NOT PORTED — in-app dump-renderer subsystem out of scope for
+the current dump-producer work (Phase 1 of
+docs/superpowers/specs/2026-04-24-treedump-port-design.md).
+
+A plugin that constructs emTreeDumpFilePanel is meaningless until
+emTreeDumpFilePanel exists in the Rust port. Nothing to register.
+
+Rust equivalent for now: none.
+
+Future port path: ports together with emTreeDumpFilePanel and
+emTreeDumpFileModel — the last piece, registering the assembled
+renderer with the Rust port's emFpPlugin machinery so .emTreeDump
+files open in the viewer.

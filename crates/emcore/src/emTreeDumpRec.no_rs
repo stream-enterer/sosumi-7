@@ -1,0 +1,35 @@
+================================================================================
+REVIEWED SUMMARY
+================================================================================
+
+C++ header:         include/emTreeDump/emTreeDumpRec.h
+C++ implementation: src/emTreeDump/emTreeDumpRec.cpp
+
+Purpose: Typed emStructRec schema for a tree-dump node — Frame enum,
+BgColor, FgColor, Title, Text, Commands (array of {Caption, Args}),
+Files (array of strings), and Children (recursive array of
+emTreeDumpRec). This is the in-memory record type that the in-app
+renderer (emTreeDumpFilePanel / emTreeDumpRecPanel) loads from a
+saved .emTreeDump file and walks to paint zoomable nodes.
+
+Status: NOT PORTED — in-app dump-renderer subsystem out of scope for
+the current dump-producer work (Phase 1 of
+docs/superpowers/specs/2026-04-24-treedump-port-design.md).
+
+The Rust port only needs to *produce* .emTreeDump files, not consume
+them as a typed schema for in-app rendering. crates/emcore/src/emTreeDump.rs
+assembles the schema inline via RecStruct field writes (Frame, BgColor,
+FgColor, Title, Text, Commands, Files, Children) rather than through a
+typed mirror of emTreeDumpRec. The producer side has no structural need
+for a typed struct; only the reader side (emTreeDumpFilePanel) does,
+and that reader is not ported.
+
+Rust equivalent for now: the inline RecStruct field assembly in
+crates/emcore/src/emTreeDump.rs. The schema (field names, types, order,
+Frame enum values) is byte-identical to the C++ emTreeDumpRec schema
+so the written files are interchangeable with C++ Eagle Mode.
+
+Future port path: if/when the in-app dump-renderer subsystem is ported
+(emTreeDumpFilePanel + emTreeDumpRecPanel + emTreeDumpFileModel), a
+typed emTreeDumpRec mirror can be added mechanically at that point,
+since the schema is already fixed.

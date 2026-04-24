@@ -1,0 +1,31 @@
+================================================================================
+REVIEWED SUMMARY
+================================================================================
+
+C++ header:         include/emTreeDump/emTreeDumpFilePanel.h
+C++ implementation: src/emTreeDump/emTreeDumpFilePanel.cpp
+
+Purpose: emFilePanel subclass that displays a saved .emTreeDump file
+inside a running Eagle Mode session. Owns an emTreeDumpRecPanel child
+rooted at the tree's top node, which recursively creates child
+emTreeDumpRecPanels for each node. The "render the dump as a zoomable
+view inside the running app" workflow — a user can point Eagle Mode
+at a .emTreeDump file and explore the captured tree in the same
+zoomable UI that produced it.
+
+Status: NOT PORTED — in-app dump-renderer subsystem out of scope for
+the current dump-producer work (Phase 1 of
+docs/superpowers/specs/2026-04-24-treedump-port-design.md).
+
+This is the visual debug-renderer subsystem. The current Rust port's
+emTreeDump work only produces .emTreeDump files; it has no consumer
+for them in-app. Ported files are intended to be inspected either by
+C++ Eagle Mode or by external tooling, not by a Rust renderer (which
+doesn't exist).
+
+Rust equivalent for now: none.
+
+Future port path: ports together with emTreeDumpRecPanel,
+emTreeDumpFileModel, emTreeDumpControlPanel, and emTreeDumpFpPlugin
+if/when the in-app viewer is brought over. Depends on emFpPlugin and
+emFilePanel being fully exercised for plugin-registered file types.

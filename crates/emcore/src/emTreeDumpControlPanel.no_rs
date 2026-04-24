@@ -1,0 +1,27 @@
+================================================================================
+REVIEWED SUMMARY
+================================================================================
+
+C++ header:         include/emTreeDump/emTreeDumpControlPanel.h
+C++ implementation: src/emTreeDump/emTreeDumpControlPanel.cpp
+
+Purpose: emRasterGroup subclass serving as the control-panel widget
+for the in-app TreeDump viewer. Displays the node's Commands as
+clickable buttons (RunCommand(index)) that launch external programs
+with the node's args, scoped to the node's directory. Surfaces the
+Commands / Files arrays of the displayed emTreeDumpRec as an
+interactive toolbar.
+
+Status: NOT PORTED — in-app dump-renderer subsystem out of scope for
+the current dump-producer work (Phase 1 of
+docs/superpowers/specs/2026-04-24-treedump-port-design.md).
+
+Only meaningful as the control panel for emTreeDumpRecPanel; with no
+RecPanel in the Rust port, there is nothing to host this control
+widget.
+
+Rust equivalent for now: none.
+
+Future port path: ports together with emTreeDumpRecPanel. Depends on
+emRasterGroup (toolkit widget) and a command-launching facility
+equivalent to C++'s process-exec path.
