@@ -7,7 +7,7 @@ use emcore::emColor::emColor;
 use emcore::emContext::emContext;
 use emcore::emEngineCtx::PanelCtx;
 use emcore::emFileModel::FileModelState;
-use emcore::emFilePanel::emFilePanel;
+use emcore::emFilePanel::{emFilePanel, VirtualFileState};
 use emcore::emInput::{emInputEvent, InputKey};
 use emcore::emInputState::emInputState;
 use emcore::emPainter::emPainter;
@@ -474,19 +474,27 @@ impl PanelBehavior for emDirPanel {
         }
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
-        if self.loading_done {
-            let cfg = self.config.borrow();
-            let theme = cfg.GetTheme();
-            let dc = emColor::from_packed(theme.GetRec().DirContentColor);
-            painter.Clear(dc);
-        } else if self.loading_error.is_some() || self.dir_model.is_some() {
-            self.file_panel.paint_status(painter, w, h);
-        } else {
-            let cfg = self.config.borrow();
-            let theme = cfg.GetTheme();
-            let dc = emColor::from_packed(theme.GetRec().DirContentColor);
-            painter.Clear(dc);
+    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+        // Port of C++ emDirPanel::Paint (emDirPanel.cpp:159-170):
+        //   switch (GetVirFileState()) {
+        //   case VFS_LOADED:
+        //   case VFS_NO_FILE_MODEL:
+        //       painter.Clear(Config->GetTheme().DirContentColor.Get());
+        //       break;
+        //   default:
+        //       emFilePanel::Paint(painter,canvasColor);
+        //       break;
+        //   }
+        match self.file_panel.GetVirFileState() {
+            VirtualFileState::Loaded | VirtualFileState::NoFileModel => {
+                let cfg = self.config.borrow();
+                let theme = cfg.GetTheme();
+                let dc = emColor::from_packed(theme.GetRec().DirContentColor);
+                painter.Clear(dc);
+            }
+            _ => {
+                self.file_panel.Paint(painter, w, h, state);
+            }
         }
     }
 
@@ -1726,5 +1734,104 @@ mod tests {
             sched.remove_engine(eid);
         }
         let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    /// F010 Phase 1: state-gated Paint port. With a no-file-model dir panel,
+    /// the C++ switch (emDirPanel.cpp:159-170) hits the `VFS_NO_FILE_MODEL`
+    /// case and Clears with `DirContentColor`. Verify Paint fills the entire
+    /// pixel buffer with DirContentColor.
+    #[test]
+    fn paint_clears_with_dir_content_color_when_no_file_model() {
+        use emcore::emImage::emImage;
+        use emcore::emPainter::emPainter;
+        use emcore::emPanel::PanelState;
+
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let mut panel = emDirPanel::new(Rc::clone(&ctx), "/tmp".to_string());
+
+        // No SetFileModel — file_panel is in NoFileModel state.
+        assert_eq!(
+            panel.file_panel.GetVirFileState(),
+            VirtualFileState::NoFileModel,
+        );
+
+        let dc = emColor::from_packed(panel.config.borrow().GetTheme().GetRec().DirContentColor);
+
+        // 16x16 RGBA image filled with the canvas color so the canvas-blend
+        // formula in Clear produces exact DirContentColor pixels.
+        let mut img = emImage::new(16, 16, 4);
+        img.fill(dc);
+        {
+            let mut p = emPainter::new(&mut img);
+            p.SetCanvasColor(dc);
+            let state = PanelState::default_for_test();
+            panel.Paint(&mut p, 1.0, 1.0, &state);
+        }
+
+        // Every pixel should be DirContentColor (Clear filled the whole rect).
+        let map = img.GetMap();
+        let r = ((dc.GetPacked() >> 24) & 0xFF) as u8;
+        let g = ((dc.GetPacked() >> 16) & 0xFF) as u8;
+        let b = ((dc.GetPacked() >> 8) & 0xFF) as u8;
+        let a = (dc.GetPacked() & 0xFF) as u8;
+        for px in map.chunks_exact(4) {
+            assert_eq!(
+                (px[0], px[1], px[2], px[3]),
+                (r, g, b, a),
+                "all pixels must equal DirContentColor after Clear",
+            );
+        }
+    }
+
+    /// F010 Phase 1: in a non-good state (Waiting), the C++ default arm
+    /// delegates to `emFilePanel::Paint`, which calls `paint_status` — it
+    /// emits status text only and does NOT Clear the full rect. Verify
+    /// at least one pixel remains the sentinel color.
+    #[test]
+    fn paint_does_not_clear_when_waiting() {
+        use emcore::emFileModel::FileModelState;
+        use emcore::emImage::emImage;
+        use emcore::emPainter::emPainter;
+        use emcore::emPanel::PanelState;
+
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let dm_rc = emDirModel::Acquire(&ctx, "/tmp");
+        let mut panel = emDirPanel::new(Rc::clone(&ctx), "/tmp".to_string());
+        panel.file_panel.SetFileModel(Some(
+            Rc::clone(&dm_rc) as Rc<RefCell<dyn FileModelState>>,
+        ));
+
+        // Just-acquired model is in Waiting state.
+        assert!(matches!(
+            panel.file_panel.GetVirFileState(),
+            VirtualFileState::Waiting,
+        ));
+
+        let dc = emColor::from_packed(panel.config.borrow().GetTheme().GetRec().DirContentColor);
+        let sentinel = emColor::rgba(255, 0, 255, 255); // magenta — distinct from DirContentColor
+
+        let mut img = emImage::new(16, 16, 4);
+        img.fill(sentinel);
+        {
+            let mut p = emPainter::new(&mut img);
+            p.SetCanvasColor(sentinel);
+            let state = PanelState::default_for_test();
+            panel.Paint(&mut p, 1.0, 1.0, &state);
+        }
+
+        // No full-rect Clear should have happened. At least the corner pixel
+        // (0,0) should remain the sentinel color (paint_status text is
+        // centered, so the (0,0) corner is untouched).
+        let map = img.GetMap();
+        let dc_r = ((dc.GetPacked() >> 24) & 0xFF) as u8;
+        let dc_g = ((dc.GetPacked() >> 16) & 0xFF) as u8;
+        let dc_b = ((dc.GetPacked() >> 8) & 0xFF) as u8;
+        let dc_a = (dc.GetPacked() & 0xFF) as u8;
+        let corner = (map[0], map[1], map[2], map[3]);
+        assert_ne!(
+            corner,
+            (dc_r, dc_g, dc_b, dc_a),
+            "Waiting state must NOT Clear with DirContentColor (default arm delegates to paint_status)",
+        );
     }
 }
