@@ -268,7 +268,7 @@
     {
       "id": "F010",
       "kind": "fix",
-      "status": "investigating",
+      "status": "root-cause-found",
       "priority": "high",
       "title": "Directory listing loads slowly and renders blank after long 'Loading NN%' phase",
       "description": "Prior fix (theme-name validation in emFileManConfig::Acquire) changed the symptom from 'always black' to 'loads eventually, badly'. Current runtime behaviour (verified 2026-04-24): (1) zooming into a directory shows a 'Loading NN%' progress indicator for a very long time for each directory, then the interior comes up blank rather than populated with entries; (2) /root shows a red 'Failed to open directory /root' box (permission-denied \u2014 may be expected for a normal-user run, but the red error style and sizing bear checking against C++); (3) many other directories show 'This file type cannot be shown' red boxes inside entries (also likely expected emCore behaviour for unrenderable file types, but worth confirming against the C++ reference). The core remaining bug is (1): loading takes long and lands on blank instead of the expected directory listing.",
@@ -278,7 +278,7 @@
       "introduced_date": "2026-04-23",
       "fix_note": "Phase 3 complete. Hypothesis E CONFIRMED by code analysis: emVisitingViewAnimator::Activate (emViewAnimator.rs:896-898) only sets self.active=true and does NOT wake VisitingVAEngineClass. C++ emViewAnimator::Activate (emViewAnimator.cpp:81) calls WakeUp(). The wrapper engine starts asleep (awake_state:-1) and no production code path wakes it after Activate, so VisitPanel/VisitFullsized are silent no-ops on the animator path. Outer-view zoom still works only because user mouse-wheel uses the synchronous RawVisit path that bypasses the animator. Phase 4: plumb SchedCtx through Visit* methods and wake visiting_va_engine_id after va.Activate(). See investigations/F010.md Phase 3 E3.5\u2013E3.10 evidence.",
       "investigation_file": "docs/debug/investigations/F010.md",
-      "root_cause_file": null,
+      "root_cause_file": "docs/debug/investigations/F010-root-cause.md",
       "blocked_question": null,
       "fixed_in_commit": null,
       "fixed_date": null,
