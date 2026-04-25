@@ -1,6 +1,6 @@
 # Agent Control Channel
 
-Programmatic control surface for driving the running `eaglemode` binary from outside the process. Built for autonomous agents but usable from a shell with `nc`/`socat`. Replaces the "ask a human to repro and report" loop with "drive the app, dump state, read the file".
+Programmatic control surface for driving the running `eaglemode` binary from outside the process. Built for autonomous agents but usable from a shell with `socat`. Replaces the "ask a human to repro and report" loop with "drive the app, dump state, read the file".
 
 The channel is opt-in and OS-quiet when off — no socket file, no acceptor thread, no JSON code path runs unless gated on.
 
@@ -10,20 +10,23 @@ The channel is opt-in and OS-quiet when off — no socket file, no acceptor thre
 EMCORE_DEBUG_CONTROL=1 cargo run --bin eaglemode &
 APP_PID=$!
 SOCK=/tmp/eaglemode-rs.${APP_PID}.sock
-
-# Wait until the socket appears (usually <1s).
 while [ ! -S "$SOCK" ]; do sleep 0.1; done
 
-# Drive the app.
-printf '{"cmd":"visit","panel_path":"/cosmos/home"}\n' | nc -U $SOCK
-printf '{"cmd":"wait_idle","timeout_ms":30000}\n'      | nc -U $SOCK
-printf '{"cmd":"dump"}\n'                              | nc -U $SOCK
+# Zoom outer view → content sub-view panel
+printf '{"cmd":"visit","identity":"root:content view"}\n' | socat -t2 - UNIX-CONNECT:$SOCK
+printf '{"cmd":"wait_idle","timeout_ms":30000}\n'         | socat -t35 - UNIX-CONNECT:$SOCK
+# Zoom content sub-view → home directory inside cosmos
+printf '{"cmd":"visit","view":"root:content view","identity":"::home"}\n' | socat -t2 - UNIX-CONNECT:$SOCK
+printf '{"cmd":"wait_idle","timeout_ms":30000}\n'         | socat -t35 - UNIX-CONNECT:$SOCK
+printf '{"cmd":"dump"}\n' | socat -t2 - UNIX-CONNECT:$SOCK
 cat /tmp/debug.emTreeDump | head -80
 
-# Clean shutdown.
-printf '{"cmd":"quit"}\n' | nc -U $SOCK
+# Clean shutdown
+printf '{"cmd":"quit"}\n' | socat -t2 - UNIX-CONNECT:$SOCK
 wait $APP_PID
 ```
+
+(`nc` on Fedora is `ncat` and behaves differently from BSD/OpenBSD `nc -U`; use `socat` — it is the canonical client now.)
 
 Works under a real display or under `Xvfb :99 -screen 0 1920x1080x24 & DISPLAY=:99 …`.
 
@@ -35,28 +38,36 @@ Replies follow the shape `{"ok": true, ...}` or `{"ok": false, "error": "<messag
 
 ### Commands
 
-| Command           | Payload                                                  | Reply fields                                              | Notes                                                                                                            |
-|-------------------|----------------------------------------------------------|-----------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
-| `dump`            | —                                                        | `path`                                                    | Writes full tree dump to `$TMPDIR/debug.emTreeDump` (emRec format `emTreeDump`). Returns the absolute path.       |
-| `get_state`       | —                                                        | `focused_path`, `view_rect: [x, y, w, h]`, `loading: []`  | Lightweight probe; no file write. Use to poll between `visit` and `wait_idle`.                                    |
-| `quit`            | —                                                        | —                                                         | Replies first, then signals the event loop to exit. Socket file is unlinked on exit.                              |
-| `visit`           | `panel_path: String`, `adherent?: bool`                  | —                                                         | `emView::VisitPanel` — zoom-to-panel through the view's animator. `adherent` forwards to the C++ flag.            |
-| `visit_fullsized` | `panel_path: String`                                     | —                                                         | `emView::VisitFullsized` (utilize_view = false).                                                                  |
-| `set_focus`       | `panel_path: String`                                     | —                                                         | Sets the focused panel without animating.                                                                         |
-| `seek_to`         | `panel_path: String`                                     | —                                                         | Currently calls `VisitPanel` after path resolution. Native seek-engine integration is a follow-up.                |
-| `wait_idle`       | `timeout_ms?: u64`                                       | `idle_frame: u64` (or `error: "timeout"`)                 | Parks reply until `EngineScheduler::is_idle()`. Drained from `about_to_wait`. Returns the view's frame on resolve. |
-| `input`           | `event: InputPayload`                                    | —                                                         | One synthetic `WindowEvent` dispatched through `App::window_event`. See *Input* below.                            |
-| `input_batch`     | `events: [InputPayload, ...]`                            | —                                                         | N events, one round-trip. Stops on first error.                                                                   |
+| Command           | Payload                                                  | Reply fields                                                                  | Notes                                                                                                            |
+|-------------------|----------------------------------------------------------|-------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `dump`            | —                                                        | `path`                                                                        | Writes full tree dump to `$TMPDIR/debug.emTreeDump` (emRec format `emTreeDump`). Returns the absolute path.       |
+| `get_state`       | —                                                        | `focused_view`, `focused_identity`, `view_rect: [x, y, w, h]`, `loading: []`  | Lightweight probe; no file write. The pair `(focused_view, focused_identity)` round-trips into `visit`.           |
+| `quit`            | —                                                        | —                                                                             | Replies first, then signals the event loop to exit. Socket file is unlinked on exit.                              |
+| `visit`           | `view?: String, identity: String, adherent?: bool`       | —                                                                             | `emView::VisitPanel` on the resolved view. `view` defaults to `""` (outer view). `adherent` forwards to C++.      |
+| `visit_fullsized` | `view?: String, identity: String`                        | —                                                                             | `emView::VisitFullsized` (utilize_view = false) on the resolved view.                                             |
+| `set_focus`       | `view?: String, identity: String`                        | —                                                                             | Sets the focused panel on the resolved view without animating.                                                    |
+| `seek_to`         | `view?: String, identity: String`                        | —                                                                             | Currently delegates to `VisitPanel` on the resolved view; true seek-engine wiring is a follow-up.                 |
+| `wait_idle`       | `timeout_ms?: u64`                                       | `idle_frame: u64` (or `error: "timeout"`)                                     | Parks reply until `EngineScheduler::is_idle()`. Drained from `about_to_wait`. Returns the view's frame on resolve.|
+| `input`           | `event: InputPayload`                                    | —                                                                             | One synthetic `WindowEvent` dispatched through `App::window_event`. See *Input* below.                            |
+| `input_batch`     | `events: [InputPayload, ...]`                            | —                                                                             | N events, one round-trip. Stops on first error.                                                                   |
 
-### Path syntax
+### Identity addressing
 
-Paths are `/`-separated, root-relative, walked via `tree.children(parent)` matching `tree.name(child)`. Examples:
+Panels are addressed by `(view, identity)`. Identities come from `emPanel::GetIdentity` — colon-separated, backslash-escaped via `EncodeIdentity`/`DecodeIdentity` in `emPanelTree.rs:71-142`. The `view` selector is the outer-view identity of the containing `emSubViewPanel`; omit it (or pass `""`) to address the outer view itself.
 
-- `/` → root panel
-- `/cosmos` → `root.child("cosmos")`
-- `/cosmos/home` → `root.child("cosmos").child("home")`
+Examples from the live emMainPanel tree:
 
-Missing segment errors with `no such panel: /a/b (segment 'b' not found under 'a')`. Names containing `/` aren't supported by the resolver — see *Known gaps*.
+| Target                                            | `view`               | `identity`            |
+|---------------------------------------------------|----------------------|-----------------------|
+| Outer view's root (emMainPanel)                   | `""`                 | `"root"`              |
+| Control sub-view panel                            | `""`                 | `"root:control view"` |
+| Content sub-view panel                            | `""`                 | `"root:content view"` |
+| Slider                                            | `""`                 | `"root:slider"`       |
+| Inner content view's root (sub-tree root)         | `"root:content view"`| `""`                  |
+| Cosmos panel (sub-root's empty-named child)       | `"root:content view"`| `":"`                 |
+| Home directory under cosmos                       | `"root:content view"`| `"::home"`            |
+
+Empty `identity` addresses the view's root. Empty segments (`""`) are addressable — they encode unnamed panels, which emCore uses for "the singleton child of a parent that doesn't need to be addressed by name" (both C++ `emMainContentPanel.cpp:29` and Rust `emMainWindow.rs:588` give cosmos the empty name).
 
 ### Input payload
 
@@ -129,23 +140,21 @@ SOCK=/tmp/eaglemode-rs.${APP_PID}.sock
 while [ ! -S "$SOCK" ]; do sleep 0.1; done
 
 # Snapshot before
-printf '{"cmd":"dump"}\n' | nc -U $SOCK
+printf '{"cmd":"dump"}\n' | socat -t2 - UNIX-CONNECT:$SOCK
 cp /tmp/debug.emTreeDump /tmp/before.emTreeDump
 
-# Zoom into the directory of interest
-printf '{"cmd":"visit","panel_path":"/cosmos/home"}\n'    | nc -U $SOCK
-printf '{"cmd":"wait_idle","timeout_ms":30000}\n'         | nc -U $SOCK
+# Two-call navigation: outer → content SVP, then inner → home
+printf '{"cmd":"visit","identity":"root:content view"}\n' | socat -t2 - UNIX-CONNECT:$SOCK
+printf '{"cmd":"wait_idle","timeout_ms":30000}\n'         | socat -t35 - UNIX-CONNECT:$SOCK
+printf '{"cmd":"visit","view":"root:content view","identity":"::home"}\n' | socat -t2 - UNIX-CONNECT:$SOCK
+printf '{"cmd":"wait_idle","timeout_ms":30000}\n'         | socat -t35 - UNIX-CONNECT:$SOCK
 
 # Snapshot after loading completes
-printf '{"cmd":"dump"}\n' | nc -U $SOCK
+printf '{"cmd":"dump"}\n' | socat -t2 - UNIX-CONNECT:$SOCK
 cp /tmp/debug.emTreeDump /tmp/after.emTreeDump
-
-# Diff the panel sub-tree of interest
-diff <(grep -A 30 '"/cosmos/home"' /tmp/before.emTreeDump) \
-     <(grep -A 30 '"/cosmos/home"' /tmp/after.emTreeDump)
 ```
 
-In `/tmp/after.emTreeDump`, look at the `emDirPanel` for `/cosmos/home`:
+In `/tmp/after.emTreeDump`, look for the `emDirPanel` rec under the inner content view's branch — each sub-view appears as a child context of the home view per Phase 0's nested topology fix. Read:
 - `loading_done: true` — the load reached completion.
 - `child_count: N` — entries were created.
 - Each `emDirEntryPanel` child should have `LastPaintFrame: ≈current` if visible.
@@ -156,7 +165,7 @@ In `/tmp/after.emTreeDump`, look at the `emDirPanel` for `/cosmos/home`:
 
 ```bash
 while true; do
-  reply=$(printf '{"cmd":"get_state"}\n' | nc -U $SOCK)
+  reply=$(printf '{"cmd":"get_state"}\n' | socat -t2 - UNIX-CONNECT:$SOCK)
   echo "$reply"
   echo "$reply" | grep -q '"loading":\[\]' && break
   sleep 0.5
@@ -171,7 +180,7 @@ APP_PID=$!
 SOCK=/tmp/eaglemode-rs.${APP_PID}.sock
 while [ ! -S "$SOCK" ]; do sleep 0.1; done
 sleep 1   # let the home view materialize
-printf '{"cmd":"dump"}\n{"cmd":"quit"}\n' | nc -U $SOCK
+printf '{"cmd":"dump"}\n{"cmd":"quit"}\n' | socat -t2 - UNIX-CONNECT:$SOCK
 wait $APP_PID
 ```
 
@@ -208,9 +217,9 @@ Spec: `docs/superpowers/specs/2026-04-24-treedump-port-design.md`. Plan: `docs/s
 
 2. **Xvfb headless verification deferred.** The dev machine where Phase 1–5 was implemented does not have Xvfb installed. Integration tests that spawn the binary are marked `#[ignore]` so they can be opted into when Xvfb (or a real display) is available. If Xvfb turns out to fail under wgpu+llvmpipe, fall back to the `--headless` flag path described in the spec.
 
-3. **`seek_to` does not yet use the seek engine.** Currently resolves the path and calls `VisitPanel` — same destination but without the seek-engine's lazy-load behavior. Loading-deep-into-an-uninitialized-subtree may behave differently from `td!` + manual zoom. Tracked as a follow-up; integrate `emView::VisitByIdentity` once the path-string ↔ identity-string conversion is decided.
+3. **`seek_to` does not yet use the seek engine.** Currently resolves `(view, identity)` and calls `VisitPanel` on the resolved view — same destination but without the seek-engine's lazy-load behavior. Loading-deep-into-an-uninitialized-subtree may behave differently from `td!` + manual zoom. Tracked as a follow-up; integrate `emView::SeekByIdentity` (or its native equivalent) once the seek engine grows the cross-sub-view dispatch path.
 
-4. **`dump_window` / `dump_model` / `dump_file_model` walkers are reachable only from tests.** The Rust port's `emContext` doesn't enumerate child views, child contexts, or registered models in a uniform way (C++ uses `dynamic_cast` over `emRecordable`; Rust models are `Rc<RefCell<T>>` keyed by `TypeId`). The walkers exist, are correct, and will be wired once the port grows enumeration APIs. For now the dump shows the home view's panel tree but does not enumerate sibling windows, common models, or child contexts.
+4. **Sibling windows and popups are not enumerated by the dump.** Phase 3 of the tree-dump-subview-crossing work landed `dump_from_root_context_with_home`, so the cascade now reaches sub-views and child contexts — `dump_context_with_cascade` walks `ctx.live_children()` and emits each sub-view's View + panel-tree recs under its parent context. What is still missing: sibling windows, popups, common models on non-home contexts, and private models. The Rust port's `emContext` does not yet enumerate these in a uniform way (C++ uses `dynamic_cast` over `emRecordable`; Rust models are `Rc<RefCell<T>>` keyed by `TypeId`). They will be wired once the port grows the matching enumeration APIs.
 
 5. **`emView` reports placeholder counts for context fields.** The `Common Models: N / Private Models: N` lines in the view branch use `view.GetContext().common_model_count()` and a `0` placeholder for private. Annotated `UPSTREAM-GAP:` — Rust `emContext` does not track private models the same way C++ does; once it does, fill in the real count.
 
