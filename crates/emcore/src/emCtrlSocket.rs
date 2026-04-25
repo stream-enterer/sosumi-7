@@ -261,6 +261,21 @@ pub enum WaitForCondition {
         view: String,
         identity: String,
     },
+    /// Resolves once the panel exists, is viewed, and its rendered rect
+    /// fully spans at least one home-rect dimension of the (possibly
+    /// inner) view, with its center approximately at the home-rect
+    /// center. Designed to detect "did `visit_fullsized` actually
+    /// zoom?" — the `panel_viewed` predicate is satisfied by sub-pixel
+    /// rects (any non-empty intersection flips `panel.viewed` true), so
+    /// it cannot distinguish a fullsized visit from a degenerate
+    /// layout. This predicate ignores the sub-pixel case by requiring
+    /// the dominant dimension of the panel's `viewed` rect to match
+    /// the view's home-rect dimension within ~1.0 pixel.
+    PanelFullsized {
+        #[serde(default)]
+        view: String,
+        identity: String,
+    },
 }
 
 /// Synthetic input payload — wire format `{"kind":"<name>", ...}`.
@@ -1004,6 +1019,37 @@ fn evaluate_wait_for(app: &mut App, condition: &WaitForCondition) -> WaitForReso
                 Err(_) => WaitForResolution::NotYet,
             }
         }
+        WaitForCondition::PanelFullsized { view, identity } => {
+            let result = resolve_target(app, view, identity, |view, tree, id, _ctx| {
+                let p = tree.panels.get(id)?;
+                if !p.viewed {
+                    return Some(false);
+                }
+                let hw = view.HomeWidth;
+                let hh = view.HomeHeight;
+                if hw <= 0.0 || hh <= 0.0 {
+                    return Some(false);
+                }
+                // Dominant dimension must span ≥ home dim within ~1px.
+                let span_w = p.viewed_width >= hw - 1.0;
+                let span_h = p.viewed_height >= hh - 1.0;
+                if !(span_w || span_h) {
+                    return Some(false);
+                }
+                // Center within ~1px of home-rect center (rules out
+                // huge but off-screen rects).
+                let pcx = p.viewed_x + p.viewed_width * 0.5;
+                let pcy = p.viewed_y + p.viewed_height * 0.5;
+                let hcx = view.HomeX + hw * 0.5;
+                let hcy = view.HomeY + hh * 0.5;
+                Some((pcx - hcx).abs() <= 1.0 && (pcy - hcy).abs() <= 1.0)
+            });
+            match result {
+                Ok(Some(true)) => WaitForResolution::Ready,
+                Ok(_) => WaitForResolution::NotYet,
+                Err(_) => WaitForResolution::NotYet,
+            }
+        }
     }
 }
 
@@ -1206,6 +1252,23 @@ mod tests {
                 assert_eq!(view, "root:content view");
                 assert_eq!(identity, "::fs");
                 assert_eq!(timeout_ms, Some(30000));
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn wait_for_panel_fullsized_roundtrip() {
+        let json = r#"{"cmd":"wait_for","condition":{"kind":"panel_fullsized","view":"root:content view","identity":":"},"timeout_ms":10000}"#;
+        let parsed: CtrlCmd = serde_json::from_str(json).unwrap();
+        match parsed {
+            CtrlCmd::WaitFor {
+                condition: WaitForCondition::PanelFullsized { view, identity },
+                timeout_ms,
+            } => {
+                assert_eq!(view, "root:content view");
+                assert_eq!(identity, ":");
+                assert_eq!(timeout_ms, Some(10000));
             }
             _ => panic!("wrong variant"),
         }
