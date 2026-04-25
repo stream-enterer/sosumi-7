@@ -218,8 +218,21 @@ pub fn handle_main_thread(app: &mut App, event_loop: &ActiveEventLoop, msg: Ctrl
         CtrlCmd::SetFocus { ref panel_path } => handle_set_focus(app, panel_path),
         CtrlCmd::SeekTo { ref panel_path } => handle_seek_to(app, panel_path),
         CtrlCmd::WaitIdle { .. } => unreachable!(), // handled above
-        CtrlCmd::Input { .. } | CtrlCmd::InputBatch { .. } => {
-            CtrlReply::err("not implemented in phase 3 skeleton")
+        CtrlCmd::Input { event } => match synthesize_and_dispatch(app, event_loop, event) {
+            Ok(()) => CtrlReply::ok(),
+            Err(e) => CtrlReply::err(e),
+        },
+        CtrlCmd::InputBatch { events } => {
+            let mut last_err: Option<String> = None;
+            for ev in events {
+                if let Err(e) = synthesize_and_dispatch(app, event_loop, ev) {
+                    last_err = Some(e);
+                }
+            }
+            match last_err {
+                Some(e) => CtrlReply::err(e),
+                None => CtrlReply::ok(),
+            }
         }
     };
     let _ = msg.reply_tx.send(reply);
@@ -504,6 +517,134 @@ fn dispatch(cmd: CtrlCmd) -> CtrlReply {
 pub fn cleanup_on_exit() {
     let _ = std::fs::remove_file(socket_path());
 }
+
+use winit::application::ApplicationHandler;
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::keyboard::{Key, NamedKey, SmolStr};
+use winit::window::WindowId;
+
+/// Map agent-supplied key names to winit `Key` values.
+///
+/// Recognized named keys: Return/Enter, Escape, Tab, Space, Backspace,
+/// Arrow{Up,Down,Left,Right}, Home, End, PageUp, PageDown, F1..F12.
+/// Anything else is treated as a single-character `Key::Character`.
+pub(crate) fn key_from_name(name: &str) -> Key {
+    let named = match name {
+        "Return" | "Enter" => Some(NamedKey::Enter),
+        "Escape" => Some(NamedKey::Escape),
+        "Tab" => Some(NamedKey::Tab),
+        "Space" => Some(NamedKey::Space),
+        "Backspace" => Some(NamedKey::Backspace),
+        "ArrowUp" => Some(NamedKey::ArrowUp),
+        "ArrowDown" => Some(NamedKey::ArrowDown),
+        "ArrowLeft" => Some(NamedKey::ArrowLeft),
+        "ArrowRight" => Some(NamedKey::ArrowRight),
+        "Home" => Some(NamedKey::Home),
+        "End" => Some(NamedKey::End),
+        "PageUp" => Some(NamedKey::PageUp),
+        "PageDown" => Some(NamedKey::PageDown),
+        "F1" => Some(NamedKey::F1),
+        "F2" => Some(NamedKey::F2),
+        "F3" => Some(NamedKey::F3),
+        "F4" => Some(NamedKey::F4),
+        "F5" => Some(NamedKey::F5),
+        "F6" => Some(NamedKey::F6),
+        "F7" => Some(NamedKey::F7),
+        "F8" => Some(NamedKey::F8),
+        "F9" => Some(NamedKey::F9),
+        "F10" => Some(NamedKey::F10),
+        "F11" => Some(NamedKey::F11),
+        "F12" => Some(NamedKey::F12),
+        _ => None,
+    };
+    match named {
+        Some(n) => Key::Named(n),
+        None => Key::Character(SmolStr::new(name)),
+    }
+}
+
+/// Construct a synthetic `WindowEvent` from an `InputPayload` and dispatch
+/// it through `App::window_event` — the same entry point winit uses for
+/// real input. Downstream handling is identical (scheduler ticks, focus
+/// updates, paint requests, etc.).
+///
+/// Returns Err if the App has no home window or if the payload is a Key
+/// event (see `build_window_event` for the dependency-forced limitation).
+pub(crate) fn synthesize_and_dispatch(
+    app: &mut App,
+    event_loop: &ActiveEventLoop,
+    payload: InputPayload,
+) -> Result<(), String> {
+    let window_id: WindowId = match app.home_window_id {
+        Some(id) => id,
+        None => return Err("home window not initialized".into()),
+    };
+    let event = build_window_event(payload)?;
+    app.window_event(event_loop, window_id, event);
+    Ok(())
+}
+
+/// Translate `InputPayload` into a `winit::WindowEvent`.
+///
+/// DIVERGED: (dependency-forced)
+/// `WindowEvent::KeyboardInput { event: KeyEvent, .. }` cannot be
+/// constructed outside the `winit` crate in 0.30 because
+/// `KeyEvent::platform_specific` is `pub(crate)` and there is no
+/// public constructor. C++ emCore drives synthetic key input by
+/// directly calling `emView::InputKey` (emView.cpp), bypassing the
+/// platform event layer; winit 0.30 admits no equivalent path. Until
+/// winit exposes a public `KeyEvent` constructor (or we route synthetic
+/// keys through a higher-level emCore entry point), the Key arm of
+/// this function returns Err. Mouse / scroll / cursor events have
+/// public constructors and are dispatched normally. Tracking note: a
+/// future task may bypass `App::window_event` entirely for Key
+/// payloads and call into `emWindow`/`emView` input methods directly.
+fn build_window_event(payload: InputPayload) -> Result<WindowEvent, String> {
+    Ok(match payload {
+        InputPayload::Key { key, press: _, mods: _ } => {
+            // Map the name eagerly so the agent gets immediate feedback
+            // on bogus key names; the dependency-forced limitation
+            // below means we can't yet construct a KeyEvent to deliver.
+            let _logical = key_from_name(&key);
+            return Err(
+                "synthetic key events not yet supported (winit 0.30 KeyEvent has no public constructor)"
+                    .into(),
+            );
+        }
+        InputPayload::MouseMove { x, y } => WindowEvent::CursorMoved {
+            device_id: synthetic_device_id(),
+            position: winit::dpi::PhysicalPosition::new(x, y),
+        },
+        InputPayload::MouseButton { button, press } => {
+            let winit_button = match button {
+                MouseButtonName::Left => MouseButton::Left,
+                MouseButtonName::Middle => MouseButton::Middle,
+                MouseButtonName::Right => MouseButton::Right,
+            };
+            WindowEvent::MouseInput {
+                device_id: synthetic_device_id(),
+                state: if press {
+                    ElementState::Pressed
+                } else {
+                    ElementState::Released
+                },
+                button: winit_button,
+            }
+        }
+        InputPayload::Scroll { dx, dy } => WindowEvent::MouseWheel {
+            device_id: synthetic_device_id(),
+            delta: MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(dx, dy)),
+            phase: winit::event::TouchPhase::Moved,
+        },
+    })
+}
+
+/// Construct a placeholder `winit::event::DeviceId` for synthetic events
+/// using winit's public `DeviceId::dummy()` constructor.
+fn synthetic_device_id() -> winit::event::DeviceId {
+    winit::event::DeviceId::dummy()
+}
+
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -920,6 +1061,102 @@ mod tests {
         let deadline = Instant::now() + Duration::from_millis(10);
         std::thread::sleep(Duration::from_millis(20));
         assert!(Instant::now() > deadline);
+    }
+
+    #[test]
+    fn key_from_name_named_keys() {
+        match key_from_name("Return") {
+            Key::Named(NamedKey::Enter) => {}
+            other => panic!("unexpected mapping: {:?}", other),
+        }
+        match key_from_name("Enter") {
+            Key::Named(NamedKey::Enter) => {}
+            _ => panic!(),
+        }
+        match key_from_name("F5") {
+            Key::Named(NamedKey::F5) => {}
+            _ => panic!(),
+        }
+        match key_from_name("ArrowUp") {
+            Key::Named(NamedKey::ArrowUp) => {}
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn key_from_name_character_fallback() {
+        match key_from_name("a") {
+            Key::Character(s) => assert_eq!(s.as_str(), "a"),
+            _ => panic!(),
+        }
+        match key_from_name("xyz") {
+            Key::Character(s) => assert_eq!(s.as_str(), "xyz"),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn build_window_event_key_returns_err() {
+        // Key arm is dependency-forced stubbed (see DIVERGED comment on
+        // build_window_event). Verify the documented error is returned.
+        let payload = InputPayload::Key {
+            key: "Return".into(),
+            press: true,
+            mods: Modifiers::default(),
+        };
+        let result = build_window_event(payload);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("not yet supported") || err.contains("KeyEvent"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn build_window_event_mouse_move() {
+        let payload = InputPayload::MouseMove { x: 100.0, y: 200.0 };
+        let event = build_window_event(payload).expect("mouse_move should succeed");
+        match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                assert!((position.x - 100.0).abs() < 0.001);
+                assert!((position.y - 200.0).abs() < 0.001);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn build_window_event_mouse_button() {
+        let payload = InputPayload::MouseButton {
+            button: MouseButtonName::Left,
+            press: true,
+        };
+        let event = build_window_event(payload).expect("mouse_button should succeed");
+        match event {
+            WindowEvent::MouseInput { state, button, .. } => {
+                assert_eq!(state, ElementState::Pressed);
+                assert!(matches!(button, MouseButton::Left));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn build_window_event_scroll() {
+        let payload = InputPayload::Scroll { dx: 1.0, dy: -2.0 };
+        let event = build_window_event(payload).expect("scroll should succeed");
+        match event {
+            WindowEvent::MouseWheel { delta, .. } => match delta {
+                MouseScrollDelta::PixelDelta(p) => {
+                    assert!((p.x - 1.0).abs() < 0.001);
+                    assert!((p.y + 2.0).abs() < 0.001);
+                }
+                _ => panic!("expected PixelDelta"),
+            },
+            _ => panic!(),
+        }
     }
 
     #[test]
