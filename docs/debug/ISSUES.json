@@ -268,7 +268,7 @@
     {
       "id": "F010",
       "kind": "fix",
-      "status": "investigating",
+      "status": "needs-manual-verification",
       "priority": "high",
       "title": "Directory panel renders incorrectly: black bg, no outer border, missing left info",
       "description": "Reframed 2026-04-25 after manual rejection of commit 287f7539. F010 is a cluster of 3 distinct dir-panel render-chain divergences vs C++ (Card-Blue at same zoom into '/'): (1a) emDirPanel::Paint skips Clear(DirContentColor) during loading — background renders black instead of light-grey; (1b) emDirEntryPanel never paints the OuterBorder gradient image and the .tga assets (CardOuterBorder.tga, CardInnerBorder.tga, etc.) are not shipped in res/ — entry chrome looks flat; (2) PaintInfo Rust analogue paints only time_str, omitting Type/Permissions/Size/Owner/Group fields and all labels — left info pane is empty. Phases 1–5 fixed the StartupEngine wake (commit 287f7539, preserved); that work was necessary but does not address symptoms (1a)(1b)(2). Slow-loading symptom split off as F017 on 2026-04-25. See investigation_file Phase 6 reframe. HYPOTHESIS X scope corrected 2026-04-25: port C++ switch verbatim (Clear only on VFS_LOADED/VFS_NO_FILE_MODEL); the symptom of black-during-loading was reattributed to emFilePanel::Paint divergence and split off as F018.",
@@ -276,12 +276,12 @@
       "caused_by": null,
       "introduced_commit": null,
       "introduced_date": "2026-04-23",
-      "fix_note": "Phase 6 reframe (2026-04-25): Phase 5 StartupEngine fix preserved (commit 287f7539). Remaining work is a cluster of three independent dir-panel render-chain divergences. HYPOTHESIS X: emDirPanel::Paint must call Clear(DirContentColor) unconditionally (C++ emDirPanel.cpp:159-170). HYPOTHESIS Y: extend emFileManThemeData with OuterBorder*/InnerBorder* fields, ship .tga assets, call paint_border_image in emDirEntryPanel::Paint (C++ emDirEntryPanel.cpp:318-335). HYPOTHESIS Z: port the C++ PaintInfo body (emDirEntryPanel.cpp:484-715) emitting all 6 fields with labels into emDirEntryPanel::Paint info area. Slow-loading symptom (formerly HYPOTHESIS W) split off as F017 on 2026-04-25. See docs/debug/investigations/F010.md Phase 6 section for full evidence.",
+      "fix_note": "Cluster X+Y+Z landed 2026-04-25; F017 (slow loading) and F018 (loading-state black bg) still open separately. X (08127c43): emDirPanel::Paint state-gated Clear ported verbatim from C++ emDirPanel.cpp:159-170. Y (594d0b51): emDirEntryPanel::Paint emits OuterBorder/InnerBorder PaintBorderImage calls; theme already had fields and assets. Z (4f2d520f): emDirEntryPanel::PaintInfo body ported (cpp:484-725) — six-field info pane (Type, Permissions, Owner, Group, Size, Time) with labels, three layout modes (tall/medium/wide), magic constants 0.087/0.483/7.6666/1.4/1.03/0.025/0.75 preserved. Windows permission/drive branches DIVERGED (upstream-gap-forced). Verification gap: no emDirEntryPanel golden test infrastructure exists; covered by 4 new unit tests asserting layout-mode op counts + field content. Awaiting human GUI confirmation to flip to closed.",
       "investigation_file": "docs/debug/investigations/F010.md",
       "root_cause_file": "docs/debug/investigations/F010-root-cause.md",
       "blocked_question": null,
-      "fixed_in_commit": null,
-      "fixed_date": null,
+      "fixed_in_commit": "4f2d520f",
+      "fixed_date": "2026-04-25",
       "repro": "Launch app. Navigate into cosmos. Zoom into the File System or Home panel. Observe 'Loading NN%' for each directory taking a very long time; when it completes, the interior renders blank. Navigating into /root yields a red 'Failed to open directory /root: Permission denied' box; several directories show 'This file type cannot be shown' red boxes for entries."
     },
     {

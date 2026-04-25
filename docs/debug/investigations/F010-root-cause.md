@@ -149,3 +149,135 @@ exposes the wake without leaking `EngineId` internals.
   addressed by the StartupEngine fix because the user's mouse-zoom
   flow (which works through `RawVisit`) reaches cosmos, which then
   auto-expands normally.
+
+---
+
+## Phase 6 addendum (2026-04-25) — Render-chain cluster X+Y+Z
+
+After Phase 5 landed, manual verification rejected the result: cosmos
+now reaches the dir-panel level, but the panel itself renders wrong.
+The issue was reframed as a cluster of three independent dir-panel
+render-chain divergences vs C++ Card-Blue (slow-loading symptom split
+off as F017; loading-state black background split off as F018).
+
+### Hypothesis X — emDirPanel::Paint state-gated Clear
+
+10. **Symptom:** Loaded directory panel background was black instead
+    of `DirContentColor` light grey.
+
+11. **Root cause** (`crates/emfileman/src/emDirPanel.rs:477-491`):
+    Rust port omitted the C++ switch on `GetVirFileState()`. C++
+    (`emDirPanel.cpp:159-170`) calls
+    `painter.Clear(Config->GetTheme().DirContentColor.Get())` only
+    on `VFS_LOADED` / `VFS_NO_FILE_MODEL`; default arm delegates to
+    `emFilePanel::Paint`. Rust had neither.
+
+12. **Fix (commit 08127c43):** ported the C++ switch verbatim,
+    using Rust `VirtualFileState::Loaded` / `NoFileModel`. Existing
+    dir-panel painting body runs inside the `Loaded`/`NoFileModel`
+    arm after the `Clear` call.
+
+13. **Note:** the symptom of "black during loading" is NOT addressed
+    by this fix — that is a separate `emFilePanel::Paint` divergence
+    tracked as F018.
+
+### Hypothesis Y — emDirEntryPanel paints OuterBorder/InnerBorder
+
+14. **Symptom:** Directory entries rendered with flat chrome — no
+    Card-Blue gradient outer border, no inner border around the
+    content area.
+
+15. **Root cause:** `emDirEntryPanel::Paint`
+    (`crates/emfileman/src/emDirEntryPanel.rs`) lacked the
+    `PaintBorderImage` calls that C++
+    (`emDirEntryPanel.cpp:318-335`) emits for OuterBorderImg and
+    the inner border (file vs dir variant). Theme data and
+    `.tga` assets were already present (`emFileManThemeData` had
+    all OuterBorder*/FileInnerBorder*/DirInnerBorder* fields;
+    `res/emFileMan/themes/` contained `CardOuterBorder.tga`,
+    `CardInnerBorder.tga`, etc., byte-identical to upstream).
+
+16. **Fix (commit 594d0b51):** ported the C++ `PaintBorderImage`
+    call sequence. Theme image loading uses the existing
+    `ImageFileRec` lazy-load infrastructure
+    (`GetOuterBorderImage`/`GetDirInnerBorderImage`); no new
+    asset-loading code introduced.
+
+### Hypothesis Z — emDirEntryPanel::PaintInfo six-field info pane
+
+17. **Symptom:** Each entry's left info pane showed only Time;
+    Type, Permissions, Owner, Group, Size labels and values were
+    all missing.
+
+18. **Root cause:** Rust port stubbed `PaintInfo` to a single
+    `PaintTextBoxed` of `FormatTime(st_mtime)`. C++
+    (`emDirEntryPanel.cpp:484-725`) implements three layout modes
+    keyed on aspect ratio (tall `t > 0.9`, medium
+    `0.04 < t ≤ 0.9`, wide `t ≤ 0.04`) and paints six labels
+    plus six field values with carefully-tuned magic constants
+    (`0.087`, `0.483`, `7.6666`, `1.4`, `1.03`, `0.025`, `0.75`).
+
+19. **Fix (commit 4f2d520f):** ported the entire `PaintInfo` body
+    into Rust `paint_info` (`crates/emfileman/src/emDirEntryPanel.rs`).
+    All three layout modes preserved with C++ line citations.
+    Magic constants kept exact. Six fields ported:
+    - **Type** (cpp:578-634) — branches on
+      `stat.st_mode & libc::S_IFMT` for regular/dir/FIFO/blk/chr/sock
+      plus the symlink branch (label half + target/error half).
+    - **Permissions** (cpp:650-668) — Unix branch only; three
+      `PaintText` calls for owner/group/other rwx groups. Windows
+      attribute branch (cpp:642-648) and Windows drive-type
+      extension (cpp:611-626) intentionally omitted; marked
+      `// DIVERGED: (upstream-gap-forced)` because both are gated
+      on `#if defined(_WIN32)` upstream and ship as no-ops on the
+      project's Linux build.
+    - **Owner / Group** (cpp:670-684) — single `PaintTextBoxed`
+      from `entry.GetOwner()` / `GetGroup()`.
+    - **Size** (cpp:689-709) — `em_uint64_to_str` (new helper,
+      port of `emStd1.cpp:200-214`) with thousands-separator
+      digit-chunk loop (`j = (len-i) - (len-i-1)/3*3`) and
+      magnitude suffix `kMGTPEZY` painted as a separate
+      `PaintText` at `(by[4] + bh[4]*0.75, bh[4]/5)`.
+    - **Time** (cpp:714-721) — `FormatTime(st_mtime, …)` with the
+      C++ `bw[5]/bh[5] < 6.0` compact-mode flag.
+
+20. **Documented design choice — alignment:** C++ `PaintInfo` takes
+    an `alignment: emAlignment` argument and switches between
+    top/bottom/center positioning (cpp:514-516, 549-551). The Rust
+    port hardcodes the center branch because the only caller
+    (`Paint`) passes `EM_ALIGN_CENTER`. Comments at the centering
+    branches in tall and wide modes explicitly document this and
+    the plumbing path forward if a non-center caller is added.
+
+### Verification
+
+- Static checks clean: `cargo check`, `cargo clippy -- -D warnings`,
+  `cargo xtask annotations`.
+- Test suite: `cargo-nextest ntr` — 2249 passed, 2 pre-existing
+  `emcore::plugin_invocation` failures unrelated. emfileman test
+  count grew 167 → 171 (4 new `paint_info` tests covering tall,
+  medium, wide regimes plus a field-content assertion).
+- Divergence report: 1 exact-match, 0 divergent (zero divergence
+  on the existing golden corpus).
+- Verification gap: no `emDirEntryPanel`-level golden test
+  infrastructure exists. Building one requires panel-tree
+  integration, theme/asset loading, and a corresponding C++-side
+  `gen_golden` harness — out of scope for F010. The four new unit
+  tests cover layout-mode op counts and field-content strings;
+  pixel-exact equivalence to C++ awaits the broader test
+  infrastructure.
+
+### Status
+
+- F010 status flipped to `needs-manual-verification`.
+- Awaiting human GUI confirmation:
+  - **X verified**: light-grey `DirContentColor` background on
+    loaded panels.
+  - **Y verified**: Card-Blue gradient outer border + inner border
+    around content area on dir entries.
+  - **Z verified**: each entry's left info pane shows Type,
+    Permissions (rwxr-x-r-x style), Owner, Group, Size (with
+    thousands separator + magnitude suffix), Time — labels and
+    values both visible across all three layout modes.
+- F017 (slow loading) and F018 (loading-state black bg) remain
+  open separately.
