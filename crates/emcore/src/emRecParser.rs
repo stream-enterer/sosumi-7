@@ -101,6 +101,14 @@ impl RecStruct {
         self.push(name, val);
     }
 
+    /// Remove all fields with the given name (case-insensitive). Used by
+    /// callers that want replace-semantics on top of the push-based
+    /// `SetValue` (e.g. `emTreeDump::set_children`).
+    pub fn remove_field(&mut self, name: &str) {
+        self.fields
+            .retain(|(k, _)| !k.eq_ignore_ascii_case(name));
+    }
+
     fn GetRec(&self, name: &str) -> Option<&RecValue> {
         self.fields
             .iter()

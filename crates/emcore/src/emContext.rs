@@ -82,6 +82,15 @@ impl emContext {
         cur
     }
 
+    /// Borrow the raw children list (weak refs to live + dead child contexts).
+    /// Callers iterate and `Weak::upgrade` to filter live entries.
+    ///
+    /// Used by the tree-dump cascade (`emTreeDump::dump_context_with_cascade`)
+    /// which needs to walk the full child set, not just count.
+    pub(crate) fn children(&self) -> std::cell::Ref<'_, Vec<Weak<emContext>>> {
+        self.children.borrow()
+    }
+
     /// Number of live children (expired weak references are not counted).
     pub fn child_count(&self) -> usize {
         self.children

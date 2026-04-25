@@ -122,6 +122,14 @@ pub(crate) fn empty_rec(title: String, text: String, style: VisualStyle) -> RecS
 /// `empty_rec` does not pre-populate Children. Callers that have no
 /// children should still call with an empty Vec for schema completeness.
 pub(crate) fn set_children(rec: &mut RecStruct, children: Vec<RecValue>) {
+    // Replace any existing "Children" entry rather than appending.
+    // RecStruct::SetValue is push-based; without a remove-prior step,
+    // calling set_children twice on the same rec leaves stale entries
+    // ahead of the new one and `get_array` (first-match) returns the
+    // stale array. The cross-view cascade (Phase 3) calls `dump_context`
+    // (which sets empty children) and then overlays its own children
+    // list, so this replace-semantic matters.
+    rec.remove_field("Children");
     rec.SetValue("Children", RecValue::Array(children));
 }
 
@@ -543,6 +551,46 @@ pub(crate) fn dump_context(ctx: &emContext, is_root: bool) -> RecStruct {
     };
     let mut rec = empty_rec(title, text, style);
     set_children(&mut rec, Vec::new());
+    rec
+}
+
+/// Like `dump_context`, but recursively emits child contexts. Each
+/// upgraded child is dispatched to `dump_view` (if present in the
+/// pre-pass `view_map`) or to itself recursively for plain contexts.
+///
+/// Mirrors C++ `emTreeDumpFromObject`'s emContext cascade with view
+/// dispatch (the `dynamic_cast<emView*>(ctx)` branch in C++).
+// TEMP: `pub` — non-test caller (`dump_from_root_context_with_home`)
+// lands in the next commit. `pub(crate)` here would trip `dead_code`
+// because tests don't count for the lib build. Tightened once the
+// home-context entry point is wired.
+pub fn dump_context_with_cascade(
+    ctx: &crate::emContext::emContext,
+    is_root: bool,
+    view_map: &ViewMap<'_>,
+) -> RecStruct {
+    let mut rec = dump_context(ctx, is_root);
+
+    let mut children: Vec<RecValue> = Vec::new();
+    for weak in ctx.children().iter() {
+        let Some(child_ctx) = weak.upgrade() else {
+            continue; // dead weak — skip
+        };
+        let ptr = std::rc::Rc::as_ptr(&child_ctx);
+        if let Some(&(view, tree)) = view_map.get(&ptr) {
+            // Known view: emit the view branch. Use the view's own
+            // IsFocused() for window_focused (matches the existing
+            // dump_tree shim's `self.window_focused` access pattern).
+            let view_rec = dump_view(view, tree, view.IsFocused());
+            children.push(RecValue::Struct(view_rec));
+        } else {
+            // Plain context: recurse with the same view_map.
+            let child_rec = dump_context_with_cascade(&child_ctx, false, view_map);
+            children.push(RecValue::Struct(child_rec));
+        }
+    }
+
+    set_children(&mut rec, children);
     rec
 }
 
@@ -1185,6 +1233,30 @@ mod tests {
         // MAXIMIZED / AUTO_DELETE are Rust-only and must NOT appear.
         assert!(!text.contains("WF_MAXIMIZED"), "Rust-only flag leaked:\n{}", text);
         assert!(!text.contains("WF_AUTO_DELETE"), "Rust-only flag leaked:\n{}", text);
+    }
+
+    #[test]
+    fn dump_context_with_cascade_iterates_child_contexts() {
+        let root = crate::emContext::emContext::NewRoot();
+        let child1 = crate::emContext::emContext::NewChild(&root);
+        let child2 = crate::emContext::emContext::NewChild(&root);
+        // Sanity: parent records both children before we walk.
+        assert_eq!(root.child_count(), 2, "parent should hold 2 live children");
+
+        // Empty ViewMap: no child is a known view, so both children emit
+        // as plain dump_context recs.
+        let view_map = ViewMap::new();
+        let rec = dump_context_with_cascade(&root, true, &view_map);
+        let children = rec.get_array("Children").expect("Children exists");
+        assert_eq!(
+            children.len(),
+            2,
+            "expected 2 child context recs, got {}",
+            children.len()
+        );
+
+        drop(child1);
+        drop(child2);
     }
 
     #[test]
