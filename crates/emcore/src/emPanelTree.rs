@@ -1683,6 +1683,19 @@ impl PanelTree {
         }
     }
 
+    /// Shared-borrow access to a panel's behavior. Returns `None` when the
+    /// panel has no behavior set or has been removed. Use instead of
+    /// `take_behavior` / `put_behavior` when you only need to call
+    /// `&self` methods on the behavior (`type_name`, `dump_state`,
+    /// `as_sub_view_panel`).
+    // TEMP: `pub` (not `pub(crate)`) — first non-test caller lands in
+    // Phase 3's `dump_context_with_cascade`. `pub(crate)` trips
+    // `dead_code` because `#[cfg(test)]`-only uses don't count for the
+    // lib build. Tightened to `pub(crate)` in Phase 3.
+    pub fn behavior(&self, id: PanelId) -> Option<&dyn PanelBehavior> {
+        self.panels.get(id)?.behavior.as_deref()
+    }
+
     /// Extract a child behavior, downcast to concrete type, call a closure,
     /// then put the behavior back. Returns None if panel doesn't exist or
     /// behavior is the wrong type.

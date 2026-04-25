@@ -386,6 +386,13 @@ pub trait PanelBehavior: AsAny {
         None
     }
 
+    /// Shared-ref sibling of [`as_sub_view_panel_mut`]. Used by
+    /// `emTreeDump::collect_views` to discover nested sub-views during a
+    /// shared-borrow walk of the panel tree.
+    fn as_sub_view_panel(&self) -> Option<&crate::emSubViewPanel::emSubViewPanel> {
+        None
+    }
+
     /// Downcast to `emDialog::DlgPanel` without `Any`. Used by
     /// `DialogPrivateEngine::Cycle` (phase 3.5 task 4) to reach the dialog's
     /// mutable state (pending_result, finalized_result, finish_state, …) via
