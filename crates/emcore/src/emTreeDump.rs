@@ -199,7 +199,7 @@ fn collect_into<'a>(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dump_panel(
-    tree: &mut PanelTree,
+    tree: &PanelTree,
     id: PanelId,
     current_frame: u64,
     focused_id: Option<PanelId>,
@@ -231,14 +231,11 @@ pub(crate) fn dump_panel(
     let update_priority = tree.GetUpdatePriority(id, view_home_w, view_home_h, window_focused);
     let memory_limit = tree.GetMemoryLimit(id, view_home_w, view_home_h, 2_048_000_000, None);
 
-    // take_behavior to extract subtype fields and type_name.
-    let (type_name, subtype_pairs) = if let Some(behavior) = tree.take_behavior(id) {
-        let n = behavior.type_name().to_string();
-        let p = behavior.dump_state();
-        tree.put_behavior(id, behavior);
-        (n, p)
-    } else {
-        ("(no behavior)".to_string(), Vec::new())
+    // Subtype fields + type_name via shared-ref accessor (Phase 2's
+    // PanelTree::behavior + PanelBehavior::dump_state(&self)).
+    let (type_name, subtype_pairs) = match tree.behavior(id) {
+        Some(behavior) => (behavior.type_name().to_string(), behavior.dump_state()),
+        None => ("(no behavior)".to_string(), Vec::new()),
     };
 
     let panel_title = tree.get_title(id);
@@ -355,7 +352,7 @@ pub(crate) fn dump_panel(
 ///
 /// Visibility is `pub` pending wiring to real consumers (the `td!`
 /// cheat / `emCtrlSocket` `dump`) — see `dump_panel` for rationale.
-pub(crate) fn dump_view(view: &emView, tree: &mut PanelTree, window_focused: bool) -> RecStruct {
+pub(crate) fn dump_view(view: &emView, tree: &PanelTree, window_focused: bool) -> RecStruct {
     // --- Context-branch fields (C++ emView IS-A emContext). ---
     // The C++ cascade for a View first runs the Context branch (lines
     // 109-142) which emits Common/Private Models, *then* the View branch.
@@ -1020,7 +1017,7 @@ mod tests {
         let root = tree.create_root_deferred_view("root");
         tree.put_behavior(root, Box::new(NoopBehavior));
 
-        let rec = dump_panel(&mut tree, root, 0, None, 1.0, 1.0, false);
+        let rec = dump_panel(&tree, root, 0, None, 1.0, 1.0, false);
 
         let title = rec.get_str("Title").expect("Title exists").to_string();
         let text = rec.get_str("Text").expect("Text exists").to_string();
@@ -1069,7 +1066,7 @@ mod tests {
         let c2 = tree.create_child(root, "beta", None);
         tree.put_behavior(c2, Box::new(NoopBehavior));
 
-        let rec = dump_panel(&mut tree, root, 0, None, 1.0, 1.0, false);
+        let rec = dump_panel(&tree, root, 0, None, 1.0, 1.0, false);
 
         let children = rec.get_array("Children").expect("Children exists");
         assert_eq!(children.len(), 2);
@@ -1106,7 +1103,7 @@ mod tests {
         let ctx = crate::emContext::emContext::NewRoot();
         let view = emView::new(ctx, root, 800.0, 600.0);
 
-        let rec = dump_view(&view, &mut tree, false);
+        let rec = dump_view(&view, &tree, false);
 
         let title = rec.get_str("Title").expect("Title exists").to_string();
         assert_eq!(title, "View (Context):\nemView");
@@ -1141,7 +1138,7 @@ mod tests {
         let ctx = crate::emContext::emContext::NewRoot();
         let view = emView::new(ctx, root, 100.0, 100.0);
 
-        let rec = dump_view(&view, &mut tree, false);
+        let rec = dump_view(&view, &tree, false);
         let text = rec.get_str("Text").expect("Text").to_string();
         assert!(
             text.contains("View Flags: 0"),
@@ -1226,7 +1223,7 @@ mod tests {
         let root = tree.create_root_deferred_view("root");
         tree.put_behavior(root, Box::new(LoadingBehavior));
 
-        let rec = dump_panel(&mut tree, root, 0, None, 1.0, 1.0, false);
+        let rec = dump_panel(&tree, root, 0, None, 1.0, 1.0, false);
 
         let text = rec.get_str("Text").expect("Text exists").to_string();
         assert!(

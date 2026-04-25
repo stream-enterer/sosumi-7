@@ -5004,7 +5004,7 @@ impl emView {
 
     /// Dump the panel tree to `temp_dir()/debug.emTreeDump` in
     /// emRec format. Returns the path written.
-    pub fn dump_tree(&self, tree: &mut PanelTree) -> std::path::PathBuf {
+    pub fn dump_tree(&self, tree: &PanelTree) -> std::path::PathBuf {
         let path = std::env::temp_dir().join("debug.emTreeDump");
 
         // Build the top-level rec with General Info + root context.
@@ -6042,10 +6042,10 @@ mod tests {
     fn tree_dump_produces_valid_emrec() {
         use crate::emRecParser::parse_rec_with_format;
 
-        let (mut tree, root, _child1, _child2) = setup_tree();
+        let (tree, root, _child1, _child2) = setup_tree();
         let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
 
-        let path = view.dump_tree(&mut tree);
+        let path = view.dump_tree(&tree);
 
         // File should exist
         assert!(path.exists(), "dump file should exist at {:?}", path);

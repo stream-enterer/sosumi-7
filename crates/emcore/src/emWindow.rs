@@ -1089,7 +1089,7 @@ impl emWindow {
                     }
                 }
                 CheatAction::TreeDump => {
-                    self.view.dump_tree(tree);
+                    self.view.dump_tree(&*tree);
                 }
                 CheatAction::Screenshot => {
                     take_screenshot();
