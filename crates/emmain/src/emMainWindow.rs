@@ -973,7 +973,12 @@ pub fn create_main_window(
             current_engine: None,
             pending_actions: &app.pending_actions,
         };
-        let mut svp = emSubViewPanel::new(Rc::clone(&app.context), ctrl_id, window_id, &mut sc);
+        // SP7 §3.1: sub-view's emContext parents to the outer view's
+        // emContext (matching C++ emSubViewPanel.cpp:114). Previously
+        // this passed app.context (root), flattening the topology —
+        // corrected 2026-04-24 when instrumenting cross-view dump.
+        let home_view_ctx = window.view.GetContext().clone();
+        let mut svp = emSubViewPanel::new(home_view_ctx, ctrl_id, window_id, &mut sc);
         svp.set_sub_view_flags(
             ViewFlags::POPUP_ZOOM | ViewFlags::ROOT_SAME_TALLNESS | ViewFlags::NO_ACTIVE_HIGHLIGHT,
         );
@@ -992,8 +997,9 @@ pub fn create_main_window(
             current_engine: None,
             pending_actions: &app.pending_actions,
         };
+        let home_view_ctx = window.view.GetContext().clone();
         let mut svp =
-            emSubViewPanel::new(Rc::clone(&app.context), content_id, window_id, &mut sc);
+            emSubViewPanel::new(home_view_ctx, content_id, window_id, &mut sc);
         svp.set_sub_view_flags(ViewFlags::ROOT_SAME_TALLNESS);
         svp
     };
