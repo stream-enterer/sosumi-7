@@ -14,7 +14,7 @@ use crate::emColor::emColor;
 use crate::emCursor::emCursor;
 use crate::emPainter::{emPainter, TextAlignment, VAlign};
 use crate::emPanel::Rect;
-use crate::emRecParser::{write_rec_with_format, RecValue};
+use crate::emRecParser::write_rec_with_format;
 
 bitflags! {
     /// Flags controlling view behavior.
@@ -4525,9 +4525,7 @@ impl emView {
         scheduler: &mut crate::emScheduler::EngineScheduler,
         framework_actions: &mut Vec<crate::emEngineCtx::DeferredAction>,
         root_context: &std::rc::Rc<crate::emContext::emContext>,
-        framework_clipboard: &std::cell::RefCell<
-            Option<Box<dyn crate::emClipboard::emClipboard>>,
-        >,
+        framework_clipboard: &std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>>,
         pending_actions: &std::rc::Rc<
             std::cell::RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>,
         >,
@@ -5007,23 +5005,12 @@ impl emView {
     pub fn dump_tree(&self, tree: &PanelTree) -> std::path::PathBuf {
         let path = std::env::temp_dir().join("debug.emTreeDump");
 
-        // Build the top-level rec with General Info + root context.
+        // Build the top-level rec via the cross-view cascade entry —
+        // a `collect_views` pre-pass over this view + tree discovers
+        // every sub-view, and `dump_context_with_cascade` dispatches
+        // each one as it walks the root context's child chain.
         let root_ctx = self.GetRootContext();
-        let mut rec = crate::emTreeDump::dump_from_root_context(&root_ctx);
-
-        // Append the view's own dump as an additional child of the root rec
-        // (the root context's first child in C++'s walk). The Rust port
-        // doesn't yet enumerate sibling views via emContext, so we attach
-        // this view explicitly. Future work: when emContext exposes a view
-        // iterator, fold this into dump_from_root_context.
-        let view_rec = crate::emTreeDump::dump_view(self, tree, self.window_focused);
-        // Read existing Children, append, replace.
-        let mut children: Vec<RecValue> = rec
-            .get_array("Children")
-            .cloned()
-            .unwrap_or_default();
-        children.push(RecValue::Struct(view_rec));
-        crate::emTreeDump::set_children(&mut rec, children);
+        let rec = crate::emTreeDump::dump_from_root_context_with_home(&root_ctx, self, tree);
 
         let text = write_rec_with_format(&rec, "emTreeDump");
         if let Err(e) = std::fs::write(&path, &text) {
@@ -6043,7 +6030,13 @@ mod tests {
         use crate::emRecParser::parse_rec_with_format;
 
         let (tree, root, _child1, _child2) = setup_tree();
-        let view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+        // Keep `root_ctx` alive across `dump_tree` — the cross-view cascade
+        // walks `root_ctx.children()` (Weak<emContext>) to find the view.
+        // If `NewRoot()` is consumed by `emView::new` and dropped, the
+        // root context becomes the view's own Context (which has no
+        // children) and the view branch is lost from the dump.
+        let root_ctx = crate::emContext::emContext::NewRoot();
+        let view = emView::new(std::rc::Rc::clone(&root_ctx), root, 800.0, 600.0);
 
         let path = view.dump_tree(&tree);
 
@@ -7795,12 +7788,7 @@ mod tests {
             tree.set_behavior(child1, Box::new(NoopBehavior));
             tree.set_behavior(child2, Box::new(NoopBehavior));
 
-            let mut view = emView::new(
-                crate::emContext::emContext::NewRoot(),
-                root,
-                800.0,
-                600.0,
-            );
+            let mut view = emView::new(crate::emContext::emContext::NewRoot(), root, 800.0, 600.0);
             // Layout + SVP selection so paint_one_panel is actually reached.
             ts.with(|sc| view.Update(&mut tree, sc));
 
@@ -7833,7 +7821,10 @@ mod tests {
             // Second Paint: counter bumps again, last_paint_frame records 1.
             view.Paint(&mut tree, &mut painter, emColor::TRANSPARENT);
             let root_data = &tree.panels[root];
-            assert!(root_data.paint_count >= 2, "root paint_count after 2nd paint");
+            assert!(
+                root_data.paint_count >= 2,
+                "root paint_count after 2nd paint"
+            );
             assert_eq!(root_data.last_paint_frame, 1, "2nd paint records frame 1");
             assert_eq!(view.current_frame.get(), 2, "current_frame after 2nd paint");
         }

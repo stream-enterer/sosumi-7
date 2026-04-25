@@ -105,8 +105,7 @@ impl RecStruct {
     /// callers that want replace-semantics on top of the push-based
     /// `SetValue` (e.g. `emTreeDump::set_children`).
     pub fn remove_field(&mut self, name: &str) {
-        self.fields
-            .retain(|(k, _)| !k.eq_ignore_ascii_case(name));
+        self.fields.retain(|(k, _)| !k.eq_ignore_ascii_case(name));
     }
 
     fn GetRec(&self, name: &str) -> Option<&RecValue> {

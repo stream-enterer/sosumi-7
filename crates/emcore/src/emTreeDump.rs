@@ -51,21 +51,37 @@ pub struct VisualStyle {
 
 impl VisualStyle {
     pub fn engine() -> Self {
-        Self { frame: Frame::Rectangle, bg: 0x000000, fg: 0xEEEEEE }
+        Self {
+            frame: Frame::Rectangle,
+            bg: 0x000000,
+            fg: 0xEEEEEE,
+        }
     }
     pub(crate) fn context(_is_root: bool) -> Self {
         // C++ uses the same color for root and child context; is_root
         // affects only the Title string (handled at call site).
-        Self { frame: Frame::Ellipse, bg: 0x777777, fg: 0xEEEEEE }
+        Self {
+            frame: Frame::Ellipse,
+            bg: 0x777777,
+            fg: 0xEEEEEE,
+        }
     }
     pub(crate) fn view(focused: bool) -> Self {
         let fg = if focused { 0xEEEE44 } else { 0xEEEEEE };
-        Self { frame: Frame::RoundRect, bg: 0x448888, fg }
+        Self {
+            frame: Frame::RoundRect,
+            bg: 0x448888,
+            fg,
+        }
     }
     pub fn window() -> Self {
         // Window branch overlays the view branch in C++; frame stays
         // ROUND_RECT (from view), only Bg is overridden.
-        Self { frame: Frame::RoundRect, bg: 0x222288, fg: 0xEEEEEE }
+        Self {
+            frame: Frame::RoundRect,
+            bg: 0x222288,
+            fg: 0xEEEEEE,
+        }
     }
     pub(crate) fn panel(
         viewed: bool,
@@ -87,13 +103,25 @@ impl VisualStyle {
         } else {
             0xEEEEEE
         };
-        Self { frame: Frame::Rectangle, bg, fg }
+        Self {
+            frame: Frame::Rectangle,
+            bg,
+            fg,
+        }
     }
     pub fn model() -> Self {
-        Self { frame: Frame::Hexagon, bg: 0x440000, fg: 0xBBBBBB }
+        Self {
+            frame: Frame::Hexagon,
+            bg: 0x440000,
+            fg: 0xBBBBBB,
+        }
     }
     pub fn file_model() -> Self {
-        Self { frame: Frame::Hexagon, bg: 0x440033, fg: 0xBBBBBB }
+        Self {
+            frame: Frame::Hexagon,
+            bg: 0x440033,
+            fg: 0xBBBBBB,
+        }
     }
 }
 
@@ -261,12 +289,22 @@ pub(crate) fn dump_panel(
     let paint_count = data.paint_count;
     let last_paint_frame = data.last_paint_frame;
     let viewed_xywh = if is_viewed {
-        Some((data.viewed_x, data.viewed_y, data.viewed_width, data.viewed_height))
+        Some((
+            data.viewed_x,
+            data.viewed_y,
+            data.viewed_width,
+            data.viewed_height,
+        ))
     } else {
         None
     };
     let clip_x1y1x2y2 = if is_viewed {
-        Some((data.clip_x, data.clip_y, data.clip_x + data.clip_w, data.clip_y + data.clip_h))
+        Some((
+            data.clip_x,
+            data.clip_y,
+            data.clip_x + data.clip_w,
+            data.clip_y + data.clip_h,
+        ))
     } else {
         None
     };
@@ -325,7 +363,12 @@ pub(crate) fn dump_panel(
     // --- Compose rec ---
 
     let title = format!("Panel:\n{}\n\"{}\"", type_name, name);
-    let style = VisualStyle::panel(is_viewed, is_in_viewed_path, in_focused_path, in_active_path);
+    let style = VisualStyle::panel(
+        is_viewed,
+        is_in_viewed_path,
+        in_focused_path,
+        in_active_path,
+    );
     let mut rec = empty_rec(title, text, style);
 
     // --- Recurse into children ---
@@ -687,16 +730,17 @@ pub fn dump_file_model(
 
 /// Top-level entry point — port of C++ `emTreeDumpFromRootContext` at
 /// src/emTreeDump/emTreeDumpUtil.cpp:360-414. Builds the General Info
-/// rec, attaches the root context as Children[0]. The view + panel tree
-/// are walked when the caller iterates the root context's child views.
-///
-/// Note: this entry point does NOT walk views directly. The Rust port's
-/// emContext doesn't enumerate child views or contexts in a unified way
-/// (Task 1.6 documented this gap). Callers that need a full
-/// view+panel-tree dump should also call `dump_view` and append it to
-/// the rec's Children. The shim in `emView::dump_tree` (Task 1.9) does
-/// exactly that.
-pub(crate) fn dump_from_root_context(root_ctx: &emContext) -> RecStruct {
+/// rec, attaches the root context as Children[0]. Does NOT cascade
+/// into child contexts/views — use `dump_from_root_context_with_home`
+/// for that. Retained as the minimal entry that mirrors the C++
+/// signature (no view/tree required), and as a building block for
+/// tests that exercise the General Info / root-context shape.
+// TEMP: `pub` rather than `pub(crate)` because the only non-test
+// caller (the dump_tree shim) now goes through
+// `dump_from_root_context_with_home`. Keeping this around for parity
+// with C++ + as a building block; downgrade to `pub(crate)` once a
+// non-test caller binds it.
+pub fn dump_from_root_context(root_ctx: &emContext) -> RecStruct {
     let title =
         "Tree Dump\nof the top-level objects\nof a running emCore-based program".to_string();
     let text = general_info_text();
@@ -709,6 +753,37 @@ pub(crate) fn dump_from_root_context(root_ctx: &emContext) -> RecStruct {
 
     // Children[0] = the root context's own dump rec.
     let ctx_rec = dump_context(root_ctx, /* is_root */ true);
+    set_children(&mut rec, vec![RecValue::Struct(ctx_rec)]);
+    rec
+}
+
+/// Top-level entry — builds the General Info rec, runs `collect_views`
+/// pre-pass over the home view/tree, then drives the context cascade
+/// via `dump_context_with_cascade`.
+///
+/// Supersedes the split-entry shape where `dump_tree` appended the home
+/// view rec manually. The cascade discovers the home view (and any
+/// sub-views) through the root context's child list — every emView's
+/// emContext is a child of the root context (via `emContext::NewChild`
+/// in `emView::new`), so the cascade reaches them via the
+/// `view_map.get(&ptr)` dispatch.
+pub(crate) fn dump_from_root_context_with_home(
+    root_ctx: &emContext,
+    home_view: &crate::emView::emView,
+    home_tree: &PanelTree,
+) -> RecStruct {
+    let title =
+        "Tree Dump\nof the top-level objects\nof a running emCore-based program".to_string();
+    let text = general_info_text();
+    let style = VisualStyle {
+        frame: Frame::Rectangle,
+        bg: 0x444466,
+        fg: 0xBBBBEE,
+    };
+    let mut rec = empty_rec(title, text, style);
+
+    let view_map = collect_views(home_view, home_tree);
+    let ctx_rec = dump_context_with_cascade(root_ctx, /* is_root */ true, &view_map);
     set_children(&mut rec, vec![RecValue::Struct(ctx_rec)]);
     rec
 }
@@ -861,7 +936,11 @@ fn fmt_g(v: f64) -> String {
         return "nan".to_string();
     }
     if v.is_infinite() {
-        return if v < 0.0 { "-inf".to_string() } else { "inf".to_string() };
+        return if v < 0.0 {
+            "-inf".to_string()
+        } else {
+            "inf".to_string()
+        };
     }
 
     let exp = v.abs().log10().floor() as i32;
@@ -874,7 +953,10 @@ fn fmt_g(v: f64) -> String {
         let (mantissa, exp_str) = raw.split_once('E').expect("format!E always contains E");
         // Strip trailing zeros from the mantissa; then strip a trailing
         // '.' if the mantissa collapses to an integer.
-        let mut m = mantissa.trim_end_matches('0').trim_end_matches('.').to_string();
+        let mut m = mantissa
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string();
         if m.is_empty() || m == "-" {
             m.push('0');
         }
@@ -1097,7 +1179,12 @@ mod tests {
             "PaintCount: 0",
             "LastPaintFrame: 0 (current: 0)",
         ] {
-            assert!(text.contains(label), "Text missing label `{}`:\n{}", label, text);
+            assert!(
+                text.contains(label),
+                "Text missing label `{}`:\n{}",
+                label,
+                text
+            );
         }
 
         let children = rec.get_array("Children").expect("Children exists");
@@ -1173,7 +1260,11 @@ mod tests {
         }
 
         let children = rec.get_array("Children").expect("Children exists");
-        assert_eq!(children.len(), 1, "view rec must have one (root-panel) child");
+        assert_eq!(
+            children.len(),
+            1,
+            "view rec must have one (root-panel) child"
+        );
         assert!(matches!(children[0], RecValue::Struct(_)));
     }
 
@@ -1225,14 +1316,34 @@ mod tests {
         assert_eq!(title, "Window (View, Context):\nemWindow");
 
         let text = rec.get_str("Text").expect("Text").to_string();
-        assert!(text.contains("Window Flags:"), "missing `Window Flags:`:\n{}", text);
+        assert!(
+            text.contains("Window Flags:"),
+            "missing `Window Flags:`:\n{}",
+            text
+        );
         assert!(text.contains("WF_POPUP"), "missing WF_POPUP:\n{}", text);
-        assert!(text.contains("WF_UNDECORATED"), "missing WF_UNDECORATED:\n{}", text);
-        assert!(text.contains("WMResName:"), "missing `WMResName:`:\n{}", text);
+        assert!(
+            text.contains("WF_UNDECORATED"),
+            "missing WF_UNDECORATED:\n{}",
+            text
+        );
+        assert!(
+            text.contains("WMResName:"),
+            "missing `WMResName:`:\n{}",
+            text
+        );
 
         // MAXIMIZED / AUTO_DELETE are Rust-only and must NOT appear.
-        assert!(!text.contains("WF_MAXIMIZED"), "Rust-only flag leaked:\n{}", text);
-        assert!(!text.contains("WF_AUTO_DELETE"), "Rust-only flag leaked:\n{}", text);
+        assert!(
+            !text.contains("WF_MAXIMIZED"),
+            "Rust-only flag leaked:\n{}",
+            text
+        );
+        assert!(
+            !text.contains("WF_AUTO_DELETE"),
+            "Rust-only flag leaked:\n{}",
+            text
+        );
     }
 
     #[test]
@@ -1426,7 +1537,12 @@ mod tests {
             "Res",
             "Home",
         ] {
-            assert!(s.contains(label), "general info missing `{}`:\n{}", label, s);
+            assert!(
+                s.contains(label),
+                "general info missing `{}`:\n{}",
+                label,
+                s
+            );
         }
     }
 
@@ -1449,7 +1565,11 @@ mod tests {
         assert!(title.starts_with("Tree Dump\n"), "Title: {}", title);
 
         let text = rec.get_str("Text").expect("Text").to_string();
-        assert!(text.contains("General Info"), "Text missing General Info:\n{}", text);
+        assert!(
+            text.contains("General Info"),
+            "Text missing General Info:\n{}",
+            text
+        );
 
         let children = rec.get_array("Children").expect("Children");
         assert_eq!(children.len(), 1);
@@ -1514,11 +1634,10 @@ mod collect_views_tests {
     /// sub_view's scheduler-registered engines/signals, recursively tear
     /// down its sub_tree, then remove the slot. Finally remove the root.
     /// Mirrors `SvpTestHarness::teardown` from emSubViewPanel.rs.
-    fn teardown_tree(
-        mut tree: PanelTree,
-        sched: &mut crate::emScheduler::EngineScheduler,
-    ) {
-        let Some(root) = tree.GetRootPanel() else { return };
+    fn teardown_tree(mut tree: PanelTree, sched: &mut crate::emScheduler::EngineScheduler) {
+        let Some(root) = tree.GetRootPanel() else {
+            return;
+        };
         // Collect all SVP slot ids by walking.
         fn collect_svp_ids(tree: &PanelTree, out: &mut Vec<crate::emPanelTree::PanelId>) {
             for pid in tree.panel_ids() {
@@ -1589,8 +1708,7 @@ mod collect_views_tests {
         use std::cell::RefCell;
         let svp = {
             let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
-            let cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
-                RefCell::new(None);
+            let cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
             let pa: Rc<RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
                 Rc::new(RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
@@ -1606,8 +1724,7 @@ mod collect_views_tests {
         tree.set_behavior(slot_id, Box::new(svp));
     }
 
-    fn build_outer_with_one_subview()
-    -> (emView, PanelTree, crate::emScheduler::EngineScheduler) {
+    fn build_outer_with_one_subview() -> (emView, PanelTree, crate::emScheduler::EngineScheduler) {
         let (root_ctx, home_ctx, mut sched, wid) = fixture_base();
         let mut tree = PanelTree::new();
         let root = tree.create_root("outer_root", true);
@@ -1618,8 +1735,7 @@ mod collect_views_tests {
         (view, tree, sched)
     }
 
-    fn build_outer_with_two_subviews()
-    -> (emView, PanelTree, crate::emScheduler::EngineScheduler) {
+    fn build_outer_with_two_subviews() -> (emView, PanelTree, crate::emScheduler::EngineScheduler) {
         let (root_ctx, home_ctx, mut sched, wid) = fixture_base();
         let mut tree = PanelTree::new();
         let root = tree.create_root("outer_root", true);
@@ -1632,14 +1748,20 @@ mod collect_views_tests {
         (view, tree, sched)
     }
 
-    fn build_nested_subview_fixture()
-    -> (emView, PanelTree, crate::emScheduler::EngineScheduler) {
+    fn build_nested_subview_fixture() -> (emView, PanelTree, crate::emScheduler::EngineScheduler) {
         let (root_ctx, home_ctx, mut sched, wid) = fixture_base();
         let mut tree = PanelTree::new();
         let root = tree.create_root("outer_root", true);
         tree.init_panel_view(root, None);
         let outer_svp_id = tree.create_child(root, "outer_svp", None);
-        install_svp(&mut tree, outer_svp_id, &home_ctx, &root_ctx, &mut sched, wid);
+        install_svp(
+            &mut tree,
+            outer_svp_id,
+            &home_ctx,
+            &root_ctx,
+            &mut sched,
+            wid,
+        );
 
         // Drill into outer_svp's sub_tree; install a grandchild SVP there.
         tree.with_behavior_as::<emSubViewPanel, _>(outer_svp_id, |outer_svp| {
@@ -1649,7 +1771,14 @@ mod collect_views_tests {
                 .GetRootPanel()
                 .expect("sub_tree has a root from emSubViewPanel::new");
             let grand_svp_id = sub_tree.create_child(sub_root, "inner_svp", None);
-            install_svp(sub_tree, grand_svp_id, &inner_ctx, &root_ctx, &mut sched, wid);
+            install_svp(
+                sub_tree,
+                grand_svp_id,
+                &inner_ctx,
+                &root_ctx,
+                &mut sched,
+                wid,
+            );
         });
 
         let view = emView::new(home_ctx, root, 1.0, 1.0);
@@ -1702,5 +1831,60 @@ mod collect_views_tests {
         drop(view);
         teardown_tree(tree, &mut sched);
         assert_eq!(len, 3, "outer + two levels of nested subviews");
+    }
+
+    #[test]
+    fn dump_shows_per_view_current_frame_for_subview() {
+        // Build outer+sub-view inline (bypassing build_outer_with_one_subview)
+        // so the root_ctx Rc stays alive across the dump call. The fixture
+        // helper drops root_ctx on return, after which `view.GetRootContext()`
+        // walks dead Weaks and returns the view's own Context — that breaks
+        // the cascade because the live root_ctx is what owns the Weak<>
+        // children list the cascade iterates.
+        //
+        // Set outer current_frame=10 and inner current_frame=3, dump, and
+        // assert both per-view counters appear in the text — proving each
+        // panel's LastPaintFrame line is paired with its OWN view's
+        // current_frame, not the outermost view's.
+        let root_ctx = emContext::NewRoot();
+        let mut sched = crate::emScheduler::EngineScheduler::new();
+        let wid = winit::window::WindowId::dummy();
+        let mut tree = PanelTree::new();
+        let root = tree.create_root("outer_root", true);
+        tree.init_panel_view(root, None);
+        let svp_id = tree.create_child(root, "svp_slot", None);
+        install_svp(&mut tree, svp_id, &root_ctx, &root_ctx, &mut sched, wid);
+        let view = emView::new(Rc::clone(&root_ctx), root, 1.0, 1.0);
+
+        view.current_frame.set(10);
+        tree.with_behavior_as::<emSubViewPanel, _>(svp_id, |svp| {
+            svp.sub_view.current_frame.set(3);
+        });
+
+        let rec = dump_from_root_context_with_home(&root_ctx, &view, &tree);
+        let text = crate::emRecParser::write_rec_with_format(&rec, "emTreeDump");
+        // Note: the outer view's Context is `NewChild(&root_ctx)` and its
+        // root panel's `LastPaintFrame` line carries the outer view's
+        // current_frame (10). The SVP's sub_view's Context is also a child
+        // of `root_ctx` (because `install_svp` passes `root_ctx` as the
+        // parent_ctx in this test), so the cascade reaches it via the
+        // `view_map` lookup and emits its panels' LastPaintFrame against
+        // the inner current_frame (3).
+        let pass_outer = text.contains("current: 10");
+        let pass_inner = text.contains("current: 3");
+
+        drop(view);
+        teardown_tree(tree, &mut sched);
+
+        assert!(
+            pass_outer,
+            "outer view current_frame must appear in dump:\n{}",
+            text
+        );
+        assert!(
+            pass_inner,
+            "inner view current_frame must appear in dump:\n{}",
+            text
+        );
     }
 }
