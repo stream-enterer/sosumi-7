@@ -19,7 +19,7 @@ use std::sync::mpsc::SyncSender;
 use winit::event_loop::ActiveEventLoop;
 
 use crate::emGUIFramework::App;
-use crate::emPanelTree::{PanelId, PanelTree};
+use crate::emPanelTree::{DecodeIdentity, PanelId, PanelTree};
 
 /// Resolve an emCore-native identity string to a `PanelId` within
 /// `tree`, starting at `root`. `GetIdentity(tree, root)` includes the
@@ -31,12 +31,15 @@ use crate::emPanelTree::{PanelId, PanelTree};
 /// used `/`-separator paths. Identity strings handle empty-named panels
 /// and special characters via the existing `EncodeIdentity` /
 /// `DecodeIdentity` machinery in `emPanelTree.rs`.
+// TEMP: `pub` (not `pub(crate)`) — no non-test callers land until Phase 4's
+// `resolve_target`. The plan tightens visibility back to `pub(crate)` at
+// that point. Verified 2026-04-24 that `pub(crate)` trips `dead_code`
+// because `#[cfg(test)]`-only uses don't count for the lib build.
 pub fn resolve_identity(
     tree: &PanelTree,
     root: PanelId,
     identity: &str,
 ) -> Result<PanelId, String> {
-    use crate::emPanelTree::DecodeIdentity;
     // Empty identity string means "the root itself" — short-circuit
     // before decoding (C++ DecodeIdentity("") yields a single empty
     // segment, which would otherwise be matched against the root name).
@@ -44,9 +47,6 @@ pub fn resolve_identity(
         return Ok(root);
     }
     let names = DecodeIdentity(identity);
-    if names.is_empty() {
-        return Ok(root);
-    }
     let root_name = tree.name(root).unwrap_or("");
     if names[0] != root_name {
         return Err(format!(
@@ -74,8 +74,8 @@ pub fn resolve_identity(
             1 => cur = matched[0],
             n => {
                 return Err(format!(
-                    "ambiguous identity: {} (segment {} = {:?} matches {} siblings)",
-                    identity, depth, name, n
+                    "ambiguous identity: {} (segment {} = {:?} matches {} siblings under {:?})",
+                    identity, depth, name, n, tree.name(cur).unwrap_or("<unnamed>")
                 ));
             }
         }
@@ -1329,6 +1329,7 @@ mod resolve_identity_tests {
         tree.create_child(root, "dup", None);
         let err = resolve_identity(&tree, root, "r:dup").unwrap_err();
         assert!(err.contains("ambiguous identity"), "got: {}", err);
+        assert!(err.contains("under"), "got: {}", err);
     }
 
     /// Parametric round-trip: for every panel in a tree,
