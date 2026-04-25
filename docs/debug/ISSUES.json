@@ -271,7 +271,7 @@
       "status": "investigating",
       "priority": "high",
       "title": "Directory panel renders incorrectly: black bg, no outer border, missing left info",
-      "description": "Reframed 2026-04-25 after manual rejection of commit 287f7539. F010 is a cluster of 3 distinct dir-panel render-chain divergences vs C++ (Card-Blue at same zoom into '/'): (1a) emDirPanel::Paint skips Clear(DirContentColor) during loading — background renders black instead of light-grey; (1b) emDirEntryPanel never paints the OuterBorder gradient image and the .tga assets (CardOuterBorder.tga, CardInnerBorder.tga, etc.) are not shipped in res/ — entry chrome looks flat; (2) PaintInfo Rust analogue paints only time_str, omitting Type/Permissions/Size/Owner/Group fields and all labels — left info pane is empty. Phases 1–5 fixed the StartupEngine wake (commit 287f7539, preserved); that work was necessary but does not address symptoms (1a)(1b)(2). Slow-loading symptom split off as F017 on 2026-04-25. See investigation_file Phase 6 reframe.",
+      "description": "Reframed 2026-04-25 after manual rejection of commit 287f7539. F010 is a cluster of 3 distinct dir-panel render-chain divergences vs C++ (Card-Blue at same zoom into '/'): (1a) emDirPanel::Paint skips Clear(DirContentColor) during loading — background renders black instead of light-grey; (1b) emDirEntryPanel never paints the OuterBorder gradient image and the .tga assets (CardOuterBorder.tga, CardInnerBorder.tga, etc.) are not shipped in res/ — entry chrome looks flat; (2) PaintInfo Rust analogue paints only time_str, omitting Type/Permissions/Size/Owner/Group fields and all labels — left info pane is empty. Phases 1–5 fixed the StartupEngine wake (commit 287f7539, preserved); that work was necessary but does not address symptoms (1a)(1b)(2). Slow-loading symptom split off as F017 on 2026-04-25. See investigation_file Phase 6 reframe. HYPOTHESIS X scope corrected 2026-04-25: port C++ switch verbatim (Clear only on VFS_LOADED/VFS_NO_FILE_MODEL); the symptom of black-during-loading was reattributed to emFilePanel::Paint divergence and split off as F018.",
       "location": "crates/emfileman/src/emDirPanel.rs:477-491 (Paint Clear gating); crates/emfileman/src/emDirEntryPanel.rs:492-610 (per-entry Paint; missing OuterBorder + 5 of 6 info fields); crates/emfileman/src/emFileManViewConfig.rs (theme record — missing OuterBorder*/InnerBorder* fields); res/emFileMan/themes/ (missing border .tga assets)",
       "caused_by": null,
       "introduced_commit": null,
@@ -444,6 +444,25 @@
       "fixed_in_commit": null,
       "fixed_date": null,
       "repro": "Launch app, zoom into File System or Home panel. Observe each directory shows 'Loading: NN%' overlay with visible incremental progress; same operation in C++ Eagle Mode 0.96.4 completes too fast to see the overlay."
+    },
+    {
+      "id": "F018",
+      "kind": "fix",
+      "status": "open",
+      "priority": "medium",
+      "title": "emFilePanel::Paint loading-state background appears black in Rust vs C++ baseline",
+      "description": "Split off from F010 HYPOTHESIS X on 2026-04-25 after C++ source review revealed emDirPanel::Paint does NOT clear with DirContentColor during loading — it delegates to emFilePanel::Paint. The visible 'black during loading' symptom that motivated F010-X is therefore an emFilePanel::Paint divergence, not a missing Clear in emDirPanel. C++ reference: emDirPanel.cpp:159-170 (the default arm). Investigation must compare C++ vs Rust emFilePanel::Paint behavior in non-VFS_LOADED/NO_FILE_MODEL states (Waiting, TooCostly, etc.) to find where C++ produces the loading-state appearance and Rust does not.",
+      "location": "crates/emcore/src/emFilePanel.rs (Paint method); compare with ~/Projects/eaglemode-0.96.4/src/emCore/emFilePanel.cpp",
+      "caused_by": null,
+      "introduced_commit": null,
+      "introduced_date": "2026-04-23",
+      "fix_note": "Reattributed from F010 HYPOTHESIS X on 2026-04-25 after C++ source revealed the dir-panel Paint delegates to emFilePanel::Paint during loading. Next step: read C++ emFilePanel::Paint, compare with Rust port, identify divergence in load-state rendering. Defer until F010 X+Y+Z paint cluster lands so this can be measured against a correctly-rendering loaded baseline.",
+      "investigation_file": null,
+      "root_cause_file": null,
+      "blocked_question": null,
+      "fixed_in_commit": null,
+      "fixed_date": null,
+      "repro": "Launch app, zoom into File System or Home panel, observe directory panel during the 'Loading: NN%' phase. Background renders black; in C++ Eagle Mode 0.96.4 the same loading phase renders with non-black chrome (exact appearance to be characterized during investigation)."
     }
   ]
 }

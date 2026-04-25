@@ -68,42 +68,61 @@ crates/emfileman/src/emDirEntry.rs: `IsRegularFile`, `IsDirectory`, `IsSymbolicL
 
 ---
 
-## Phase 1 — HYPOTHESIS X: unconditional `Clear` in `emDirPanel::Paint`
+## Phase 1 — HYPOTHESIS X: port C++ `emDirPanel::Paint` switch verbatim
 
-**Goal**: dir-panel background renders `DirContentColor` (light grey) during loading instead of black.
+**Goal**: when dir panel is in `VFS_LOADED` / `VFS_NO_FILE_MODEL` state, the background renders `DirContentColor` (light grey). In other states, delegate to `emFilePanel::Paint` (matching C++).
+
+**Replan note (2026-04-25)**: original directive ("unconditional Clear") was wrong — C++ gates the Clear on load state. Corrected directive ports the C++ switch verbatim. The "black during loading" symptom is not addressed by this phase; investigation moved to **F018** (emFilePanel::Paint loading-state divergence).
 
 ### What to implement (copy, don't transform)
 
-In **crates/emfileman/src/emDirPanel.rs:477-491**, add a single line at the top of `Paint`:
+C++ reference (read first):
 
-```rust
-painter.Clear(emColor::from_packed(theme_rec.DirContentColor));
+```cpp
+// emDirPanel.cpp:159-170
+void emDirPanel::Paint(const emPainter & painter, emColor canvasColor) const
+{
+    switch (GetVirFileState()) {
+    case VFS_LOADED:
+    case VFS_NO_FILE_MODEL:
+        painter.Clear(Config->GetTheme().DirContentColor.Get());
+        break;
+    default:
+        emFilePanel::Paint(painter,canvasColor);
+        break;
+    }
+}
 ```
 
-Mirror the existing `Clear` call at crates/emstocks/src/emStocksFilePanel.rs:34. The C++ reference is **emDirPanel.cpp:159-170** — confirm the C++ Clear runs unconditionally (not gated on load state) and copy the same gating (i.e. none).
+In **crates/emfileman/src/emDirPanel.rs** at the top of the existing `Paint` method (around lines 477-491), port this switch verbatim. Rust has `GetVirFileState() -> VirtualFileState` (crates/emcore/src/emFilePanel.rs:100); use the `Loaded` and `NoFileModel` variants (confirm exact names by grepping `enum VirtualFileState`). Other variants delegate to `emFilePanel::Paint`.
+
+The current Rust `Paint` body should run inside the `Loaded`/`NoFileModel` arm AFTER the `Clear` call — i.e. preserve all existing dir-panel painting; only add the leading Clear and the state gate. If the existing body needs to run in other states too, STOP and report — read C++ to confirm.
 
 ### Documentation references
 
 - C++: `~/Projects/eaglemode-0.96.4/src/emFileMan/emDirPanel.cpp:159-170`
 - Rust painter: `crates/emcore/src/emPainter.rs:5783`
-- Existing call site: `crates/emstocks/src/emStocksFilePanel.rs:34`
+- VirtualFileState enum: `crates/emcore/src/emFilePanel.rs` (search for `VirtualFileState`, `GetVirFileState`)
+- Existing Clear call shape: `crates/emstocks/src/emStocksFilePanel.rs:34`
+- Existing `emFilePanel::Paint` delegation pattern: search for `emFilePanel.*Paint` calls in `crates/emcore/src/emImageFileImageFilePanel.rs` or similar file panel subclasses
 
 ### Verification checklist
 
 1. `cargo check` clean.
 2. `cargo clippy -- -D warnings` clean.
-3. New draw-op test in `crates/eaglemode/tests/golden/` (or wherever dir-panel paint tests live — search for `emDirPanel` in tests/) asserting **the first emitted draw op of `emDirPanel::Paint` is `Clear` with color = `DirContentColor`**, regardless of load state. Use the eagle_logo.rs template (lines 24-59).
-4. `cargo-nextest ntr` clean (existing tests still pass).
-5. Grep guard: `grep -n "Clear" crates/emfileman/src/emDirPanel.rs` — exactly one new Clear call at top of Paint.
+3. **State-gated draw-op test**: assert that in `VirtualFileState::Loaded` (or `NoFileModel`), the FIRST emitted op is `Clear(DirContentColor)`. In a non-good state (e.g. `Waiting` / `TooCostly`), assert no `Clear(DirContentColor)` op is emitted. Use the eagle_logo.rs template (crates/eaglemode/tests/golden/eagle_logo.rs:24-59).
+4. `cargo-nextest ntr` clean.
+5. Grep guard: `grep -n "Clear" crates/emfileman/src/emDirPanel.rs` — exactly one Clear call, inside the `Loaded`/`NoFileModel` arm.
 
 ### Anti-pattern guards
 
-- Don't gate the Clear on `is_loading()` or any other state. C++ doesn't.
-- Don't introduce a `if let Some(theme) = ...` wrapper if the existing code accesses `theme_rec` unconditionally — match the surrounding pattern.
+- **Don't add an unconditional Clear.** C++ gates it on state.
+- **Don't fix the "black during loading" symptom in this phase** — that's F018. If you find yourself wanting to also Clear in the default arm "to fix the dark loading", STOP and report.
+- **Don't reorder C++ logic.** `Clear` first, then the existing dir-panel painting (LayoutChildren / entry painting / etc.) inside the same arm. The default arm is just a delegation to `emFilePanel::Paint`.
 
 ### Phase exit gate
 
-All five verification items pass. Commit message: `fix(F010 X): clear dir-panel bg with DirContentColor before render`.
+All five verification items pass. Commit message: `fix(F010 X): port emDirPanel::Paint state-gated Clear from C++`.
 
 ---
 
