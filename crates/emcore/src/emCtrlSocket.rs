@@ -387,28 +387,13 @@ fn handle_get_state(app: &App) -> CtrlReply {
     let outer_view = win.view();
     let outer_tree = win.tree();
 
-    let (focused_view, focused_identity) = focused_pair(app);
-
-    // Pick the rect of whichever view currently has focus; fall back
-    // to the outer view if no view is focused. emView semantics keep
-    // focus mutually exclusive across the hierarchy, so the first
-    // matching view in HashMap-iteration order is unambiguous.
-    let view_rect = {
-        let view_map = crate::emTreeDump::collect_views(outer_view, outer_tree);
-        let mut picked = outer_view;
-        for (_, (v, _)) in view_map.iter() {
-            if v.GetFocusedPanel().is_some() {
-                picked = v;
-                break;
-            }
-        }
-        [
-            picked.CurrentX,
-            picked.CurrentY,
-            picked.CurrentWidth,
-            picked.CurrentHeight,
-        ]
-    };
+    let (focused_view, focused_identity, picked) = focused_state(outer_view, outer_tree);
+    let view_rect = [
+        picked.CurrentX,
+        picked.CurrentY,
+        picked.CurrentWidth,
+        picked.CurrentHeight,
+    ];
 
     CtrlReply {
         ok: true,
@@ -420,38 +405,64 @@ fn handle_get_state(app: &App) -> CtrlReply {
     }
 }
 
-/// Compute `(focused_view, focused_identity)` for the currently-focused
-/// panel. Walks the ViewMap to find which view's `GetFocusedPanel()` is
-/// `Some`. If outer view, returns `(Some(""), Some(GetIdentity(focused)))`.
-/// If inner view, finds the containing emSubViewPanel in the outer tree
-/// and returns `(Some(GetIdentity(svp)), Some(GetIdentity(focused_in_inner)))`.
-fn focused_pair(app: &App) -> (Option<String>, Option<String>) {
-    let Some(home_id) = app.home_window_id else {
-        return (None, None);
-    };
-    let Some(win) = app.windows.get(&home_id) else {
-        return (None, None);
-    };
-    let outer_view = win.view();
-    let outer_tree = win.tree();
-
+/// Walk the ViewMap once to compute `(focused_view, focused_identity)`
+/// plus the view whose rect should be reported (the focused view if any,
+/// else the outer view).
+///
+/// `focused_view`/`focused_identity` semantics: if outer view is focused,
+/// returns `(Some(""), Some(GetIdentity(focused)))`. If inner view is
+/// focused, finds the containing emSubViewPanel in the outer tree and
+/// returns `(Some(GetIdentity(svp)), Some(GetIdentity(focused_in_inner)))`.
+///
+/// emView semantics keep focus mutually exclusive across the hierarchy;
+/// debug builds assert that invariant against HashMap iteration order.
+fn focused_state<'a>(
+    outer_view: &'a crate::emView::emView,
+    outer_tree: &'a crate::emPanelTree::PanelTree,
+) -> (Option<String>, Option<String>, &'a crate::emView::emView) {
     let view_map = crate::emTreeDump::collect_views(outer_view, outer_tree);
 
+    let mut result: Option<(Option<String>, Option<String>, &'a crate::emView::emView)> = None;
     for (_ptr, (view, tree)) in view_map.iter() {
         if let Some(pid) = view.GetFocusedPanel() {
+            // Focus-exclusivity invariant: at most one view in the map
+            // may report GetFocusedPanel().is_some() at a time. A second
+            // hit means hash-order non-determinism would flip our result.
+            debug_assert!(
+                result.is_none(),
+                "multiple views report focused panel — focus-exclusivity invariant violated"
+            );
             let view_sel = if std::rc::Rc::ptr_eq(view.GetContext(), outer_view.GetContext()) {
                 String::new()
             } else {
-                let Some(svp_id) = find_svp_by_inner_view(outer_tree, view) else {
-                    continue;
-                };
-                outer_tree.GetIdentity(svp_id)
+                match find_svp_by_inner_view(outer_tree, view) {
+                    Some(svp_id) => outer_tree.GetIdentity(svp_id),
+                    None => {
+                        // Invariant: every inner view in the ViewMap is
+                        // reachable via an emSubViewPanel in the outer
+                        // tree (collect_views only descends through SVPs).
+                        debug_assert!(
+                            false,
+                            "inner view in ViewMap has no containing SVP in outer tree — invariant violation"
+                        );
+                        continue;
+                    }
+                }
             };
             let identity = tree.GetIdentity(pid);
-            return (Some(view_sel), Some(identity));
+            result = Some((Some(view_sel), Some(identity), *view));
+            // In release: keep the first match (matches prior behavior).
+            // In debug: keep iterating so the assertion above can fire.
+            if !cfg!(debug_assertions) {
+                break;
+            }
         }
     }
-    (None, None)
+
+    match result {
+        Some((vs, id, v)) => (vs, id, v),
+        None => (None, None, outer_view),
+    }
 }
 
 /// Scan the outer tree for an emSubViewPanel whose inner view's context
