@@ -7524,23 +7524,36 @@ mod tests {
             .visiting_va_engine_id
             .expect("RegisterEngines must register VisitingVAEngineClass");
 
-        // Activate the animator — SetGoal + Activate, matching the
-        // delegation shape Visit-family methods will use in Phase 3.
+        // Drive the animator through the public `Visit*` API — F010
+        // moved the wake from raw `va.Activate()` to
+        // `emView::wake_visiting_va_engine`, which the Visit-family
+        // methods invoke automatically. No manual `sched.wake_up`.
         {
-            let view = view_rc.borrow();
-            let mut va = view.VisitingVA.borrow_mut();
-            va.SetGoal("root", false, "");
-            va.Activate();
+            let mut v = view_rc.borrow_mut();
+            let root_ctx = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let __cb_visit: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+                std::cell::RefCell::new(None);
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                framework_clipboard: &__cb_visit,
+                current_engine: None,
+                pending_actions: &__pa,
+            };
+            v.VisitByIdentityBare("root", false, "", &mut sc);
         }
         assert!(
             view_rc.borrow().VisitingVA.borrow().is_active(),
-            "animator should be active after SetGoal + Activate"
+            "animator should be active after VisitByIdentityBare"
         );
+        let _ = visiting_id;
 
         // Tick the scheduler. With view-direct weak (SP8 Phase 1), Cycle
         // upgrades the weak successfully and calls va.animate. The animator
         // either progresses (remaining active) or cleanly deactivates.
-        sched.borrow_mut().wake_up(visiting_id);
         let mut windows = std::collections::HashMap::new();
         let __root_ctx = crate::emContext::emContext::NewRoot();
         let mut __fw: Vec<_> = Vec::new();
