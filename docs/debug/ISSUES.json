@@ -280,7 +280,7 @@
       "investigation_file": "docs/debug/investigations/F010.md",
       "root_cause_file": "docs/debug/investigations/F010-root-cause.md",
       "blocked_question": null,
-      "fixed_in_commit": "PENDING",
+      "fixed_in_commit": "287f7539",
       "fixed_date": "2026-04-25",
       "repro": "Launch app. Navigate into cosmos. Zoom into the File System or Home panel. Observe 'Loading NN%' for each directory taking a very long time; when it completes, the interior renders blank. Navigating into /root yields a red 'Failed to open directory /root: Permission denied' box; several directories show 'This file type cannot be shown' red boxes for entries."
     },
