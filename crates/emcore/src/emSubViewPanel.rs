@@ -660,6 +660,9 @@ mod subview_dispatch_tests {
                 current_engine: None,
                 pending_actions: &pa,
             };
+            // Test harness: uses `emctx` as parent_context for minimal setup. Production
+            // code (emMainWindow.rs) passes the home view's context per SP7 §3.1 — this
+            // test doesn't exercise context-tree topology so the simpler harness is fine.
             emSubViewPanel::new(Rc::clone(&emctx), outer_panel_id, wid, &mut sc)
         };
 
@@ -810,6 +813,9 @@ mod sp8_tests {
                     current_engine: None,
                     pending_actions: &__pa,
                 };
+                // Test harness: uses `emctx` as parent_context for minimal setup. Production
+                // code (emMainWindow.rs) passes the home view's context per SP7 §3.1 — this
+                // test doesn't exercise context-tree topology so the simpler harness is fine.
                 emSubViewPanel::new(
                     root_ctx.clone(),
                     owner_id,
