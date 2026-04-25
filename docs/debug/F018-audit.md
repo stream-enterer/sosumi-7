@@ -91,33 +91,82 @@ plan.
 
 ### I.1 — Framebuffer pre-state must not be observable
 
-**Status:**
+**Status:** VIOLATION
+
 **Evidence:**
+- Pre-fill sites in production paths (greppable as `fill(emColor::BLACK)` / `LoadOp::Clear(wgpu::Color::BLACK)`):
+  - `crates/emcore/src/emWindow.rs:632` — single-buffer fallback (>50% dirty tiles).
+  - `crates/emcore/src/emWindow.rs:674` — per-tile single-threaded path.
+  - `crates/emcore/src/emWindow.rs:767` — parallel-replay path (per-thread tile buffer).
+  - `crates/emcore/src/emViewRendererCompositor.rs:261` — wgpu render-pass `LoadOp::Clear(wgpu::Color::BLACK)`.
+- Test-only pre-fills (confirmed by `grep -rn 'SoftwareCompositor::new' crates/` — only matches in `crates/eaglemode/tests/golden/`): `crates/emcore/src/emViewRenderer.rs:37, 87, 99` — `SoftwareCompositor`. Not in production path; still subject to the same contract for tests.
+- The conditional clear at `crates/emcore/src/emView.rs:4727-4738` mirrors C++ `emView.cpp:1073-1084` (per I.3 audit). When the SVP is opaque-and-covering the clear is skipped, leaving the BLACK pre-fill as the framebuffer state at panel-paint time. Any non-opaque descendant of an opaque parent then exposes the pre-fill.
+
 **Notes:**
+- All four production pre-fill sites use literal BLACK rather than `view.background_color`. Even when the conditional clear fires, the pre-fill is observably wrong for the sub-frame moment between fill and clear (not user-visible, but semantically unconstrained). The user-visible failure is the skip-clear case.
+- Remediation must eliminate observable pre-fill in all four sites. Options per spec:
+  - (a) replace BLACK with `view.background_color` at every pre-fill site, AND threaded through the wgpu LoadOp (cross-cuts with I.4 and I.5);
+  - (b) skip pre-fill entirely and rely on emView's clear semantics to cover every pixel — requires guaranteeing every viewport pixel is overwritten before composition (cross-cuts with III.1, III.2, III.3);
+  - (c) introduce a Rust-only pre-clear-to-background-color step before `view.Paint`, mirroring the C++ default-framebuffer assumption.
+- Cross-cuts with I.2 (tile init color), I.4 (compositor load-clear), I.5 (background_color propagation), III.1/III.2/III.3 (transitive non-opaque exposure).
 
 ### I.2 — Tile backing-store init color is not observable
 
-**Status:**
+**Status:** VIOLATION (transitive from I.1)
+
 **Evidence:**
+- `emImage::new` at `crates/emcore/src/emImage.rs:118-135` initializes pixel data to `vec![0; len]`. For 4-channel (RGBA) tiles the per-pixel value is `(0, 0, 0, 0)` — transparent black.
+- `Tile::new` constructs tiles via `emImage::new(TILE_SIZE, TILE_SIZE, 4)`, then `emWindow.rs:674, 767` immediately overwrites with `tile.image.fill(emColor::BLACK)` = opaque black `(0, 0, 0, 255)`.
+- Per O.5: `None` compositor slots show solid LoadOp::Clear opaque black. `Some` slots with alpha < 255 pixels alpha-blend RGB onto that black via `BlendState::ALPHA_BLENDING`.
+- Newly-allocated tiles are immediately dirty (`Tile::new` sets `dirty: true`) and painted within the same render call (`emWindow.rs:622, 668-687`). But paint may not cover the full tile — when the conditional I.3 clear is skipped (opaque-and-covering SVP), any tile pixels not subsequently overpainted by panel ops keep the BLACK pre-fill.
+
 **Notes:**
+- The tile init color itself (RGBA 0,0,0,0) is not directly observable in production because the pre-fill at line 674/767 immediately overwrites it. The observable color is the pre-fill BLACK — which is the I.1 violation. So I.2 reduces to I.1 in practice.
+- Remediation: eliminating the I.1 pre-fill (option a, b, or c) closes I.2 too. If option (b) is chosen (skip pre-fill), the raw `emImage::new` zero-fill becomes observable for un-painted regions — that's also wrong, so option (b) requires changing `emImage::new` for tiles or guaranteeing full-tile paint coverage.
 
 ### I.3 — Conditional framebuffer clear must mirror C++
 
-**Status:**
+**Status:** COMPLIANT
+
 **Evidence:**
+- C++ `emView.cpp:1062-1084` and Rust `emView.rs:4725-4739` are line-for-line equivalent:
+  - `if (!SupremeViewedPanel)` → handled by the outer `match self.supreme_viewed_panel` (early branch unconditionally clears).
+  - `if (!p->IsOpaque() || p->ViewedX > rx1 || ...)` → `if !tree.IsOpaque(svp_id) || svp_vx > rx1 || svp_vx + svp_vw < rx2 || svp_vy > ry1 || svp_vy + svp_vh < ry2` (line 4727-4732).
+  - `ncc = p->CanvasColor; if (!ncc.IsOpaque()) ncc = BackgroundColor;` → `let mut ncc = svp_canvas; if !ncc.IsOpaque() { ncc = self.background_color; }` (line 4733-4736).
+  - `painter.Clear(ncc, canvasColor); canvasColor = ncc;` → `painter.ClearWithCanvas(ncc, canvas_color); canvas_color = ncc;` (line 4737-4738).
+- All three render strategies in `emWindow.rs:632-700, 760-776` invoke the panel walk through `view.Paint`/`render_parallel_inner` → display-list replay; both ultimately route through the same `emView::Paint` block for direct paint, and the recording painter records the clear as a `PaintRect` (per O.4) for replay.
+
 **Notes:**
+- The clear-condition mirror is correct in isolation. The black-during-loading symptom does NOT come from this conditional being wrong — it comes from I.1/I.2/I.4 (pre-fills and load-clear) being observable in scenarios where this conditional skips the clear. Remediation for the symptom does not need to touch this block.
 
 ### I.4 — Compositor load-clear color must not be observable
 
-**Status:**
+**Status:** VIOLATION
+
 **Evidence:**
+- `crates/emcore/src/emViewRendererCompositor.rs:261` — `load: wgpu::LoadOp::Clear(wgpu::Color::BLACK)`.
+- `crates/emcore/src/emViewRendererCompositor.rs:97` — `BlendState::ALPHA_BLENDING`. Tiles composite as `out_RGB = tile_RGB * tile_A + load_clear_RGB * (1 - tile_A)`.
+- Per O.5: `None` tile slots show the load-clear directly (initial frame / post-resize transient). `Some` slots whose tile pixels have alpha < 255 blend the load-clear black through.
+
 **Notes:**
+- Remediation per spec rule I.4 has two options: (a) cover every viewport pixel with an opaque tile fragment so alpha is always 255 — couples to I.1/I.2 fixes and to per-panel paint-coverage guarantees; (b) parameterize the load-clear color on `view.background_color` and update it whenever the view's background changes — cross-cuts with I.5 (currently no plumbing exists between view and compositor for this).
+- Option (b) is mechanically simplest but introduces a view→compositor data-flow that the current architecture does not have (compositor knows nothing about the view).
+- Option (a) is structurally cleaner (compositor stays view-agnostic) but requires that every render strategy emit alpha=255 for every painted pixel inside the visible panel-tree footprint. Currently both pre-fill BLACK (alpha=255) and the conditional clear (which may have alpha<255 for non-opaque ncc) violate that.
 
 ### I.5 — Runtime `view.background_color` changes propagate
 
-**Status:**
+**Status:** VIOLATION
+
 **Evidence:**
+- `emView::SetBackgroundColor` at `crates/emcore/src/emView.rs:3508-3513` only updates the field and sets `self.viewport_changed = true`. It does NOT call `InvalidatePainting` or otherwise mark tiles dirty.
+- `viewport_changed` is consumed only by `viewport_changed()` getter (line 3477) and `clear_viewport_changed()` setter (line 3482). `grep -rn 'viewport_changed' crates/emcore/src/emWindow.rs` returns NO matches — the window/render loop never reads the flag, so it never triggers a tile-cache invalidation.
+- Compositor / tile cache / window have no `background_color` references outside `emWindow.rs:346, 367, 441, 449` (which only forward the constructor argument to `view.SetBackgroundColor`). The compositor's load-clear is hardcoded BLACK (`emViewRendererCompositor.rs:261`) with no view-state plumbing.
+
 **Notes:**
+- Two layers fail simultaneously:
+  1. **Dirty-region layer:** `SetBackgroundColor` does not invalidate tiles. After a runtime call, tiles keep their previously-painted contents until something else dirties them. New tiles painted with the new color (after some other invalidation) would coexist with stale tiles painted with the old color.
+  2. **Compositor-load-clear layer:** Even if every tile is repainted with the new color, the load-clear is hardcoded BLACK; the I.4 violation still leaks the old wrong color (BLACK) where alpha<255.
+- Remediation must (a) add a full-viewport InvalidatePainting (or equivalent dirty-mark) inside SetBackgroundColor, AND (b) plumb background_color from view to compositor (option I.4-b) or guarantee opaque tile coverage (option I.4-a).
 
 ---
 
