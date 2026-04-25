@@ -495,7 +495,7 @@ impl PanelBehavior for emDirEntryPanel {
         let theme_rec = theme.GetRec();
         let bg = emColor::from_packed(self.bg_color);
 
-        // Background rounded rect
+        // C++ emDirEntryPanel.cpp:283-301: PaintRoundRect(Background...).
         let r = theme_rec.BackgroundRX.min(theme_rec.BackgroundRY);
         painter.PaintRoundRect(
             theme_rec.BackgroundX,
@@ -508,7 +508,59 @@ impl PanelBehavior for emDirEntryPanel {
             emColor::TRANSPARENT,
         );
 
-        // Name color based on file type
+        // C++ emDirEntryPanel.cpp:303-335: outer-border canvasColor selection
+        // and PaintBorderImage(OuterBorder...).
+        //
+        // C++ uses local `canvasColor` initialized to the parent's canvas color
+        // (the painter's current canvas color). Then: if BgColor==canvasColor
+        // (the rounded-rect background didn't change pixels — parent canvas
+        // already matches bg), or if the outer-border rect lies strictly inside
+        // the rounded-rect inner area (so border draws over actual BgColor
+        // pixels), set canvasColor=BgColor; else canvasColor=0.
+        let parent_canvas = painter.GetCanvasColor();
+        let canvas_color = if parent_canvas == bg
+            || (theme_rec.OuterBorderX >= theme_rec.BackgroundX + theme_rec.BackgroundRX * 0.3
+                && theme_rec.OuterBorderY >= theme_rec.BackgroundY + theme_rec.BackgroundRY * 0.3
+                && theme_rec.OuterBorderW
+                    <= theme_rec.BackgroundX + theme_rec.BackgroundW
+                        - theme_rec.BackgroundRX * 0.3
+                        - theme_rec.OuterBorderX
+                && theme_rec.OuterBorderH
+                    <= theme_rec.BackgroundY + theme_rec.BackgroundH
+                        - theme_rec.BackgroundRY * 0.3
+                        - theme_rec.OuterBorderY)
+        {
+            bg
+        } else {
+            emColor::TRANSPARENT
+        };
+        // Outer border: borrow image via theme accessor (returns Ref<emImage>).
+        {
+            let img = theme.GetOuterBorderImage();
+            painter.PaintBorderImage(
+                theme_rec.OuterBorderX,
+                theme_rec.OuterBorderY,
+                theme_rec.OuterBorderW,
+                theme_rec.OuterBorderH,
+                theme_rec.OuterBorderL,
+                theme_rec.OuterBorderT,
+                theme_rec.OuterBorderR,
+                theme_rec.OuterBorderB,
+                &img,
+                theme_rec.OuterBorderImgL,
+                theme_rec.OuterBorderImgT,
+                theme_rec.OuterBorderImgR,
+                theme_rec.OuterBorderImgB,
+                255,
+                canvas_color,
+                emcore::emPainter::BORDER_EDGES_ONLY,
+            );
+        }
+
+        // C++ line 337: canvasColor=BgColor — restored before name paint.
+        let canvas_color = bg;
+
+        // C++ lines 339-353: name color based on file type.
         let name_color = if self.dir_entry.IsRegularFile() {
             let mode = self.dir_entry.GetStat().st_mode;
             if mode & (libc::S_IXUSR | libc::S_IXGRP | libc::S_IXOTH) != 0 {
@@ -522,6 +574,7 @@ impl PanelBehavior for emDirEntryPanel {
             emColor::from_packed(theme_rec.OtherNameColor)
         };
 
+        // C++ lines 362-375: PaintTextBoxed(Name...).
         let name = self.dir_entry.GetName();
         painter.PaintTextBoxed(
             theme_rec.NameX,
@@ -531,7 +584,7 @@ impl PanelBehavior for emDirEntryPanel {
             name,
             theme_rec.NameH,
             name_color,
-            bg,
+            canvas_color,
             TextAlignment::Left,
             VAlign::Center,
             TextAlignment::Left,
@@ -540,7 +593,29 @@ impl PanelBehavior for emDirEntryPanel {
             1.0,
         );
 
-        // Path (shown when content area is visible)
+        // C++ lines 377-385: PaintInfo. Rust has only the time-stamp slice
+        // ported so far; emit it in C++ position (between Name and Path).
+        let info_color = emColor::from_packed(theme_rec.InfoColor);
+        let time_str = FormatTime(self.dir_entry.GetStat().st_mtime, false);
+        painter.PaintTextBoxed(
+            theme_rec.InfoX,
+            theme_rec.InfoY,
+            theme_rec.InfoW,
+            theme_rec.InfoH,
+            &time_str,
+            theme_rec.InfoH,
+            info_color,
+            canvas_color,
+            TextAlignment::Left,
+            VAlign::Center,
+            TextAlignment::Left,
+            0.5,
+            false,
+            1.0,
+        );
+
+        // C++ lines 387-466: path text, inner border (Dir or File), and
+        // content-rect background, gated on content visibility.
         let content_w = if self.dir_entry.IsDirectory() {
             theme_rec.DirContentW
         } else {
@@ -557,7 +632,7 @@ impl PanelBehavior for emDirEntryPanel {
                 self.dir_entry.GetPath(),
                 theme_rec.PathH,
                 emColor::from_packed(theme_rec.PathColor),
-                bg,
+                canvas_color,
                 TextAlignment::Left,
                 VAlign::Center,
                 TextAlignment::Left,
@@ -566,47 +641,89 @@ impl PanelBehavior for emDirEntryPanel {
                 1.0,
             );
 
-            // Content area background
             if self.dir_entry.IsDirectory() {
+                // C++ lines 404-419: PaintBorderImage(DirInnerBorder...).
+                {
+                    let img = theme.GetDirInnerBorderImage();
+                    painter.PaintBorderImage(
+                        theme_rec.DirInnerBorderX,
+                        theme_rec.DirInnerBorderY,
+                        theme_rec.DirInnerBorderW,
+                        theme_rec.DirInnerBorderH,
+                        theme_rec.DirInnerBorderL,
+                        theme_rec.DirInnerBorderT,
+                        theme_rec.DirInnerBorderR,
+                        theme_rec.DirInnerBorderB,
+                        &img,
+                        theme_rec.DirInnerBorderImgL,
+                        theme_rec.DirInnerBorderImgT,
+                        theme_rec.DirInnerBorderImgR,
+                        theme_rec.DirInnerBorderImgB,
+                        255,
+                        canvas_color,
+                        emcore::emPainter::BORDER_EDGES_ONLY,
+                    );
+                }
+                // C++ lines 420-427: PaintRect(DirContent...).
                 painter.PaintRect(
                     theme_rec.DirContentX,
                     theme_rec.DirContentY,
                     theme_rec.DirContentW,
                     theme_rec.DirContentH,
                     emColor::from_packed(theme_rec.DirContentColor),
-                    bg,
+                    canvas_color,
                 );
             } else {
+                // C++ lines 430-445: PaintBorderImage(FileInnerBorder...).
+                {
+                    let img = theme.GetFileInnerBorderImage();
+                    painter.PaintBorderImage(
+                        theme_rec.FileInnerBorderX,
+                        theme_rec.FileInnerBorderY,
+                        theme_rec.FileInnerBorderW,
+                        theme_rec.FileInnerBorderH,
+                        theme_rec.FileInnerBorderL,
+                        theme_rec.FileInnerBorderT,
+                        theme_rec.FileInnerBorderR,
+                        theme_rec.FileInnerBorderB,
+                        &img,
+                        theme_rec.FileInnerBorderImgL,
+                        theme_rec.FileInnerBorderImgT,
+                        theme_rec.FileInnerBorderImgR,
+                        theme_rec.FileInnerBorderImgB,
+                        255,
+                        canvas_color,
+                        emcore::emPainter::BORDER_EDGES_ONLY,
+                    );
+                }
+                // C++ lines 446-457: containment check — if content rect
+                // extends beyond inner-border inner edges, force canvas=0.
+                let content_canvas = if theme_rec.FileContentX + 1e-10
+                    < theme_rec.FileInnerBorderX + theme_rec.FileInnerBorderL
+                    || theme_rec.FileContentY + 1e-10
+                        < theme_rec.FileInnerBorderY + theme_rec.FileInnerBorderT
+                    || theme_rec.FileContentX + theme_rec.FileContentW - 1e-10
+                        > theme_rec.FileInnerBorderX + theme_rec.FileInnerBorderW
+                            - theme_rec.FileInnerBorderR
+                    || theme_rec.FileContentY + theme_rec.FileContentH - 1e-10
+                        > theme_rec.FileInnerBorderY + theme_rec.FileInnerBorderH
+                            - theme_rec.FileInnerBorderB
+                {
+                    emColor::TRANSPARENT
+                } else {
+                    canvas_color
+                };
+                // C++ lines 458-465: PaintRect(FileContent...).
                 painter.PaintRect(
                     theme_rec.FileContentX,
                     theme_rec.FileContentY,
                     theme_rec.FileContentW,
                     theme_rec.FileContentH,
                     emColor::from_packed(theme_rec.FileContentColor),
-                    bg,
+                    content_canvas,
                 );
             }
         }
-
-        // Info area (permissions, owner, group, size, time)
-        let info_color = emColor::from_packed(theme_rec.InfoColor);
-        let time_str = FormatTime(self.dir_entry.GetStat().st_mtime, false);
-        painter.PaintTextBoxed(
-            theme_rec.InfoX,
-            theme_rec.InfoY,
-            theme_rec.InfoW,
-            theme_rec.InfoH,
-            &time_str,
-            theme_rec.InfoH,
-            info_color,
-            bg,
-            TextAlignment::Left,
-            VAlign::Center,
-            TextAlignment::Left,
-            0.5,
-            false,
-            1.0,
-        );
     }
 
     fn get_title(&self) -> Option<String> {
@@ -813,6 +930,58 @@ mod tests {
 
         panel.select(false, true); // ctrl-click: deselect
         assert!(!panel.file_man.borrow().IsSelectedAsTarget("/tmp"));
+    }
+
+    /// F010 Phase 2 (HYPOTHESIS Y): emDirEntryPanel::Paint must call
+    /// `painter.PaintBorderImage` for the outer border. Mirrors C++
+    /// emDirEntryPanel.cpp:318-335 (unconditional outer-border paint).
+    ///
+    /// Uses the painter's op-log callback to record DrawOp variants and asserts
+    /// at least one `PaintBorderImage` op was emitted.
+    #[test]
+    fn paint_emits_outer_border_image() {
+        use emcore::emImage::emImage;
+        use emcore::emPainter::emPainter;
+        use emcore::emPainterDrawList::DrawOp;
+        use emcore::emPanel::PanelState;
+
+        let ctx = emcore::emContext::emContext::NewRoot();
+        let entry = crate::emDirEntry::emDirEntry::from_path("/tmp");
+        let mut panel = emDirEntryPanel::new(Rc::clone(&ctx), entry);
+
+        let mut img = emImage::new(64, 64, 4);
+        img.fill(emColor::BLACK);
+
+        // Shared op-counter; the closure must be 'static so we use Rc<Cell<_>>.
+        let border_image_count = Rc::new(std::cell::Cell::new(0u32));
+        let total_ops = Rc::new(std::cell::Cell::new(0u32));
+        {
+            let bic = Rc::clone(&border_image_count);
+            let tot = Rc::clone(&total_ops);
+            let mut p = emPainter::new(&mut img);
+            p.SetCanvasColor(emColor::TRANSPARENT);
+            p.set_op_log(move |op, _depth, _state| {
+                tot.set(tot.get() + 1);
+                if matches!(op, DrawOp::PaintBorderImage { .. }) {
+                    bic.set(bic.get() + 1);
+                }
+            });
+            let state = PanelState::default_for_test();
+            panel.Paint(&mut p, 1.0, 1.0, &state);
+        }
+
+        // Confirm the recorder fired at all (sanity).
+        assert!(
+            total_ops.get() > 0,
+            "op-log callback must observe at least one DrawOp",
+        );
+        // Phase 2 acceptance: PaintBorderImage emitted at least once
+        // (outer border is unconditional in C++).
+        assert!(
+            border_image_count.get() >= 1,
+            "Paint must emit at least one PaintBorderImage (outer border); got {}",
+            border_image_count.get(),
+        );
     }
 
     #[test]
