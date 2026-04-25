@@ -1064,10 +1064,11 @@ impl emView {
         rel_y: f64,
         rel_a: f64,
         adherent: bool,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
         let identity = tree.GetIdentity(panel);
         let subject = tree.get_title(panel);
-        self.VisitByIdentity(&identity, rel_x, rel_y, rel_a, adherent, &subject);
+        self.VisitByIdentity(&identity, rel_x, rel_y, rel_a, adherent, &subject, ctx);
     }
 
     /// Port of C++ `emView::Visit(identity, relX, relY, relA, adherent, subject)`
@@ -1083,13 +1084,20 @@ impl emView {
         rel_a: f64,
         adherent: bool,
         subject: &str,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
-        let cfg = self.CoreConfig.borrow();
-        let cfg = cfg.GetRec();
-        let mut va = self.VisitingVA.borrow_mut();
-        va.SetAnimParamsByCoreConfig(cfg);
-        va.SetGoalCoords(identity, rel_x, rel_y, rel_a, adherent, subject);
-        va.Activate();
+        {
+            let cfg = self.CoreConfig.borrow();
+            let cfg = cfg.GetRec();
+            let mut va = self.VisitingVA.borrow_mut();
+            va.SetAnimParamsByCoreConfig(cfg);
+            va.SetGoalCoords(identity, rel_x, rel_y, rel_a, adherent, subject);
+            va.Activate();
+        }
+        // F010: mirror C++ emViewAnimator::Activate's WakeUp() call
+        // (emViewAnimator.cpp:81) — the Rust animator-engine split moves
+        // this wake to the Visit-family methods.
+        self.wake_visiting_va_engine(ctx);
     }
 
     /// Port of C++ `emView::VisitFullsized(panel, adherent, utilizeView)` (emView.cpp:525-528).
@@ -1099,10 +1107,11 @@ impl emView {
         panel: PanelId,
         adherent: bool,
         utilize_view: bool,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
         let identity = tree.GetIdentity(panel);
         let subject = tree.get_title(panel);
-        self.VisitFullsizedByIdentity(&identity, adherent, utilize_view, &subject);
+        self.VisitFullsizedByIdentity(&identity, adherent, utilize_view, &subject, ctx);
     }
 
     /// DIVERGED: (language-forced) C++ overload `emView::VisitFullsized(identity, adherent, utilizeView, subject)` (emView.cpp:531-541)
@@ -1116,13 +1125,17 @@ impl emView {
         adherent: bool,
         utilize_view: bool,
         subject: &str,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
-        let cfg = self.CoreConfig.borrow();
-        let cfg = cfg.GetRec();
-        let mut va = self.VisitingVA.borrow_mut();
-        va.SetAnimParamsByCoreConfig(cfg);
-        va.SetGoalFullsized(identity, adherent, utilize_view, subject);
-        va.Activate();
+        {
+            let cfg = self.CoreConfig.borrow();
+            let cfg = cfg.GetRec();
+            let mut va = self.VisitingVA.borrow_mut();
+            va.SetAnimParamsByCoreConfig(cfg);
+            va.SetGoalFullsized(identity, adherent, utilize_view, subject);
+            va.Activate();
+        }
+        self.wake_visiting_va_engine(ctx);
     }
 
     /// DIVERGED: (language-forced) C++ overload `emView::Visit(panel, adherent)` (emView.cpp:511-514)
@@ -1130,10 +1143,16 @@ impl emView {
     /// the canonical 6-arg `Visit` added in Task 3.1.
     ///
     /// Port of C++ `emView::Visit(panel, adherent)` (emView.cpp:511-514).
-    pub fn VisitPanel(&mut self, tree: &PanelTree, panel: PanelId, adherent: bool) {
+    pub fn VisitPanel(
+        &mut self,
+        tree: &PanelTree,
+        panel: PanelId,
+        adherent: bool,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) {
         let identity = tree.GetIdentity(panel);
         let subject = tree.get_title(panel);
-        self.VisitByIdentityBare(&identity, adherent, &subject);
+        self.VisitByIdentityBare(&identity, adherent, &subject, ctx);
     }
 
     /// DIVERGED: (language-forced) C++ overload `emView::Visit(identity, adherent, subject)` (emView.cpp:517-523)
@@ -1141,13 +1160,22 @@ impl emView {
     /// relX/relY/relA coords) to disambiguate from the 7-arg `VisitByIdentity`.
     ///
     /// Port of C++ `emView::Visit(identity, adherent, subject)` (emView.cpp:517-523).
-    pub fn VisitByIdentityBare(&mut self, identity: &str, adherent: bool, subject: &str) {
-        let cfg = self.CoreConfig.borrow();
-        let cfg = cfg.GetRec();
-        let mut va = self.VisitingVA.borrow_mut();
-        va.SetAnimParamsByCoreConfig(cfg);
-        va.SetGoal(identity, adherent, subject);
-        va.Activate();
+    pub fn VisitByIdentityBare(
+        &mut self,
+        identity: &str,
+        adherent: bool,
+        subject: &str,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) {
+        {
+            let cfg = self.CoreConfig.borrow();
+            let cfg = cfg.GetRec();
+            let mut va = self.VisitingVA.borrow_mut();
+            va.SetAnimParamsByCoreConfig(cfg);
+            va.SetGoal(identity, adherent, subject);
+            va.Activate();
+        }
+        self.wake_visiting_va_engine(ctx);
     }
 
     // --- Viewport ---
@@ -2657,7 +2685,7 @@ impl emView {
         // them here (after the main loop so SVP is up to date).
         let nav_requests = tree.drain_navigation_requests();
         for target in nav_requests {
-            self.VisitFullsized(tree, target, false, false);
+            self.VisitFullsized(tree, target, false, false, ctx);
         }
     }
 
@@ -2670,7 +2698,7 @@ impl emView {
     // these methods; programmatic callers (animators, tests) do not gate.
 
     /// Port of C++ `emView::VisitNext()` (emView.cpp:564-578).
-    pub fn VisitNext(&mut self, tree: &mut PanelTree) {
+    pub fn VisitNext(&mut self, tree: &mut PanelTree, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusableNext(active);
         if p.is_none() {
@@ -2685,12 +2713,12 @@ impl emView {
             }
         }
         if let Some(target) = p {
-            self.VisitPanel(tree, target, true);
+            self.VisitPanel(tree, target, true, ctx);
         }
     }
 
     /// Port of C++ `emView::VisitPrev()` (emView.cpp:581-595).
-    pub fn VisitPrev(&mut self, tree: &mut PanelTree) {
+    pub fn VisitPrev(&mut self, tree: &mut PanelTree, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusablePrev(active);
         if p.is_none() {
@@ -2705,67 +2733,67 @@ impl emView {
             }
         }
         if let Some(target) = p {
-            self.VisitPanel(tree, target, true);
+            self.VisitPanel(tree, target, true, ctx);
         }
     }
 
     /// Port of C++ `emView::VisitFirst()` (emView.cpp:598-608).
-    pub fn VisitFirst(&mut self, tree: &mut PanelTree) {
+    pub fn VisitFirst(&mut self, tree: &mut PanelTree, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusableParent(active);
         if let Some(parent) = p {
             p = tree.GetFocusableFirstChild(parent);
         }
         let target = p.unwrap_or(active);
-        self.VisitPanel(tree, target, true);
+        self.VisitPanel(tree, target, true, ctx);
     }
 
     /// Port of C++ `emView::VisitLast()` (emView.cpp:611-621).
-    pub fn VisitLast(&mut self, tree: &mut PanelTree) {
+    pub fn VisitLast(&mut self, tree: &mut PanelTree, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
         let Some(active) = self.active else { return };
         let mut p = tree.GetFocusableParent(active);
         if let Some(parent) = p {
             p = tree.GetFocusableLastChild(parent);
         }
         let target = p.unwrap_or(active);
-        self.VisitPanel(tree, target, true);
+        self.VisitPanel(tree, target, true, ctx);
     }
 
     /// Port of C++ `emView::VisitLeft()` (emView.cpp:624-627).
-    pub fn VisitLeft(&mut self, tree: &mut PanelTree) {
-        self.VisitNeighbour(tree, 2);
+    pub fn VisitLeft(&mut self, tree: &mut PanelTree, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
+        self.VisitNeighbour(tree, 2, ctx);
     }
 
     /// Port of C++ `emView::VisitRight()` (emView.cpp:630-633).
-    pub fn VisitRight(&mut self, tree: &mut PanelTree) {
-        self.VisitNeighbour(tree, 0);
+    pub fn VisitRight(&mut self, tree: &mut PanelTree, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
+        self.VisitNeighbour(tree, 0, ctx);
     }
 
     /// Port of C++ `emView::VisitUp()` (emView.cpp:636-639).
-    pub fn VisitUp(&mut self, tree: &mut PanelTree) {
-        self.VisitNeighbour(tree, 3);
+    pub fn VisitUp(&mut self, tree: &mut PanelTree, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
+        self.VisitNeighbour(tree, 3, ctx);
     }
 
     /// Port of C++ `emView::VisitDown()` (emView.cpp:642-645).
-    pub fn VisitDown(&mut self, tree: &mut PanelTree) {
-        self.VisitNeighbour(tree, 1);
+    pub fn VisitDown(&mut self, tree: &mut PanelTree, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
+        self.VisitNeighbour(tree, 1, ctx);
     }
 
     /// Port of C++ `emView::VisitIn()` (emView.cpp:740-746).
-    pub fn VisitIn(&mut self, tree: &mut PanelTree) {
+    pub fn VisitIn(&mut self, tree: &mut PanelTree, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
         let Some(active) = self.active else { return };
         if let Some(p) = tree.GetFocusableFirstChild(active) {
-            self.VisitPanel(tree, p, true);
+            self.VisitPanel(tree, p, true, ctx);
         } else {
-            self.VisitFullsized(tree, active, true, false);
+            self.VisitFullsized(tree, active, true, false, ctx);
         }
     }
 
     /// Port of C++ `emView::VisitOut()` (emView.cpp:749-762).
-    pub fn VisitOut(&mut self, tree: &mut PanelTree) {
+    pub fn VisitOut(&mut self, tree: &mut PanelTree, ctx: &mut crate::emEngineCtx::SchedCtx<'_>) {
         let Some(active) = self.active else { return };
         if let Some(p) = tree.GetFocusableParent(active) {
-            self.VisitPanel(tree, p, true);
+            self.VisitPanel(tree, p, true, ctx);
         } else if let Some(root) = tree.GetRootPanel() {
             let root_h = tree.get_height(root);
             let mut rel_a = self.HomeWidth * root_h / self.HomePixelTallness / self.HomeHeight;
@@ -2773,12 +2801,17 @@ impl emView {
             if rel_a < rel_a2 {
                 rel_a = rel_a2;
             }
-            self.Visit(tree, root, 0.0, 0.0, rel_a, true);
+            self.Visit(tree, root, 0.0, 0.0, rel_a, true, ctx);
         }
     }
 
     /// Port of C++ `emView::VisitNeighbour(direction)` (emView.cpp:648-737).
-    pub fn VisitNeighbour(&mut self, tree: &mut PanelTree, direction: i32) {
+    pub fn VisitNeighbour(
+        &mut self,
+        tree: &mut PanelTree,
+        direction: i32,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+    ) {
         let direction = direction & 3;
         let Some(current0) = self.active else { return };
         let parent = tree
@@ -2933,7 +2966,7 @@ impl emView {
             }
         }
 
-        self.VisitPanel(tree, current, true);
+        self.VisitPanel(tree, current, true, ctx);
     }
 
     // --- Hit testing ---
@@ -7544,11 +7577,21 @@ mod tests {
 
         // Drive a programmatic visit through the public API. NO manual
         // wake_up — Activate must take care of it.
-        // Note: 3-arg form here; Task 3 will add &mut sc as the 4th arg
-        // when VisitByIdentityBare's signature gains it.
-        view_rc
-            .borrow_mut()
-            .VisitByIdentityBare("root", false, "test-subject");
+        {
+            let mut v = view_rc.borrow_mut();
+            let root_ctx = v.Context.GetRootContext();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut s = sched.borrow_mut();
+            let mut sc = crate::emEngineCtx::SchedCtx {
+                scheduler: &mut s,
+                framework_actions: &mut fw,
+                root_context: &root_ctx,
+                framework_clipboard: &cb,
+                current_engine: None,
+                pending_actions: &pa,
+            };
+            v.VisitByIdentityBare("root", false, "test-subject", &mut sc);
+        }
 
         // Capture observable state BEFORE asserting, so cleanup can run
         // even on assertion failure (avoids panic-in-destructor SIGABRT
