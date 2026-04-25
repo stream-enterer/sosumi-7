@@ -463,6 +463,44 @@
       "fixed_in_commit": null,
       "fixed_date": null,
       "repro": "Launch app, zoom into File System or Home panel, observe directory panel during the 'Loading: NN%' phase. Background renders black; in C++ Eagle Mode 0.96.4 the same loading phase renders with non-black chrome (exact appearance to be characterized during investigation)."
+    },
+    {
+      "id": "F019",
+      "kind": "fix",
+      "status": "open",
+      "priority": "low",
+      "title": "emFilePanel::SetFileModel does not connect FileStateSignal to panel engine; panels poll instead of waking on signal",
+      "description": "Surfaced during F017 implementation. C++ emFilePanel::SetFileModel connects the model's FileStateSignal to the panel's engine so a state-change fire wakes the panel for repaint and observe-only transitions; Rust SetFileModel stores the model but does not establish the signal-to-engine connection. Compounding this, emDirModel's change_signal is SignalId::default() because emFileModel::new is called inside emDirModel::Acquire which has no scheduler reach (Acquire's closure cannot allocate signals). Net effect: an observe-only emDirPanel::Cycle that returns false would never wake to observe Loaded, so the F017 fix returns true while Loading|Waiting as a polling workaround — the panel wakes every 50ms slice instead of only on state-change fires. Observably correct but burns ~20 needless cycles/sec per directory in the active path.",
+      "location": "crates/emcore/src/emFilePanel.rs (SetFileModel — needs signal connection); crates/emfileman/src/emDirModel.rs (ensure_engine_registered — needs to allocate change_signal via scheduler.create_signal); crates/emfileman/src/emDirPanel.rs (Cycle can return false once #1 + #2 are wired)",
+      "caused_by": null,
+      "introduced_commit": null,
+      "introduced_date": "2026-04-25",
+      "fix_note": "Two-part fix: (1) emDirModel::ensure_engine_registered must allocate a real change_signal via scheduler.create_signal and assign it onto self.file_model (requires a setter on emFileModel<T> for change_signal). (2) emFilePanel::SetFileModel must call ctx.connect(model.GetFileStateSignal(), panel_engine_id) and disconnect on model swap. Once both wired, emDirPanel::Cycle in F017 can drop the stay_awake-while-loading workaround and become true observe-only. Risk: SetFileModel signature currently has no scheduler reach; may require a ctx parameter or a deferred-connect pattern. Audit other emFileModel subclasses (emImageFile etc.) for parity gaps before committing.",
+      "investigation_file": null,
+      "root_cause_file": null,
+      "blocked_question": null,
+      "fixed_in_commit": null,
+      "fixed_date": null,
+      "repro": "After F017 fix (commit 9ecf1148), profile emDirPanel::Cycle invocation count during a long directory load. Each panel in the active path will tick once per 50ms scheduler slice while loading, regardless of whether state actually changed. C++ ticks only on FileStateSignal fire (entry batches landed)."
+    },
+    {
+      "id": "F020",
+      "kind": "fix",
+      "status": "open",
+      "priority": "low",
+      "title": "Framework-scoped model engines have no automatic cleanup; scheduler Drop debug_assert leaks every model registered outside notice(unviewed)",
+      "description": "Surfaced during F017 implementation. emDirModelEngine is registered with PanelScope::Framework because the model is shareable across panels. PanelTree::remove cleans up panel-scoped engines but not framework-scoped ones, so the only path that unregisters an emDirModel engine is emDirPanel::notice with state.viewed==false && state.in_active_path==false (which calls release_engine). Tests that build a tree, drive slices, and tear down without going through the unviewed-notice path leak the engine; EngineScheduler::Drop debug_asserts engines empty and panics. F017 worked around this by adding emDirModel::release_engine and explicit cleanup in 6 integration tests. There's no compile-time signal — every future framework-scoped model engine repeats this trap.",
+      "location": "crates/emcore/src/emScheduler.rs (Drop debug_assert); crates/emcore/src/emEngine.rs (no model-engine ownership story); crates/emfileman/src/emDirModel.rs (emDirModelEngine, release_engine, ensure_engine_registered as the per-model workaround); crates/emfileman/src/emDirPanel.rs (6 tests with manual cleanup)",
+      "caused_by": null,
+      "introduced_commit": "9ecf1148",
+      "introduced_date": "2026-04-25",
+      "fix_note": "Two candidate shapes: (a) make the engine self-deregister — emDirModelEngine::Cycle calls ctx.scheduler.remove_engine(ctx.engine_id) when Weak::upgrade fails, AND models track their engine_id and unregister via a Drop-time deferred-removal queue on emContext (emContext gains a list of (EngineId, Weak<Scheduler>) cleanup entries drained at drop). (b) Introduce a ModelRegistry on emContext that owns scheduler-unregistration deterministically — every Acquire-able model registers there, registry drop fires through scheduler. Either lifts the burden off callers and tests. Audit: how many framework-scoped engines exist today? Likely just emDirModelEngine + emStocksPricesFetcher (per F017 investigation obs 196). Both should adopt the chosen shape.",
+      "investigation_file": null,
+      "root_cause_file": null,
+      "blocked_question": null,
+      "fixed_in_commit": null,
+      "fixed_date": null,
+      "repro": "Write a unit test that emDirModel::Acquire + ensure_engine_registered + drop both without going through emDirPanel::notice(unviewed). Scheduler Drop debug_assert fires with 'EngineScheduler dropped with remaining engines'. The 6 cleanup edits in commit 9ecf1148 (crates/emfileman/src/emDirPanel.rs) demonstrate the per-test mitigation."
     }
   ]
 }
