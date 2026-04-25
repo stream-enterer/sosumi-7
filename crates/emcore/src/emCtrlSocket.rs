@@ -27,15 +27,10 @@ use crate::emPanelTree::{DecodeIdentity, PanelId, PanelTree};
 /// the expected root-name (erroring on mismatch) and descends from
 /// `names[1..]`. An empty identity string means "the root itself".
 ///
-/// This is the emCore-native replacement for `resolve_panel_path` which
-/// used `/`-separator paths. Identity strings handle empty-named panels
-/// and special characters via the existing `EncodeIdentity` /
-/// `DecodeIdentity` machinery in `emPanelTree.rs`.
-// TEMP: `pub` (not `pub(crate)`) — no non-test callers land until Phase 4's
-// `resolve_target`. The plan tightens visibility back to `pub(crate)` at
-// that point. Verified 2026-04-24 that `pub(crate)` trips `dead_code`
-// because `#[cfg(test)]`-only uses don't count for the lib build.
-pub fn resolve_identity(
+/// Identity strings handle empty-named panels and special characters via
+/// the existing `EncodeIdentity` / `DecodeIdentity` machinery in
+/// `emPanelTree.rs`.
+pub(crate) fn resolve_identity(
     tree: &PanelTree,
     root: PanelId,
     identity: &str,
@@ -83,47 +78,73 @@ pub fn resolve_identity(
     Ok(cur)
 }
 
-/// Resolve a `/`-separated panel path to a PanelId, starting from `root`.
-/// `"/"` returns `root`. `"/a/b"` walks root → child("a") → child("b").
-/// Returns Err with a human-readable message for missing segments.
+/// Resolve `{ view, identity }` and invoke `f` with the resulting
+/// `(view, tree, panel)` triple. `view == ""` targets the home window's
+/// outer view; otherwise `view_sel` resolves (via the outer tree) to an
+/// `emSubViewPanel`, whose inner view/tree are used for `identity`.
 ///
-/// Naming caveat: emCore panel names can technically contain `/`, but
-/// this resolver assumes they don't. If a child name contains `/` and a
-/// path attempts to traverse through it, behavior is undefined (the
-/// segment after the embedded `/` will be searched as a separate child
-/// of the wrong parent). Future enhancement: escape syntax. For now,
-/// callers using this resolver must avoid panel names containing `/`.
-pub(crate) fn resolve_panel_path(
-    tree: &PanelTree,
-    root: PanelId,
-    path: &str,
-) -> Result<PanelId, String> {
-    if path == "/" || path.is_empty() {
-        return Ok(root);
+/// Closure-based rather than returning references because
+/// `PanelTree::with_behavior_as` borrows the behavior out of the tree
+/// for the duration of its callback and reinserts it on return —
+/// references into the SVP's `sub_view`/`sub_tree` fields cannot
+/// outlive the callback. Handlers therefore do their work inside the
+/// callback.
+pub(crate) fn resolve_target<R>(
+    app: &mut App,
+    view_sel: &str,
+    identity: &str,
+    f: impl FnOnce(&mut crate::emView::emView, &mut PanelTree, PanelId) -> R,
+) -> Result<R, String> {
+    let home_id = app
+        .home_window_id
+        .ok_or_else(|| "home window not initialized".to_string())?;
+    let win = app
+        .windows
+        .get_mut(&home_id)
+        .ok_or_else(|| "home window missing".to_string())?;
+
+    if view_sel.is_empty() {
+        let tree = &mut win.tree;
+        let view = &mut win.view;
+        let root = tree
+            .GetRootPanel()
+            .ok_or_else(|| "no root panel".to_string())?;
+        let target = resolve_identity(tree, root, identity)?;
+        return Ok(f(view, tree, target));
     }
-    let stripped = path.strip_prefix('/').unwrap_or(path);
-    let mut current = root;
-    for segment in stripped.split('/') {
-        if segment.is_empty() {
-            // Trailing slash or `//` — treat as no-op.
-            continue;
-        }
-        let children: Vec<PanelId> = tree.children(current).collect();
-        let matched = children
-            .into_iter()
-            .find(|&c| tree.name(c) == Some(segment));
-        match matched {
-            Some(c) => current = c,
-            None => {
-                let parent_name = tree.name(current).unwrap_or("<unnamed>").to_string();
-                return Err(format!(
-                    "no such panel: {} (segment '{}' not found under '{}')",
-                    path, segment, parent_name,
-                ));
-            }
-        }
-    }
-    Ok(current)
+
+    // Inner view: resolve view_sel against outer tree; require SVP.
+    // Compute svp_id under an immutable borrow of win.tree, drop it,
+    // then take the mutable borrow via with_behavior_as.
+    let svp_id = {
+        let outer_root = win
+            .tree
+            .GetRootPanel()
+            .ok_or_else(|| "no root panel".to_string())?;
+        resolve_identity(&win.tree, outer_root, view_sel)?
+    };
+
+    // SAFETY-via-typing: the closure runs while the SVP behavior is taken
+    // out of the tree. Its `sub_view` and `sub_tree` are owned by the
+    // behavior, so the references handed to `f` are valid for the
+    // closure's lifetime.
+    let result = win
+        .tree
+        .with_behavior_as::<crate::emSubViewPanel::emSubViewPanel, _>(svp_id, |svp| {
+            let (sub_view, sub_tree) = svp.sub_view_and_tree_mut();
+            let sub_root = sub_tree
+                .GetRootPanel()
+                .ok_or_else(|| "sub-view has no root panel".to_string())?;
+            let inner_target = resolve_identity(sub_tree, sub_root, identity)?;
+            Ok::<R, String>(f(sub_view, sub_tree, inner_target))
+        })
+        .ok_or_else(|| {
+            format!(
+                "view selector does not refer to a sub-view panel: {}",
+                view_sel
+            )
+        })?;
+    result
 }
 
 /// Top-level command tag — wire format `{"cmd":"<name>", ...}`.
@@ -134,18 +155,26 @@ pub enum CtrlCmd {
     GetState,
     Quit,
     Visit {
-        panel_path: String,
+        #[serde(default)]
+        view: String,
+        identity: String,
         #[serde(default)]
         adherent: bool,
     },
     VisitFullsized {
-        panel_path: String,
+        #[serde(default)]
+        view: String,
+        identity: String,
     },
     SetFocus {
-        panel_path: String,
+        #[serde(default)]
+        view: String,
+        identity: String,
     },
     SeekTo {
-        panel_path: String,
+        #[serde(default)]
+        view: String,
+        identity: String,
     },
     WaitIdle {
         #[serde(default)]
@@ -273,12 +302,22 @@ pub fn handle_main_thread(app: &mut App, event_loop: &ActiveEventLoop, msg: Ctrl
         CtrlCmd::Quit => handle_quit(event_loop),
         CtrlCmd::GetState => handle_get_state(app),
         CtrlCmd::Visit {
-            ref panel_path,
+            ref view,
+            ref identity,
             adherent,
-        } => handle_visit(app, panel_path, adherent),
-        CtrlCmd::VisitFullsized { ref panel_path } => handle_visit_fullsized(app, panel_path),
-        CtrlCmd::SetFocus { ref panel_path } => handle_set_focus(app, panel_path),
-        CtrlCmd::SeekTo { ref panel_path } => handle_seek_to(app, panel_path),
+        } => handle_visit(app, view, identity, adherent),
+        CtrlCmd::VisitFullsized {
+            ref view,
+            ref identity,
+        } => handle_visit_fullsized(app, view, identity),
+        CtrlCmd::SetFocus {
+            ref view,
+            ref identity,
+        } => handle_set_focus(app, view, identity),
+        CtrlCmd::SeekTo {
+            ref view,
+            ref identity,
+        } => handle_seek_to(app, view, identity),
         CtrlCmd::WaitIdle { .. } => unreachable!(), // handled above
         CtrlCmd::Input { event } => match synthesize_and_dispatch(app, event_loop, event) {
             Ok(()) => CtrlReply::ok(),
@@ -357,106 +396,46 @@ fn handle_get_state(app: &App) -> CtrlReply {
     }
 }
 
-fn handle_visit(app: &mut App, path: &str, adherent: bool) -> CtrlReply {
-    let home_id = match app.home_window_id {
-        Some(id) => id,
-        None => return CtrlReply::err("home window not initialized"),
-    };
-    let win = match app.windows.get_mut(&home_id) {
-        Some(w) => w,
-        None => return CtrlReply::err("home window missing"),
-    };
-    let view = &mut win.view;
-    let tree = &mut win.tree;
-    let root = match tree.GetRootPanel() {
-        Some(r) => r,
-        None => return CtrlReply::err("no root panel"),
-    };
-    let target = match resolve_panel_path(tree, root, path) {
-        Ok(t) => t,
-        Err(e) => return CtrlReply::err(e),
-    };
-    view.VisitPanel(tree, target, adherent);
-    CtrlReply::ok()
+fn handle_visit(app: &mut App, view_sel: &str, identity: &str, adherent: bool) -> CtrlReply {
+    match resolve_target(app, view_sel, identity, |view, tree, target| {
+        view.VisitPanel(tree, target, adherent);
+    }) {
+        Ok(()) => CtrlReply::ok(),
+        Err(e) => CtrlReply::err(e),
+    }
 }
 
-fn handle_visit_fullsized(app: &mut App, path: &str) -> CtrlReply {
-    let home_id = match app.home_window_id {
-        Some(id) => id,
-        None => return CtrlReply::err("home window not initialized"),
-    };
-    let win = match app.windows.get_mut(&home_id) {
-        Some(w) => w,
-        None => return CtrlReply::err("home window missing"),
-    };
-    let view = &mut win.view;
-    let tree = &mut win.tree;
-    let root = match tree.GetRootPanel() {
-        Some(r) => r,
-        None => return CtrlReply::err("no root panel"),
-    };
-    let target = match resolve_panel_path(tree, root, path) {
-        Ok(t) => t,
-        Err(e) => return CtrlReply::err(e),
-    };
+fn handle_visit_fullsized(app: &mut App, view_sel: &str, identity: &str) -> CtrlReply {
     // C++ `emView::VisitFullsized(panel, adherent, utilizeView=false)` —
     // control-socket adherent/utilize_view default to false (matches C++
     // defaults in emView.h:341-342).
-    view.VisitFullsized(tree, target, false, false);
-    CtrlReply::ok()
+    match resolve_target(app, view_sel, identity, |view, tree, target| {
+        view.VisitFullsized(tree, target, false, false);
+    }) {
+        Ok(()) => CtrlReply::ok(),
+        Err(e) => CtrlReply::err(e),
+    }
 }
 
-fn handle_set_focus(app: &mut App, path: &str) -> CtrlReply {
-    let home_id = match app.home_window_id {
-        Some(id) => id,
-        None => return CtrlReply::err("home window not initialized"),
-    };
-    let win = match app.windows.get_mut(&home_id) {
-        Some(w) => w,
-        None => return CtrlReply::err("home window missing"),
-    };
-    let view = &mut win.view;
-    let tree = &win.tree;
-    let root = match tree.GetRootPanel() {
-        Some(r) => r,
-        None => return CtrlReply::err("no root panel"),
-    };
-    let target = match resolve_panel_path(tree, root, path) {
-        Ok(t) => t,
-        Err(e) => return CtrlReply::err(e),
-    };
-    view.set_focus(Some(target));
-    CtrlReply::ok()
+fn handle_set_focus(app: &mut App, view_sel: &str, identity: &str) -> CtrlReply {
+    match resolve_target(app, view_sel, identity, |view, _tree, target| {
+        view.set_focus(Some(target));
+    }) {
+        Ok(()) => CtrlReply::ok(),
+        Err(e) => CtrlReply::err(e),
+    }
 }
 
-fn handle_seek_to(app: &mut App, path: &str) -> CtrlReply {
+fn handle_seek_to(app: &mut App, view_sel: &str, identity: &str) -> CtrlReply {
     // TODO: seek_to currently delegates to VisitPanel for already-loaded
     // targets. True seek semantics (lazy-load target panels via the seek
-    // engine) land as a Phase-4 follow-up; using
-    // `VisitByIdentityBare(identity)` directly would skip path resolution
-    // but the identity format (emCore-encoded, not `/`-separated) doesn't
-    // match the control-socket path syntax — so resolve-then-VisitPanel is
-    // used for wire-format parity with visit/set_focus.
-    let home_id = match app.home_window_id {
-        Some(id) => id,
-        None => return CtrlReply::err("home window not initialized"),
-    };
-    let win = match app.windows.get_mut(&home_id) {
-        Some(w) => w,
-        None => return CtrlReply::err("home window missing"),
-    };
-    let view = &mut win.view;
-    let tree = &mut win.tree;
-    let root = match tree.GetRootPanel() {
-        Some(r) => r,
-        None => return CtrlReply::err("no root panel"),
-    };
-    let target = match resolve_panel_path(tree, root, path) {
-        Ok(t) => t,
-        Err(e) => return CtrlReply::err(e),
-    };
-    view.VisitPanel(tree, target, false);
-    CtrlReply::ok()
+    // engine) land as a Phase-4 follow-up.
+    match resolve_target(app, view_sel, identity, |view, tree, target| {
+        view.VisitPanel(tree, target, false);
+    }) {
+        Ok(()) => CtrlReply::ok(),
+        Err(e) => CtrlReply::err(e),
+    }
 }
 
 fn focused_panel_path(
@@ -811,12 +790,13 @@ mod tests {
     }
 
     #[test]
-    fn visit_cmd_roundtrip_with_default_adherent() {
-        let json = r#"{"cmd":"visit","panel_path":"/cosmos/home"}"#;
-        let parsed: CtrlCmd = serde_json::from_str(json).unwrap();
-        match parsed {
-            CtrlCmd::Visit { panel_path, adherent } => {
-                assert_eq!(panel_path, "/cosmos/home");
+    fn visit_cmd_deserializes_with_view_and_identity() {
+        let json = r#"{"cmd":"visit","view":"root:content view","identity":"::home"}"#;
+        let cmd: CtrlCmd = serde_json::from_str(json).unwrap();
+        match cmd {
+            CtrlCmd::Visit { view, identity, adherent } => {
+                assert_eq!(view, "root:content view");
+                assert_eq!(identity, "::home");
                 assert!(!adherent);
             }
             _ => panic!("wrong variant"),
@@ -824,8 +804,21 @@ mod tests {
     }
 
     #[test]
+    fn visit_cmd_view_field_defaults_to_empty_string() {
+        let json = r#"{"cmd":"visit","identity":"root"}"#;
+        let cmd: CtrlCmd = serde_json::from_str(json).unwrap();
+        match cmd {
+            CtrlCmd::Visit { view, identity, .. } => {
+                assert_eq!(view, "");
+                assert_eq!(identity, "root");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
     fn visit_cmd_roundtrip_with_explicit_adherent() {
-        let json = r#"{"cmd":"visit","panel_path":"/foo","adherent":true}"#;
+        let json = r#"{"cmd":"visit","identity":"root","adherent":true}"#;
         let parsed: CtrlCmd = serde_json::from_str(json).unwrap();
         match parsed {
             CtrlCmd::Visit { adherent, .. } => assert!(adherent),
@@ -834,31 +827,40 @@ mod tests {
     }
 
     #[test]
-    fn visit_fullsized_cmd_roundtrip() {
-        let json = r#"{"cmd":"visit_fullsized","panel_path":"/foo"}"#;
-        let parsed: CtrlCmd = serde_json::from_str(json).unwrap();
-        match parsed {
-            CtrlCmd::VisitFullsized { panel_path } => assert_eq!(panel_path, "/foo"),
+    fn visit_fullsized_has_view_and_identity() {
+        let json = r#"{"cmd":"visit_fullsized","view":"root:content view","identity":"::home"}"#;
+        let cmd: CtrlCmd = serde_json::from_str(json).unwrap();
+        match cmd {
+            CtrlCmd::VisitFullsized { view, identity } => {
+                assert_eq!(view, "root:content view");
+                assert_eq!(identity, "::home");
+            }
             _ => panic!("wrong variant"),
         }
     }
 
     #[test]
-    fn set_focus_cmd_roundtrip() {
-        let json = r#"{"cmd":"set_focus","panel_path":"/foo"}"#;
-        let parsed: CtrlCmd = serde_json::from_str(json).unwrap();
-        match parsed {
-            CtrlCmd::SetFocus { panel_path } => assert_eq!(panel_path, "/foo"),
+    fn set_focus_has_view_and_identity() {
+        let json = r#"{"cmd":"set_focus","identity":"root"}"#;
+        let cmd: CtrlCmd = serde_json::from_str(json).unwrap();
+        match cmd {
+            CtrlCmd::SetFocus { view, identity } => {
+                assert_eq!(view, "");
+                assert_eq!(identity, "root");
+            }
             _ => panic!("wrong variant"),
         }
     }
 
     #[test]
-    fn seek_to_cmd_roundtrip() {
-        let json = r#"{"cmd":"seek_to","panel_path":"/foo"}"#;
-        let parsed: CtrlCmd = serde_json::from_str(json).unwrap();
-        match parsed {
-            CtrlCmd::SeekTo { panel_path } => assert_eq!(panel_path, "/foo"),
+    fn seek_to_has_view_and_identity() {
+        let json = r#"{"cmd":"seek_to","identity":"root:content view"}"#;
+        let cmd: CtrlCmd = serde_json::from_str(json).unwrap();
+        match cmd {
+            CtrlCmd::SeekTo { view, identity } => {
+                assert_eq!(view, "");
+                assert_eq!(identity, "root:content view");
+            }
             _ => panic!("wrong variant"),
         }
     }
@@ -1046,11 +1048,12 @@ mod tests {
         // construct in a unit test. Skip — the live behavior is covered
         // by the integration test in a later phase. This test is a
         // placeholder asserting the wire format is what we expect.
-        let json = r#"{"cmd":"visit","panel_path":"/cosmos"}"#;
+        let json = r#"{"cmd":"visit","identity":"root:cosmos"}"#;
         let parsed: CtrlCmd = serde_json::from_str(json).unwrap();
         match parsed {
-            CtrlCmd::Visit { panel_path, adherent } => {
-                assert_eq!(panel_path, "/cosmos");
+            CtrlCmd::Visit { view, identity, adherent } => {
+                assert_eq!(view, "");
+                assert_eq!(identity, "root:cosmos");
                 assert!(!adherent);
             }
             _ => panic!("wrong variant"),
@@ -1064,44 +1067,6 @@ mod tests {
             r.error.as_deref(),
             Some("not implemented in phase 3 skeleton")
         );
-    }
-
-    #[test]
-    fn resolve_root_returns_root() {
-        use crate::emPanelTree::PanelTree;
-        let mut tree = PanelTree::new();
-        let root = tree.create_root_deferred_view("root");
-        assert_eq!(resolve_panel_path(&tree, root, "/").unwrap(), root);
-        assert_eq!(resolve_panel_path(&tree, root, "").unwrap(), root);
-    }
-
-    #[test]
-    fn resolve_one_segment() {
-        use crate::emPanelTree::PanelTree;
-        let mut tree = PanelTree::new();
-        let root = tree.create_root_deferred_view("root");
-        let a = tree.create_child(root, "a", None);
-        assert_eq!(resolve_panel_path(&tree, root, "/a").unwrap(), a);
-    }
-
-    #[test]
-    fn resolve_nested_segments() {
-        use crate::emPanelTree::PanelTree;
-        let mut tree = PanelTree::new();
-        let root = tree.create_root_deferred_view("root");
-        let a = tree.create_child(root, "a", None);
-        let b = tree.create_child(a, "b", None);
-        assert_eq!(resolve_panel_path(&tree, root, "/a/b").unwrap(), b);
-    }
-
-    #[test]
-    fn resolve_missing_segment_returns_error() {
-        use crate::emPanelTree::PanelTree;
-        let mut tree = PanelTree::new();
-        let root = tree.create_root_deferred_view("root");
-        let err = resolve_panel_path(&tree, root, "/nonexistent").unwrap_err();
-        assert!(err.contains("no such panel"));
-        assert!(err.contains("nonexistent"));
     }
 
     #[test]
