@@ -1,50 +1,50 @@
 {
   "schema": {
-    "note": "This file is read and edited exclusively by LLMs. All fields documented here are always present on every entry of the matching kind \u2014 null when unknown or not yet applicable. Never omit a field that belongs to a kind's shape. Some fields are only non-null in specific statuses \u2014 see status_semantics for which fields apply to which statuses.",
+    "note": "This file is read and edited exclusively by LLMs. All fields documented here are always present on every entry of the matching kind — null when unknown or not yet applicable. Never omit a field that belongs to a kind's shape. Some fields are only non-null in specific statuses — see status_semantics for which fields apply to which statuses.",
     "universal_fields": {
-      "id": "string \u2014 F### for fix, D### for design, P### for perf. Zero-padded to three digits. ID prefix reflects kind at time of filing; if kind is reclassified, the ID prefix does not change (reclassification is recorded in fix_note).",
-      "kind": "fix | design | perf. fix: agent can autonomously investigate and resolve. design: requires human architectural or planning decisions before a fix can be written \u2014 out of scope for the debug harness. perf: measurement-driven, requires a separate protocol. Issues are filed as fix by default; the debug harness reclassifies to design if investigation reveals the fix requires human decisions (see run_debug.md).",
+      "id": "string — F### for fix, D### for design, P### for perf. Zero-padded to three digits. ID prefix reflects kind at time of filing; if kind is reclassified, the ID prefix does not change (reclassification is recorded in fix_note).",
+      "kind": "fix | design | perf. fix: agent can autonomously investigate and resolve. design: requires human architectural or planning decisions before a fix can be written — out of scope for the debug harness. perf: measurement-driven, requires a separate protocol. Issues are filed as fix by default; the debug harness reclassifies to design if investigation reveals the fix requires human decisions (see run_debug.md).",
       "status": "open | investigating | root-cause-found | needs-design | blocked | needs-manual-verification | closed. See status_semantics for meaning of each value.",
       "priority": "high | medium | low",
-      "title": "string \u2014 one line, plain English",
-      "description": "string \u2014 what is observed to be wrong and why it matters. Updated by the debug harness if investigation reveals a more precise understanding.",
-      "location": "string? \u2014 code address: file:line or subsystem name. null when not yet pinpointed.",
-      "caused_by": "string? \u2014 issue ID this is a direct downstream consequence of. null if independent.",
-      "introduced_commit": "string? \u2014 full or short git SHA where this was introduced. null if unknown.",
-      "introduced_date": "string? \u2014 ISO 8601 (YYYY-MM-DD) when first observed or committed. null if unknown.",
-      "fix_note": "string? \u2014 current best understanding of fix direction or design requirement. Updated by the debug harness as investigation progresses. For design issues: describes what human decision is required. null if not yet investigated.",
-      "investigation_file": "string? \u2014 path to active investigation scratchpad, e.g. docs/debug/investigations/F001.md. Set when investigation begins; remains set after close as a permanent investigation record.",
-      "root_cause_file": "string? \u2014 path to final root-cause narrative, e.g. docs/debug/investigations/F001-root-cause.md. Set when root cause is confirmed; never cleared.",
-      "blocked_question": "string? \u2014 the specific question a human must answer before investigation can continue. Only non-null when status is blocked. Human recovery: answer the question in fix_note and set status back to investigating.",
-      "fixed_in_commit": "string? \u2014 git SHA of the fix commit on main. Set when the harness commits the fix (at needs-manual-verification or closed time). null until fix is committed.",
-      "fixed_date": "string? \u2014 ISO 8601 date the fix was committed to main. null until fix is committed."
+      "title": "string — one line, plain English",
+      "description": "string — what is observed to be wrong and why it matters. Updated by the debug harness if investigation reveals a more precise understanding.",
+      "location": "string? — code address: file:line or subsystem name. null when not yet pinpointed.",
+      "caused_by": "string? — issue ID this is a direct downstream consequence of. null if independent.",
+      "introduced_commit": "string? — full or short git SHA where this was introduced. null if unknown.",
+      "introduced_date": "string? — ISO 8601 (YYYY-MM-DD) when first observed or committed. null if unknown.",
+      "fix_note": "string? — current best understanding of fix direction or design requirement. Updated by the debug harness as investigation progresses. For design issues: describes what human decision is required. null if not yet investigated.",
+      "investigation_file": "string? — path to active investigation scratchpad, e.g. docs/debug/investigations/F001.md. Set when investigation begins; remains set after close as a permanent investigation record.",
+      "root_cause_file": "string? — path to final root-cause narrative, e.g. docs/debug/investigations/F001-root-cause.md. Set when root cause is confirmed; never cleared.",
+      "blocked_question": "string? — the specific question a human must answer before investigation can continue. Only non-null when status is blocked. Human recovery: answer the question in fix_note and set status back to investigating.",
+      "fixed_in_commit": "string? — git SHA of the fix commit on main. Set when the harness commits the fix (at needs-manual-verification or closed time). null until fix is committed.",
+      "fixed_date": "string? — ISO 8601 date the fix was committed to main. null until fix is committed."
     },
     "status_semantics": {
       "open": "Not yet touched by the debug harness.",
-      "investigating": "Active or paused investigation. Scratchpad exists at investigation_file. Resumable by the harness \u2014 it will read the scratchpad from main and continue from the first unchecked next_steps item.",
+      "investigating": "Active or paused investigation. Scratchpad exists at investigation_file. Resumable by the harness — it will read the scratchpad from main and continue from the first unchecked next_steps item.",
       "root-cause-found": "An agent (possibly from a prior run) concluded the root cause is known. This is a belief, not a verified fact. A resuming agent should read root_cause_file and verify the diagnosis before committing to fix mode. If the fix attempt fails, downgrade back to investigating. Scratchpad and root_cause_file are both populated.",
-      "needs-design": "Investigation revealed the fix requires human architectural or planning decisions \u2014 the agent cannot autonomously resolve this. fix_note describes what the design session must decide. kind has been updated to design; the harness skips design issues. Human recovery: run a brainstorming or planning session, then either set kind back to fix and status to investigating if a concrete fix emerges, or leave as design.",
+      "needs-design": "Investigation revealed the fix requires human architectural or planning decisions — the agent cannot autonomously resolve this. fix_note describes what the design session must decide. kind has been updated to design; the harness skips design issues. Human recovery: run a brainstorming or planning session, then either set kind back to fix and status to investigating if a concrete fix emerges, or leave as design.",
       "blocked": "Investigation stalled: 3+ distinct hypotheses ruled out with evidence, cannot proceed without human input. blocked_question states what the human must answer. Human recovery: answer in fix_note and set status to investigating.",
-      "needs-manual-verification": "A fix has been committed to main and tests pass, but the issue requires human runtime confirmation (e.g. UI/input behaviour not covered by cargo-nextest). fixed_in_commit points to the fix commit. Human recovery: launch the app and verify. If confirmed, set status to closed. If fix did not work, set status back to investigating and clear fixed_in_commit/fixed_date \u2014 the harness will resume on the next run.",
+      "needs-manual-verification": "A fix has been committed to main and tests pass, but the issue requires human runtime confirmation (e.g. UI/input behaviour not covered by cargo-nextest). fixed_in_commit points to the fix commit. Human recovery: launch the app and verify. If confirmed, set status to closed. If fix did not work, set status back to investigating and clear fixed_in_commit/fixed_date — the harness will resume on the next run.",
       "closed": "Resolved, verified at runtime (or by automated tests), and committed to main. fixed_in_commit and fixed_date are populated."
     },
     "kind_specific_fields": {
       "fix": {
-        "repro": "string? \u2014 reproduction steps. null if not yet documented."
+        "repro": "string? — reproduction steps. null if not yet documented."
       },
       "design": {
-        "repro": "string? \u2014 reproduction steps or description of the undesired behaviour that motivated filing. null if not applicable.",
+        "repro": "string? — reproduction steps or description of the undesired behaviour that motivated filing. null if not applicable.",
         "details": {
-          "audit_source": "string? \u2014 original E### ID from docs/superpowers/notes/2026-04-19-port-divergence-raw-material.json if this issue originated from the port divergence audit. null otherwise."
+          "audit_source": "string? — original E### ID from docs/superpowers/notes/2026-04-19-port-divergence-raw-material.json if this issue originated from the port divergence audit. null otherwise."
         }
       },
       "perf": {
-        "repro": "string? \u2014 reproduction steps. null if not yet documented.",
+        "repro": "string? — reproduction steps. null if not yet documented.",
         "details": {
-          "metric": "string? \u2014 what is measured, e.g. frame_time_ms, paint_throughput_mpx_per_sec. null if not yet defined.",
-          "observed": "string? \u2014 measured value at time of filing. null if not yet measured.",
-          "target": "string? \u2014 threshold or C++ baseline this should meet. null if not yet defined.",
-          "benchmark": "string? \u2014 command to reproduce the measurement. null if not yet written."
+          "metric": "string? — what is measured, e.g. frame_time_ms, paint_throughput_mpx_per_sec. null if not yet defined.",
+          "observed": "string? — measured value at time of filing. null if not yet measured.",
+          "target": "string? — threshold or C++ baseline this should meet. null if not yet defined.",
+          "benchmark": "string? — command to reproduce the measurement. null if not yet written."
         }
       }
     }
@@ -55,13 +55,13 @@
       "kind": "design",
       "status": "open",
       "priority": "high",
-      "title": "Rc<RefCell<EngineScheduler>> \u2014 crosscutting architectural divergence",
+      "title": "Rc<RefCell<EngineScheduler>> — crosscutting architectural divergence",
       "description": "C++ emGUIFramework owns the scheduler directly; engines reach it via a raw pointer threaded through Cycle/EngineCtx. Rust uses Rc<RefCell<EngineScheduler>> introduced pre-Port-Ideology (2026-03-04), unannotated. All 12 B01 workarounds (pending queues, try_borrow guards, SchedOp variants) are downstream consequences.",
       "location": "crates/emcore/src/emGUIFramework.rs:89",
       "caused_by": null,
       "introduced_commit": "78c113b",
       "introduced_date": "2026-03-04",
-      "fix_note": "Requires architectural design decision: choose among three alternatives documented in docs/superpowers/notes/2026-04-19-scheduler-refcell-workaround-ledger.md \u00a76 \u2014 (1) event loop owns &mut EngineScheduler threaded through Cycle/EngineCtx, (2) interior sharding, (3) other. Design session required before implementation.",
+      "fix_note": "Requires architectural design decision: choose among three alternatives documented in docs/superpowers/notes/2026-04-19-scheduler-refcell-workaround-ledger.md §6 — (1) event loop owns &mut EngineScheduler threaded through Cycle/EngineCtx, (2) interior sharding, (3) other. Design session required before implementation.",
       "investigation_file": null,
       "root_cause_file": null,
       "blocked_question": null,
@@ -83,7 +83,7 @@
       "caused_by": "D001",
       "introduced_commit": null,
       "introduced_date": "2026-04-18",
-      "fix_note": "Resolves automatically when D001 is resolved \u2014 direct &mut access eliminates the re-entrancy. No independent design work required.",
+      "fix_note": "Resolves automatically when D001 is resolved — direct &mut access eliminates the re-entrancy. No independent design work required.",
       "investigation_file": null,
       "root_cause_file": null,
       "blocked_question": null,
@@ -111,7 +111,7 @@
       "blocked_question": null,
       "fixed_in_commit": "6769a990",
       "fixed_date": "2026-04-24",
-      "repro": "Launch app. Scroll-wheel zoom in/out to confirm it works. Alt+Tab away. Alt+Tab back. Attempt scroll-wheel zoom \u2014 broken."
+      "repro": "Launch app. Scroll-wheel zoom in/out to confirm it works. Alt+Tab away. Alt+Tab back. Attempt scroll-wheel zoom — broken."
     },
     {
       "id": "F002",
@@ -119,7 +119,7 @@
       "status": "open",
       "priority": "medium",
       "title": "Resizing or moving the window intermittently turns the background gradient white",
-      "description": "When the window is resized or moved, the background gradient behind the Eagle panel sometimes renders as solid white instead of the expected gradient. The failure is inconsistent \u2014 it does not happen on every resize/move, making it likely a missed repaint or stale surface state.",
+      "description": "When the window is resized or moved, the background gradient behind the Eagle panel sometimes renders as solid white instead of the expected gradient. The failure is inconsistent — it does not happen on every resize/move, making it likely a missed repaint or stale surface state.",
       "location": null,
       "caused_by": null,
       "introduced_commit": null,
@@ -130,7 +130,7 @@
       "blocked_question": null,
       "fixed_in_commit": null,
       "fixed_date": null,
-      "repro": "Launch app \u2014 the background gradient behind the Eagle may already be solid white on first paint. If not, drag the window title bar to move it or drag a window edge to resize it; the gradient may turn solid white. The failure is intermittent in both cases; relaunch or try several resize/move actions to trigger it."
+      "repro": "Launch app — the background gradient behind the Eagle may already be solid white on first paint. If not, drag the window title bar to move it or drag a window edge to resize it; the gradient may turn solid white. The failure is intermittent in both cases; relaunch or try several resize/move actions to trigger it."
     },
     {
       "id": "F008",
@@ -138,12 +138,12 @@
       "status": "closed",
       "priority": "high",
       "title": "All app panels fail to load: dlopen error on libemFileMan.so",
-      "description": "Every app panel inside the cosmos (File System, Home, emStocks) fails to load with the error: \"failed to load library 'libemFileMan.so': dlopen failed\". Root cause: plugin crates were [dev-dependencies] only, so cargo never built their cdylibs for release; RUNPATH also only covered target/release/ not target/release/deps/ where cargo places cdylib deps. Secondary: Home.emFileLink used Path='~' (shell tilde, not expanded by OS) resolving to nonexistent VcItemFiles/~ \u2014 fixed to use BasePathType='home'.",
+      "description": "Every app panel inside the cosmos (File System, Home, emStocks) fails to load with the error: \"failed to load library 'libemFileMan.so': dlopen failed\". Root cause: plugin crates were [dev-dependencies] only, so cargo never built their cdylibs for release; RUNPATH also only covered target/release/ not target/release/deps/ where cargo places cdylib deps. Secondary: Home.emFileLink used Path='~' (shell tilde, not expanded by OS) resolving to nonexistent VcItemFiles/~ — fixed to use BasePathType='home'.",
       "location": "crates/eaglemode/Cargo.toml, crates/eaglemode/build.rs, etc/emMain/VcItemFiles/Home.emFileLink",
       "caused_by": null,
       "introduced_commit": null,
       "introduced_date": "2026-04-23",
-      "fix_note": "(1) Moved emfileman and emstocks from [dev-dependencies] to [dependencies] in eaglemode/Cargo.toml. Extended RUNPATH in build.rs to $ORIGIN:$ORIGIN/deps. (2) Fixed Home.emFileLink: changed Path='~' to BasePathType='home', resolves to $HOME. Remaining visual: before AutoExpand emFileLinkPanel shows dark-red 'No file model' (NoFileModel state) because emRecFileModel does not implement FileModelState \u2014 see new issue F009.",
+      "fix_note": "(1) Moved emfileman and emstocks from [dev-dependencies] to [dependencies] in eaglemode/Cargo.toml. Extended RUNPATH in build.rs to $ORIGIN:$ORIGIN/deps. (2) Fixed Home.emFileLink: changed Path='~' to BasePathType='home', resolves to $HOME. Remaining visual: before AutoExpand emFileLinkPanel shows dark-red 'No file model' (NoFileModel state) because emRecFileModel does not implement FileModelState — see new issue F009.",
       "investigation_file": "docs/debug/investigations/F008.md",
       "root_cause_file": null,
       "blocked_question": null,
@@ -157,7 +157,7 @@
       "status": "open",
       "priority": "medium",
       "title": "Extraneous 'Home' panel appears in cosmos with unknown provenance",
-      "description": "A 'Home' panel is present in the cosmos but its origin is unclear \u2014 it may be a misplaced or incorrectly wired attempt to port a feature from C++ Eagle Mode. Investigation should determine: (1) what C++ behaviour or panel the 'Home' entry is intended to correspond to, (2) whether it is being created by correct or incorrect code, and (3) whether it should exist at all or should be removed/relocated.",
+      "description": "A 'Home' panel is present in the cosmos but its origin is unclear — it may be a misplaced or incorrectly wired attempt to port a feature from C++ Eagle Mode. Investigation should determine: (1) what C++ behaviour or panel the 'Home' entry is intended to correspond to, (2) whether it is being created by correct or incorrect code, and (3) whether it should exist at all or should be removed/relocated.",
       "location": null,
       "caused_by": null,
       "introduced_commit": null,
@@ -176,18 +176,18 @@
       "status": "investigating",
       "priority": "high",
       "title": "Control panel shows no app icons",
-      "description": "The top control panel bar is empty \u2014 no app icons are rendered. In C++ Eagle Mode the panel displays a context-sensitive set of app icons (e.g. New Window, Fullscreen, Select Files, Help, Root, Chess, MetaWalk, Roleplay, Home, Virtual Cosmos, Mines, Clock at the Eagle/top level; a richer file-manager toolbar when zoomed into a directory). See C++ reference screenshots: /home/alex/Pictures/Screenshots/em_cpp_fully_zoomed_out.png (max zoom out) and /home/alex/Pictures/Screenshots/em_cpp_fresh_state.png (fresh start / file manager view). User-observed symptom is that the entire left-half (lMain/bookmarks) region is blank at runtime \u2014 not merely buttons-without-icons.",
+      "description": "The top control panel bar is empty — no app icons are rendered. In C++ Eagle Mode the panel displays a context-sensitive set of app icons (e.g. New Window, Fullscreen, Select Files, Help, Root, Chess, MetaWalk, Roleplay, Home, Virtual Cosmos, Mines, Clock at the Eagle/top level; a richer file-manager toolbar when zoomed into a directory). See C++ reference screenshots: /home/alex/Pictures/Screenshots/em_cpp_fully_zoomed_out.png (max zoom out) and /home/alex/Pictures/Screenshots/em_cpp_fresh_state.png (fresh start / file manager view). User-observed symptom is that the entire left-half (lMain/bookmarks) region is blank at runtime — not merely buttons-without-icons.",
       "location": null,
       "caused_by": null,
       "introduced_commit": null,
       "introduced_date": "2026-04-23",
-      "fix_note": "Prior investigation (b304b1f2, merged via 0bfa0868) diagnosed 'emBookmarkButton::Paint never loads its TGA icon' and added lazy icon loading. Runtime verification on 2026-04-24 by user: control panel still blank \u2014 the fix addresses a real secondary defect (buttons without icons would have rendered as colored rect + text) but does not cause buttons to appear. The agent was misled by the golden test control_panel_layout_children (E1.4 in docs/debug/investigations/F006.md), which asserts lMain has a non-zero layout rect, and concluded buttons exist. That test covers layout wiring only, not bookmark button instantiation/painting in the running app. Reopening to investigate why bookmark buttons are not visible in the actual app: candidates include (1) emBookmarksPanel children never created, (2) children created but Panel::Paint not dispatched, (3) bookmarks model not loaded so no entries exist, (4) layout rect exists but is sized/positioned such that children paint outside visible area. Do not discard the prior icon-loading change \u2014 it is still correct for when buttons do appear.",
+      "fix_note": "Prior investigation (b304b1f2, merged via 0bfa0868) diagnosed 'emBookmarkButton::Paint never loads its TGA icon' and added lazy icon loading. Runtime verification on 2026-04-24 by user: control panel still blank — the fix addresses a real secondary defect (buttons without icons would have rendered as colored rect + text) but does not cause buttons to appear. The agent was misled by the golden test control_panel_layout_children (E1.4 in docs/debug/investigations/F006.md), which asserts lMain has a non-zero layout rect, and concluded buttons exist. That test covers layout wiring only, not bookmark button instantiation/painting in the running app. Reopening to investigate why bookmark buttons are not visible in the actual app: candidates include (1) emBookmarksPanel children never created, (2) children created but Panel::Paint not dispatched, (3) bookmarks model not loaded so no entries exist, (4) layout rect exists but is sized/positioned such that children paint outside visible area. Do not discard the prior icon-loading change — it is still correct for when buttons do appear.",
       "investigation_file": "docs/debug/investigations/F006.md",
       "root_cause_file": null,
       "blocked_question": null,
       "fixed_in_commit": null,
       "fixed_date": null,
-      "repro": "Launch app. Observe the top control panel \u2014 no app icons are visible. In C++ Eagle Mode the same panel shows app icons at every zoom level."
+      "repro": "Launch app. Observe the top control panel — no app icons are visible. In C++ Eagle Mode the same panel shows app icons at every zoom level."
     },
     {
       "id": "F005",
@@ -195,7 +195,7 @@
       "status": "open",
       "priority": "medium",
       "title": "Scroll-wheel zoom over the control panel zooms the Eagle view instead of the control panel",
-      "description": "When the mouse is hovered over the top control panel and the scroll wheel is used, the Eagle panel (bottom section) zooms in/out as if the cursor were hovering over it, while the control panel stays at a fixed zoom. Expected behavior (matching C++ Eagle Mode): each panel zooms independently \u2014 scroll over the control panel zooms the control panel, scroll over the Eagle panel zooms the Eagle panel. This likely indicates that scroll events over the control panel are being routed to the wrong panel or that independent per-panel zoom is not yet implemented, which may be a functionality gap.",
+      "description": "When the mouse is hovered over the top control panel and the scroll wheel is used, the Eagle panel (bottom section) zooms in/out as if the cursor were hovering over it, while the control panel stays at a fixed zoom. Expected behavior (matching C++ Eagle Mode): each panel zooms independently — scroll over the control panel zooms the control panel, scroll over the Eagle panel zooms the Eagle panel. This likely indicates that scroll events over the control panel are being routed to the wrong panel or that independent per-panel zoom is not yet implemented, which may be a functionality gap.",
       "location": null,
       "caused_by": null,
       "introduced_commit": null,
@@ -214,7 +214,7 @@
       "status": "open",
       "priority": "medium",
       "title": "Clicking the top control panel expands an unexpected grey bar beneath it",
-      "description": "Clicking anywhere on the screen-width blue-ish control panel bar at the top of the window causes a large grey bar to appear and expand below it, obscuring part of the view. See screenshot: /home/alex/Pictures/Screenshots/Screenshot From 2026-04-23 11-04-21.png. Expected behavior (matching C++ Eagle Mode): a click on the control panel does nothing. Investigation should also identify what behavior the grey popup is attempting to execute \u2014 whatever code path triggers it may be incorrectly wired up and could expose additional bugs in that implementation.",
+      "description": "Clicking anywhere on the screen-width blue-ish control panel bar at the top of the window causes a large grey bar to appear and expand below it, obscuring part of the view. See screenshot: /home/alex/Pictures/Screenshots/Screenshot From 2026-04-23 11-04-21.png. Expected behavior (matching C++ Eagle Mode): a click on the control panel does nothing. Investigation should also identify what behavior the grey popup is attempting to execute — whatever code path triggers it may be incorrectly wired up and could expose additional bugs in that implementation.",
       "location": null,
       "caused_by": null,
       "introduced_commit": null,
@@ -244,7 +244,7 @@
       "blocked_question": null,
       "fixed_in_commit": null,
       "fixed_date": null,
-      "repro": "Launch app. Observe the first ~0.5 s of rendering \u2014 the Eagle appears partially zoomed in, then snaps to fully zoomed out."
+      "repro": "Launch app. Observe the first ~0.5 s of rendering — the Eagle appears partially zoomed in, then snaps to fully zoomed out."
     },
     {
       "id": "F009",
@@ -263,20 +263,20 @@
       "blocked_question": null,
       "fixed_in_commit": "63a2275b",
       "fixed_date": "2026-04-23",
-      "repro": "Launch app. Navigate into cosmos. Observe file manager panels (FS, Home) \u2014 they show a small dark-red box before zooming in. Once zoomed in enough for AutoExpand, the red disappears and the panel renders normally."
+      "repro": "Launch app. Navigate into cosmos. Observe file manager panels (FS, Home) — they show a small dark-red box before zooming in. Once zoomed in enough for AutoExpand, the red disappears and the panel renders normally."
     },
     {
       "id": "F010",
       "kind": "fix",
       "status": "investigating",
       "priority": "high",
-      "title": "Directory panel renders incorrectly: black bg, no outer border, missing left info, slow loading",
-      "description": "Reframed 2026-04-25 after manual rejection of commit 287f7539. F010 is a cluster of 4 distinct dir-panel render-chain divergences vs C++ (Card-Blue at same zoom into '/'): (1a) emDirPanel::Paint skips Clear(DirContentColor) during loading \u2014 background renders black instead of light-grey; (1b) emDirEntryPanel never paints the OuterBorder gradient image and the .tga assets (CardOuterBorder.tga, CardInnerBorder.tga, etc.) are not shipped in res/ \u2014 entry chrome looks flat; (2) PaintInfo Rust analogue paints only time_str, omitting Type/Permissions/Size/Owner/Group fields and all labels \u2014 left info pane is empty; (3) directory loading crawls cell-by-cell with 'Loading: NN%'. Phases 1\u20135 fixed the StartupEngine wake (commit 287f7539, preserved); that work was necessary but does not address symptoms (1a)(1b)(2)(3). See investigation_file Phase 6 reframe.",
-      "location": "crates/emfileman/src/emDirPanel.rs:477-491 (Paint Clear gating); crates/emfileman/src/emDirEntryPanel.rs:492-610 (per-entry Paint; missing OuterBorder + 5 of 6 info fields); crates/emfileman/src/emFileManViewConfig.rs (theme record \u2014 missing OuterBorder*/InnerBorder* fields); res/emFileMan/themes/ (missing border .tga assets)",
+      "title": "Directory panel renders incorrectly: black bg, no outer border, missing left info",
+      "description": "Reframed 2026-04-25 after manual rejection of commit 287f7539. F010 is a cluster of 3 distinct dir-panel render-chain divergences vs C++ (Card-Blue at same zoom into '/'): (1a) emDirPanel::Paint skips Clear(DirContentColor) during loading — background renders black instead of light-grey; (1b) emDirEntryPanel never paints the OuterBorder gradient image and the .tga assets (CardOuterBorder.tga, CardInnerBorder.tga, etc.) are not shipped in res/ — entry chrome looks flat; (2) PaintInfo Rust analogue paints only time_str, omitting Type/Permissions/Size/Owner/Group fields and all labels — left info pane is empty. Phases 1–5 fixed the StartupEngine wake (commit 287f7539, preserved); that work was necessary but does not address symptoms (1a)(1b)(2). Slow-loading symptom split off as F017 on 2026-04-25. See investigation_file Phase 6 reframe.",
+      "location": "crates/emfileman/src/emDirPanel.rs:477-491 (Paint Clear gating); crates/emfileman/src/emDirEntryPanel.rs:492-610 (per-entry Paint; missing OuterBorder + 5 of 6 info fields); crates/emfileman/src/emFileManViewConfig.rs (theme record — missing OuterBorder*/InnerBorder* fields); res/emFileMan/themes/ (missing border .tga assets)",
       "caused_by": null,
       "introduced_commit": null,
       "introduced_date": "2026-04-23",
-      "fix_note": "Phase 6 reframe (2026-04-25): Phase 5 StartupEngine fix preserved (commit 287f7539). Remaining work is a cluster of three independent dir-panel render-chain divergences plus an unidentified loading-speed cause. HYPOTHESIS X: emDirPanel::Paint must call Clear(DirContentColor) unconditionally (C++ emDirPanel.cpp:159-170). HYPOTHESIS Y: extend emFileManThemeData with OuterBorder*/InnerBorder* fields, ship .tga assets, call paint_border_image in emDirEntryPanel::Paint (C++ emDirEntryPanel.cpp:318-335). HYPOTHESIS Z: port the C++ PaintInfo body (emDirEntryPanel.cpp:484-715) emitting all 6 fields with labels into emDirEntryPanel::Paint info area. HYPOTHESIS W (slow loading): root cause unknown \u2014 throttle structure is per-call one-entry in BOTH ports (C++ emFileModel.cpp:340 also one-per-call); candidates are Cycle-frequency divergence, per-call cost, or step_loading bypass. W likely splits to F017. See docs/debug/investigations/F010.md Phase 6 section for full evidence.",
+      "fix_note": "Phase 6 reframe (2026-04-25): Phase 5 StartupEngine fix preserved (commit 287f7539). Remaining work is a cluster of three independent dir-panel render-chain divergences. HYPOTHESIS X: emDirPanel::Paint must call Clear(DirContentColor) unconditionally (C++ emDirPanel.cpp:159-170). HYPOTHESIS Y: extend emFileManThemeData with OuterBorder*/InnerBorder* fields, ship .tga assets, call paint_border_image in emDirEntryPanel::Paint (C++ emDirEntryPanel.cpp:318-335). HYPOTHESIS Z: port the C++ PaintInfo body (emDirEntryPanel.cpp:484-715) emitting all 6 fields with labels into emDirEntryPanel::Paint info area. Slow-loading symptom (formerly HYPOTHESIS W) split off as F017 on 2026-04-25. See docs/debug/investigations/F010.md Phase 6 section for full evidence.",
       "investigation_file": "docs/debug/investigations/F010.md",
       "root_cause_file": "docs/debug/investigations/F010-root-cause.md",
       "blocked_question": null,
@@ -289,26 +289,26 @@
       "kind": "fix",
       "status": "closed",
       "priority": "high",
-      "title": "emDirPanel shows 'Wait...' indefinitely \u2014 PanelCycleEngine never dispatched in production",
-      "description": "emDirPanel stays at VirtualFileState::Waiting ('Wait...' yellow text) forever in the running app. Root cause chain: (1) emSubViewPanel::new registered sub-tree PanelCycleEngines with PanelScope::SubView{window_id: WindowId::dummy()} because emMainWindow constructed emSubViewPanel before the real WindowId was known. (2) The scheduler's SubView dispatch arm calls windows.get_mut(&window_id) \u2014 WindowId(0) never appears in the windows map \u2014 so every sub-tree engine re-sleeps every frame. (3) Even after (1) was fixed, PanelCycleEngine::Cycle called ctx_tree.take_behavior(self.panel_id) on the outer tree, but self.panel_id is a sub-tree id \u2014 returned None, engine returned false. (4) emDirPanel::Cycle never fires, state machine stays at Waiting.",
+      "title": "emDirPanel shows 'Wait...' indefinitely — PanelCycleEngine never dispatched in production",
+      "description": "emDirPanel stays at VirtualFileState::Waiting ('Wait...' yellow text) forever in the running app. Root cause chain: (1) emSubViewPanel::new registered sub-tree PanelCycleEngines with PanelScope::SubView{window_id: WindowId::dummy()} because emMainWindow constructed emSubViewPanel before the real WindowId was known. (2) The scheduler's SubView dispatch arm calls windows.get_mut(&window_id) — WindowId(0) never appears in the windows map — so every sub-tree engine re-sleeps every frame. (3) Even after (1) was fixed, PanelCycleEngine::Cycle called ctx_tree.take_behavior(self.panel_id) on the outer tree, but self.panel_id is a sub-tree id — returned None, engine returned false. (4) emDirPanel::Cycle never fires, state machine stays at Waiting.",
       "location": "crates/emcore/src/emSubViewPanel.rs (dummy WindowId), crates/emmain/src/emMainWindow.rs (construction before window_id known), crates/emcore/src/emPanelCycleEngine.rs (SubView branch unimplemented)",
       "caused_by": null,
       "introduced_commit": null,
       "introduced_date": "2026-04-23",
-      "fix_note": "Four-part fix: (1) emSubViewPanel::new gains outer_window_id parameter. (2) emMainWindow moves emSubViewPanel construction to after window_id is known. (3) build.rs RUNPATH swapped to $ORIGIN/deps:$ORIGIN. (4) PanelCycleEngine::Cycle branches on self.scope \u2014 SubView arm navigates outer tree \u2192 emSubViewPanel behavior \u2192 sub_tree, then take/dispatch/put against sub_tree. Integration test sub_tree_panel_cycle_engine_dispatched_via_outer_scheduler verifies end-to-end. 2695 tests pass. Verified by user in running app.",
+      "fix_note": "Four-part fix: (1) emSubViewPanel::new gains outer_window_id parameter. (2) emMainWindow moves emSubViewPanel construction to after window_id is known. (3) build.rs RUNPATH swapped to $ORIGIN/deps:$ORIGIN. (4) PanelCycleEngine::Cycle branches on self.scope — SubView arm navigates outer tree → emSubViewPanel behavior → sub_tree, then take/dispatch/put against sub_tree. Integration test sub_tree_panel_cycle_engine_dispatched_via_outer_scheduler verifies end-to-end. 2695 tests pass. Verified by user in running app.",
       "investigation_file": "docs/debug/investigations/F011.md",
       "root_cause_file": "crates/emcore/src/emPanelCycleEngine.rs",
       "blocked_question": null,
       "fixed_in_commit": "ec0da9f5",
       "fixed_date": "2026-04-24",
-      "repro": "Launch app. Navigate into cosmos. Zoom into the File System panel. emDirPanel shows 'Wait...' in yellow text indefinitely \u2014 no directory listing appears."
+      "repro": "Launch app. Navigate into cosmos. Zoom into the File System panel. emDirPanel shows 'Wait...' in yellow text indefinitely — no directory listing appears."
     },
     {
       "id": "F012",
       "kind": "fix",
       "status": "needs-manual-verification",
       "priority": "high",
-      "title": "Control panel ContentControlPanel never created \u2014 context-sensitive app icons missing",
+      "title": "Control panel ContentControlPanel never created — context-sensitive app icons missing",
       "description": "In C++ Eagle Mode, emMainControlPanel has two children: lMain (general controls + bookmarks, weight 11.37) and ContentControlPanel (context-specific icons, weight 21.32). ContentControlPanel is created via ContentView.CreateControlPanel() and changes based on the active panel in the content view. In the Rust port, ControlPanelBridge had three bugs: cp_signal wired to outer window's emView (not content sub-view), wrong panel IDs (root_id instead of ctrl_id/content_id), and Cycle was a log stub.",
       "location": "crates/emmain/src/emMainWindow.rs (ControlPanelBridge)",
       "caused_by": null,
@@ -328,7 +328,7 @@
       "status": "closed",
       "priority": "high",
       "title": "Panic when zooming into file manager: CreateControlPanel requires scheduler-reach PanelCtx",
-      "description": "Zooming into the file system panel triggers a panic at crates/emfileman/src/emDirPanel.rs:529 \u2014 emDirPanel::CreateControlPanel calls parent_ctx.as_sched_ctx().expect(\"CreateControlPanel requires scheduler-reach PanelCtx\") and the provided PanelCtx does not have scheduler reach, so the expect fires and the process aborts (SIGSEGV follows the panic). Likely surfaced by the F012 ContentControlPanel wiring \u2014 the new cross-tree CreateControlPanel dispatch is handing emDirPanel a PanelCtx without scheduler access, whereas emDirPanel's C++ analogue can construct emFileManControlPanel unconditionally.",
+      "description": "Zooming into the file system panel triggers a panic at crates/emfileman/src/emDirPanel.rs:529 — emDirPanel::CreateControlPanel calls parent_ctx.as_sched_ctx().expect(\"CreateControlPanel requires scheduler-reach PanelCtx\") and the provided PanelCtx does not have scheduler reach, so the expect fires and the process aborts (SIGSEGV follows the panic). Likely surfaced by the F012 ContentControlPanel wiring — the new cross-tree CreateControlPanel dispatch is handing emDirPanel a PanelCtx without scheduler access, whereas emDirPanel's C++ analogue can construct emFileManControlPanel unconditionally.",
       "location": "crates/emcore/src/emPanelTree.rs:2120 (create_control_panel_in builds PanelCtx::new without scheduler reach); panic surfaces at crates/emfileman/src/emDirPanel.rs:529 and crates/emfileman/src/emDirEntryPanel.rs:624",
       "caused_by": "F012",
       "introduced_commit": "851ca26b",
@@ -346,8 +346,8 @@
       "kind": "fix",
       "status": "open",
       "priority": "medium",
-      "title": "File-manager ContentControlPanel renders incorrectly \u2014 appears tiny/zoomed-out, content unreadable",
-      "description": "With F012's ContentControlPanel wiring in place, selecting a file-manager panel causes something to render in the right half of the top control-panel strip, but it is drawn at a very small scale \u2014 looks like a miniature menu, illegible, not matching the expected emFileManControlPanel layout (Select Files, Help, etc.). Likely a layout/viewport/zoom problem in the cross-tree ContentControlPanel path rather than missing creation. Observed 2026-04-24 runtime verification of F012.",
+      "title": "File-manager ContentControlPanel renders incorrectly — appears tiny/zoomed-out, content unreadable",
+      "description": "With F012's ContentControlPanel wiring in place, selecting a file-manager panel causes something to render in the right half of the top control-panel strip, but it is drawn at a very small scale — looks like a miniature menu, illegible, not matching the expected emFileManControlPanel layout (Select Files, Help, etc.). Likely a layout/viewport/zoom problem in the cross-tree ContentControlPanel path rather than missing creation. Observed 2026-04-24 runtime verification of F012.",
       "location": "crates/emmain/src/emMainWindow.rs (ControlPanelBridge / set_content_control_panel); crates/emcore/src/emPanelTree.rs (create_control_panel_in); emFileManControlPanel layout",
       "caused_by": "F012",
       "introduced_commit": "851ca26b",
@@ -358,7 +358,7 @@
       "blocked_question": null,
       "fixed_in_commit": null,
       "fixed_date": null,
-      "repro": "Launch app. Zoom into the file system panel. Observe the right side of the top control-panel strip \u2014 it contains rendered content, but drawn at an incorrect (very small) scale, unreadable, not matching the expected emFileManControlPanel layout."
+      "repro": "Launch app. Zoom into the file system panel. Observe the right side of the top control-panel strip — it contains rendered content, but drawn at an incorrect (very small) scale, unreadable, not matching the expected emFileManControlPanel layout."
     },
     {
       "id": "P001",
@@ -391,26 +391,26 @@
       "status": "closed",
       "priority": "low",
       "title": "f010_subview_dump_nests_under_home_view_context asserts state the command sequence cannot reach",
-      "description": "The integration test at crates/eaglemode/tests/subview_dump_integration.rs:46 asserts dump.contains(\"emDirPanel\") after sending `visit view=\"root:content view\" identity=\"::home\"`, but the sequence cannot produce an emDirPanel record. (1) `home` is not a child of cosmos at the time the visit is sent \u2014 emVirtualCosmosPanel auto-expands children only after cosmos becomes Viewed, and the test does not wait for that. (2) resolve_identity(\"::home\") therefore errors and the visit is a no-op. (3) Even if it succeeded, `home` resolves to an emVirtualCosmosPanel child (a directory entry view), not an emDirPanel \u2014 reaching emDirPanel requires zooming further into the home directory and waiting for the dir model to load. The test fails for reasons unrelated to whether F010's user-visible blank-listing symptom is fixed.",
+      "description": "The integration test at crates/eaglemode/tests/subview_dump_integration.rs:46 asserts dump.contains(\"emDirPanel\") after sending `visit view=\"root:content view\" identity=\"::home\"`, but the sequence cannot produce an emDirPanel record. (1) `home` is not a child of cosmos at the time the visit is sent — emVirtualCosmosPanel auto-expands children only after cosmos becomes Viewed, and the test does not wait for that. (2) resolve_identity(\"::home\") therefore errors and the visit is a no-op. (3) Even if it succeeded, `home` resolves to an emVirtualCosmosPanel child (a directory entry view), not an emDirPanel — reaching emDirPanel requires zooming further into the home directory and waiting for the dir model to load. The test fails for reasons unrelated to whether F010's user-visible blank-listing symptom is fixed.",
       "location": "crates/eaglemode/tests/subview_dump_integration.rs:46-92",
       "caused_by": "F010",
       "introduced_commit": null,
       "introduced_date": "2026-04-25",
-      "fix_note": "Two-part fix. Phase 1 (commit 0f26bf91): added a `wait_for { panel_exists | panel_viewed | file_loaded }` control-channel command mirroring wait_idle's parking pattern, plus a `file_load_status` PanelBehavior trait method (default None) overridden on emFilePanel/emDirPanel/emFileLinkPanel. Phase 2 calibration confirmed the deep cascade (cosmos\u2192home item\u2192emFileLinkPanel\u2192emDirPanel) cannot be triggered by Visit/VisitFullsized alone \u2014 view-condition thresholds along the chain require zoom-driven progression that the control surface does not expose. Phase 3 (commit 4cf09eae): rewrote the test using wait_for to assert what F010's structural fix actually delivers \u2014 visit `root:content view`, wait_for panel_viewed, wait_idle so the inner wrapper engine cycles, dump, assert emVirtualCosmosPanel record present in the sub-view tree. That regresses if F010 is reverted. emDirPanel reachability deferred to F016.",
+      "fix_note": "Two-part fix. Phase 1 (commit 0f26bf91): added a `wait_for { panel_exists | panel_viewed | file_loaded }` control-channel command mirroring wait_idle's parking pattern, plus a `file_load_status` PanelBehavior trait method (default None) overridden on emFilePanel/emDirPanel/emFileLinkPanel. Phase 2 calibration confirmed the deep cascade (cosmos→home item→emFileLinkPanel→emDirPanel) cannot be triggered by Visit/VisitFullsized alone — view-condition thresholds along the chain require zoom-driven progression that the control surface does not expose. Phase 3 (commit 4cf09eae): rewrote the test using wait_for to assert what F010's structural fix actually delivers — visit `root:content view`, wait_for panel_viewed, wait_idle so the inner wrapper engine cycles, dump, assert emVirtualCosmosPanel record present in the sub-view tree. That regresses if F010 is reverted. emDirPanel reachability deferred to F016.",
       "investigation_file": null,
       "root_cause_file": null,
       "blocked_question": null,
       "fixed_in_commit": "4cf09eae",
       "fixed_date": "2026-04-25",
-      "repro": "cargo test --test subview_dump_integration -- --ignored --nocapture f010_subview_dump_nests_under_home_view_context \u2014 panics on `dump must contain emDirPanel rec` even after the F010 fix lands and the inner content view's StartupEngine zoom to cosmos works (verified via dlog traces in /tmp/F010_dlog_after_wake.stderr)."
+      "repro": "cargo test --test subview_dump_integration -- --ignored --nocapture f010_subview_dump_nests_under_home_view_context — panics on `dump must contain emDirPanel rec` even after the F010 fix lands and the inner content view's StartupEngine zoom to cosmos works (verified via dlog traces in /tmp/F010_dlog_after_wake.stderr)."
     },
     {
       "id": "F016",
       "kind": "fix",
       "status": "investigating",
       "priority": "high",
-      "title": "Startup does not zoom into bookmark target \u2014 C++ does, Rust does not",
-      "description": "On `cargo run --bin eaglemode`, Rust does not perform any visible startup zoom. C++ Eagle Mode 0.96.4 on the same machine, with the same `~/.eaglemode/emMain/bookmarks.rec` (containing `LocationIdentity=\":\"` `LocationRelA=0.00621`, a deep zoom into the cosmos / homedir bookmark), zooms in to the bookmark target during startup. Originally filed as a control-channel design issue (zoom-cascade primitives for an emDirPanel reachability test); investigation in this session reframed F016 as the underlying observable port-fidelity gap that the cascade test was an indirect way of exercising. Two distinct sub-bugs were identified: (A) `visit_fullsized` against an inner sub-view target sometimes commits to a goal computed against a placeholder `(-2,-2,1,1)` layout (Phase 3 finding, see investigation file); (B) `wait_for panel_viewed` returns true for sub-pixel rects, masking failures of (A). (B) is shipped as `wait_for panel_fullsized` (Phase 1, commit bd2ff09c). (A) was investigated but the user-observable startup-zoom gap is NOT fixed by addressing (A) in isolation \u2014 see F016.md Phase 4 post-mortem. The controlling cause is at StartupEngine state 11 (default arm): C++ calls `ContentView.Visit(VisitIdentity, ...)` after the state-10 zoom-out, Rust does not produce the same observable re-zoom.",
+      "title": "Startup does not zoom into bookmark target — C++ does, Rust does not",
+      "description": "On `cargo run --bin eaglemode`, Rust does not perform any visible startup zoom. C++ Eagle Mode 0.96.4 on the same machine, with the same `~/.eaglemode/emMain/bookmarks.rec` (containing `LocationIdentity=\":\"` `LocationRelA=0.00621`, a deep zoom into the cosmos / homedir bookmark), zooms in to the bookmark target during startup. Originally filed as a control-channel design issue (zoom-cascade primitives for an emDirPanel reachability test); investigation in this session reframed F016 as the underlying observable port-fidelity gap that the cascade test was an indirect way of exercising. Two distinct sub-bugs were identified: (A) `visit_fullsized` against an inner sub-view target sometimes commits to a goal computed against a placeholder `(-2,-2,1,1)` layout (Phase 3 finding, see investigation file); (B) `wait_for panel_viewed` returns true for sub-pixel rects, masking failures of (A). (B) is shipped as `wait_for panel_fullsized` (Phase 1, commit bd2ff09c). (A) was investigated but the user-observable startup-zoom gap is NOT fixed by addressing (A) in isolation — see F016.md Phase 4 post-mortem. The controlling cause is at StartupEngine state 11 (default arm): C++ calls `ContentView.Visit(VisitIdentity, ...)` after the state-10 zoom-out, Rust does not produce the same observable re-zoom.",
       "location": "crates/emmain/src/emMainWindow.rs (StartupEngine state machine, especially states 4/9/11); crates/emcore/src/emCtrlSocket.rs (wait_for panel_fullsized, shipped); crates/emcore/src/emView.rs and emViewAnimator.rs (visit/animator path)",
       "caused_by": null,
       "introduced_commit": null,
@@ -425,6 +425,25 @@
       "details": {
         "audit_source": null
       }
+    },
+    {
+      "id": "F017",
+      "kind": "fix",
+      "status": "open",
+      "priority": "medium",
+      "title": "Directory loading crawls cell-by-cell with visible 'Loading: NN%' progress",
+      "description": "Split off from F010 on 2026-04-25 (Phase 6 reframe). When zooming into a directory panel, the entries load one at a time with a visible 'Loading: NN%' overlay; in C++ the same directory loads fast enough that no progress is visible. Root cause unknown. Throttle structure is per-call one-entry in BOTH ports (C++ emFileModel.cpp:340 calls TryContinueLoading exactly once per StepLoading, matching Rust). Candidates: (a) Cycle frequency divergence between Rust and C++ schedulers, (b) per-call lstat/stat cost in Rust, (c) emDirPanel bypassing step_loading and calling try_continue_loading directly per Cycle (which sets memory_need/progress differently from C++ emFilePanel::Cycle delegation). See F010.md Phase 6 HYPOTHESIS W for evidence already gathered.",
+      "location": "crates/emfileman/src/emDirPanel.rs (Cycle / try_continue_loading direct call); crates/emcore/src/emFileModel.rs (step_loading); scheduler Cycle frequency",
+      "caused_by": null,
+      "introduced_commit": null,
+      "introduced_date": "2026-04-23",
+      "fix_note": "Inherited as HYPOTHESIS W from F010 Phase 6 reframe. Three candidate causes already identified, none confirmed. Next step: instrument Cycle call frequency and per-entry load cost in both ports, compare. Defer until F010 paint cluster (X/Y/Z) lands so the loading symptom can be measured against a correctly-rendering baseline.",
+      "investigation_file": null,
+      "root_cause_file": null,
+      "blocked_question": null,
+      "fixed_in_commit": null,
+      "fixed_date": null,
+      "repro": "Launch app, zoom into File System or Home panel. Observe each directory shows 'Loading: NN%' overlay with visible incremental progress; same operation in C++ Eagle Mode 0.96.4 completes too fast to see the overlay."
     }
   ]
 }
