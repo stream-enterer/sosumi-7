@@ -2119,12 +2119,14 @@ impl emViewAnimator for emVisitingViewAnimator {
         }
         match self.state {
             VisitingState::NoGoal | VisitingState::GivenUp | VisitingState::GoalReached => {
+                dlog!("VisitingVA::animate id={} terminal state={:?} -> false", self.identity, self.state);
                 return false;
             }
             VisitingState::GivingUp => {
                 self.give_up_clock += dt;
                 if self.give_up_clock > 1.5 {
                     self.state = VisitingState::GivenUp;
+                    dlog!("VisitingVA::animate id={} GivingUp expired -> GivenUp false", self.identity);
                     return false;
                 }
                 return true;
@@ -2138,9 +2140,15 @@ impl emViewAnimator for emVisitingViewAnimator {
             None => {
                 self.state = VisitingState::GivingUp;
                 self.give_up_clock = 0.0;
+                dlog!("VisitingVA::animate id={} nep=None -> GivingUp", self.identity);
                 return true;
             }
         };
+        dlog!(
+            "VisitingVA::animate id={} state={:?} nep.depth={} nep.panels_after={} dist_final={:.4} hope={}",
+            self.identity, self.state, nep.depth, nep.panels_after, nep.dist_final,
+            self.time_slices_without_hope
+        );
 
         // C++ emViewAnimator.cpp:1233-1244: activate nearest existing panel.
         // While animating, the goal panel may forward activation to a child.

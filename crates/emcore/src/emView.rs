@@ -298,12 +298,14 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
         match scope {
             crate::emPanelScope::PanelScope::Toplevel(wid) => {
                 let Some(window) = ctx.windows.get_mut(&wid) else {
+                    dlog!("VisitingVAEngineClass::Cycle Toplevel({:?}) — window missing, sleep", wid);
                     return false;
                 };
                 let view = &mut window.view;
                 let va_rc = Rc::clone(&view.VisitingVA);
                 let mut va = va_rc.borrow_mut();
                 if !va.is_active() {
+                    dlog!("VisitingVAEngineClass::Cycle Toplevel({:?}) — !is_active, sleep", wid);
                     return false;
                 }
                 let mut sc = crate::emEngineCtx::SchedCtx {
@@ -314,7 +316,9 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
                     current_engine: Some(engine_id),
                     pending_actions: ctx.pending_actions,
                 };
-                va.animate(view, tree, dt, &mut sc)
+                let r = va.animate(view, tree, dt, &mut sc);
+                dlog!("VisitingVAEngineClass::Cycle Toplevel({:?}) dt={:.4} animate->{}", wid, dt, r);
+                r
             }
             crate::emPanelScope::PanelScope::SubView {
                 window_id: _,
@@ -326,12 +330,14 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
                     .and_then(|p| p.behavior.as_mut())
                     .and_then(|b| b.as_sub_view_panel_mut())
                 else {
+                    dlog!("VisitingVAEngineClass::Cycle SubView(pid={:?}) — SVP missing, sleep", pid);
                     return false;
                 };
                 let (sub_view, sub_tree) = svp.sub_view_and_tree_mut();
                 let va_rc = Rc::clone(&sub_view.VisitingVA);
                 let mut va = va_rc.borrow_mut();
                 if !va.is_active() {
+                    dlog!("VisitingVAEngineClass::Cycle SubView(pid={:?}) — !is_active, sleep", pid);
                     return false;
                 }
                 let mut sc = crate::emEngineCtx::SchedCtx {
@@ -342,7 +348,9 @@ impl super::emEngine::emEngine for VisitingVAEngineClass {
                     current_engine: Some(engine_id),
                     pending_actions: ctx.pending_actions,
                 };
-                va.animate(sub_view, sub_tree, dt, &mut sc)
+                let r = va.animate(sub_view, sub_tree, dt, &mut sc);
+                dlog!("VisitingVAEngineClass::Cycle SubView(pid={:?}) dt={:.4} animate->{}", pid, dt, r);
+                r
             }
             crate::emPanelScope::PanelScope::Framework => {
                 unreachable!(
