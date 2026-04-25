@@ -93,13 +93,34 @@ pub(crate) fn resolve_target<R>(
     app: &mut App,
     view_sel: &str,
     identity: &str,
-    f: impl FnOnce(&mut crate::emView::emView, &mut PanelTree, PanelId) -> R,
+    f: impl FnOnce(&mut crate::emView::emView, &mut PanelTree, PanelId, &mut crate::emEngineCtx::SchedCtx<'_>) -> R,
 ) -> Result<R, String> {
     let home_id = app
         .home_window_id
         .ok_or_else(|| "home window not initialized".to_string())?;
-    let win = app
-        .windows
+
+    // Split-borrow the App: scheduler/framework_actions/context/etc.
+    // are independent of `windows`. We construct a SchedCtx that
+    // outlives the closure call below.
+    let App {
+        windows,
+        scheduler,
+        framework_actions,
+        context,
+        clipboard,
+        pending_actions,
+        ..
+    } = app;
+    let mut sc = crate::emEngineCtx::SchedCtx {
+        scheduler,
+        framework_actions,
+        root_context: context,
+        framework_clipboard: clipboard,
+        current_engine: None,
+        pending_actions,
+    };
+
+    let win = windows
         .get_mut(&home_id)
         .ok_or_else(|| "home window missing".to_string())?;
 
@@ -110,7 +131,7 @@ pub(crate) fn resolve_target<R>(
             .GetRootPanel()
             .ok_or_else(|| "no root panel".to_string())?;
         let target = resolve_identity(tree, root, identity)?;
-        return Ok(f(view, tree, target));
+        return Ok(f(view, tree, target, &mut sc));
     }
 
     // Inner view: resolve view_sel against outer tree; require SVP.
@@ -141,7 +162,7 @@ pub(crate) fn resolve_target<R>(
                 .GetRootPanel()
                 .ok_or_else(|| "sub-view has no root panel".to_string())?;
             let inner_target = resolve_identity(sub_tree, sub_root, identity)?;
-            Ok::<R, String>(f(sub_view, sub_tree, inner_target))
+            Ok::<R, String>(f(sub_view, sub_tree, inner_target, &mut sc))
         })
         .ok_or_else(|| {
             format!(
@@ -486,8 +507,8 @@ fn find_svp_by_inner_view(
 }
 
 fn handle_visit(app: &mut App, view_sel: &str, identity: &str, adherent: bool) -> CtrlReply {
-    match resolve_target(app, view_sel, identity, |view, tree, target| {
-        view.VisitPanel(tree, target, adherent);
+    match resolve_target(app, view_sel, identity, |view, tree, target, ctx| {
+        view.VisitPanel(tree, target, adherent, ctx);
     }) {
         Ok(()) => CtrlReply::ok(),
         Err(e) => CtrlReply::err(e),
@@ -498,8 +519,8 @@ fn handle_visit_fullsized(app: &mut App, view_sel: &str, identity: &str) -> Ctrl
     // C++ `emView::VisitFullsized(panel, adherent, utilizeView=false)` —
     // control-socket adherent/utilize_view default to false (matches C++
     // defaults in emView.h:341-342).
-    match resolve_target(app, view_sel, identity, |view, tree, target| {
-        view.VisitFullsized(tree, target, false, false);
+    match resolve_target(app, view_sel, identity, |view, tree, target, ctx| {
+        view.VisitFullsized(tree, target, false, false, ctx);
     }) {
         Ok(()) => CtrlReply::ok(),
         Err(e) => CtrlReply::err(e),
@@ -507,7 +528,7 @@ fn handle_visit_fullsized(app: &mut App, view_sel: &str, identity: &str) -> Ctrl
 }
 
 fn handle_set_focus(app: &mut App, view_sel: &str, identity: &str) -> CtrlReply {
-    match resolve_target(app, view_sel, identity, |view, _tree, target| {
+    match resolve_target(app, view_sel, identity, |view, _tree, target, _ctx| {
         view.set_focus(Some(target));
     }) {
         Ok(()) => CtrlReply::ok(),
@@ -521,8 +542,8 @@ fn handle_seek_to(app: &mut App, view_sel: &str, identity: &str) -> CtrlReply {
     // seek engine is wired to the control surface. Today this falls
     // back to VisitPanel, which only works on already-materialized
     // sub-trees. Same wire format; behavioral upgrade later.
-    match resolve_target(app, view_sel, identity, |view, tree, target| {
-        view.VisitPanel(tree, target, false);
+    match resolve_target(app, view_sel, identity, |view, tree, target, ctx| {
+        view.VisitPanel(tree, target, false, ctx);
     }) {
         Ok(()) => CtrlReply::ok(),
         Err(e) => CtrlReply::err(e),

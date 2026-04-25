@@ -160,9 +160,10 @@ impl emSubViewPanel {
         rel_a: f64,
         adherent: bool,
         subject: &str,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
     ) {
         self.sub_view
-            .VisitByIdentity(identity, rel_x, rel_y, rel_a, adherent, subject);
+            .VisitByIdentity(identity, rel_x, rel_y, rel_a, adherent, subject, ctx);
     }
 
     /// Set the view flags on the sub-view.

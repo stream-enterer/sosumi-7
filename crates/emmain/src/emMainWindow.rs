@@ -1301,10 +1301,10 @@ fn RecreateContentPanels(app: &mut App) {
         None => return,
     };
 
-    let ctx = Rc::clone(&app.context);
+    let root_ctx = Rc::clone(&app.context);
 
-    app.home_tree_mut()
-        .with_behavior_as::<emSubViewPanel, _>(content_view_id, |svp| {
+    app.with_home_tree_and_sched_ctx(|tree, sc| {
+        tree.with_behavior_as::<emSubViewPanel, _>(content_view_id, |svp| {
             // Save current visit state (C++ emMainWindow.cpp:297-301).
             let mut rel_x = 0.0;
             let mut rel_y = 0.0;
@@ -1332,12 +1332,13 @@ fn RecreateContentPanels(app: &mut App) {
             // Create new content panel (C++ emMainWindow.cpp:303).
             let sub_tree = svp.sub_tree_mut();
             let child_id = sub_tree.create_child(sub_root, "", None);
-            sub_tree.set_behavior(child_id, Box::new(emMainContentPanel::new(ctx)));
+            sub_tree.set_behavior(child_id, Box::new(emMainContentPanel::new(root_ctx)));
             sub_tree.Layout(child_id, 0.0, 0.0, 1.0, 1.0, 1.0, None);
 
             // Restore visit (C++ emMainWindow.cpp:304).
-            svp.visit_by_identity(&identity, rel_x, rel_y, rel_a, adherent, &title);
+            svp.visit_by_identity(&identity, rel_x, rel_y, rel_a, adherent, &title, sc);
         });
+    });
 
     log::info!("emMainWindow::RecreateContentPanels — content panels recreated");
 }

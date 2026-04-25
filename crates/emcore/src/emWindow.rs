@@ -1108,9 +1108,9 @@ impl emWindow {
                 .contains(crate::emView::ViewFlags::NO_USER_NAVIGATION)
             {
                 if state.GetShift() {
-                    self.view.VisitPrev(tree);
+                    self.view.VisitPrev(tree, ctx);
                 } else {
-                    self.view.VisitNext(tree);
+                    self.view.VisitNext(tree, ctx);
                 }
             }
             return;
@@ -1232,30 +1232,30 @@ impl emWindow {
             .contains(crate::emView::ViewFlags::NO_USER_NAVIGATION);
         if !consumed && !user_nav_blocked && event.variant == InputVariant::Press {
             match event.key {
-                InputKey::ArrowLeft if state.IsNoMod() => self.view.VisitLeft(tree),
-                InputKey::ArrowRight if state.IsNoMod() => self.view.VisitRight(tree),
-                InputKey::ArrowUp if state.IsNoMod() => self.view.VisitUp(tree),
-                InputKey::ArrowDown if state.IsNoMod() => self.view.VisitDown(tree),
+                InputKey::ArrowLeft if state.IsNoMod() => self.view.VisitLeft(tree, ctx),
+                InputKey::ArrowRight if state.IsNoMod() => self.view.VisitRight(tree, ctx),
+                InputKey::ArrowUp if state.IsNoMod() => self.view.VisitUp(tree, ctx),
+                InputKey::ArrowDown if state.IsNoMod() => self.view.VisitDown(tree, ctx),
 
                 // C++ emPanel.cpp:1168-1180: Home with modifier variants.
-                InputKey::Home if state.IsNoMod() => self.view.VisitFirst(tree),
+                InputKey::Home if state.IsNoMod() => self.view.VisitFirst(tree, ctx),
                 InputKey::Home if state.IsAltMod() => {
                     if let Some(p) = self.view.GetActivePanel() {
                         let adherent = self.view.IsActivationAdherent();
-                        self.view.VisitFullsized(tree, p, adherent, false);
+                        self.view.VisitFullsized(tree, p, adherent, false, ctx);
                     }
                 }
                 InputKey::Home if state.IsShiftAltMod() => {
                     if let Some(p) = self.view.GetActivePanel() {
                         let adherent = self.view.IsActivationAdherent();
-                        self.view.VisitFullsized(tree, p, adherent, true);
+                        self.view.VisitFullsized(tree, p, adherent, true, ctx);
                     }
                 }
 
                 // C++ emPanel.cpp:1182-1198
-                InputKey::End if state.IsNoMod() => self.view.VisitLast(tree),
-                InputKey::PageUp if state.IsNoMod() => self.view.VisitOut(tree),
-                InputKey::PageDown if state.IsNoMod() => self.view.VisitIn(tree),
+                InputKey::End if state.IsNoMod() => self.view.VisitLast(tree, ctx),
+                InputKey::PageUp if state.IsNoMod() => self.view.VisitOut(tree, ctx),
+                InputKey::PageDown if state.IsNoMod() => self.view.VisitIn(tree, ctx),
 
                 _ => {}
             }

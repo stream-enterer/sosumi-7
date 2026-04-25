@@ -355,6 +355,47 @@ impl App {
         None
     }
 
+    /// Run a closure with mutable access to the home window's tree and a
+    /// freshly-constructed `SchedCtx` over the framework scheduler. Used by
+    /// callers in other crates (e.g. `emmain::RecreateContentPanels`) that
+    /// need to invoke `Visit*` methods plumbed through with `&mut SchedCtx`.
+    ///
+    /// RUST_ONLY: (language-forced-utility) — out-of-crate callers cannot
+    /// destructure `App` because `framework_actions` is `pub(crate)`. This
+    /// helper performs the split-borrow internally.
+    pub fn with_home_tree_and_sched_ctx<R>(
+        &mut self,
+        f: impl FnOnce(&mut PanelTree, &mut crate::emEngineCtx::SchedCtx<'_>) -> R,
+    ) -> R {
+        let id = self
+            .home_window_id
+            .expect("home window not yet created (setup callback has not run)");
+        let App {
+            windows,
+            scheduler,
+            framework_actions,
+            context,
+            clipboard,
+            pending_actions,
+            ..
+        } = self;
+        let mut sc = crate::emEngineCtx::SchedCtx {
+            scheduler,
+            framework_actions,
+            root_context: context,
+            framework_clipboard: clipboard,
+            current_engine: None,
+            pending_actions,
+        };
+        let win = windows
+            .get_mut(&id)
+            .expect("home window present in App::windows");
+        let mut tree = win.take_tree();
+        let result = f(&mut tree, &mut sc);
+        win.put_tree(tree);
+        result
+    }
+
     /// Mutable access to the home window's panel tree.
     ///
     /// Phase 3.5.A Task 7: `App::tree` is gone; the home window owns its
