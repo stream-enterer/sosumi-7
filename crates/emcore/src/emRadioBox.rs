@@ -168,8 +168,13 @@ impl emRadioBox {
 
         // Paint label to the right of the box.
         if self.border.HasLabel() {
-            self.border
-                .paint_label(painter, Rect::new(lx, ly, lw, lh), &self.look, enabled);
+            self.border.paint_label(
+                painter,
+                canvas_color,
+                Rect::new(lx, ly, lw, lh),
+                &self.look,
+                enabled,
+            );
         }
 
         // Paint face (InputBgColor) — circular for radio.

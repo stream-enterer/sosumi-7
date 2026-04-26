@@ -212,6 +212,7 @@ impl emCheckBox {
             }
             self.border.paint_label_colored(
                 painter,
+                canvas_color,
                 Rect::new(lx, ly, lw, lh),
                 &self.look,
                 color,

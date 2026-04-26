@@ -122,7 +122,8 @@ impl emLabel {
         // C++ emLabel::PaintContent delegates to PaintLabel → DoLabel.
         // border.paint_label handles the full layout (icon + caption +
         // description) with alignment and disabled dimming.
-        self.border.paint_label(painter, cr, &self.look, enabled);
+        self.border
+            .paint_label(painter, canvas_color, cr, &self.look, enabled);
     }
 
     // DIVERGED: (language-forced) no C++ equivalent — Rust-only layout helper

@@ -146,6 +146,7 @@ impl emCheckButton {
         }
         self.border.paint_label_colored(
             painter,
+            face_color,
             Rect::new(lx, ly, lw, lh),
             &self.look,
             color,

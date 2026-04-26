@@ -1522,7 +1522,14 @@ How to move or set the focus:\n\
     /// position and dimensions for the label area.
     ///
     /// C++ equivalent: `emBorder::PaintLabel`.
-    pub fn paint_label(&self, painter: &mut emPainter, area: Rect, look: &emLook, enabled: bool) {
+    pub fn paint_label(
+        &self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        area: Rect,
+        look: &emLook,
+        enabled: bool,
+    ) {
         let dim_color = |c: emColor| -> emColor {
             if enabled {
                 c
@@ -1530,13 +1537,14 @@ How to move or set the focus:\n\
                 c.SetAlpha((c.GetAlpha() as f64 * 0.25 + 0.5) as u8)
             }
         };
-        self.paint_label_impl(painter, area, look, &dim_color);
+        self.paint_label_impl(painter, canvas_color, area, look, &dim_color);
     }
 
     /// Paint the label with a custom text color (used by emButton for button_fg_color).
     pub fn paint_label_colored(
         &self,
         painter: &mut emPainter,
+        canvas_color: emColor,
         area: Rect,
         look: &emLook,
         color: emColor,
@@ -1549,7 +1557,7 @@ How to move or set the focus:\n\
                 color.SetAlpha((color.GetAlpha() as f64 * 0.25 + 0.5) as u8)
             }
         };
-        self.paint_label_impl(painter, area, look, &dim_color);
+        self.paint_label_impl(painter, canvas_color, area, look, &dim_color);
     }
 
     /// Internal helper that paints the label components (icon, caption,
@@ -1557,6 +1565,7 @@ How to move or set the focus:\n\
     fn paint_label_impl(
         &self,
         painter: &mut emPainter,
+        canvas_color: emColor,
         area: Rect,
         look: &emLook,
         dim_color: &dyn Fn(emColor) -> emColor,
@@ -1607,7 +1616,7 @@ How to move or set the focus:\n\
         // Caption — C++ DoLabel passes capH (rect height) as maxCharHeight
         // (emBorder.cpp:1384-1396).
         if let Some(ref cr) = label.caption_rect {
-            let label_canvas = painter.GetCanvasColor();
+            let label_canvas = canvas_color;
             painter.PaintTextBoxed(
                 cr.x,
                 cr.y,
@@ -1629,7 +1638,7 @@ How to move or set the focus:\n\
         // Description — C++ DoLabel passes descH (rect height) as maxCharHeight
         // (emBorder.cpp:1398-1412).
         if let Some(ref dr) = label.description_rect {
-            let label_canvas = painter.GetCanvasColor();
+            let label_canvas = canvas_color;
             painter.PaintTextBoxed(
                 dr.x,
                 dr.y,
@@ -2133,6 +2142,7 @@ How to move or set the focus:\n\
                 // C++ lines 973-981: PaintLabel
                 self.paint_label_impl(
                     painter,
+                    canvas_color,
                     Rect::new(tx, ty, tw, th),
                     look,
                     &|c: emColor| -> emColor {
