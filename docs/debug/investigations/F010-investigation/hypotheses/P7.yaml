@@ -1,0 +1,21 @@
+id: P7
+short_name: "Multi-target paint composition (intra-frame scratch target)"
+hypothesis_statement: |
+  Some paint goes to a scratch offscreen target (for clipping or
+  shadow effects) that is then composited under a different blend mode
+  than borders use. X+Z would composite wrong while Y (which goes
+  direct) is unaffected.
+falsification_criterion: |
+  Enumerate all wgpu encoder/render-pass instantiations during a
+  frame. If only one render-pass writes the final framebuffer (no
+  intermediate offscreen target), P7 is falsified.
+experimental_design: |
+  Add instrumentation at every wgpu Encoder::begin_render_pass site
+  emitting target/blend mode. Reproduce; capture.
+evidence_shape: |
+  Log at artifacts/P7-render-passes.log. Pass criterion: one
+  render-pass per frame.
+falsification_action: |
+  If P7 falsified, single-pass paint. If P7 confirmed, multi-target
+  composition is the bug surface.
+cluster_membership: []

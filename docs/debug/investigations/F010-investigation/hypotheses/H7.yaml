@@ -1,0 +1,23 @@
+id: H7
+short_name: "Send-Sync soundness for DrawOp *const emImage variants"
+hypothesis_statement: |
+  emPainterDrawList.rs:381,415 has unsafe impl Send/Sync for DrawOp
+  variants holding *const emImage. If a panel mutates an emImage
+  between record and replay (or the parallel-replay workers race on
+  it), replay reads stale or invalid pixels.
+falsification_criterion: |
+  Audit every code path that mutates a referenced emImage. If every
+  such mutation occurs strictly outside any record→replay window
+  (e.g. only at theme-init, never during paint), H7 is falsified.
+experimental_design: |
+  rg pattern '&mut .*emImage' in emfileman/, emcore/. Trace each
+  mutation site to its caller; verify caller is not invoked during
+  paint. Static analysis; no runtime test.
+evidence_shape: |
+  Audit report at artifacts/H7-mutation-audit.md listing every
+  mutation site + lifetime classification. Pass criterion: every site
+  is paint-orthogonal.
+falsification_action: |
+  If H7 falsified, soundness holds. If H7 confirmed, race or aliasing
+  bug.
+cluster_membership: []
