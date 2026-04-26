@@ -242,21 +242,41 @@ plan.
 
 ### III.1 — Non-opaque SVP reveals view background
 
-**Status:**
+**Status:** VIOLATION
+
 **Evidence:**
+- F018 repro (spec section V.1): zooming into a directory panel during VFS_LOADING shows BLACK where C++ Eagle Mode 0.96.4 shows 0x808080 grey.
+- I.3 audit (Task 10): COMPLIANT. The conditional clear correctly fires for non-opaque SVPs, writing `view.background_color` (or fallback) into the painter's clip region.
+- I.4 audit (Task 11): VIOLATION. Compositor load-clear is hardcoded BLACK, alpha-blend composes through any non-opaque tile pixels.
+- I.1 audit (Task 8): VIOLATION. All four production pre-fill sites use literal BLACK.
+- For the F018 case, `emFilePanel` returns non-opaque `IsOpaque()` during loading, so it is the SVP and the I.3 clear DOES fire — writing `view.background_color` (= grey 0x808080 by default per `emView.rs:664`) into the tile's clip region. But the tile is still uploaded to the compositor with whatever alpha the panel paint produced. If the loading-state paint produces alpha<255 in regions, those pixels alpha-blend through the BLACK load-clear. If the panel paint produces alpha=255 grey, it should display as grey. The empirical observation (BLACK) suggests the panel paints with alpha<255 OR doesn't fully cover the tile region.
+
 **Notes:**
+- The contributory mechanism is the composite of I.4 (load-clear BLACK) and either I.1 (skipped pre-fill paint) or panel-paint alpha<255. Resolving I.1+I.4 closes III.1.
+- Remediation needs to verify post-fix that V.1 (the F018 repro) actually shows grey — see V.1 audit. A successful I.4 fix (option a or b) is necessary; an I.1 fix may also be necessary depending on which root mechanism dominates.
 
 ### III.2 — Non-opaque child reveals parent
 
-**Status:**
+**Status:** PARTIAL — COMPLIANT for opaque-parent + non-opaque-child case; VIOLATION when parent is non-opaque (transitive from I.1).
+
 **Evidence:**
-**Notes:**
+- Rust child-paint dispatch at `crates/emcore/src/emView.rs:4777-4830` mirrors C++ `emView.cpp:1099-1135`: SVP painted first (line 4771), then iterative DFS over children (4777+). Parent-before-child order preserved.
+- Parent paints into the tile/buffer. Child paints next, alpha-blending against the tile's current state (= parent's painted pixels in regions parent covered, or pre-fill BLACK in regions parent skipped).
+- When parent paints opaquely over its own region, child sees parent's pixels and composes correctly — COMPLIANT.
+- When parent itself is non-opaque or skips pixels (the F018 case for emFilePanel), child sees the pre-fill BLACK leaking through parent's holes — that's a transitive I.1 violation manifesting through III.2.
+
+**Notes:** Closing I.1 closes III.2.
 
 ### III.3 — Opaque-panel skip-clear remains valid under tiles
 
-**Status:**
+**Status:** PARTIAL — COMPLIANT when SVP and all descendants paint opaquely; VIOLATION otherwise (transitive from I.1).
+
 **Evidence:**
-**Notes:**
+- When the I.3 conditional clear is skipped (opaque-and-covering SVP — `emView.rs:4727-4732`), the framebuffer state at SVP-paint time is the I.1 pre-fill BLACK plus, on the GPU side, whatever was in the tile texture (overwritten by the next `upload_tile`).
+- If SVP and all visible descendants paint every pixel opaquely, pre-fill is invisible — COMPLIANT in that case.
+- If SVP is opaque-and-covering BUT some descendant is non-opaque (e.g. an emFilePanel inside an opaque parent), the descendant's holes show the pre-fill BLACK — VIOLATION.
+
+**Notes:** Closing I.1 closes III.3. The C++ original implicitly assumes the framebuffer pre-state equals `view.background_color` (which it does in C++ because Eagle Mode's default OS framebuffer is so-cleared). Rust violates that assumption with the BLACK pre-fill.
 
 ---
 
