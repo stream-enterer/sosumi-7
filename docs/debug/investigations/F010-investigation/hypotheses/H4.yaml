@@ -1,0 +1,27 @@
+id: H4
+short_name: "Texture-sampling at replay (font-atlas specific)"
+hypothesis_statement: |
+  PaintText records DrawOp::PaintText but at replay the font cache
+  atlas reference is wrong (uninitialized in worker thread, stale
+  pointer, or atlas image was evicted). Glyphs render to wrong pixels
+  or transparent. Y is unaffected because border-image uses caller-
+  supplied emImage, not the font atlas.
+falsification_criterion: |
+  Construct a recording painter, record a PaintText op for one
+  character. Replay into an emImage. Compare the replayed pixels to a
+  direct-mode rendering of the same PaintText call. If the pixel
+  outputs match (within a tight tolerance), H4 is falsified.
+experimental_design: |
+  Unit test in crates/emcore/tests/f010_h4_text_replay.rs:
+  - Setup font cache with one glyph populated.
+  - Record PaintText("A", ...) into a DrawList.
+  - Replay into emImage A.
+  - Direct-render PaintText("A", ...) into emImage B.
+  - Diff A and B; assert pixels equal (or within ε).
+evidence_shape: |
+  Test pass/fail; PPM diff at artifacts/H4-text-replay-diff.ppm. Pass
+  criterion: pixel diff is zero (or within tolerance).
+falsification_action: |
+  If H4 falsified, advance to other Tier-3 candidates. If H4 confirmed,
+  the font-atlas at replay is buggy.
+cluster_membership: []

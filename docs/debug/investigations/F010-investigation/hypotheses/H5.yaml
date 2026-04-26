@@ -1,0 +1,26 @@
+id: H5
+short_name: "Tile composite alpha re-blend at compositor"
+hypothesis_statement: |
+  emViewRendererCompositor.rs:99 uses BlendState::ALPHA_BLENDING in the
+  composite pass. Tiles containing semi-transparent pixels (e.g.
+  anti-aliased text on a transparent canvas) get re-blended against
+  the framebuffer at composite time, darkening or shifting their
+  effective color from what direct rasterization produced.
+falsification_criterion: |
+  Render the symptomatic scene through both paths: (a) full pipeline
+  (record → replay → composite), (b) direct mode bypassing composite.
+  If the per-pixel output of (a) and (b) match within tolerance for
+  the symptomatic panel area, H5 is falsified.
+experimental_design: |
+  Unit test in crates/emcore/tests/f010_h5_composite.rs:
+  - Drive emDirPanel::Paint scenario through both pipelines into
+    matching-size emImages.
+  - Diff the panel-interior pixel range.
+  - Assert max channel diff <= tolerance (e.g. 4).
+evidence_shape: |
+  Test pass/fail; PPM diff at artifacts/H5-composite-diff.ppm. Pass
+  criterion: max diff within tolerance.
+falsification_action: |
+  If H5 falsified, composite re-blend is not the cause. If H5
+  confirmed, composite blend mode is wrong.
+cluster_membership: []

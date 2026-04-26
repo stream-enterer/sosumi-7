@@ -1,0 +1,29 @@
+id: H3
+short_name: "Render-strategy split — bug fires only in display-list branch"
+hypothesis_statement: |
+  emWindow::render has three branches (viewport-buffer at lines
+  636-660, parallel display-list at 661-676, per-tile direct at
+  677-696). Only the display-list branch uses recording mode where
+  H1's no-op fires. The other two use direct mode. The bug fires only
+  when display-list is selected (when render_pool.GetThreadCount() > 1
+  AND dirty_count > 1).
+falsification_criterion: |
+  Force the per-tile direct branch by setting
+  render_pool.GetThreadCount() = 1 (or kill the dirty_count > 1
+  condition at emWindow.rs:661). Reproduce. If the symptom persists in
+  the per-tile direct branch, H3 is falsified — branch-conditional is
+  not the cause.
+experimental_design: |
+  Set EM_RENDER_THREADS=1 env var (or analogous; if not present, add
+  one as instrumentation), or inline-edit emWindow.rs:661 to force
+  per-tile branch. Rebuild; reproduce.
+evidence_shape: |
+  Manual GUI verification + screenshot at
+  artifacts/H3-pertile-screenshot.png. Pass criterion: symptom gone
+  when per-tile branch is forced.
+falsification_action: |
+  If H3 falsified, branch-condition is not the issue — but per-tile
+  branch could still hit zero-area or another mechanism. Advance to
+  Tier-3 singletons. If H3 confirmed, the display-list branch
+  specifically has the bug.
+cluster_membership: []
