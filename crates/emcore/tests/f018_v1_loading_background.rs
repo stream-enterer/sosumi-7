@@ -11,7 +11,7 @@
 //! through the unconditional pre-fill sites (`emViewRenderer.rs` and
 //! `emWindow.rs`), it continues to pass. The test catches regressions in
 //! either layer. The wgpu `LoadOp::Clear` path
-//! (`emViewRendererCompositor.rs:261`) and the `emWindow.rs` per-tile
+//! (`emViewRendererCompositor::render_frame`) and the `emWindow` per-tile
 //! `tile.image.fill` are not exercised here — they are covered by F018 Task 5's
 //! manual visual gate against the eaglemode binary.
 
@@ -32,6 +32,18 @@ use emcore::test_view_harness::TestSched;
 /// `view.background_color` in regions it does not paint.
 #[test]
 fn vfs_loading_reveals_background_color() {
+    // Framebuffer dimensions for the compositor under test. The view, panel
+    // tree, and compositor all share these dimensions so the panel rect spans
+    // the full framebuffer.
+    const FB_DIM: u32 = 256;
+    // Top-left corner sample: far from the centered loading widget regardless
+    // of its exact extent. (4, 4) keeps a 4-pixel margin from the panel edge
+    // to avoid any edge-pixel coverage artifacts. Decoupling the sample point
+    // from the loading-widget layout means future widget-size changes do not
+    // silently invalidate this test.
+    const SAMPLE_X: u32 = 4;
+    const SAMPLE_Y: u32 = 4;
+
     // Use a distinct, non-default color so the assertion proves we observe
     // the configured value, not a default that coincidentally matches.
     let bg = emColor::rgba(0xFF, 0x00, 0x00, 0xFF); // opaque red
@@ -40,15 +52,15 @@ fn vfs_loading_reveals_background_color() {
     let mut view = build_view_with_svp(&mut tree, panel_id);
     view.SetBackgroundColor(bg);
 
-    let mut compositor = SoftwareCompositor::new(256, 256);
+    let mut compositor = SoftwareCompositor::new(FB_DIM, FB_DIM);
     compositor.render(&mut tree, &view);
 
-    // Sample a pixel known to be inside the panel clip rect but outside
-    // the centered "Loading…" text region. Top-left of the panel is safe.
+    // V.1 asserts an exact-color match: the conditional ClearWithCanvas writes
+    // opaque background_color, no blending at the sample point.
     let fb = compositor.framebuffer();
-    let px = fb.GetPixel(10, 10);
+    let px = fb.GetPixel(SAMPLE_X, SAMPLE_Y);
     let px_color = emColor::rgba(px[0], px[1], px[2], px[3]);
-    let tol = 4; // matches tests/golden/common.rs channel tolerance
+    let tol = 0;
     assert!(
         channel_diff(px_color, bg) <= tol,
         "expected background red ~{:?}, got {:?}",
@@ -115,7 +127,7 @@ fn build_loading_directory_panel() -> (PanelTree, PanelId) {
 /// Build the `emView` and run a settle pass so the SVP is selected.
 /// Sets the panel-tree's view, then drives `view.Update` (which internally
 /// drains pending notices via `HandleNotice` until quiet — see
-/// `emView::Update` `:2581`). After this, `view.GetSupremeViewedPanel()` is
+/// `emView::Update`). After this, `view.GetSupremeViewedPanel()` is
 /// `Some(panel_id)`.
 fn build_view_with_svp(tree: &mut PanelTree, panel_id: PanelId) -> emView {
     let mut view = emView::new(
