@@ -1,5 +1,6 @@
 // SPLIT: Split from emViewRenderer.h — compositor extracted
 use super::emViewRendererTileCache::{Tile, TILE_SIZE};
+use crate::emColor::emColor;
 
 /// Per-tile GPU data.
 struct TileGpuData {
@@ -19,7 +20,7 @@ pub struct WgpuCompositor {
     rows: u32,
     viewport_width: u32,
     viewport_height: u32,
-    background_color: crate::emColor::emColor,
+    background_color: emColor,
 }
 
 /// Uniform data sent per tile draw call: NDC offset (x,y) and scale (w,h).
@@ -132,7 +133,7 @@ impl WgpuCompositor {
             rows,
             viewport_width,
             viewport_height,
-            background_color: crate::emColor::emColor::BLACK,
+            background_color: emColor::BLACK,
         }
     }
 
@@ -140,7 +141,7 @@ impl WgpuCompositor {
     /// Must be called every frame from the render driver before
     /// [`Self::render_frame`], so the load-clear reflects any runtime change to
     /// `view.background_color` (per F018 contract rule I.5).
-    pub fn set_background_color(&mut self, color: crate::emColor::emColor) {
+    pub fn set_background_color(&mut self, color: emColor) {
         self.background_color = color;
     }
 
