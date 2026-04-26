@@ -1,0 +1,34 @@
+id: H2
+short_name: "Tile pre-fill / view.background_color contract"
+hypothesis_statement: |
+  view.background_color is captured per-frame at emWindow.rs:620-621 and
+  used to pre-fill tiles at emWindow.rs:640,683 and the compositor
+  pre-fills at emViewRendererCompositor.rs:48,99,111. If
+  view.background_color resolves to BLACK (or TRANSPARENT, which the
+  wgpu LoadOp::Clear then composites against another BLACK), the
+  pre-fill is what shows whenever a panel paint operation does not
+  write to those pixels. This is downstream-of-H1 in causal terms but
+  testable independently: confirm that view.background_color is BLACK
+  when the symptom reproduces.
+falsification_criterion: |
+  Query view.background_color at the moment emView::Paint runs in the
+  symptom-reproducing scenario. If the value is anything other than
+  BLACK or TRANSPARENT (e.g. light grey matching DirContentColor), H2
+  is falsified — the visible black is not the pre-fill.
+experimental_design: |
+  Add an instrumentation print at emWindow.rs near line 620 that emits
+  view.background_color (as RGBA hex). Build the GUI binary with this
+  instrumentation; reproduce the symptom; capture the emitted value.
+  Same scenario can also be exercised in a unit test that constructs an
+  emView with the production initial config and reads
+  view.background_color.
+evidence_shape: |
+  Stdout capture from the instrumented GUI run AND the unit-test
+  output, both saved to artifacts/H2-bgcolor.txt. Pass criterion: value
+  is BLACK (0x000000FF) OR TRANSPARENT (0x00000000).
+falsification_action: |
+  If H2 falsified (background_color is not black), then the visible
+  black has another source — most likely a missing paint op that should
+  have written DirContentColor. Continue to next cluster (the
+  same-observable-with-H1 cluster, if not already run).
+cluster_membership: []
