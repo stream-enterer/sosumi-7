@@ -31,9 +31,10 @@ fn f010_h1_clear_records_no_op() {
         "len_after": len_after,
         "ops_added_by_clear": ops_added_by_clear,
     });
-    let path = "docs/debug/investigations/F010-investigation/artifacts/H1-ops.json";
-    std::fs::create_dir_all(std::path::Path::new(path).parent().unwrap()).unwrap();
-    std::fs::write(path, observation_artifact.to_string()).unwrap();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/debug/investigations/F010-investigation/artifacts/H1-ops.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, observation_artifact.to_string()).unwrap();
 
     // Test PASSES under the hypothesis (ops_added_by_clear == 0). Test FAILS
     // (and H1 is falsified) if any op is added.

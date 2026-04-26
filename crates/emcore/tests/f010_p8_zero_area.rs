@@ -44,9 +44,10 @@ fn f010_p8_clear_rect_non_degenerate() {
         "clip": {"x1": clip_x1, "y1": clip_y1, "x2": clip_x2, "y2": clip_y2},
         "rect": {"x": x, "y": y, "w": w, "h": h},
     });
-    let path = "docs/debug/investigations/F010-investigation/artifacts/P8-rect.json";
-    std::fs::create_dir_all(std::path::Path::new(path).parent().unwrap()).unwrap();
-    std::fs::write(path, observation_artifact.to_string()).unwrap();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/debug/investigations/F010-investigation/artifacts/P8-rect.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, observation_artifact.to_string()).unwrap();
 
     // P8 hypothesis predicts: w == 0 OR h == 0 at symptomatic zoom.
     // Falsification: w > 0 AND h > 0 (rect is non-degenerate).
