@@ -1,0 +1,22 @@
+id: B4
+short_name: "Stale tile from prior frame surviving cache invalidation"
+hypothesis_statement: |
+  The visible black is a tile painted during a prior frame (when state
+  was VFS_WAITING) that was cached and is being re-presented even after
+  state advanced. Cache invalidation criterion misses the
+  WAITING→LOADED transition.
+falsification_criterion: |
+  Force tile-cache full invalidation each frame (e.g. clear cache at
+  emWindow.rs render entry). Reproduce. If symptom persists with
+  per-frame full-invalidation, B4 is falsified.
+experimental_design: |
+  Add a feature-gated "flush every frame" branch at the tile-cache
+  invalidation site. Build with the flag; reproduce.
+evidence_shape: |
+  Manual GUI verification + screenshot at
+  artifacts/B4-flushed-cache-screenshot.png. Pass criterion: symptom
+  gone.
+falsification_action: |
+  If B4 falsified, cache is correctly invalidated. If B4 confirmed,
+  invalidation is missing the relevant transition.
+cluster_membership: []
