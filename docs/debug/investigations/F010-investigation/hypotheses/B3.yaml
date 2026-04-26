@@ -1,0 +1,27 @@
+id: B3
+short_name: "Paint-not-reached for symptomatic panel (parent cull / viewport clip)"
+hypothesis_statement: |
+  A parent panel's IsOpaque cascade or viewport-clip culls the
+  emDirPanel before Paint dispatch reaches it. The dispatch never
+  arrives at the trait method (P3 examines whether the trait method is
+  invoked AT ALL; B3 examines whether dispatch even attempts to reach
+  it). Adjacent to P3 but distinct: P3 = wrong method invoked; B3 =
+  no method invocation attempted.
+falsification_criterion: |
+  Add an instrumentation print at emView.rs:4796 (paint_one_panel entry,
+  per architectural-grounding.md Layer 5) emitting the panel id about
+  to be painted. If any invocation has a panel_id matching the
+  symptomatic emDirPanel, B3 is falsified — the panel is reached.
+experimental_design: |
+  Modify emView.rs paint_one_panel: add `eprintln!("paint_one_panel
+  panel_id={:?}", panel_id)` at the first line of the function.
+  Rebuild GUI; reproduce; capture stderr.
+evidence_shape: |
+  stderr capture saved to artifacts/B3-paint-dispatch.txt. Pass
+  criterion: stderr contains a line with the symptomatic panel's id
+  during the symptom-reproducing window.
+falsification_action: |
+  If B3 falsified, paint dispatch reaches the panel — fall back to
+  P3/B2 within cluster. If B3 confirmed (panel never reached), upstream
+  cull is the cause; halt cluster and report.
+cluster_membership: ["dispatch-cluster"]

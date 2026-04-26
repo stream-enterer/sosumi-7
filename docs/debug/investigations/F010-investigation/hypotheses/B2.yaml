@@ -1,0 +1,30 @@
+id: B2
+short_name: "Panel state machine reaches VFS_LOADED in production"
+hypothesis_statement: |
+  emDirPanel::Paint's Clear-emitting arm fires only when GetVirFileState
+  returns VFS_LOADED or VFS_NO_FILE_MODEL (emDirPanel.rs:454-460). If
+  production state never reaches Loaded for the symptomatic panel — or
+  reaches it briefly before transitioning to a state where Clear isn't
+  emitted — Paint runs the default arm (delegating to
+  file_panel.Paint), which uses a different paint shape. Headless tests
+  reach Loaded; production may not.
+falsification_criterion: |
+  Add an instrumentation print at emDirPanel.rs:454 emitting the value
+  returned by self.file_panel.GetVirFileState() at every Paint
+  invocation for the symptomatic panel. If any invocation observes
+  VFS_LOADED or VFS_NO_FILE_MODEL while the symptom is visible, B2 is
+  falsified — the gated arm IS reached.
+experimental_design: |
+  Modify emDirPanel.rs Paint method body: add `eprintln!("emDirPanel
+  Paint vfs_state={:?}", state)` at line 454 (right before the match).
+  Rebuild GUI; reproduce; capture stderr.
+evidence_shape: |
+  stderr capture saved to artifacts/B2-vfs-state.txt. Pass criterion:
+  at least one line shows VFS_LOADED or VFS_NO_FILE_MODEL during the
+  symptom-reproducing window.
+falsification_action: |
+  If B2 falsified, advance to B3 (paint-not-reached at all by parent
+  cull) or close cluster with H1/P8 reactivation. If B2 confirmed
+  (state never reaches Loaded), the cause is in the state-machine
+  pipeline upstream of paint.
+cluster_membership: ["dispatch-cluster"]
