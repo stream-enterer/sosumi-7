@@ -155,18 +155,18 @@ plan.
 
 ### I.5 — Runtime `view.background_color` changes propagate
 
-**Status:** VIOLATION
+**Status:** PARTIAL (corrected — see Notes)
 
 **Evidence:**
 - `emView::SetBackgroundColor` at `crates/emcore/src/emView.rs:3508-3513` only updates the field and sets `self.viewport_changed = true`. It does NOT call `InvalidatePainting` or otherwise mark tiles dirty.
-- `viewport_changed` is consumed only by `viewport_changed()` getter (line 3477) and `clear_viewport_changed()` setter (line 3482). `grep -rn 'viewport_changed' crates/emcore/src/emWindow.rs` returns NO matches — the window/render loop never reads the flag, so it never triggers a tile-cache invalidation.
+- `viewport_changed` is consumed in the frame loop at `crates/emcore/src/emGUIFramework.rs:1419-1421` — when set, it triggers `needs_full_repaint = true` → `win.invalidate()` (line 1431), which marks all tiles dirty. (Earlier draft of this audit incorrectly stated `viewport_changed` is never read; the correct path goes through emGUIFramework, not directly through emWindow.)
 - Compositor / tile cache / window have no `background_color` references outside `emWindow.rs:346, 367, 441, 449` (which only forward the constructor argument to `view.SetBackgroundColor`). The compositor's load-clear is hardcoded BLACK (`emViewRendererCompositor.rs:261`) with no view-state plumbing.
 
 **Notes:**
-- Two layers fail simultaneously:
-  1. **Dirty-region layer:** `SetBackgroundColor` does not invalidate tiles. After a runtime call, tiles keep their previously-painted contents until something else dirties them. New tiles painted with the new color (after some other invalidation) would coexist with stale tiles painted with the old color.
-  2. **Compositor-load-clear layer:** Even if every tile is repainted with the new color, the load-clear is hardcoded BLACK; the I.4 violation still leaks the old wrong color (BLACK) where alpha<255.
-- Remediation must (a) add a full-viewport InvalidatePainting (or equivalent dirty-mark) inside SetBackgroundColor, AND (b) plumb background_color from view to compositor (option I.4-b) or guarantee opaque tile coverage (option I.4-a).
+- Status downgraded from full VIOLATION to PARTIAL on this layer-by-layer analysis:
+  1. **Dirty-region layer: COMPLIANT.** `SetBackgroundColor` → `viewport_changed = true` → emGUIFramework triggers `win.invalidate()` → all tiles dirty → all tiles repainted with new background color through the conditional I.3 clear.
+  2. **Compositor-load-clear layer: VIOLATION.** Even with all tiles correctly repainted, the load-clear is hardcoded BLACK (`emViewRendererCompositor.rs:261`); pixels showing the load-clear (per I.4) do NOT pick up the new color.
+- Net **Status: PARTIAL** — see status correction. Remediation must plumb background_color from view to compositor (option I.4-b) or guarantee opaque tile coverage (option I.4-a). No fix needed on the dirty-region layer.
 
 ---
 
@@ -284,33 +284,70 @@ plan.
 
 ### IV.1 — `InvalidatePainting` propagates to tile cache and compositor
 
-**Status:**
+**Status:** COMPLIANT
+
 **Evidence:**
+- Chain end-to-end:
+  - `emView::InvalidatePainting` at `crates/emcore/src/emView.rs:3159-3166` pushes a `Rect(clip_x, clip_y, clip_w, clip_h)` onto `self.dirty_rects: Vec<Rect>`. (No-arg overload — uses panel's full clip rect.)
+  - `emView::invalidate_painting_rect` at `crates/emcore/src/emView.rs:3173-3213` clips against panel clip rect and pushes the clipped rect.
+  - `emView::take_dirty_rects` / `take_dirty_clip_rects` at `emView.rs:3425-3431` drain the queue.
+  - Frame loop in `emGUIFramework.rs:1404-1416` calls `view.has_dirty_rects() / take_dirty_clip_rects()` then iterates each rect and calls `win.mark_dirty_rect(r.x1, r.y1, r.x2, r.y2)`.
+  - `emWindow::invalidate_rect` at `emWindow.rs:1568-1570` and `emWindow::mark_dirty_rect` at `emWindow.rs:1575-1597` compute the tile range covered by the rect and call `tile_cache.mark_dirty(col, row)` per overlapping tile.
+- The chain exists end-to-end. Tile-aligned rect computation at `emWindow.rs:1587-1590` floors x1/y1 and ceils x2/y2 — correctly covers all overlapping tiles.
+
 **Notes:**
+- Compositor invalidation is implicit: a tile marked dirty is re-uploaded next frame via `compositor.upload_tile`, which overwrites the GPU texture. No separate compositor-cache invalidation needed.
+- This rule is COMPLIANT in steady state. Note that I.5 incorrectly described `viewport_changed` as never being read — actually `emGUIFramework.rs:1419-1421` reads it and triggers `needs_full_repaint`, which calls `win.invalidate()`. See I.5 audit Notes for the correction; I.5 status remains VIOLATION because the compositor load-clear (I.4) is independent and a full repaint does not fix the load-clear leak.
 
 ### IV.2 — Painted region shrinking invalidates the difference
 
-**Status:**
+**Status:** PARTIAL (overload exists; specific call-sites unchecked)
+
 **Evidence:**
+- Rust overloads at `crates/emcore/src/emView.rs:3159` (no-arg, full panel clip rect) and `emView.rs:3173` (rect-arg).
+- Note: there is no `emPanel::InvalidatePainting` method — invalidation lives on `emView`, not `emPanel`. C++ has it on `emPanel` (emPanel.cpp:1282-1311). This is a structural divergence: in Rust, panels must call `view.InvalidatePainting(tree, self_id)` rather than `self.InvalidatePainting()`. Functionally equivalent if every C++ `InvalidatePainting()` call site has a Rust `view.InvalidatePainting(tree, id)` mirror — which is NOT exhaustively verified here.
+- `grep -n 'InvalidatePainting\|invalidate_painting' crates/emcore/src/emFilePanel.rs crates/emcore/src/emFileModel.rs` returns no results — `emFilePanel` does not directly invalidate on its own state changes. Invalidation likely happens via `mark_panel_dirty` (a different path) or via the model's dirty-flag → engine cycle.
+
 **Notes:**
+- The plan's pre-condition (panels call no-arg overload on shape-changing state transitions) cannot be verified without a wider audit of every `InvalidatePainting` call site. For the F018 symptom, the relevant transition is VFS_LOADED → VFS_LOADING (which changes the loading-state overlay region). Whether `emFilePanel` invalidates correctly on that transition is OUTSIDE the immediate F018 root cause (the symptom is BLACK leaking through, not stale paint).
+- Remediation should add a sweep verifying every shape-changing state transition either calls the no-arg overload or bounds the rect-arg overload to the union of old and new regions.
 
 ### IV.3 — `IsOpaque` change invalidates SVP-choice path
 
-**Status:**
+**Status:** VIOLATION
+
 **Evidence:**
+- `SVPChoiceByOpacityInvalid: bool` is declared on emView (`crates/emcore/src/emView.rs:528`), initialized to false (line 707), and CLEARED to false at consumption sites (`emView.rs:1883, 2624`). `grep -rn 'SVPChoiceByOpacityInvalid *=' crates/emcore/src/` returns ONLY the two false-setters and the initializer — no path SETS it to true.
+- C++ `emPanel::InvalidatePainting` at `emPanel.cpp:1284-1290, 1296-1302` sets `View->SVPChoiceByOpacityInvalid = true` whenever invalidation runs on a panel that could affect SVP choice. Rust's `emView::InvalidatePainting` (line 3159-3166) does NOT set this flag.
+
 **Notes:**
+- Consequence: when a panel's `IsOpaque()` return value changes between frames (e.g., emFilePanel transitioning VFS_LOADED → VFS_LOAD_ERROR), the SVP-choice does not get re-evaluated. The view continues using the old SVP, which may now be the wrong one.
+- This is independent of the F018 symptom (which is about pre-fill leaking through during a single frame), but it's a latent bug that V.5 acceptance would expose.
+- Remediation: add `self.SVPChoiceByOpacityInvalid = true` inside `emView::InvalidatePainting` and `invalidate_painting_rect`, mirroring C++ `emPanel.cpp:1284-1290, 1296-1302`. Verify a behavioral test triggers re-evaluation on opacity change.
 
 ### IV.4 — All three render strategies obey the dirty contract identically
 
-**Status:**
+**Status:** INCONCLUSIVE — requires test harness
+
 **Evidence:**
+- Single-buffer fallback (`crates/emcore/src/emWindow.rs:632-651`): paints viewport-sized buffer once, then `for row/col` loop only copies dirty tiles (line 640: `if tile.dirty { ... }`). Clean tiles are not touched on the GPU side.
+- Per-tile path (`emWindow.rs:670-686`): `for row/col` only paints dirty tiles (line 673: `if tile.dirty { ... }`). Clean tiles untouched.
+- Parallel path (`emWindow.rs:760-776` `render_parallel_inner`): records once into a display list, then `render_pool.CallParallel` over `dirty_tiles.len()` (line 775). Only dirty tiles get replayed.
+- All three respect `tile.dirty` for which tiles to (re-)paint. Same `view.Paint` block produces the same draw operations for the same panel-tree state.
+
 **Notes:**
+- Strict pixel-equivalence across strategies is INCONCLUSIVE without a test that exercises the same panel-tree state under each strategy and compares outputs (V.3 acceptance). The strategies have small structural differences (single-buffer vs per-tile painter clip; recording-replay vs direct paint) that could produce divergent output for non-opaque panels — see I.4 alpha-blend-through interaction.
+- Remediation plan must add a strategy-parity test as part of V.3.
 
 ### IV.5 — Recording-painter ops must record the conditional clear
 
-**Status:**
-**Evidence:**
+**Status:** COMPLIANT (per O.4)
+
+**Evidence:** Per O.4 finding: `DrawOp` has no dedicated `Clear` variant, but `emPainter::ClearWithCanvas` at `crates/emcore/src/emPainter.rs:865-878` is implemented as a delegated `PaintRect` over the painter's clip region. `DrawOp::PaintRect` (line 462 of `emPainterDrawList.rs`) is recordable. So recording captures the conditional clear as a `PaintRect`, and replay invokes the same paint over the per-tile painter's clip-intersected region.
+
 **Notes:**
+- The clear is recorded but as a `PaintRect`, not a semantic `Clear`. Diagnostic dumps and op-count audits should account for this — there's no "Clear count" to grep for.
+- If remediation introduces a dedicated `DrawOp::Clear` variant for performance (avoid full-rect raster on every replay) or for explicit semantics, it must propagate through both record and replay paths and update the recording-painter `ClearWithCanvas` implementation.
 
 ---
 
