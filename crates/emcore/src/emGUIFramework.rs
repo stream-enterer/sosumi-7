@@ -1371,7 +1371,7 @@ impl ApplicationHandler<CtrlMsg> for App {
                     ev.mouse_y = state.mouse_y;
                     pending_inputs.push((*win_id, ev));
                 }
-                scheduler.wake_up(input_dispatch_engine_id);
+                sc.scheduler.wake_up(input_dispatch_engine_id);
                 win.invalidate();
                 win.request_redraw();
             }
@@ -1391,7 +1391,7 @@ impl ApplicationHandler<CtrlMsg> for App {
             // when the blink timer fires.
             let active_id = win.view().GetActivePanel();
             if let Some(active_id) = active_id {
-                win.view_mut().InvalidatePainting(&tree, active_id);
+                win.view_mut().InvalidatePainting(&mut sc, &tree, active_id);
             }
 
             // Phase 3.5.A Task 7: put the tree back on the window.

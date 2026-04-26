@@ -3178,7 +3178,12 @@ impl emView {
     /// Mark the entire panel clip rect as needing repaint.
     ///
     /// Corresponds to `emPanel::InvalidatePainting()` (no-arg overload).
-    pub fn InvalidatePainting(&mut self, tree: &PanelTree, panel: PanelId) {
+    pub fn InvalidatePainting(
+        &mut self,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
+        tree: &PanelTree,
+        panel: PanelId,
+    ) {
         let p = match tree.GetRec(panel) {
             Some(p) if p.viewed => p,
             _ => return,
@@ -3186,6 +3191,7 @@ impl emView {
         self.dirty_rects
             .push(Rect::new(p.clip_x, p.clip_y, p.clip_w, p.clip_h));
         self.SVPChoiceByOpacityInvalid = true;
+        self.WakeUpUpdateEngine(ctx);
     }
 
     /// Mark a sub-rectangle of the panel as needing repaint. The rectangle
@@ -3193,8 +3199,10 @@ impl emView {
     /// coordinates, then clipped against the panel's clip rect.
     ///
     /// Corresponds to `emPanel::InvalidatePainting(x, y, w, h)`.
+    #[allow(clippy::too_many_arguments)]
     pub fn invalidate_painting_rect(
         &mut self,
+        ctx: &mut crate::emEngineCtx::SchedCtx<'_>,
         tree: &PanelTree,
         panel: PanelId,
         x: f64,
@@ -3235,6 +3243,7 @@ impl emView {
         if vw > 0.0 && vh > 0.0 {
             self.dirty_rects.push(Rect::new(vx, vy, vw, vh));
             self.SVPChoiceByOpacityInvalid = true;
+            self.WakeUpUpdateEngine(ctx);
         }
     }
 
@@ -5607,7 +5616,7 @@ mod tests {
         view.take_dirty_rects(); // drain change-block invalidation
 
         // child1 should be viewed after update_viewing
-        view.InvalidatePainting(&tree, child1);
+        ts.with(|sc| view.InvalidatePainting(sc, &tree, child1));
         let rects = view.take_dirty_rects();
         assert_eq!(rects.len(), 1);
         // The dirty rect should be the child's clip rect
@@ -5625,7 +5634,7 @@ mod tests {
         view.take_dirty_rects(); // drain change-block invalidation
 
         // Invalidate a sub-rect of child1 in panel coordinates
-        view.invalidate_painting_rect(&tree, child1, 0.0, 0.0, 0.5, 0.5);
+        ts.with(|sc| view.invalidate_painting_rect(sc, &tree, child1, 0.0, 0.0, 0.5, 0.5));
         let rects = view.take_dirty_rects();
         assert_eq!(rects.len(), 1);
         assert!(rects[0].w > 0.0);
@@ -5633,7 +5642,7 @@ mod tests {
 
         // Not viewed => no dirty rect
         tree.get_mut(child1).unwrap().viewed = false;
-        view.invalidate_painting_rect(&tree, child1, 0.0, 0.0, 1.0, 1.0);
+        ts.with(|sc| view.invalidate_painting_rect(sc, &tree, child1, 0.0, 0.0, 1.0, 1.0));
         let rects = view.take_dirty_rects();
         assert!(rects.is_empty());
     }

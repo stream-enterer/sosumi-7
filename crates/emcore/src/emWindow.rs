@@ -1223,7 +1223,7 @@ impl emWindow {
                             .unwrap_or("?");
                         eprintln!("  >>> CONSUMED by {:?}", name);
                     }
-                    self.view.InvalidatePainting(tree, panel_id);
+                    self.view.InvalidatePainting(ctx, tree, panel_id);
                     break;
                 }
             }

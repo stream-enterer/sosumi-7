@@ -460,7 +460,10 @@ impl PanelBehavior for emSubViewPanel {
                 };
                 self.sub_tree.put_behavior(panel_id, behavior);
                 if consumed {
-                    self.sub_view.InvalidatePainting(&self.sub_tree, panel_id);
+                    if let Some(mut sc) = ctx.as_sched_ctx() {
+                        self.sub_view
+                            .InvalidatePainting(&mut sc, &self.sub_tree, panel_id);
+                    }
                     return true;
                 }
             }

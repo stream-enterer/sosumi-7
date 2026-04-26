@@ -428,7 +428,15 @@ impl PipelineTestHarness {
                 };
                 self.tree.put_behavior(panel_id, behavior);
                 if consumed {
-                    self.view.InvalidatePainting(&self.tree, panel_id);
+                    let mut sc = SchedCtx {
+                        scheduler: &mut self.scheduler,
+                        framework_actions: &mut self.framework_actions,
+                        root_context: &self.root_context,
+                        framework_clipboard: &self.framework_clipboard,
+                        current_engine: None,
+                        pending_actions: &self.pending_actions,
+                    };
+                    self.view.InvalidatePainting(&mut sc, &self.tree, panel_id);
                     break;
                 }
             }

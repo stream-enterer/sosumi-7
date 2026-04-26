@@ -828,7 +828,7 @@ fn dispatch_event(
             };
             tree.put_behavior(panel_id, behavior);
             if consumed {
-                view.InvalidatePainting(tree, panel_id);
+                view.InvalidatePainting(&mut tvh.sched_ctx(), tree, panel_id);
                 break;
             }
         }

@@ -32,7 +32,8 @@ fn invalidate_painting_sets_svp_choice_by_opacity_invalid() {
     view.SVPChoiceByOpacityInvalid = false;
     assert!(!view.SVPChoiceByOpacityInvalid, "precondition");
 
-    view.InvalidatePainting(&tree, panel_id);
+    let mut ts = TestSched::new();
+    ts.with(|sc| view.InvalidatePainting(sc, &tree, panel_id));
 
     assert!(
         view.SVPChoiceByOpacityInvalid,
@@ -49,7 +50,8 @@ fn invalidate_painting_rect_sets_svp_choice_by_opacity_invalid() {
     view.SVPChoiceByOpacityInvalid = false;
     assert!(!view.SVPChoiceByOpacityInvalid, "precondition");
 
-    view.invalidate_painting_rect(&tree, panel_id, 0.0, 0.0, 1.0, 1.0);
+    let mut ts = TestSched::new();
+    ts.with(|sc| view.invalidate_painting_rect(sc, &tree, panel_id, 0.0, 0.0, 1.0, 1.0));
 
     assert!(
         view.SVPChoiceByOpacityInvalid,
