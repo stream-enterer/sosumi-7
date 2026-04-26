@@ -128,14 +128,14 @@ impl PanelBehavior for CheckBoxPanel {
     fn Paint(
         &mut self,
         painter: &mut emPainter,
-        _canvas_color: emColor,
+        canvas_color: emColor,
         w: f64,
         h: f64,
         state: &PanelState,
     ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.check_box
-            .Paint(painter, w, h, state.enabled, pixel_scale);
+            .Paint(painter, canvas_color, w, h, state.enabled, pixel_scale);
     }
 
     fn Input(
@@ -221,13 +221,14 @@ impl PanelBehavior for ButtonPanel {
     fn Paint(
         &mut self,
         painter: &mut emPainter,
-        _canvas_color: emColor,
+        canvas_color: emColor,
         w: f64,
         h: f64,
         state: &PanelState,
     ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.button.Paint(painter, w, h, state.enabled, pixel_scale);
+        self.button
+            .Paint(painter, canvas_color, w, h, state.enabled, pixel_scale);
     }
 
     fn Input(

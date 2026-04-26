@@ -196,14 +196,13 @@ impl emFpPlugin {
     /// resolve a dynamic library. Use this in tests to inject emDirFpPlugin without
     /// a .emFpPlugin config file on disk.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn for_test_directory_handler(
-        function_name: &str,
-        func: emFpPluginFunc,
-    ) -> Self {
-        let mut p = Self::default();
-        p.file_types = vec!["directory".to_string()];
-        p.function = function_name.to_string();
-        p.library = "__test__".to_string();
+    pub fn for_test_directory_handler(function_name: &str, func: emFpPluginFunc) -> Self {
+        let p = Self {
+            file_types: vec!["directory".to_string()],
+            function: function_name.to_string(),
+            library: "__test__".to_string(),
+            ..Self::default()
+        };
         *p.cached.borrow_mut() = CachedFunctions {
             lib_name: "__test__".to_string(),
             func_name: function_name.to_string(),

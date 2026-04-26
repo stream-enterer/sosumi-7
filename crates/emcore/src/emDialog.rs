@@ -797,13 +797,14 @@ impl PanelBehavior for DlgButton {
     fn Paint(
         &mut self,
         painter: &mut emPainter,
-        _canvas_color: emColor,
+        canvas_color: emColor,
         w: f64,
         h: f64,
         state: &PanelState,
     ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.button.Paint(painter, w, h, state.enabled, pixel_scale);
+        self.button
+            .Paint(painter, canvas_color, w, h, state.enabled, pixel_scale);
     }
 
     // DIVERGED: (language-forced) DlgButton click observation — C++ emDialog.cpp:236 `DlgButton::Clicked()` walks

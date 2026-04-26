@@ -83,6 +83,7 @@ impl emCheckButton {
     pub fn Paint(
         &mut self,
         painter: &mut emPainter,
+        canvas_color: emColor,
         w: f64,
         h: f64,
         enabled: bool,
@@ -94,7 +95,9 @@ impl emCheckButton {
         self.border.how_to_text = self.GetHowTo(enabled, true);
         self.border
             .paint_border(painter, w, h, &self.look, false, true, pixel_scale);
-        let canvas_color = painter.GetCanvasColor();
+        let canvas_color = self
+            .border
+            .content_canvas_color(canvas_color, &self.look, enabled);
 
         // C++ DoButton non-boxed path — emButton.cpp:345-422
         let (cr, r) = self.border.GetContentRoundRect(w, h, &self.look);

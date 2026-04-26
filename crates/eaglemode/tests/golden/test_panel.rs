@@ -120,9 +120,10 @@ struct ButtonPanel {
     widget: emButton,
 }
 impl PanelBehavior for ButtonPanel {
-    fn Paint(&mut self, p: &mut emPainter, _canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
+    fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.widget.Paint(p, w, h, s.enabled, pixel_scale);
+        self.widget
+            .Paint(p, canvas_color, w, h, s.enabled, pixel_scale);
     }
     fn Input(
         &mut self,
@@ -145,9 +146,10 @@ struct CheckButtonPanel {
     widget: emCheckButton,
 }
 impl PanelBehavior for CheckButtonPanel {
-    fn Paint(&mut self, p: &mut emPainter, _canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
+    fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.widget.Paint(p, w, h, s.enabled, pixel_scale);
+        self.widget
+            .Paint(p, canvas_color, w, h, s.enabled, pixel_scale);
     }
     fn Input(
         &mut self,
@@ -170,9 +172,10 @@ struct CheckBoxPanel {
     widget: emCheckBox,
 }
 impl PanelBehavior for CheckBoxPanel {
-    fn Paint(&mut self, p: &mut emPainter, _canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
+    fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.widget.Paint(p, w, h, s.enabled, pixel_scale);
+        self.widget
+            .Paint(p, canvas_color, w, h, s.enabled, pixel_scale);
     }
     fn Input(
         &mut self,
@@ -195,9 +198,10 @@ struct RadioButtonPanel {
     widget: emRadioButton,
 }
 impl PanelBehavior for RadioButtonPanel {
-    fn Paint(&mut self, p: &mut emPainter, _canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
+    fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.widget.Paint(p, w, h, s.enabled, pixel_scale);
+        self.widget
+            .Paint(p, canvas_color, w, h, s.enabled, pixel_scale);
     }
     fn Input(
         &mut self,

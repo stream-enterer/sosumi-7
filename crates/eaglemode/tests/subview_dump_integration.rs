@@ -41,16 +41,26 @@ fn spawn_and_connect() -> (Child, UnixStream) {
     let pid = child.id();
     let sock_path = PathBuf::from(format!("/tmp/eaglemode-rs.{}.sock", pid));
 
+    match wait_for_socket(&sock_path) {
+        Some(s) => (child, s),
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("socket did not appear within 60s at {:?}", sock_path);
+        }
+    }
+}
+
+fn wait_for_socket(sock_path: &PathBuf) -> Option<UnixStream> {
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         if sock_path.exists() {
-            if let Ok(s) = UnixStream::connect(&sock_path) {
-                return (child, s);
+            if let Ok(s) = UnixStream::connect(sock_path) {
+                return Some(s);
             }
         }
         if Instant::now() > deadline {
-            let _ = child.kill();
-            panic!("socket did not appear within 60s at {:?}", sock_path);
+            return None;
         }
         thread::sleep(Duration::from_millis(200));
     }
@@ -71,7 +81,11 @@ fn f010_subview_dump_nests_under_home_view_context() {
 
     // Settle the StartupEngine's initial animation.
     let reply = send(&mut s, r#"{"cmd":"wait_idle","timeout_ms":30000}"#);
-    assert!(reply.contains("\"ok\":true"), "startup wait_idle: {}", reply);
+    assert!(
+        reply.contains("\"ok\":true"),
+        "startup wait_idle: {}",
+        reply
+    );
 
     // Baseline dump — confirms the dump endpoint works and the home window
     // is fully constructed (root context + outer view + 2 sub-views =
@@ -94,7 +108,11 @@ fn f010_subview_dump_nests_under_home_view_context() {
     // view, the SVP becomes part of the viewed path, and its inner wrapper
     // engine wakes up to cycle the sub-tree.
     let reply = send(&mut s, r#"{"cmd":"visit","identity":"root:content view"}"#);
-    assert!(reply.contains("\"ok\":true"), "visit content view: {}", reply);
+    assert!(
+        reply.contains("\"ok\":true"),
+        "visit content view: {}",
+        reply
+    );
     let reply = send(
         &mut s,
         r#"{"cmd":"wait_for","condition":{"kind":"panel_viewed","identity":"root:content view"},"timeout_ms":60000}"#,
@@ -109,7 +127,11 @@ fn f010_subview_dump_nests_under_home_view_context() {
     // has a chance to run (creates emVirtualCosmosPanel under the unnamed
     // sub-view root).
     let reply = send(&mut s, r#"{"cmd":"wait_idle","timeout_ms":10000}"#);
-    assert!(reply.contains("\"ok\":true"), "post-visit wait_idle: {}", reply);
+    assert!(
+        reply.contains("\"ok\":true"),
+        "post-visit wait_idle: {}",
+        reply
+    );
 
     // Post-visit dump.
     let reply = send(&mut s, r#"{"cmd":"dump"}"#);

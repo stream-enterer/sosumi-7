@@ -315,7 +315,7 @@ impl PanelBehavior for emFileManControlPanel {
     fn Paint(
         &mut self,
         painter: &mut emPainter,
-        _canvas_color: emColor,
+        canvas_color: emColor,
         w: f64,
         h: f64,
         state: &PanelState,
@@ -333,7 +333,7 @@ impl PanelBehavior for emFileManControlPanel {
         macro_rules! paint_widget {
             ($widget:expr) => {
                 painter.translate(margin, y);
-                $widget.Paint(painter, widget_w, widget_h, true, pixel_scale);
+                $widget.Paint(painter, canvas_color, widget_w, widget_h, true, pixel_scale);
                 painter.translate(-margin, -y);
                 y += widget_h;
             };

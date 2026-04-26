@@ -274,7 +274,7 @@ fn button_click_works_after_zoom() {
     {
         let mut img = emImage::new(600, 600, 4);
         let mut p = emPainter::new(&mut img);
-        btn.Paint(&mut p, 600.0, 600.0, true, 1.0);
+        btn.Paint(&mut p, emColor::TRANSPARENT, 600.0, 600.0, true, 1.0);
     }
 
     // Calibration: pixel center (300, 300) passes at 1x.
@@ -313,7 +313,7 @@ fn button_click_works_after_zoom() {
     {
         let mut img = emImage::new(1200, 1200, 4);
         let mut p = emPainter::new(&mut img);
-        btn.Paint(&mut p, 1200.0, 1200.0, true, 1.0);
+        btn.Paint(&mut p, emColor::TRANSPARENT, 1200.0, 1200.0, true, 1.0);
     }
 
     // Calibration: pixel center at 2x (600, 600) passes.
@@ -353,14 +353,15 @@ fn button_click_works_after_zoom() {
         fn Paint(
             &mut self,
             painter: &mut emPainter,
-            _canvas_color: emColor,
+            canvas_color: emColor,
             w: f64,
             h: f64,
             state: &PanelState,
         ) {
             let pixel_scale =
                 state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-            self.widget.Paint(painter, w, h, state.enabled, pixel_scale);
+            self.widget
+                .Paint(painter, canvas_color, w, h, state.enabled, pixel_scale);
         }
         fn Input(
             &mut self,
