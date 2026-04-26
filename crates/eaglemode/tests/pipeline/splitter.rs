@@ -33,14 +33,14 @@ impl PanelBehavior for SharedSplitterPanel {
     fn Paint(
         &mut self,
         painter: &mut emPainter,
-        _canvas_color: emColor,
+        canvas_color: emColor,
         w: f64,
         h: f64,
         state: &PanelState,
     ) {
         self.inner
             .borrow_mut()
-            .PaintContent(painter, w, h, state.enabled);
+            .PaintContent(painter, canvas_color, w, h, state.enabled);
     }
 
     fn Input(

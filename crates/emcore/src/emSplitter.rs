@@ -1,3 +1,4 @@
+use crate::emColor::emColor;
 use crate::emCursor::emCursor;
 use crate::emEngineCtx::{ConstructCtx, PanelCtx, WidgetCallback};
 use crate::emInput::{emInputEvent, InputKey, InputVariant};
@@ -130,14 +131,21 @@ impl emSplitter {
         self.set_initial_position(self.position);
     }
 
-    pub fn PaintContent(&mut self, painter: &mut emPainter, w: f64, h: f64, enabled: bool) {
+    pub fn PaintContent(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        enabled: bool,
+    ) {
         self.last_w = w;
         self.last_h = h;
         self.enabled = enabled;
 
         let resolved = self.orientation.resolve(w, h);
         let color = self.look.button_bg_color;
-        let canvas = painter.GetCanvasColor();
+        let canvas = canvas_color;
 
         let (gx, gy, gw, gh) = self.calc_grip_rect(w, h, resolved);
         painter.PaintRect(gx, gy, gw, gh, color, canvas);

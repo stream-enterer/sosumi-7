@@ -527,12 +527,13 @@ impl PanelBehavior for SplitterBehavior {
     fn Paint(
         &mut self,
         painter: &mut emPainter,
-        _canvas_color: emColor,
+        canvas_color: emColor,
         w: f64,
         h: f64,
         _state: &PanelState,
     ) {
-        self.splitter.PaintContent(painter, w, h, _state.enabled);
+        self.splitter
+            .PaintContent(painter, canvas_color, w, h, _state.enabled);
     }
 }
 
@@ -2092,12 +2093,13 @@ impl PanelBehavior for SplitterCompositionBehavior {
     fn Paint(
         &mut self,
         painter: &mut emPainter,
-        _canvas_color: emColor,
+        canvas_color: emColor,
         w: f64,
         h: f64,
         state: &PanelState,
     ) {
-        self.splitter.PaintContent(painter, w, h, state.enabled);
+        self.splitter
+            .PaintContent(painter, canvas_color, w, h, state.enabled);
     }
 
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {

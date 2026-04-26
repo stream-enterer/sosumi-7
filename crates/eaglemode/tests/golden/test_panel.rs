@@ -460,15 +460,8 @@ struct SplitterPanel {
     widget: emSplitter,
 }
 impl PanelBehavior for SplitterPanel {
-    fn Paint(
-        &mut self,
-        p: &mut emPainter,
-        _canvas_color: emColor,
-        w: f64,
-        h: f64,
-        _s: &PanelState,
-    ) {
-        self.widget.PaintContent(p, w, h, _s.enabled);
+    fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, _s: &PanelState) {
+        self.widget.PaintContent(p, canvas_color, w, h, _s.enabled);
     }
     fn Input(
         &mut self,
