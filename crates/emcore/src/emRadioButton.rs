@@ -362,7 +362,6 @@ impl emRadioButton {
         // C++ emButton.cpp:361: ButtonBgColor for non-boxed path.
         let face_color = self.look.button_bg_color;
         painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, face_color, canvas_color);
-        painter.SetCanvasColor(face_color);
 
         // Label inside face with padding (C++ lines 370-391).
         let d_min = fw.min(fh) * 0.1;

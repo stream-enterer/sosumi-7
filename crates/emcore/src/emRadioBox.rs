@@ -180,7 +180,6 @@ impl emRadioBox {
         // Paint face (InputBgColor) — circular for radio.
         let face_color = self.look.input_bg_color;
         painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, face_color, canvas_color);
-        painter.SetCanvasColor(face_color);
 
         // Paint radio dot if selected (C++ PaintBoxSymbol, lines 161-167).
         // C++ PaintEllipse takes bounding rect (x, y, w, h).

@@ -4791,7 +4791,6 @@ impl emView {
             painter.SetTransformation(svp_vx + ox, svp_vy + oy, svp_vw, svp_vw);
 
             // C++ line 1098: p->Paint(pnt, canvasColor)
-            painter.SetCanvasColor(canvas_color);
             self.paint_one_panel(tree, painter, svp_id, canvas_color, svp_layout);
 
             // C++ lines 1099-1135: iterative DFS over children.
@@ -4833,7 +4832,6 @@ impl emView {
                                 painter.SetTransformation(p_vx + ox, p_vy + oy, p_vw, p_vw);
 
                                 // C++ line 1118: p->Paint(pnt, p->CanvasColor)
-                                painter.SetCanvasColor(p_canvas);
                                 self.paint_one_panel(tree, painter, p, p_canvas, p_layout);
 
                                 // C++ lines 1120-1123

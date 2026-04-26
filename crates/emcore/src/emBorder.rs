@@ -2042,11 +2042,6 @@ How to move or set the focus:\n\
             }
         }
 
-        // Sync painter canvas color with local tracking variable so that
-        // downstream code (paint_label_impl, etc.) that reads
-        // painter.GetCanvasColor() sees the correct value.
-        painter.SetCanvasColor(canvas_color);
-
         // C++ line 901-902: s=emMin(rndW,rndH)*BorderScaling; minSpace*=s;
         let s = rnd_w.min(rnd_h) * self.border_scaling;
         let min_space = min_space * s;
@@ -2254,7 +2249,6 @@ How to move or set the focus:\n\
                 }
                 // C++ line 1109
                 painter.PaintRoundRect(tx, ty, tw, th, tr, tr, color, canvas_color);
-                painter.SetCanvasColor(color);
                 // Note: C++ then calls PaintContent + PaintBorderImage and returns.
                 // In Rust, content painting is external; paint_inner_overlay handles
                 // the border image overlay.

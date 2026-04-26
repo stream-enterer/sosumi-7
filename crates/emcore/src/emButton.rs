@@ -218,7 +218,6 @@ impl emButton {
 
         let face_color = self.look.button_bg_color;
         painter.PaintRoundRect(fx, fy, fw, fh, fr, fr, face_color, canvas_color);
-        painter.SetCanvasColor(face_color);
 
         let d = fw.min(fh) * 0.1;
         let dx = (r * 0.7).max(d);
