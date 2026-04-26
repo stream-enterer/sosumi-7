@@ -9,6 +9,7 @@ use emcore::emEngineCtx::PanelCtx;
 use emcore::emPanelTree::{PanelTree, ViewConditionType};
 
 use emcore::emBorder::{emBorder, InnerBorderType, OuterBorderType};
+use emcore::emColor::emColor;
 use emcore::emPainter::emPainter;
 use emcore::emView::{emView, ViewFlags};
 use emcore::emViewRenderer::SoftwareCompositor;
@@ -105,7 +106,14 @@ impl BorderBehavior {
 }
 
 impl PanelBehavior for BorderBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.border
             .paint_border(painter, w, h, &self.look, false, true, pixel_scale);
@@ -118,7 +126,14 @@ struct LabelBehavior {
 }
 
 impl PanelBehavior for LabelBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.label
             .PaintContent(painter, w, h, state.enabled, pixel_scale);
@@ -131,7 +146,14 @@ struct ButtonBehavior {
 }
 
 impl PanelBehavior for ButtonBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.button.Paint(painter, w, h, state.enabled, pixel_scale);
     }
@@ -143,7 +165,14 @@ struct CheckBoxBehavior {
 }
 
 impl PanelBehavior for CheckBoxBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.check_box
             .Paint(painter, w, h, state.enabled, pixel_scale);
@@ -156,7 +185,14 @@ struct TextFieldBehavior {
 }
 
 impl PanelBehavior for TextFieldBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.text_field
             .Paint(painter, w, h, state.enabled, pixel_scale);
@@ -169,7 +205,14 @@ struct ScalarFieldBehavior {
 }
 
 impl PanelBehavior for ScalarFieldBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.scalar_field
             .Paint(painter, w, h, state.enabled, pixel_scale);
@@ -440,7 +483,14 @@ struct RadioButtonBehavior {
 }
 
 impl PanelBehavior for RadioButtonBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.radio_button
             .Paint(painter, w, h, state.enabled, pixel_scale);
@@ -453,7 +503,14 @@ struct ListBoxBehavior {
 }
 
 impl PanelBehavior for ListBoxBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.list_box.Paint(painter, w, h, pixel_scale);
     }
@@ -465,7 +522,14 @@ struct SplitterBehavior {
 }
 
 impl PanelBehavior for SplitterBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         self.splitter.PaintContent(painter, w, h, _state.enabled);
     }
 }
@@ -609,7 +673,14 @@ struct ColorFieldExpandedBehavior {
 }
 
 impl PanelBehavior for ColorFieldExpandedBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.color_field.Paint(painter, w, h, pixel_scale);
     }
@@ -684,7 +755,14 @@ struct ListBoxExpandedBehavior {
 }
 
 impl PanelBehavior for ListBoxExpandedBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.list_box.Paint(painter, w, h, pixel_scale);
     }
@@ -1068,9 +1146,17 @@ struct TunnelBehavior {
 }
 
 impl PanelBehavior for TunnelBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.tunnel.paint_tunnel(painter, w, h, pixel_scale);
+        self.tunnel
+            .paint_tunnel(painter, canvas_color, w, h, pixel_scale);
     }
 }
 
@@ -1999,7 +2085,14 @@ struct SplitterCompositionBehavior {
 }
 
 impl PanelBehavior for SplitterCompositionBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.splitter.PaintContent(painter, w, h, state.enabled);
     }
 

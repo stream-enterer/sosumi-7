@@ -127,10 +127,28 @@ impl emTunnel {
     }
 
     /// Paint the tunnel decoration.
-    pub fn paint_tunnel(&self, painter: &mut emPainter, w: f64, h: f64, pixel_scale: f64) {
+    pub fn paint_tunnel(
+        &self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        pixel_scale: f64,
+    ) {
         // Paint the border chrome first.
         self.border
             .paint_border(painter, w, h, &self.look, false, true, pixel_scale);
+
+        // The polygon paints below render inside the border's content rect, so
+        // their canvas is the border's *content* canvas, not the panel's outer
+        // canvas. Pre-F018 Rust code derived this implicitly by reading
+        // painter.GetCanvasColor() after paint_border (which had set it via
+        // SetCanvasColor). With the canvas-color carrier going away, derive
+        // the content canvas explicitly from the same border helper that
+        // GetChildRect uses.
+        let canvas_color = self
+            .border
+            .content_canvas_color(canvas_color, &self.look, true);
 
         let (rect, ar) = self.GetContentRoundRect(w, h);
         let ax = rect.x;
@@ -142,7 +160,6 @@ impl emTunnel {
             return;
         }
 
-        let canvas_color = painter.GetCanvasColor();
         let (bx, by, bw, bh, br) = self.compute_inner_rect(ax, ay, aw, ah, ar);
 
         let img = with_toolkit_images(|imgs| imgs.tunnel.clone());
@@ -274,9 +291,16 @@ impl emTunnel {
 }
 
 impl PanelBehavior for emTunnel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.paint_tunnel(painter, w, h, pixel_scale);
+        self.paint_tunnel(painter, canvas_color, w, h, pixel_scale);
     }
 
     fn auto_expand(&self) -> bool {

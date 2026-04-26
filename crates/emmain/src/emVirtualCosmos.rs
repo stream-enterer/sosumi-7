@@ -468,22 +468,25 @@ impl emVirtualCosmosItemPanel {
 }
 
 impl PanelBehavior for emVirtualCosmosItemPanel {
-    // DIVERGED: (language-forced) C++ Paint(const emPainter&, emColor canvasColor)
-    // Rust PanelBehavior::Paint doesn't receive canvasColor; use painter.GetCanvasColor().
-    fn Paint(&mut self, painter: &mut emPainter, _w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        _w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         let Some(rec) = &self.item_rec else {
             return;
         };
 
         if rec.BorderScaling <= 1e-100 {
-            let canvas_color = painter.GetCanvasColor();
             painter.ClearWithCanvas(rec.BackgroundColor, canvas_color);
             return;
         }
 
         let bor_col = rec.BorderColor;
         let (l, t, r, b) = self.CalcBorders();
-        let canvas_color = painter.GetCanvasColor();
 
         if bor_col == rec.BackgroundColor {
             painter.ClearWithCanvas(rec.BackgroundColor, canvas_color);
@@ -863,7 +866,14 @@ impl PanelBehavior for emVirtualCosmosPanel {
         self.layout_items(ctx);
     }
 
-    fn Paint(&mut self, _painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        _painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        _state: &PanelState,
+    ) {
         // Background is drawn by the emStarFieldPanel child. Nothing to paint here.
     }
 }

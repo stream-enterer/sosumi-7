@@ -556,7 +556,11 @@ impl emBookmarkButton {
             Ok(data) => match emcore::emResTga::load_tga(&data) {
                 Ok(img) => self.icon = Some(img),
                 Err(e) => {
-                    log::warn!("emBookmarkButton: TGA decode failed for {:?}: {:?}", path, e);
+                    log::warn!(
+                        "emBookmarkButton: TGA decode failed for {:?}: {:?}",
+                        path,
+                        e
+                    );
                 }
             },
             Err(e) => {
@@ -575,7 +579,14 @@ impl PanelBehavior for emBookmarkButton {
         self.bookmark.entry.BgColor
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         if !self.icon_load_attempted {
             self.load_icon();
         }
@@ -682,7 +693,14 @@ impl PanelBehavior for emBookmarksPanel {
         GROUP_BG_DEFAULT
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         // Draw group background.
         painter.PaintRect(0.0, 0.0, w, h, GROUP_BG_DEFAULT, emColor::TRANSPARENT);
     }
@@ -783,7 +801,14 @@ impl PanelBehavior for emBookmarksGroupPanel {
         self.group.entry.BgColor
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         let bg = self.group.entry.BgColor;
         painter.PaintRect(0.0, 0.0, w, h, bg, emColor::TRANSPARENT);
         if !self.group.entry.Name.is_empty() {

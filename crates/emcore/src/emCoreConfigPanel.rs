@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use crate::emColor::emColor;
 use crate::emCoreConfig::emCoreConfig;
 use crate::emEngineCtx::PanelCtx;
 use crate::emLinearLayout::emLinearLayout;
@@ -237,7 +238,14 @@ impl KBGroup {
 }
 
 impl PanelBehavior for KBGroup {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.border.paint_border(
             painter,
             w,
@@ -378,7 +386,14 @@ impl MouseMiscGroup {
 }
 
 impl PanelBehavior for MouseMiscGroup {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.border.paint_border(
             painter,
             w,
@@ -557,7 +572,14 @@ impl KineticGroup {
 }
 
 impl PanelBehavior for KineticGroup {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.border.paint_border(
             painter,
             w,
@@ -681,7 +703,14 @@ impl MaxMemGroup {
 }
 
 impl PanelBehavior for MaxMemGroup {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.border.paint_border(
             painter,
             w,
@@ -778,7 +807,15 @@ impl MemFieldLayoutPanel {
 }
 
 impl PanelBehavior for MemFieldLayoutPanel {
-    fn Paint(&mut self, _painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {}
+    fn Paint(
+        &mut self,
+        _painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        _state: &PanelState,
+    ) {
+    }
 
     fn auto_expand(&self) -> bool {
         true
@@ -828,9 +865,17 @@ impl MaxMemInnerTunnelPanel {
 }
 
 impl PanelBehavior for MaxMemInnerTunnelPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.tunnel.paint_tunnel(painter, w, h, pixel_scale);
+        self.tunnel
+            .paint_tunnel(painter, canvas_color, w, h, pixel_scale);
     }
 
     fn auto_expand(&self) -> bool {
@@ -892,9 +937,17 @@ impl MaxMemTunnelPanel {
 }
 
 impl PanelBehavior for MaxMemTunnelPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.tunnel.paint_tunnel(painter, w, h, pixel_scale);
+        self.tunnel
+            .paint_tunnel(painter, canvas_color, w, h, pixel_scale);
     }
 
     fn auto_expand(&self) -> bool {
@@ -1018,7 +1071,14 @@ impl CpuGroup {
 }
 
 impl PanelBehavior for CpuGroup {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.border.paint_border(
             painter,
             w,
@@ -1183,7 +1243,14 @@ impl PerformanceGroup {
 }
 
 impl PanelBehavior for PerformanceGroup {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.border.paint_border(
             painter,
             w,
@@ -1376,7 +1443,14 @@ impl MouseGroup {
 }
 
 impl PanelBehavior for MouseGroup {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.border.paint_border(
             painter,
             w,
@@ -1490,7 +1564,15 @@ impl ButtonsPanel {
 }
 
 impl PanelBehavior for ButtonsPanel {
-    fn Paint(&mut self, _painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {}
+    fn Paint(
+        &mut self,
+        _painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        _state: &PanelState,
+    ) {
+    }
 
     fn auto_expand(&self) -> bool {
         true
@@ -1581,7 +1663,15 @@ impl ContentPanel {
 }
 
 impl PanelBehavior for ContentPanel {
-    fn Paint(&mut self, _painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {}
+    fn Paint(
+        &mut self,
+        _painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        _state: &PanelState,
+    ) {
+    }
 
     fn auto_expand(&self) -> bool {
         true
@@ -1688,7 +1778,14 @@ impl emCoreConfigPanel {
 }
 
 impl PanelBehavior for emCoreConfigPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.border.paint_border(
             painter,
             w,

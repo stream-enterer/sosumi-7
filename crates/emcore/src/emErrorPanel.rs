@@ -40,9 +40,14 @@ impl PanelBehavior for emErrorPanel {
     }
 
     // DIVERGED: (language-forced) Paint — implemented as PanelBehavior::paint trait method
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
-        let canvas_color = painter.GetCanvasColor();
-
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         painter.PaintRect(0.0, 0.0, w, h, BG_COLOR, canvas_color);
 
         if self.error_message.is_empty() {

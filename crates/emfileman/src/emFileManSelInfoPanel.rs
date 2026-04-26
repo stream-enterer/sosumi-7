@@ -668,7 +668,14 @@ impl PanelBehavior for emFileManSelInfoPanel {
         false
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        _state: &PanelState,
+    ) {
         let fm = self.file_man.borrow();
         let fg_src = emColor::from_packed(0x80E080FF);
         let text = format!("Sources:{:4}", fm.GetSourceSelectionCount());

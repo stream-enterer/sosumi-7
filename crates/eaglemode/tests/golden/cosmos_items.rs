@@ -73,7 +73,7 @@ fn cosmos_item_border() {
         }
         p.SetCanvasColor(emColor::TRANSPARENT);
         p.scale(sx, sy);
-        panel.Paint(&mut p, 1.0, panel_h, &state);
+        panel.Paint(&mut p, emColor::TRANSPARENT, 1.0, panel_h, &state);
     }
 
     compare_images(

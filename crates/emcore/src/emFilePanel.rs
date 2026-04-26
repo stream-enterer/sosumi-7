@@ -162,8 +162,7 @@ impl emFilePanel {
     /// This renders informational text about the current virtual file state.
     /// Derived panels should check `vir_file_state().is_good()` and render
     /// their content instead of calling this method when the state is good.
-    pub fn paint_status(&self, painter: &mut emPainter, w: f64, h: f64) {
-        let canvas_color = painter.GetCanvasColor();
+    pub fn paint_status(&self, painter: &mut emPainter, canvas_color: emColor, w: f64, h: f64) {
         let vfs = self.GetVirFileState();
 
         match &vfs {
@@ -428,8 +427,15 @@ impl PanelBehavior for emFilePanel {
         self.GetVirFileState().IsHopeForSeeking()
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
-        self.paint_status(painter, w, h);
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
+        self.paint_status(painter, canvas_color, w, h);
     }
 
     fn dump_state(&self) -> Vec<(&'static str, String)> {
@@ -469,9 +475,7 @@ pub fn map_vir_state(state: &VirtualFileState) -> FileLoadStatus {
         VirtualFileState::Loaded | VirtualFileState::Unsaved | VirtualFileState::Saving => {
             FileLoadStatus::Loaded
         }
-        VirtualFileState::TooCostly => {
-            FileLoadStatus::Error("file too costly to load".to_string())
-        }
+        VirtualFileState::TooCostly => FileLoadStatus::Error("file too costly to load".to_string()),
         VirtualFileState::LoadError(e) | VirtualFileState::SaveError(e) => {
             FileLoadStatus::Error(e.clone())
         }

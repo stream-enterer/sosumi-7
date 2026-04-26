@@ -74,7 +74,14 @@ impl FileItemPanelBehavior {
 }
 
 impl PanelBehavior for FileItemPanelBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         // C++ emFileSelectionBox::FileItemPanel::Paint (lines 958-1062).
         // Panel coordinates: (0,0)-(w,h) where w is normalized to 1.0 in C++.
         // Here w and h are the actual panel dimensions.
@@ -108,7 +115,10 @@ impl PanelBehavior for FileItemPanelBehavior {
         };
 
         let fg_color = fg;
-        let mut canvas_color = bg;
+        // `cur_canvas` tracks the canvas color that has been painted under each
+        // subsequent draw. Initialized to `bg` because the panel is opaque-bg
+        // (C++ FileItemPanel sets canvas to bg via GetCanvasColor()).
+        let mut cur_canvas = bg;
 
         // 1. Selection highlight (C++ lines 973-985).
         if self.is_selected {
@@ -126,9 +136,9 @@ impl PanelBehavior for FileItemPanelBehavior {
                 r * w,
                 r * w,
                 hl,
-                painter.GetCanvasColor(),
+                canvas_color,
             );
-            canvas_color = hl;
+            cur_canvas = hl;
         }
 
         // 2. Filename text (C++ lines 987-999).
@@ -146,7 +156,7 @@ impl PanelBehavior for FileItemPanelBehavior {
                 &self.name,
                 nh * w,
                 text_color,
-                canvas_color,
+                cur_canvas,
                 crate::emPainter::TextAlignment::Center,
                 crate::emPainter::VAlign::Center,
                 crate::emPainter::TextAlignment::Center,
@@ -195,7 +205,7 @@ impl PanelBehavior for FileItemPanelBehavior {
                     img_h,
                     emColor::TRANSPARENT,
                     fg_color,
-                    canvas_color,
+                    cur_canvas,
                     ImageExtension::Zero,
                 );
 
@@ -239,7 +249,7 @@ impl PanelBehavior for FileItemPanelBehavior {
                         rw * 2.0,
                         rw * 2.0,
                         &stroke,
-                        canvas_color,
+                        cur_canvas,
                     );
 
                     // Diagonal line.
@@ -251,7 +261,7 @@ impl PanelBehavior for FileItemPanelBehavior {
                         cx + t,
                         cy + t,
                         &line_stroke,
-                        canvas_color,
+                        cur_canvas,
                     );
                 }
             });
@@ -629,8 +639,7 @@ impl PanelBehavior for TextFilePanel {
     /// The panel is always in "loaded" state (file was read in constructor).
     /// At golden test scale, the silhouette path is always taken because
     /// `CharHeight * GetViewedWidth() < 0.5`.
-    fn Paint(&mut self, p: &mut emPainter, w: f64, h: f64, _s: &PanelState) {
-        let canvas_color = p.GetCanvasColor();
+    fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, _s: &PanelState) {
         let panel_h = h / w.max(1e-100); // normalized height (tallness)
 
         self.update_text_layout(panel_h);
@@ -1367,7 +1376,14 @@ impl PanelBehavior for emFileSelectionBox {
         Some(self)
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.border.paint_border(
             painter,
             w,

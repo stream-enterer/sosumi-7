@@ -5,6 +5,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use emcore::emButton::emButton;
+use emcore::emColor::emColor;
 use emcore::emCursor::emCursor;
 use emcore::emEngineCtx::PanelCtx;
 use emcore::emInput::{emInputEvent, InputKey};
@@ -23,7 +24,14 @@ struct ButtonPanel {
 }
 
 impl PanelBehavior for ButtonPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(painter, w, h, state.enabled, pixel_scale);
     }

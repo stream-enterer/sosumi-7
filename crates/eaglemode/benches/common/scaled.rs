@@ -22,7 +22,14 @@ pub struct ColorPanel {
 }
 
 impl PanelBehavior for ColorPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         painter.PaintRect(0.0, 0.0, w, h, self.color, emColor::TRANSPARENT);
     }
 

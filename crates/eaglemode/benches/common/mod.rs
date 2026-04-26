@@ -97,7 +97,14 @@ impl TestPanel {
 }
 
 impl PanelBehavior for TestPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         if state.viewed_rect.w < 25.0 {
             return;
         }

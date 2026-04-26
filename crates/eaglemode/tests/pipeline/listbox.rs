@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use emcore::emBorder::{emBorder, InnerBorderType, OuterBorderType};
+use emcore::emColor::emColor;
 use emcore::emCursor::emCursor;
 use emcore::emEngineCtx::PanelCtx;
 use emcore::emInput::{emInputEvent, InputKey};
@@ -31,7 +32,14 @@ struct SharedListBoxPanel {
 }
 
 impl PanelBehavior for SharedListBoxPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.inner.borrow_mut().Paint(painter, w, h, pixel_scale);
     }

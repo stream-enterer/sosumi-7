@@ -155,7 +155,14 @@ impl PanelBehavior for SliderPanel {
         false
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, _w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         if !self.mouse_over && self.hidden {
             return;
         }
@@ -259,7 +266,14 @@ impl PanelBehavior for StartupOverlayPanel {
         true
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         painter.Clear(emColor::from_packed(0x808080FF));
         let text_height = 30.0 / painter.GetScaleY();
         painter.PaintTextBoxed(
@@ -684,7 +698,14 @@ impl PanelBehavior for emMainPanel {
         false
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        _state: &PanelState,
+    ) {
         // Port of C++ emMainPanel::Paint (emMainPanel.cpp:167-222).
 
         if self.content_y <= 1e-10 {

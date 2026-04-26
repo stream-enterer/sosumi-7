@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use crate::emButton::emButton;
+use crate::emColor::emColor;
 use crate::emCursor::emCursor;
 
 /// Extension callback invoked by DialogPrivateEngine::Cycle after the base
@@ -639,7 +640,14 @@ impl PanelBehavior for DlgPanel {
         Some(self)
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         let pixel_scale = 1.0; // DlgPanel is the view root; no enclosing scaling
         self.border
             .paint_border(painter, w, h, &self.look, false, true, pixel_scale);
@@ -786,7 +794,14 @@ impl DlgButton {
 }
 
 impl PanelBehavior for DlgButton {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.button.Paint(painter, w, h, state.enabled, pixel_scale);
     }

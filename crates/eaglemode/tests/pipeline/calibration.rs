@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use emcore::emButton::emButton;
+use emcore::emColor::emColor;
 use emcore::emColorField::emColorField;
 use emcore::emCursor::emCursor;
 use emcore::emEngineCtx::PanelCtx;
@@ -36,7 +37,14 @@ impl ScalarFieldBehavior {
 }
 
 impl PanelBehavior for ScalarFieldBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.sf.Paint(painter, w, h, state.enabled, pixel_scale);
     }
@@ -145,7 +153,14 @@ impl ColorFieldBehavior {
 }
 
 impl PanelBehavior for ColorFieldBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.color_field.Paint(painter, w, h, pixel_scale);
     }
@@ -335,7 +350,14 @@ fn button_click_works_after_zoom() {
         widget: emButton,
     }
     impl PanelBehavior for BtnPanel {
-        fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+        fn Paint(
+            &mut self,
+            painter: &mut emPainter,
+            _canvas_color: emColor,
+            w: f64,
+            h: f64,
+            state: &PanelState,
+        ) {
             let pixel_scale =
                 state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
             self.widget.Paint(painter, w, h, state.enabled, pixel_scale);
@@ -402,7 +424,14 @@ struct SharedListBoxPanel {
 }
 
 impl PanelBehavior for SharedListBoxPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.inner.borrow_mut().Paint(painter, w, h, pixel_scale);
     }

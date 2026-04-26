@@ -312,11 +312,7 @@ impl PanelBehavior for emDirPanel {
         ]
     }
 
-    fn Cycle(
-        &mut self,
-        ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
-        ctx: &mut PanelCtx,
-    ) -> bool {
+    fn Cycle(&mut self, ectx: &mut emcore::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
         // Port of C++ emFilePanel::Cycle (emFilePanel.cpp:151-161): observe
         // the file model's state and refresh the painted view; never drive
         // loading from the panel. Loading is owned by emDirModelEngine,
@@ -324,9 +320,8 @@ impl PanelBehavior for emDirPanel {
         if self.dir_model.is_none() {
             let dm_rc = emDirModel::Acquire(&self.ctx, &self.path);
             emDirModel::ensure_engine_registered(&dm_rc, ectx.scheduler);
-            self.file_panel.SetFileModel(Some(
-                Rc::clone(&dm_rc) as Rc<RefCell<dyn FileModelState>>,
-            ));
+            self.file_panel
+                .SetFileModel(Some(Rc::clone(&dm_rc) as Rc<RefCell<dyn FileModelState>>));
             self.dir_model = Some(dm_rc);
             self.child_count = 0;
             self.content_complete = false;
@@ -411,9 +406,8 @@ impl PanelBehavior for emDirPanel {
                     if let Some(sched) = ctx.scheduler.as_deref_mut() {
                         emDirModel::ensure_engine_registered(&dm_rc, sched);
                     }
-                    self.file_panel.SetFileModel(Some(
-                        Rc::clone(&dm_rc) as Rc<RefCell<dyn FileModelState>>,
-                    ));
+                    self.file_panel
+                        .SetFileModel(Some(Rc::clone(&dm_rc) as Rc<RefCell<dyn FileModelState>>));
                     self.dir_model = Some(dm_rc);
                     self.child_count = 0;
                     self.content_complete = false;
@@ -439,7 +433,14 @@ impl PanelBehavior for emDirPanel {
         }
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         // Port of C++ emDirPanel::Paint (emDirPanel.cpp:159-170):
         //   switch (GetVirFileState()) {
         //   case VFS_LOADED:
@@ -458,7 +459,7 @@ impl PanelBehavior for emDirPanel {
                 painter.Clear(dc);
             }
             _ => {
-                self.file_panel.Paint(painter, w, h, state);
+                self.file_panel.Paint(painter, canvas_color, w, h, state);
             }
         }
     }
@@ -580,7 +581,7 @@ mod tests {
         let dm_rc = emDirModel::Acquire(&ctx, "/tmp");
         let mut panel = emDirPanel::new(Rc::clone(&ctx), "/tmp".to_string());
         panel.file_panel.SetFileModel(Some(
-            Rc::clone(&dm_rc) as Rc<std::cell::RefCell<dyn FileModelState>>,
+            Rc::clone(&dm_rc) as Rc<std::cell::RefCell<dyn FileModelState>>
         ));
         assert_ne!(
             panel.file_panel.GetVirFileState(),
@@ -605,9 +606,9 @@ mod tests {
         let dm_rc = emDirModel::Acquire(&ctx, "/tmp");
 
         let mut panel = emDirPanel::new(Rc::clone(&ctx), "/tmp".to_string());
-        panel.file_panel.SetFileModel(Some(
-            Rc::clone(&dm_rc) as Rc<RefCell<dyn FileModelState>>,
-        ));
+        panel
+            .file_panel
+            .SetFileModel(Some(Rc::clone(&dm_rc) as Rc<RefCell<dyn FileModelState>>));
         panel.dir_model = Some(Rc::clone(&dm_rc));
 
         // Execute the Waiting→Loading transition exactly as Cycle does it
@@ -817,9 +818,9 @@ mod tests {
         let mut pending_inputs = Vec::new();
         let mut input_state = emcore::emInputState::emInputState::new();
         let cb = std::cell::RefCell::new(None::<Box<dyn emcore::emClipboard::emClipboard>>);
-        let pa = Rc::new(std::cell::RefCell::new(
-            Vec::<emcore::emGUIFramework::DeferredAction>::new(),
-        ));
+        let pa = Rc::new(std::cell::RefCell::new(Vec::<
+            emcore::emGUIFramework::DeferredAction,
+        >::new()));
 
         // Drain any engines already awake before our panel (root/parent engines
         // woken by INIT_NOTICE_FLAGS) so they don't muddy the has_awake signal.
@@ -887,10 +888,7 @@ mod tests {
                 if flags.contains(NoticeFlags::VIEWING_CHANGED) && !self.spawned {
                     let child_id = ctx.create_child_with(
                         "content",
-                        Box::new(emDirPanel::new(
-                            Rc::clone(&self.emctx),
-                            self.path.clone(),
-                        )),
+                        Box::new(emDirPanel::new(Rc::clone(&self.emctx), self.path.clone())),
                     );
                     ctx.wake_up_panel(child_id);
                     self.spawned = true;
@@ -1234,9 +1232,7 @@ mod tests {
                 "emDir",
                 crate::emDirFpPlugin::emDirFpPluginFunc,
             );
-            emctx.acquire::<emFpPluginList>("", || {
-                emFpPluginList::from_plugins(vec![dir_plugin])
-            });
+            emctx.acquire::<emFpPluginList>("", || emFpPluginList::from_plugins(vec![dir_plugin]));
         }
 
         // Build tree: root→emDirEntryPanel for /tmp
@@ -1282,11 +1278,7 @@ mod tests {
                     ids.push(eid);
                 }
                 // Queue SOUGHT_NAME_CHANGED so update_content_panel fires and sees is_sought=true
-                tree.queue_notice(
-                    root,
-                    NoticeFlags::SOUGHT_NAME_CHANGED,
-                    Some(&mut sched),
-                );
+                tree.queue_notice(root, NoticeFlags::SOUGHT_NAME_CHANGED, Some(&mut sched));
             }
             win.put_tree(tree);
             ids
@@ -1417,9 +1409,7 @@ mod tests {
                 "emDir",
                 crate::emDirFpPlugin::emDirFpPluginFunc,
             );
-            emctx.acquire::<emFpPluginList>("", || {
-                emFpPluginList::from_plugins(vec![dir_plugin])
-            });
+            emctx.acquire::<emFpPluginList>("", || emFpPluginList::from_plugins(vec![dir_plugin]));
         }
 
         let entry = emDirEntry::from_parent_and_name("", &path);
@@ -1462,11 +1452,7 @@ mod tests {
                 if let Some(eid) = win.view().visiting_va_engine_id {
                     ids.push(eid);
                 }
-                tree.queue_notice(
-                    root,
-                    NoticeFlags::SOUGHT_NAME_CHANGED,
-                    Some(&mut sched),
-                );
+                tree.queue_notice(root, NoticeFlags::SOUGHT_NAME_CHANGED, Some(&mut sched));
             }
             win.put_tree(tree);
             ids
@@ -1528,7 +1514,8 @@ mod tests {
                 rect.w > 0.0 && rect.h > 0.0,
                 "Entry child {name:?} has zero-sized layout_rect: w={} h={}. \
                  Hypothesis B(ii) confirmed: LayoutChildren never ran or produced zero rects.",
-                rect.w, rect.h,
+                rect.w,
+                rect.h,
             );
         }
 
@@ -1582,9 +1569,7 @@ mod tests {
                 "emDir",
                 crate::emDirFpPlugin::emDirFpPluginFunc,
             );
-            emctx.acquire::<emFpPluginList>("", || {
-                emFpPluginList::from_plugins(vec![dir_plugin])
-            });
+            emctx.acquire::<emFpPluginList>("", || emFpPluginList::from_plugins(vec![dir_plugin]));
         }
 
         let entry = emDirEntry::from_parent_and_name("", &path);
@@ -1627,11 +1612,7 @@ mod tests {
                 if let Some(eid) = win.view().visiting_va_engine_id {
                     ids.push(eid);
                 }
-                tree.queue_notice(
-                    root,
-                    NoticeFlags::SOUGHT_NAME_CHANGED,
-                    Some(&mut sched),
-                );
+                tree.queue_notice(root, NoticeFlags::SOUGHT_NAME_CHANGED, Some(&mut sched));
             }
             win.put_tree(tree);
             ids
@@ -1697,7 +1678,8 @@ mod tests {
             }
         }
         assert_eq!(
-            zero_rect_count, 0,
+            zero_rect_count,
+            0,
             "{zero_rect_count}/{} entries have zero-sized layout_rect at scale",
             entry_children.len(),
         );
@@ -1746,7 +1728,7 @@ mod tests {
             let mut p = emPainter::new(&mut img);
             p.SetCanvasColor(dc);
             let state = PanelState::default_for_test();
-            panel.Paint(&mut p, 1.0, 1.0, &state);
+            panel.Paint(&mut p, dc, 1.0, 1.0, &state);
         }
 
         // Every pixel should be DirContentColor (Clear filled the whole rect).
@@ -1778,9 +1760,9 @@ mod tests {
         let ctx = emcore::emContext::emContext::NewRoot();
         let dm_rc = emDirModel::Acquire(&ctx, "/tmp");
         let mut panel = emDirPanel::new(Rc::clone(&ctx), "/tmp".to_string());
-        panel.file_panel.SetFileModel(Some(
-            Rc::clone(&dm_rc) as Rc<RefCell<dyn FileModelState>>,
-        ));
+        panel
+            .file_panel
+            .SetFileModel(Some(Rc::clone(&dm_rc) as Rc<RefCell<dyn FileModelState>>));
 
         // Just-acquired model is in Waiting state.
         assert!(matches!(
@@ -1797,7 +1779,7 @@ mod tests {
             let mut p = emPainter::new(&mut img);
             p.SetCanvasColor(sentinel);
             let state = PanelState::default_for_test();
-            panel.Paint(&mut p, 1.0, 1.0, &state);
+            panel.Paint(&mut p, sentinel, 1.0, 1.0, &state);
         }
 
         // No full-rect Clear should have happened. At least the corner pixel

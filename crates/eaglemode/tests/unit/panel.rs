@@ -26,7 +26,14 @@ impl TestBehavior {
 }
 
 impl PanelBehavior for TestBehavior {
-    fn Paint(&mut self, _painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        _painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        _state: &PanelState,
+    ) {
         self.paint_count += 1;
     }
 

@@ -2,6 +2,7 @@
 //! correctly positioned after auto-expansion, and that the group's
 //! PanelBehavior contract (auto_expand, child count) is upheld.
 
+use emcore::emColor::emColor;
 use emcore::emPackGroup::emPackGroup;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{PanelBehavior, PanelState};
@@ -12,7 +13,15 @@ use super::support::pipeline::PipelineTestHarness;
 struct DummyBehavior;
 
 impl PanelBehavior for DummyBehavior {
-    fn Paint(&mut self, _painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {}
+    fn Paint(
+        &mut self,
+        _painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        _state: &PanelState,
+    ) {
+    }
 }
 
 // ---------------------------------------------------------------------------

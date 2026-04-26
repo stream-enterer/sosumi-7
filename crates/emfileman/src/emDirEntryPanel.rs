@@ -937,7 +937,14 @@ impl PanelBehavior for emDirEntryPanel {
             && theme_rec.BackgroundRY <= 0.0
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, _w: f64, _h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        state: &PanelState,
+    ) {
         let cfg = self.config.borrow();
         let theme = cfg.GetTheme();
         let theme_rec = theme.GetRec();
@@ -965,7 +972,7 @@ impl PanelBehavior for emDirEntryPanel {
         // already matches bg), or if the outer-border rect lies strictly inside
         // the rounded-rect inner area (so border draws over actual BgColor
         // pixels), set canvasColor=BgColor; else canvasColor=0.
-        let parent_canvas = painter.GetCanvasColor();
+        let parent_canvas = canvas_color;
         let canvas_color = if parent_canvas == bg
             || (theme_rec.OuterBorderX >= theme_rec.BackgroundX + theme_rec.BackgroundRX * 0.3
                 && theme_rec.OuterBorderY >= theme_rec.BackgroundY + theme_rec.BackgroundRY * 0.3
@@ -1407,7 +1414,7 @@ mod tests {
                 }
             });
             let state = PanelState::default_for_test();
-            panel.Paint(&mut p, 1.0, 1.0, &state);
+            panel.Paint(&mut p, emColor::TRANSPARENT, 1.0, 1.0, &state);
         }
 
         // Confirm the recorder fired at all (sanity).
@@ -1468,7 +1475,11 @@ mod tests {
     /// Helper: build a recording emPainter, install an op-log that pushes
     /// each DrawOp variant tag onto a Vec, and run `f` against the painter.
     /// Returns the recorded variant tags so callers can count by `kind`.
-    fn collect_paint_info_ops<F>(panel: &emDirEntryPanel, info: (f64, f64, f64, f64), f: F) -> Vec<&'static str>
+    fn collect_paint_info_ops<F>(
+        panel: &emDirEntryPanel,
+        info: (f64, f64, f64, f64),
+        f: F,
+    ) -> Vec<&'static str>
     where
         F: FnOnce(&emDirEntryPanel, &mut emcore::emPainter::emPainter, (f64, f64, f64, f64)),
     {
@@ -1601,10 +1612,7 @@ mod tests {
             text_boxed >= 10,
             "wide layout: expected >=10 PaintTextBoxed, got {text_boxed}"
         );
-        assert!(
-            text >= 4,
-            "wide layout: expected >=4 PaintText, got {text}"
-        );
+        assert!(text >= 4, "wide layout: expected >=4 PaintText, got {text}");
     }
 
     /// F010 Phase 3 verification item 4: field content matches expected

@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use emcore::emCheckBox::emCheckBox;
 use emcore::emCheckButton::emCheckButton;
+use emcore::emColor::emColor;
 use emcore::emCursor::emCursor;
 use emcore::emEngineCtx::PanelCtx;
 use emcore::emInput::emInputEvent;
@@ -29,7 +30,14 @@ struct SharedCheckButtonPanel {
 }
 
 impl PanelBehavior for SharedCheckButtonPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.inner
             .borrow_mut()
@@ -66,7 +74,14 @@ struct SharedCheckBoxPanel {
 }
 
 impl PanelBehavior for SharedCheckBoxPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.inner
             .borrow_mut()

@@ -157,9 +157,15 @@ impl DefaultItemPanelBehavior {
 }
 
 impl PanelBehavior for DefaultItemPanelBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         // C++ emListBox::DefaultItemPanel::Paint — emListBox.cpp:554-608
-        let canvas_color = painter.GetCanvasColor();
 
         let (mut bg_col, mut fg_col, mut hl_col) = if self.selection_mode != SelectionMode::ReadOnly
         {

@@ -7,6 +7,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use emcore::emColor::emColor;
 use emcore::emCursor::emCursor;
 use emcore::emEngineCtx::PanelCtx;
 use emcore::emInput::{emInputEvent, InputKey};
@@ -29,7 +30,14 @@ struct SharedSplitterPanel {
 }
 
 impl PanelBehavior for SharedSplitterPanel {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.inner
             .borrow_mut()
             .PaintContent(painter, w, h, state.enabled);

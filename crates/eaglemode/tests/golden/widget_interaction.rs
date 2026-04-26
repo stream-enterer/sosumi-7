@@ -2,6 +2,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use emcore::emBorder::{emBorder, InnerBorderType, OuterBorderType};
+use emcore::emColor::emColor;
 use emcore::emCursor::emCursor;
 use emcore::emEngineCtx::PanelCtx;
 use emcore::emInput::{emInputEvent, InputKey, InputVariant};
@@ -600,7 +601,14 @@ struct SplitterLayoutBehavior {
 }
 
 impl PanelBehavior for SplitterLayoutBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         self.splitter.PaintContent(painter, w, h, state.enabled);
     }
 
@@ -747,7 +755,7 @@ struct ClickableButtonPanel {
 }
 
 impl PanelBehavior for ClickableButtonPanel {
-    fn Paint(&mut self, p: &mut emPainter, w: f64, h: f64, s: &PanelState) {
+    fn Paint(&mut self, p: &mut emPainter, _canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget.Paint(p, w, h, s.enabled, pixel_scale);
     }

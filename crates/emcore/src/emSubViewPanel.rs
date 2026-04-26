@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use crate::emColor::emColor;
 use crate::emCursor::emCursor;
 use crate::emInput::emInputEvent;
 use crate::emInputState::emInputState;
@@ -385,7 +386,13 @@ impl PanelBehavior for emSubViewPanel {
                     current_engine: None,
                     pending_actions: pa_ref,
                 };
-                if vif.filter(&vif_event, &sub_input_state, &mut self.sub_view, &mut self.sub_tree, &mut sc) {
+                if vif.filter(
+                    &vif_event,
+                    &sub_input_state,
+                    &mut self.sub_view,
+                    &mut self.sub_tree,
+                    &mut sc,
+                ) {
                     vif_consumed = true;
                     break;
                 }
@@ -395,9 +402,10 @@ impl PanelBehavior for emSubViewPanel {
                 // Wake our PanelCycleEngine so Cycle() runs to animate the VIF
                 // spring physics — mirrors C++ WakeUp() in emMouseZoomScrollVIF
                 // (emViewInputFilter.cpp:212) after a wheel event.
-                if let (Some(eng_id), Some(sched)) =
-                    (ctx.tree.panel_engine_id(ctx.id), ctx.scheduler.as_deref_mut())
-                {
+                if let (Some(eng_id), Some(sched)) = (
+                    ctx.tree.panel_engine_id(ctx.id),
+                    ctx.scheduler.as_deref_mut(),
+                ) {
                     sched.wake_up(eng_id);
                 }
                 return true;
@@ -552,7 +560,14 @@ impl PanelBehavior for emSubViewPanel {
         }
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, _w: f64, _h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        state: &PanelState,
+    ) {
         if !state.viewed {
             return;
         }
@@ -644,8 +659,7 @@ mod subview_dispatch_tests {
         let mut outer_tree = crate::emPanelTree::PanelTree::new();
         let outer_root = outer_tree.create_root("outer_root", false);
         outer_tree.init_panel_view(outer_root, None);
-        let outer_panel_id =
-            outer_tree.create_child(outer_root, "svp_slot", None);
+        let outer_panel_id = outer_tree.create_child(outer_root, "svp_slot", None);
 
         // wid must match what we use as the windows-map key below.
         let wid = winit::window::WindowId::dummy();
@@ -654,8 +668,7 @@ mod subview_dispatch_tests {
         // scope SubView{wid, outer_panel_id}.
         let mut svp = {
             let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
-            let cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
-                RefCell::new(None);
+            let cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
             let pa: Rc<RefCell<Vec<crate::emGUIFramework::DeferredAction>>> =
                 Rc::new(RefCell::new(Vec::new()));
             let mut sc = crate::emEngineCtx::SchedCtx {
@@ -675,9 +688,9 @@ mod subview_dispatch_tests {
         // Add a child panel to the sub-tree. Its PanelCycleEngine is
         // registered on `sched` (outer scheduler) with SubView scope.
         let sub_root = svp.sub_root();
-        let sub_child_id = svp
-            .sub_tree_mut()
-            .create_child(sub_root, "test_panel", Some(&mut sched));
+        let sub_child_id =
+            svp.sub_tree_mut()
+                .create_child(sub_root, "test_panel", Some(&mut sched));
 
         // Verify the engine was registered before continuing.
         let child_eid = svp
@@ -698,10 +711,12 @@ mod subview_dispatch_tests {
         // Wrap outer tree in a headless emWindow keyed by wid.
         // headless_emwindow_with_tree returns (WindowId::dummy(), win) which
         // equals wid here — the scheduler's SubView dispatch will find it.
-        let (map_wid, win) = crate::test_view_harness::headless_emwindow_with_tree(
-            &emctx, &mut sched, outer_tree,
+        let (map_wid, win) =
+            crate::test_view_harness::headless_emwindow_with_tree(&emctx, &mut sched, outer_tree);
+        assert_eq!(
+            map_wid, wid,
+            "headless window must use same id as SubView scope"
         );
-        assert_eq!(map_wid, wid, "headless window must use same id as SubView scope");
         let mut windows = HashMap::new();
         windows.insert(map_wid, win);
 

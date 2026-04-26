@@ -7,6 +7,7 @@
 use std::rc::Rc;
 
 use emcore::emBorder::{emBorder, InnerBorderType, OuterBorderType};
+use emcore::emColor::emColor;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{PanelBehavior, PanelState};
 use emcore::emPanelTree::PanelTree;
@@ -124,7 +125,14 @@ struct BorderBehavior {
 }
 
 impl PanelBehavior for BorderBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         self.border
             .paint_border(painter, w, h, &self.look, false, true, 1.0);
     }
@@ -135,7 +143,14 @@ struct LabelBehavior {
 }
 
 impl PanelBehavior for LabelBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.label
             .PaintContent(painter, w, h, state.enabled, pixel_scale);
@@ -147,7 +162,14 @@ struct CheckBoxBehavior {
 }
 
 impl PanelBehavior for CheckBoxBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.check_box
             .Paint(painter, w, h, state.enabled, pixel_scale);
@@ -159,7 +181,14 @@ struct ScalarFieldBehavior {
 }
 
 impl PanelBehavior for ScalarFieldBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.scalar_field
             .Paint(painter, w, h, state.enabled, pixel_scale);

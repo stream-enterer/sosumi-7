@@ -95,15 +95,21 @@ impl PanelBehavior for emImageFilePanel {
         self.file_panel.GetCanvasColor()
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         if !self.file_panel.GetVirFileState().is_good() {
-            self.file_panel.Paint(painter, w, h, state);
+            self.file_panel.Paint(painter, canvas_color, w, h, state);
             return;
         }
 
         if let Some(ref image) = self.current_image {
             if let Some((ix, iy, iw, ih)) = self.GetEssenceRect(w, h) {
-                let canvas_color = painter.GetCanvasColor();
                 painter.paint_image_full(ix, iy, iw, ih, image, 255, canvas_color);
             }
         }

@@ -1146,7 +1146,14 @@ impl PanelBehavior for emMainContentPanel {
         }
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        w: f64,
+        h: f64,
+        _state: &PanelState,
+    ) {
         let top_color = emColor::from_packed(0x91ABF2FF); // emColor(145, 171, 242)
         let bot_color = emColor::from_packed(0xE1DDB7FF); // emColor(225, 221, 183)
         let canvas = emColor::from_packed(0x000000FF);

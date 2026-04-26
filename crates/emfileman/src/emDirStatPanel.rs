@@ -126,9 +126,16 @@ impl PanelBehavior for emDirStatPanel {
         (bg >> 24) == 0xFF
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, w: f64, h: f64, state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
         if self.file_panel.GetVirFileState() != VirtualFileState::Loaded {
-            self.file_panel.paint_status(painter, w, h);
+            self.file_panel.paint_status(painter, canvas_color, w, h);
             return;
         }
 

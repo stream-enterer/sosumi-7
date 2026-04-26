@@ -29,7 +29,14 @@ impl ColorFillBehavior {
 }
 
 impl PanelBehavior for ColorFillBehavior {
-    fn Paint(&mut self, painter: &mut emPainter, vw: f64, vh: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        vw: f64,
+        vh: f64,
+        _state: &PanelState,
+    ) {
         painter.PaintRect(0.0, 0.0, vw, vh, self.color, emColor::TRANSPARENT);
     }
 }

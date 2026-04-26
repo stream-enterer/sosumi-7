@@ -185,7 +185,14 @@ impl PanelBehavior for emStarFieldPanel {
         true
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        _state: &PanelState,
+    ) {
         let bg = emColor::from_packed(BG_COLOR);
         painter.Clear(bg);
 
@@ -544,7 +551,14 @@ impl PanelBehavior for TicTacToePanel {
         false
     }
 
-    fn Paint(&mut self, painter: &mut emPainter, _w: f64, _h: f64, _state: &PanelState) {
+    fn Paint(
+        &mut self,
+        painter: &mut emPainter,
+        _canvas_color: emColor,
+        _w: f64,
+        _h: f64,
+        _state: &PanelState,
+    ) {
         let c = Self::CheckState(self.state);
 
         for i in 0..9_i32 {
