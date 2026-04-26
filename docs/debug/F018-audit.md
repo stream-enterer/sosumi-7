@@ -174,33 +174,67 @@ plan.
 
 ### II.1 — `view.Paint` receives the OS-driver canvas color
 
-**Status:**
+**Status:** COMPLIANT
+
 **Evidence:**
-**Notes:**
+- Rust render strategies pass `emColor::TRANSPARENT` to `view.Paint`:
+  - `crates/emcore/src/emWindow.rs:635` (single-buffer fallback).
+  - `crates/emcore/src/emWindow.rs:679` (per-tile path).
+  - `crates/emcore/src/emWindow.rs:736` (parallel record path — verified inline by reading 730+).
+  - Test-only: `crates/emcore/src/emViewRenderer.rs:41, 64`.
+- Per O.1: C++ passes literal `0` = `emColor(0)` = transparent black at `~/Projects/eaglemode-0.96.4/src/emCore/emViewRenderer.cpp:109, 140`. Rust's `emColor::TRANSPARENT` is the same value (RGBA 0,0,0,0).
+
+**Notes:** No remediation needed at the entry point.
 
 ### II.2 — SVP receives the conditionally-updated canvas color
 
-**Status:**
+**Status:** COMPLIANT
+
 **Evidence:**
-**Notes:**
+- `crates/emcore/src/emView.rs:4738` — `canvas_color = ncc;` immediately after the conditional `ClearWithCanvas`. Mirrors C++ `emView.cpp:1083`.
+- SVP paint dispatch at `crates/emcore/src/emView.rs:4770-4771`:
+  - `painter.SetCanvasColor(canvas_color);` propagates the (possibly updated) value to the painter carrier.
+  - `self.paint_one_panel(tree, painter, svp_id, svp_layout);` invokes the SVP's paint via the carrier.
+- Mirrors C++ `emView.cpp:1098`: `p->Paint(pnt, canvasColor)` where `canvasColor` was just updated on line 1083.
+
+**Notes:** Per O.2, the divergence is parameter-vs-carrier (preserved-design-intent in C++ is expressed as carrier-state in Rust). Functionally equivalent at this update point.
 
 ### II.3 — Children receive their own `CanvasColor`
 
-**Status:**
+**Status:** COMPLIANT
+
 **Evidence:**
-**Notes:**
+- C++ `emView.cpp:1118` — `p->Paint(pnt, p->CanvasColor);` — child receives its own panel's `CanvasColor`, not the parent's or the SVP's.
+- Rust child-paint dispatch at `crates/emcore/src/emView.rs:4805, 4812`:
+  - `let p_canvas = panel.canvas_color;` — fetches the child panel's own canvas color from its `PanelRecord`.
+  - `painter.SetCanvasColor(p_canvas);` — updates the painter carrier with the child's canvas color before invoking `paint_one_panel`.
+
+**Notes:** Per-child carrier update mirrors C++ per-child parameter pass. No remediation.
 
 ### II.4 — Tile boundaries do not perturb canvas color
 
-**Status:**
+**Status:** COMPLIANT (transitive from II.1, II.2, II.3)
+
 **Evidence:**
-**Notes:**
+- Per-tile path (`crates/emcore/src/emWindow.rs:668-687`): each dirty tile invokes `view.Paint(tree, &mut painter, emColor::TRANSPARENT)` with a fresh painter (carrier reset to `TRANSPARENT` at `emPainter::new`, line 547). Each call re-derives canvas color through the same `emView::Paint` block. Identical input → identical canvas-color output for the same panel across tiles.
+- Single-buffer fallback (`emWindow.rs:632-636`): one `view.Paint` call writes the whole viewport-sized buffer; canvas color is derived once and applied during the same walk.
+- Parallel path (`emWindow.rs:735-736`): one `view.Paint` records into a display list with each op carrying its own canvas-color argument (the recording painter captures `canvas_color` as part of `DrawOp::PaintRect` etc.). Replay into per-tile painters does not re-derive canvas color — it replays the recorded values verbatim.
+
+**Notes:** Tile boundaries do not affect canvas-color computation under any of the three strategies. Compliance is transitive from II.2/II.3.
 
 ### II.5 — `emPainter` is not a canvas-color carrier
 
-**Status:**
-**Evidence:**
+**Status:** VIOLATION (structural — preserved-design-intent divergence)
+
+**Evidence:** Per O.2 finding: Rust `emPainter` has a `canvas_color: emColor` member field (`crates/emcore/src/emPainter.rs:200`), accessed via `GetCanvasColor` / `SetCanvasColor` (lines 720, 725). C++ passes canvas color as an explicit parameter to every `emPanel::Paint(emPainter, emColor canvasColor)` call. Rust panels read canvas color from the painter carrier (e.g., `emFilePanel.rs:166`, `emTunnel.rs:145`, `emButton.rs:191`).
+
 **Notes:**
+- This is the spec's preserved-design-intent rule (II.5). The carrier is a structural divergence from C++. The spec admits this divergence only if updates at the carrier are aligned with C++'s parameter changes — which O.2 confirmed at the canonical update points (after conditional clear `emView.rs:4770`, per child `emView.rs:4812`).
+- Functionally equivalent today, but the divergence is load-bearing: any future panel that forgets to call `SetCanvasColor` before delegating to a sub-paint will silently use stale canvas color. C++ cannot make this mistake (parameter is required).
+- Remediation options:
+  - (a) accept the divergence and document it as an annotated `DIVERGED:` block citing the C++ shape and the rationale (matches CLAUDE.md `IDIOM:`-retired norm; would actually need a forced-divergence category — no such category obviously fits, suggesting the divergence is either an idiom adaptation or a hidden fidelity bug);
+  - (b) thread canvas color as an explicit parameter to every panel's paint method, removing the carrier and matching C++ exactly.
+- Decision deferred to remediation. F018 root cause does NOT require resolving II.5; the symptom is in I.1/I.4.
 
 ---
 
