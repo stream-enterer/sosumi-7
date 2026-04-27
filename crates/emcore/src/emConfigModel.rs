@@ -69,6 +69,14 @@ impl<T: Record> emConfigModel<T> {
         self.change_signal
     }
 
+    /// Test helper: replace the stored signal ID. Used when the model was
+    /// created with `SignalId::null()` (no scheduler available at construction
+    /// time) and must later be wired to a real scheduler signal for testing.
+    /// pub so downstream crate tests (emmain) can call via emMainConfig.
+    pub fn set_change_signal(&mut self, sig: SignalId) {
+        self.change_signal = sig;
+    }
+
     pub fn GetInstallPath(&self) -> &Path {
         &self.path
     }

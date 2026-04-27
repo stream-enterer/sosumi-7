@@ -1170,4 +1170,308 @@ mod tests {
         let panel = emMainControlPanel::new(ctx, None);
         assert_eq!(panel.get_title(), Some("emMainControl".to_string()));
     }
+
+    // ── B-006 click-through tests ─────────────────────────────────────────
+    // Verify D-006 row-218 and row-219 signal wiring end-to-end.
+    //
+    // Lives here (not in typed_subscribe_b006.rs) because the test requires
+    // access to private types (the emMainWindow thread-local) and uses the
+    // `unsafe` scheduler-alias pattern common to B-003's click-through test.
+    // Mirrors the B-003 precedent for click-through tests in
+    // emAutoplayControlPanel::tests::bt_autoplay_check_drives_set_autoplaying.
+
+    /// B-006 §Row 218 click-through.
+    ///
+    /// Fires the window-flags signal and verifies that Cycle sets
+    /// `bt_fullscreen.IsChecked()` to match the FULLSCREEN flag.
+    /// Mirrors C++ Cycle 253-255:
+    ///   if (IsSignaled(MainWin.GetWindowFlagsSignal()))
+    ///     BtFullscreen->SetChecked((MainWin.GetWindowFlags()&WF_FULLSCREEN)!=0)
+    #[test]
+    fn row_218_flags_signal_sets_bt_fullscreen() {
+        use emcore::emEngineCtx::{EngineCtx, PanelCtx};
+        use emcore::emScheduler::EngineScheduler;
+        use emcore::emWindow::{WindowFlags, emWindow};
+        use std::collections::HashMap;
+
+        let root_ctx = emcore::emContext::emContext::NewRoot();
+        let mut sched = EngineScheduler::new();
+
+        // ── Allocate signals for the fake emWindow ──
+        let close_sig = sched.create_signal();
+        let flags_sig = sched.create_signal();
+        let focus_sig = sched.create_signal();
+        let geom_sig = sched.create_signal();
+        let win_id = winit::window::WindowId::dummy();
+
+        // Build a fake emWindow with FULLSCREEN flag set. The flags_signal
+        // matches what the Cycle init block will look up via GetWindowFlagsSignal.
+        let mut win = emWindow::new_popup_pending(
+            Rc::clone(&root_ctx),
+            WindowFlags::empty(),
+            "test_fs".to_string(),
+            close_sig,
+            flags_sig,
+            focus_sig,
+            geom_sig,
+            emcore::emColor::emColor::TRANSPARENT,
+        );
+        win.flags = WindowFlags::FULLSCREEN;
+        let mut windows: HashMap<winit::window::WindowId, emWindow> = HashMap::new();
+        windows.insert(win_id, win);
+
+        // Register emMainWindow so with_main_window succeeds.
+        let mut mw = crate::emMainWindow::emMainWindow::new(
+            Rc::clone(&root_ctx),
+            crate::emMainWindow::emMainWindowConfig::default(),
+        );
+        mw.window_id = Some(win_id);
+        crate::emMainWindow::set_main_window(mw);
+
+        // Build panel and tree.
+        let mut panel = emMainControlPanel::new(Rc::clone(&root_ctx), None);
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let root_id = tree.create_root_deferred_view("cp_218");
+        tree.set_panel_view(root_id);
+        tree.register_engine_for_public(root_id, Some(&mut sched));
+        let engine_id = tree.panel_engine_id_pub(root_id).expect("engine");
+
+        let fw_cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        let pa: Rc<std::cell::RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+            Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut fw_actions: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+
+        // Run create_children so bt_fullscreen is allocated.
+        {
+            let mut pctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                root_id,
+                1.0,
+                &mut sched,
+                &mut fw_actions,
+                &root_ctx,
+                &fw_cb,
+                &pa,
+            );
+            panel.create_children(&mut pctx);
+        }
+        assert!(panel.bt_fullscreen.is_some(), "bt_fullscreen allocated");
+
+        // Connect engine to flags_signal and fire it. The subscribed_init=false
+        // means the Cycle init block will re-connect (idempotent).
+        sched.connect(flags_sig, engine_id);
+        sched.fire(flags_sig);
+        sched.flush_signals_for_test();
+
+        // Drive Cycle manually with a hand-built EngineCtx + PanelCtx.
+        let mut pending_inputs: Vec<(winit::window::WindowId, emcore::emInput::emInputEvent)> =
+            Vec::new();
+        let mut input_state = emcore::emInputState::emInputState::new();
+
+        // SAFETY: ectx.scheduler and pctx.scheduler alias the same EngineScheduler.
+        // Single-threaded; mirrors PanelCycleEngine's identical unsafe split.
+        let sched_ptr: *mut EngineScheduler = &mut sched;
+        let mut pctx =
+            PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
+        let mut ectx = EngineCtx {
+            scheduler: &mut sched,
+            tree: None,
+            windows: &mut windows,
+            root_context: &root_ctx,
+            framework_actions: &mut fw_actions,
+            pending_inputs: &mut pending_inputs,
+            input_state: &mut input_state,
+            framework_clipboard: &fw_cb,
+            engine_id,
+            pending_actions: &pa,
+        };
+        panel.Cycle(&mut ectx, &mut pctx);
+
+        assert!(
+            panel
+                .bt_fullscreen
+                .as_ref()
+                .expect("bt_fullscreen present")
+                .borrow()
+                .IsChecked(),
+            "bt_fullscreen must be checked when flags_signal fires with FULLSCREEN set"
+        );
+
+        // Cleanup: remove all engines and signals so EngineScheduler drops cleanly.
+        let all_ids = tree.panel_ids();
+        for pid in all_ids {
+            if let Some(eid) = tree.panel_engine_id_pub(pid) {
+                sched.remove_engine(eid);
+            }
+        }
+        sched.disconnect(flags_sig, engine_id);
+        sched.remove_signal(close_sig);
+        sched.remove_signal(flags_sig);
+        sched.remove_signal(focus_sig);
+        sched.remove_signal(geom_sig);
+        sched.abort_all_pending();
+    }
+
+    /// B-006 §Row 219 click-through.
+    ///
+    /// Fires the config-change signal and verifies that Cycle sets
+    /// `bt_auto_hide_control_view` and `bt_auto_hide_slider` check states.
+    /// Mirrors C++ Cycle 257-260:
+    ///   if (IsSignaled(MainConfig->GetChangeSignal()))
+    ///     BtAutoHideControlView->SetChecked(MainConfig->AutoHideControlView);
+    ///     BtAutoHideSlider->SetChecked(MainConfig->AutoHideSlider);
+    #[test]
+    fn row_219_config_signal_sets_auto_hide_buttons() {
+        use emcore::emEngineCtx::{EngineCtx, PanelCtx};
+        use emcore::emScheduler::EngineScheduler;
+        use std::collections::HashMap;
+
+        let root_ctx = emcore::emContext::emContext::NewRoot();
+        let mut sched = EngineScheduler::new();
+
+        // ── Allocate a real change signal for the config singleton ──
+        // emMainConfig::Acquire creates the config with SignalId::null() because
+        // no scheduler is available at registration time. Override it with a
+        // real signal so the Cycle's IsSignaled check works.
+        let cfg_change_sig = sched.create_signal();
+        let win_id = winit::window::WindowId::dummy();
+
+        // Register emMainWindow (row-218 subscribe path also runs; provide a
+        // real flags_signal so the init block can connect it too).
+        let flags_sig = sched.create_signal();
+        let close_sig = sched.create_signal();
+        let focus_sig = sched.create_signal();
+        let geom_sig = sched.create_signal();
+        let win = emcore::emWindow::emWindow::new_popup_pending(
+            Rc::clone(&root_ctx),
+            emcore::emWindow::WindowFlags::empty(),
+            "test_cfg".to_string(),
+            close_sig,
+            flags_sig,
+            focus_sig,
+            geom_sig,
+            emcore::emColor::emColor::TRANSPARENT,
+        );
+        let mut windows: HashMap<winit::window::WindowId, emcore::emWindow::emWindow> =
+            HashMap::new();
+        windows.insert(win_id, win);
+
+        let mut mw = crate::emMainWindow::emMainWindow::new(
+            Rc::clone(&root_ctx),
+            crate::emMainWindow::emMainWindowConfig::default(),
+        );
+        mw.window_id = Some(win_id);
+        crate::emMainWindow::set_main_window(mw);
+
+        // Build panel with scheduler-backed config signal.
+        let mut panel = emMainControlPanel::new(Rc::clone(&root_ctx), None);
+
+        // Override the config's null signal with the real test signal.
+        panel
+            .config
+            .borrow_mut()
+            .set_change_signal_for_test(cfg_change_sig);
+
+        // Mutate config so the reaction reads the updated values.
+        panel.config.borrow_mut().SetAutoHideControlView(true);
+        panel.config.borrow_mut().SetAutoHideSlider(true);
+
+        // Build panel tree and engine.
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let root_id = tree.create_root_deferred_view("cp_219");
+        tree.set_panel_view(root_id);
+        tree.register_engine_for_public(root_id, Some(&mut sched));
+        let engine_id = tree.panel_engine_id_pub(root_id).expect("engine");
+
+        let fw_cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        let pa: Rc<std::cell::RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+            Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut fw_actions: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+
+        {
+            let mut pctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                root_id,
+                1.0,
+                &mut sched,
+                &mut fw_actions,
+                &root_ctx,
+                &fw_cb,
+                &pa,
+            );
+            panel.create_children(&mut pctx);
+        }
+        assert!(
+            panel.bt_auto_hide_control_view.is_some(),
+            "bt_auto_hide_control_view allocated"
+        );
+        assert!(
+            panel.bt_auto_hide_slider.is_some(),
+            "bt_auto_hide_slider allocated"
+        );
+
+        // Connect engine and fire the config change signal.
+        sched.connect(cfg_change_sig, engine_id);
+        sched.fire(cfg_change_sig);
+        sched.flush_signals_for_test();
+
+        let mut pending_inputs: Vec<(winit::window::WindowId, emcore::emInput::emInputEvent)> =
+            Vec::new();
+        let mut input_state = emcore::emInputState::emInputState::new();
+
+        let sched_ptr: *mut EngineScheduler = &mut sched;
+        let mut pctx =
+            PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
+        let mut ectx = EngineCtx {
+            scheduler: &mut sched,
+            tree: None,
+            windows: &mut windows,
+            root_context: &root_ctx,
+            framework_actions: &mut fw_actions,
+            pending_inputs: &mut pending_inputs,
+            input_state: &mut input_state,
+            framework_clipboard: &fw_cb,
+            engine_id,
+            pending_actions: &pa,
+        };
+        // subscribed_init=true: skip the init block (we connected manually above).
+        panel.subscribed_init = true;
+        panel.Cycle(&mut ectx, &mut pctx);
+
+        assert!(
+            panel
+                .bt_auto_hide_control_view
+                .as_ref()
+                .expect("present")
+                .borrow()
+                .IsChecked(),
+            "bt_auto_hide_control_view must be checked when cfg fires with AutoHideControlView=true"
+        );
+        assert!(
+            panel
+                .bt_auto_hide_slider
+                .as_ref()
+                .expect("present")
+                .borrow()
+                .IsChecked(),
+            "bt_auto_hide_slider must be checked when cfg fires with AutoHideSlider=true"
+        );
+
+        // Cleanup.
+        let all_ids = tree.panel_ids();
+        for pid in all_ids {
+            if let Some(eid) = tree.panel_engine_id_pub(pid) {
+                sched.remove_engine(eid);
+            }
+        }
+        sched.disconnect(cfg_change_sig, engine_id);
+        sched.remove_signal(cfg_change_sig);
+        sched.remove_signal(close_sig);
+        sched.remove_signal(flags_sig);
+        sched.remove_signal(focus_sig);
+        sched.remove_signal(geom_sig);
+        sched.abort_all_pending();
+    }
 }
