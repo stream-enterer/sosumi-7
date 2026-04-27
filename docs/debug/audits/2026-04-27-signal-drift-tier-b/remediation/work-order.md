@@ -18,7 +18,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 6 | B-019-stale-annotations | 0 | mechanical-heavy | 9 | designed | [e7129430](../../../../superpowers/specs/2026-04-27-B-019-stale-annotations-design.md) |
 | 7 | B-001-no-wire-emstocks | 0 | balanced | 71 | designed | [456fa5f7](../../../../superpowers/specs/2026-04-27-B-001-no-wire-emstocks-design.md) |
 | 8 | B-002-no-wire-emfileman | 0 | balanced | 4 | designed | [7fb3decd](../../../../superpowers/specs/2026-04-27-B-002-no-wire-emfileman-design.md) |
-| 9 | B-003-no-wire-autoplay | 0 | balanced | 3 | pending | — |
+| 9 | B-003-no-wire-autoplay | 0 | balanced | 3 | designed | [703fa462](../../../../superpowers/specs/2026-04-27-B-003-no-wire-autoplay-design.md) |
 | 10 | B-004-no-wire-misc | 0 | balanced | 4 | pending | — |
 | 11 | B-016-polling-no-acc-emfileman | 0 | balanced | 3 | pending | — |
 | 12 | B-017-polling-no-acc-emstocks | 0 | balanced | 3 | pending | — |
@@ -115,3 +115,11 @@ Total rows: 187 (178 actionable + 9 cleanup).
 - **Outbound opportunity (downstream simplification, not prereq):** once B-002 lands G2, B-001's G1 (emStocksFileModel delegating accessor) can simplify to inherit through `emRecFileModel<T>`. Same potential for emAutoplay/emVirtualCosmos. Tracked here for forward reference; no spine edit until those buckets are designed.
 - **Possible audit gap flagged:** emFileLinkPanel's C++ subscribes to `UpdateSignalModel->Sig`, `GetVirFileStateSignal()`, `Config->GetChangeSignal()` — not in B-002's row set. Verify whether B-005 covers them; if not, audit-coverage amendment needed.
 - **B-002 status:** pending → designed.
+
+### 2026-04-27 — B-003 design returned (703fa462)
+
+- **D-002 deferred question §1 resolved.** Working-memory ratified **R-A: drop AutoplayFlags entirely.** Designer's investigation found the seven inbound `Cell`s are produced but never consumed; existing `DIVERGED` annotation at `emAutoplayControlPanel.rs:84` claiming "polled by parent panel" is factually wrong. R-A matches C++; outbound `progress` replaces with `Rc<RefCell<emAutoplayViewModel>>` + `GetItemProgress()` in `Paint`. D-002 amended in place.
+- **Row renamed in inventory-enriched.json:** `emAutoplayViewModel-accessor-model-state` → `emAutoplayViewModel-accessor-progress`. C++ second signal is `ProgressSignal`, not a state signal. No prereq references; safe rename.
+- **2 accessor groups:** G1 ChangeSignal (6 emit sites), G2 ProgressSignal (1 emit site). `emAutoplay-1171` Cycle fan-out covers 2 model subscribes + 7 widget subscribes; `emAutoplayControlPanel` gains a `Cycle` method.
+- **No new D-### entries.** No cross-bucket prereqs.
+- **B-003 status:** pending → designed.

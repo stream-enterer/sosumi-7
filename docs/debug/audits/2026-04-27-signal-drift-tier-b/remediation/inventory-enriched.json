@@ -5223,11 +5223,11 @@
       }
     },
     {
-      "id": "emAutoplayViewModel-accessor-model-state",
+      "id": "emAutoplayViewModel-accessor-progress",
       "cpp_file": null,
       "cpp_line": null,
       "signal_expression": "Model->GetProgressSignal()",
-      "signal_kind": "model-state",
+      "signal_kind": "progress",
       "rust_file": "crates/emmain/src/emAutoplay.rs",
       "rust_status": "gap-blocked",
       "rust_evidence": {
@@ -5244,7 +5244,7 @@
       "consumers": [
         "emAutoplay-1172"
       ],
-      "notes": "",
+      "notes": "Renamed from -accessor-model-state per B-003 brainstorm 703fa462; C++ second signal is ProgressSignal (emAutoplay.h:241,279,318; cpp:911), not a state signal.",
       "enrichment": {
         "pattern_id": "P-001-no-subscribe-no-accessor",
         "decision_ids": [
@@ -5252,6 +5252,11 @@
         ],
         "scope_key": "emmain:emAutoplay",
         "prereq_ids": []
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-003 brainstorm 703fa462",
+        "change": "id renamed: emAutoplayViewModel-accessor-model-state -> emAutoplayViewModel-accessor-progress"
       }
     },
     {

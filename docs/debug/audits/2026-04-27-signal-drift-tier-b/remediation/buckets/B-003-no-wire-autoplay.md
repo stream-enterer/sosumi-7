@@ -1,6 +1,12 @@
 # B-003-no-wire-autoplay — P-001 — wire missing accessor + subscribe in emAutoplay
 
 **Pattern:** P-001-no-subscribe-no-accessor
+
+**Reconciliation amendments (2026-04-27, post-design 703fa462):**
+- **D-002 §1 deferred question resolved here.** Working-memory ratified R-A (drop AutoplayFlags entirely) per B-003 designer's recommendation. AutoplayFlags inbound `Cell`s are dead code; existing `DIVERGED` annotation at `emAutoplayControlPanel.rs:84` is factually wrong. R-A matches C++; outbound `progress: Rc<Cell<f64>>` replaced with `Rc<RefCell<emAutoplayViewModel>>` reading `GetItemProgress()` in `Paint`. See `decisions.md` D-002 entry.
+- **Row renamed:** `emAutoplayViewModel-accessor-model-state` → `emAutoplayViewModel-accessor-progress` (C++ second signal is `ProgressSignal`, not state). Updated in `inventory-enriched.json` and the row table above.
+- **2 accessor groups (G1, G2):** G1 `emAutoplayViewModel.GetChangeSignal()` (1 row, 6 emit sites in mutator methods), G2 `emAutoplayViewModel.GetProgressSignal()` (1 row, emit at `SetItemProgress` only).
+- **Wire scope:** `emAutoplay-1171` expands to a Cycle fan-out: 2 model subscribes + 7 widget subscribes. `emAutoplayControlPanel` has no `Cycle` method today; adding it is in-scope. Audit's row count of 1 is correct (single C++ site) but implementer scope is larger.
 **Scope:** emmain:emAutoplay
 **Row count:** 3
 **Mechanical-vs-judgement:** balanced — wiring is mechanical once the accessor shape is decided; the accessor shape is a per-scope judgement call.
@@ -17,7 +23,7 @@ Rust path neither subscribes nor exposes the C++-side signal accessor; both ends
 |---|---|---|---|---|
 | emAutoplay-1171 | src/emMain/emAutoplay.cpp:1171 | crates/emmain/src/emAutoplay.rs:658 | missing | ControlPanel port split into emAutoplayControlPanel.rs; references view-model |
 | emAutoplayViewModel-accessor-model-change | n/a | crates/emmain/src/emAutoplay.rs:800 | missing | Panel references view-model; config-side accessor at line 129 is a different object |
-| emAutoplayViewModel-accessor-model-state | n/a | crates/emmain/src/emAutoplay.rs:800 | missing | model-state signal accessor absent on view-model |
+| emAutoplayViewModel-accessor-progress | n/a | crates/emmain/src/emAutoplay.rs:800 | missing | progress signal accessor absent on view-model (renamed from -accessor-model-state per B-003 design 703fa462) |
 
 ## C++ reference sites
 

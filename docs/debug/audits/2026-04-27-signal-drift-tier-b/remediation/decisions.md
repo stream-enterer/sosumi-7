@@ -48,7 +48,7 @@ Stable IDs (`D-###`) are referenced from `inventory-enriched.json` and from `buc
 3. **Escalate to working-memory session** if neither rule cleanly applies.
 
 **Open questions deferred to bucket design:**
-- The emAutoplay flags-passing pattern (`AutoplayFlags { progress: Rc<Cell<f64>> }`) — does this fall under rule 1 or rule 2? emAutoplay has no C++ analogue (it's a Rust-only panel) so the rule needs adaptation. Bucket sketcher flags this for the working-memory session to resolve before bucket execution.
+- ~~The emAutoplay flags-passing pattern (`AutoplayFlags { progress: Rc<Cell<f64>> }`) — does this fall under rule 1 or rule 2? emAutoplay has no C++ analogue (it's a Rust-only panel) so the rule needs adaptation. Bucket sketcher flags this for the working-memory session to resolve before bucket execution.~~ **Resolved by B-003 brainstorm 703fa462 + working-memory ratification (2026-04-27):** B-003 designer found that `AutoplayFlags`'s seven inbound `Cell`s are produced but never consumed (existing DIVERGED annotation at `emAutoplayControlPanel.rs:84` claiming "polled by parent panel" is factually wrong; only test sites read them). **Resolution R-A: drop AutoplayFlags entirely.** Matches C++ (which has no AutoplayFlags pattern); removes a no-forced-category DIVERGED block; consistent with this entry's default-convert rule. The single load-bearing piece — outbound `progress: Rc<Cell<f64>>` driving `AutoplayCheckButtonPanel`'s paint — replaces with `Rc<RefCell<emAutoplayViewModel>>` on the check-button panel reading `GetItemProgress()` in `Paint`. emAutoplay is consequently *not* an exception to rule 1 — it had no C++ analogue because the original divergence was unjustified, not because of a structural constraint.
 
 ---
 
