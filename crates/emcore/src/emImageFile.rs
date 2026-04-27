@@ -80,18 +80,14 @@ impl emImageFileModel {
         let model_rc = Rc::new(RefCell::new(model));
         let model_weak = Rc::downgrade(&model_rc);
 
-        // B-007 row -103: cache file_update_signal at register time so LoaderEngine
-        // can subscribe to the shared broadcast and stay persistent.
-        // EngineCtx is not available here (only ConstructCtx), so we cannot call
-        // ctx.connect() — the engine connects in its own first-Cycle init block.
-        // We stash SignalId::null() here; it is replaced in Cycle if needed.
-        // Note: ConstructCtx doesn't expose file_update_signal because most
-        // implementors are InitCtx/SchedCtx without App linkage. The engine
-        // reads it from EngineCtx::scheduler.file_update_signal at Cycle time.
+        // B-007 row -103: ConstructCtx doesn't expose file_update_signal because
+        // most implementors are InitCtx/SchedCtx without App linkage. The engine
+        // reads ctx.scheduler.file_update_signal directly at Cycle time and calls
+        // ctx.connect() then, so no cached SignalId field is needed here.
         let engine = Box::new(LoaderEngine {
             model_weak,
             load_complete_signal,
-            initial_load_done: false,
+            subscribed_to_broadcast: false,
         });
         let eid = ctx.register_engine(engine, Priority::Low, PanelScope::Framework);
         ctx.wake_up(eid);
@@ -200,7 +196,9 @@ impl emImageFileModel {
 /// `dyn FileModelState`).
 ///
 /// DIVERGED: (language-forced) C++ emImageFileModel : emFileModel (virtual
-/// inheritance). Rust has no virtual inheritance; delegation is explicit here.
+/// inheritance). Writing the virtual-base-class shape in Rust under the project's
+/// canonical ownership model does not compile — Rust has no virtual base classes.
+/// Delegation is explicit here instead.
 impl crate::emFileModel::FileModelState for emImageFileModel {
     fn GetFileState(&self) -> &FileState {
         self.file_model.GetFileState()
@@ -240,8 +238,9 @@ impl crate::emFileModel::FileModelState for emImageFileModel {
 struct LoaderEngine {
     model_weak: Weak<RefCell<emImageFileModel>>,
     load_complete_signal: SignalId,
-    /// True after the first Cycle has run and connected to the broadcast.
-    initial_load_done: bool,
+    /// True once `ctx.connect(file_update_signal, engine_id)` has been called.
+    /// Only set when the connect actually happens (signal non-null at Cycle time).
+    subscribed_to_broadcast: bool,
 }
 
 impl emEngine for LoaderEngine {
@@ -254,11 +253,13 @@ impl emEngine for LoaderEngine {
             return false;
         };
 
-        // B-007 row -103: first-Cycle init — subscribe to the shared broadcast.
+        // B-007 row -103: subscribe to the shared broadcast on the first Cycle
+        // where file_update_signal is available.
         // Mirrors C++ emFileModel::SetIgnoreUpdateSignal(false) → AddWakeUpSignal.
         let upd = ctx.scheduler.file_update_signal;
-        if !self.initial_load_done && !upd.is_null() {
+        if !self.subscribed_to_broadcast && !upd.is_null() {
             ctx.connect(upd, engine_id);
+            self.subscribed_to_broadcast = true;
         }
 
         // B-007 row -103: broadcast-wake reaction.
@@ -299,8 +300,6 @@ impl emEngine for LoaderEngine {
             ctx.fire(file_state_signal);
             ctx.fire(self.load_complete_signal);
         }
-
-        self.initial_load_done = true;
 
         // Stay registered — the broadcast may wake us again for a reload.
         // Removal only happens above when model_weak fails to upgrade.
