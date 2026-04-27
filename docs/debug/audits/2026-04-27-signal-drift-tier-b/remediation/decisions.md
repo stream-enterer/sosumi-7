@@ -179,7 +179,7 @@ Stable IDs (`D-###`) are referenced from `inventory-enriched.json` and from `buc
 **Origin:** Surfaced and resolved during the B-009-typemismatch-emfileman bucket-design brainstorm (commit `0a7d7fd3`).
 
 **Options considered:**
-- **A1. Lazy allocation by first subscriber.** Model field is `Cell<SignalId>` initialized `null`. Each consumer's first-Cycle init calls a new `&self` method `EnsureXxxSignal(ectx) -> SignalId` which allocates on first call and caches. Mutators check `if sig != null { ectx.fire(sig) }`. Matches C++ `emSignal::Signal()` with zero subscribers (silent no-op).
+- **A1. Lazy allocation by first subscriber.** Model field is `Cell<SignalId>` initialized `null`. The accessor allocates lazily on first call and caches. Mutators check `if sig != null { ectx.fire(sig) }`. Matches C++ `emSignal::Signal()` with zero subscribers (silent no-op). **API shape:** a single accessor matching the C++ name (`fn GetXxxSignal(&self, ectx) -> SignalId`) is the canonical form — it mirrors C++'s `GetXxxSignal()` per File and Name Correspondence and folds allocation into the same call. (An earlier draft of this entry split the API into `EnsureXxxSignal(ectx)` + `GetXxxSignal(&self)`; that split was speculative and produced no real callsite that wanted allocation-check without allocation. Sanctioned post-B-003 merge `eb9427db`.)
 - **A2. Eager allocation by threading scheduler through Acquire.** `Acquire(ctx) -> Acquire(ctx, scheduler)`. Crisp single allocation point. Hits the same friction D-006 cited: ConstructCtx doesn't expose scheduler/`create_signal`; threading through every Acquire callsite is a ripple bigger than the bucket.
 - **A3. Frame `emContext` to expose a scheduler handle.** Models call `ctx.scheduler().create_signal()` at Acquire. Substantial framework change; out of B-009 scope. Future architectural candidate when enough models accumulate `SignalId::default()`/`null()` placeholders.
 
@@ -192,7 +192,7 @@ Stable IDs (`D-###`) are referenced from `inventory-enriched.json` and from `buc
 **Watch-list (not a decision):** A3 — expose scheduler through `emContext` — may become worthwhile once enough models carry `SignalId::default()`/`null()` placeholders. Current placeholder occupants noted by B-009 brainstorm: `emFileLinkModel`, `emFileManTheme`, `emFileManConfig`, `emFileModel`. If this list grows, the working-memory session promotes A3 to a separate framework-lift bucket.
 
 **Open questions deferred to per-bucket design:**
-- Whether `Ensure*Signal` should sit on `&self` (with interior `Cell` mutation) or `&mut self`. Currently `&self` per A1 description; revisit if borrow-checker friction surfaces.
+- ~~Whether `Ensure*Signal` should sit on `&self` (with interior `Cell` mutation) or `&mut self`. Currently `&self` per A1 description; revisit if borrow-checker friction surfaces.~~ **Resolved post-B-003:** combined `GetXxxSignal(&self, ectx)` form using interior `Cell` mutation works cleanly; `&mut self` not needed. The Ensure/Get split is retired.
 
 ---
 

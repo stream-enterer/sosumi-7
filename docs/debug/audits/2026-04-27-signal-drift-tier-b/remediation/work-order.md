@@ -15,10 +15,10 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 3 | B-007-typed-subscribe-emcore | 0 | mechanical-heavy | 3 | designed | [8b220ebb](../../../../superpowers/specs/2026-04-27-B-007-typed-subscribe-emcore-design.md) |
 | 4 | B-008-typed-subscribe-misc | 0 | mechanical-heavy | 3 | designed | [4c4141f1](../../../../superpowers/specs/2026-04-27-B-008-typed-subscribe-misc-design.md) |
 | 5 | B-015-polling-emcore-plus | 0 | mechanical-heavy | 10 | designed | [b521b3f6](../../../../superpowers/specs/2026-04-27-B-015-polling-emcore-plus-design.md) |
-| 6 | B-019-stale-annotations | 0 | mechanical-heavy | 9 | designed | [e7129430](../../../../superpowers/specs/2026-04-27-B-019-stale-annotations-design.md) |
+| 6 | B-019-stale-annotations | 0 | mechanical-heavy | 9 | merged at 41599129 | [e7129430](../../../../superpowers/specs/2026-04-27-B-019-stale-annotations-design.md) |
 | 7 | B-001-no-wire-emstocks | 0 | balanced | 71 | designed | [456fa5f7](../../../../superpowers/specs/2026-04-27-B-001-no-wire-emstocks-design.md) |
 | 8 | B-002-no-wire-emfileman | 0 | balanced | 4 | designed | [7fb3decd](../../../../superpowers/specs/2026-04-27-B-002-no-wire-emfileman-design.md) |
-| 9 | B-003-no-wire-autoplay | 0 | balanced | 3 | designed | [703fa462](../../../../superpowers/specs/2026-04-27-B-003-no-wire-autoplay-design.md) |
+| 9 | B-003-no-wire-autoplay | 0 | balanced | 3 | merged at eb9427db (12d3b4fe + 2ac6a627 + eb9427db) | [703fa462](../../../../superpowers/specs/2026-04-27-B-003-no-wire-autoplay-design.md) |
 | 10 | B-004-no-wire-misc | 0 | balanced | 4 | designed | [3497069d](../../../../superpowers/specs/2026-04-27-B-004-no-wire-misc-design.md) |
 | 11 | B-016-polling-no-acc-emfileman | 0 | balanced | 3 | designed | [d837346b](../../../../superpowers/specs/2026-04-27-B-016-polling-no-acc-emfileman-design.md) |
 | 12 | B-017-polling-no-acc-emstocks | 0 | balanced | 3 | designed | [a27d2faa](../../../../superpowers/specs/2026-04-27-B-017-polling-no-acc-emstocks-design.md) |
@@ -28,7 +28,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 16 | B-012-rc-shim-mainctrl | 0 | judgement-heavy | 7 | designed | [bf6e9bd5](../../../../superpowers/specs/2026-04-27-B-012-rc-shim-mainctrl-design.md) |
 | 17 | B-013-dialog-cells-emstocks | 0 | judgement-heavy | 4 | designed | [ec317565](../../../../superpowers/specs/2026-04-27-B-013-dialog-cells-emstocks-design.md) |
 | 18 | B-014-rc-shim-no-acc-misc | 0 | judgement-heavy | 2 | designed | [d7d964d4](../../../../superpowers/specs/2026-04-27-B-014-rc-shim-no-acc-misc-design.md) |
-| 19 | B-018-fileDialog-singleton | 0 | judgement-heavy | 1 | designed (false positive — no work) | [04059bac](../../../../superpowers/specs/2026-04-27-B-018-fileDialog-singleton-design.md) |
+| 19 | B-018-fileDialog-singleton | 0 | judgement-heavy | 1 | merged (false positive — no implementation; reclassification at 683153f1) | [04059bac](../../../../superpowers/specs/2026-04-27-B-018-fileDialog-singleton-design.md) |
 
 Total rows: 187 (178 actionable + 9 cleanup).
 
@@ -240,3 +240,26 @@ All 19 buckets are now `designed`. Spine state at completion:
 - **Watch-list items deferred:** A3 (scheduler in emContext); generation counter on emCoreConfigPanel; emDialog post-show sync GetResult; mutator-fire ectx-threading benign-hybrid composition (recorded as D-007 composition note); audit accessor-status heuristic gap (4 sightings, established but not promoted — methodology issue, not design).
 
 Phase 5 reconciliation continues as implementation merges land. Status column transitions designed → merged per implementation PR.
+
+---
+
+### 2026-04-27 — first-wave merges land (B-018, B-003, B-019)
+
+- **B-018 → merged at 683153f1.** No implementation work (false positive; reclassification commit only). 2812/2812 tests pass.
+- **B-019 → merged at 41599129.** 9 stale annotations cleaned up. Spec-compliant per review. Single commit.
+- **B-003 → merged at eb9427db (3 commits: 12d3b4fe wire + 2ac6a627 spec-review fixups + eb9427db ViewModel unification).** R-A applied; AutoplayFlags shim dropped; emAutoplayViewModel signals (GetChangeSignal, GetProgressSignal) added; AutoplayCheckButtonPanel uses Rc<RefCell<emAutoplayViewModel>> + GetItemProgress() in Paint. Spec review surfaced 3 Important deviations; all resolved before merge.
+
+**Spine amendments from these merges:**
+
+1. **D-008 A1 sanctioned in combined form** (`GetXxxSignal(&self, ectx) -> SignalId` instead of `Ensure*` + `Get*` split). Earlier draft split was speculative; combined form mirrors C++ name and folds allocation into the call. Operational rule 1 amended in place; deferred open question struck. Sanctioned post-B-003 merge `eb9427db`.
+2. **emAutoplay-1171 `rust_file` patched** in `inventory-enriched.json`: `emAutoplay.rs` → `emAutoplayControlPanel.rs`. The `rust_evidence.file` field was already correct; top-level `rust_file` carried the split-file line drift.
+3. **emAutoplayViewModel-accessor row rename** (`...-accessor-model-state` → `...-accessor-progress`) was already applied during B-003 brainstorm reconciliation (commit 31ddd60b). No action needed.
+
+**Follow-on debt surfaced (not Phase 5 buckets — separate cleanup):**
+
+1. **B-019 quality review found 7 pre-existing pseudo-DIVERGED blocks** in `crates/emcore/src/emDialog.rs` (lines 540, 555, 563, 568, 576, 588, 593) and `crates/emcore/src/emFileDialog.rs:655` using the form `DIVERGED (Phase 3.6 Task 3)` / `DIVERGED (Phase 3.6.1 Task 2)` — parenthetical-phase form lacks the required forced-divergence category. The annotation linter's regex doesn't catch this form. Pre-dates B-019. **Recommend a follow-on bucket** to classify each block (re-categorize or remove) and tighten the linter regex. Owner: working-memory session to scope.
+2. **B-003 stub follow-up:** `update_controls` and `update_progress` reaction bodies in `emAutoplayControlPanel` are logging stubs marked `B-003-follow-up`. Tracked in code, no inventory row. Address in a downstream pass once stocks/dialog buckets ship.
+3. **B-003 documented exception:** `emAutoplayControlPanel::autoplay_model_for_test` is `pub` (not `pub(crate)`) because integration tests link as external crate. Doc-comment explains the deliberate CLAUDE.md §Visibility exception. Note for future readers: a `test-support` feature on `emmain` could remove this exception.
+4. **B-003 cosmetic minors skipped per design call:** redundant inner `#[cfg(any(test, feature = "test-support"))]` on `flush_signals_for_test`; top-of-file comment in `emAutoplayControlPanel.rs` lost some architectural context after `DIVERGED:` removal; `ContinueLastAutoplay` comment could cite `emAutoplay.cpp:710` explicitly. Not blocking; revisit if a reader hits friction.
+
+**Status:** 3 of 19 buckets merged. 16 remain `designed` and ready for implementation per the prereq DAG.

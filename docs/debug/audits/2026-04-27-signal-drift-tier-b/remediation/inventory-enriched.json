@@ -2006,7 +2006,7 @@
       "cpp_line": 1171,
       "signal_expression": "Model->GetChangeSignal()",
       "signal_kind": "model-change",
-      "rust_file": "crates/emmain/src/emAutoplay.rs",
+      "rust_file": "crates/emmain/src/emAutoplayControlPanel.rs",
       "rust_status": "drifted",
       "rust_evidence": {
         "kind": "absent",
@@ -2031,6 +2031,9 @@
         "decision_ids": [],
         "scope_key": "emmain:emAutoplay",
         "prereq_ids": []
+      },
+      "reconciliation": {
+        "rust_file_patch": "crates/emmain/src/emAutoplay.rs -> crates/emmain/src/emAutoplayControlPanel.rs (split-file; rust_evidence.file was already correct, top-level field amended post-merge per B-003 spec review)"
       }
     },
     {
