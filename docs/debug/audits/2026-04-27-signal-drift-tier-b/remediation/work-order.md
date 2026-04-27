@@ -16,7 +16,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 4 | B-008-typed-subscribe-misc | 0 | mechanical-heavy | 3 | designed | [4c4141f1](../../../../superpowers/specs/2026-04-27-B-008-typed-subscribe-misc-design.md) |
 | 5 | B-015-polling-emcore-plus | 0 | mechanical-heavy | 10 | designed | [b521b3f6](../../../../superpowers/specs/2026-04-27-B-015-polling-emcore-plus-design.md) |
 | 6 | B-019-stale-annotations | 0 | mechanical-heavy | 9 | designed | [e7129430](../../../../superpowers/specs/2026-04-27-B-019-stale-annotations-design.md) |
-| 7 | B-001-no-wire-emstocks | 0 | balanced | 71 | pending | — |
+| 7 | B-001-no-wire-emstocks | 0 | balanced | 71 | designed | [456fa5f7](../../../../superpowers/specs/2026-04-27-B-001-no-wire-emstocks-design.md) |
 | 8 | B-002-no-wire-emfileman | 0 | balanced | 4 | pending | — |
 | 9 | B-003-no-wire-autoplay | 0 | balanced | 3 | pending | — |
 | 10 | B-004-no-wire-misc | 0 | balanced | 4 | pending | — |
@@ -93,3 +93,16 @@ Total rows: 187 (178 actionable + 9 cleanup).
 - **Sequencing recommendation from designer:** land B-019 single-PR before B-012/B-016 to remove camouflage. Non-blocking either direction; preference only.
 - **No coverage gaps** — every mask-drift item maps to an existing bucket.
 - **B-019 status:** pending → designed.
+
+### 2026-04-27 — B-001 design returned (456fa5f7)
+
+- **No new D-### entries.** Designer flagged a candidate (AutoExpand-deferred widget-subscribe two-tier init) but did not promote on a single occurrence. If a second bucket rediscovers it, promote.
+- **No cross-bucket prereqs** — P-001 in emstocks subscribes only to `SignalId`-typed accessors; no P-003 dependency.
+- **Audit-data refinements within bucket scope** — no row moves:
+  - `emStocksListBox-53` is shape-equivalent to P-002 (accessor inherited from `emListBox`); stays in B-001.
+  - 20 `emStocksControlPanel` rows + `-626` carry an additional "missing widget instance" drift the audit didn't separately classify; widget-add absorbed into bucket scope.
+  - `emStocksFileModel-accessor-model-change`: delegating accessor (one-liner), not a new SignalId allocation.
+- **9 accessor groups** organize the design (G1..G9). Largest: G2 Config.GetChangeSignal (6 consumers), G1 FileModel.GetChangeSignal (4 consumers).
+- **Coverage flag for working-memory:** G3 (`PricesFetcher.GetChangeSignal`) accessor ported per D-003 but has no in-bucket consumer. If C++ has an `AddWakeUpSignal(...PricesFetcher.GetChangeSignal())` site the audit missed, it's a B-001 amendment candidate. No action taken now.
+- **Two-tier init pattern recorded** in B-001's reconciliation notes. Local-only; promotion candidate if rediscovered.
+- **B-001 status:** pending → designed.
