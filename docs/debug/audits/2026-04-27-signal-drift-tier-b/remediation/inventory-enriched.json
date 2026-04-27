@@ -2069,7 +2069,7 @@
       "cpp_line": 1255,
       "signal_expression": "BtAutoplay->GetCheckSignal()",
       "signal_kind": "widget-check",
-      "rust_file": "crates/emmain/src/emAutoplay.rs",
+      "rust_file": "crates/emmain/src/emAutoplayControlPanel.rs",
       "rust_status": "drifted",
       "rust_evidence": {
         "kind": "rc_cell_shim",
@@ -2095,7 +2095,14 @@
           "D-002-rc-shim-policy"
         ],
         "scope_key": "emmain:emAutoplay",
-        "prereq_ids": []
+        "prereq_ids": [
+          "emAutoplay-1171"
+        ]
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-011 brainstorm cf9e1cc4",
+        "change": "rust_file split-file line drift: crates/emmain/src/emAutoplay.rs -> crates/emmain/src/emAutoplayControlPanel.rs; hard prereq on B-003 row emAutoplay-1171 (R-A removes these closures by construction)"
       }
     },
     {
@@ -2104,7 +2111,7 @@
       "cpp_line": 1270,
       "signal_expression": "BtPrev->GetClickSignal()",
       "signal_kind": "widget-click",
-      "rust_file": "crates/emmain/src/emAutoplay.rs",
+      "rust_file": "crates/emmain/src/emAutoplayControlPanel.rs",
       "rust_status": "drifted",
       "rust_evidence": {
         "kind": "rc_cell_shim",
@@ -2130,7 +2137,14 @@
           "D-002-rc-shim-policy"
         ],
         "scope_key": "emmain:emAutoplay",
-        "prereq_ids": []
+        "prereq_ids": [
+          "emAutoplay-1171"
+        ]
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-011 brainstorm cf9e1cc4",
+        "change": "rust_file split-file line drift: crates/emmain/src/emAutoplay.rs -> crates/emmain/src/emAutoplayControlPanel.rs; hard prereq on B-003 row emAutoplay-1171 (R-A removes these closures by construction)"
       }
     },
     {
@@ -2139,7 +2153,7 @@
       "cpp_line": 1282,
       "signal_expression": "BtNext->GetClickSignal()",
       "signal_kind": "widget-click",
-      "rust_file": "crates/emmain/src/emAutoplay.rs",
+      "rust_file": "crates/emmain/src/emAutoplayControlPanel.rs",
       "rust_status": "drifted",
       "rust_evidence": {
         "kind": "rc_cell_shim",
@@ -2165,7 +2179,14 @@
           "D-002-rc-shim-policy"
         ],
         "scope_key": "emmain:emAutoplay",
-        "prereq_ids": []
+        "prereq_ids": [
+          "emAutoplay-1171"
+        ]
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-011 brainstorm cf9e1cc4",
+        "change": "rust_file split-file line drift: crates/emmain/src/emAutoplay.rs -> crates/emmain/src/emAutoplayControlPanel.rs; hard prereq on B-003 row emAutoplay-1171 (R-A removes these closures by construction)"
       }
     },
     {
@@ -2174,7 +2195,7 @@
       "cpp_line": 1294,
       "signal_expression": "BtContinueLast->GetClickSignal()",
       "signal_kind": "widget-click",
-      "rust_file": "crates/emmain/src/emAutoplay.rs",
+      "rust_file": "crates/emmain/src/emAutoplayControlPanel.rs",
       "rust_status": "drifted",
       "rust_evidence": {
         "kind": "rc_cell_shim",
@@ -2200,7 +2221,14 @@
           "D-002-rc-shim-policy"
         ],
         "scope_key": "emmain:emAutoplay",
-        "prereq_ids": []
+        "prereq_ids": [
+          "emAutoplay-1171"
+        ]
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-011 brainstorm cf9e1cc4",
+        "change": "rust_file split-file line drift: crates/emmain/src/emAutoplay.rs -> crates/emmain/src/emAutoplayControlPanel.rs; hard prereq on B-003 row emAutoplay-1171 (R-A removes these closures by construction)"
       }
     },
     {
@@ -2209,7 +2237,7 @@
       "cpp_line": 1314,
       "signal_expression": "SfDuration->GetValueSignal()",
       "signal_kind": "widget-click",
-      "rust_file": "crates/emmain/src/emAutoplay.rs",
+      "rust_file": "crates/emmain/src/emAutoplayControlPanel.rs",
       "rust_status": "drifted",
       "rust_evidence": {
         "kind": "rc_cell_shim",
@@ -2235,7 +2263,14 @@
           "D-002-rc-shim-policy"
         ],
         "scope_key": "emmain:emAutoplay",
-        "prereq_ids": []
+        "prereq_ids": [
+          "emAutoplay-1171"
+        ]
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-011 brainstorm cf9e1cc4",
+        "change": "rust_file split-file line drift: crates/emmain/src/emAutoplay.rs -> crates/emmain/src/emAutoplayControlPanel.rs; hard prereq on B-003 row emAutoplay-1171 (R-A removes these closures by construction)"
       }
     },
     {
@@ -2244,7 +2279,7 @@
       "cpp_line": 1321,
       "signal_expression": "CbRecursive->GetCheckSignal()",
       "signal_kind": "widget-check",
-      "rust_file": "crates/emmain/src/emAutoplay.rs",
+      "rust_file": "crates/emmain/src/emAutoplayControlPanel.rs",
       "rust_status": "drifted",
       "rust_evidence": {
         "kind": "rc_cell_shim",
@@ -2270,7 +2305,14 @@
           "D-002-rc-shim-policy"
         ],
         "scope_key": "emmain:emAutoplay",
-        "prereq_ids": []
+        "prereq_ids": [
+          "emAutoplay-1171"
+        ]
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-011 brainstorm cf9e1cc4",
+        "change": "rust_file split-file line drift: crates/emmain/src/emAutoplay.rs -> crates/emmain/src/emAutoplayControlPanel.rs; hard prereq on B-003 row emAutoplay-1171 (R-A removes these closures by construction)"
       }
     },
     {
@@ -2279,7 +2321,7 @@
       "cpp_line": 1329,
       "signal_expression": "CbLoop->GetCheckSignal()",
       "signal_kind": "widget-check",
-      "rust_file": "crates/emmain/src/emAutoplay.rs",
+      "rust_file": "crates/emmain/src/emAutoplayControlPanel.rs",
       "rust_status": "drifted",
       "rust_evidence": {
         "kind": "rc_cell_shim",
@@ -2305,7 +2347,14 @@
           "D-002-rc-shim-policy"
         ],
         "scope_key": "emmain:emAutoplay",
-        "prereq_ids": []
+        "prereq_ids": [
+          "emAutoplay-1171"
+        ]
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-011 brainstorm cf9e1cc4",
+        "change": "rust_file split-file line drift: crates/emmain/src/emAutoplay.rs -> crates/emmain/src/emAutoplayControlPanel.rs; hard prereq on B-003 row emAutoplay-1171 (R-A removes these closures by construction)"
       }
     },
     {

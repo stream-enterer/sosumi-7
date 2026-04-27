@@ -4,8 +4,15 @@
 **Scope:** emmain:emAutoplay
 **Row count:** 7
 **Mechanical-vs-judgement:** judgement-heavy
-**Cited decisions:** D-002-rc-shim-policy — governs the per-row triage rule (convert vs keep) for every rc-shim row in this bucket and explicitly flags AutoplayFlags as needing escalation
-**Prereq buckets:** none
+**Cited decisions:** D-002-rc-shim-policy §1 R-A (drop AutoplayFlags entirely; ratified during B-003 reconciliation).
+**Prereq buckets:** B-003-no-wire-autoplay (hard, all 7 rows — B-003's R-A removes the AutoplayFlags struct, which removes these 7 closures by construction).
+
+**Reconciliation amendments (2026-04-27, post-design cf9e1cc4):**
+- **All 7 rows are the same closures B-003's R-A removes.** Implementation merges with B-003's PR; B-011 carries no independent wiring work. Status flips designed → merged jointly with B-003.
+- **Hard prereq edge encoded:** all 7 rows in `inventory-enriched.json` have `prereq_ids: ['emAutoplay-1171']` (B-003's `emAutoplayControlPanel::Cycle` wiring row centralizes the fix).
+- **Audit-data correction (split-file line drift):** all 7 rows had `rust_file = crates/emmain/src/emAutoplay.rs` but the actual code lives in `crates/emmain/src/emAutoplayControlPanel.rs` at the same line numbers (B-003 anomaly §2 again). Inventory amended in this reconciliation.
+- **"Accessor present" interpretation note:** the audit tag is technically correct but refers to widget-side accessors (`emCheckButton::check_signal`, `emButton::click_signal`, `emScalarField::value_signal`), not model-side. No reclassification; flagged for future audit-heuristic tightening.
+- **No new D-### entries; no new global decisions.**
 
 ## Pattern description
 

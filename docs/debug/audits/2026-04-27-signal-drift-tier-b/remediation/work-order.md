@@ -24,7 +24,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 12 | B-017-polling-no-acc-emstocks | 0 | balanced | 3 | designed | [a27d2faa](../../../../superpowers/specs/2026-04-27-B-017-polling-no-acc-emstocks-design.md) |
 | 13 | B-009-typemismatch-emfileman | 0 | judgement-heavy | 14 | designed | [0a7d7fd3](../../../../superpowers/specs/2026-04-27-B-009-typemismatch-emfileman-design.md) |
 | 14 | B-010-rc-shim-emcore | 0 | judgement-heavy | 15 | pending | — |
-| 15 | B-011-rc-shim-autoplay | 0 | judgement-heavy | 7 | pending | — |
+| 15 | B-011-rc-shim-autoplay | 0 | judgement-heavy | 7 | designed | [cf9e1cc4](../../../../superpowers/specs/2026-04-27-B-011-rc-shim-autoplay-design.md) |
 | 16 | B-012-rc-shim-mainctrl | 0 | judgement-heavy | 7 | pending | — |
 | 17 | B-013-dialog-cells-emstocks | 0 | judgement-heavy | 4 | designed | [ec317565](../../../../superpowers/specs/2026-04-27-B-013-dialog-cells-emstocks-design.md) |
 | 18 | B-014-rc-shim-no-acc-misc | 0 | judgement-heavy | 2 | designed | [d7d964d4](../../../../superpowers/specs/2026-04-27-B-014-rc-shim-no-acc-misc-design.md) |
@@ -186,3 +186,12 @@ Total rows: 187 (178 actionable + 9 cleanup).
 - **Accessor-status heuristic check:** held up at 4 sightings; B-014 verified both rows' tags correct.
 - **No prereq edges.** Soft note on B-003 precedent for R-A; already ratified.
 - **B-014 status:** pending → designed.
+
+### 2026-04-27 — B-011 design returned (cf9e1cc4)
+
+- **Thin design doc** (deferred-to-B-003). All 7 B-011 rows are the same widget closures that B-003's R-A removes by construction; B-011 carries no independent implementation work and merges jointly with B-003's PR.
+- **Hard prereq edge encoded:** all 7 rows → `emAutoplay-1171` (B-003's centralizing row).
+- **Audit-data correction (split-file line drift):** `rust_file` for all 7 rows patched from `emAutoplay.rs` → `emAutoplayControlPanel.rs` (same line numbers; B-003 anomaly §2 recurring).
+- **"Accessor present" disambiguation:** audit tag is widget-side accessors, not model-side. Correct as-is; flagged for future audit-heuristic tightening.
+- **No new D-### entries.** R-A precedent covers all 7 rows.
+- **B-011 status:** pending → designed.
