@@ -10,8 +10,8 @@
 **Scope:** emmain:emAutoplay
 **Row count:** 3
 **Mechanical-vs-judgement:** balanced — wiring is mechanical once the accessor shape is decided; the accessor shape is a per-scope judgement call.
-**Cited decisions:** D-003-gap-blocked-fill-vs-stub — bucket fills the missing emAutoplayViewModel accessors in scope, then wires the panel subscribe.
-**Prereq buckets:** none
+**Cited decisions:** D-003-gap-blocked-fill-vs-stub (gap-fill in scope), D-006-subscribe-shape (canonical wiring), D-002-rc-shim-policy (R-A resolution applied per amended D-002 §1).
+**Prereq buckets:** none.
 
 ## Pattern description
 
