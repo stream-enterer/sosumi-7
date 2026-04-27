@@ -56,7 +56,7 @@ Stable IDs (`D-###`) are referenced from `inventory-enriched.json` and from `buc
 
 **Question:** For the 16 gap-blocked rows where the upstream-gap is the blocker, do we fill the gap (port the missing infrastructure) or stub at the consumer (no-op signal subscription that becomes live when the gap fills)?
 
-**Affects:** all gap-blocked rows: 10 P-001 + 2 P-002 + 3 P-003 = 15 rows. (Was 16 before B-006 reconciliation reclassified `emMainControlPanel-218` from gap-blocked to drifted.)
+**Affects:** all gap-blocked rows: 10 P-001 + 1 P-002 + 3 P-003 = 14 rows. (Was 16 originally; reduced by B-006 reclassifying `emMainControlPanel-218` and B-007 reclassifying `emFileSelectionBox-64` — both audit-time stale gap-blocked tags where the accessor actually exists.)
 
 **Options considered:**
 - **A. Fill the gap.** Port the missing upstream model/accessor as part of each gap-blocked bucket.

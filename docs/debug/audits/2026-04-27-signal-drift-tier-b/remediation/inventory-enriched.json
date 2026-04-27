@@ -580,7 +580,7 @@
       "signal_expression": "FileModelsUpdateSignalModel->Sig",
       "signal_kind": "model-update-broadcast",
       "rust_file": "crates/emcore/src/emFileSelectionBox.rs",
-      "rust_status": "gap-blocked",
+      "rust_status": "drifted",
       "rust_evidence": {
         "kind": "absent",
         "file": "crates/emcore/src/emFileSelectionBox.rs",
@@ -596,11 +596,14 @@
       "notes": "C++ subscribes to global `FileModelsUpdateSignalModel->Sig` to invalidate listing on cross-process file mtime broadcast. Rust has no `FileModelsUpdateSignalModel` model and no equivalent global broadcast SignalId \u2014 `grep -rn FileModelsUpdate crates/` returns no matches. Panel cannot subscribe without first adding the model accessor; classified gap-blocked rather than drifted per spec \u00a75.2 step 5.",
       "enrichment": {
         "pattern_id": "P-002-no-subscribe-accessor-present",
-        "decision_ids": [
-          "D-003-gap-blocked-fill-vs-stub"
-        ],
+        "decision_ids": [],
         "scope_key": "emcore",
         "prereq_ids": []
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-007 brainstorm 8b220ebb",
+        "change": "gap-blocked -> drifted; shared FileModelsUpdateSignal is ported as App::file_update_signal at crates/emcore/src/emGUIFramework.rs:227"
       }
     },
     {
@@ -5435,6 +5438,11 @@
         "decision_ids": [],
         "scope_key": "emcore",
         "prereq_ids": []
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-007 brainstorm 8b220ebb",
+        "note": "B-007 design corrects a latent semantic mis-port: AcquireUpdateSignalModel at emFileModel.rs:343 was returning a dead per-model signal; design re-wires to the shared App::file_update_signal broadcast. Bug fix, not annotated DIVERGED."
       }
     },
     {

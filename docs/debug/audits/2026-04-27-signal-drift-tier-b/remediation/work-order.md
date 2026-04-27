@@ -12,7 +12,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 |---|---|---|---|---|---|---|
 | 1 | B-005-typed-subscribe-emfileman | 0 | mechanical-heavy | 21 | designed | [d95d55a7](../../../../superpowers/specs/2026-04-27-B-005-typed-subscribe-emfileman-design.md) |
 | 2 | B-006-typed-subscribe-mainctrl | 0 | mechanical-heavy | 3 | designed | [a13880c7](../../../../superpowers/specs/2026-04-27-B-006-typed-subscribe-mainctrl-design.md) |
-| 3 | B-007-typed-subscribe-emcore | 0 | mechanical-heavy | 3 | pending | — |
+| 3 | B-007-typed-subscribe-emcore | 0 | mechanical-heavy | 3 | designed | [8b220ebb](../../../../superpowers/specs/2026-04-27-B-007-typed-subscribe-emcore-design.md) |
 | 4 | B-008-typed-subscribe-misc | 0 | mechanical-heavy | 3 | pending | — |
 | 5 | B-015-polling-emcore-plus | 0 | mechanical-heavy | 10 | pending | — |
 | 6 | B-019-stale-annotations | 0 | mechanical-heavy | 9 | pending | — |
@@ -57,3 +57,12 @@ Total rows: 187 (178 actionable + 9 cleanup).
 - **Soft cross-bucket edge:** B-006 → B-012-rc-shim-mainctrl. Non-blocking. The 7 `BtNewWindow..BtQuit` click-flag polls in `emMainControlPanel.Cycle` will become D-006-shaped `IsSignaled` branches when B-012 lands. B-006 is observable-correct without it.
 - **Implementation note from designer:** three widget handles (`bt_fullscreen`, `bt_auto_hide_control_view`, `bt_auto_hide_slider`) need to be hoisted from `LMainPanel`-local to `emMainControlPanel` fields as Step 1 of the implementation. Mechanical refactor; in-scope per the design doc.
 - **B-006 status:** pending → designed.
+
+### 2026-04-27 — B-007 design returned (8b220ebb)
+
+- **No new D-### entries** — D-006 covered wiring shape.
+- **Audit-data correction:** `emFileSelectionBox-64` reclassified `gap-blocked → drifted`; `D-003` dropped. Shared `FileModelsUpdateSignal` is actually ported as `App::file_update_signal` at `crates/emcore/src/emGUIFramework.rs:227`. D-003 affects count: 15 → 14.
+- **Latent semantic mis-port surfaced:** `emFileModel::AcquireUpdateSignalModel` (`emFileModel.rs:343`) returned a dead per-model signal instead of the shared broadcast. B-007 design fixes inline as a bug (not annotated DIVERGED — Port Ideology says fidelity bugs are fixed, not annotated). Recorded on `emFileModel-103`'s row as a `reconciliation.note`.
+- **Anchor-vs-implementation site mismatch:** `emImageFile-139`'s actual fix site is the SPLIT panel file `emImageFileImageFilePanel.rs`, not the audit anchor `emImageFile.rs:85`. Per-row design doc has the right site; bookkeeping note only.
+- **No cross-bucket prereqs.** Designer noted `LoaderEngine` persistent-after-load in step 2 is a precedent that future `emFileModel`-derived ports (e.g., `emRecFileModel`) will reuse — track as a downstream pattern, not a prereq edge.
+- **B-007 status:** pending → designed.

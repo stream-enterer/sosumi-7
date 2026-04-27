@@ -4,8 +4,13 @@
 **Scope:** emcore
 **Row count:** 3
 **Mechanical-vs-judgement:** mechanical-heavy — per pattern catalog, accessor is ready and the work is to connect the consumer's subscribe call.
-**Cited decisions:** D-003-gap-blocked-fill-vs-stub — two of three rows reference upstream broadcast models (`FileModelsUpdateSignalModel`, shared `UpdateSignalModel`) that may be unported; per D-003 we fill the gap inside this bucket where the gap is a missing accessor on a ported model, and escalate where the entire upstream model is missing.
-**Prereq buckets:** none
+**Cited decisions:** D-006-subscribe-shape (canonical wiring shape).
+**Prereq buckets:** none.
+
+**Reconciliation amendments (2026-04-27, post-design 8b220ebb):**
+- `emFileSelectionBox-64` reclassified `gap-blocked → drifted`; `D-003` citation removed. The shared `FileModelsUpdateSignalModel` broadcast IS ported as `App::file_update_signal` at `crates/emcore/src/emGUIFramework.rs:227`; audit-time gap-blocked tag was stale.
+- `emFileModel-103` retains `drifted` verdict but design surfaces a latent semantic mis-port: `emFileModel::AcquireUpdateSignalModel` at `emFileModel.rs:343` returns the dead per-model `update_signal` instead of the shared root-context broadcast. Bug fix, not annotated DIVERGED. Captured in row's `reconciliation` field.
+- `emImageFile-139` consumer-side fix lands in the SPLIT panel file (`emImageFileImageFilePanel.rs`), not the audit anchor (`emImageFile.rs:85`). Bookkeeping note — design doc's per-row section has the actual implementation site.
 
 ## Pattern description
 
