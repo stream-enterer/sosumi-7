@@ -147,6 +147,7 @@ pub struct emMainControlPanel {
     /// Renamed from `_config` (removing underscore that suppressed unused warning
     /// now that Cycle actively reads config state for row-219 reaction).
     /// Matches C++ member name `MainConfig`.
+    /// Rc<RefCell<>> justification (b): context-registry typed singleton shared via Acquire.
     config: Rc<RefCell<emMainConfig>>,
     border: emBorder,
     look: emLook,
@@ -174,9 +175,11 @@ pub struct emMainControlPanel {
     /// detached emCheckButton (not in the panel tree). Populated by create_children;
     /// paint/input wiring deferred until HaveAux/emRasterGroup infrastructure is
     /// ported.
+    /// Rc<RefCell<>> justification (b): shared widget handle for Cycle mutation + future panel-tree placement.
     pub(crate) bt_auto_hide_control_view: Option<Rc<RefCell<emCheckButton>>>,
     /// Port of C++ `emMainControlPanel::BtAutoHideSlider`. Same deferred port as
     /// bt_auto_hide_control_view — detached until HaveAux/emRasterGroup infrastructure ports.
+    /// Rc<RefCell<>> justification (b): shared widget handle for Cycle mutation + future panel-tree placement.
     pub(crate) bt_auto_hide_slider: Option<Rc<RefCell<emCheckButton>>>,
 }
 

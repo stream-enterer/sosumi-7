@@ -107,14 +107,6 @@ impl emMainConfig {
         self.config_model.GetChangeSignal()
     }
 
-    /// Test helper: replace the internal null signal ID with a real signal
-    /// allocated from a scheduler, so that unit tests can fire the change
-    /// signal and verify reactions without needing a full config-save engine.
-    ///
-    /// Only needed because `Acquire` creates the signal as `SignalId::null()`
-    /// (no scheduler is available at registration time). Production code never
-    /// calls this method; the scheduler allocates the real signal via the
-    /// engine-registration path.
     /// Test helper: wire a real scheduler signal to the config model.
     /// `Acquire` creates the model with `SignalId::null()`; call this in tests
     /// to replace it with a signal the test's EngineScheduler owns, so that

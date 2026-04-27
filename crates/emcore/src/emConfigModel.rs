@@ -72,9 +72,10 @@ impl<T: Record> emConfigModel<T> {
     /// Test helper: replace the stored signal ID. Used when the model was
     /// created with `SignalId::null()` (no scheduler available at construction
     /// time) and must later be wired to a real scheduler signal for testing.
-    /// `pub` so downstream crate test helpers (e.g. `emMainConfig`) can call it;
-    /// production callers are prevented by the `#[cfg(test)]` gate on every
-    /// wrapper that exposes this through the public API.
+    /// Unconditionally `pub` (cross-crate `#[cfg(test)]` does not work for
+    /// dependency crates in Rust). Prevention of production callers relies on
+    /// convention: every wrapper that exposes this through the public API gates
+    /// itself with `#[cfg(test)]` in its own crate (e.g. `emMainConfig`).
     pub fn set_change_signal(&mut self, sig: SignalId) {
         self.change_signal = sig;
     }
