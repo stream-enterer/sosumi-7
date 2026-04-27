@@ -1,0 +1,191 @@
+rust_file,line,claimed_category,full_block,signal_related,notes,revalidation_result,corrected_category
+crates/emcore/src/emImageFile.rs,69,language-forced,"    /// DIVERGED: (language-forced) C++ creates file models via `emModel::Acquire(context, name)`,
+    /// a context-registered, path-keyed shared-instance pattern backed by virtual inheritance
+    /// (`emModel : emEngine`, `emFileModel : emModel`). Rust has no virtual base-class
+    /// inheritance; the `emModel` context-registry infrastructure is not yet ported, so
+    /// callers receive an explicit `Rc<RefCell<Self>>` and manage sharing themselves.
+    /// The observable loading contract — async engine fires on schedule, signals on completion —
+    /// is preserved.",true,,verified,
+crates/emfileman/src/emDirEntryPanel.rs,314,language-forced,"    /// DIVERGED: (language-forced) C++ walks sibling panels via parent panel tree traversal.
+    /// Rust accesses the emDirModel directly to enumerate entries in display
+    /// order, since panel tree parent traversal is not available.",false,,,
+crates/emfileman/src/emDirEntryPanel.rs,419,upstream-gap-forced,"    /// DIVERGED: (upstream-gap-forced) Linux-only port; Windows attribute
+    /// branch (emDirEntryPanel.cpp:642-648), the Windows
+    /// `IsDrive`/`IsDirectory` guards around the Size and Time fields
+    /// (cpp:686-688, 707-709, 711-713, 722-724), and the Windows drive-type
+    /// extension of the Type field (cpp:611-626) are intentionally omitted.
+    /// The C++ source gates these on `#if defined(_WIN32)`, which is never
+    /// defined for our Linux-only target build, so the corresponding code
+    /// path is an upstream no-op for this configuration.",false,,,
+crates/emfileman/src/emDirPanel.rs,117,language-forced,"/// DIVERGED: (language-forced) C++ emDirPanel connects emDirModel as a FileModelState via
+/// SetFileModel. Rust drives loading directly in Cycle using
+/// `get_file_state()` to query the model's phase, because emDirModel does
+/// not implement FileModelState — it wraps emDirModelData directly without
+/// scheduler integration.",true,,failed,
+crates/emfileman/src/emDirPanel.rs,272,language-forced,"                // DIVERGED: (language-forced) C++ uses View.Visit() from Input handler. Rust queues
+                // navigation via PanelCtx::request_visit, drained by emView each frame.",false,,,
+crates/emfileman/src/emFileLinkPanel.rs,299,language-forced,"    /// DIVERGED: (language-forced) C++ calls UpdateDataAndChildPanel from Cycle() and Notice().
+    /// Rust defers to LayoutChildren() for borrow safety — the RefCell holding
+    /// the panel cannot be borrowed mutably while also creating/deleting child
+    /// panels. The timing difference is at most one frame. This matches the
+    /// established pattern in emDirEntryPanel.",true,,verified,
+crates/emfileman/src/emFileManControlPanel.rs,43,language-forced,"/// DIVERGED: (language-forced) C++ uses emLinearLayout composition with emPackGroup/
+/// emRasterLayout for widget tree. Rust uses manual painting with
+/// computed y offsets — widgets are painted directly rather than
+/// composed as child panels in a layout tree.",false,,,
+crates/emfileman/src/emFileManControlPanel.rs,245,language-forced,"    /// DIVERGED: (language-forced) C++ SelectAll finds active DirPanel by walking from
+    /// content_view's focused panel. Rust receives the dir_path from the
+    /// creating DirPanel and accesses the emDirModel directly.",false,,,
+crates/emfileman/src/emFileManSelInfoPanel.rs,222,language-forced,"    /// DIVERGED: (language-forced) C++ name is ResetDetails (private). Renamed to
+    /// reset_details with pub(crate) visibility for test access.",false,,,
+crates/emmain/src/emAutoplay.rs,24,language-forced,"// DIVERGED: (language-forced) C++ `emAutoplayConfig` is a single class; Rust splits the record data into
+// `emAutoplayConfigRec` and the model wrapper into `emAutoplayConfig` (one primary type per file).",false,,,
+crates/emmain/src/emAutoplay.rs,170,language-forced,"        // DIVERGED: (language-forced) C++ returns const emString&; Rust borrows &str from the model.
+        // We can't return a borrow of the inner data directly because GetRec() returns
+        // a reference. We return an owned &str via a static-lifetime-alike trick:
+        // actually, GetRec() returns &T so this is fine.",false,,,
+crates/emmain/src/emBookmarks.rs,18,language-forced,"// DIVERGED: (language-forced) C++ uses class inheritance (emBookmarkEntryRec → emBookmarkRec,
+// emBookmarkGroupRec). Rust flattens to struct composition — `emBookmarkEntryBase`
+// is embedded by value in each concrete struct. The field names and default
+// colors are identical to the C++ originals.",false,,,
+crates/emmain/src/emBookmarks.rs,775,language-forced,"/// DIVERGED: (language-forced) C++ uses recursive emBookmarksPanel for groups.  In Rust we use
+/// a separate struct `emBookmarksGroupPanel` to avoid ownership issues when
+/// recursively creating child panels from within `LayoutChildren`.  The
+/// behavior is identical; only the type name differs.",false,,,
+crates/emmain/src/emMainControlPanel.rs,35,language-forced,"// DIVERGED: (language-forced) C++ uses AddWakeUpSignal / IsSignaled. Rust uses Rc<Cell<bool>>
+// flags set by on_click callbacks and polled in Cycle.",true,,failed,
+crates/emmain/src/emMainControlPanel.rs,303,language-forced,"                // DIVERGED: (language-forced) C++ has direct MainWin reference; Rust uses
+                // thread_local. ToggleFullscreen requires &mut App which
+                // we don't have in Cycle. Log for now.",true,,failed,
+crates/emmain/src/emMainControlPanel.rs,320,language-forced,"            // DIVERGED: (language-forced) C++ calls MainWin.ReloadFiles() directly via signal.
+            // Rust sets a flag on emMainWindow, polled by MainWindowEngine which
+            // has EngineCtx access to fire the file_update_signal.",true,,failed,
+crates/emmain/src/emMainControlPanel.rs,726,language-forced,"            // DIVERGED: (language-forced) C++ uses emPackGroup with PrefChildTallness(0.7).
+            // Rust uses emLinearLayout vertical since emPackLayout doesn't
+            // support tallness preferences in the same way.",false,,,
+crates/emmain/src/emMainPanel.rs,29,language-forced,"/// DIVERGED: (language-forced) C++ SliderPanel holds a `MainPanel&` and calls
+/// `MainPanel.DragSlider(dy)` / `MainPanel.DoubleClickSlider()` directly.
+/// Rust cannot hold parent references in the panel tree. Instead, the parent
+/// (`emMainPanel`) reads `pending_drag_delta` and `double_clicked` from this
+/// panel via `with_behavior_as` in its `Cycle` and dispatches accordingly.",true,,verified,
+crates/emcore/src/emDialog.rs,35,language-forced,"/// DIVERGED: (language-forced) C++ `emDialog::CheckFinish` is a virtual method with no
+/// extra args — subclasses reach into self's fields directly. Rust uses
+/// a callback slot on `DlgPanel`; the closure needs `&mut DlgPanel` +
+/// `&mut EngineCtx<'_>` to read tree state (e.g. emFileDialog's fsb
+/// child panel) and spawn transient sub-dialogs. Matches `DialogCycleExt`
+/// (Phase 3.6 Task 2).",true,,failed,
+crates/emcore/src/emDialog.rs,408,language-forced,"    /// DIVERGED: (language-forced) Rust's lazy-create is simpler (plain child) because the
+    /// layout contract in `DlgPanel::LayoutChildren` already rects-out
+    /// `content_panel_id` against the computed content area — the C++
+    /// emLinearGroup wrapper is an idiom adaptation since the wrapper
+    /// layer is not yet ported. Consumers install their own child behavior
+    /// via the returned PanelId (see `emFileDialog::new`).
+    ///
+    /// Pre-show only. Panics post-show: content panel must be installed
+    /// before `show()` because the pre-show tree-reach pattern is the only
+    /// mutation path for the dialog's PanelTree before materialization.",false,,,
+crates/emcore/src/emDialog.rs,523,language-forced,"    /// DIVERGED: (language-forced) Rust mechanism for the C++ ""emFileDialog::Cycle calls
+    /// emDialog::Cycle() first then runs its own logic"" inheritance pattern
+    /// (emFileDialog.cpp:82). In C++, `emFileDialog` is a subclass and its
+    /// `Cycle()` override calls `emDialog::Cycle()` then continues. In Rust
+    /// there is a single engine type (`DialogPrivateEngine`) with no
+    /// inheritance; this callback slot lets emFileDialog inject post-base
+    /// Cycle logic without needing a separate engine or vtable dispatch.
+    ///
+    /// `DialogPrivateEngine::Cycle` calls this AFTER the base cycle body
+    /// (close-signal observation, pending_result resolution, auto-delete
+    /// countdown). Return value: whether the extension wants to keep the
+    /// engine awake (OR'd with the base Cycle's return).
+    ///
+    /// NOTE: the extension must not call `ctx.tree.take_behavior(root_panel_id)`
+    /// — that behavior is already taken by the engine's Cycle body. The
+    /// extension CAN take other panels (e.g. overwrite dialog's root).
+    ///
+    /// Populated by emFileDialog::new in Task 3. `None` for plain emDialog.",true,,failed,
+crates/emcore/src/emDialog.rs,717,language-forced,"        // DIVERGED: (language-forced) emBorder has no Input in Rust; C++ emBorder::Input called
+        // here handles focus traversal. Track as latent gap — revisit if
+        // emBorder gains Input.",false,,,
+crates/emcore/src/emDialog.rs,818,language-forced,"    // DIVERGED: (language-forced) DlgButton click observation — C++ emDialog.cpp:236 `DlgButton::Clicked()` walks
+    // parent chain via `((emDialog*)GetWindow())->Finish(Result)`. Rust wires this engine-side
+    // via `scheduler.connect(button.click_signal, private_engine_id)` at install time (Task 7),
+    // so `Input` here is a pure delegator.",true,,verified,
+crates/emcore/src/emDialog.rs,965,language-forced,"            // DIVERGED: (language-forced) `delete this` becomes a deferred
+            // `DeferredAction::CloseWindow`, because emWindow lifetime is
+            // owned by emGUIFramework rather than self-destructed.",false,,,
+crates/emcore/src/emFileDialog.rs,40,language-forced,"/// DIVERGED: (language-forced) Rust uses composition for C++ inheritance (idiom adaptation —
+/// observable behavior identical). The owned `dialog: emDialog` provides the
+/// window/root-panel/private-engine infrastructure from Phase 3.5; the
+/// `emFileSelectionBox` is installed as a child panel under
+/// `dialog.GetContentPanel()` at construction.
+///
+/// Scheduler-driven Cycle: on construction, the outer emDialog's
+/// DialogPrivateEngine subscribes to `fsb.file_trigger_signal` via
+/// `PendingTopLevel::wake_up_signals` — the pre-show rail that the installer
+/// drains into `scheduler.connect` at materialization time (port of
+/// emFileDialog.cpp:41 `AddWakeUpSignal(Fsb->GetFileTriggerSignal())`). The
+/// file-dialog per-cycle logic (emFileDialog.cpp:80-106) lives in the
+/// `on_cycle_ext` callback installed on the dialog's `DlgPanel`.
+///
+/// Overwrite-confirmation transient state (the popped-up ""File Exists""
+/// sub-dialog, its asked-text, AND its confirmed-text) lives on `DlgPanel`
+/// (see `on_cycle_ext` closure access pattern) — NOT on this struct. This
+/// avoids `Rc<RefCell<...>>` because the `'static + FnMut` closure cannot
+/// borrow from `emFileDialog`. Phase 3.6 Task 3 fix: `overwrite_confirmed`
+/// moved to `DlgPanel` alongside `overwrite_asked` so the closure can
+/// promote `asked → confirmed` on OD POSITIVE (C++ emFileDialog.cpp:93).",true,,verified,
+crates/emcore/src/emFileDialog.rs,68,language-forced,"    /// accessor. DIVERGED: (language-forced) C++ `emFileDialog` does not expose a
+    /// `GetFileTriggerSignal` accessor; this cache exists solely because
+    /// Rust tests need to fire the signal externally without walking the
+    /// tree. The closure in `on_cycle_ext` captures the same SignalId via
+    /// move-capture at construction and does NOT read this field.",true,,failed,
+crates/emcore/src/emFileDialog.rs,140,language-forced,"                // DIVERGED: (language-forced) Rust-specific re-wake. The base
+                // `DialogPrivateEngine::Cycle` body runs BEFORE on_cycle_ext
+                // (Phase-3.6 Task 2 ordering). State mutations this closure
+                // makes — setting `dlg.pending_result`, pushing
+                // `pending_actions` — are not visible to the base body this
+                // Cycle. We return `true` on any mutation to keep the engine
+                // awake so the next Cycle's base body observes them. C++
+                // doesn't need this: `Finish(POSITIVE)` in
+                // emFileDialog::Cycle finalizes via same-call-stack re-entry
+                // into emDialog::Cycle's finalize path.",true,,failed,
+crates/emcore/src/emMiniIpc.rs,119,language-forced,"        // DIVERGED: (language-forced) C++ `emMiniIpc` uses `~/.emMiniIpc-<uid>`. eaglemode-rs
+        // uses `~/.emMiniIpc-rs-<uid>` so a running C++ server is not mistaken
+        // for a Rust server (and vice-versa) — the two builds must not share
+        // the IPC namespace even though the protocol would collide on names.",false,,,
+crates/emcore/src/emMiniIpc.rs,438,language-forced,"        // DIVERGED: (language-forced) no C++ equivalent — Rust-only resource cleanup (C++ uses destructor)
+        /// Remove engine/timer from scheduler. Call before dropping.",false,,,
+crates/emmain/src/emMainWindow.rs,3,language-forced,"// DIVERGED: (language-forced) C++ emMainWindow creates an OS window + emMainPanel + detached
+// control window + StartupEngine.  Rust creates a single emWindow with
+// emMainPanel as the root panel.  StartupEngine drives staged panel creation,
+// autoplay input is wired via emAutoplayViewModel, and the window is persisted
+// across frames via thread_local (set_main_window / with_main_window).",false,,,
+crates/emmain/src/emMainWindow.rs,229,language-forced,"    /// DIVERGED: (language-forced) C++ Input uses emInputEvent, Rust uses the same struct but
+    /// reads modifier state from emInputState (matching C++ behavior of
+    /// checking the global input state rather than per-event modifiers).",false,,,
+crates/emmain/src/emMainWindow.rs,432,language-forced,"        // DIVERGED: (language-forced) C++ parses visit string into identity/relX/relY/relA fields
+        // at construction time (emMainWindow.cpp:338-361).  Rust stores the raw
+        // visit string as identity; bookmark-based visit is filled in at state 4.",false,,,
+crates/emmain/src/emMainWindow.rs,819,language-forced,"/// DIVERGED: (language-forced) C++ emMainControlPanel directly subscribes to
+/// ContentView.GetControlPanelSignal() and calls ContentView.CreateControlPanel()
+/// from its own Cycle(). In Rust, the outer tree is taken by the scheduler before
+/// SubView-scope panel engines dispatch, so emMainControlPanel::Cycle cannot reach
+/// the content sub-view. This Framework-scope engine performs the cross-tree
+/// recreation instead.",true,,verified,
+crates/emmain/src/emMainWindow.rs,1310,language-forced,"/// DIVERGED: (language-forced) RecreateContentPanels — C++ iterates all windows on the screen,
+/// finds emMainWindow instances, and recreates each one's content panel while
+/// preserving the visited location.  Rust has a single-window architecture with
+/// thread-local storage, so we operate on the single main window instead.",false,,,
+crates/emcore/src/emFileModel.rs,40,language-forced,"/// DIVERGED: (language-forced) C++ emFileModel base class — Rust uses trait for type erasure
+/// since emFileModel<T> is generic.",false,,,
+crates/emcore/src/emFileModel.rs,490,upstream-gap-forced,"        // DIVERGED: (upstream-gap-forced) C++ Cycle calls StartPSAgent and
+        // UpdateMemoryLimit before the loop. PSAgent integration is
+        // deferred from F017 scope (Rust PriSchedModel callback signature
+        // is incompatible with C++ GotAccess→WakeUp; tracked separately).
+        // UpdateMemoryLimit signals memory pressure that no panel
+        // currently reads in the Rust port.",true,,wrong_category,language-forced
+crates/emcore/src/emFileModel.rs,674,language-forced,"/// DIVERGED: (language-forced) Uses Weak<RefCell<T>> instead of raw pointer + emRef.
+/// Rust has no emFileModelClient base class; this is a standalone
+/// wrapper that tracks a file model's lifetime via Weak reference.",false,,,
+crates/emstocks/src/emStocksFileModel.rs,17,language-forced,"/// DIVERGED: (language-forced) Composition instead of C++ multiple inheritance — Rust has no MI; composition with delegation is the idiomatic equivalent.
+/// Save timer uses std::time::Instant instead of emTimer — emTimer::TimerCentral is
+/// internal to emcore; Instant provides the same delayed-save behavior.",false,,,
