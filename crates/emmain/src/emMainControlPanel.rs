@@ -169,14 +169,14 @@ pub struct emMainControlPanel {
     /// Populated by create_children; None until first LayoutChildren.
     pub(crate) bt_fullscreen: Option<Rc<RefCell<emCheckButton>>>,
     /// Port of C++ `emMainControlPanel::BtAutoHideControlView`.
-    /// UPSTREAM-GAP: C++ places this widget inside BtFullscreen->HaveAux() in
-    /// an emRasterGroup. Rust has no HaveAux/emRasterGroup port yet, so the
-    /// button is created as a detached emCheckButton (not in the panel tree).
-    /// Populated by create_children; paint/input wiring deferred until aux-panel
-    /// infrastructure is ported.
+    /// C++ places this widget inside BtFullscreen->HaveAux() in an emRasterGroup.
+    /// Rust has no HaveAux/emRasterGroup port yet, so the button is created as a
+    /// detached emCheckButton (not in the panel tree). Populated by create_children;
+    /// paint/input wiring deferred until HaveAux/emRasterGroup infrastructure is
+    /// ported.
     pub(crate) bt_auto_hide_control_view: Option<Rc<RefCell<emCheckButton>>>,
-    /// Port of C++ `emMainControlPanel::BtAutoHideSlider`. Same upstream-gap
-    /// as bt_auto_hide_control_view — detached until HaveAux infrastructure ports.
+    /// Port of C++ `emMainControlPanel::BtAutoHideSlider`. Same deferred port as
+    /// bt_auto_hide_control_view — detached until HaveAux/emRasterGroup infrastructure ports.
     pub(crate) bt_auto_hide_slider: Option<Rc<RefCell<emCheckButton>>>,
 }
 
@@ -290,12 +290,12 @@ impl emMainControlPanel {
             });
         self.bt_fullscreen = bt_fullscreen_opt.clone();
 
-        // UPSTREAM-GAP: BtAutoHideControlView and BtAutoHideSlider live inside
-        // BtFullscreen->HaveAux() in an emRasterGroup in C++. Rust has no HaveAux /
-        // emRasterGroup port yet. The buttons are created here as detached
-        // emCheckButton instances (not in the panel tree). Their check state is
-        // updated by the row-219 Cycle reaction and tested by typed_subscribe_b006;
-        // paint/input wiring is deferred until aux-panel infrastructure is ported.
+        // BtAutoHideControlView and BtAutoHideSlider live inside BtFullscreen->HaveAux()
+        // in an emRasterGroup in C++. Rust has no HaveAux/emRasterGroup port yet.
+        // The buttons are created here as detached emCheckButton instances (not in the
+        // panel tree). Their check state is updated by the Cycle reaction and tested by
+        // typed_subscribe_b006; paint/input wiring is deferred until
+        // HaveAux/emRasterGroup infrastructure is ported.
         let bt_auto_hide_control_view_opt: Option<Rc<RefCell<emCheckButton>>> =
             ctx.as_sched_ctx().map(|mut sched| {
                 Rc::new(RefCell::new(emCheckButton::new(

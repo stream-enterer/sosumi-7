@@ -72,7 +72,9 @@ impl<T: Record> emConfigModel<T> {
     /// Test helper: replace the stored signal ID. Used when the model was
     /// created with `SignalId::null()` (no scheduler available at construction
     /// time) and must later be wired to a real scheduler signal for testing.
-    /// pub so downstream crate tests (emmain) can call via emMainConfig.
+    /// `pub` so downstream crate test helpers (e.g. `emMainConfig`) can call it;
+    /// production callers are prevented by the `#[cfg(test)]` gate on every
+    /// wrapper that exposes this through the public API.
     pub fn set_change_signal(&mut self, sig: SignalId) {
         self.change_signal = sig;
     }
