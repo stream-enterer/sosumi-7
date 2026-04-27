@@ -50,14 +50,9 @@ pub struct emImageFileModel {
 }
 
 impl emImageFileModel {
-    pub fn new(
-        path: PathBuf,
-        change_signal: SignalId,
-        update_signal: SignalId,
-        data_change_signal: SignalId,
-    ) -> Self {
+    pub fn new(path: PathBuf, change_signal: SignalId, data_change_signal: SignalId) -> Self {
         Self {
-            file_model: emFileModel::new(path, change_signal, update_signal),
+            file_model: emFileModel::new(path, change_signal),
             data_change_signal,
             saving_quality: 100,
         }
@@ -75,10 +70,9 @@ impl emImageFileModel {
     /// is preserved.
     pub fn register<C: ConstructCtx>(ctx: &mut C, path: PathBuf) -> Rc<RefCell<Self>> {
         let change_signal = ctx.create_signal();
-        let update_signal = ctx.create_signal();
         let load_complete_signal = ctx.create_signal();
 
-        let mut model = Self::new(path, change_signal, update_signal, load_complete_signal);
+        let mut model = Self::new(path, change_signal, load_complete_signal);
         model.file_model.Load();
 
         let model_rc = Rc::new(RefCell::new(model));

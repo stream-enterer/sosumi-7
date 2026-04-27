@@ -279,11 +279,7 @@ impl emEngine for emDirModelEngine {
 impl emDirModel {
     pub fn Acquire(ctx: &Rc<emcore::emContext::emContext>, name: &str) -> Rc<RefCell<Self>> {
         ctx.acquire::<Self>(name, || Self {
-            file_model: emFileModel::new(
-                PathBuf::from(name),
-                SignalId::default(),
-                SignalId::default(),
-            ),
+            file_model: emFileModel::new(PathBuf::from(name), SignalId::default()),
             data: emDirModelData::new(PathBuf::from(name)),
             path: name.to_string(),
             engine_id: None,

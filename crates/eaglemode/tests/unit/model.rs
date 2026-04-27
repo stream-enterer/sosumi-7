@@ -125,7 +125,7 @@ fn context_children_are_weak() {
 #[test]
 fn file_model_state_machine() {
     let sig = make_signal();
-    let mut fm = emFileModel::<Vec<u8>>::new(PathBuf::from("/tmp/test"), sig, sig);
+    let mut fm = emFileModel::<Vec<u8>>::new(PathBuf::from("/tmp/test"), sig);
 
     assert_eq!(*fm.GetFileState(), FileState::Waiting);
     assert_eq!(fm.GetFileProgress(), 0.0);
@@ -169,7 +169,7 @@ fn file_model_state_machine() {
 #[test]
 fn file_model_too_costly() {
     let sig = make_signal();
-    let mut fm = emFileModel::<String>::new(PathBuf::from("/tmp/test"), sig, sig);
+    let mut fm = emFileModel::<String>::new(PathBuf::from("/tmp/test"), sig);
 
     fm.mark_too_costly();
     assert_eq!(*fm.GetFileState(), FileState::TooCostly);
@@ -419,7 +419,7 @@ fn make_temp_file(subdir: &str) -> PathBuf {
 fn file_model_step_loading() {
     let sig = make_signal();
     let path = make_temp_file("eaglemode_fm_10");
-    let mut fm = emFileModel::<()>::new(path, sig, sig);
+    let mut fm = emFileModel::<()>::new(path, sig);
     let mut ops = MemOps::new();
 
     // First step: Waiting → Loading
@@ -441,7 +441,7 @@ fn file_model_step_loading() {
 fn file_model_step_saving() {
     let sig = make_signal();
     let path = make_temp_file("eaglemode_fm_11");
-    let mut fm = emFileModel::<()>::new(path, sig, sig);
+    let mut fm = emFileModel::<()>::new(path, sig);
 
     // Reach Loaded state manually
     fm.complete_load(());
@@ -469,7 +469,7 @@ fn file_model_step_saving() {
 fn file_model_hard_reset_file_state() {
     let sig = make_signal();
     let path = make_temp_file("eaglemode_fm_12");
-    let mut fm = emFileModel::<()>::new(path, sig, sig);
+    let mut fm = emFileModel::<()>::new(path, sig);
     fm.complete_load(());
     assert_eq!(*fm.GetFileState(), FileState::Loaded);
 
@@ -484,7 +484,7 @@ fn file_model_hard_reset_file_state() {
 fn file_model_set_unsaved_state_aborts_loading() {
     let sig = make_signal();
     let path = make_temp_file("eaglemode_fm_13");
-    let mut fm = emFileModel::<()>::new(path, sig, sig);
+    let mut fm = emFileModel::<()>::new(path, sig);
     let mut ops = MemOps::new();
 
     // Step once: Waiting → Loading

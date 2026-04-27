@@ -122,14 +122,13 @@ pub struct emFileModel<T> {
     last_size: u64,
     out_of_date: bool,
     ignore_update_signal: bool,
-    update_signal: SignalId,
     clients: Vec<Weak<RefCell<dyn FileModelClient>>>,
     memory_limit_invalid: bool,
     priority_invalid: bool,
 }
 
 impl<T> emFileModel<T> {
-    pub fn new(path: PathBuf, signal_id: SignalId, update_signal: SignalId) -> Self {
+    pub fn new(path: PathBuf, signal_id: SignalId) -> Self {
         Self {
             data: None,
             path,
@@ -143,7 +142,6 @@ impl<T> emFileModel<T> {
             last_size: 0,
             out_of_date: false,
             ignore_update_signal: false,
-            update_signal,
             clients: Vec::new(),
             memory_limit_invalid: true,
             priority_invalid: true,
@@ -338,10 +336,16 @@ impl<T> emFileModel<T> {
         self.ignore_update_signal = ignore;
     }
 
-    /// Port of C++ `emFileModel::AcquireUpdateSignalModel`.
-    /// Returns the update signal ID.
-    pub fn AcquireUpdateSignalModel(&self) -> SignalId {
-        self.update_signal
+    /// Port of C++ `static emRef<emSigModel> emFileModel::AcquireUpdateSignalModel(emRootContext&)`.
+    /// Returns the shared file-update broadcast `SignalId` from the scheduler.
+    /// In C++ this returns the root-context-scoped `emSigModel("emFileModel::UpdateSignal")`
+    /// shared by all file models; in Rust the equivalent is `scheduler.file_update_signal`
+    /// allocated by `App::new`. Takes `EngineCtx` (not `&self`) mirroring the C++ static shape.
+    ///
+    /// B-007 gap-fix: previously returned per-model `update_signal` (dead signal,
+    /// fidelity bug). Now returns the shared broadcast signal per D-003 option A.
+    pub fn AcquireUpdateSignalModel(ectx: &crate::emEngineCtx::EngineCtx<'_>) -> SignalId {
+        ectx.scheduler.file_update_signal
     }
 
     pub fn GetErrorText(&self) -> &str {
@@ -743,11 +747,7 @@ mod tests {
     }
 
     fn make_model() -> emFileModel<()> {
-        emFileModel::new(
-            PathBuf::from("/tmp/test.dat"),
-            SignalId::default(),
-            SignalId::default(),
-        )
+        emFileModel::new(PathBuf::from("/tmp/test.dat"), SignalId::default())
     }
 
     fn make_client(limit: u64, priority: f64, annoying: bool) -> Rc<RefCell<dyn FileModelClient>> {
@@ -944,7 +944,6 @@ mod tests {
 
         let model: Rc<RefCell<emFileModel<String>>> = Rc::new(RefCell::new(emFileModel::new(
             PathBuf::from("/dev/null"),
-            SignalId::default(),
             SignalId::default(),
         )));
 

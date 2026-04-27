@@ -421,7 +421,6 @@ impl emStocksFilePanel {
         let model = Rc::new(RefCell::new(emFileModel::<String>::new(
             PathBuf::from("/tmp/test"),
             SignalId::default(),
-            SignalId::default(),
         )));
         model.borrow_mut().complete_load("test".to_string());
         self.file_panel

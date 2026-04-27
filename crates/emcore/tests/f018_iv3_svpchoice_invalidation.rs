@@ -73,7 +73,6 @@ fn build_minimal_tree() -> (PanelTree, PanelId) {
     let model: Rc<RefCell<emFileModel<String>>> = Rc::new(RefCell::new(emFileModel::new(
         PathBuf::from("/tmp/f018_iv3_svpchoice_invalidation.test"),
         SignalId::default(),
-        SignalId::default(),
     )));
 
     let mut panel = emFilePanel::new();

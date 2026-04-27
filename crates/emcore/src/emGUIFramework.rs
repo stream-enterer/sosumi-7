@@ -246,6 +246,11 @@ impl App {
     pub fn new(setup: SetupFn) -> Self {
         let mut scheduler = EngineScheduler::new();
         let file_update_signal = scheduler.create_signal();
+        // Mirror C++ emFileModel::AcquireUpdateSignalModel: store the shared
+        // broadcast SignalId on the scheduler so engines can reach it through
+        // EngineCtx::scheduler.file_update_signal without threading a new
+        // parameter through DoTimeSlice. Set before any engine registration.
+        scheduler.file_update_signal = file_update_signal;
         // Register the InputDispatchEngine at top priority (Phase 3 / spec
         // §3.1 / §4 D4.9): winit input callbacks enqueue into
         // `pending_inputs` and wake this engine; its `Cycle` drains the

@@ -494,7 +494,6 @@ mod tests {
         let model = Rc::new(RefCell::new(emFileModel::new(
             PathBuf::from("/tmp/test"),
             SignalId::default(),
-            SignalId::default(),
         )));
         let mut panel = emFilePanel::new();
         panel.SetFileModel(Some(model.clone() as Rc<RefCell<dyn FileModelState>>));
@@ -551,7 +550,6 @@ mod tests {
         // Reset to waiting by creating a new model
         let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(
             PathBuf::from("/tmp/test2"),
-            SignalId::default(),
             SignalId::default(),
         )));
         panel.SetFileModel(Some(model2 as Rc<RefCell<dyn FileModelState>>));
@@ -621,7 +619,6 @@ mod tests {
         let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(
             PathBuf::from("/tmp/test2"),
             SignalId::default(),
-            SignalId::default(),
         )));
         panel.SetFileModel(Some(model2.clone() as Rc<RefCell<dyn FileModelState>>));
         model2.borrow_mut().fail_load("e".to_string());
@@ -644,7 +641,6 @@ mod tests {
         // SaveError — need fresh model
         let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(
             PathBuf::from("/tmp/test2"),
-            SignalId::default(),
             SignalId::default(),
         )));
         panel.SetFileModel(Some(model2.clone() as Rc<RefCell<dyn FileModelState>>));
@@ -788,7 +784,6 @@ mod tests {
         // Reset to test error state
         let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(
             PathBuf::from("/tmp/test2"),
-            SignalId::default(),
             SignalId::default(),
         )));
         panel.SetFileModel(Some(model2.clone() as Rc<RefCell<dyn FileModelState>>));
