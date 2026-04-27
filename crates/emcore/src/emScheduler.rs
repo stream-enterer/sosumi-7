@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{Key as _, SecondaryMap, SlotMap};
 use winit::window::WindowId;
 
 use super::emEngine::{emEngine, EngineData, EngineId, Priority};
@@ -141,6 +141,20 @@ pub struct EngineScheduler {
     /// construction code can allocate IDs through `ConstructCtx` without
     /// requiring `&mut App`. Permanent home per spec §8.
     pub(crate) next_dialog_id: u64,
+    /// Global file-update broadcast signal. Port of C++
+    /// `emFileModel::AcquireUpdateSignalModel` (the shared root-scoped
+    /// `emSigModel("emFileModel::UpdateSignal")`). Stored here so engines
+    /// can reach it through `EngineCtx::scheduler.file_update_signal`
+    /// without threading a new parameter through `DoTimeSlice`.
+    ///
+    /// Initially `SignalId::null()`; set to a real signal by `App::new`
+    /// (which calls `scheduler.create_signal()` then assigns it here).
+    /// Production code never reads it before `App::new` finishes init.
+    /// Test harnesses that call `DoTimeSlice` without constructing an App
+    /// leave it null — `AcquireUpdateSignalModel` callers in those harnesses
+    /// will receive `SignalId::null()`, which is safe (connect/fire on null
+    /// are no-ops per `EngineScheduler` invariants).
+    pub file_update_signal: SignalId,
 }
 
 impl EngineScheduler {
@@ -148,6 +162,7 @@ impl EngineScheduler {
         Self {
             terminated: false,
             next_dialog_id: 0,
+            file_update_signal: SignalId::null(),
             inner: EngineCtxInner {
                 signals: SlotMap::with_key(),
                 engines: SlotMap::with_key(),

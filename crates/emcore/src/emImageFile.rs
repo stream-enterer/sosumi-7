@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 
+use slotmap::Key as _;
+
 use crate::emEngine::{emEngine, Priority};
 use crate::emEngineCtx::{ConstructCtx, EngineCtx};
 use crate::emFileModel::{emFileModel, FileState};
@@ -50,14 +52,9 @@ pub struct emImageFileModel {
 }
 
 impl emImageFileModel {
-    pub fn new(
-        path: PathBuf,
-        change_signal: SignalId,
-        update_signal: SignalId,
-        data_change_signal: SignalId,
-    ) -> Self {
+    pub fn new(path: PathBuf, change_signal: SignalId, data_change_signal: SignalId) -> Self {
         Self {
-            file_model: emFileModel::new(path, change_signal, update_signal),
+            file_model: emFileModel::new(path, change_signal),
             data_change_signal,
             saving_quality: 100,
         }
@@ -75,18 +72,26 @@ impl emImageFileModel {
     /// is preserved.
     pub fn register<C: ConstructCtx>(ctx: &mut C, path: PathBuf) -> Rc<RefCell<Self>> {
         let change_signal = ctx.create_signal();
-        let update_signal = ctx.create_signal();
         let load_complete_signal = ctx.create_signal();
 
-        let mut model = Self::new(path, change_signal, update_signal, load_complete_signal);
+        let mut model = Self::new(path, change_signal, load_complete_signal);
         model.file_model.Load();
 
         let model_rc = Rc::new(RefCell::new(model));
         let model_weak = Rc::downgrade(&model_rc);
 
+        // B-007 row -103: cache file_update_signal at register time so LoaderEngine
+        // can subscribe to the shared broadcast and stay persistent.
+        // EngineCtx is not available here (only ConstructCtx), so we cannot call
+        // ctx.connect() — the engine connects in its own first-Cycle init block.
+        // We stash SignalId::null() here; it is replaced in Cycle if needed.
+        // Note: ConstructCtx doesn't expose file_update_signal because most
+        // implementors are InitCtx/SchedCtx without App linkage. The engine
+        // reads it from EngineCtx::scheduler.file_update_signal at Cycle time.
         let engine = Box::new(LoaderEngine {
             model_weak,
             load_complete_signal,
+            initial_load_done: false,
         });
         let eid = ctx.register_engine(engine, Priority::Low, PanelScope::Framework);
         ctx.wake_up(eid);
@@ -189,19 +194,54 @@ impl emImageFileModel {
     }
 }
 
+/// Delegate `FileModelState` from `emImageFileModel` to its inner `emFileModel<ImageFileData>`.
+/// Required so `emImageFilePanel::SetImageFileModel` can pass a typed
+/// `Rc<RefCell<emImageFileModel>>` to `emFilePanel::SetFileModel` (which takes
+/// `dyn FileModelState`).
+///
+/// DIVERGED: (language-forced) C++ emImageFileModel : emFileModel (virtual
+/// inheritance). Rust has no virtual inheritance; delegation is explicit here.
+impl crate::emFileModel::FileModelState for emImageFileModel {
+    fn GetFileState(&self) -> &FileState {
+        self.file_model.GetFileState()
+    }
+    fn GetFileProgress(&self) -> f64 {
+        self.file_model.GetFileProgress()
+    }
+    fn GetErrorText(&self) -> &str {
+        self.file_model.GetErrorText()
+    }
+    fn get_memory_need(&self) -> u64 {
+        self.file_model.get_memory_need()
+    }
+    fn GetFileStateSignal(&self) -> SignalId {
+        self.file_model.GetFileStateSignal()
+    }
+}
+
 // ---------------------------------------------------------------------------
-// LoaderEngine — one-shot engine that drives async image loading.
+// LoaderEngine — persistent engine that drives async image loading and
+// reacts to the shared file-update broadcast (B-007 row -103).
 // ---------------------------------------------------------------------------
 
-/// One-shot scheduler engine that loads an image file on the next time-slice.
+/// Scheduler engine that loads an image file on the next time-slice and
+/// stays registered to react to the shared file-update broadcast signal.
 ///
-/// Port of C++ `emImageFileModel`'s internal async load path: the model
-/// registers itself with the scheduler, which calls back on the next
-/// `DoTimeSlice`. `LoaderEngine` does the synchronous I/O + TGA parse, stores
-/// the result in the model, fires the load-complete signal, and removes itself.
+/// Port of C++ `emFileModel::Cycle` lines 233-235:
+///   `if (IsSignaled(UpdateSignalModel->Sig) && !GetIgnoreUpdateSignal()) Update();`
+/// and the async load path of `emImageFileModel`.
+///
+/// B-007 row -103: previously one-shot (removed after first run). Now persistent:
+/// - At first Cycle, connects to `App::file_update_signal` (broadcast).
+/// - On subsequent Cycles: if broadcast is signaled and model respects it,
+///   calls `model.update()` which resets LoadError/TooCostly/out-of-date to
+///   Waiting, then re-runs the load path.
+/// - Removed only when `model_weak` fails to upgrade (model dropped).
 struct LoaderEngine {
     model_weak: Weak<RefCell<emImageFileModel>>,
     load_complete_signal: SignalId,
+    /// True after the first Cycle has run and connected to the broadcast.
+    initial_load_done: bool,
 }
 
 impl emEngine for LoaderEngine {
@@ -214,28 +254,67 @@ impl emEngine for LoaderEngine {
             return false;
         };
 
-        let path = model_rc.borrow().path().to_path_buf();
-        let result = load_image_sync(&path);
-
-        let file_state_signal;
-        {
-            let mut m = model_rc.borrow_mut();
-            match result {
-                Ok(img) => m.file_model_mut().complete_load(ImageFileData {
-                    image: img,
-                    comment: String::new(),
-                    format_info: String::new(),
-                }),
-                Err(e) => m.file_model_mut().fail_load(e),
-            }
-            // Mirror C++ emFileModel::Cycle: fire FileStateSignal on every state transition.
-            file_state_signal = m.file_model().GetFileStateSignal();
+        // B-007 row -103: first-Cycle init — subscribe to the shared broadcast.
+        // Mirrors C++ emFileModel::SetIgnoreUpdateSignal(false) → AddWakeUpSignal.
+        // Only connect if file_update_signal is real (non-null); in test contexts
+        // without App, the signal is null and we fall back to one-shot semantics.
+        let upd = ctx.scheduler.file_update_signal;
+        let has_broadcast = !upd.is_null();
+        if !self.initial_load_done && has_broadcast {
+            ctx.connect(upd, engine_id);
         }
 
-        ctx.fire(file_state_signal);
-        ctx.fire(self.load_complete_signal);
-        ctx.remove_engine(engine_id);
-        false
+        // B-007 row -103: broadcast-wake reaction.
+        // Mirrors C++ emFileModel::Cycle lines 233-235.
+        if has_broadcast && ctx.IsSignaled(upd) {
+            let ignore = model_rc.borrow().file_model().GetIgnoreUpdateSignal();
+            if !ignore {
+                model_rc.borrow_mut().file_model_mut().update();
+            }
+        }
+
+        // Run the load path if the model is in Waiting or Loading state.
+        let file_state = model_rc.borrow().state().clone();
+        let needs_load = matches!(
+            file_state,
+            crate::emFileModel::FileState::Waiting | crate::emFileModel::FileState::Loading { .. }
+        );
+
+        if needs_load {
+            let path = model_rc.borrow().path().to_path_buf();
+            let result = load_image_sync(&path);
+
+            let file_state_signal;
+            {
+                let mut m = model_rc.borrow_mut();
+                match result {
+                    Ok(img) => m.file_model_mut().complete_load(ImageFileData {
+                        image: img,
+                        comment: String::new(),
+                        format_info: String::new(),
+                    }),
+                    Err(e) => m.file_model_mut().fail_load(e),
+                }
+                // Mirror C++ emFileModel::Cycle: fire FileStateSignal on every state transition.
+                file_state_signal = m.file_model().GetFileStateSignal();
+            }
+
+            ctx.fire(file_state_signal);
+            ctx.fire(self.load_complete_signal);
+        }
+
+        self.initial_load_done = true;
+
+        if has_broadcast {
+            // Stay registered — the broadcast may wake us again for a reload.
+            // Removal only happens above when model_weak fails to upgrade.
+            false
+        } else {
+            // No broadcast (test context without App). Preserve one-shot semantics:
+            // remove after first run so the scheduler doesn't keep a stale engine.
+            ctx.remove_engine(engine_id);
+            false
+        }
     }
 }
 

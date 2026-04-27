@@ -13,9 +13,8 @@ use winit::window::WindowId;
 fn make_model() -> emImageFileModel {
     let mut sched = EngineScheduler::new();
     let change = sched.create_signal();
-    let update = sched.create_signal();
     let data_change = sched.create_signal();
-    emImageFileModel::new(PathBuf::from("test.png"), change, update, data_change)
+    emImageFileModel::new(PathBuf::from("test.png"), change, data_change)
 }
 
 #[test]

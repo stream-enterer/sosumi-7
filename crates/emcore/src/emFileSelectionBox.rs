@@ -747,6 +747,9 @@ pub struct emFileSelectionBox {
     pub selection_signal: SignalId,
     /// Allocated per C++ `emFileSelectionBox::GetFileTriggerSignal()`.
     pub file_trigger_signal: SignalId,
+    /// B-007 row -64: true after first-Cycle init has connected to the
+    /// shared file-update broadcast.
+    subscribed_init: bool,
 }
 
 impl emFileSelectionBox {
@@ -782,6 +785,7 @@ impl emFileSelectionBox {
             on_trigger: None,
             selection_signal: ctx.create_signal(),
             file_trigger_signal: ctx.create_signal(),
+            subscribed_init: false,
         }
     }
 
@@ -1492,6 +1496,30 @@ impl PanelBehavior for emFileSelectionBox {
     }
 
     fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        // B-007 row -64: D-006 first-Cycle init.
+        // Mirrors C++ emFileSelectionBox.cpp:39 (AcquireUpdateSignalModel) + :64
+        // (AddWakeUpSignal(FileModelsUpdateSignalModel->Sig)).
+        if !self.subscribed_init {
+            let eid = ectx.id();
+            let upd = crate::emFileModel::emFileModel::<()>::AcquireUpdateSignalModel(ectx);
+            use slotmap::Key as _;
+            if !upd.is_null() {
+                ectx.connect(upd, eid);
+            }
+            self.subscribed_init = true;
+        }
+
+        // B-007 row -64: broadcast-wake reaction.
+        // Mirrors C++ emFileSelectionBox.cpp:392 (IsSignaled(FileModelsUpdateSignalModel->Sig)
+        // → InvalidateListing()).
+        {
+            let upd = crate::emFileModel::emFileModel::<()>::AcquireUpdateSignalModel(ectx);
+            use slotmap::Key as _;
+            if !upd.is_null() && ectx.IsSignaled(upd) {
+                self.invalidate_listing();
+            }
+        }
+
         // Take all pending events.
         let events = {
             let mut e = self.events.borrow_mut();
@@ -1754,5 +1782,127 @@ mod tests {
         assert!(!fsb.is_filter_hidden());
         fsb.set_filter_hidden(true);
         assert!(fsb.is_filter_hidden());
+    }
+
+    /// B-007 row -64 click-through: emFileSelectionBox::Cycle subscribes to the
+    /// shared file-update broadcast and calls invalidate_listing() when signaled.
+    ///
+    /// Mirrors C++ emFileSelectionBox.cpp:64 (AddWakeUpSignal) + :392 (reaction).
+    #[test]
+    fn broadcast_invalidates_listing() {
+        use crate::emEngine::{emEngine, Priority};
+        use crate::emEngineCtx::EngineCtx;
+        use crate::emPanelScope::PanelScope;
+        use crate::emPanelTree::PanelTree;
+        use crate::emScheduler::EngineScheduler;
+        use std::collections::HashMap;
+
+        let mut sched = EngineScheduler::new();
+        // Set up the shared broadcast signal (mirrors App::new).
+        let file_update_signal = sched.create_signal();
+        sched.file_update_signal = file_update_signal;
+
+        // Build emFileSelectionBox via InitCtx.
+        let root_ctx = crate::emContext::emContext::NewRoot();
+        let mut fw_actions: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+        let pa: Rc<RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>> =
+            Rc::new(RefCell::new(Vec::new()));
+        let mut init_ctx = crate::emEngineCtx::InitCtx {
+            scheduler: &mut sched,
+            framework_actions: &mut fw_actions,
+            root_context: &root_ctx,
+            pending_actions: &pa,
+        };
+        let fsb = emFileSelectionBox::new(&mut init_ctx, "B007 test");
+
+        // Wrap fsb in an engine; share it via Rc<RefCell<>> so we can inspect after cycles.
+        let fsb_rc = Rc::new(RefCell::new(fsb));
+
+        struct FsbEngine {
+            fsb: Rc<RefCell<emFileSelectionBox>>,
+            tree: PanelTree,
+            root: crate::emPanelTree::PanelId,
+            cycles_run: u32,
+        }
+        impl emEngine for FsbEngine {
+            fn Cycle(&mut self, ctx: &mut EngineCtx<'_>) -> bool {
+                let mut pctx = crate::emEngineCtx::PanelCtx::new(&mut self.tree, self.root, 1.0);
+                self.fsb.borrow_mut().Cycle(ctx, &mut pctx);
+                self.cycles_run += 1;
+                self.cycles_run < 3
+            }
+        }
+
+        let mut tree = PanelTree::new();
+        let root = tree.create_root_deferred_view("b007_fsb");
+        let engine = Box::new(FsbEngine {
+            fsb: fsb_rc.clone(),
+            tree,
+            root,
+            cycles_run: 0,
+        });
+        let eid = sched.register_engine(engine, Priority::Low, PanelScope::Framework);
+        sched.wake_up(eid);
+
+        // First slice: Cycle runs, subscribes to broadcast; listing is already
+        // invalid from construction so the InvalidateListing path won't fire.
+        {
+            let mut windows: HashMap<winit::window::WindowId, crate::emWindow::emWindow> =
+                HashMap::new();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut pi: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> = Vec::new();
+            let mut is = crate::emInputState::emInputState::new();
+            let cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+            let pa2: Rc<RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>> =
+                Rc::new(RefCell::new(Vec::new()));
+            sched.DoTimeSlice(
+                &mut windows,
+                &root_ctx,
+                &mut fw,
+                &mut pi,
+                &mut is,
+                &cb,
+                &pa2,
+            );
+        }
+
+        // Clear the listing_invalid flag manually so we can detect it being set again.
+        fsb_rc.borrow_mut().listing_invalid = false;
+        assert!(
+            !fsb_rc.borrow().listing_invalid,
+            "precondition: listing_invalid must be false before broadcast"
+        );
+
+        // Fire the broadcast.
+        sched.fire(file_update_signal);
+
+        // Second slice: Cycle observes the broadcast, calls invalidate_listing().
+        {
+            let mut windows: HashMap<winit::window::WindowId, crate::emWindow::emWindow> =
+                HashMap::new();
+            let mut fw: Vec<crate::emEngineCtx::DeferredAction> = Vec::new();
+            let mut pi: Vec<(winit::window::WindowId, crate::emInput::emInputEvent)> = Vec::new();
+            let mut is = crate::emInputState::emInputState::new();
+            let cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+            let pa2: Rc<RefCell<Vec<crate::emEngineCtx::FrameworkDeferredAction>>> =
+                Rc::new(RefCell::new(Vec::new()));
+            sched.DoTimeSlice(
+                &mut windows,
+                &root_ctx,
+                &mut fw,
+                &mut pi,
+                &mut is,
+                &cb,
+                &pa2,
+            );
+        }
+
+        assert!(
+            fsb_rc.borrow().listing_invalid,
+            "B-007 row -64: listing_invalid must be true after broadcast"
+        );
+
+        sched.remove_engine(eid);
+        sched.clear_pending_for_tests();
     }
 }

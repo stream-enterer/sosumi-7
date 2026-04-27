@@ -101,7 +101,6 @@ fn build_loading_directory_panel() -> (PanelTree, PanelId) {
     let model: Rc<RefCell<emFileModel<String>>> = Rc::new(RefCell::new(emFileModel::new(
         PathBuf::from("/tmp/f018_v1_loading_background.test"),
         SignalId::default(),
-        SignalId::default(),
     )));
     {
         let mut m = model.borrow_mut();

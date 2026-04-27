@@ -51,7 +51,6 @@ fn file_panel_delegation() {
     let model: Rc<RefCell<emFileModel<String>>> = Rc::new(RefCell::new(emFileModel::new(
         PathBuf::from("/tmp/test"),
         Default::default(),
-        Default::default(),
     )));
     model.borrow_mut().complete_load("data".to_string());
 
