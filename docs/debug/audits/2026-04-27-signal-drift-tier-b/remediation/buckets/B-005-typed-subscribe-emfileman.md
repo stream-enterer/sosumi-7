@@ -3,13 +3,13 @@
 **Pattern:** P-002-no-subscribe-accessor-present
 **Scope:** emfileman
 **Row count:** 21
-**Mechanical-vs-judgement:** mechanical-heavy — pattern catalog entry not yet authored; classification provisional based on packet shape (accessor present at every site; remediation is a wiring pass per row, with judgement concentrated in the shared subscribe-shape decision rather than per-row).
-**Cited decisions:** none — packet `decisions: []` and `decisions.md` currently contains no resolved D-### entries; bucket-design brainstorm must surface the global subscribe-shape decision before per-row wiring proceeds.
+**Mechanical-vs-judgement:** mechanical-heavy per `pattern-catalog.md` P-002 entry — accessor present at every site; remediation is a wiring pass per row, with judgement concentrated in a shared subscribe-shape decision rather than per-row.
+**Cited decisions:** none — packet `decisions: []` and no entry in `decisions.md` currently applies to a P-002 emfileman row. The bucket-design brainstorm is expected to surface a global subscribe-shape decision (working name `D-006-subscribe-shape`) for the working-memory session to absorb during reconciliation.
 **Prereq buckets:** none
 
 ## Pattern description
 
-P-002 covers sites where the C++ panel/cycle reacts to a signal via `AddWakeUpSignal` / connect-style subscription, the Rust port has the corresponding accessor exposed (signal id retrievable from the model or widget), but no subscription is wired — reactions are instead inferred from polling widget state inside `Input()` or are absent entirely. (Pattern catalog entry pending; this paragraph is provisional and must be reconciled against the catalog once authored.) In this bucket the scope is `emfileman`: one `emFileLinkPanel` model-update-broadcast site plus 20 `emFileManControlPanel` widget-click / widget-check sites whose reactions currently live inline in `Input()` rather than in a signal-driven `Cycle`.
+P-002 covers sites where the C++ panel/cycle reacts to a signal via `AddWakeUpSignal` / connect-style subscription, the Rust port has the corresponding accessor exposed (signal id retrievable from the model or widget), but no subscription is wired — reactions are instead inferred from polling widget state inside `Input()` or are absent entirely. In this bucket the scope is `emfileman`: one `emFileLinkPanel` model-update-broadcast site plus 20 `emFileManControlPanel` widget-click / widget-check sites whose reactions currently live inline in `Input()` rather than in a signal-driven `Cycle`.
 
 ## Rows
 

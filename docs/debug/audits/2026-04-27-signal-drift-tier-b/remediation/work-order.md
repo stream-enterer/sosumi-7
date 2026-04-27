@@ -10,7 +10,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 
 | # | Bucket | Layer | Mechanical-vs-judgement | Rows | Status | Design doc |
 |---|---|---|---|---|---|---|
-| 1 | B-005-typed-subscribe-emfileman | 0 | mechanical-heavy | 21 | pending | — |
+| 1 | B-005-typed-subscribe-emfileman | 0 | mechanical-heavy | 21 | in-design | — |
 | 2 | B-006-typed-subscribe-mainctrl | 0 | mechanical-heavy | 3 | pending | — |
 | 3 | B-007-typed-subscribe-emcore | 0 | mechanical-heavy | 3 | pending | — |
 | 4 | B-008-typed-subscribe-misc | 0 | mechanical-heavy | 3 | pending | — |
