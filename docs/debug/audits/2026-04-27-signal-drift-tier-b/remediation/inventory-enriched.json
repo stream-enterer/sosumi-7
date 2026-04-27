@@ -2343,6 +2343,11 @@
         "decision_ids": [],
         "scope_key": "emmain:emMainControlPanel",
         "prereq_ids": []
+      },
+      "resolved_by": {
+        "site": "crates/emmain/src/emMainWindow.rs:825",
+        "mechanism": "ControlPanelBridge engine subscribes to control_panel_signal; existing DIVERGED (dependency-forced) annotation cites SubView/Framework scope split blocking direct subscribe in emMainControlPanel",
+        "source": "B-006 brainstorm a13880c7"
       }
     },
     {
@@ -2352,7 +2357,7 @@
       "signal_expression": "MainWin.GetWindowFlagsSignal()",
       "signal_kind": "model-state",
       "rust_file": "crates/emmain/src/emMainControlPanel.rs",
-      "rust_status": "gap-blocked",
+      "rust_status": "drifted",
       "rust_evidence": {
         "kind": "absent",
         "file": "crates/emmain/src/emMainControlPanel.rs",
@@ -2368,11 +2373,14 @@
       "notes": "emWindow.WindowFlags exists (crates/emcore/src/emWindow.rs:27) but no GetWindowFlagsSignal accessor \u2014 emWindow does not expose a SignalId for flag changes. gap-blocked: panel cannot subscribe without first adding the accessor on emWindow.",
       "enrichment": {
         "pattern_id": "P-002-no-subscribe-accessor-present",
-        "decision_ids": [
-          "D-003-gap-blocked-fill-vs-stub"
-        ],
+        "decision_ids": [],
         "scope_key": "emmain:emMainControlPanel",
         "prereq_ids": []
+      },
+      "reconciliation": {
+        "date": "2026-04-27",
+        "source": "B-006 brainstorm",
+        "change": "gap-blocked -> drifted; accessor confirmed present at crates/emcore/src/emWindow.rs:1279"
       }
     },
     {

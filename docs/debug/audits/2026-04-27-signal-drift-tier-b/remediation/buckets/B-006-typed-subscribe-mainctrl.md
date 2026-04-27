@@ -4,8 +4,12 @@
 **Scope:** emmain:emMainControlPanel
 **Row count:** 3
 **Mechanical-vs-judgement:** mechanical-heavy
-**Cited decisions:** D-003-gap-blocked-fill-vs-stub — applies to row 218 where the WindowFlags signal accessor is missing on emWindow and must be filled in-bucket before the panel can subscribe.
-**Prereq buckets:** none
+**Cited decisions:** D-006-subscribe-shape (canonical wiring shape).
+**Prereq buckets:** none.
+
+**Reconciliation amendments (2026-04-27, post-design a13880c7):**
+- Row 218 reclassified `gap-blocked → drifted` and `D-003` citation removed: `GetWindowFlagsSignal` already exists at `crates/emcore/src/emWindow.rs:1279` returning `SignalId`. Audit-time tag was stale.
+- Row 217 marked `resolved_by` → `crates/emmain/src/emMainWindow.rs:825` (`ControlPanelBridge` engine; existing dependency-forced `DIVERGED` annotation captures the SubView/Framework scope split). Row stays in bucket for completeness; design-doc treats it as no-action.
 
 ## Pattern description
 
