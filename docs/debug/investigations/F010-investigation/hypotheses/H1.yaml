@@ -1,0 +1,31 @@
+id: H1
+short_name: "Recording-mode dispatch hole — Clear silently dropped"
+hypothesis_statement: |
+  emPainter::Clear uses require_direct() without a paired DrawOp::Clear
+  variant. When the painter target is PaintTarget::DrawList (recording
+  mode used by the parallel tile compositor at emViewRenderer.rs:74),
+  Clear early-returns silently. The tile pre-fill (view.background_color)
+  shows through at the panel interior because emDirPanel::Paint's
+  Clear(DirContentColor) call records nothing.
+falsification_criterion: |
+  Construct a recording painter targeting an empty DrawList. Call
+  painter.Clear(emColor::RED). After the call, inspect the DrawList ops
+  vec. If the ops vec contains any op (regardless of variant) that was
+  added by the Clear call, H1 is falsified.
+experimental_design: |
+  Unit test in crates/emcore/tests/f010_h1_clear_recording.rs.
+  - Create emPainter::new_recording.
+  - Call painter.Clear(emColor::rgba(255, 0, 0, 255)).
+  - Assert the underlying DrawList ops vec is empty (or contains zero
+    ops contributed by Clear). Compare against PaintRect baseline (which
+    DOES record).
+  Production code path: same emPainter::Clear function called by
+  emDirPanel::Paint at emfileman/src/emDirPanel.rs:459.
+evidence_shape: |
+  Test pass/fail. JSON serialization of the DrawList ops vec, written to
+  artifacts/H1-ops.json. Pass = test pass + ops vec empty after Clear.
+falsification_action: |
+  If H1 falsified, advance to P8 (cluster mate, same-observable-with-H1)
+  for cluster discrimination. P8 examines whether the rect emDirPanel
+  passes to Clear is degenerate (zero-area) at the symptomatic zoom.
+cluster_membership: ["same-observable-with-H1"]

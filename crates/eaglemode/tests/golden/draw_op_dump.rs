@@ -745,6 +745,7 @@ fn variant_name(op: &DrawOp) -> &'static str {
         DrawOp::SetTransformation { .. } => "SetTransformation",
         DrawOp::ClipRect { .. } => "ClipRect",
         DrawOp::SetAlpha(..) => "SetAlpha",
+        DrawOp::Clear { .. } => "Clear",
         DrawOp::PaintRect { .. } => "PaintRect",
         DrawOp::PaintRoundRect { .. } => "PaintRoundRect",
         DrawOp::PaintRectOutline { .. } => "PaintRectOutline",

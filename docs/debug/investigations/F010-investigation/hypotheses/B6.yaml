@@ -1,0 +1,23 @@
+id: B6
+short_name: "Build-config / GPU-vendor / DPR / environment-only repros"
+hypothesis_statement: |
+  The symptom is environment-conditional. Specifically: only on certain
+  GPU vendors, only at certain DPRs, only on Wayland fractional-scale,
+  only with certain locale settings. Reduces to a runtime environment
+  variable that the test harness doesn't reproduce.
+falsification_criterion: |
+  Reproduce on at least two distinct hardware/driver/DPR combinations.
+  If the symptom appears on every reasonable combination, B6 is
+  falsified — environment is not the discriminator.
+experimental_design: |
+  User-driven: reproduce on the original developer machine + a second
+  machine with different GPU vendor/DPR/Wayland config. Document
+  outcomes.
+evidence_shape: |
+  Matrix table at artifacts/B6-env-matrix.md. Pass criterion: every
+  tested combination shows symptom-present.
+falsification_action: |
+  Manual; cannot proceed without user-driven multi-machine testing.
+  If B6 confirmed (symptom is env-conditional), the diverging env
+  identifies the bug surface.
+cluster_membership: []

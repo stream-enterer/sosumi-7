@@ -1,0 +1,23 @@
+id: B7
+short_name: "Recursive paint invocation safety"
+hypothesis_statement: |
+  A panel's Paint method can recursively trigger sub-panel Paint. If
+  the recording-painter's internal state (PaintTarget, op vec, depth)
+  is not preserved across recursive entries, sub-panel paints land on
+  the wrong target or get appended to a parent's op list with bad
+  state.
+falsification_criterion: |
+  At every panel Paint method entry, log the painter's PaintTarget
+  identity (memory address) and op vec length. If every recursive
+  entry observes the SAME PaintTarget and the op vec length grows
+  monotonically without resets, B7 is falsified.
+experimental_design: |
+  Add eprintln at emView.rs:4796 (paint_one_panel entry) emitting the
+  painter target identity and op vec length. Reproduce.
+evidence_shape: |
+  stderr capture at artifacts/B7-recursive-paint.txt. Pass criterion:
+  same target throughout, monotonic op-vec growth.
+falsification_action: |
+  If B7 falsified, recursion is sound. If B7 confirmed, target switch
+  or vec reset is the bug.
+cluster_membership: []

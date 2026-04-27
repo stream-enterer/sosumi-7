@@ -1,0 +1,28 @@
+id: P4
+short_name: "Non-deterministic async-task ordering between paint-prep stages"
+hypothesis_statement: |
+  Paint-prep involves multiple async stages (VFS query, theme
+  resolution, font-cache prepopulation). If their completion order is
+  non-deterministic, the symptomatic launch sees X+Z's prep stages
+  complete after the paint frame consumes them; Y's border-image is
+  always ready at theme-init. Bug is sometimes-reproducing.
+falsification_criterion: |
+  Pin all async paint-prep tasks to a deterministic order (force a
+  single-threaded runtime, or add explicit serialization at task-spawn
+  sites). Reproduce. If the symptom persists with pinned ordering, P4
+  is falsified — order is not the cause.
+experimental_design: |
+  Set RAYON_NUM_THREADS=1 (or analogous serialization env var) and
+  rebuild/run GUI; reproduce. Also: identify async-spawn sites in
+  emfileman async paths (emDirModel, theme-resolution) and replace
+  with synchronous equivalents in a feature-gated branch
+  --features serialize_paint_prep. Reproduce in this branch.
+evidence_shape: |
+  Manual GUI verification under each ordering condition + screenshots
+  at artifacts/P4-pinned-ordering-screenshot.png. Pass criterion:
+  symptom is gone in one of the pinned-ordering runs.
+falsification_action: |
+  If P4 falsified (symptom persists with pinning), advance to B5 (font
+  cache specifically) or H11 (debug_assert) or P5 (cfg-gating). If P4
+  confirmed (symptom vanishes), order-dependence is the cause.
+cluster_membership: ["order-config-cluster"]

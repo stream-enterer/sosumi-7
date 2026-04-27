@@ -31,6 +31,10 @@ pub enum DrawOp {
     },
     SetAlpha(u8),
 
+    Clear {
+        color: emColor,
+    },
+
     // Shapes
     PaintRect {
         x: f64,
@@ -456,6 +460,7 @@ impl DrawList {
                 }
                 DrawOp::ClipRect { x, y, w, h } => painter.SetClipping(*x, *y, *w, *h),
                 DrawOp::SetAlpha(a) => painter.SetAlpha(*a),
+                DrawOp::Clear { color } => painter.Clear(*color),
 
                 DrawOp::PaintRect {
                     x,
@@ -1202,6 +1207,48 @@ mod tests {
         assert!(
             images_equal(img_a.GetMap(), img_b.GetMap()),
             "replay of paint_linear_gradient must match direct paint"
+        );
+    }
+
+    /// F010 H1 fix verification: Clear records → replays → matches direct.
+    ///
+    /// Per spec docs/superpowers/specs/2026-04-26-F010-h1-fix-design.md (Test 2).
+    /// Pre-fix: this test fails to compile (DrawOp::Clear doesn't exist) or, if
+    /// only the variant existed without wiring Clear to try_record, fails the
+    /// pixel comparison (record path is empty so img_b stays at fill color).
+    #[test]
+    fn replay_clear_matches_direct() {
+        let target_color = emColor::rgba(200, 100, 50, 255);
+
+        // Direct paint
+        let mut img_a = emImage::new(64, 64, 4);
+        img_a.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img_a);
+            p.SetClipping(8.0, 8.0, 56.0, 56.0);
+            p.Clear(target_color);
+        }
+
+        // Record + replay
+        let mut draw_list = DrawList::new();
+        {
+            let mut ops = Vec::new();
+            let mut p = emPainter::new_recording(64, 64, &mut ops);
+            p.SetClipping(8.0, 8.0, 56.0, 56.0);
+            p.Clear(target_color);
+            *draw_list.ops_mut() = ops;
+        }
+        let mut img_b = emImage::new(64, 64, 4);
+        img_b.fill(emColor::WHITE);
+        {
+            let mut p = emPainter::new(&mut img_b);
+            p.SetClipping(8.0, 8.0, 56.0, 56.0);
+            draw_list.replay(&mut p, (0.0, 0.0));
+        }
+
+        assert!(
+            images_equal(img_a.GetMap(), img_b.GetMap()),
+            "replay of Clear must match direct paint"
         );
     }
 

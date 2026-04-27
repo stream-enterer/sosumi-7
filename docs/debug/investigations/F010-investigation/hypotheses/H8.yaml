@@ -1,0 +1,23 @@
+id: H8
+short_name: "GPU pipeline (sRGB / surface clear / present)"
+hypothesis_statement: |
+  emViewRendererCompositor.rs:174 uses Rgba8UnormSrgb for the surface
+  texture format. Bytes written through the linear sampler are read
+  back through gamma, causing channel value drift. Could darken text
+  or shift solid colors uniformly. Y working argues against a global
+  GPU bug, but partial drift could still affect specific channels.
+falsification_criterion: |
+  Construct an emImage with known pixel values (e.g. RGBA(128,128,128,255)
+  for grey). Upload via the same write_texture path the compositor uses.
+  Read back via render-to-texture. If readback values match the source
+  within ε, H8 is falsified.
+experimental_design: |
+  Unit test against the wgpu pipeline using a synthetic image and the
+  same sRGB texture format. Compare upload-then-readback.
+evidence_shape: |
+  Test pass/fail; readback dump at artifacts/H8-srgb-roundtrip.json.
+  Pass criterion: roundtrip pixel values within ε.
+falsification_action: |
+  If H8 falsified, GPU pipeline is sound. If H8 confirmed, format
+  mismatch.
+cluster_membership: []

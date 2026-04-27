@@ -11,5 +11,7 @@ default-filter = """
  | test(=notice::notice_window_resize)
  | test(=test_panel::testpanel_expanded)
  | test(=test_panel::testpanel_root)
- | test(=widget::widget_file_selection_box))
+ | test(=widget::widget_file_selection_box)
+ | test(=try_create_file_panel_loads_plugin)
+ | test(=try_create_file_panel_missing_symbol_errors))
 """

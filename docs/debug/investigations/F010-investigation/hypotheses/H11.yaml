@@ -1,0 +1,28 @@
+id: H11
+short_name: "debug_assert! compiled out in release / push-pop pairing"
+hypothesis_statement: |
+  emView.rs:4714 has `debug_assert!(scale=1)` and other invariants
+  enforced only in debug builds. In release, the assertion is compiled
+  out and the actual code may run with scale != 1, producing
+  mis-transformed paints that go to invisible coordinates (e.g.
+  zero-area rect, off-screen). Push/pop pairing assumptions may also
+  silently break.
+falsification_criterion: |
+  Build with `--release` AND with `RUSTFLAGS=-C debug_assertions=true`
+  (forcing assertions on in release). Reproduce in both. If the symptom
+  persists in the assertions-on-release build, H11 is falsified —
+  invariants are not the cause.
+experimental_design: |
+  cargo build --release; capture symptom (or non-symptom).
+  RUSTFLAGS="-C debug-assertions" cargo build --release; capture
+  symptom. If the second build does NOT panic AND symptom persists,
+  H11 falsified.
+evidence_shape: |
+  Manual GUI verification + screenshots. Logs of any panics at
+  artifacts/H11-assertions-on.txt. Pass criterion: assertions-on build
+  doesn't panic AND symptom persists.
+falsification_action: |
+  If H11 falsified, advance to P5 (cfg-gating beyond debug_assert). If
+  H11 confirmed (assertion fires in assertions-on release, or symptom
+  vanishes), invariant violation is the cause.
+cluster_membership: ["order-config-cluster"]

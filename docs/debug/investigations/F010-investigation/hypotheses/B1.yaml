@@ -1,0 +1,30 @@
+id: B1
+short_name: "Theme/runtime-data correctness — DirContentColor parses to expected light-grey"
+hypothesis_statement: |
+  The DirContentColor value at runtime is wrong — the theme parser
+  produces black or transparent rather than the expected light-grey,
+  even on initial load. P2 is "parses-right-then-drifts"; B1 is
+  "parses-wrong-from-the-start." Distinct because the falsification
+  evidence differs: B1 is killed by reading the parsed value once at
+  theme-init; P2 requires running multiple state transitions.
+falsification_criterion: |
+  Read theme.DirContentColor immediately after emFileManViewConfig::Acquire
+  returns (i.e. after theme-init completes, before any transitions). If
+  the value's R, G, or B channel is greater than zero AND alpha == 255,
+  B1 is falsified — initial parse is correct.
+experimental_design: |
+  Unit test in crates/emfileman/tests/f010_b1_theme_parse.rs that
+  constructs an emFileManViewConfig with the production theme name
+  ("Glass1" or whatever Card-Blue resolves to), reads
+  theme.DirContentColor, and asserts the value matches the expected
+  light-grey (any of: pre-known expected RGB values from the .emTmp
+  source, OR a sanity check that R==G==B and 0x80 <= R <= 0xFF and
+  alpha == 255).
+evidence_shape: |
+  Test pass/fail. JSON dump of the parsed value at
+  artifacts/B1-theme-parse.json. Pass criterion as above.
+falsification_action: |
+  If B1 falsified, theme parse is correct — advance to P2 (drift) or
+  B8 (compositor). If B1 confirmed, theme parse is wrong; report and
+  cluster resolves.
+cluster_membership: ["invalidation-cluster"]

@@ -1,0 +1,35 @@
+id: P8
+short_name: "Coordinate-rounding to zero-area degenerate rects"
+hypothesis_statement: |
+  At the symptomatic zoom, the f64→i32 rect computation in either
+  emDirPanel::Paint's Clear-target rect or emPainter::Clear's clip rect
+  rounds to a zero-area i32 pixel rect (w==0 or h==0). The rect is
+  computed correctly but quantizes to nothing visible. Same observable as
+  H1 (Clear is a no-op) but mechanism is geometric, not dispatch.
+falsification_criterion: |
+  Compute the i32 pixel rect that emDirPanel::Paint would clear at the
+  symptomatic zoom (the user's reproducing scenario — Card-Blue, zoomed
+  into a directory). Specifically: read state.clip from the painter and
+  apply the same x1/y1/x2/y2 rounding emPainter::Clear uses
+  (emPainter.rs:5779-5782). If the resulting (w, h) has w > 0 AND h > 0,
+  P8 is falsified — the rect is non-degenerate.
+experimental_design: |
+  Unit test in crates/emcore/tests/f010_p8_zero_area.rs.
+  - Build a panel state matching the symptomatic zoom (use real_stack
+    from existing emfileman tests as the source for plausible state values).
+  - Construct a direct painter (PaintTarget::emImage), drive
+    emDirPanel::Paint into it, capture the painter's state.clip at the
+    moment Clear is called.
+  - Apply the round formula manually and emit (w, h) as JSON.
+  Production code path: emDirPanel.rs:454-464 + emPainter.rs:5775-5784.
+evidence_shape: |
+  Test pass/fail. JSON file at artifacts/P8-rect.json containing the
+  computed (w, h) and the source state.clip values. Pass criterion:
+  (w > 0 AND h > 0).
+falsification_action: |
+  If P8 falsified (rect non-degenerate), the cluster's discrimination
+  succeeds (H1 confirmed by Task 1.1's experiment, P8 falsified here →
+  cluster resolved with H1 as cause). If P8 confirmed (rect zero-area)
+  AND H1 also confirmed (Clear records nothing), the cluster cannot be
+  discriminated by these experiments — escalate.
+cluster_membership: ["same-observable-with-H1"]

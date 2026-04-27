@@ -1,0 +1,31 @@
+id: P2
+short_name: "State-transition idempotency / hot-reload cache invalidation"
+hypothesis_statement: |
+  A theme/VFS state-transition handler runs an init-once recompute on
+  first invocation, then is silently skipped on re-entry due to a
+  flag-cleared-without-recompute idempotency bug. After the first
+  paint, subsequent state transitions don't refresh derived values like
+  DirContentColor — they remain at default/zero/black. Y is unaffected
+  because borders are pre-loaded at theme-init.
+falsification_criterion: |
+  Add an instrumentation print at every theme-reload and VFS state
+  transition site: log "transition fired" + the post-transition value
+  of theme.DirContentColor (and any other derived values relevant to
+  emDirPanel::Paint). Reproduce. If every transition's
+  post-transition DirContentColor value is light-grey, P2 is falsified.
+experimental_design: |
+  Locate theme-reload site in
+  crates/emfileman/src/emFileManViewConfig.rs and the VFS state-machine
+  transitions in crates/emfileman/src/emDirModel.rs (Cycle and
+  related). Add eprintln at each transition emitting the transition
+  type + theme.DirContentColor (RGBA hex). Rebuild; reproduce; capture.
+evidence_shape: |
+  stderr capture saved to artifacts/P2-transitions.txt. Pass criterion:
+  every emitted DirContentColor value is light-grey (specifically:
+  alpha == 255 AND not (R==G==B==0)).
+falsification_action: |
+  If P2 falsified, advance to B1 (initial parse correctness, distinct
+  from drift) or B8 (compositor invalidation, downstream). If P2
+  confirmed, the invalidation bug is in this handler; report and
+  cluster resolves.
+cluster_membership: ["invalidation-cluster"]

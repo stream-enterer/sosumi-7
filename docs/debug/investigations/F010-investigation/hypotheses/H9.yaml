@@ -1,0 +1,25 @@
+id: H9
+short_name: "SVP-boundary IsOpaque correctness"
+hypothesis_statement: |
+  emView.rs:4760-4772 conditionally clears at the SVP boundary if
+  tree.IsOpaque(svp_id) returns false. If a directory panel is the
+  SVP and its IsOpaque returns true incorrectly, the SVP-boundary
+  clear is skipped and pre-fill shows. Compare against C++
+  emFilePanel::IsOpaque (cpp:187-198).
+falsification_criterion: |
+  For the symptomatic panel, query tree.IsOpaque(panel_id). If the
+  return value matches what C++ returns for the same VFS state
+  (read from emFilePanel.cpp), H9 is falsified.
+experimental_design: |
+  Add eprintln at emView.rs:4760 emitting the panel id + IsOpaque
+  return value at every SVP-boundary check. Capture for the
+  symptomatic frame.
+evidence_shape: |
+  stderr capture at artifacts/H9-isopaque-trace.txt + reference
+  values from emFilePanel.cpp inline in the entry. Pass criterion:
+  Rust IsOpaque matches C++ for VFS_LOAD_ERROR / VFS_SAVE_ERROR /
+  VFS_CUSTOM_ERROR (per cpp:187-198).
+falsification_action: |
+  If H9 falsified, IsOpaque correct. If H9 confirmed, IsOpaque mirror
+  is wrong.
+cluster_membership: []

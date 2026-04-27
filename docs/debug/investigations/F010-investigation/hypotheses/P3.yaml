@@ -1,0 +1,31 @@
+id: P3
+short_name: "Virtual-method / trait-dispatch override missing in Rust port"
+hypothesis_statement: |
+  emDirPanel's Paint override is not actually dispatched in Rust at the
+  trait-impl level. Either the trait method name in
+  emfileman/src/emDirPanel.rs is shadowed by a base trait default, or
+  the impl is not registered for the panel-behavior trait object,
+  causing the parent's default Paint (a no-op or a different color) to
+  run. Frame B presumes Clear IS called and just gets dropped at the
+  painter layer; P3 says Clear is never called from emDirPanel because
+  the override never dispatches.
+falsification_criterion: |
+  Add an instrumentation print at the very first line of
+  <emDirPanel as PanelBehavior>::Paint (or the trait-method equivalent)
+  in emfileman/src/emDirPanel.rs. Reproduce the symptom. If the print
+  fires for the symptomatic panel, P3 is falsified — the override IS
+  dispatched.
+experimental_design: |
+  Modify emfileman/src/emDirPanel.rs to add `eprintln!("emDirPanel::Paint
+  invoked panel_id={:?}", state.panel_id);` at the entry of the Paint
+  trait method. Rebuild GUI; reproduce; capture stderr.
+evidence_shape: |
+  stderr capture from the GUI run, saved to artifacts/P3-paint-trace.txt.
+  Pass criterion: at least one line containing "emDirPanel::Paint
+  invoked" with a panel_id matching the symptomatic panel.
+falsification_action: |
+  If P3 falsified, dispatch reaches emDirPanel — advance to B2
+  (state-machine arm) or B3 (paint-not-reached, but for the parent
+  panel). If P3 confirmed (Paint never invoked), the cause is upstream
+  of paint primitives entirely; halt cluster and report.
+cluster_membership: ["dispatch-cluster"]

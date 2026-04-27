@@ -5773,7 +5773,7 @@ impl<'a> emPainter<'a> {
 
     /// Fill the current clip rect with a solid color.
     pub fn Clear(&mut self, color: emColor) {
-        let Some(proof) = self.require_direct() else {
+        let Some(proof) = self.try_record(DrawOp::Clear { color }) else {
             return;
         };
         let x = self.state.clip.x1 as i32;

@@ -1,0 +1,27 @@
+id: P1
+short_name: "GPU/atlas resource lifecycle (eviction during record→replay window)"
+hypothesis_statement: |
+  Between recording and replay, a GPU resource handle (font atlas
+  texture, image binding) is evicted/recycled, leaving the DrawOp's
+  stored pointer/handle pointing at stale or empty memory. Replay
+  samples garbage or transparent. Y is unaffected because border-image
+  textures are pinned (long-lived, low eviction priority); glyph atlas
+  pages are eviction-eligible.
+falsification_criterion: |
+  Instrument every resource-handle alloc/free/recycle site from record
+  start to replay end. If no eviction or recycle event occurs during
+  the record→replay window for any resource referenced by the
+  recorded DrawList, P1 is falsified.
+experimental_design: |
+  Add eprintln/log calls at GPU resource alloc/free in
+  emViewRendererCompositor.rs and font-cache atlas eviction in
+  emFontCache. Record DrawList; pause; before replay, log all
+  outstanding resource handles. Compare against post-replay logs.
+evidence_shape: |
+  Log capture at artifacts/P1-resource-lifecycle.log. Pass criterion:
+  no eviction/recycle events occur for any resource the DrawList
+  references during the record→replay window.
+falsification_action: |
+  If P1 falsified, lifecycle is sound. If P1 confirmed, eviction
+  during replay window is the cause.
+cluster_membership: []

@@ -1,0 +1,31 @@
+id: B8
+short_name: "Compositor dirty-tile invalidation timing across state transitions"
+hypothesis_statement: |
+  When the panel transitions VFS_WAITING → VFS_LOADED, the compositor's
+  dirty-tile flag for the panel's tile is not set. The compositor
+  presents the prior frame's tile (painted in WAITING state, when Clear
+  wasn't fired or fired differently) instead of re-rendering. Y is
+  unaffected because borders are painted on a different tile or the
+  border-image painting shares no transition-conditional code path.
+falsification_criterion: |
+  Add an instrumentation print at the compositor dirty-tile flag-set
+  site (emViewRendererCompositor.rs / emViewRendererTileCache.rs). At
+  every VFS_WAITING → VFS_LOADED transition, log whether the
+  emDirPanel's tile is set dirty. Reproduce. If at least one such
+  transition shows dirty=true for the symptomatic tile, B8 is
+  falsified.
+experimental_design: |
+  Locate dirty-tile flag-set in emViewRendererCompositor.rs and/or
+  emViewRendererTileCache.rs. Add eprintln at the flag-set site
+  emitting the panel id and dirty value. Cross-reference with the VFS
+  transition log (P2's instrumentation) to identify the
+  WAITING→LOADED transition for the symptomatic panel.
+evidence_shape: |
+  stderr capture saved to artifacts/B8-dirty-tile.txt, cross-referenced
+  with P2's transition log. Pass criterion: at least one
+  WAITING→LOADED transition has the symptomatic tile flagged dirty.
+falsification_action: |
+  If B8 falsified, compositor invalidation is correct — fall back to
+  P2/B1 within cluster. If B8 confirmed, compositor invalidation is
+  the bug; report.
+cluster_membership: ["invalidation-cluster"]

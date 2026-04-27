@@ -1,0 +1,27 @@
+id: P5
+short_name: "Build-config-conditional code path (general cfg-gating, not just debug_assert)"
+hypothesis_statement: |
+  A code path conditionally compiled in via cfg(feature=...) or
+  cfg(target_*) routes panel-interior paint differently in release vs
+  debug, or with vs without a feature flag. Symptom is build-config-
+  specific.
+falsification_criterion: |
+  Enumerate every `cfg(...)` directive in
+  crates/{emcore,emfileman,eaglemode}/src/**/*.rs that touches paint or
+  panel code. Build and reproduce under each cfg combination relevant
+  to F010 (debug, release, all default features, no default features).
+  If symptom is invariant across all combinations, P5 is falsified.
+experimental_design: |
+  rg 'cfg\(' crates/{emcore,emfileman,eaglemode}/src/ to enumerate. For
+  each cfg, build the corresponding profile/feature combination,
+  reproduce, observe.
+evidence_shape: |
+  Matrix table at artifacts/P5-cfg-matrix.md listing each
+  build-config combination + symptom-present/absent. Pass criterion:
+  every combination shows symptom-present.
+falsification_action: |
+  If P5 falsified (every config reproduces), config is not the cause —
+  cluster exhausted, advance to next cluster. If P5 confirmed (some
+  config doesn't reproduce), the diverging config identifies the bug
+  surface.
+cluster_membership: ["order-config-cluster"]

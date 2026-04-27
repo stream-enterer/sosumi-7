@@ -4,7 +4,7 @@
 
 **Goal:** Run the F010 X+Z investigation per `docs/superpowers/specs/2026-04-26-F010-investigation-methodology-design.md`. Produce converged evidence (one confirmed root cause + mechanical+manual confirmation) or "all hypotheses falsified, escalate," to feed a separate fix-spec cycle.
 
-**Architecture:** Five phases. Phase 0 sets up directories. Phase 1 drafts and locks the pre-registration table (27 hypothesis entries). Phase 2 is split into per-cluster sub-phases, ordered cheapest-cluster-first; each phase-2 sub-phase builds only the harness components needed by that cluster. Phase 3 is split into matching per-cluster sub-phases that run the falsifications and resolve each cluster (or escalate). Phase 4 satisfies the termination gate (mechanical + manual) and writes the handoff. Append-only log under `docs/debug/investigations/F010-investigation/log/` records every observation, decision, confirmation, falsification, revision, and escalation.
+**Architecture:** Five phases. Phase 0 sets up directories. Phase 1 drafts and locks the pre-registration table (26 hypothesis entries). Phase 2 is split into per-cluster sub-phases, ordered cheapest-cluster-first; each phase-2 sub-phase builds only the harness components needed by that cluster. Phase 3 is split into matching per-cluster sub-phases that run the falsifications and resolve each cluster (or escalate). Phase 4 satisfies the termination gate (mechanical + manual) and writes the handoff. Append-only log under `docs/debug/investigations/F010-investigation/log/` records every observation, decision, confirmation, falsification, revision, and escalation.
 
 **Tech Stack:** Rust (cargo, nextest), markdown frontmatter for log/registration entries, JSON op-stream artifacts, `scripts/diff_draw_ops.py` for C++ comparison.
 
@@ -1255,7 +1255,7 @@ git add docs/debug/investigations/F010-investigation/log/0002-cross-falsificatio
 git commit -m "$(cat <<'EOF'
 docs(F010): cross-falsification audit and cluster ordering
 
-All 27 pre-registration entries pass cross-falsification audit per spec
+All 26 pre-registration entries pass cross-falsification audit per spec
 Section 3 (no two falsification criteria share an artifact such that
 observing one incidentally satisfies another). Cluster ordering for
 phase 3 fixed: same-observable-with-H1 first, order-config-cluster
@@ -1327,10 +1327,10 @@ artifacts: [docs/debug/investigations/F010-investigation/forbidden-fix-shapes.md
 
 # Phase 1 lock
 
-Pre-registration table is locked. 27 entries in
+Pre-registration table is locked. 26 entries in
 `docs/debug/investigations/F010-investigation/hypotheses/`:
 
-- 19 hypotheses: H1-H11, P1-P5, P7, P8 (P6 was extracted to methodology constraint M1 per synthesis-v2.md)
+- 18 hypotheses: H1-H11, P1-P5, P7, P8 (P6 was extracted to methodology constraint M1 per synthesis-v2.md)
 - 8 blind spots: B1-B8
 
 Cross-falsification audit (entry 0002) passed. Cluster ordering (entry 0003) fixed.
@@ -1348,7 +1348,7 @@ git add docs/debug/investigations/F010-investigation/forbidden-fix-shapes.md \
 git commit -m "$(cat <<'EOF'
 docs(F010): phase 1 lock — pre-registration table immutable
 
-27 pre-registration entries (19 hypotheses + 8 blind spots) drafted,
+26 pre-registration entries (18 hypotheses + 8 blind spots) drafted,
 cross-falsification audited, cluster-ordered for phase 3. Forbidden-
 fix-shapes checklist (M1 operationalized as four-question avoidance
 test + concrete forbidden shapes) committed for fix-spec handoff.
@@ -1663,7 +1663,7 @@ EOF
 
 Even if cluster 1 resolves with H1 confirmed and P8 falsified, the methodology proceeds to Task 3.2 and runs every remaining cluster. **Defense-in-depth is the default.** Rationale:
 
-- A "confirmed" hypothesis from a single cluster is one piece of evidence, not the full picture. F010 has 19 hypotheses across 5 clusters precisely because the symptom is observationally consistent with multiple mechanisms.
+- A "confirmed" hypothesis from a single cluster is one piece of evidence, not the full picture. F010 has 18 hypotheses across 5 clusters precisely because the symptom is observationally consistent with multiple mechanisms.
 - The F018 acceptance miss (where a non-user-visible signal was accepted as confirmation, masking the user-visible failure) is the cautionary tale baked into spec Section 7. The same risk applies to single-cluster confirmation: one cluster's evidence may be "correct in isolation" while a second cluster's evidence reveals an additional or alternative mechanism.
 - Running remaining clusters costs hours; accepting a false-positive root cause wastes a full fix-spec → fix-plan → fix-implementation cycle plus the user's manual-verification time. The conservative trade favors completeness.
 - Cluster 1's outcome is recorded in the log; it does NOT need to be re-run later. Subsequent clusters either falsify (strengthening H1 by elimination) or also confirm (revealing a multi-cause situation that requires explicit handling in fix-spec).
@@ -1940,7 +1940,7 @@ Invoke `superpowers:brainstorming` with the converged evidence as input. The fix
 
 **Spec coverage check.** Walked spec sections 1-9 against plan tasks:
 - §1 scope/goal → Task 0.1 README + plan goal statement.
-- §2 hypothesis category checklist → Tasks 1.1-1.9 (all 27 entries).
+- §2 hypothesis category checklist → Tasks 1.1-1.9 (all 26 entries).
 - §3 pre-registration template → Tasks 1.1-1.9 use the schema; Task 1.11 lock.
 - §4 harness rules → Tasks 2.1+ build per-cluster harnesses.
 - §5 cluster-first execution → Tasks 3.1-3.8 follow ordering from Task 1.10.

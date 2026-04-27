@@ -1,0 +1,25 @@
+id: H6
+short_name: "DrawList replay state-snapshot equivalence"
+hypothesis_statement: |
+  RecordedState (emPainter.rs:646-658) is captured per op but not
+  consulted at replay time (emPainterDrawList.rs:438+). Replay relies
+  on the painter's *running* state via push/pop/SetClipping DrawOps. If
+  any state mutation bypasses record_state OR a DrawOp omits a state
+  change, replay desyncs from recording, producing wrong clips, wrong
+  transforms, or wrong canvas colors.
+falsification_criterion: |
+  Compare each RecordedState snapshot in a recorded DrawList against
+  the replay-time state computed by stepping through the same ops in
+  the painter. If every op's snapshot matches the replay-time state at
+  that op, H6 is falsified.
+experimental_design: |
+  Unit test in crates/emcore/tests/f010_h6_state_equivalence.rs that
+  records a representative panel scenario, then replays op-by-op while
+  comparing painter state to RecordedState at each step.
+evidence_shape: |
+  Test pass/fail; mismatch report at artifacts/H6-state-mismatches.json
+  if any. Pass criterion: zero mismatches.
+falsification_action: |
+  If H6 falsified, state equivalence holds. If H6 confirmed, state
+  desync identifies the failure.
+cluster_membership: []

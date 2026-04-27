@@ -1,0 +1,24 @@
+id: H10
+short_name: "canvas_color snapshot/op-arg disagreement"
+hypothesis_statement: |
+  emPainter::PaintRect (line 980-989) mutates state.canvas_color *after*
+  try_record. The snapshot captured at record time has the pre-mutation
+  canvas_color while the op carries the post-mutation arg. Replay may
+  apply snapshot then call painter.PaintRect with the carried arg —
+  but if any subsequent op consults the (now-stale) canvas_color
+  snapshot, output diverges.
+falsification_criterion: |
+  Audit emPainter.rs for any code path where state.canvas_color is
+  mutated AFTER try_record AND any subsequent paint op consults the
+  snapshot's canvas_color. If no such path exists, H10 is falsified.
+experimental_design: |
+  Static analysis of emPainter.rs. Search for try_record sites; check
+  if state.canvas_color mutation appears after try_record but before
+  the next try_record/require_direct.
+evidence_shape: |
+  Audit report at artifacts/H10-canvas-color-audit.md. Pass criterion:
+  no problematic ordering found.
+falsification_action: |
+  If H10 falsified, audit clean. If H10 confirmed, canvas_color
+  snapshot is stale at consumption time.
+cluster_membership: []

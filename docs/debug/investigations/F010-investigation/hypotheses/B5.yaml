@@ -1,0 +1,25 @@
+id: B5
+short_name: "Font cache initialization order vs first paint"
+hypothesis_statement: |
+  The global font cache becomes populated lazily — on first character
+  request. If paint runs before the cache is populated, glyphs render
+  as empty rectangles or transparent, which composite to whatever the
+  tile pre-fill is (often black). Y has no font dependency.
+falsification_criterion: |
+  Force-populate the font cache before first paint (call atlas() or
+  GetChar on every character that the symptomatic info pane will
+  render). Reproduce. If the symptom persists with cache pre-populated,
+  B5 is falsified.
+experimental_design: |
+  Add a pre-paint hook (in emGUIFramework.rs init) that calls
+  emFontCache::atlas() and GetChar for ASCII printable + glyphs the
+  symptomatic info pane uses (Type label, Permissions label, etc.).
+  Rebuild; reproduce.
+evidence_shape: |
+  Manual GUI verification + screenshot at
+  artifacts/B5-prepopulated-cache-screenshot.png. Pass criterion:
+  symptom gone in pre-populated run.
+falsification_action: |
+  If B5 falsified, font init is not the cause — fall back to P4 / H11.
+  If B5 confirmed, font cache populate-on-first-paint is the bug.
+cluster_membership: ["order-config-cluster"]
