@@ -111,3 +111,31 @@ Stable IDs (`D-###`) are referenced from `inventory-enriched.json` and from `buc
 
 **Open questions deferred to bucket design:**
 - For consumers that currently poll multiple sources (e.g., `emColorField::Cycle` polls four child ScalarFields), the subscribe call is N-fold. Bucket sketcher confirms whether the C++ original subscribes individually (likely) or to an aggregated signal. Default: mirror C++.
+
+**See also D-006-subscribe-shape** — D-005 picks the *reaction model* (direct subscribe, react in Cycle); D-006 picks the *wiring shape* (first-Cycle init block + IsSignaled checks at top of Cycle). Complementary, not competing. Any P-006/P-007 bucket implementing the D-005 direct-subscribe choice does so via the D-006 shape.
+
+---
+
+## D-006-subscribe-shape
+
+**Question:** What is the canonical Rust shape for the C++ `AddWakeUpSignal(sig)` + `IsSignaled(sig) in Cycle()` pattern, given that the Rust port registers panel-engines *after* panel `new()` returns and `ConstructCtx` does not expose `connect`?
+
+**Affects:** every bucket that adds a subscribe — at minimum P-001, P-002, P-006, P-007, and the consumer side of P-003. Cited by B-005 onward.
+
+**Origin:** Surfaced and resolved during the B-005-typed-subscribe-emfileman bucket-design brainstorm (design doc `docs/superpowers/specs/2026-04-27-B-005-typed-subscribe-emfileman-design.md`, commit `d95d55a7`).
+
+**Options considered:**
+- **A. First-Cycle init.** Panel adds `subscribed_init: bool`; first `Cycle()` invocation calls `ectx.connect(sig, ectx.id())` for every signal of interest, sets the flag, then runs `IsSignaled` checks. Reactions live inline in Cycle, mirroring C++ Cycle body. Matches C++ structure (C++ also calls `AddWakeUpSignal` from Cycle context, not constructor).
+- **B. Deferred-queue at construction.** Mirrors `emDialog::add_pre_show_wake_up_signal` — queue subscriptions at construction, drain on first wake. Viable fallback for panels that need subscriptions live before first wake; none of B-005's 21 rows require this.
+- **C. Invert panel-tree lifetime.** Register engines before behavior `new()` so `ConstructCtx` can `connect` directly. Rejected: large blast radius, no payoff over A.
+
+**Chosen direction:** **A. First-Cycle init.**
+
+**Why:** A is the smallest viable shape that mirrors C++ structure exactly without requiring upstream ownership-model changes. The `subscribed_init: bool` overhead is one byte per panel and one branch per Cycle call; negligible. The C++ `AddWakeUpSignal` call site is in Cycle context, not constructor, so first-Cycle init *is* the closest port. Option B is a known-good fallback for any future bucket whose panels can't honor first-Cycle init (e.g., a panel that must react to signals before its first natural Cycle invocation); D-006 admits B as a per-bucket override but defaults to A.
+
+**Operational rule:**
+1. Default shape: first-Cycle init block calling `ectx.connect(...)` for every reactive signal, gated on `!subscribed_init`, then `IsSignaled(...)` checks at top of Cycle, then reactions inline.
+2. If a bucket's row data shows a panel that needs subscriptions live before first natural Cycle, switch that panel to deferred-queue (option B) and document at the bucket level. The working-memory session updates this entry to record any such override.
+
+**Open questions deferred to per-bucket design:**
+- Whether buckets with consumer rows that subscribe to type-mismatched accessors (P-003 family) need a sub-shape that handles the `u64`-vs-`SignalId` type at the connect call. Currently no — those connects must wait for the accessor flip (D-001) per the cross-bucket prereq.

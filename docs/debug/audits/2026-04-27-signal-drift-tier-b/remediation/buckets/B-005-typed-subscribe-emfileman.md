@@ -4,8 +4,8 @@
 **Scope:** emfileman
 **Row count:** 21
 **Mechanical-vs-judgement:** mechanical-heavy per `pattern-catalog.md` P-002 entry — accessor present at every site; remediation is a wiring pass per row, with judgement concentrated in a shared subscribe-shape decision rather than per-row.
-**Cited decisions:** none — packet `decisions: []` and no entry in `decisions.md` currently applies to a P-002 emfileman row. The bucket-design brainstorm is expected to surface a global subscribe-shape decision (working name `D-006-subscribe-shape`) for the working-memory session to absorb during reconciliation.
-**Prereq buckets:** none
+**Cited decisions:** D-006-subscribe-shape (canonical first-Cycle init + IsSignaled top-of-Cycle wiring shape, originated by this bucket's brainstorm).
+**Prereq buckets:** B-009-typemismatch-emfileman — the two `emFileManControlPanel` rows whose Cycle init must subscribe to `FMModel::GetSelectionSignal` and `FMVConfig::GetChangeSignal` cannot land until B-009 flips those accessors from `u64` to `SignalId` per D-001. The other 19 rows (18 widget-only + `emFileLinkPanel-53`) are not prereq-blocked.
 
 ## Pattern description
 

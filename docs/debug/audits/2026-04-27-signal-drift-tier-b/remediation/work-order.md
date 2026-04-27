@@ -10,7 +10,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 
 | # | Bucket | Layer | Mechanical-vs-judgement | Rows | Status | Design doc |
 |---|---|---|---|---|---|---|
-| 1 | B-005-typed-subscribe-emfileman | 0 | mechanical-heavy | 21 | in-design | — |
+| 1 | B-005-typed-subscribe-emfileman | 0 | mechanical-heavy | 21 | designed | [d95d55a7](../../../../superpowers/specs/2026-04-27-B-005-typed-subscribe-emfileman-design.md) |
 | 2 | B-006-typed-subscribe-mainctrl | 0 | mechanical-heavy | 3 | pending | — |
 | 3 | B-007-typed-subscribe-emcore | 0 | mechanical-heavy | 3 | pending | — |
 | 4 | B-008-typed-subscribe-misc | 0 | mechanical-heavy | 3 | pending | — |
@@ -41,4 +41,10 @@ Total rows: 187 (178 actionable + 9 cleanup).
 
 ## Reconciliation log
 
-(Phase 5 entries appended here as fan-out designs return and are reconciled. Each entry: date, bucket, what was reconciled, spine amendments.)
+### 2026-04-27 — B-005 design returned (d95d55a7)
+
+- **D-006-subscribe-shape** added to `decisions.md` (resolved per fan-out's recommendation: first-Cycle init + IsSignaled top-of-Cycle, with deferred-queue B as documented fallback).
+- **D-005** amended with a "see also D-006" pointer (D-005 picks reaction model, D-006 picks wiring shape; complementary).
+- **Cross-bucket prereq surfaced:** B-005 → B-009. Two `emFileManControlPanel` rows in B-005 require B-009's accessor flip (D-001) before their Cycle-init connects can land. Remaining 19 B-005 rows are independent. Documented in B-005's `Prereq buckets:` line; not yet propagated to `inventory-enriched.json` row-level prereq_ids (the dependency is design-level, not row-level — a `B-005 cannot fully merge until B-009 merges` constraint, not a row-pair edge). Topo order in this table is unchanged because B-005 is already designed; merge order will sequence B-009 ahead of B-005's blocked rows when the time comes.
+- **Stale prose** in B-005's bucket sketch was already cleaned up in 83eb06d3 before the design returned.
+- **B-005 status:** in-design → designed.
