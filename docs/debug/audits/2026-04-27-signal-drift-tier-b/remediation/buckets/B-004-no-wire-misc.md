@@ -14,7 +14,7 @@
 - **Soft forward-edges (informational, non-blocking):**
   - B-004 G1 → B-015: once `GetVirFileStateSignal` lands, derived-panel polling rows in B-015 (and any future P-006) gain a subscribe target. B-015 already designed; can stub against the planned accessor.
   - B-004 G3 ↔ B-008: as above; either may land first.
-- **Mutator-fire ectx-threading flagged as candidate D-### if rediscovered.** B-008 hit the same shape on `Acquire`; if a third bucket sees it, promote.
+- ~~**Mutator-fire ectx-threading flagged as candidate D-### if rediscovered.** B-008 hit the same shape on `Acquire`; if a third bucket sees it, promote.~~ **Resolved 2026-04-27 by B-009 promotion:** D-007-mutator-fire-shape (thread `&mut EngineCtx<'_>` through mutators) and D-008-signal-allocation-shape (lazy `Ensure*Signal` allocation) added to `decisions.md`. B-004 implementer applies both in any mutator-side work for G1/G2/G3.
 
 ## Pattern description
 

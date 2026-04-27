@@ -4,8 +4,19 @@
 **Scope:** emfileman
 **Row count:** 14
 **Mechanical-vs-judgement:** judgement-heavy
-**Cited decisions:** D-001-typemismatch-accessor-policy (governs the accessor-flip vs adapt-consumer call for all 3 emfileman u64 accessors in this bucket), D-003-gap-blocked-fill-vs-stub (applies to the 3 gap-blocked rows where the accessor must be ported in-bucket), D-005-poll-replacement-shape (direct-subscribe shape for the 4 polling consumer rows being migrated)
-**Prereq buckets:** none
+**Cited decisions:** D-001-typemismatch-accessor-policy (governs the accessor-flip vs adapt-consumer call for all 3 emfileman u64 accessors), D-003-gap-blocked-fill-vs-stub (3 gap-blocked rows; accessor ported in-bucket), D-005-poll-replacement-shape (direct-subscribe shape for the 4 polling consumer rows), D-006-subscribe-shape (canonical wiring at the consumer side), D-007-mutator-fire-shape (origin: thread `&mut EngineCtx<'_>` through mutators), D-008-signal-allocation-shape (origin: lazy `Ensure*Signal` allocation).
+**Prereq buckets:** none.
+
+**Reconciliation amendments (2026-04-27, post-design 0a7d7fd3):**
+- **D-007 + D-008 promoted to `decisions.md` based on this bucket's brainstorm** (third sighting of the mutator-fire pattern; B-008 and B-004 cited as prior sightings/candidate-flag). Both decisions back-propagated to those buckets.
+- **B-005 ↔ B-009 unblock confirmed.** B-009 satisfies B-005's hard prereq on D-001. B-005's `// see D-001 — accessor returns u64 today; flip pending` annotations become obsolete after B-009 lands. Implementation order: B-009 first, B-005 second.
+- **Audit-data correction:** bucket sketch row table notes for `emFileManControlPanel-522` and Open Question 5 describe a "sub-engine" routing for `GetCommandsSignal` that does not exist. C++ `emFileManControlPanel.cpp:522` is `AddWakeUpSignal(FMModel->GetCommandsSignal())` directly on the panel's own engine, with `IsSignaled(...)` at cpp:533 in the same panel's `Cycle()`. The "sub-engine" framing is a misread; treat as same-engine subscribe.
+- **Per-accessor consumer migration plan** (mapping which consumers fold under each flipped accessor):
+  - `GetSelectionSignal` → emDirEntryAltPanel-35, emDirEntryPanel-55, emFileManControlPanel-326, emFileManSelInfoPanel-37
+  - `GetChangeSignal` (FMVConfig) → emDirEntryAltPanel-36, emDirEntryPanel-56, emDirPanel-38, emDirStatPanel-39, emFileLinkPanel-55, emFileManControlPanel-327
+  - `GetCommandsSignal` → emFileManControlPanel-522
+- **Helper APIs in-scope** (not new audit rows): `EnsureSelectionSignal`, `EnsureCommandsSignal`, `EnsureChangeSignal` per D-008.
+- **Mutator callsites all have ectx** (designer enumerated). Selection mutators in panel `Input`/`Cycle` bodies; ViewConfig setters in `emFileManControlPanel::Input`. `commands_generation` and `handle_ipc_message` paths have no production callsites yet (only tests) — fire path is theoretical until the commands-loading pipeline lands.
 
 ## Pattern description
 

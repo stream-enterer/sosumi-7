@@ -139,3 +139,53 @@ Stable IDs (`D-###`) are referenced from `inventory-enriched.json` and from `buc
 
 **Open questions deferred to per-bucket design:**
 - Whether buckets with consumer rows that subscribe to type-mismatched accessors (P-003 family) need a sub-shape that handles the `u64`-vs-`SignalId` type at the connect call. Currently no — those connects must wait for the accessor flip (D-001) per the cross-bucket prereq.
+
+---
+
+## D-007-mutator-fire-shape
+
+**Question:** When a model accessor flips from a polled `u64` counter to a real `SignalId` (D-001 family), how do mutators fire the signal? Models in the Rust port don't carry a `Scheduler` reference (no class-based engine ownership); the bumper has only `&mut self` today.
+
+**Affects:** every accessor flip in D-001's family, and any future flip that converts a polled counter to a signal. Cited by B-009 onward; back-propagates to B-008 (prior sighting on `Acquire`) and B-004 (where it was flagged as candidate-if-rediscovered).
+
+**Origin:** Surfaced and resolved during the B-009-typemismatch-emfileman bucket-design brainstorm (design doc `docs/superpowers/specs/2026-04-27-B-009-typemismatch-emfileman-design.md`, commit `0a7d7fd3`). Third sighting of the pattern (B-008 hit it on `Acquire`; B-004 flagged it as candidate-if-rediscovered).
+
+**Options considered:**
+- **A. Thread `&mut EngineCtx<'_>` through every mutator.** Mutator signature gains `ectx`; mutator calls `ectx.fire(sig)` synchronously. Matches C++ `emSignal::Signal()` synchronous semantics exactly. Blast radius: all mutator callsites (in B-009 these are panel `Input`/`Cycle` bodies that already have ectx — no exceptions found in callsite enumeration).
+- **B. Model owns a tiny "publisher" engine.** Mutators set a dirty flag; the publisher engine fires on next tick. Adds one engine per model. **Observable cost:** one-tick defer relative to mutator (C++ fires synchronously). Rejected: observable drift with no forced-category justification.
+- **C. "Fire at next observation" hybrid.** Lazy fire from a place that has ectx. Awkward; defers fire to observer access, not mutator. Rejected.
+
+**Chosen direction:** **A. Thread `&mut EngineCtx<'_>` through mutators.**
+
+**Why:** Per Port Ideology, observable timing matches C++ synchronously — B and C both introduce timing drift without forced-category justification. The only blocker for A is "we haven't threaded ectx through mutators yet," which is project-internal ownership, not language-forced. B-009's mutator-callsite enumeration confirmed all production callsites already have ectx (panel `Input`/`Cycle` bodies). Future buckets that flip accessors should enumerate their callsites and confirm ectx availability — if a single callsite genuinely lacks ectx (filesystem watch callback, IPC handler, deferred timer), that exception forces a per-callsite hybrid; surface in reconciliation.
+
+**Composes with D-008:** the mutator-fire helper is a no-op when the signal is `SignalId::null()`, matching C++ `emSignal::Signal()` with zero subscribers.
+
+**Open questions deferred to per-bucket design:**
+- Whether to introduce a typed wrapper (e.g., `Bumper<T>`) to enforce the ectx-threading discipline at the type level. Currently no — individual `&mut self` + `&mut EngineCtx<'_>` signatures are explicit enough.
+
+---
+
+## D-008-signal-allocation-shape
+
+**Question:** Where/when does a model's `SignalId` get allocated, given that `Acquire(ctx)` doesn't carry scheduler/`EngineCtx`? (Same friction D-006 chose first-Cycle init to avoid on the consumer side.)
+
+**Affects:** every accessor flip that introduces a new `SignalId` field on a model. Forced companion to D-007 — every accessor flip needs *some* allocation shape, so the question recurs by construction.
+
+**Origin:** Surfaced and resolved during the B-009-typemismatch-emfileman bucket-design brainstorm (commit `0a7d7fd3`).
+
+**Options considered:**
+- **A1. Lazy allocation by first subscriber.** Model field is `Cell<SignalId>` initialized `null`. Each consumer's first-Cycle init calls a new `&self` method `EnsureXxxSignal(ectx) -> SignalId` which allocates on first call and caches. Mutators check `if sig != null { ectx.fire(sig) }`. Matches C++ `emSignal::Signal()` with zero subscribers (silent no-op).
+- **A2. Eager allocation by threading scheduler through Acquire.** `Acquire(ctx) -> Acquire(ctx, scheduler)`. Crisp single allocation point. Hits the same friction D-006 cited: ConstructCtx doesn't expose scheduler/`create_signal`; threading through every Acquire callsite is a ripple bigger than the bucket.
+- **A3. Frame `emContext` to expose a scheduler handle.** Models call `ctx.scheduler().create_signal()` at Acquire. Substantial framework change; out of B-009 scope. Future architectural candidate when enough models accumulate `SignalId::default()`/`null()` placeholders.
+
+**Chosen direction:** **A1. Lazy allocation by first subscriber.**
+
+**Why:** A1 is self-contained (no framework or Acquire-signature changes), mirrors D-006's first-Cycle init shape symmetrically (subscribers initialize, allocation occurs as a side-effect of init), and the "no-op fire when no subscriber" semantics match C++ exactly. A2 is rejected for the same reason D-006 rejected its analogous option C. A3 is the most C++-faithful long-term answer (in C++, models do have scheduler access via engine ownership) but is out of scope for any individual bucket — it lifts to a separate framework change.
+
+**Composes with D-007:** D-007's `ectx.fire(sig)` is a no-op when `sig == SignalId::null()`, matching C++ pre-subscriber semantics.
+
+**Watch-list (not a decision):** A3 — expose scheduler through `emContext` — may become worthwhile once enough models carry `SignalId::default()`/`null()` placeholders. Current placeholder occupants noted by B-009 brainstorm: `emFileLinkModel`, `emFileManTheme`, `emFileManConfig`, `emFileModel`. If this list grows, the working-memory session promotes A3 to a separate framework-lift bucket.
+
+**Open questions deferred to per-bucket design:**
+- Whether `Ensure*Signal` should sit on `&self` (with interior `Cell` mutation) or `&mut self`. Currently `&self` per A1 description; revisit if borrow-checker friction surfaces.

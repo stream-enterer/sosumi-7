@@ -7,6 +7,12 @@
 **Cited decisions:** D-006-subscribe-shape (canonical first-Cycle init + IsSignaled top-of-Cycle wiring shape, originated by this bucket's brainstorm).
 **Prereq buckets:** B-009-typemismatch-emfileman — the two `emFileManControlPanel` rows whose Cycle init must subscribe to `FMModel::GetSelectionSignal` and `FMVConfig::GetChangeSignal` cannot land until B-009 flips those accessors from `u64` to `SignalId` per D-001. The other 19 rows (18 widget-only + `emFileLinkPanel-53`) are not prereq-blocked.
 
+**Reconciliation amendments (2026-04-27, post-B-009 design 0a7d7fd3):**
+- **B-005 ↔ B-009 unblock confirmed.** B-009's design satisfies B-005's hard-prereq-on-D-001. After B-009 lands, `emFileManModel::GetSelectionSignal` and `emFileManViewConfig::GetChangeSignal` both return `SignalId`; B-005's two `connect(...)` calls in `emFileManControlPanel`'s first-Cycle init compile and fire correctly.
+- **B-005 design-doc amendment (implementer-facing):** the `// see D-001 — accessor returns u64 today; flip pending` annotations in B-005's design doc become obsolete after B-009 lands. Implementer can drop them when applying the design.
+- **Implementation-time coordination on `emFileManControlPanel`:** after both buckets land, the panel's first-Cycle init holds B-009's 3 model/config connects + B-005's 20 widget connects (23 total). Same `subscribed_init: bool` gate; no conflict.
+- **Merge sequencing:** prereq tightens implementation order to B-009 first, B-005 second. Either order is fine for *design*; implementation must serialize.
+
 ## Pattern description
 
 P-002 covers sites where the C++ panel/cycle reacts to a signal via `AddWakeUpSignal` / connect-style subscription, the Rust port has the corresponding accessor exposed (signal id retrievable from the model or widget), but no subscription is wired — reactions are instead inferred from polling widget state inside `Input()` or are absent entirely. In this bucket the scope is `emfileman`: one `emFileLinkPanel` model-update-broadcast site plus 20 `emFileManControlPanel` widget-click / widget-check sites whose reactions currently live inline in `Input()` rather than in a signal-driven `Cycle`.

@@ -11,6 +11,7 @@
 - `emMainPanel-69` reclassified `gap-blocked → drifted`; `D-003` citation removed. `GetWindowFlagsSignal` exists at `crates/emcore/src/emWindow.rs:1279` (same stale tag as `emMainControlPanel-218`).
 - `emMainPanel-67` and `emVirtualCosmos-104` were already `drifted` in the spine — designer's intuition that all three were stale-gap-blocked was partially correct, but only -69 actually had the stale tag.
 - `emVirtualCosmos-104` carries a hard cross-bucket prereq on `emFileModel-103` (B-007 row), encoded in `inventory-enriched.json` `prereq_ids`.
+- **Back-propagation from D-007 promotion (2026-04-27, post-B-009):** B-008's `Acquire`-side encounter with the mutator-fire ectx-threading pattern was the first sighting that B-009's promotion of D-007 cites. B-008's design implementer should follow D-007's chosen direction (thread `&mut EngineCtx<'_>`) for any mutator-side work, and D-008 (lazy `Ensure*Signal` allocation) for any signal allocation.
 
 ## Pattern description
 

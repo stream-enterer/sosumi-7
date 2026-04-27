@@ -22,7 +22,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 10 | B-004-no-wire-misc | 0 | balanced | 4 | designed | [3497069d](../../../../superpowers/specs/2026-04-27-B-004-no-wire-misc-design.md) |
 | 11 | B-016-polling-no-acc-emfileman | 0 | balanced | 3 | designed | [d837346b](../../../../superpowers/specs/2026-04-27-B-016-polling-no-acc-emfileman-design.md) |
 | 12 | B-017-polling-no-acc-emstocks | 0 | balanced | 3 | designed | [a27d2faa](../../../../superpowers/specs/2026-04-27-B-017-polling-no-acc-emstocks-design.md) |
-| 13 | B-009-typemismatch-emfileman | 0 | judgement-heavy | 14 | pending | — |
+| 13 | B-009-typemismatch-emfileman | 0 | judgement-heavy | 14 | designed | [0a7d7fd3](../../../../superpowers/specs/2026-04-27-B-009-typemismatch-emfileman-design.md) |
 | 14 | B-010-rc-shim-emcore | 0 | judgement-heavy | 15 | pending | — |
 | 15 | B-011-rc-shim-autoplay | 0 | judgement-heavy | 7 | pending | — |
 | 16 | B-012-rc-shim-mainctrl | 0 | judgement-heavy | 7 | pending | — |
@@ -151,3 +151,16 @@ Total rows: 187 (178 actionable + 9 cleanup).
 - **Audit-data correction:** bucket sketch's "emTimer::TimerCentral unported" framing is stale; TimerCentral is ported at `crates/emcore/src/emTimer.rs` with active consumers. Strike from B-017 framing.
 - **Recommended PR staging:** B-004 G1 + B-001 G3 first, B-017 follows. Row 3 is natural pilot if review pressure forces staging.
 - **B-017 status:** pending → designed.
+
+### 2026-04-27 — B-009 design returned (0a7d7fd3)
+
+- **Two new D-### entries promoted** based on B-009 brainstorm (third sighting of the mutator-fire ectx-threading pattern; B-008 and B-004 cited as prior sightings):
+  - **D-007-mutator-fire-shape**: thread `&mut EngineCtx<'_>` through mutators; `ectx.fire(sig)` synchronously, matching C++ `emSignal::Signal()`. No-op when `sig == SignalId::null()`.
+  - **D-008-signal-allocation-shape**: lazy allocation via `Ensure*Signal(&self, ectx) -> SignalId` (Cell-backed). A2 (eager via Acquire scheduler-threading) rejected for the same friction D-006 cited; A3 (scheduler in emContext) deferred as a future framework lift.
+- **Citations back-propagated** to B-008 and B-004 sketches; their candidate-if-rediscovered flags struck.
+- **B-005 ↔ B-009 unblock confirmed.** B-005's design becomes implementable at B-009 merge; the `// see D-001` annotations in B-005's design doc become obsolete. Implementation order: B-009 first.
+- **Per-accessor consumer migration plan** captured in B-009 sketch (which consumers fold under each of the 3 flipped accessors).
+- **Helper APIs (EnsureSelectionSignal/EnsureCommandsSignal/EnsureChangeSignal) in-scope** per D-008. Mutator-callsite migration in-scope per D-007. Neither introduces new audit rows.
+- **Audit-data correction:** `emFileManControlPanel-522`'s "sub-engine" routing claim is a misread — direct `AddWakeUpSignal` on the panel's own engine. B-009 sketch updated.
+- **Watch-list note on D-008:** A3 (scheduler in emContext) candidate when placeholder-occupant count grows. Current occupants tracked in D-008 entry: `emFileLinkModel`, `emFileManTheme`, `emFileManConfig`, `emFileModel`.
+- **B-009 status:** pending → designed.
