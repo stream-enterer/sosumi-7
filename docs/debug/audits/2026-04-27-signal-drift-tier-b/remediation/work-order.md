@@ -11,8 +11,8 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | # | Bucket | Layer | Mechanical-vs-judgement | Rows | Status | Design doc |
 |---|---|---|---|---|---|---|
 | 1 | B-005-typed-subscribe-emfileman | 0 | mechanical-heavy | 21 | designed | [d95d55a7](../../../../superpowers/specs/2026-04-27-B-005-typed-subscribe-emfileman-design.md) |
-| 2 | B-006-typed-subscribe-mainctrl | 0 | mechanical-heavy | 3 | designed | [a13880c7](../../../../superpowers/specs/2026-04-27-B-006-typed-subscribe-mainctrl-design.md) |
-| 3 | B-007-typed-subscribe-emcore | 0 | mechanical-heavy | 3 | designed | [8b220ebb](../../../../superpowers/specs/2026-04-27-B-007-typed-subscribe-emcore-design.md) |
+| 2 | B-006-typed-subscribe-mainctrl | 0 | mechanical-heavy | 3 | merged at f37adf01 (5963c688..f37adf01) | [a13880c7](../../../../superpowers/specs/2026-04-27-B-006-typed-subscribe-mainctrl-design.md) |
+| 3 | B-007-typed-subscribe-emcore | 0 | mechanical-heavy | 3 | merged at 55d735bc (858524f1..55d735bc; includes the AcquireUpdateSignalModel gap-fix) | [8b220ebb](../../../../superpowers/specs/2026-04-27-B-007-typed-subscribe-emcore-design.md) |
 | 4 | B-008-typed-subscribe-misc | 0 | mechanical-heavy | 3 | designed | [4c4141f1](../../../../superpowers/specs/2026-04-27-B-008-typed-subscribe-misc-design.md) |
 | 5 | B-015-polling-emcore-plus | 0 | mechanical-heavy | 10 | designed | [b521b3f6](../../../../superpowers/specs/2026-04-27-B-015-polling-emcore-plus-design.md) |
 | 6 | B-019-stale-annotations | 0 | mechanical-heavy | 9 | merged at 41599129 | [e7129430](../../../../superpowers/specs/2026-04-27-B-019-stale-annotations-design.md) |
@@ -267,3 +267,11 @@ Phase 5 reconciliation continues as implementation merges land. Status column tr
 ### 2026-04-27 — B-011 status reconciled (no code; absorbed into B-003)
 
 B-011's design called out that all 7 rows are removed by B-003's R-A construction (no separate implementation). B-003 merged at `eb9427db`. Flipping B-011 status `designed → merged` to reflect reality. **4 of 19 buckets merged.**
+
+### 2026-04-27 — B-006 + B-007 merged (parallel wave, batch 1)
+
+- **B-006 → merged at f37adf01** (linear history 5963c688..f37adf01). 3 rows; emMainControlPanel Cycle init only.
+- **B-007 → merged at 55d735bc** (linear history 858524f1..55d735bc). 3 rows + the latent `AcquireUpdateSignalModel` gap-fix (re-points to the shared `App::file_update_signal` broadcast per design).
+- Test suite: 2812 → 2821 (+9 tests across both buckets).
+- **B-007 merge unblocks B-008** (next wave can pick it up).
+- **6 of 19 buckets merged. 13 remain.**
