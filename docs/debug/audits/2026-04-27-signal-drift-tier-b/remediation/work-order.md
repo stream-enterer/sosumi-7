@@ -19,7 +19,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 7 | B-001-no-wire-emstocks | 0 | balanced | 71 | designed | [456fa5f7](../../../../superpowers/specs/2026-04-27-B-001-no-wire-emstocks-design.md) |
 | 8 | B-002-no-wire-emfileman | 0 | balanced | 4 | designed | [7fb3decd](../../../../superpowers/specs/2026-04-27-B-002-no-wire-emfileman-design.md) |
 | 9 | B-003-no-wire-autoplay | 0 | balanced | 3 | designed | [703fa462](../../../../superpowers/specs/2026-04-27-B-003-no-wire-autoplay-design.md) |
-| 10 | B-004-no-wire-misc | 0 | balanced | 4 | pending | — |
+| 10 | B-004-no-wire-misc | 0 | balanced | 4 | designed | [3497069d](../../../../superpowers/specs/2026-04-27-B-004-no-wire-misc-design.md) |
 | 11 | B-016-polling-no-acc-emfileman | 0 | balanced | 3 | pending | — |
 | 12 | B-017-polling-no-acc-emstocks | 0 | balanced | 3 | pending | — |
 | 13 | B-009-typemismatch-emfileman | 0 | judgement-heavy | 14 | pending | — |
@@ -123,3 +123,13 @@ Total rows: 187 (178 actionable + 9 cleanup).
 - **2 accessor groups:** G1 ChangeSignal (6 emit sites), G2 ProgressSignal (1 emit site). `emAutoplay-1171` Cycle fan-out covers 2 model subscribes + 7 widget subscribes; `emAutoplayControlPanel` gains a `Cycle` method.
 - **No new D-### entries.** No cross-bucket prereqs.
 - **B-003 status:** pending → designed.
+
+### 2026-04-27 — B-004 design returned (3497069d)
+
+- **No new D-### entries.** Mutator-fire ectx-threading flagged as promotion candidate if rediscovered (B-008 hit similar shape on `Acquire`; one more sighting and we promote).
+- **No hard cross-bucket prereqs.** Two soft forward-edges noted: B-004 G1 → B-015 (once `GetVirFileStateSignal` lands, derived-panel polling has a subscribe target — already in B-015 scope, can stub); B-004 G3 ↔ B-008 (input vs output edges of emVirtualCosmos; independent).
+- **emBookmarks-1479 verified actionable** (vs the 21 unported emBookmarks rows). The 21 unported rows reference editing panels the Rust port has BLOCKED as read-only; row 1479 is on the ported `emBookmarkButton`.
+- **emVirtualCosmos B-004/B-008 distinction confirmed** (B-008 wires input, B-004 wires output of emVirtualCosmosModel).
+- **3 accessor groups** (G1 emFilePanel.GetVirFileStateSignal, G2 emBookmarkButton.GetClickSignal, G3 emVirtualCosmosModel.GetChangeSignal).
+- **No inventory-enriched.json patches needed.**
+- **B-004 status:** pending → designed.
