@@ -110,6 +110,37 @@ pub struct InitCtx<'a> {
     pub pending_actions: &'a Rc<RefCell<Vec<FrameworkDeferredAction>>>,
 }
 
+/// Minimal signal-mutation surface shared by `EngineCtx` and `SchedCtx`.
+/// Used by model mutators that need to fire/allocate signals but may be called
+/// from either a panel Cycle (`EngineCtx`) or a framework input handler (`SchedCtx`).
+///
+/// RUST_ONLY: (language-forced-utility) — C++ `emScheduler` is accessible from
+/// any context because C++ class instances hold a scheduler reference. Rust
+/// threads it explicitly; this trait provides the common surface without
+/// requiring callers to hold a full `EngineCtx`.
+pub trait SignalCtx {
+    fn create_signal(&mut self) -> SignalId;
+    fn fire(&mut self, id: SignalId);
+}
+
+impl SignalCtx for EngineCtx<'_> {
+    fn create_signal(&mut self) -> SignalId {
+        self.scheduler.create_signal()
+    }
+    fn fire(&mut self, id: SignalId) {
+        self.scheduler.fire(id);
+    }
+}
+
+impl SignalCtx for SchedCtx<'_> {
+    fn create_signal(&mut self) -> SignalId {
+        self.scheduler.create_signal()
+    }
+    fn fire(&mut self, id: SignalId) {
+        self.scheduler.fire(id);
+    }
+}
+
 pub trait ConstructCtx {
     fn create_signal(&mut self) -> SignalId;
     fn register_engine(

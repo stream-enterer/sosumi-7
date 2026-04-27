@@ -1,5 +1,6 @@
 use emcore::emConfigModel::emConfigModel;
 use emcore::emContext::emContext;
+use emcore::emEngineCtx::SignalCtx;
 use emcore::emInput::{InputKey, emInputEvent};
 use emcore::emInputState::emInputState;
 use emcore::emInstallInfo::{InstallDirType, emGetInstallPath};
@@ -10,7 +11,7 @@ use emcore::emRecParser::{RecError, RecStruct};
 use emcore::emRecRecord::Record;
 use emcore::emSignal::SignalId;
 use slotmap::Key as _;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 //==============================================================================
@@ -813,10 +814,19 @@ pub struct emAutoplayViewModel {
     pub(crate) ItemPlayStartTime: std::time::Instant,
     pub(crate) ScreensaverInhibited: bool,
     pub(crate) PlayedAnyInCurrentSession: bool,
+    /// Port of C++ emAutoplayViewModel::ChangeSignal (emAutoplay.h:268).
+    /// Lazily allocated on first subscribe per D-008-signal-allocation-shape (A1).
+    /// Fired at every state-mutation site (emAutoplay.cpp:661/675/688/701/710/1126).
+    pub(crate) change_signal: Cell<SignalId>,
+    /// Port of C++ emAutoplayViewModel::ProgressSignal (emAutoplay.h:279).
+    /// Lazily allocated on first subscribe per D-008 A1.
+    /// Fired by SetItemProgress (emAutoplay.cpp:911).
+    pub(crate) progress_signal: Cell<SignalId>,
 }
 
 impl emAutoplayViewModel {
     /// Construct a new view model with default values.
+    /// Signals are lazily allocated on first subscribe per D-008-signal-allocation-shape (A1).
     pub fn new() -> Self {
         Self {
             DurationMS: 5000,
@@ -832,6 +842,52 @@ impl emAutoplayViewModel {
             ItemPlayStartTime: std::time::Instant::now(),
             ScreensaverInhibited: false,
             PlayedAnyInCurrentSession: false,
+            change_signal: Cell::new(SignalId::null()),
+            progress_signal: Cell::new(SignalId::null()),
+        }
+    }
+
+    /// Port of C++ `emAutoplayViewModel::GetChangeSignal()` (emAutoplay.h:293).
+    /// Lazily allocates the signal on first call per D-008 A1.
+    pub fn GetChangeSignal(&self, ectx: &mut impl SignalCtx) -> SignalId {
+        let sig = self.change_signal.get();
+        if sig == SignalId::null() {
+            let new_sig = ectx.create_signal();
+            self.change_signal.set(new_sig);
+            new_sig
+        } else {
+            sig
+        }
+    }
+
+    /// Port of C++ `emAutoplayViewModel::GetProgressSignal()` (emAutoplay.h:318).
+    /// Lazily allocates the signal on first call per D-008 A1.
+    pub fn GetProgressSignal(&self, ectx: &mut impl SignalCtx) -> SignalId {
+        let sig = self.progress_signal.get();
+        if sig == SignalId::null() {
+            let new_sig = ectx.create_signal();
+            self.progress_signal.set(new_sig);
+            new_sig
+        } else {
+            sig
+        }
+    }
+
+    /// Fire ChangeSignal if already allocated. No-op if no subscriber has
+    /// initialized it yet — mirrors C++ `Signal(ChangeSignal)` no-op with
+    /// zero subscribers per D-008 A1 / D-007 composition note.
+    fn signal_change(&self, ectx: &mut impl SignalCtx) {
+        let sig = self.change_signal.get();
+        if sig != SignalId::null() {
+            ectx.fire(sig);
+        }
+    }
+
+    /// Fire ProgressSignal if already allocated. Same semantics as signal_change.
+    fn signal_progress(&self, ectx: &mut impl SignalCtx) {
+        let sig = self.progress_signal.get();
+        if sig != SignalId::null() {
+            ectx.fire(sig);
         }
     }
 
@@ -839,31 +895,38 @@ impl emAutoplayViewModel {
         self.DurationMS
     }
 
-    pub fn SetDurationMS(&mut self, ms: i32) {
+    /// Port of C++ `emAutoplayViewModel::SetDurationMS` (emAutoplay.cpp:661 emit site).
+    pub fn SetDurationMS(&mut self, ectx: &mut impl SignalCtx, ms: i32) {
         self.DurationMS = ms.max(0);
+        self.signal_change(ectx);
     }
 
     pub fn IsRecursive(&self) -> bool {
         self.Recursive
     }
 
-    pub fn SetRecursive(&mut self, recursive: bool) {
+    /// Port of C++ `emAutoplayViewModel::SetRecursive` (emAutoplay.cpp:675 emit site).
+    pub fn SetRecursive(&mut self, ectx: &mut impl SignalCtx, recursive: bool) {
         self.Recursive = recursive;
+        self.signal_change(ectx);
     }
 
     pub fn IsLoop(&self) -> bool {
         self.Loop
     }
 
-    pub fn SetLoop(&mut self, lp: bool) {
+    /// Port of C++ `emAutoplayViewModel::SetLoop` (emAutoplay.cpp:688 emit site).
+    pub fn SetLoop(&mut self, ectx: &mut impl SignalCtx, lp: bool) {
         self.Loop = lp;
+        self.signal_change(ectx);
     }
 
     pub fn IsAutoplaying(&self) -> bool {
         self.Autoplaying
     }
 
-    pub fn SetAutoplaying(&mut self, autoplaying: bool) {
+    /// Port of C++ `emAutoplayViewModel::SetAutoplaying` (emAutoplay.cpp:701 emit site).
+    pub fn SetAutoplaying(&mut self, ectx: &mut impl SignalCtx, autoplaying: bool) {
         if autoplaying == self.Autoplaying {
             return;
         }
@@ -878,6 +941,7 @@ impl emAutoplayViewModel {
             self.ViewAnimator.ClearGoal();
             self.ScreensaverInhibited = false;
         }
+        self.signal_change(ectx);
     }
 
     /// Returns the fractional progress through the current item (0.0..=1.0).
@@ -885,8 +949,10 @@ impl emAutoplayViewModel {
         self.ItemProgress
     }
 
-    pub fn SetItemProgress(&mut self, progress: f64) {
+    /// Port of C++ `emAutoplayViewModel::SetItemProgress` (emAutoplay.cpp:911 emit site).
+    pub fn SetItemProgress(&mut self, ectx: &mut impl SignalCtx, progress: f64) {
         self.ItemProgress = progress.clamp(0.0, 1.0);
+        self.signal_progress(ectx);
     }
 
     pub fn IsLastLocationValid(&self) -> bool {
@@ -917,11 +983,13 @@ impl emAutoplayViewModel {
         !self.Autoplaying && self.LastLocationValid
     }
 
-    pub fn ContinueLastAutoplay(&mut self) {
+    /// Port of C++ `emAutoplayViewModel::ContinueLastAutoplay` (emAutoplay.cpp:710 emit site).
+    pub fn ContinueLastAutoplay(&mut self, ectx: &mut impl SignalCtx) {
         if self.CanContinueLastAutoplay() {
             let loc = self.LastLocation.clone();
             self.ViewAnimator.SetGoalToItemAt(&loc);
-            self.SetAutoplaying(true);
+            self.SetAutoplaying(ectx, true);
+            // SetAutoplaying fires change_signal; no additional emit needed.
         }
     }
 
@@ -941,7 +1009,7 @@ impl emAutoplayViewModel {
         }
     }
 
-    fn UpdateItemPlaying(&mut self) {
+    fn UpdateItemPlaying(&mut self, ectx: &mut impl SignalCtx) {
         if !self.PlayingItem || self.PlaybackActive {
             return;
         }
@@ -952,7 +1020,7 @@ impl emAutoplayViewModel {
         } else {
             1.0
         };
-        self.SetItemProgress(progress);
+        self.SetItemProgress(ectx, progress);
         if progress >= 1.0 {
             self.StopItemPlaying();
             self.ViewAnimator.SkipToNextItem();
@@ -960,31 +1028,31 @@ impl emAutoplayViewModel {
     }
 
     /// Port of C++ `emAutoplayViewModel::Cycle` (emAutoplay.cpp:870-901).
-    pub fn Cycle(&mut self, tree: &PanelTree) -> bool {
-        self.UpdateItemPlaying();
+    pub fn Cycle(&mut self, ectx: &mut impl SignalCtx, tree: &PanelTree) -> bool {
+        self.UpdateItemPlaying(ectx);
 
         if self.Autoplaying {
             self.ViewAnimator.LowPriCycle(tree);
 
             if self.ViewAnimator.HasReachedGoal() {
                 let identity = self.ViewAnimator.GetCurrentPanelIdentity().to_string();
-                self.SaveLocation(Some(&identity));
+                self.SaveLocation(ectx, Some(&identity));
                 self.StartItemPlaying();
             } else if self.ViewAnimator.HasGivenUp() {
                 // Port of C++: if played anything this session, clear saved location.
                 if self.PlayedAnyInCurrentSession {
-                    self.SaveLocation(None);
+                    self.SaveLocation(ectx, None);
                 }
-                self.SetAutoplaying(false);
+                self.SetAutoplaying(ectx, false);
             }
         }
 
         self.Autoplaying || self.ViewAnimator.HasGoal()
     }
 
-    /// Port of C++ `emAutoplayViewModel::SaveLocation(emPanel*)`.
+    /// Port of C++ `emAutoplayViewModel::SaveLocation(emPanel*)` (emAutoplay.cpp:1126 emit site).
     /// Pass `Some(identity)` to save a location, or `None` to clear it.
-    fn SaveLocation(&mut self, identity: Option<&str>) {
+    fn SaveLocation(&mut self, ectx: &mut impl SignalCtx, identity: Option<&str>) {
         match identity {
             Some(id) => {
                 self.LastLocationValid = true;
@@ -995,6 +1063,7 @@ impl emAutoplayViewModel {
                 self.LastLocation.clear();
             }
         }
+        self.signal_change(ectx);
     }
 
     pub fn SkipToPreviousItem(&mut self) {
@@ -1016,7 +1085,15 @@ impl emAutoplayViewModel {
     }
 
     /// Port of C++ `emAutoplayViewModel::Input`.
-    pub fn Input(&mut self, event: &emInputEvent, input_state: &emInputState) -> bool {
+    /// Note: SkipToNextItem/SkipToPreviousItem do not fire ChangeSignal in C++
+    /// (they only mutate ViewAnimator, which has no signal). SetAutoplaying and
+    /// ContinueLastAutoplay do fire — they need ectx.
+    pub fn Input(
+        &mut self,
+        ectx: &mut impl SignalCtx,
+        event: &emInputEvent,
+        input_state: &emInputState,
+    ) -> bool {
         match event.key {
             InputKey::F12 if input_state.IsNoMod() => {
                 self.SkipToNextItem();
@@ -1027,11 +1104,12 @@ impl emAutoplayViewModel {
                 true
             }
             InputKey::F12 if input_state.IsCtrlMod() => {
-                self.SetAutoplaying(!self.Autoplaying);
+                let was = self.Autoplaying;
+                self.SetAutoplaying(ectx, !was);
                 true
             }
             InputKey::F12 if input_state.IsShiftCtrlMod() => {
-                self.ContinueLastAutoplay();
+                self.ContinueLastAutoplay(ectx);
                 true
             }
             InputKey::MouseX1 if input_state.IsNoMod() => {
@@ -1060,6 +1138,21 @@ impl Default for emAutoplayViewModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// No-op SignalCtx for unit tests that don't need signal delivery.
+    /// Signals allocated here go nowhere; fire() is a no-op.
+    struct NullSignalCtx;
+    impl NullSignalCtx {
+        fn new() -> Self {
+            Self
+        }
+    }
+    impl SignalCtx for NullSignalCtx {
+        fn create_signal(&mut self) -> SignalId {
+            SignalId::null()
+        }
+        fn fire(&mut self, _id: SignalId) {}
+    }
 
     #[test]
     fn test_autoplay_config_defaults() {
@@ -1138,11 +1231,12 @@ mod tests {
 
     #[test]
     fn test_view_model_setters() {
+        let mut sc = NullSignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
-        vm.SetDurationMS(2000);
-        vm.SetRecursive(true);
-        vm.SetLoop(true);
-        vm.SetAutoplaying(true);
+        vm.SetDurationMS(&mut sc, 2000);
+        vm.SetRecursive(&mut sc, true);
+        vm.SetLoop(&mut sc, true);
+        vm.SetAutoplaying(&mut sc, true);
         assert_eq!(vm.GetDurationMS(), 2000);
         assert!(vm.IsRecursive());
         assert!(vm.IsLoop());
@@ -1151,14 +1245,15 @@ mod tests {
 
     #[test]
     fn test_view_model_clamp_duration() {
+        let mut sc = NullSignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
         // C++ SetDurationMS does not clamp; it stores the value verbatim
         // (emAutoplay.cpp:856 `DurationMS=ms.max(0)` only floors negatives).
-        vm.SetDurationMS(50);
+        vm.SetDurationMS(&mut sc, 50);
         assert_eq!(vm.GetDurationMS(), 50);
-        vm.SetDurationMS(700_000);
+        vm.SetDurationMS(&mut sc, 700_000);
         assert_eq!(vm.GetDurationMS(), 700_000);
-        vm.SetDurationMS(-1);
+        vm.SetDurationMS(&mut sc, -1);
         assert_eq!(vm.GetDurationMS(), 0);
     }
 
@@ -1713,10 +1808,11 @@ mod tests {
 
     #[test]
     fn test_view_model_set_autoplaying_activates() {
+        let mut sc = NullSignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
         vm.Recursive = true;
         vm.Loop = true;
-        vm.SetAutoplaying(true);
+        vm.SetAutoplaying(&mut sc, true);
         assert!(vm.IsAutoplaying());
         assert!(vm.ScreensaverInhibited);
         assert!(!vm.PlayedAnyInCurrentSession);
@@ -1726,11 +1822,12 @@ mod tests {
 
     #[test]
     fn test_view_model_set_autoplaying_deactivates() {
+        let mut sc = NullSignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
-        vm.SetAutoplaying(true);
+        vm.SetAutoplaying(&mut sc, true);
         vm.PlayingItem = true;
         vm.ScreensaverInhibited = true;
-        vm.SetAutoplaying(false);
+        vm.SetAutoplaying(&mut sc, false);
         assert!(!vm.IsAutoplaying());
         assert!(!vm.ScreensaverInhibited);
         assert!(!vm.IsPlayingItem());
@@ -1738,6 +1835,7 @@ mod tests {
 
     #[test]
     fn test_view_model_can_continue_last() {
+        let mut sc = NullSignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
         // Not autoplaying, no last location → cannot continue
         assert!(!vm.CanContinueLastAutoplay());
@@ -1747,19 +1845,20 @@ mod tests {
         // Not autoplaying, has last location → can continue
         assert!(vm.CanContinueLastAutoplay());
 
-        vm.SetAutoplaying(true);
+        vm.SetAutoplaying(&mut sc, true);
         // Currently autoplaying → cannot continue
         assert!(!vm.CanContinueLastAutoplay());
     }
 
     #[test]
     fn test_view_model_item_progress_clamped() {
+        let mut sc = NullSignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
-        vm.SetItemProgress(1.5);
+        vm.SetItemProgress(&mut sc, 1.5);
         assert!((vm.GetItemProgress() - 1.0).abs() < 1e-10);
-        vm.SetItemProgress(-0.5);
+        vm.SetItemProgress(&mut sc, -0.5);
         assert!(vm.GetItemProgress().abs() < 1e-10);
-        vm.SetItemProgress(0.5);
+        vm.SetItemProgress(&mut sc, 0.5);
         assert!((vm.GetItemProgress() - 0.5).abs() < 1e-10);
     }
 }

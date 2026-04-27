@@ -291,10 +291,13 @@ impl emMainWindow {
         }
 
         // Delegate to autoplay view model (handles F12 toggle).
-        if let Some(ref mut avm) = self.autoplay_view_model
-            && avm.Input(event, input_state)
-        {
-            return true;
+        // Thread a SchedCtx so SetAutoplaying/ContinueLastAutoplay can fire
+        // ChangeSignal per D-007 (synchronous fire at mutation site).
+        if let Some(ref mut avm) = self.autoplay_view_model {
+            let handled = app.with_sched_ctx(|sc| avm.Input(sc, event, input_state));
+            if handled {
+                return true;
+            }
         }
 
         // Bookmark hotkeys (C++ emMainWindow.cpp:247-260).

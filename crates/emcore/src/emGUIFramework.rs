@@ -396,6 +396,35 @@ impl App {
         result
     }
 
+    /// Construct a `SchedCtx` over the framework scheduler without requiring
+    /// a particular window. Used by callsites that need to fire signals or
+    /// call mutators that take `&mut SchedCtx` but have no panel-tree access.
+    ///
+    /// Used by `emMainWindow::handle_input` to thread ectx into ViewModel
+    /// mutators (`SetAutoplaying`, `ContinueLastAutoplay`) per D-007.
+    pub fn with_sched_ctx<R>(
+        &mut self,
+        f: impl FnOnce(&mut crate::emEngineCtx::SchedCtx<'_>) -> R,
+    ) -> R {
+        let App {
+            scheduler,
+            framework_actions,
+            context,
+            clipboard,
+            pending_actions,
+            ..
+        } = self;
+        let mut sc = crate::emEngineCtx::SchedCtx {
+            scheduler,
+            framework_actions,
+            root_context: context,
+            framework_clipboard: clipboard,
+            current_engine: None,
+            pending_actions,
+        };
+        f(&mut sc)
+    }
+
     /// Mutable access to the home window's panel tree.
     ///
     /// Phase 3.5.A Task 7: `App::tree` is gone; the home window owns its

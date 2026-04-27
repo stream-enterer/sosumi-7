@@ -26,7 +26,8 @@ use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::emPanelTree::PanelId;
 use emcore::emTiling::{ChildConstraint, Orientation, Spacing};
 
-use crate::emAutoplayControlPanel::{AutoplayFlags, emAutoplayControlPanel};
+use crate::emAutoplay::emAutoplayViewModel;
+use crate::emAutoplayControlPanel::emAutoplayControlPanel;
 use crate::emBookmarks::emBookmarksPanel;
 use crate::emMainConfig::emMainConfig;
 
@@ -136,7 +137,7 @@ pub struct emMainControlPanel {
     /// C++ SetChildWeight(0, 11.37) SetChildWeight(1, 21.32).
     layout_main: emLinearLayout,
     click_flags: Rc<ClickFlags>,
-    autoplay_flags: Rc<AutoplayFlags>,
+    autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     // Panel IDs for child widgets (used for layout weight assignment).
     lmain_panel: Option<PanelId>,
     content_ctrl_panel: Option<PanelId>,
@@ -179,7 +180,7 @@ impl emMainControlPanel {
             look: emLook::default(),
             layout_main,
             click_flags: Rc::new(ClickFlags::default()),
-            autoplay_flags: Rc::new(AutoplayFlags::default()),
+            autoplay_model: Rc::new(RefCell::new(emAutoplayViewModel::new())),
             lmain_panel: None,
             content_ctrl_panel: None,
             children_created: false,
@@ -213,7 +214,7 @@ impl emMainControlPanel {
             Rc::clone(&self.ctx),
             Rc::clone(&look),
             Rc::clone(&flags),
-            Rc::clone(&self.autoplay_flags),
+            Rc::clone(&self.autoplay_model),
         ));
         let lmain_id = ctx.create_child_with("lMain", lmain);
         self.lmain_panel = Some(lmain_id);
@@ -362,7 +363,7 @@ struct LMainPanel {
     look: Rc<emLook>,
     layout: emLinearLayout,
     click_flags: Rc<ClickFlags>,
-    autoplay_flags: Rc<AutoplayFlags>,
+    autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     general_panel: Option<PanelId>,
     bookmarks_panel: Option<PanelId>,
     children_created: bool,
@@ -373,7 +374,7 @@ impl LMainPanel {
         ctx: Rc<emContext>,
         look: Rc<emLook>,
         click_flags: Rc<ClickFlags>,
-        autoplay_flags: Rc<AutoplayFlags>,
+        autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     ) -> Self {
         Self {
             ctx,
@@ -390,7 +391,7 @@ impl LMainPanel {
                 ..emLinearLayout::horizontal()
             },
             click_flags,
-            autoplay_flags,
+            autoplay_model,
             general_panel: None,
             bookmarks_panel: None,
             children_created: false,
@@ -403,7 +404,7 @@ impl LMainPanel {
             Rc::clone(&self.ctx),
             Rc::clone(&self.look),
             Rc::clone(&self.click_flags),
-            Rc::clone(&self.autoplay_flags),
+            Rc::clone(&self.autoplay_model),
         ));
         let general_id = ctx.create_child_with("general", general);
         self.general_panel = Some(general_id);
@@ -456,7 +457,7 @@ struct GeneralPanel {
     look: Rc<emLook>,
     layout: emLinearLayout,
     click_flags: Rc<ClickFlags>,
-    autoplay_flags: Rc<AutoplayFlags>,
+    autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     about_cfg_panel: Option<PanelId>,
     commands_panel: Option<PanelId>,
     children_created: bool,
@@ -467,7 +468,7 @@ impl GeneralPanel {
         ctx: Rc<emContext>,
         look: Rc<emLook>,
         click_flags: Rc<ClickFlags>,
-        autoplay_flags: Rc<AutoplayFlags>,
+        autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     ) -> Self {
         Self {
             ctx,
@@ -484,7 +485,7 @@ impl GeneralPanel {
                 ..emLinearLayout::horizontal()
             },
             click_flags,
-            autoplay_flags,
+            autoplay_model,
             about_cfg_panel: None,
             commands_panel: None,
             children_created: false,
@@ -501,7 +502,7 @@ impl GeneralPanel {
         let commands = Box::new(CommandsPanel::new(
             Rc::clone(&self.look),
             Rc::clone(&self.click_flags),
-            Rc::clone(&self.autoplay_flags),
+            Rc::clone(&self.autoplay_model),
         ));
         let commands_id = ctx.create_child_with("commands", commands);
         self.commands_panel = Some(commands_id);
@@ -700,7 +701,7 @@ struct CommandsPanel {
     border: emBorder,
     layout: emLinearLayout,
     click_flags: Rc<ClickFlags>,
-    autoplay_flags: Rc<AutoplayFlags>,
+    autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     children_created: bool,
 }
 
@@ -708,7 +709,7 @@ impl CommandsPanel {
     fn new(
         look: Rc<emLook>,
         click_flags: Rc<ClickFlags>,
-        autoplay_flags: Rc<AutoplayFlags>,
+        autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     ) -> Self {
         Self {
             look,
@@ -720,7 +721,7 @@ impl CommandsPanel {
             // support tallness preferences in the same way.
             layout: emLinearLayout::vertical(),
             click_flags,
-            autoplay_flags,
+            autoplay_model,
             children_created: false,
         }
     }
@@ -782,7 +783,7 @@ impl CommandsPanel {
         // ── Autoplay control panel ──
         let autoplay = Box::new(emAutoplayControlPanel::new(
             Rc::clone(&look),
-            Rc::clone(&self.autoplay_flags),
+            Rc::clone(&self.autoplay_model),
         ));
         let autoplay_id = ctx.create_child_with("autoplay", autoplay);
 
