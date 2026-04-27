@@ -4,8 +4,17 @@
 **Scope:** emstocks
 **Row count:** 71
 **Mechanical-vs-judgement:** balanced — wiring is mechanical once the accessor shape is decided; the accessor shape is a per-scope judgement call.
-**Cited decisions:** D-003-gap-blocked-fill-vs-stub — gap-blocked rows (FileModel/Config/PricesFetcher accessors) get the missing accessor ported in this bucket so consumers can subscribe; D-004-stocks-application-strategy — confirms design-once / apply-mechanically across all in-bucket emstocks rows is the intent.
-**Prereq buckets:** none
+**Cited decisions:** D-003-gap-blocked-fill-vs-stub (gap-fill in scope), D-004-stocks-application-strategy (design-once / apply-mechanically), D-006-subscribe-shape (canonical wiring shape, with local two-tier `subscribed_init` + `subscribed_widgets` extension for lazy-attached widgets).
+**Prereq buckets:** none.
+
+**Reconciliation amendments (2026-04-27, post-design 456fa5f7):**
+- **9 accessor groups (G1..G9).** Largest: G2 `Config.GetChangeSignal` (6 consumers), G1 `FileModel.GetChangeSignal` (4 consumers, delegating). Design organized by accessor group, not by panel.
+- **Row classification refinements (no row moves):**
+  - `emStocksListBox-53` (`GetItemTriggerSignal`): accessor inherited and present on `emListBox.item_trigger_signal` — shape-equivalent to P-002 but stays in B-001 (design-once unaffected).
+  - 20 `emStocksControlPanel` rows + `-626`: drift includes "missing widget instance"; widget-add absorbed into bucket scope.
+  - `emStocksFileModel-accessor-model-change`: delegating one-line accessor on composed `emRecFileModel<emStocksRec>`, not new SignalId allocation.
+- **Coverage flag (G3 `PricesFetcher.GetChangeSignal`):** accessor ported per D-003 but no in-bucket consumer. If C++ has a missed `AddWakeUpSignal(...PricesFetcher.GetChangeSignal())` site, surface as a B-001 amendment.
+- **Two-tier init pattern (local, not D-### worthy yet):** lazy-attached widgets and ListBox break the single `subscribed_init: bool` from D-006. Design uses `subscribed_init` for model signals + `subscribed_widgets` for AutoExpand-gated widget signals (reset on AutoShrink). If a second bucket rediscovers, promote to D-###.
 
 ## Pattern description
 
