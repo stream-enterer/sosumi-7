@@ -227,6 +227,8 @@ Post-implementation:
   - **B-019 → B-012** (hard): camouflage annotations must drop before structural conversion.
   - **B-006 ↔ B-012** (soft): shared first-Cycle init block; second-to-land merges into the first's block.
 - **New D-### proposals:** none from B-012's row set.
+> **SUPERSEDED post-B-010 design return (2026-04-27):** The watch-list pattern below was promoted to **D-009-polling-intermediary-replacement** by B-010's brainstorm (commit `09f08710`) after sightings 3 (`FsbEvents`) and 4 (`generation` counter) crossed the 3-sighting threshold. B-012's `mw.to_reload` resolution is now sighting 2 of D-009. Block below preserved as historical record.
+
 - **Candidate-if-rediscovered pattern (watch-list, not promoted):** **"Rust interposed a polling intermediary where C++ calls directly."** Two sightings to date:
   1. B-003 / D-002 §1 R-A — `AutoplayFlags.progress: Rc<Cell<f64>>` with no consumer (resolved by drop).
   2. B-012 — `mw.to_reload: bool` polled by `MainWindowEngine` to fire `file_update_signal` (resolved by ectx-threading on `ReloadFiles`).
@@ -237,7 +239,7 @@ Post-implementation:
 ## Coverage gaps and new decisions
 
 - **Coverage gaps:** none. All 7 rows resolve under existing decisions.
-- **New D-### proposals:** none ratified. One watch-list candidate (above); does not promote at two sightings.
+- **New D-### proposals:** none ratified. One watch-list candidate (above); does not promote at two sightings. *(SUPERSEDED post-B-010: that candidate was promoted to D-009 by B-010's brainstorm `09f08710`; B-012's resolution is now sighting 2 of D-009.)*
 - **Bucket-file corrections to apply:** confirm `B-012-rc-shim-mainctrl.md` open-questions section; the three open questions are all resolved by this design (Q1: rule-1 uniform; Q2: no escalations; Q3: each row reuses no shared subscriber, but all subscribe in the same panel's Cycle — single subscription per click signal).
 
 ## Open Questions for Implementer
