@@ -236,6 +236,71 @@ impl emFileManControlPanel {
         }
     }
 
+    // Test accessors. `#[doc(hidden)] pub` only — these are the minimal
+    // surface needed for the integration tests in `tests/typed_subscribe_b005.rs`
+    // (B-005) to fire widget signals and observe state without exposing the
+    // widget internals as part of the library's public API.
+    #[doc(hidden)]
+    pub fn subscribed_init_for_test(&self) -> bool {
+        self.subscribed_init
+    }
+    #[doc(hidden)]
+    pub fn config_for_test(&self) -> &Rc<RefCell<emFileManViewConfig>> {
+        &self.config
+    }
+    #[doc(hidden)]
+    pub fn sort_group_for_test(&self) -> &Rc<RefCell<RadioGroup>> {
+        &self.sort_group
+    }
+    #[doc(hidden)]
+    pub fn nss_group_for_test(&self) -> &Rc<RefCell<RadioGroup>> {
+        &self.nss_group
+    }
+    #[doc(hidden)]
+    pub fn theme_style_group_check_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.theme_style_group.borrow().check_signal
+    }
+    #[doc(hidden)]
+    pub fn theme_ar_group_check_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.theme_ar_group.borrow().check_signal
+    }
+    #[doc(hidden)]
+    pub fn dirs_first_check_for_test(&mut self) -> &mut emCheckButton {
+        &mut self.dirs_first_check
+    }
+    #[doc(hidden)]
+    pub fn show_hidden_check_for_test(&mut self) -> &mut emCheckButton {
+        &mut self.show_hidden_check
+    }
+    #[doc(hidden)]
+    pub fn autosave_check_for_test(&mut self) -> &mut emCheckButton {
+        &mut self.autosave_check
+    }
+    #[doc(hidden)]
+    pub fn save_button_click_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.save_button.click_signal
+    }
+    #[doc(hidden)]
+    pub fn select_all_button_click_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.select_all_button.click_signal
+    }
+    #[doc(hidden)]
+    pub fn clear_sel_button_click_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.clear_sel_button.click_signal
+    }
+    #[doc(hidden)]
+    pub fn swap_sel_button_click_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.swap_sel_button.click_signal
+    }
+    #[doc(hidden)]
+    pub fn paths_clip_button_click_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.paths_clip_button.click_signal
+    }
+    #[doc(hidden)]
+    pub fn names_clip_button_click_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.names_clip_button.click_signal
+    }
+
     pub(crate) fn with_dir_path(mut self, path: &str) -> Self {
         self.dir_path = Some(path.to_string());
         self
@@ -303,46 +368,223 @@ impl PanelBehavior for emFileManControlPanel {
     ) -> bool {
         // D-006 first-Cycle init: lazy-allocate signals and connect this engine.
         // Mirrors C++ emFileManControlPanel ctor `AddWakeUpSignal(...)` calls
-        // (rows 326 SelectionSignal, 327 ChangeSignal, 522 CommandsSignal).
+        // (rows 326 SelectionSignal, 327 ChangeSignal, 328-347 widget signals,
+        // 522 CommandsSignal).
         if !self.subscribed_init {
             let eid = ectx.engine_id;
+            // B-009 model/config signals.
             let sel_sig = self.file_man.borrow().GetSelectionSignal(ectx);
             let cmd_sig = self.file_man.borrow().GetCommandsSignal(ectx);
             let chg_sig = self.config.borrow().GetChangeSignal(ectx);
             ectx.connect(sel_sig, eid);
             ectx.connect(cmd_sig, eid);
             ectx.connect(chg_sig, eid);
+            // B-005 row -328 (theme aspect ratio group), -329 (theme style group).
+            //
+            // DIVERGED: (language-forced) C++ has both per-radio click_signals
+            // and group check_signals; Rust emRadioButton does not expose a
+            // per-button click_signal — only the group-level check_signal is
+            // wired. Per the audit, this collapses C++'s 6 sort-radio IsSignaled
+            // checks (cpp:381-398) into one group-level check at the same
+            // observable contract: a click flips the group selection and
+            // fires the group check_signal exactly once. Same for the 3
+            // nss radios (cpp:405-413). The Cycle reaction then reads
+            // `group.GetChecked()` to dispatch on the new index.
+            ectx.connect(self.theme_ar_group.borrow().check_signal, eid);
+            ectx.connect(self.theme_style_group.borrow().check_signal, eid);
+            // B-005 rows -330..-335 (sort criterion radios) — group signal.
+            ectx.connect(self.sort_group.borrow().check_signal, eid);
+            // B-005 rows -338..-340 (name sorting style radios) — group signal.
+            ectx.connect(self.nss_group.borrow().check_signal, eid);
+            // B-005 rows -336, -337, -341 (checkboxes).
+            ectx.connect(self.dirs_first_check.check_signal, eid);
+            ectx.connect(self.show_hidden_check.check_signal, eid);
+            ectx.connect(self.autosave_check.check_signal, eid);
+            // B-005 rows -342..-347 (action buttons).
+            ectx.connect(self.save_button.click_signal, eid);
+            ectx.connect(self.select_all_button.click_signal, eid);
+            ectx.connect(self.clear_sel_button.click_signal, eid);
+            ectx.connect(self.swap_sel_button.click_signal, eid);
+            ectx.connect(self.paths_clip_button.click_signal, eid);
+            ectx.connect(self.names_clip_button.click_signal, eid);
             self.subscribed_init = true;
         }
 
-        // C++ source order: cpp:366 selection, cpp:367 change, cpp:533 commands.
-        // Re-call the combined-form accessors (B-014 precedent,
-        // emVirtualCosmos.rs:874): idempotent — cells are non-null after
-        // the init block above, so the second call is a cheap field read.
+        // Snapshot signal ids (drop borrows before mutating config/model).
         let sel_sig = self.file_man.borrow().GetSelectionSignal(ectx);
         let chg_sig = self.config.borrow().GetChangeSignal(ectx);
         let cmd_sig = self.file_man.borrow().GetCommandsSignal(ectx);
+        let theme_ar_sig = self.theme_ar_group.borrow().check_signal;
+        let theme_style_sig = self.theme_style_group.borrow().check_signal;
+        let sort_sig = self.sort_group.borrow().check_signal;
+        let nss_sig = self.nss_group.borrow().check_signal;
+        let dirs_first_sig = self.dirs_first_check.check_signal;
+        let show_hidden_sig = self.show_hidden_check.check_signal;
+        let autosave_sig = self.autosave_check.check_signal;
+        let save_sig = self.save_button.click_signal;
+        let select_all_sig = self.select_all_button.click_signal;
+        let clear_sel_sig = self.clear_sel_button.click_signal;
+        let swap_sel_sig = self.swap_sel_button.click_signal;
+        let paths_clip_sig = self.paths_clip_button.click_signal;
+        let names_clip_sig = self.names_clip_button.click_signal;
+
         let mut changed = false;
 
+        // Branch order mirrors C++ emFileManControlPanel::Cycle (cpp:365-445).
+
+        // cpp:365-370 — selection or change → UpdateButtonStates.
         if !sel_sig.is_null() && ectx.IsSignaled(sel_sig) {
             // Mirrors C++ emFileManControlPanel.cpp:366 — selection-driven
-            // button-state refresh. The Rust port currently has no
-            // UpdateButtonStates implementation; mark a state change so
-            // a future port slots in cleanly. (No regression: prior code
-            // did not react to selection here either.)
+            // button-state refresh. The Rust port has no UpdateButtonStates
+            // (button enable/disable is not yet ported); mark changed so
+            // a future port slots in cleanly.
             changed = true;
         }
         if !chg_sig.is_null() && ectx.IsSignaled(chg_sig) {
-            // Mirrors C++ emFileManControlPanel.cpp:367 — config-driven sync.
+            // Mirrors C++ emFileManControlPanel.cpp:367 — config-driven sync
+            // of widget state from config (UpdateButtonStates analog).
             self.sync_from_config(ctx);
             changed = true;
         }
-        if !cmd_sig.is_null() && ectx.IsSignaled(cmd_sig) {
-            // Mirrors C++ emFileManControlPanel.cpp:533 — commands-tree
-            // changed. Direct same-engine subscribe (no sub-engine —
-            // audit-data correction noted in B-009 design doc).
+
+        // cpp:371-380 — theme group change → SetThemeName(theme_style, ar).
+        if ectx.IsSignaled(theme_ar_sig) || ectx.IsSignaled(theme_style_sig) {
+            let style_idx = self.theme_style_group.borrow().GetChecked().unwrap_or(0);
+            let ar_idx = self.theme_ar_group.borrow().GetChecked().unwrap_or(0);
+            let tn = self.theme_names.borrow();
+            let style_count = tn.GetThemeStyleCount();
+            let mut i = style_idx;
+            if i >= style_count {
+                i = 0;
+            }
+            let ar_count = tn.GetThemeAspectRatioCount(i);
+            let mut j = ar_idx;
+            if j >= ar_count {
+                j = 0;
+            }
+            let name = tn.GetThemeName(i, j).map(|s| s.to_string());
+            drop(tn);
+            if let Some(name) = name {
+                self.config.borrow_mut().SetThemeName(ectx, &name);
+            }
             changed = true;
         }
+
+        // cpp:381-398 — sort criterion radio click (rows -330..-335).
+        // DIVERGED: (language-forced) see init-block comment — single group
+        // check_signal in place of C++'s 6 per-radio click_signals. Rust SortCriterion enum
+        // order matches SORT_LABELS: 0 ByName, 1 ByEnding, 2 ByClass,
+        // 3 ByVersion, 4 ByDate, 5 BySize. (C++ branch order in the source
+        // is ByName, ByDate, BySize, ByEnding, ByClass, ByVersion — but
+        // since at most one branch can fire per cycle in C++ as well,
+        // ordering is observably equivalent under exclusive selection.)
+        if ectx.IsSignaled(sort_sig) {
+            if let Some(idx) = self.sort_group.borrow().GetChecked() {
+                let sc_val = match idx {
+                    0 => Some(SortCriterion::ByName),
+                    1 => Some(SortCriterion::ByEnding),
+                    2 => Some(SortCriterion::ByClass),
+                    3 => Some(SortCriterion::ByVersion),
+                    4 => Some(SortCriterion::ByDate),
+                    5 => Some(SortCriterion::BySize),
+                    _ => None,
+                };
+                if let Some(sc_val) = sc_val {
+                    self.config.borrow_mut().SetSortCriterion(ectx, sc_val);
+                }
+            }
+            changed = true;
+        }
+
+        // cpp:399-401 — sort directories first.
+        if ectx.IsSignaled(dirs_first_sig) {
+            let v = self.dirs_first_check.IsChecked();
+            self.config.borrow_mut().SetSortDirectoriesFirst(ectx, v);
+            changed = true;
+        }
+
+        // cpp:402-404 — show hidden files.
+        if ectx.IsSignaled(show_hidden_sig) {
+            let v = self.show_hidden_check.IsChecked();
+            self.config.borrow_mut().SetShowHiddenFiles(ectx, v);
+            changed = true;
+        }
+
+        // cpp:405-413 — name sorting style radios (rows -338..-340).
+        // Same per-group collapse as the sort_group.
+        if ectx.IsSignaled(nss_sig) {
+            if let Some(idx) = self.nss_group.borrow().GetChecked() {
+                let nss = match idx {
+                    0 => Some(NameSortingStyle::PerLocale),
+                    1 => Some(NameSortingStyle::CaseSensitive),
+                    2 => Some(NameSortingStyle::CaseInsensitive),
+                    _ => None,
+                };
+                if let Some(nss) = nss {
+                    self.config.borrow_mut().SetNameSortingStyle(ectx, nss);
+                }
+            }
+            changed = true;
+        }
+
+        // cpp:414-416 — autosave.
+        if ectx.IsSignaled(autosave_sig) {
+            let v = self.autosave_check.IsChecked();
+            self.config.borrow_mut().SetAutosave(ectx, v);
+            changed = true;
+        }
+
+        // cpp:417-419 — save as default.
+        if ectx.IsSignaled(save_sig) {
+            self.config.borrow_mut().SaveAsDefault();
+            changed = true;
+        }
+
+        // cpp:420-433 — select all.
+        if ectx.IsSignaled(select_all_sig) {
+            // DIVERGED: (language-forced) C++ walks ContentView.GetActivePanel()
+            // up the parent chain to find the active emDirPanel. Rust uses the
+            // cached `dir_path` set by the creating DirPanel and accesses
+            // emDirModel directly (see `select_all`).
+            self.select_all(ectx);
+            changed = true;
+        }
+
+        // cpp:434-437 — clear selection (both source and target).
+        if ectx.IsSignaled(clear_sel_sig) {
+            {
+                let mut fm = self.file_man.borrow_mut();
+                fm.ClearSourceSelection(ectx);
+                fm.ClearTargetSelection(ectx);
+            }
+            changed = true;
+        }
+
+        // cpp:438-440 — swap selection.
+        if ectx.IsSignaled(swap_sel_sig) {
+            self.file_man.borrow_mut().SwapSelection(ectx);
+            changed = true;
+        }
+
+        // cpp:441-443 — paths to clipboard.
+        if ectx.IsSignaled(paths_clip_sig) {
+            let _text = self.file_man.borrow().SelectionToClipboard(false, false);
+            changed = true;
+        }
+
+        // cpp:444-446 — names to clipboard.
+        if ectx.IsSignaled(names_clip_sig) {
+            let _text = self.file_man.borrow().SelectionToClipboard(false, true);
+            changed = true;
+        }
+
+        // cpp:533 — commands-tree changed (in C++ this lives on the inner Group;
+        // Rust reacts on the outer panel since the Rust port has no separate
+        // Group sub-engine — see B-009 design doc audit-data correction).
+        if !cmd_sig.is_null() && ectx.IsSignaled(cmd_sig) {
+            changed = true;
+        }
+
         changed
     }
 
@@ -439,184 +681,70 @@ impl PanelBehavior for emFileManControlPanel {
         input_state: &emInputState,
         _ctx: &mut emcore::emEngineCtx::PanelCtx,
     ) -> bool {
-        // D-007 mutator-fire-shape: setters now thread SignalCtx. Delegate
-        // input to widgets first, then if any setter needs to fire, build a
-        // SchedCtx via _ctx.as_sched_ctx().
-        //
-        // Invariant: every `_ctx.as_sched_ctx().expect(...)` below is safe
-        // because production input dispatch always reaches `Input` through
-        // the full PanelCtx path: `EngineCtx::deliver_input` → `PanelTree`
-        // hand-off, which invariably constructs a `PanelCtx` carrying the
-        // engine-id + scheduler reference required by `as_sched_ctx`. The
-        // only way `as_sched_ctx()` can return `None` here is a test that
-        // synthesises a degraded `PanelCtx` without the scheduler reach;
-        // no such test path exists for this panel (see
-        // `tests/typemismatch_b009.rs` — all click-through tests drive
-        // `Input` through the standard harness, which wires SchedCtx).
-        // Extracting a helper to fold these `expect` callsites is blocked
-        // by the borrow-checker: the resulting `&mut SchedCtx` must
-        // co-exist with `self.config.borrow_mut()` / `self.file_man
-        // .borrow_mut()` in each branch, and a helper would have to hold
-        // the SchedCtx across the borrow boundary.
-        // Delegate to sort criterion radios
+        // B-005 (D-006 subscribe-shape): widget Input runs to update widget
+        // state and fire its own check_signal / click_signal via the panel-
+        // scheduler reach baked into `PanelCtx`. The panel's reaction (the
+        // SetXxx / mutator calls) lives in `Cycle` gated on `IsSignaled`,
+        // mirroring C++ emFileManControlPanel::Cycle (cpp:358-447). Input
+        // therefore only delegates; it no longer carries action bodies.
+
         for radio in &mut self.sort_radios {
             if radio.Input(event, state, input_state, _ctx) {
-                if let Some(idx) = self.sort_group.borrow().GetChecked() {
-                    let sc_val = match idx {
-                        0 => SortCriterion::ByName,
-                        1 => SortCriterion::ByEnding,
-                        2 => SortCriterion::ByClass,
-                        3 => SortCriterion::ByVersion,
-                        4 => SortCriterion::ByDate,
-                        5 => SortCriterion::BySize,
-                        _ => return true,
-                    };
-                    let mut sc = _ctx
-                        .as_sched_ctx()
-                        .expect("emFileManControlPanel::Input requires full PanelCtx reach");
-                    self.config.borrow_mut().SetSortCriterion(&mut sc, sc_val);
-                }
                 return true;
             }
         }
-
-        // Delegate to name sorting style radios
         for radio in &mut self.nss_radios {
             if radio.Input(event, state, input_state, _ctx) {
-                if let Some(idx) = self.nss_group.borrow().GetChecked() {
-                    let nss = match idx {
-                        0 => NameSortingStyle::PerLocale,
-                        1 => NameSortingStyle::CaseSensitive,
-                        2 => NameSortingStyle::CaseInsensitive,
-                        _ => return true,
-                    };
-                    let mut sc = _ctx
-                        .as_sched_ctx()
-                        .expect("emFileManControlPanel::Input requires full PanelCtx reach");
-                    self.config.borrow_mut().SetNameSortingStyle(&mut sc, nss);
-                }
                 return true;
             }
         }
-
-        // Delegate to theme style radios
         for radio in &mut self.theme_style_radios {
             if radio.Input(event, state, input_state, _ctx) {
-                let style_idx = self.theme_style_group.borrow().GetChecked();
-                if let Some(style_idx) = style_idx {
-                    let ar_idx = self.theme_ar_group.borrow().GetChecked().unwrap_or(0);
-                    let tn = self.theme_names.borrow();
-                    // Clamp AR index to new style's AR count
-                    let clamped_ar =
-                        ar_idx.min(tn.GetThemeAspectRatioCount(style_idx).saturating_sub(1));
-                    let name = tn.GetThemeName(style_idx, clamped_ar);
-                    drop(tn);
-                    if let Some(name) = name {
-                        {
-                            let mut sc = _ctx.as_sched_ctx().expect(
-                                "emFileManControlPanel::Input requires full PanelCtx reach",
-                            );
-                            self.config.borrow_mut().SetThemeName(&mut sc, &name);
-                        }
-                        self.sync_from_config(_ctx);
-                    }
-                }
                 return true;
             }
         }
-
-        // Delegate to theme AR radios
         for radio in &mut self.theme_ar_radios {
             if radio.Input(event, state, input_state, _ctx) {
-                if let Some(ar_idx) = self.theme_ar_group.borrow().GetChecked() {
-                    let style_idx = self.theme_style_group.borrow().GetChecked().unwrap_or(0);
-                    let tn = self.theme_names.borrow();
-                    if let Some(name) = tn.GetThemeName(style_idx, ar_idx) {
-                        drop(tn);
-                        let mut sc = _ctx
-                            .as_sched_ctx()
-                            .expect("emFileManControlPanel::Input requires full PanelCtx reach");
-                        self.config.borrow_mut().SetThemeName(&mut sc, &name);
-                    }
-                }
                 return true;
             }
         }
-
-        // Delegate to checkboxes
         if self.dirs_first_check.Input(event, state, input_state, _ctx) {
-            let v = self.dirs_first_check.IsChecked();
-            let mut sc = _ctx
-                .as_sched_ctx()
-                .expect("emFileManControlPanel::Input requires full PanelCtx reach");
-            self.config.borrow_mut().SetSortDirectoriesFirst(&mut sc, v);
             return true;
         }
         if self
             .show_hidden_check
             .Input(event, state, input_state, _ctx)
         {
-            let v = self.show_hidden_check.IsChecked();
-            let mut sc = _ctx
-                .as_sched_ctx()
-                .expect("emFileManControlPanel::Input requires full PanelCtx reach");
-            self.config.borrow_mut().SetShowHiddenFiles(&mut sc, v);
             return true;
         }
         if self.autosave_check.Input(event, state, input_state, _ctx) {
-            let v = self.autosave_check.IsChecked();
-            let mut sc = _ctx
-                .as_sched_ctx()
-                .expect("emFileManControlPanel::Input requires full PanelCtx reach");
-            self.config.borrow_mut().SetAutosave(&mut sc, v);
             return true;
         }
-
-        // Delegate to action buttons
         if self.save_button.Input(event, state, input_state, _ctx) {
-            if self.save_button.IsPressed() {
-                // Press tracked; actual save on release via on_click
-            } else {
-                self.config.borrow_mut().SaveAsDefault();
-            }
             return true;
         }
         if self
             .select_all_button
             .Input(event, state, input_state, _ctx)
         {
-            let mut sc = _ctx
-                .as_sched_ctx()
-                .expect("emFileManControlPanel::Input requires full PanelCtx reach");
-            self.select_all(&mut sc);
             return true;
         }
         if self.clear_sel_button.Input(event, state, input_state, _ctx) {
-            let mut sc = _ctx
-                .as_sched_ctx()
-                .expect("emFileManControlPanel::Input requires full PanelCtx reach");
-            self.file_man.borrow_mut().ClearTargetSelection(&mut sc);
             return true;
         }
         if self.swap_sel_button.Input(event, state, input_state, _ctx) {
-            let mut sc = _ctx
-                .as_sched_ctx()
-                .expect("emFileManControlPanel::Input requires full PanelCtx reach");
-            self.file_man.borrow_mut().SwapSelection(&mut sc);
             return true;
         }
         if self
             .paths_clip_button
             .Input(event, state, input_state, _ctx)
         {
-            let _text = self.file_man.borrow().SelectionToClipboard(false, false);
             return true;
         }
         if self
             .names_clip_button
             .Input(event, state, input_state, _ctx)
         {
-            let _text = self.file_man.borrow().SelectionToClipboard(false, true);
             return true;
         }
 
