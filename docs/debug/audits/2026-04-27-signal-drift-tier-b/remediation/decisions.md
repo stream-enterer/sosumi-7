@@ -137,6 +137,8 @@ Stable IDs (`D-###`) are referenced from `inventory-enriched.json` and from `buc
 1. Default shape: first-Cycle init block calling `ectx.connect(...)` for every reactive signal, gated on `!subscribed_init`, then `IsSignaled(...)` checks at top of Cycle, then reactions inline.
 2. If a bucket's row data shows a panel that needs subscriptions live before first natural Cycle, switch that panel to deferred-queue (option B) and document at the bucket level. The working-memory session updates this entry to record any such override.
 
+**Ratified by implementation (post-B-005 merge `91433733`):** three implemented sightings — B-014 (`emVirtualCosmosPanel`), B-009 (`emFileManControlPanel`), B-005 (`emFileManControlPanel` 20 widget signals + `emFileLinkPanel-53` broadcast). The first-Cycle init shape is the canonical remediation pattern for P-002 (no-subscribe-accessor-present); subsequent P-002 buckets should adopt without re-litigation.
+
 **Open questions deferred to per-bucket design:**
 - Whether buckets with consumer rows that subscribe to type-mismatched accessors (P-003 family) need a sub-shape that handles the `u64`-vs-`SignalId` type at the connect call. Currently no — those connects must wait for the accessor flip (D-001) per the cross-bucket prereq.
 

@@ -10,7 +10,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 
 | # | Bucket | Layer | Mechanical-vs-judgement | Rows | Status | Design doc |
 |---|---|---|---|---|---|---|
-| 1 | B-005-typed-subscribe-emfileman | 0 | mechanical-heavy | 21 | designed | [d95d55a7](../../../../superpowers/specs/2026-04-27-B-005-typed-subscribe-emfileman-design.md) |
+| 1 | B-005-typed-subscribe-emfileman | 0 | mechanical-heavy | 21 | merged at 91433733 (d15bbca0..91433733) | [d95d55a7](../../../../superpowers/specs/2026-04-27-B-005-typed-subscribe-emfileman-design.md) |
 | 2 | B-006-typed-subscribe-mainctrl | 0 | mechanical-heavy | 3 | merged at f37adf01 (5963c688..f37adf01) | [a13880c7](../../../../superpowers/specs/2026-04-27-B-006-typed-subscribe-mainctrl-design.md) |
 | 3 | B-007-typed-subscribe-emcore | 0 | mechanical-heavy | 3 | merged at 55d735bc (858524f1..55d735bc; includes the AcquireUpdateSignalModel gap-fix) | [8b220ebb](../../../../superpowers/specs/2026-04-27-B-007-typed-subscribe-emcore-design.md) |
 | 4 | B-008-typed-subscribe-misc | 0 | mechanical-heavy | 3 | designed | [4c4141f1](../../../../superpowers/specs/2026-04-27-B-008-typed-subscribe-misc-design.md) |
@@ -305,3 +305,22 @@ B-011's design called out that all 7 rows are removed by B-003's R-A constructio
   3. **D3.** `emFileManControlPanel::Input` carries 9 `_ctx.as_sched_ctx().expect("…requires full PanelCtx reach")` calls. Comment at site explains why; helper extraction blocked by borrow-checker. Refactor candidate if `PanelCtx` API gains an ergonomic `SchedCtx` accessor.
   4. **D4.** D-008 A3 watch-list (scheduler in `emContext`) — placeholder occupants unchanged: emFileLinkModel, emFileManTheme, emFileManConfig, emFileModel. B-009 did not grow the list.
 - **8 of 19 buckets merged. 11 remain.**
+
+### 2026-04-28 — B-005 merged (parallel wave, batch 4)
+
+- **B-005 → merged at 91433733** (linear history d15bbca0..91433733; 4 commits: d15bbca0 feat-emFileLinkPanel + 02dd7305 feat-emFileManControlPanel + 2d606ac3 tests + 91433733 fixup).
+- **D-001 prereq (B-009) consumed.** B-005's 2 cross-bucket-blocked rows landed cleanly on the post-B-009 combined-form accessors. Combined `GetSelectionSignal(ectx)` / `GetCommandsSignal(ectx)` / `GetChangeSignal(ectx)` calls used at the connect sites; "see D-001" caveats are now historical.
+- **D-006 first-Cycle init shape ratified by implementation.** Three implemented sightings (B-014, B-009, B-005). Codify in pattern-catalog.md §P-002 as the canonical remediation shape for P-002 going forward.
+- Test suite: 2837 → 2860 (+23 click-through tests).
+- **Port-completeness fix (in-scope upscoping):** `emRadioButton` had no `click_signal` field — design doc cited `rb.borrow().check_signal` as if the field existed. Spec-review surfaced this; implementer added `pub click_signal: SignalId` to `emRadioButton` (matches C++ `emButton::GetClickSignal()` inheritance) and propagated per-radio subscribes at all 4 radio groups. This closed a real port gap; no DIVERGED annotation residue. **Cross-crate API change:** `emRadioButton::new` signature gained `cc: &mut impl ConstructCtx` first; emstocks (2 files) and eaglemode tests (6 files) updated. Reviewer-approved.
+- **Acknowledged deviations (reviewer-approved):**
+  - `PanelCtx::invalidate_painting` does not exist — substituted `self.needs_update = true` in `emFileLinkPanel-53` reaction. C++ cpp:90-93 also relies on the child-panel rebuild downstream rather than explicit InvalidatePainting on this branch. Inline equivalence comment added.
+  - Extra `CommandsSignal` Cycle branch (no-op placeholder) — out of B-005's 21 rows but kept per existing B-009 audit-data note. Not a regression.
+- **Follow-on debt (in code, not inventory rows):**
+  1. **D1 (carryover from B-009):** `UpdateButtonStates` (cpp:451-499) still a placeholder beyond `sync_from_config`. Selection_signal / chg_sig branches lack full button-enable/disable refresh. Not regressed by B-005.
+  2. **D2:** `save_button` post-Input requires `SetEnableSwitch(IsUnsaved())`; not wired.
+  3. **D3:** `select_all` Cycle branch uses cached `dir_path` shortcut instead of C++ active-dir-panel walk (pre-existing).
+  4. **D4 (new from B-005):** `sync_from_config_with_construct` introduced for construction-time AR-radio rebuild that needs `ConstructCtx` for per-radio click_signal allocation; the Cycle-time `sync_from_config` skips AR rebuild when `PanelCtx` has no scheduler. Production unaffected; consider unifying in a later sweep.
+  5. **D5 (new from B-005):** `emRadioButton::new` signature changed (cross-crate API change documented above).
+- **Process note:** PM session declined a second spec-review pass after fixup and skipped a separate code-review subagent dispatch. Combined-reviewer template (`COMBINED-REVIEWER-TEMPLATE.md`, committed `dbb54bad`) is now the recommended replacement for the legacy two-subagent flow on subsequent buckets.
+- **9 of 19 buckets merged. 10 remain.**

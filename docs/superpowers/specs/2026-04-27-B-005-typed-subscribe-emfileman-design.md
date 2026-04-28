@@ -1,7 +1,9 @@
 # B-005-typed-subscribe-emfileman — Design
 
 **Date:** 2026-04-27
-**Status:** Approved (brainstorm)
+**Status:** Approved (brainstorm) — **MERGED 2026-04-28 at `91433733`** (linear history `d15bbca0..91433733`; 4 commits).
+
+> **Post-merge note:** Implementation closed a port gap not anticipated by this design — `emRadioButton` had no `click_signal` field; the design's `rb.borrow().check_signal` reference assumed a field that did not exist. The fix added `pub click_signal: SignalId` to `emRadioButton` (matches C++ `emButton::GetClickSignal()` inheritance) and propagated per-radio subscribes at all 4 radio groups. Cross-crate API change: `emRadioButton::new` signature gained `cc: &mut impl ConstructCtx` first; emstocks (2 files) and eaglemode tests (6 files) updated. Reviewer-approved as design-faithful port-completeness work. See work-order.md reconciliation log entry "2026-04-28 — B-005 merged" for full handback details.
 **Bucket:** `docs/debug/audits/2026-04-27-signal-drift-tier-b/remediation/buckets/B-005-typed-subscribe-emfileman.md`
 **Pattern:** P-002-no-subscribe-accessor-present
 **Scope:** emfileman, 21 rows
