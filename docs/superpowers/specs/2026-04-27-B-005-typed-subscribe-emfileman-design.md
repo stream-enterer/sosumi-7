@@ -40,6 +40,8 @@ No other decisions in `decisions.md` (D-002–D-005) apply to B-005.
 
 The implementer marks each affected line with `// see D-001 — accessor returns u64 today; flip pending` and the inventory-enriched.json edge `prereq: D-001` for those rows is wired by the working-memory session.
 
+> **PREREQ SATISFIED post-B-009 merge (2026-04-28, 50994e26):** D-001 has landed. The three flipped accessors (`GetSelectionSignal`, `GetCommandsSignal`, `GetChangeSignal` on `emFileManViewConfig`) now return `SignalId` and use the **combined-form** signature `GetXxxSignal(&self, ectx: &mut impl SignalCtx) -> SignalId` (per D-008 A1 amendment). The "see D-001" annotations and pending-flip caveats below are obsolete; the connect-list compiles unchanged in shape but each call passes `ectx` to the accessor (e.g., `ectx.connect(fmm.GetSelectionSignal(ectx), eid)`). Implementer: drop the caveat comments; use combined-form accessor calls.
+
 This is not a bucket-boundary violation: B-005's rows are exclusively the 21 P-002 sites listed in the bucket sketch. The two P-003 accessors are *consumed* by B-005's design but *fixed* elsewhere.
 
 ## File-by-file plan

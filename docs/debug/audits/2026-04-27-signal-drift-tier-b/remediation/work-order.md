@@ -22,7 +22,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 10 | B-004-no-wire-misc | 0 | balanced | 4 | designed | [3497069d](../../../../superpowers/specs/2026-04-27-B-004-no-wire-misc-design.md) |
 | 11 | B-016-polling-no-acc-emfileman | 0 | balanced | 3 | designed | [d837346b](../../../../superpowers/specs/2026-04-27-B-016-polling-no-acc-emfileman-design.md) |
 | 12 | B-017-polling-no-acc-emstocks | 0 | balanced | 3 | designed | [a27d2faa](../../../../superpowers/specs/2026-04-27-B-017-polling-no-acc-emstocks-design.md) |
-| 13 | B-009-typemismatch-emfileman | 0 | judgement-heavy | 14 | designed | [0a7d7fd3](../../../../superpowers/specs/2026-04-27-B-009-typemismatch-emfileman-design.md) |
+| 13 | B-009-typemismatch-emfileman | 0 | judgement-heavy | 14 | merged at 50994e26 (3b56e00b..50994e26) | [0a7d7fd3](../../../../superpowers/specs/2026-04-27-B-009-typemismatch-emfileman-design.md) |
 | 14 | B-010-rc-shim-emcore | 0 | judgement-heavy | 15 | designed | [09f08710](../../../../superpowers/specs/2026-04-27-B-010-rc-shim-emcore-design.md) |
 | 15 | B-011-rc-shim-autoplay | 0 | judgement-heavy | 7 | merged at eb9427db (absorbed into B-003) | [cf9e1cc4](../../../../superpowers/specs/2026-04-27-B-011-rc-shim-autoplay-design.md) |
 | 16 | B-012-rc-shim-mainctrl | 0 | judgement-heavy | 7 | designed | [bf6e9bd5](../../../../superpowers/specs/2026-04-27-B-012-rc-shim-mainctrl-design.md) |
@@ -286,3 +286,22 @@ B-011's design called out that all 7 rows are removed by B-003's R-A constructio
 - **Inherited debt (not new):** `emAutoplayControlPanel.rs:704` carries a `TODO(B-003-follow-up)` from B-003. Already inventoried in B-003's reconciliation block above; noting here for completeness.
 - **Out-of-scope future work confirmed:** `emVirtualCosmosModel::Cycle()` port (C++ has the model react to `FileUpdateSignalModel->Sig` and call `Reload()` from its own Cycle; Rust eagerly Reloads from Acquire). When that gap closes, the future-caller side of D-007 enumeration kicks in, and the CALLSITE-NOTE on `Reload` is the contract. Not blocking.
 - **7 of 19 buckets merged. 12 remain.**
+
+### 2026-04-28 — B-009 merged (parallel wave, batch 3)
+
+- **B-009 → merged at 50994e26** (linear history 3b56e00b..50994e26; commits: 3b56e00b feat + 301f33fc test + 50994e26 fixup).
+- **3 accessors flipped (D-001):** `emFileManModel::GetSelectionSignal`, `emFileManModel::GetCommandsSignal`, `emFileManViewConfig::GetChangeSignal`. 11 consumers migrated.
+- **D-008 A1 combined-form precedent compounds (third sighting).** B-009 design doc was authored against the pre-amendment split form (`Ensure*Signal` + `Get*Signal`); cluster convention (B-003 + B-014 precedent) was re-applied. Design doc annotated as superseded.
+- **D-007 mutator-signature shape broadened.** Design tables specified `&mut EngineCtx<'_>`; landed shape uses `&mut impl SignalCtx`. Both `EngineCtx` and `SchedCtx` impl `SignalCtx`. Forced because `PanelBehavior::Input` only receives `PanelCtx` (no `EngineCtx`). D-007 amended to record the broader trait-bound shape.
+- **B-005 unblocked.** B-005's hard prereq edge (two rows blocked on D-001's accessor flip) is now satisfied; the `// see D-001` annotations in B-005's design doc are obsolete and have been struck.
+- Test suite: 2823 → 2837 (+14 tests; 13 new in `tests/typemismatch_b009.rs` + 1 inline-test net adjustment).
+- **Acknowledged deviations (reviewer-approved):**
+  - emFileManControlPanel-326 (Selection) and -522 (Commands) reactions are `changed = true` placeholders. C++ `UpdateButtonStates` (cpp:366) and the commands-react block (cpp:533) are not yet ported. Branches wired and observed; comments at the sites flag the gap. Tracked as follow-on debt D1/D2.
+  - Per-row click-through coverage compromise: 3 representative click-throughs (selection / change / commands) + 4 construction-only tests for the other panels, vs. design's per-row suggestion. Risk-acceptable per spec reviewer.
+  - `#[cfg(test)] pub(crate) cached_*_signal()` getter on `emFileManModel` for 3 tests that need to observe the pre-allocation `null` state (combined-form accessor would allocate). Production fields stay private.
+- **Follow-on debt (in code, not inventory rows):**
+  1. **D1.** Port `UpdateButtonStates` and replace `changed = true` placeholder at `crates/emfileman/src/emFileManControlPanel.rs:324-330` (C++ `emFileManControlPanel.cpp:366`).
+  2. **D2.** Port the commands-react block and replace `changed = true` placeholder at `crates/emfileman/src/emFileManControlPanel.rs:337-342` (C++ `emFileManControlPanel.cpp:533`).
+  3. **D3.** `emFileManControlPanel::Input` carries 9 `_ctx.as_sched_ctx().expect("…requires full PanelCtx reach")` calls. Comment at site explains why; helper extraction blocked by borrow-checker. Refactor candidate if `PanelCtx` API gains an ergonomic `SchedCtx` accessor.
+  4. **D4.** D-008 A3 watch-list (scheduler in `emContext`) — placeholder occupants unchanged: emFileLinkModel, emFileManTheme, emFileManConfig, emFileModel. B-009 did not grow the list.
+- **8 of 19 buckets merged. 11 remain.**

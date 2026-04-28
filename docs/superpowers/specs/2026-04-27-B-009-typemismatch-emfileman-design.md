@@ -103,6 +103,13 @@ No row reassignment between B-005 and B-009.
 
 ## File-by-file plan
 
+> **SUPERSEDED post-merge (2026-04-28, 50994e26):** Two API shapes below are stale; cluster convention applies to all future "no-acc" / D-001-flip designs.
+>
+> 1. **D-008 A1 accessor form: split → combined.** All `Ensure*Signal(&self, ectx) -> SignalId` + `Get*Signal(&self) -> SignalId` pairs below were implemented as a **single combined accessor** `Get*Signal(&self, ectx: &mut impl SignalCtx) -> SignalId` (folds lazy-alloc into the call). Per D-008 A1 amendment from B-003 merge `eb9427db`; re-applied at B-014 and B-009. Future bucket designers: write the combined form directly.
+> 2. **D-007 mutator signature: `&mut EngineCtx<'_>` → `&mut impl SignalCtx`.** All `(&mut self, ectx: &mut EngineCtx<'_>, …)` signatures below were implemented with the broader trait bound `&mut impl SignalCtx`. Forced because `PanelBehavior::Input` only receives `PanelCtx` (no `EngineCtx`); both `EngineCtx` and `SchedCtx` impl `SignalCtx`. Future bucket designers: write the trait bound directly.
+>
+> Blocks below preserved as historical record.
+
 ### `crates/emfileman/src/emFileManModel.rs` — 2 accessor rows + mutator threading
 
 Replace counter field with signal field:

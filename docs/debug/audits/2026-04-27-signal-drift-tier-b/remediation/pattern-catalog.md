@@ -50,6 +50,7 @@ Total = 178 actionable + 9 cleanup = 187 rows.
 **Mechanical-vs-judgement:** judgement-heavy at the accessor (decide D-001), then mechanical at consumers.
 **Row count:** 14 (11 drifted + 3 gap-blocked).
 **Cited decision:** D-001-typemismatch-accessor-policy.
+**Status (post-B-009 merge 50994e26):** closed. B-009 flipped 3 of the 4 distinct accessors (`GetSelectionSignal`, `GetCommandsSignal`, `GetChangeSignal` on `emFileManViewConfig`) and migrated 11 consumers. The 4th nominal accessor (`emFileManViewConfig::GetChangeSignal` listed twice in the cluster row) is the same accessor; no separate flip needed.
 
 ## P-004-rc-shim-instead-of-signal
 
