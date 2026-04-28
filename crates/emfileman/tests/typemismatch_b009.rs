@@ -15,7 +15,6 @@
 //! D-007 (mutator-fire ectx-threading), D-008 A1 combined-form (B-014
 //! precedent in `emVirtualCosmosModel::GetChangeSignal`).
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use emFileMan::emDirEntry::emDirEntry;
@@ -31,7 +30,7 @@ use emFileMan::emFileManViewConfig::emFileManViewConfig;
 use emcore::emEngine::Priority;
 use emcore::emPanel::PanelBehavior;
 use emcore::emPanelScope::PanelScope;
-use emcore::emPanelTree::{PanelId, PanelTree};
+use emcore::emPanelTree::PanelTree;
 use emcore::test_view_harness::TestViewHarness;
 use slotmap::Key as _;
 
@@ -444,10 +443,3 @@ fn construction_file_link_panel_first_cycle_subscribes() {
     h.scheduler.remove_engine(dummy_eid);
     drain_all_engines(&mut h);
 }
-
-// Suppress "unused" warning on PanelId import that is referenced only via
-// PanelTree::create_root return value flow.
-#[allow(dead_code)]
-fn _unused_panel_id(_: PanelId) {}
-#[allow(dead_code)]
-fn _unused_refcell<T>(_: RefCell<T>) {}

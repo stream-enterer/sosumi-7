@@ -174,8 +174,9 @@ impl PanelBehavior for emDirEntryAltPanel {
             self.subscribed_init = true;
         }
 
-        let sel_sig = self.file_man.borrow().selection_signal.get();
-        let chg_sig = self.config.borrow().change_signal.get();
+        // Re-call combined-form accessors (B-014 precedent): idempotent.
+        let sel_sig = self.file_man.borrow().GetSelectionSignal(ectx);
+        let chg_sig = self.config.borrow().GetChangeSignal(ectx);
         let mut stay_awake = false;
         if !sel_sig.is_null() && ectx.IsSignaled(sel_sig) {
             // Mirrors C++ emDirEntryAltPanel.cpp:85 — selection-driven repaint.

@@ -516,9 +516,9 @@ pub struct emFileManModel {
     /// Port of C++ `emFileManModel::SelectionSignal` (emFileMan/emFileManModel.h).
     /// Lazily allocated on first subscribe per D-008-signal-allocation-shape (A1
     /// combined form, B-014 precedent on `emVirtualCosmosModel::GetChangeSignal`).
-    pub(crate) selection_signal: Cell<SignalId>,
+    selection_signal: Cell<SignalId>,
     /// Port of C++ `emFileManModel::CommandsSignal`. Lazy-alloc D-008 A1.
-    pub(crate) commands_signal: Cell<SignalId>,
+    commands_signal: Cell<SignalId>,
     ipc_server_name: String,
 }
 
@@ -567,6 +567,15 @@ impl emFileManModel {
         } else {
             s
         }
+    }
+
+    /// Test-only cached read of the `SelectionSignal` cell without lazy
+    /// allocation. Production code routes through `GetSelectionSignal` (the
+    /// combined-form accessor); this getter exists so tests can observe the
+    /// pre-allocation null state.
+    #[cfg(test)]
+    pub(crate) fn cached_selection_signal(&self) -> SignalId {
+        self.selection_signal.get()
     }
 
     /// Port of C++ `emFileManModel::GetCommandsSignal()`.
@@ -1176,7 +1185,7 @@ mod model_tests {
             let ctx = sc.root_context.clone();
             emFileManModel::Acquire(&ctx)
         });
-        assert!(model.borrow().selection_signal.get().is_null());
+        assert!(model.borrow().cached_selection_signal().is_null());
         let sig = h.with(|sc| model.borrow().GetSelectionSignal(sc));
         assert!(!sig.is_null());
         // Idempotent: returns same id.
@@ -1191,7 +1200,7 @@ mod model_tests {
         let ctx = emcore::emContext::emContext::NewRoot();
         let model = emFileManModel::Acquire(&ctx);
         // No GetSelectionSignal called yet → selection_signal is null.
-        assert!(model.borrow().selection_signal.get().is_null());
+        assert!(model.borrow().cached_selection_signal().is_null());
         // Build a one-shot harness, mutate, and drop. The harness's scheduler
         // never sees a fire because fire_selection_signal short-circuits on null.
         let mut h = emcore::test_view_harness::TestSched::new();

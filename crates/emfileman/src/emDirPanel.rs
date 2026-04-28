@@ -332,7 +332,8 @@ impl PanelBehavior for emDirPanel {
         }
 
         // Mirrors C++ emDirPanel.cpp:78 — config-driven force-rebuild.
-        let chg_sig = self.config.borrow().change_signal.get();
+        // Re-call combined-form accessor (B-014 precedent): idempotent.
+        let chg_sig = self.config.borrow().GetChangeSignal(ectx);
         if !chg_sig.is_null() && ectx.IsSignaled(chg_sig) {
             self.child_count = 0;
         }

@@ -125,7 +125,8 @@ impl PanelBehavior for emDirStatPanel {
         }
 
         // Mirrors C++ emDirStatPanel.cpp:61 — config-driven invalidation.
-        let chg_sig = self.config.borrow().change_signal.get();
+        // Re-call combined-form accessor (B-014 precedent): idempotent.
+        let chg_sig = self.config.borrow().GetChangeSignal(ectx);
         if !chg_sig.is_null() && ectx.IsSignaled(chg_sig) {
             // C++ invalidates and repaints; Rust reset stats so update_statistics
             // re-derives from a fresh entries snapshot on next set_entries.

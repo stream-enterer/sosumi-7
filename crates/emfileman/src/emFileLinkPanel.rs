@@ -191,7 +191,8 @@ impl PanelBehavior for emFileLinkPanel {
         }
 
         // Mirrors C++ emFileLinkPanel.cpp:95 — config-driven invalidation/repaint.
-        let chg_sig = self.config.borrow().change_signal.get();
+        // Re-call combined-form accessor (B-014 precedent): idempotent.
+        let chg_sig = self.config.borrow().GetChangeSignal(ectx);
         if !chg_sig.is_null() && ectx.IsSignaled(chg_sig) {
             self.needs_update = true;
         }

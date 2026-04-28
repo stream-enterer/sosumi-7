@@ -658,7 +658,8 @@ impl PanelBehavior for emFileManSelInfoPanel {
         }
 
         // Mirrors C++ emFileManSelInfoPanel.cpp:54 — selection-driven reset.
-        let sel_sig = self.file_man.borrow().selection_signal.get();
+        // Re-call the combined-form accessor (B-014 precedent): idempotent.
+        let sel_sig = self.file_man.borrow().GetSelectionSignal(ectx);
         if !sel_sig.is_null() && ectx.IsSignaled(sel_sig) {
             self.reset_details();
         }
@@ -896,7 +897,7 @@ mod tests {
         let ctx = h.with(|sc| Rc::clone(sc.root_context));
         let panel = emFileManSelInfoPanel::new(ctx);
         assert!(!panel.subscribed_init);
-        assert!(panel.file_man.borrow().selection_signal.get().is_null());
+        assert!(panel.file_man.borrow().cached_selection_signal().is_null());
 
         // Mutator before any subscriber: clean no-op fire (D-008 A1).
         h.with(|sc| panel.file_man.borrow_mut().SelectAsTarget(sc, "/tmp"));

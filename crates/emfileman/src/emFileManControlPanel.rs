@@ -316,9 +316,12 @@ impl PanelBehavior for emFileManControlPanel {
         }
 
         // C++ source order: cpp:366 selection, cpp:367 change, cpp:533 commands.
-        let sel_sig = self.file_man.borrow().selection_signal.get();
-        let chg_sig = self.config.borrow().change_signal.get();
-        let cmd_sig = self.file_man.borrow().commands_signal.get();
+        // Re-call the combined-form accessors (B-014 precedent,
+        // emVirtualCosmos.rs:874): idempotent — cells are non-null after
+        // the init block above, so the second call is a cheap field read.
+        let sel_sig = self.file_man.borrow().GetSelectionSignal(ectx);
+        let chg_sig = self.config.borrow().GetChangeSignal(ectx);
+        let cmd_sig = self.file_man.borrow().GetCommandsSignal(ectx);
         let mut changed = false;
 
         if !sel_sig.is_null() && ectx.IsSignaled(sel_sig) {
@@ -439,6 +442,22 @@ impl PanelBehavior for emFileManControlPanel {
         // D-007 mutator-fire-shape: setters now thread SignalCtx. Delegate
         // input to widgets first, then if any setter needs to fire, build a
         // SchedCtx via _ctx.as_sched_ctx().
+        //
+        // Invariant: every `_ctx.as_sched_ctx().expect(...)` below is safe
+        // because production input dispatch always reaches `Input` through
+        // the full PanelCtx path: `EngineCtx::deliver_input` → `PanelTree`
+        // hand-off, which invariably constructs a `PanelCtx` carrying the
+        // engine-id + scheduler reference required by `as_sched_ctx`. The
+        // only way `as_sched_ctx()` can return `None` here is a test that
+        // synthesises a degraded `PanelCtx` without the scheduler reach;
+        // no such test path exists for this panel (see
+        // `tests/typemismatch_b009.rs` — all click-through tests drive
+        // `Input` through the standard harness, which wires SchedCtx).
+        // Extracting a helper to fold these `expect` callsites is blocked
+        // by the borrow-checker: the resulting `&mut SchedCtx` must
+        // co-exist with `self.config.borrow_mut()` / `self.file_man
+        // .borrow_mut()` in each branch, and a helper would have to hold
+        // the SchedCtx across the borrow boundary.
         // Delegate to sort criterion radios
         for radio in &mut self.sort_radios {
             if radio.Input(event, state, input_state, _ctx) {

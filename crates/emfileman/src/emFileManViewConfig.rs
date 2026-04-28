@@ -362,7 +362,7 @@ pub struct emFileManViewConfig {
     autosave: bool,
     /// Port of C++ `emFileManViewConfig::ChangeSignal`. Lazy-alloc D-008 A1
     /// combined-form (B-014 precedent).
-    pub(crate) change_signal: Cell<SignalId>,
+    change_signal: Cell<SignalId>,
     // Track initial values for IsUnsaved
     initial_sort_criterion: SortCriterion,
     initial_name_sorting_style: NameSortingStyle,
