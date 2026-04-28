@@ -13,7 +13,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 1 | B-005-typed-subscribe-emfileman | 0 | mechanical-heavy | 21 | merged at 91433733 (d15bbca0..91433733) | [d95d55a7](../../../../superpowers/specs/2026-04-27-B-005-typed-subscribe-emfileman-design.md) |
 | 2 | B-006-typed-subscribe-mainctrl | 0 | mechanical-heavy | 3 | merged at f37adf01 (5963c688..f37adf01) | [a13880c7](../../../../superpowers/specs/2026-04-27-B-006-typed-subscribe-mainctrl-design.md) |
 | 3 | B-007-typed-subscribe-emcore | 0 | mechanical-heavy | 3 | merged at 55d735bc (858524f1..55d735bc; includes the AcquireUpdateSignalModel gap-fix) | [8b220ebb](../../../../superpowers/specs/2026-04-27-B-007-typed-subscribe-emcore-design.md) |
-| 4 | B-008-typed-subscribe-misc | 0 | mechanical-heavy | 3 | designed | [4c4141f1](../../../../superpowers/specs/2026-04-27-B-008-typed-subscribe-misc-design.md) |
+| 4 | B-008-typed-subscribe-misc | 0 | mechanical-heavy | 3 | merged at 133de22e (c68360ef..133de22e) | [4c4141f1](../../../../superpowers/specs/2026-04-27-B-008-typed-subscribe-misc-design.md) |
 | 5 | B-015-polling-emcore-plus | 0 | mechanical-heavy | 10 | designed | [b521b3f6](../../../../superpowers/specs/2026-04-27-B-015-polling-emcore-plus-design.md) |
 | 6 | B-019-stale-annotations | 0 | mechanical-heavy | 9 | merged at 41599129 | [e7129430](../../../../superpowers/specs/2026-04-27-B-019-stale-annotations-design.md) |
 | 7 | B-001-no-wire-emstocks | 0 | balanced | 71 | designed | [456fa5f7](../../../../superpowers/specs/2026-04-27-B-001-no-wire-emstocks-design.md) |
@@ -340,3 +340,22 @@ Combined-reviewer template dispatched against `d15bbca0..91433733`. Result: **AP
   - **D9.** Q3 (mutator effect) coverage gap on save_button (-342) / select_all (-343) / paths_clip (-346) / names_clip (-347) tests — currently smoke-only `does_not_panic`, verify Q1+Q2 (subscribed + Cycle observes) but not Q3 (actual side-effect: file write, clipboard contents). Test-coverage debt.
   - **D10.** `emFileManControlPanel.rs:765-826` — `Input()` is 14 `if widget.Input(...) { return true; }` blocks; collapse via slice/loop helper. Pre-existing-style but worth folding.
 - **No fix-forward action.** All findings disposition is accept-as-known-debt. No follow-up commit.
+
+### 2026-04-28 — B-008 merged (parallel wave, batch 5)
+
+- **B-008 → merged at 133de22e** (linear history c68360ef..133de22e). 3 rows: emMainPanel-67 (EOI subscribe), emMainPanel-69 (WindowFlags subscribe), emVirtualCosmos-104 (FileUpdate broadcast subscribe).
+- **Cross-bucket prereq (B-007 → B-008 row 104) honored.** B-007's `emFileModel::AcquireUpdateSignalModel` re-pointing landed first; row 104's broadcast subscribe consumed the post-B-007 shape cleanly.
+- **D-006 first-Cycle init shape compounded** (fourth implemented sighting after B-014/B-009/B-005). emMainPanel rows -67/-69 added a single combined `subscribed_init` block in `emMainPanel::Cycle`.
+- Test suite: 2860 → 2865 (+5 tests; 3 inline click-through in emMainPanel/emVirtualCosmos + 2 accessor-stability tests in `crates/emmain/tests/typed_subscribe_b008.rs`).
+- **Cost-pilot signal (EP-vs-SDD).** B-008 ran via `/executing-plans` in a separate session (vs. the subagent-driven-development flow used on prior buckets). Implementer reports "felt 30–50% lighter" for this bucket size — single combined-reviewer dispatch at the end was the only subagent; no per-task fresh-subagent context-prime cost; no cargo-error iterations. Caveat: bucket was uniform-shape mechanical-heavy (3 well-trodden D-006 wires). Larger or judgement-heavy buckets may not see the same savings as parent-session context grows past usefulness. Worth re-evaluating on B-001/B-010/B-012.
+- **Acknowledged deviations (cluster-convention disposition, reviewer-approved):**
+  - **Row -104 hosting choice (implementer's pick).** Design left this open (open-question 4): a separate `VirtualCosmosUpdateEngine` driving engine vs. panel-side first-Cycle subscribe in `emVirtualCosmosPanel::Cycle` alongside the existing B-014 ChangeSignal subscribe. Implementation chose panel-side. Rationale: avoids threading a `ConstructCtx` through `emVirtualCosmosModel::Acquire`, and the panel is the model's sole consumer. Observable contract preserved (broadcast wake → `Reload()` → `ChangeSignal` fire → `update_children`).
+  - **Row -104 synthesized ChangeSignal fire.** After `Reload()`, the Cycle code synthesizes `ectx.fire(chg)` so the existing ChangeSignal-driven `update_children` runs in the same time slice. Mirrors C++ `Signal(ChangeSignal)` inside `Reload`.
+- **Promotion candidates (watch for next sighting):**
+  - **Panel-side broadcast subscribe for non-engine emModel.** First sighting in this cluster (B-008 row -104, where `emVirtualCosmosModel` is not an `emEngine` and so cannot host its own subscribe — the panel hosts a `Reload() + fire(ChangeSignal)` block in *its* Cycle, mirroring C++ model::Cycle's behavior on the panel side). Promotion candidate for a D-### "panel-hosted model-Cycle proxy" pattern if it recurs.
+- **New debt items (D11–D13, accept-as-known-debt; not blocking subsequent buckets):**
+  - **D11.** Test-scaffold extract-helper debt — three click-through tests across `emMainPanel.rs` and `emVirtualCosmos.rs` duplicate ~60 lines of `EngineCtx + tree + scheduler` stub setup. Same shape recurring across B-005/B-006/B-007/B-008. Candidate for a shared `mock_engine_ctx_for_panel` test helper (compounds with B-005 D6).
+  - **D12.** `crates/emmain/tests/typed_subscribe_b008.rs::row_67_eoi_signal_field_addressable` is compile-time only (inner `_shape_check` fn). Behavioral coverage lives in inline `b008_row_67_eoi_signal_finalises_slider_hide`. Either remove the compile-time test or upgrade to a runtime assertion.
+  - **D13.** Out-of-scope cross-edge confirmed: `emMainPanel-68` (`SliderTimer.GetSignal()`) is still polled — B-015's territory. B-008 left the polling code untouched per design.
+- **Process note:** Combined-reviewer template ran end-of-bucket and approved cleanly with the deviations above. No fixup commit needed.
+- **10 of 19 buckets merged. 9 remain.**

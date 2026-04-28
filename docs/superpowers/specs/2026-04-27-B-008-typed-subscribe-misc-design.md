@@ -1,7 +1,7 @@
 # B-008-typed-subscribe-misc — Design
 
 **Date:** 2026-04-27
-**Status:** Approved (brainstorm)
+**Status:** Merged at `133de22e` (2026-04-28; range `c68360ef..133de22e`). Combined-reviewer APPROVED end-of-bucket; +5 tests (2860 → 2865). **Implementer pick on row -104:** panel-side first-Cycle subscribe in `emVirtualCosmosPanel::Cycle` (option `(b)` from open question 4) rather than a standalone `VirtualCosmosUpdateEngine`. Observable contract preserved (broadcast wake → `Reload()` → synthesize `ChangeSignal` fire → `update_children`). The success-criterion that referenced `VirtualCosmosUpdateEngine` is satisfied by the panel-side equivalent.
 **Bucket:** `docs/debug/audits/2026-04-27-signal-drift-tier-b/remediation/buckets/B-008-typed-subscribe-misc.md`
 **Pattern:** P-002-no-subscribe-accessor-present
 **Scope:** misc (emMainPanel, emVirtualCosmos), 3 rows

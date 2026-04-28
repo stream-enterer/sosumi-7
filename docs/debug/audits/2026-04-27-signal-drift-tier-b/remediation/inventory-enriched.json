@@ -2795,7 +2795,7 @@
       "signal_expression": "GetControlView().GetEOISignal()",
       "signal_kind": "model-state",
       "rust_file": "crates/emmain/src/emMainPanel.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "absent",
         "file": "crates/emmain/src/emMainPanel.rs",
@@ -2814,6 +2814,11 @@
         "decision_ids": [],
         "scope_key": "emmain:emMainPanel",
         "prereq_ids": []
+      },
+      "reconciliation": {
+        "date": "2026-04-28",
+        "source": "B-008 merge 133de22e",
+        "change": "drifted -> faithful; D-006 first-Cycle init landed in emMainPanel::Cycle (subscribed_init block + EOISignal IsSignaled reaction calling ZoomOut + content-panel Activate, mirroring C++ cpp:67 + cpp:103)"
       }
     },
     {
@@ -2860,7 +2865,7 @@
       "signal_expression": "GetWindow()->GetWindowFlagsSignal()",
       "signal_kind": "model-state",
       "rust_file": "crates/emmain/src/emMainPanel.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "absent",
         "file": "crates/emmain/src/emMainPanel.rs",
@@ -2881,9 +2886,9 @@
         "prereq_ids": []
       },
       "reconciliation": {
-        "date": "2026-04-27",
-        "source": "B-008 brainstorm 4c4141f1",
-        "change": "gap-blocked -> drifted; GetWindowFlagsSignal exists at crates/emcore/src/emWindow.rs:1279 (same audit-time stale tag as emMainControlPanel-218)"
+        "date": "2026-04-28",
+        "source": "B-008 merge 133de22e",
+        "change": "gap-blocked -> drifted (B-008 brainstorm 4c4141f1; GetWindowFlagsSignal exists at crates/emcore/src/emWindow.rs:1279, same audit-time stale tag as emMainControlPanel-218); drifted -> faithful (B-008 merge 133de22e; D-006 first-Cycle init landed in emMainPanel::Cycle with WindowFlagsSignal IsSignaled reaction calling UpdateFullscreen + UpdateSliderHiding(false), mirroring C++ cpp:69 + cpp:108-110)"
       }
     },
     {
@@ -2893,7 +2898,7 @@
       "signal_expression": "FileUpdateSignalModel->Sig",
       "signal_kind": "model-update-broadcast",
       "rust_file": "crates/emmain/src/emVirtualCosmos.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "absent",
         "file": "crates/emmain/src/emVirtualCosmos.rs",
@@ -2916,9 +2921,9 @@
         ]
       },
       "reconciliation": {
-        "date": "2026-04-27",
-        "source": "B-008 brainstorm 4c4141f1",
-        "note": "cross-bucket prereq: depends on B-007 step 1 re-pointing emFileModel::AcquireUpdateSignalModel to App::file_update_signal"
+        "date": "2026-04-28",
+        "source": "B-008 merge 133de22e",
+        "change": "drifted -> faithful (B-008 merge 133de22e; cross-bucket prereq B-007 consumed cleanly — emFileModel::AcquireUpdateSignalModel re-points to App::file_update_signal). Implementer pick: panel-side first-Cycle subscribe in emVirtualCosmosPanel::Cycle (alongside the existing B-014 ChangeSignal subscribe) rather than a separate VirtualCosmosUpdateEngine; observable contract preserved (broadcast wake -> Reload() -> ChangeSignal fire -> update_children, mirroring C++ model::Cycle Signal(ChangeSignal)). New-pattern watch: panel-side broadcast subscribe for non-engine emModel."
       }
     },
     {

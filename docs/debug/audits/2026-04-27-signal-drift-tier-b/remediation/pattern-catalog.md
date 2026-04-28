@@ -41,7 +41,9 @@ Total = 178 actionable + 9 cleanup = 187 rows.
 **Accessor-status:** present
 **Mechanical-vs-judgement:** mechanical-heavy — the accessor is ready, just connect.
 **Row count:** 30 (27 drifted + 3 gap-blocked).
-**Canonical remediation pattern:** D-006 first-Cycle init (ratified by implementation post-B-005 merge `91433733`; three implemented sightings: B-014, B-009, B-005). B-005 (`emFileManControlPanel` 20 widget subscribes + `emFileLinkPanel-53`) is the canonical reference; subsequent P-002 buckets should adopt without re-litigating the wiring shape.
+**Canonical remediation pattern:** D-006 first-Cycle init (ratified by implementation post-B-005 merge `91433733`; four implemented sightings: B-014, B-009, B-005, B-008). B-005 (`emFileManControlPanel` 20 widget subscribes + `emFileLinkPanel-53`) is the canonical reference; subsequent P-002 buckets should adopt without re-litigating the wiring shape.
+
+**Promotion-candidate variant (B-008 first sighting, watch for next):** *Panel-side broadcast subscribe for non-engine emModel.* When the C++ subscribe lives in `Model::Cycle()` but the Rust model is not an `emEngine` (no Cycle on the model), host the subscribe in the model's panel `Cycle` instead — broadcast wake → `Model.Reload()` → synthesize `ChangeSignal` fire so the existing change-driven panel update runs in the same time slice. First sighted at `emVirtualCosmos-104` (B-008 merge `133de22e`); promote to a D-### pattern after a second sighting.
 
 ## P-003-typemismatch-blocks-subscribe
 
