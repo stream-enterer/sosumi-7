@@ -76,7 +76,11 @@ This is the second audit-classification correction in the rc-shim family (cf. B-
 
 **Fix (rule-1 convert per D-002, wired per D-006/D-007/D-008):**
 
-**Step A — accessor + lazy allocation (D-008 A1).** Add to `emVirtualCosmosModel`:
+**Step A — accessor + lazy allocation (D-008 A1).**
+
+> **SUPERSEDED post-merge (2026-04-28, c2871547):** The split form below (`GetChangeSignal()` + `EnsureChangeSignal(ectx)`) was written against the pre-amendment draft of D-008 A1. Cluster convention (D-008 A1 amendment from B-003 merge `eb9427db`) prescribes the **combined form** `GetChangeSignal(&self, ectx: &mut EngineCtx<'_>) -> SignalId` — a single accessor that folds the lazy-alloc check into the call. B-014 implementation followed combined form per cluster convention; reviewer-approved. Future "no-acc" bucket designers: use combined form directly. Block below preserved as historical record.
+
+Add to `emVirtualCosmosModel`:
 ```rust
 // Field on the struct:
 change_signal: Cell<SignalId>,  // SignalId::null() until first subscriber

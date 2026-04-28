@@ -27,7 +27,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 15 | B-011-rc-shim-autoplay | 0 | judgement-heavy | 7 | merged at eb9427db (absorbed into B-003) | [cf9e1cc4](../../../../superpowers/specs/2026-04-27-B-011-rc-shim-autoplay-design.md) |
 | 16 | B-012-rc-shim-mainctrl | 0 | judgement-heavy | 7 | designed | [bf6e9bd5](../../../../superpowers/specs/2026-04-27-B-012-rc-shim-mainctrl-design.md) |
 | 17 | B-013-dialog-cells-emstocks | 0 | judgement-heavy | 4 | designed | [ec317565](../../../../superpowers/specs/2026-04-27-B-013-dialog-cells-emstocks-design.md) |
-| 18 | B-014-rc-shim-no-acc-misc | 0 | judgement-heavy | 2 | designed | [d7d964d4](../../../../superpowers/specs/2026-04-27-B-014-rc-shim-no-acc-misc-design.md) |
+| 18 | B-014-rc-shim-no-acc-misc | 0 | judgement-heavy | 2 | merged at c2871547 (c89db09b..c2871547) | [d7d964d4](../../../../superpowers/specs/2026-04-27-B-014-rc-shim-no-acc-misc-design.md) |
 | 19 | B-018-fileDialog-singleton | 0 | judgement-heavy | 1 | merged (false positive — no implementation; reclassification at 683153f1) | [04059bac](../../../../superpowers/specs/2026-04-27-B-018-fileDialog-singleton-design.md) |
 
 Total rows: 187 (178 actionable + 9 cleanup).
@@ -275,3 +275,14 @@ B-011's design called out that all 7 rows are removed by B-003's R-A constructio
 - Test suite: 2812 → 2821 (+9 tests across both buckets).
 - **B-007 merge unblocks B-008** (next wave can pick it up).
 - **6 of 19 buckets merged. 13 remain.**
+
+### 2026-04-28 — B-014 merged (parallel wave, batch 2)
+
+- **B-014 → merged at c2871547** (linear history c89db09b..c2871547; commits: c89db09b feat + c2871547 fixup).
+- **Effective row count: 1.** emAutoplay-1172 (Row 2) was discovered to be already absorbed by the B-003 merge — `AutoplayFlags` already dropped, `AutoplayCheckButtonPanel` already holds `Rc<RefCell<emAutoplayViewModel>>` and reads `model.borrow().GetItemProgress()` at paint, file-head DIVERGED block already replaced with benign migration prose. No B-014 commit touched emAutoplay. Spec-reviewer independently verified observable equivalence. emVirtualCosmos-575 (Row 1) carried the implementation: rule-1 convert per D-006 + D-007 + D-008.
+- **D-008 A1 combined-form precedent compounds.** B-014 design doc §2.2 Step A had specified the pre-amendment split form (`GetChangeSignal()` + `EnsureChangeSignal(ectx)`); cluster convention (D-008 A1 amendment from B-003 merge `eb9427db`) prescribes combined `GetChangeSignal(&self, ectx) -> SignalId`. Implementation followed combined form per cluster convention; reviewer-approved. **B-014 design doc §2.2 Step A annotated as superseded** to prevent future bucket designers from re-deriving the split form.
+- **D-008 entry amended** with B-014 added as second combined-form precedent (B-003, B-014).
+- Test suite: 2821 → 2823 (+2 tests in B-014).
+- **Inherited debt (not new):** `emAutoplayControlPanel.rs:704` carries a `TODO(B-003-follow-up)` from B-003. Already inventoried in B-003's reconciliation block above; noting here for completeness.
+- **Out-of-scope future work confirmed:** `emVirtualCosmosModel::Cycle()` port (C++ has the model react to `FileUpdateSignalModel->Sig` and call `Reload()` from its own Cycle; Rust eagerly Reloads from Acquire). When that gap closes, the future-caller side of D-007 enumeration kicks in, and the CALLSITE-NOTE on `Reload` is the contract. Not blocking.
+- **7 of 19 buckets merged. 12 remain.**

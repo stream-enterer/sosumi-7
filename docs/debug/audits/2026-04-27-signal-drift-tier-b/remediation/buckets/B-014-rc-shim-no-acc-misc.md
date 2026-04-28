@@ -7,6 +7,14 @@
 **Cited decisions:** D-002-rc-shim-policy §1 R-A (emAutoplay-1172 — drop AutoplayFlags, ratified during B-003), D-002 rule 1 (emVirtualCosmos-575 — convert), D-006-subscribe-shape (emVirtualCosmos panel wiring), D-007-mutator-fire-shape + D-008-signal-allocation-shape (emVirtualCosmos accessor + Reload fire).
 **Prereq buckets:** none.
 
+**Status:** merged at `c2871547` (linear history `c89db09b..c2871547`; 2026-04-28).
+
+**Post-merge notes (2026-04-28):**
+- **Effective row count: 1.** emAutoplay-1172 (Row 2) was discovered already absorbed by the B-003 merge — `AutoplayFlags` already dropped, `AutoplayCheckButtonPanel` already holds `Rc<RefCell<emAutoplayViewModel>>` with `GetItemProgress()` reads in Paint, file-head DIVERGED block already replaced. No B-014 commit touched emAutoplay; spec-reviewer verified observable equivalence.
+- **emVirtualCosmos-575 implemented per design** with one deviation: D-008 A1 accessor shape used the cluster's combined form `GetChangeSignal(&self, ectx) -> SignalId` rather than the design doc's split `GetChangeSignal()` + `EnsureChangeSignal(ectx)`. Cluster convention amendment from B-003 merge `eb9427db` (re-applied here) supersedes the design doc. Reviewer-approved.
+- **Test suite:** 2821 → 2823 (+2 B-014 tests).
+- **Design doc §2.2 Step A annotated as superseded** to prevent future "no-acc" bucket designers from re-deriving the split form.
+
 **Reconciliation amendments (2026-04-27, post-design d7d964d4):**
 - **emVirtualCosmos-575 reclassified:** `pattern_id P-005 → P-001`, `evidence_kind rc_cell_shim → absent`. Audit misread `model: Rc<RefCell<emVirtualCosmosModel>>` (routine model handle, analogous to C++ `emRef<>`) as a click-handler shim. Actual mechanism is "wrong trigger" (`NF_VIEWING_CHANGED` notice instead of `ChangeSignal`). Fix shape unchanged; audit truth cleaner. Row stays in B-014; boundaries frozen.
 - **emAutoplay-1172 disposition:** apply D-002 §1 R-A by precedent (already ratified during B-003). Drop `AutoplayFlags` shim; give `AutoplayCheckButtonPanel` `Rc<RefCell<emAutoplayViewModel>>`; read `GetItemProgress()` in `Paint`. No accessor added, no subscribe added.
