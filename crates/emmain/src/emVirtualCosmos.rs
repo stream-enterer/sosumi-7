@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use emcore::emColor::emColor;
 use emcore::emContext::emContext;
-use emcore::emEngineCtx::{EngineCtx, PanelCtx};
+use emcore::emEngineCtx::{PanelCtx, SignalCtx};
 use emcore::emFpPlugin::{FileStatMode, PanelParentArg, emFpPluginList};
 use emcore::emImage::emImage;
 use emcore::emInstallInfo::{InstallDirType, emGetConfigDirOverloadable, emGetInstallPath};
@@ -220,7 +220,8 @@ pub struct emVirtualCosmosModel {
     item_recs: Vec<usize>,
     /// Port of C++ emVirtualCosmosModel::ChangeSignal (emVirtualCosmos.h).
     /// Lazily allocated on first subscribe per D-008-signal-allocation-shape (A1).
-    /// Fired by `Reload` post-Acquire (see CALLSITE-NOTE on `Reload`).
+    /// Fired by `Reload` post-Acquire (emVirtualCosmos.cpp:226 in C++; Rust
+    /// callsite is benign-no-op per CALLSITE-NOTE on Reload).
     change_signal: Cell<SignalId>,
 }
 
@@ -256,17 +257,9 @@ impl emVirtualCosmosModel {
     }
 
     /// Port of C++ `emVirtualCosmosModel::GetChangeSignal()`.
-    ///
-    /// Returns the current `ChangeSignal` id, or `SignalId::null()` if no
-    /// subscriber has yet caused lazy allocation. Pair with `EnsureChangeSignal`
-    /// at first-Cycle init time. Per D-008 A1.
-    pub fn GetChangeSignal(&self) -> SignalId {
-        self.change_signal.get()
-    }
-
-    /// Lazily allocate `ChangeSignal` on first call; return its id thereafter.
-    /// Per D-008-signal-allocation-shape (A1).
-    pub fn EnsureChangeSignal(&self, ectx: &mut EngineCtx<'_>) -> SignalId {
+    /// Lazily allocates the signal on first call per D-008 A1 (combined-form
+    /// accessor; B-003 precedent on `emAutoplayViewModel::GetChangeSignal`).
+    pub fn GetChangeSignal(&self, ectx: &mut impl SignalCtx) -> SignalId {
         let sig = self.change_signal.get();
         if sig.is_null() {
             let new_sig = ectx.create_signal();
@@ -282,14 +275,16 @@ impl emVirtualCosmosModel {
     /// Port of C++ `emVirtualCosmosModel::Reload`.
     ///
     /// CALLSITE-NOTE: The single existing callsite is the Acquire-bootstrap
-    /// closure (see `Acquire`), which has no `EngineCtx` and runs before any
+    /// closure (see `Acquire`), which has no `SignalCtx` and runs before any
     /// panel has subscribed. Per D-008 A1 lazy allocation, `change_signal ==
     /// SignalId::null()` at that moment, so a missing fire is benign-by-
     /// construction (the composition of D-007/D-008 absorbs it). Future
     /// post-Acquire callers (e.g., a future port of `emVirtualCosmosModel::
-    /// Cycle` reacting to `FileUpdateSignalModel`) MUST thread `&mut
-    /// EngineCtx<'_>` and call `ectx.fire(self.change_signal.get())` after a
-    /// successful reload (skipping the fire if `change_signal.is_null()`).
+    /// Cycle` reacting to `FileUpdateSignalModel`) MUST thread `&mut impl
+    /// SignalCtx` and fire via `ectx.fire(self.change_signal.get())` after a
+    /// successful reload (skipping the fire if `change_signal.is_null()`),
+    /// mirroring B-003's `signal_change` mutator-fire pattern on
+    /// `emAutoplayViewModel`.
     pub fn Reload(&mut self) {
         let items_dir = emGetConfigDirOverloadable("emMain", Some("VcItems"))
             .map(|p| p.to_string_lossy().into_owned())
@@ -868,7 +863,7 @@ impl PanelBehavior for emVirtualCosmosPanel {
         // ChangeSignal. Mirrors C++ ctor `AddWakeUpSignal(Model->GetChangeSignal())`
         // (emVirtualCosmos.cpp:575). Lazy alloc per D-008 A1.
         if !self.subscribed_init {
-            let sig = self.model.borrow().EnsureChangeSignal(ectx);
+            let sig = self.model.borrow().GetChangeSignal(ectx);
             ectx.connect(sig, ectx.id());
             self.subscribed_init = true;
         }
@@ -876,7 +871,8 @@ impl PanelBehavior for emVirtualCosmosPanel {
         // B-014 row -575: ChangeSignal reaction — mirrors C++ Cycle's
         // `IsSignaled(Model->GetChangeSignal()) → UpdateChildren()`
         // (emVirtualCosmos.cpp:606).
-        if ectx.IsSignaled(self.model.borrow().GetChangeSignal()) {
+        let change_sig = self.model.borrow().GetChangeSignal(ectx);
+        if ectx.IsSignaled(change_sig) {
             self.update_children(ctx);
         }
 
@@ -1213,24 +1209,25 @@ mod tests {
         assert_eq!(item.TitleColor.GetBlue(), 255);
     }
 
-    /// B-014 row -575: signal-mechanism test. Verify EnsureChangeSignal
-    /// allocates lazily, GetChangeSignal returns a stable id, and a manual
-    /// fire is observable to a connected engine.
+    /// B-014 row -575: model-level signal-allocation test. Verifies the
+    /// combined-form `GetChangeSignal(ectx)` accessor lazy-allocates on first
+    /// call and is idempotent on subsequent calls. End-to-end fire-driven
+    /// behavior is covered by `b014_row_575_change_signal_drives_update_children`.
     ///
-    /// Mirrors C++ emVirtualCosmos.cpp:226 `Signal(ChangeSignal)` semantics:
-    /// the model exposes a fire-able signal that subscribers can observe.
+    /// Mirrors C++ emVirtualCosmos.cpp:226 `Signal(ChangeSignal)` semantics
+    /// at the allocation/identity layer.
     #[test]
-    fn b014_row_575_change_signal_lazy_alloc_and_fire() {
+    fn b014_row_575_change_signal_lazy_alloc_and_idempotence() {
         use emcore::emEngineCtx::EngineCtx;
         use emcore::emScheduler::EngineScheduler;
         use slotmap::Key as _;
         use std::collections::HashMap;
 
         let model = emVirtualCosmosModel::from_items(vec![]);
-        // Pre-Ensure: GetChangeSignal returns null.
+        // Pre-allocation: the cell is null until first GetChangeSignal call.
         assert!(
-            model.GetChangeSignal().is_null(),
-            "before EnsureChangeSignal, GetChangeSignal must be null"
+            model.change_signal.get().is_null(),
+            "before first GetChangeSignal call, change_signal must be null"
         );
 
         let mut sched = EngineScheduler::new();
@@ -1245,14 +1242,14 @@ mod tests {
         let mut windows: HashMap<winit::window::WindowId, emcore::emWindow::emWindow> =
             HashMap::new();
 
-        // Register a stub engine so we have a valid EngineId for connect+IsSignaled.
+        // Register a stub engine so we have a valid EngineId for the EngineCtx.
         let mut tree = emcore::emPanelTree::PanelTree::new();
         let stub_id = tree.create_root_deferred_view("b014_stub");
         tree.set_panel_view(stub_id);
         tree.register_engine_for_public(stub_id, Some(&mut sched));
         let engine_id = tree.panel_engine_id_pub(stub_id).expect("engine");
 
-        // Allocate the signal lazily and connect.
+        // Allocate the signal lazily.
         let sig = {
             let mut ectx = EngineCtx {
                 scheduler: &mut sched,
@@ -1266,18 +1263,15 @@ mod tests {
                 engine_id,
                 pending_actions: &pa,
             };
-            model.EnsureChangeSignal(&mut ectx)
+            model.GetChangeSignal(&mut ectx)
         };
-        assert!(
-            !sig.is_null(),
-            "EnsureChangeSignal must return a non-null id"
-        );
+        assert!(!sig.is_null(), "GetChangeSignal must return a non-null id");
         assert_eq!(
             sig,
-            model.GetChangeSignal(),
-            "GetChangeSignal must equal the just-Ensured id"
+            model.change_signal.get(),
+            "stored change_signal must equal the just-allocated id"
         );
-        // Idempotent: a second EnsureChangeSignal returns the same id.
+        // Idempotent: a second GetChangeSignal returns the same id.
         let sig2 = {
             let mut ectx = EngineCtx {
                 scheduler: &mut sched,
@@ -1291,20 +1285,11 @@ mod tests {
                 engine_id,
                 pending_actions: &pa,
             };
-            model.EnsureChangeSignal(&mut ectx)
+            model.GetChangeSignal(&mut ectx)
         };
-        assert_eq!(sig2, sig, "EnsureChangeSignal must be idempotent");
-
-        // Fire the signal and verify it is observable.
-        sched.connect(sig, engine_id);
-        sched.fire(sig);
-        assert!(
-            sched.is_pending(sig),
-            "ChangeSignal must be pending after fire"
-        );
+        assert_eq!(sig2, sig, "GetChangeSignal must be idempotent");
 
         // Cleanup.
-        sched.disconnect(sig, engine_id);
         let all_ids = tree.panel_ids();
         for pid in all_ids {
             if let Some(eid) = tree.panel_engine_id_pub(pid) {
@@ -1368,6 +1353,12 @@ mod tests {
         // No fire pending → update_children should not be called.
         let mut behavior_slot = tree.take_behavior(root_id).expect("behavior");
         {
+            // SAFETY: single-threaded test; `pctx` (via sched_ptr) and `ectx`
+            // (via &mut sched) both hold a mutable scheduler reference, but
+            // Cycle uses them sequentially within a single call frame with no
+            // overlapping &mut access across the two paths. The aliasing is
+            // restricted to test setup that mirrors how the real frame-driver
+            // would hand both contexts to a panel.
             let sched_ptr: *mut EngineScheduler = &mut sched;
             let mut pctx =
                 PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
@@ -1388,7 +1379,9 @@ mod tests {
         tree.put_behavior(root_id, behavior_slot);
 
         // Verify subscribe happened and update_children did not run.
-        let change_sig = model_handle.borrow().GetChangeSignal();
+        // After first-Cycle init, the cell is populated; read it directly
+        // (the GetChangeSignal accessor needs an ectx, but we just want the id).
+        let change_sig = model_handle.borrow().change_signal.get();
         assert!(
             !change_sig.is_null(),
             "after first-Cycle init, ChangeSignal must be allocated"
@@ -1417,6 +1410,8 @@ mod tests {
 
         let mut behavior_slot = tree.take_behavior(root_id).expect("behavior");
         {
+            // SAFETY: see SAFETY comment on the first Cycle invocation above —
+            // same aliasing rationale applies to this second Cycle call.
             let sched_ptr: *mut EngineScheduler = &mut sched;
             let mut pctx =
                 PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
