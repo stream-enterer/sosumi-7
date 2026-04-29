@@ -7,7 +7,7 @@
       "signal_expression": "sf->GetValueSignal()",
       "signal_kind": "widget-click",
       "rust_file": "crates/emcore/src/emColorField.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "polling",
         "file": "crates/emcore/src/emColorField.rs",
@@ -20,7 +20,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "emColorField::Cycle (Rust line 271) compares cached `sf_*` / `tf_name` fields against current `*_out` values rather than subscribing to each ScalarField's value_signal. `sync_from_children` (line 342) walks child panels via tree to read GetValue() — pure poll. The accessor exists as `value_signal: SignalId` (emScalarField.rs:115); no `connect(...)` is wired.",
+      "notes": "emColorField::Cycle (Rust line 271) compares cached `sf_*` / `tf_name` fields against current `*_out` values rather than subscribing to each ScalarField's value_signal. `sync_from_children` (line 342) walks child panels via tree to read GetValue() — pure poll. The accessor exists as `value_signal: SignalId` (emScalarField.rs:115); no `connect(...)` is wired. [B-015 73842780: polling replaced with D-006 subscribe-driven Cycle reaction.]",
       "enrichment": {
         "pattern_id": "P-006-polling-accessor-present",
         "decision_ids": [
@@ -37,7 +37,7 @@
       "signal_expression": "sf->GetValueSignal()",
       "signal_kind": "widget-click",
       "rust_file": "crates/emcore/src/emColorField.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "polling",
         "file": "crates/emcore/src/emColorField.rs",
@@ -50,7 +50,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "Green ScalarField. Same polling-based Cycle as emColorField-245.",
+      "notes": "Green ScalarField. Same polling-based Cycle as emColorField-245. [B-015 73842780: polling replaced with D-006 subscribe-driven Cycle reaction.]",
       "enrichment": {
         "pattern_id": "P-006-polling-accessor-present",
         "decision_ids": [
@@ -67,7 +67,7 @@
       "signal_expression": "sf->GetValueSignal()",
       "signal_kind": "widget-click",
       "rust_file": "crates/emcore/src/emColorField.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "polling",
         "file": "crates/emcore/src/emColorField.rs",
@@ -80,7 +80,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "Blue ScalarField. Same polling-based Cycle.",
+      "notes": "Blue ScalarField. Same polling-based Cycle. [B-015 73842780: polling replaced with D-006 subscribe-driven Cycle reaction.]",
       "enrichment": {
         "pattern_id": "P-006-polling-accessor-present",
         "decision_ids": [
@@ -97,7 +97,7 @@
       "signal_expression": "sf->GetValueSignal()",
       "signal_kind": "widget-click",
       "rust_file": "crates/emcore/src/emColorField.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "polling",
         "file": "crates/emcore/src/emColorField.rs",
@@ -110,7 +110,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "Alpha ScalarField. Same polling-based Cycle.",
+      "notes": "Alpha ScalarField. Same polling-based Cycle. [B-015 73842780: polling replaced with D-006 subscribe-driven Cycle reaction.]",
       "enrichment": {
         "pattern_id": "P-006-polling-accessor-present",
         "decision_ids": [
@@ -127,7 +127,7 @@
       "signal_expression": "sf->GetValueSignal()",
       "signal_kind": "widget-click",
       "rust_file": "crates/emcore/src/emColorField.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "polling",
         "file": "crates/emcore/src/emColorField.rs",
@@ -140,7 +140,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "Hue ScalarField. Same polling-based Cycle.",
+      "notes": "Hue ScalarField. Same polling-based Cycle. [B-015 73842780: polling replaced with D-006 subscribe-driven Cycle reaction.]",
       "enrichment": {
         "pattern_id": "P-006-polling-accessor-present",
         "decision_ids": [
@@ -157,7 +157,7 @@
       "signal_expression": "sf->GetValueSignal()",
       "signal_kind": "widget-click",
       "rust_file": "crates/emcore/src/emColorField.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "polling",
         "file": "crates/emcore/src/emColorField.rs",
@@ -170,7 +170,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "Saturation ScalarField. Same polling-based Cycle.",
+      "notes": "Saturation ScalarField. Same polling-based Cycle. [B-015 73842780: polling replaced with D-006 subscribe-driven Cycle reaction.]",
       "enrichment": {
         "pattern_id": "P-006-polling-accessor-present",
         "decision_ids": [
@@ -187,7 +187,7 @@
       "signal_expression": "sf->GetValueSignal()",
       "signal_kind": "widget-click",
       "rust_file": "crates/emcore/src/emColorField.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "polling",
         "file": "crates/emcore/src/emColorField.rs",
@@ -200,7 +200,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "Value (brightness) ScalarField. Same polling-based Cycle.",
+      "notes": "Value (brightness) ScalarField. Same polling-based Cycle. [B-015 73842780: polling replaced with D-006 subscribe-driven Cycle reaction.]",
       "enrichment": {
         "pattern_id": "P-006-polling-accessor-present",
         "decision_ids": [
@@ -217,7 +217,7 @@
       "signal_expression": "tf->GetTextSignal()",
       "signal_kind": "widget-click",
       "rust_file": "crates/emcore/src/emColorField.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "polling",
         "file": "crates/emcore/src/emColorField.rs",
@@ -230,7 +230,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "Name TextField. Polled via `sync_from_children` (line 342) which calls `tfp.text_field.GetText()` and compares to cached `tf_name` in Cycle.",
+      "notes": "Name TextField. Polled via `sync_from_children` (line 342) which calls `tfp.text_field.GetText()` and compares to cached `tf_name` in Cycle. [B-015 73842780: polling replaced with D-006 subscribe-driven Cycle reaction.]",
       "enrichment": {
         "pattern_id": "P-006-polling-accessor-present",
         "decision_ids": [
@@ -555,7 +555,7 @@
       "signal_expression": "fileModel->GetFileStateSignal()",
       "signal_kind": "model-state",
       "rust_file": "crates/emcore/src/emFilePanel.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "polling",
         "file": "crates/emcore/src/emFilePanel.rs",
@@ -568,7 +568,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "C++ AddWakeUpSignal/RemoveWakeUpSignal pair on (un)set of FileModel (emFilePanel.cpp:48,50). Rust SetFileModel makes no scheduler.connect/disconnect call — it only stores the model_weak. Cycle polls `compute_vir_file_state()` each tick and compares against `last_vir_file_state`. Accessor present on the model side. This is the same polling-substitute class the F010 investigation flagged in emFileLinkPanel.",
+      "notes": "C++ AddWakeUpSignal/RemoveWakeUpSignal pair on (un)set of FileModel (emFilePanel.cpp:48,50). Rust SetFileModel makes no scheduler.connect/disconnect call — it only stores the model_weak. Cycle polls `compute_vir_file_state()` each tick and compares against `last_vir_file_state`. Accessor present on the model side. This is the same polling-substitute class the F010 investigation flagged in emFileLinkPanel. [B-015 73842780: polling replaced with D-006 subscribe-driven Cycle reaction.]",
       "enrichment": {
         "pattern_id": "P-006-polling-accessor-present",
         "decision_ids": [
@@ -2828,7 +2828,7 @@
       "signal_expression": "SliderTimer.GetSignal()",
       "signal_kind": "timer",
       "rust_file": "crates/emmain/src/emMainPanel.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "polling",
         "file": "crates/emmain/src/emMainPanel.rs",
@@ -2841,7 +2841,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "emTimer infrastructure exists; emMainPanel chose wall-clock polling instead. Cycle returns false unconditionally so the panel will not be re-woken once the timer expires unless something else signals.",
+      "notes": "emTimer infrastructure exists; emMainPanel chose wall-clock polling instead. Cycle returns false unconditionally so the panel will not be re-woken once the timer expires unless something else signals. [B-015 73842780: polling replaced with D-006 subscribe-driven Cycle reaction.]",
       "enrichment": {
         "pattern_id": "P-006-polling-accessor-present",
         "decision_ids": [

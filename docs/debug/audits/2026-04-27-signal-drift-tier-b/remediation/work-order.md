@@ -14,7 +14,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 2 | B-006-typed-subscribe-mainctrl | 0 | mechanical-heavy | 3 | merged at f37adf01 (5963c688..f37adf01) | [a13880c7](../../../../superpowers/specs/2026-04-27-B-006-typed-subscribe-mainctrl-design.md) |
 | 3 | B-007-typed-subscribe-emcore | 0 | mechanical-heavy | 3 | merged at 55d735bc (858524f1..55d735bc; includes the AcquireUpdateSignalModel gap-fix) | [8b220ebb](../../../../superpowers/specs/2026-04-27-B-007-typed-subscribe-emcore-design.md) |
 | 4 | B-008-typed-subscribe-misc | 0 | mechanical-heavy | 3 | merged at 133de22e (c68360ef..133de22e) | [4c4141f1](../../../../superpowers/specs/2026-04-27-B-008-typed-subscribe-misc-design.md) |
-| 5 | B-015-polling-emcore-plus | 0 | mechanical-heavy | 10 | designed | [b521b3f6](../../../../superpowers/specs/2026-04-27-B-015-polling-emcore-plus-design.md) |
+| 5 | B-015-polling-emcore-plus | 0 | mechanical-heavy | 10 | merged at 73842780 (3fcd6c2b..73842780) | [b521b3f6](../../../../superpowers/specs/2026-04-27-B-015-polling-emcore-plus-design.md) |
 | 6 | B-019-stale-annotations | 0 | mechanical-heavy | 9 | merged at 41599129 | [e7129430](../../../../superpowers/specs/2026-04-27-B-019-stale-annotations-design.md) |
 | 7 | B-001-no-wire-emstocks | 0 | balanced | 71 | designed | [456fa5f7](../../../../superpowers/specs/2026-04-27-B-001-no-wire-emstocks-design.md) |
 | 8 | B-002-no-wire-emfileman | 0 | balanced | 4 | designed | [7fb3decd](../../../../superpowers/specs/2026-04-27-B-002-no-wire-emfileman-design.md) |
@@ -373,3 +373,13 @@ Combined-reviewer template dispatched against `d15bbca0..91433733`. Result: **AP
 - **Audit-data corrections applied (per design §7).** B-010 bucket sketch row notes for emCoreConfigPanel rows 299/300/301 disambiguate "no Cycle in Rust today" vs "no Cycle in C++" (C++ DOES have Cycle overrides on emCoreConfigPanel/MouseMiscGroup/MaxMemGroup/PerformanceGroup using IsSignaled). FSB open questions §2 (aggregator-vs-flat-list) and §3 (generation-counter origin) resolved as written. No row reclassifications.
 - **Process note:** Combined-reviewer template approved cleanly. SDD execution; standard reconciliation flow.
 - **11 of 19 buckets merged. 8 remain** (B-001, B-002, B-004, B-012, B-013, B-015, B-016, B-017).
+
+### 2026-04-29 — B-015 merged (polling emcore-plus)
+
+- **B-015 → merged at 73842780** (squash-merge; 3 implementation commits: 9e579738 feat + 11c5db2e fixup + 7bd0ba53 fixup). 10 P-006 rows converted from per-Cycle polling to D-006 subscribe-driven Cycle reactions.
+- **emColorField rows -245/-255/-265/-277/-288/-298/-308/-320 (8 rows):** expansion-gated first-Cycle init subscribes to each of 8 child signals per C++ `AutoExpand`. Cycle rewritten to 8 per-signal `IsSignaled` branches in C++ source order (cpp:116-187) with per-channel `*_out` compare guards and cascade flags. `ColorFieldPanel::Cycle` wired in golden test wrappers (`test_panel.rs`, `composition.rs`). Production `emCoreConfigPanel` does not yet instantiate `emColorField` — pre-existing gap, out of B-015 scope.
+- **emFilePanel row -50:** subscribe at `SetFileModel` time (D-006 override; mirrors `emFilePanel.cpp:48,50`). `DIVERGED` annotation per B-007 precedent (`SetFileModel` callers include constructors with no `EngineCtx`).
+- **emMainPanel row -68:** `emTimer` `SliderTimer` wired. `SliderTimerAction` deferred-intent queue removed (D-009 violation). `update_slider_hiding` takes `Option<&mut EngineScheduler>` and calls arm/cancel synchronously.
+- **Pre-merge blockers caught and fixed:** (1) production Cycle unwired (Blocker 1 — resolved by wiring golden test wrappers); (2) design doc wrongly claimed C++ has no per-signal `IsSignaled` branches — C++ `emColorField.cpp:116-187` has 8 branches with distinct cascade flags (Blocker 2 — rewrite required); (3) `SliderTimerAction` was a D-009 violation (Blocker 3 — de-queued).
+- Test suite: 2881 → 2890 (+9 tests in `crates/emcore/tests/polling_b015.rs`).
+- **12 of 19 buckets merged. 7 remain** (B-001, B-002, B-004, B-012, B-013, B-016, B-017).
