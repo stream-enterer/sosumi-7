@@ -51,12 +51,12 @@ fn do_slice(sched: &mut EngineScheduler) {
 }
 
 // ---------------------------------------------------------------------------
-// Row 80: ButtonsPanel Reset → config defaults + generation bump
+// Row 80: ButtonsPanel Reset → config defaults
 // ---------------------------------------------------------------------------
 
 /// Row 80: After firing the captured Reset-button click_signal, ButtonsPanel::Cycle
-/// resets every config field to default, calls TrySave, and bumps the generation
-/// counter — observable equivalence with the deleted `btn.on_click` closure shim.
+/// resets every config field to default and calls TrySave — observable equivalence
+/// with the deleted `btn.on_click` closure shim.
 ///
 /// Mirrors C++ `emCoreConfigPanel::Cycle` (emCoreConfigPanel.cpp:42), where the
 /// host panel subscribes to `ResetButton->GetClickSignal()` and reacts inline.
@@ -66,11 +66,11 @@ fn do_slice(sched: &mut EngineScheduler) {
 ///       the captured `bt_reset_sig`.
 ///   (2) Cycle observes? — IsSignaled(bt_reset_sig) branch in Cycle.
 ///   (3) Reaction fires documented mutator? — cm.modify(...) sets every field
-///       to its default, TrySave(false) saves, generation.set(gen+1) bumps.
+///       to its default, TrySave(false) saves.
 ///   (4) C++ branch order preserved? — init block before IsSignaled reaction,
 ///       matching the canonical D-006 shape from the design doc §2.1.
 #[test]
-fn row_80_reset_button_cycle_restores_defaults_and_bumps_generation() {
+fn row_80_reset_button_cycle_restores_defaults() {
     // --- Scheduler + config setup ----------------------------------------
     let mut sched = EngineScheduler::new();
     let install_path = std::env::temp_dir().join("rc_shim_b010_row80.rec");
@@ -122,19 +122,13 @@ fn row_80_reset_button_cycle_restores_defaults_and_bumps_generation() {
 
     // --- Build ButtonsPanel + tree --------------------------------------
     let look = emLook::new();
-    let generation: Rc<std::cell::Cell<u64>> = Rc::new(std::cell::Cell::new(0));
-    let panel_rc: Rc<RefCell<ButtonsPanel>> = Rc::new(RefCell::new(ButtonsPanel::new(
-        Rc::clone(&config),
-        look,
-        Rc::clone(&generation),
-    )));
+    let panel_rc: Rc<RefCell<ButtonsPanel>> =
+        Rc::new(RefCell::new(ButtonsPanel::new(Rc::clone(&config), look)));
 
     let tree_rc: Rc<RefCell<PanelTree>> = Rc::new(RefCell::new(PanelTree::new()));
     let root: PanelId = tree_rc
         .borrow_mut()
         .create_root_deferred_view("rc_shim_b010_row80");
-
-    let initial_gen = generation.get();
 
     // --- Wrapper engine: drives create_children once, then Cycle --------
     struct PanelEngine {
@@ -216,15 +210,10 @@ fn row_80_reset_button_cycle_restores_defaults_and_bumps_generation() {
     sched.fire(bt_reset_sig);
 
     // Second slice: ButtonsPanel::Cycle observes IsSignaled(bt_reset_sig) and
-    // runs the reaction body (config reset + TrySave + generation bump).
+    // runs the reaction body (config reset + TrySave).
     do_slice(&mut sched);
 
     // --- Assertions -----------------------------------------------------
-    assert_eq!(
-        generation.get(),
-        initial_gen + 1,
-        "generation counter must be incremented exactly once by the reset reaction"
-    );
     assert!(
         !*config.borrow().GetRec().StickMouseWhenNavigating.GetValue(),
         "StickMouseWhenNavigating must be reset to its default (false) after the click"
@@ -320,11 +309,9 @@ fn run_mouse_misc_checkbox_test(
     }
 
     let look = emLook::new();
-    let generation: Rc<std::cell::Cell<u64>> = Rc::new(std::cell::Cell::new(0));
     let panel_rc: Rc<RefCell<MouseMiscGroup>> = Rc::new(RefCell::new(MouseMiscGroup::new(
         Rc::clone(&config),
         look,
-        Rc::clone(&generation),
         true, // stick_possible
     )));
 
@@ -719,12 +706,8 @@ fn build_cpu_group_harness(
     };
 
     let look = emLook::new();
-    let generation = Rc::new(std::cell::Cell::new(0u64));
-    let panel_rc: Rc<RefCell<CpuGroup>> = Rc::new(RefCell::new(CpuGroup::new(
-        Rc::clone(&config),
-        look,
-        generation,
-    )));
+    let panel_rc: Rc<RefCell<CpuGroup>> =
+        Rc::new(RefCell::new(CpuGroup::new(Rc::clone(&config), look)));
 
     let tree_rc: Rc<RefCell<PanelTree>> = Rc::new(RefCell::new(PanelTree::new()));
     let root: PanelId = tree_rc.borrow_mut().create_root_deferred_view(label);
@@ -1009,11 +992,9 @@ fn build_perf_group_harness(
     };
 
     let look = emLook::new();
-    let generation = Rc::new(std::cell::Cell::new(0u64));
     let panel_rc: Rc<RefCell<PerformanceGroup>> = Rc::new(RefCell::new(PerformanceGroup::new(
         Rc::clone(&config),
         look,
-        generation,
     )));
 
     let tree_rc: Rc<RefCell<PanelTree>> = Rc::new(RefCell::new(PanelTree::new()));

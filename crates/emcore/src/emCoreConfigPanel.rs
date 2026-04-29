@@ -1,4 +1,6 @@
-use std::cell::{Cell, RefCell};
+#[cfg(any(test, feature = "test-support"))]
+use std::cell::Cell;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use slotmap::Key as _;
@@ -233,24 +235,15 @@ fn make_factor_field(
 struct KBGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
-    last_generation: u64,
     border: emBorder,
     layout: emRasterLayout,
 }
 
 impl KBGroup {
-    fn new(
-        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
-        look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
-    ) -> Self {
-        let gen = generation.get();
+    fn new(config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>, look: Rc<emLook>) -> Self {
         Self {
             config,
             look,
-            generation,
-            last_generation: gen,
             border: emBorder::new(OuterBorderType::Group)
                 .with_inner(InnerBorderType::Group)
                 .with_caption("Keyboard Control"),
@@ -374,14 +367,6 @@ impl PanelBehavior for KBGroup {
             return;
         }
 
-        let gen = self.generation.get();
-        if gen != self.last_generation && ctx.child_count() > 0 {
-            for id in ctx.children() {
-                ctx.delete_child(id);
-            }
-            self.last_generation = gen;
-        }
-
         if ctx.child_count() == 0 {
             self.create_children(ctx);
         }
@@ -407,8 +392,6 @@ impl PanelBehavior for KBGroup {
 pub struct MouseMiscGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
-    last_generation: u64,
     stick_possible: bool,
     border: emBorder,
     layout: emRasterLayout,
@@ -430,8 +413,6 @@ pub struct MouseMiscGroup {
 pub(crate) struct MouseMiscGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
-    last_generation: u64,
     stick_possible: bool,
     border: emBorder,
     layout: emRasterLayout,
@@ -454,17 +435,13 @@ impl MouseMiscGroup {
     pub fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
         stick_possible: bool,
     ) -> Self {
-        let gen = generation.get();
         let config_sig = config.borrow().GetChangeSignal();
         Self {
             config_sig,
             config,
             look,
-            generation,
-            last_generation: gen,
             stick_possible,
             border: emBorder::new(OuterBorderType::Group)
                 .with_inner(InnerBorderType::Group)
@@ -485,17 +462,13 @@ impl MouseMiscGroup {
     pub(crate) fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
         stick_possible: bool,
     ) -> Self {
-        let gen = generation.get();
         let config_sig = config.borrow().GetChangeSignal();
         Self {
             config_sig,
             config,
             look,
-            generation,
-            last_generation: gen,
             stick_possible,
             border: emBorder::new(OuterBorderType::Group)
                 .with_inner(InnerBorderType::Group)
@@ -694,23 +667,6 @@ impl PanelBehavior for MouseMiscGroup {
             return;
         }
 
-        let gen = self.generation.get();
-        if gen != self.last_generation && ctx.child_count() > 0 {
-            for id in ctx.children() {
-                ctx.delete_child(id);
-            }
-            self.last_generation = gen;
-            // B-010: child PanelIds and signals are stale after rebuild;
-            // re-subscribe on the next Cycle once children are recreated.
-            self.subscribed_init = false;
-            self.stick_id = None;
-            self.emu_id = None;
-            self.pan_id = None;
-            self.stick_sig = SignalId::null();
-            self.emu_sig = SignalId::null();
-            self.pan_sig = SignalId::null();
-        }
-
         if ctx.child_count() == 0 {
             self.create_children(ctx);
         }
@@ -827,24 +783,15 @@ impl PanelBehavior for MouseMiscGroup {
 struct KineticGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
-    last_generation: u64,
     border: emBorder,
     layout: emRasterLayout,
 }
 
 impl KineticGroup {
-    fn new(
-        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
-        look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
-    ) -> Self {
-        let gen = generation.get();
+    fn new(config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>, look: Rc<emLook>) -> Self {
         Self {
             config,
             look,
-            generation,
-            last_generation: gen,
             border: emBorder::new(OuterBorderType::Group)
                 .with_inner(InnerBorderType::Group)
                 .with_caption("Kinetic Effects"),
@@ -1052,14 +999,6 @@ impl PanelBehavior for KineticGroup {
             return;
         }
 
-        let gen = self.generation.get();
-        if gen != self.last_generation && ctx.child_count() > 0 {
-            for id in ctx.children() {
-                ctx.delete_child(id);
-            }
-            self.last_generation = gen;
-        }
-
         if ctx.child_count() == 0 {
             self.create_children(ctx);
         }
@@ -1079,24 +1018,15 @@ impl PanelBehavior for KineticGroup {
 struct MaxMemGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
-    last_generation: u64,
     border: emBorder,
     layout: emLinearLayout,
 }
 
 impl MaxMemGroup {
-    fn new(
-        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
-        look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
-    ) -> Self {
-        let gen = generation.get();
+    fn new(config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>, look: Rc<emLook>) -> Self {
         Self {
             config,
             look,
-            generation,
-            last_generation: gen,
             border: emBorder::new(OuterBorderType::Group)
                 .with_inner(InnerBorderType::Group)
                 .with_caption("Max Megabytes Per View"),
@@ -1182,14 +1112,6 @@ impl PanelBehavior for MaxMemGroup {
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
         if !ctx.tree.IsAutoExpanded(ctx.id) {
             return;
-        }
-
-        let gen = self.generation.get();
-        if gen != self.last_generation && ctx.child_count() > 0 {
-            for id in ctx.children() {
-                ctx.delete_child(id);
-            }
-            self.last_generation = gen;
         }
 
         if ctx.child_count() == 0 {
@@ -1433,15 +1355,10 @@ struct MaxMemInnerTunnelPanel {
     tunnel: emTunnel,
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
 }
 
 impl MaxMemInnerTunnelPanel {
-    fn new(
-        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
-        look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
-    ) -> Self {
+    fn new(config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>, look: Rc<emLook>) -> Self {
         let mut tunnel = emTunnel::new(look.clone())
             .with_caption("Please read all text\nbefore changing this setting!");
         tunnel.SetChildTallness(0.7);
@@ -1449,7 +1366,6 @@ impl MaxMemInnerTunnelPanel {
             tunnel,
             config,
             look,
-            generation,
         }
     }
 }
@@ -1480,11 +1396,7 @@ impl PanelBehavior for MaxMemInnerTunnelPanel {
         if ctx.child_count() == 0 {
             ctx.create_child_with(
                 "maxMemGroup",
-                Box::new(MaxMemGroup::new(
-                    Rc::clone(&self.config),
-                    self.look.clone(),
-                    Rc::clone(&self.generation),
-                )),
+                Box::new(MaxMemGroup::new(Rc::clone(&self.config), self.look.clone())),
             );
         }
 
@@ -1505,15 +1417,10 @@ struct MaxMemTunnelPanel {
     tunnel: emTunnel,
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
 }
 
 impl MaxMemTunnelPanel {
-    fn new(
-        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
-        look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
-    ) -> Self {
+    fn new(config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>, look: Rc<emLook>) -> Self {
         let mut tunnel = emTunnel::new(look.clone());
         tunnel.SetChildTallness(0.3);
         tunnel.border_mut().SetBorderScaling(1.5);
@@ -1521,7 +1428,6 @@ impl MaxMemTunnelPanel {
             tunnel,
             config,
             look,
-            generation,
         }
     }
 }
@@ -1555,7 +1461,6 @@ impl PanelBehavior for MaxMemTunnelPanel {
                 Box::new(MaxMemInnerTunnelPanel::new(
                     Rc::clone(&self.config),
                     self.look.clone(),
-                    Rc::clone(&self.generation),
                 )),
             );
         }
@@ -1582,8 +1487,6 @@ impl PanelBehavior for MaxMemTunnelPanel {
 pub struct CpuGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
-    last_generation: u64,
     border: emBorder,
     layout: emLinearLayout,
     // B-010 rows 746/755: D-006 first-Cycle init + IsSignaled subscribe state.
@@ -1602,8 +1505,6 @@ pub struct CpuGroup {
 pub(crate) struct CpuGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
-    last_generation: u64,
     border: emBorder,
     layout: emLinearLayout,
     // B-010 rows 746/755: D-006 first-Cycle init + IsSignaled subscribe state.
@@ -1620,12 +1521,7 @@ pub(crate) struct CpuGroup {
 
 impl CpuGroup {
     #[cfg(any(test, feature = "test-support"))]
-    pub fn new(
-        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
-        look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
-    ) -> Self {
-        let gen = generation.get();
+    pub fn new(config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>, look: Rc<emLook>) -> Self {
         let config_sig = config.borrow().GetChangeSignal();
         let mut border = emBorder::new(OuterBorderType::Instrument)
             .with_inner(InnerBorderType::Group)
@@ -1635,8 +1531,6 @@ impl CpuGroup {
             config_sig,
             config,
             look,
-            generation,
-            last_generation: gen,
             border,
             layout: emLinearLayout::vertical().with_spacing(Spacing {
                 inner_v: 0.1,
@@ -1655,9 +1549,7 @@ impl CpuGroup {
     pub(crate) fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
     ) -> Self {
-        let gen = generation.get();
         let config_sig = config.borrow().GetChangeSignal();
         let mut border = emBorder::new(OuterBorderType::Instrument)
             .with_inner(InnerBorderType::Group)
@@ -1667,8 +1559,6 @@ impl CpuGroup {
             config_sig,
             config,
             look,
-            generation,
-            last_generation: gen,
             border,
             layout: emLinearLayout::vertical().with_spacing(Spacing {
                 inner_v: 0.1,
@@ -1836,21 +1726,6 @@ impl PanelBehavior for CpuGroup {
             return;
         }
 
-        let gen = self.generation.get();
-        if gen != self.last_generation && ctx.child_count() > 0 {
-            for id in ctx.children() {
-                ctx.delete_child(id);
-            }
-            self.last_generation = gen;
-            // B-010: child PanelIds and signals are stale after rebuild;
-            // re-subscribe on the next Cycle once children are recreated.
-            self.subscribed_init = false;
-            self.threads_id = None;
-            self.simd_id = None;
-            self.threads_sig = SignalId::null();
-            self.simd_sig = SignalId::null();
-        }
-
         if ctx.child_count() == 0 {
             self.create_children(ctx);
         }
@@ -1971,8 +1846,6 @@ thread_local! {
 pub struct PerformanceGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
-    last_generation: u64,
     border: emBorder,
     layout: emRasterLayout,
     // B-010 rows 773/791: D-006 first-Cycle init + IsSignaled subscribe state.
@@ -1987,8 +1860,6 @@ pub struct PerformanceGroup {
 pub(crate) struct PerformanceGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
-    last_generation: u64,
     border: emBorder,
     layout: emRasterLayout,
     // B-010 rows 773/791: D-006 first-Cycle init + IsSignaled subscribe state.
@@ -2001,17 +1872,10 @@ pub(crate) struct PerformanceGroup {
 
 impl PerformanceGroup {
     #[cfg(any(test, feature = "test-support"))]
-    pub fn new(
-        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
-        look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
-    ) -> Self {
-        let gen = generation.get();
+    pub fn new(config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>, look: Rc<emLook>) -> Self {
         Self {
             config,
             look,
-            generation,
-            last_generation: gen,
             border: emBorder::new(OuterBorderType::Group)
                 .with_inner(InnerBorderType::Group)
                 .with_caption("Graphics Performance vs. Quality"),
@@ -2036,14 +1900,10 @@ impl PerformanceGroup {
     pub(crate) fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
     ) -> Self {
-        let gen = generation.get();
         Self {
             config,
             look,
-            generation,
-            last_generation: gen,
             border: emBorder::new(OuterBorderType::Group)
                 .with_inner(InnerBorderType::Group)
                 .with_caption("Graphics Performance vs. Quality"),
@@ -2126,18 +1986,13 @@ impl PerformanceGroup {
             Box::new(MaxMemTunnelPanel::new(
                 Rc::clone(&self.config),
                 self.look.clone(),
-                Rc::clone(&self.generation),
             )),
         );
 
         // CPU group
         ctx.create_child_with(
             "cpu",
-            Box::new(CpuGroup::new(
-                Rc::clone(&self.config),
-                self.look.clone(),
-                Rc::clone(&self.generation),
-            )),
+            Box::new(CpuGroup::new(Rc::clone(&self.config), self.look.clone())),
         );
 
         // DownscaleQuality: range 2-6
@@ -2232,21 +2087,6 @@ impl PanelBehavior for PerformanceGroup {
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
         if !ctx.tree.IsAutoExpanded(ctx.id) {
             return;
-        }
-
-        let gen = self.generation.get();
-        if gen != self.last_generation && ctx.child_count() > 0 {
-            for id in ctx.children() {
-                ctx.delete_child(id);
-            }
-            self.last_generation = gen;
-            // B-010: child PanelIds and signals are stale after rebuild;
-            // re-subscribe on the next Cycle once children are recreated.
-            self.subscribed_init = false;
-            self.downscale_id = None;
-            self.upscale_id = None;
-            self.downscale_sig = SignalId::null();
-            self.upscale_sig = SignalId::null();
         }
 
         if ctx.child_count() == 0 {
@@ -2348,8 +2188,6 @@ impl PanelBehavior for PerformanceGroup {
 struct MouseGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
-    last_generation: u64,
     stick_possible: bool,
     border: emBorder,
     layout: emRasterLayout,
@@ -2359,15 +2197,11 @@ impl MouseGroup {
     fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
         stick_possible: bool,
     ) -> Self {
-        let gen = generation.get();
         Self {
             config,
             look,
-            generation,
-            last_generation: gen,
             stick_possible,
             border: emBorder::new(OuterBorderType::Group)
                 .with_inner(InnerBorderType::Group)
@@ -2537,7 +2371,6 @@ impl MouseGroup {
             Box::new(MouseMiscGroup::new(
                 Rc::clone(&self.config),
                 self.look.clone(),
-                Rc::clone(&self.generation),
                 self.stick_possible,
             )),
         );
@@ -2574,14 +2407,6 @@ impl PanelBehavior for MouseGroup {
             return;
         }
 
-        let gen = self.generation.get();
-        if gen != self.last_generation && ctx.child_count() > 0 {
-            for id in ctx.children() {
-                ctx.delete_child(id);
-            }
-            self.last_generation = gen;
-        }
-
         if ctx.child_count() == 0 {
             self.create_children(ctx);
         }
@@ -2611,7 +2436,6 @@ impl PanelBehavior for MouseGroup {
 pub struct ButtonsPanel {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
     layout: emLinearLayout,
     // B-010 row 80: D-006 first-Cycle init + IsSignaled subscribe state.
     subscribed_init: bool,
@@ -2623,7 +2447,6 @@ pub struct ButtonsPanel {
 pub(crate) struct ButtonsPanel {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
     layout: emLinearLayout,
     // B-010 row 80: D-006 first-Cycle init + IsSignaled subscribe state.
     subscribed_init: bool,
@@ -2633,15 +2456,10 @@ pub(crate) struct ButtonsPanel {
 
 impl ButtonsPanel {
     #[cfg(any(test, feature = "test-support"))]
-    pub fn new(
-        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
-        look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
-    ) -> Self {
+    pub fn new(config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>, look: Rc<emLook>) -> Self {
         Self {
             config,
             look,
-            generation,
             layout: emLinearLayout::horizontal()
                 .with_alignment_h(AlignmentH::Right)
                 .with_alignment_v(AlignmentV::Bottom),
@@ -2655,12 +2473,10 @@ impl ButtonsPanel {
     pub(crate) fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
     ) -> Self {
         Self {
             config,
             look,
-            generation,
             layout: emLinearLayout::horizontal()
                 .with_alignment_h(AlignmentH::Right)
                 .with_alignment_v(AlignmentV::Bottom),
@@ -2749,9 +2565,9 @@ impl PanelBehavior for ButtonsPanel {
             ectx.wake_up(eid);
         }
         if !self.bt_reset_sig.is_null() && ectx.IsSignaled(self.bt_reset_sig) {
-            // Verbatim port of the deleted `btn.on_click` closure body
-            // (D-009 sighting #4 — the generation bump is load-bearing for
-            // visible Reset behaviour and must be preserved per design §2.1.1).
+            // Verbatim port of the deleted `btn.on_click` closure body.
+            // Each config field change fires its per-field signal, which
+            // each group's FactorFieldPanel/Cycle subscription handles in place.
             let mut cm = self.config.borrow_mut();
             let mut sched = ctx.as_sched_ctx().expect("sched");
             cm.modify(
@@ -2778,7 +2594,6 @@ impl PanelBehavior for ButtonsPanel {
                 &mut sched,
             );
             let _ = cm.TrySave(false);
-            self.generation.set(self.generation.get() + 1);
         }
         false
     }
@@ -2788,7 +2603,6 @@ impl PanelBehavior for ButtonsPanel {
 struct ContentPanel {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
     stick_possible: bool,
     layout: emRasterLayout,
 }
@@ -2797,13 +2611,11 @@ impl ContentPanel {
     fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
-        generation: Rc<Cell<u64>>,
         stick_possible: bool,
     ) -> Self {
         Self {
             config,
             look,
-            generation,
             stick_possible,
             layout: emRasterLayout::new()
                 .with_preferred_tallness(0.5)
@@ -2821,18 +2633,13 @@ impl ContentPanel {
             Box::new(MouseGroup::new(
                 Rc::clone(&self.config),
                 self.look.clone(),
-                Rc::clone(&self.generation),
                 self.stick_possible,
             )),
         );
 
         ctx.create_child_with(
             "keyboard",
-            Box::new(KBGroup::new(
-                Rc::clone(&self.config),
-                self.look.clone(),
-                Rc::clone(&self.generation),
-            )),
+            Box::new(KBGroup::new(Rc::clone(&self.config), self.look.clone())),
         );
 
         ctx.create_child_with(
@@ -2840,7 +2647,6 @@ impl ContentPanel {
             Box::new(KineticGroup::new(
                 Rc::clone(&self.config),
                 self.look.clone(),
-                Rc::clone(&self.generation),
             )),
         );
 
@@ -2849,7 +2655,6 @@ impl ContentPanel {
             Box::new(PerformanceGroup::new(
                 Rc::clone(&self.config),
                 self.look.clone(),
-                Rc::clone(&self.generation),
             )),
         );
     }
@@ -2894,7 +2699,6 @@ impl PanelBehavior for ContentPanel {
 pub struct emCoreConfigPanel {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
-    generation: Rc<Cell<u64>>,
     /// Whether the screen can move the mouse pointer (C++ StickPossible).
     /// Controls whether the "Stick mouse when navigating" checkbox is enabled.
     stick_possible: bool,
@@ -2911,7 +2715,6 @@ impl emCoreConfigPanel {
         Self {
             config,
             look,
-            generation: Rc::new(Cell::new(0)),
             stick_possible: true,
             border,
             layout: emLinearLayout::vertical().with_spacing(Spacing {
@@ -2940,7 +2743,6 @@ impl emCoreConfigPanel {
             Box::new(ContentPanel::new(
                 Rc::clone(&self.config),
                 self.look.clone(),
-                Rc::clone(&self.generation),
                 self.stick_possible,
             )),
         );
@@ -2957,7 +2759,6 @@ impl emCoreConfigPanel {
             Box::new(ButtonsPanel::new(
                 Rc::clone(&self.config),
                 self.look.clone(),
-                Rc::clone(&self.generation),
             )),
         );
         self.layout.set_child_constraint(
