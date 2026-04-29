@@ -11,6 +11,7 @@ use crate::emPanel::{PanelBehavior, PanelState};
 use crate::emPanelTree::PanelId;
 use crate::emSignal::SignalId;
 use crate::emStroke::emStroke;
+use slotmap::Key as _;
 
 use super::emBorder::{emBorder, with_toolkit_images, InnerBorderType, OuterBorderType};
 use super::emColorFieldFieldPanel::{CheckBoxPanel, ListBoxPanel, TextFieldPanel};
@@ -691,18 +692,6 @@ impl PanelBehavior for TextFilePanel {
 type SelectionChangedCb = crate::emEngineCtx::WidgetCallback<()>;
 type FileTriggerCb = crate::emEngineCtx::WidgetCallbackRef<str>;
 
-/// Shared event state collected by child-panel callbacks and drained in `cycle()`.
-#[derive(Default)]
-struct FsbEvents {
-    selection_changed: bool,
-    selection_indices: Vec<usize>,
-    triggered_index: Option<usize>,
-    name_text_changed: Option<String>,
-    dir_text_changed: Option<String>,
-    hidden_toggled: Option<bool>,
-    filter_index_changed: Option<usize>,
-}
-
 /// A file selection box widget for browsing and selecting files.
 ///
 /// Port of C++ `emFileSelectionBox`. Provides a file browser with:
@@ -735,8 +724,6 @@ pub struct emFileSelectionBox {
     filter_lb_id: Option<PanelId>,
     /// True when children must be torn down and rebuilt on next layout pass.
     children_dirty: bool,
-    /// Shared event state collected by child-panel callbacks.
-    events: Rc<RefCell<FsbEvents>>,
     /// Shared listing metadata for the item behavior factory closure.
     listing_data: Rc<RefCell<Vec<FileItemData>>>,
     /// Consumer callback: selection changed.
@@ -750,6 +737,19 @@ pub struct emFileSelectionBox {
     /// B-007 row -64: true after first-Cycle init has connected to the
     /// shared file-update broadcast.
     subscribed_init: bool,
+    /// B-010 Task 7: child widget signals captured in `create_children`,
+    /// then connected once children exist (first-Cycle scaffold).
+    /// Consumed by Cycle in Tasks 8/9.
+    dir_text_sig: SignalId,
+    hidden_check_sig: SignalId,
+    files_sel_sig: SignalId,
+    files_trigger_sig: SignalId,
+    name_text_sig: SignalId,
+    filter_sel_sig: SignalId,
+    /// B-010 Task 7: true after the widget signal subscriptions have been
+    /// connected (after children exist). Separate from `subscribed_init`
+    /// to preserve B-007's eager file-update subscription timing.
+    widget_sigs_subscribed: bool,
 }
 
 impl emFileSelectionBox {
@@ -779,13 +779,19 @@ impl emFileSelectionBox {
             name_field_id: None,
             filter_lb_id: None,
             children_dirty: false,
-            events: Rc::new(RefCell::new(FsbEvents::default())),
             listing_data: Rc::new(RefCell::new(Vec::new())),
             on_selection: None,
             on_trigger: None,
             selection_signal: ctx.create_signal(),
             file_trigger_signal: ctx.create_signal(),
             subscribed_init: false,
+            dir_text_sig: SignalId::null(),
+            hidden_check_sig: SignalId::null(),
+            files_sel_sig: SignalId::null(),
+            files_trigger_sig: SignalId::null(),
+            name_text_sig: SignalId::null(),
+            filter_sel_sig: SignalId::null(),
+            widget_sigs_subscribed: false,
         }
     }
 
@@ -986,6 +992,124 @@ impl emFileSelectionBox {
         self.filter_hidden = hidden;
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // B-010 Task 8 test accessors: expose captured widget signal IDs and
+    // child panel IDs to integration tests in `tests/rc_shim_b010.rs` so
+    // they can fire signals and pre-stage widget state without going
+    // through the (pub(crate)) panel adapters.
+    // ─────────────────────────────────────────────────────────────────
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn dir_text_sig_for_test(&self) -> SignalId {
+        self.dir_text_sig
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn hidden_check_sig_for_test(&self) -> SignalId {
+        self.hidden_check_sig
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn files_sel_sig_for_test(&self) -> SignalId {
+        self.files_sel_sig
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn files_trigger_sig_for_test(&self) -> SignalId {
+        self.files_trigger_sig
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn name_text_sig_for_test(&self) -> SignalId {
+        self.name_text_sig
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn filter_sel_sig_for_test(&self) -> SignalId {
+        self.filter_sel_sig
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_dir_field_text_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        text: &str,
+    ) {
+        let id = self
+            .dir_field_id
+            .expect("dir_field_id set in create_children");
+        tree.with_behavior_as::<TextFieldPanel, _>(id, |p| {
+            p.text_field.set_text_for_test(text);
+        });
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_hidden_checkbox_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        checked: bool,
+    ) {
+        let id = self
+            .hidden_cb_id
+            .expect("hidden_cb_id set in create_children");
+        tree.with_behavior_as::<CheckBoxPanel, _>(id, |p| {
+            p.check_box.set_checked_for_test(checked);
+        });
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_files_lb_selected_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        indices: Vec<usize>,
+    ) {
+        let id = self
+            .files_lb_id
+            .expect("files_lb_id set in create_children");
+        tree.with_behavior_as::<ListBoxPanel, _>(id, |p| {
+            p.list_box.set_selected_indices_for_test(indices);
+        });
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_files_lb_triggered_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        idx: Option<usize>,
+    ) {
+        let id = self
+            .files_lb_id
+            .expect("files_lb_id set in create_children");
+        tree.with_behavior_as::<ListBoxPanel, _>(id, |p| {
+            p.list_box.set_triggered_item_index_for_test(idx);
+        });
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_name_field_text_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        text: &str,
+    ) {
+        let id = self
+            .name_field_id
+            .expect("name_field_id set in create_children");
+        tree.with_behavior_as::<TextFieldPanel, _>(id, |p| {
+            p.text_field.set_text_for_test(text);
+        });
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_filter_lb_selected_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        indices: Vec<usize>,
+    ) {
+        let id = self
+            .filter_lb_id
+            .expect("filter_lb_id set in create_children");
+        tree.with_behavior_as::<ListBoxPanel, _>(id, |p| {
+            p.list_box.set_selected_indices_for_test(indices);
+        });
+    }
+    /// Test-only: stage the FSB's listing directly (skips filesystem I/O).
+    /// Used by Task 8 row tests that need a deterministic listing without
+    /// touching real directories.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_listing_for_test(&mut self, listing: Vec<(String, FileItemData)>) {
+        self.listing = listing;
+        self.listing_invalid = false;
+    }
+
     /// Reload the directory listing, applying filters and hidden-file settings.
     pub fn reload_listing(&mut self) {
         let mut entries = Vec::new();
@@ -1078,7 +1202,20 @@ impl emFileSelectionBox {
     }
 
     /// Create child panels matching C++ AutoExpand().
+    ///
+    /// Test-visible (`pub` under `test-support`) so B-010 Task 8 integration
+    /// tests in `tests/rc_shim_b010.rs` can drive child creation directly
+    /// without going through `LayoutChildren`'s auto-expand gate.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn create_children(&mut self, ctx: &mut PanelCtx) {
+        self.create_children_impl(ctx);
+    }
+    #[cfg(not(any(test, feature = "test-support")))]
     fn create_children(&mut self, ctx: &mut PanelCtx) {
+        self.create_children_impl(ctx);
+    }
+
+    fn create_children_impl(&mut self, ctx: &mut PanelCtx) {
         // Pre-calculate border scaling for FilesLB (C++ sets this dynamically,
         // but we set it at creation time to avoid downcasting).
         let rect = ctx.layout_rect();
@@ -1101,13 +1238,7 @@ impl emFileSelectionBox {
             tf.SetCaption("Directory");
             tf.SetEditable(true);
             tf.SetText(&self.parent_dir.to_string_lossy());
-            let events = self.events.clone();
-            tf.on_text = Some(Box::new(
-                move |text: &str, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                    let mut e = events.borrow_mut();
-                    e.dir_text_changed = Some(text.to_string());
-                },
-            ));
+            self.dir_text_sig = tf.text_signal;
             let id =
                 ctx.create_child_with("directory", Box::new(TextFieldPanel { text_field: tf }));
             self.dir_field_id = Some(id);
@@ -1120,13 +1251,7 @@ impl emFileSelectionBox {
                 emCheckBox::new(&mut sched, "Show\nHidden\nFiles", self.look.clone())
             };
             cb.SetChecked(self.hidden_files_shown, ctx);
-            let events = self.events.clone();
-            cb.on_check = Some(Box::new(
-                move |checked: bool, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                    let mut e = events.borrow_mut();
-                    e.hidden_toggled = Some(checked);
-                },
-            ));
+            self.hidden_check_sig = cb.check_signal;
             let id =
                 ctx.create_child_with("showHiddenFiles", Box::new(CheckBoxPanel { check_box: cb }));
             self.hidden_cb_id = Some(id);
@@ -1155,21 +1280,6 @@ impl emFileSelectionBox {
             if h2 > 1e-100 {
                 lb.border_mut().SetBorderScaling(hs / h2);
             }
-            let events = self.events.clone();
-            lb.on_selection = Some(Box::new(
-                move |indices: &[usize], _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                    let mut e = events.borrow_mut();
-                    e.selection_changed = true;
-                    e.selection_indices = indices.to_vec();
-                },
-            ));
-            let events = self.events.clone();
-            lb.on_trigger = Some(Box::new(
-                move |index: usize, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                    let mut e = events.borrow_mut();
-                    e.triggered_index = Some(index);
-                },
-            ));
             // Set custom item behavior factory for FileItemPanel rendering.
             let listing_data = self.listing_data.clone();
             let parent_dir = self.parent_dir.clone();
@@ -1190,6 +1300,8 @@ impl emFileSelectionBox {
                     parent_dir.clone(),
                 ))
             });
+            self.files_sel_sig = lb.selection_signal;
+            self.files_trigger_sig = lb.item_trigger_signal;
             let id = ctx.create_child_with("files", Box::new(ListBoxPanel { list_box: lb }));
             self.files_lb_id = Some(id);
         }
@@ -1205,13 +1317,7 @@ impl emFileSelectionBox {
             if let Some(name) = self.selected_names.first() {
                 tf.SetText(name);
             }
-            let events = self.events.clone();
-            tf.on_text = Some(Box::new(
-                move |text: &str, _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                    let mut e = events.borrow_mut();
-                    e.name_text_changed = Some(text.to_string());
-                },
-            ));
+            self.name_text_sig = tf.text_signal;
             let id = ctx.create_child_with("name", Box::new(TextFieldPanel { text_field: tf }));
             self.name_field_id = Some(id);
         }
@@ -1230,13 +1336,7 @@ impl emFileSelectionBox {
             if self.selected_filter_index >= 0 {
                 lb.SetSelectedIndex(self.selected_filter_index as usize);
             }
-            let events = self.events.clone();
-            lb.on_selection = Some(Box::new(
-                move |indices: &[usize], _sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                    let mut e = events.borrow_mut();
-                    e.filter_index_changed = indices.first().copied();
-                },
-            ));
+            self.filter_sel_sig = lb.selection_signal;
             let id = ctx.create_child_with("filter", Box::new(ListBoxPanel { list_box: lb }));
             self.filter_lb_id = Some(id);
         }
@@ -1418,6 +1518,16 @@ impl PanelBehavior for emFileSelectionBox {
             self.files_lb_id = None;
             self.name_field_id = None;
             self.filter_lb_id = None;
+            // B-010 Task 7: stale captured signals would point at deleted
+            // child widgets; clear them so the next create_children pass
+            // captures fresh ids and the scaffold re-subscribes.
+            self.dir_text_sig = SignalId::null();
+            self.hidden_check_sig = SignalId::null();
+            self.files_sel_sig = SignalId::null();
+            self.files_trigger_sig = SignalId::null();
+            self.name_text_sig = SignalId::null();
+            self.filter_sel_sig = SignalId::null();
+            self.widget_sigs_subscribed = false;
         }
         self.children_dirty = false;
 
@@ -1502,11 +1612,39 @@ impl PanelBehavior for emFileSelectionBox {
         if !self.subscribed_init {
             let eid = ectx.id();
             let upd = crate::emFileModel::emFileModel::<()>::AcquireUpdateSignalModel(ectx);
-            use slotmap::Key as _;
             if !upd.is_null() {
                 ectx.connect(upd, eid);
             }
             self.subscribed_init = true;
+        }
+
+        // B-010 Task 7: child widget signal subscription scaffold.
+        // Once children exist, connect this engine to each captured widget
+        // signal so future Cycles can react via IsSignaled (Tasks 8/9 add
+        // those branches; the existing closure-drain plumbing below remains
+        // active in Task 7 — behaviour is unchanged).
+        if !self.widget_sigs_subscribed && self.files_lb_id.is_some() {
+            let eid = ectx.id();
+            if self.dir_field_id.is_some() && !self.dir_text_sig.is_null() {
+                ectx.connect(self.dir_text_sig, eid);
+            }
+            if self.hidden_cb_id.is_some() && !self.hidden_check_sig.is_null() {
+                ectx.connect(self.hidden_check_sig, eid);
+            }
+            if !self.files_sel_sig.is_null() {
+                ectx.connect(self.files_sel_sig, eid);
+            }
+            if !self.files_trigger_sig.is_null() {
+                ectx.connect(self.files_trigger_sig, eid);
+            }
+            if self.name_field_id.is_some() && !self.name_text_sig.is_null() {
+                ectx.connect(self.name_text_sig, eid);
+            }
+            if self.filter_lb_id.is_some() && !self.filter_sel_sig.is_null() {
+                ectx.connect(self.filter_sel_sig, eid);
+            }
+            self.widget_sigs_subscribed = true;
+            ectx.wake_up(eid);
         }
 
         // B-007 row -64: broadcast-wake reaction.
@@ -1520,49 +1658,29 @@ impl PanelBehavior for emFileSelectionBox {
             }
         }
 
-        // Take all pending events.
-        let events = {
-            let mut e = self.events.borrow_mut();
-            std::mem::take(&mut *e)
-        };
+        // B-010 Task 8: D-006 IsSignaled branches mirroring C++
+        // emFileSelectionBox::Cycle (cpp:385-501).
+        use slotmap::Key as _;
 
-        // Step 2 (C++): Directory field changed.
-        if let Some(dir_text) = events.dir_text_changed {
-            let new_dir = PathBuf::from(&dir_text);
+        // 1. dir field (cpp:396): ParentDirField text changed.
+        if self.dir_field_id.is_some()
+            && !self.dir_text_sig.is_null()
+            && ectx.IsSignaled(self.dir_text_sig)
+        {
+            let new_text = self
+                .dir_field_id
+                .and_then(|id| {
+                    ctx.tree.with_behavior_as::<TextFieldPanel, _>(id, |p| {
+                        p.text_field.GetText().to_string()
+                    })
+                })
+                .unwrap_or_default();
+            let new_dir = PathBuf::from(&new_text);
             if self.parent_dir != new_dir {
                 self.parent_dir = new_dir;
                 self.triggered_file_name.clear();
                 self.invalidate_listing();
                 // C++ emFileSelectionBox.cpp:401: Signal(SelectionSignal).
-                {
-                    let mut sched = ectx.as_sched_ctx();
-                    sched.fire(self.selection_signal);
-                    if let Some(ref mut cb) = self.on_selection {
-                        cb((), &mut sched);
-                    }
-                }
-            }
-        }
-
-        // Step 4 (C++): Hidden files checkbox toggled.
-        if let Some(shown) = events.hidden_toggled {
-            self.set_hidden_files_shown(shown);
-        }
-
-        // Step 5 (C++): Reload listing if invalid.
-        if self.listing_invalid && self.files_lb_id.is_some() {
-            self.reload_listing();
-            // Sync selection TO emListBox after reload.
-            self.selection_to_list_box(ctx);
-        }
-
-        // Step 6 (C++): emListBox selection changed -> update FSB state.
-        if events.selection_changed && !self.listing_invalid {
-            self.selection_from_list_box(&events.selection_indices);
-            // Update name field.
-            self.sync_name_field(ctx);
-            // C++ emFileSelectionBox.cpp:413+417 area: Signal(SelectionSignal).
-            {
                 let mut sched = ectx.as_sched_ctx();
                 sched.fire(self.selection_signal);
                 if let Some(ref mut cb) = self.on_selection {
@@ -1571,68 +1689,141 @@ impl PanelBehavior for emFileSelectionBox {
             }
         }
 
-        // Step 7 (C++): emListBox trigger (double-click).
-        if let Some(index) = events.triggered_index {
-            if !self.listing_invalid {
-                // First sync selection.
-                self.selection_from_list_box(&events.selection_indices);
+        // 2. hidden checkbox (cpp:405): HiddenCheckBox toggled.
+        if self.hidden_cb_id.is_some()
+            && !self.hidden_check_sig.is_null()
+            && ectx.IsSignaled(self.hidden_check_sig)
+        {
+            let checked = self
+                .hidden_cb_id
+                .and_then(|id| {
+                    ctx.tree
+                        .with_behavior_as::<CheckBoxPanel, _>(id, |p| p.check_box.IsChecked())
+                })
+                .unwrap_or(false);
+            self.set_hidden_files_shown(checked);
+        }
 
+        // C++ cpp:411 ReloadListing if invalid runs after hidden but before
+        // selection branches.
+        if self.listing_invalid && self.files_lb_id.is_some() {
+            self.reload_listing();
+            self.selection_to_list_box(ctx);
+        }
+
+        // 3. files-sel (cpp:413): FilesLB selection changed.
+        if !self.files_sel_sig.is_null()
+            && ectx.IsSignaled(self.files_sel_sig)
+            && !self.listing_invalid
+        {
+            let indices = self
+                .files_lb_id
+                .and_then(|id| {
+                    ctx.tree.with_behavior_as::<ListBoxPanel, _>(id, |p| {
+                        p.list_box.GetSelectedIndices().to_vec()
+                    })
+                })
+                .unwrap_or_default();
+            self.selection_from_list_box(&indices);
+            self.sync_name_field(ctx);
+            // C++ emFileSelectionBox.cpp:413+417 area: Signal(SelectionSignal).
+            let mut sched = ectx.as_sched_ctx();
+            sched.fire(self.selection_signal);
+            if let Some(ref mut cb) = self.on_selection {
+                cb((), &mut sched);
+            }
+        }
+
+        // 4. files-trigger (cpp:419): FilesLB item triggered.
+        if !self.files_trigger_sig.is_null()
+            && ectx.IsSignaled(self.files_trigger_sig)
+            && !self.listing_invalid
+        {
+            let trig = self.files_lb_id.and_then(|id| {
+                ctx.tree
+                    .with_behavior_as::<ListBoxPanel, _>(id, |p| p.list_box.GetTriggeredItemIndex())
+                    .flatten()
+            });
+            if let Some(index) = trig {
+                let indices = self
+                    .files_lb_id
+                    .and_then(|id| {
+                        ctx.tree.with_behavior_as::<ListBoxPanel, _>(id, |p| {
+                            p.list_box.GetSelectedIndices().to_vec()
+                        })
+                    })
+                    .unwrap_or_default();
+                self.selection_from_list_box(&indices);
                 if let Some((name, data)) = self.listing.get(index) {
                     let name = name.clone();
                     let is_dir = data.is_directory;
                     if name == ".." || is_dir {
                         self.enter_sub_dir(&name);
-                        // After entering subdir, update dir field.
                         self.sync_dir_field(ctx);
                     } else {
                         self.triggered_file_name = name.clone();
                         // C++ emFileSelectionBox::TriggerFile
                         // (emFileSelectionBox.cpp:305-309): Signal(FileTriggerSignal).
-                        {
-                            let mut sched = ectx.as_sched_ctx();
-                            sched.fire(self.file_trigger_signal);
-                            if let Some(ref mut cb) = self.on_trigger {
-                                cb(&name, &mut sched);
-                            }
+                        let mut sched = ectx.as_sched_ctx();
+                        sched.fire(self.file_trigger_signal);
+                        if let Some(ref mut cb) = self.on_trigger {
+                            cb(&name, &mut sched);
                         }
                     }
                 }
             }
         }
 
-        // Step 8 (C++): Name field text changed.
-        if let Some(name_text) = events.name_text_changed {
+        // 5. name field (cpp:434): NameField text changed.
+        if self.name_field_id.is_some()
+            && !self.name_text_sig.is_null()
+            && ectx.IsSignaled(self.name_text_sig)
+        {
+            let name_text = self
+                .name_field_id
+                .and_then(|id| {
+                    ctx.tree.with_behavior_as::<TextFieldPanel, _>(id, |p| {
+                        p.text_field.GetText().to_string()
+                    })
+                })
+                .unwrap_or_default();
             if name_text.is_empty() {
                 if self.selected_names.len() == 1 {
                     self.set_selected_name("");
                 }
             } else if name_text.contains('/') || name_text.contains('\\') {
-                // User typed a path -- resolve it.
                 let abs = if Path::new(&name_text).is_absolute() {
                     PathBuf::from(&name_text)
                 } else {
                     self.parent_dir.join(&name_text)
                 };
                 self.set_selected_path(&abs);
-                // Sync name field back to just the filename.
                 self.sync_name_field(ctx);
                 self.sync_dir_field(ctx);
                 // C++ emFileSelectionBox.cpp name-field path: Signal(SelectionSignal).
-                {
-                    let mut sched = ectx.as_sched_ctx();
-                    sched.fire(self.selection_signal);
-                    if let Some(ref mut cb) = self.on_selection {
-                        cb((), &mut sched);
-                    }
+                let mut sched = ectx.as_sched_ctx();
+                sched.fire(self.selection_signal);
+                if let Some(ref mut cb) = self.on_selection {
+                    cb((), &mut sched);
                 }
             } else {
                 self.set_selected_name(&name_text);
             }
         }
 
-        // Step 9 (C++): Filter selection changed.
-        if let Some(filter_idx) = events.filter_index_changed {
-            self.set_selected_filter_index(filter_idx as i32);
+        // 6. filter (cpp:469): FiltersLB selection changed.
+        if self.filter_lb_id.is_some()
+            && !self.filter_sel_sig.is_null()
+            && ectx.IsSignaled(self.filter_sel_sig)
+        {
+            let idx = self.filter_lb_id.and_then(|id| {
+                ctx.tree
+                    .with_behavior_as::<ListBoxPanel, _>(id, |p| p.list_box.GetSelectedIndex())
+                    .flatten()
+            });
+            if let Some(i) = idx {
+                self.set_selected_filter_index(i as i32);
+            }
         }
 
         // Stay awake as long as we have children (panel is expanded).

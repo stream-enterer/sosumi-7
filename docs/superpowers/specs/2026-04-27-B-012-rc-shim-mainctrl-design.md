@@ -176,6 +176,8 @@ The `flags.reload.take() → mw.to_reload = true → MainWindowEngine::Cycle pol
 
 **Verification of MainWindowEngine survival:** `MainWindowEngine::Cycle` retains `close_signal` observation (rs:352-356), `title_signal` observation (rs:359-372), `startup_done` tracking (rs:375-380), and `to_close` self-delete (rs:393-396). Engine is not removed; only the to_reload block.
 
+> Now formalised as D-009-polling-intermediary-replacement (sighting #2).
+
 ### Removal of `ClickFlags`
 
 After all 7 reactions migrate to `IsSignaled`, the `ClickFlags` struct (rs:39-46) is dead. Remove the struct, the field on `MainCtrlPanel` (rs:140), and the `Rc<ClickFlags>` parameters threaded through `LMainPanel::new` (rs:383), `LAbtCfgCmdPanel::new` (rs:477), `LCloseQuitPanel::new` (rs:718). Replace with `Rc<RefCell<Option<ButtonSignals>>>` (or equivalent) per §"Subscribe shape" above.

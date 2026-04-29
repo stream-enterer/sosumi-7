@@ -942,6 +942,41 @@ impl emListBox {
         self.triggered_index
     }
 
+    /// Test-only setter that bypasses signal firing. Used by B-010 row 531
+    /// integration tests in `tests/rc_shim_b010.rs` to pre-stage
+    /// `GetSelectedIndices()` state before firing the captured
+    /// `selection_signal` directly. Production code must use
+    /// `SetSelectedIndices` (which atomically updates state + fires the
+    /// signal). Mirrors `set_checked_for_test` on `emCheckBox`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_selected_indices_for_test(&mut self, indices: Vec<usize>) {
+        for &idx in &self.selected_indices {
+            if idx < self.items.len() {
+                self.items[idx].selected = false;
+            }
+        }
+        let mut new_sel: Vec<usize> = indices
+            .into_iter()
+            .filter(|&i| i < self.items.len())
+            .collect();
+        new_sel.sort_unstable();
+        new_sel.dedup();
+        for &idx in &new_sel {
+            self.items[idx].selected = true;
+        }
+        self.selected_indices = new_sel;
+    }
+
+    /// Test-only setter that bypasses signal firing. Used by B-010 row 532
+    /// integration tests in `tests/rc_shim_b010.rs` to pre-stage
+    /// `GetTriggeredItemIndex()` state before firing the captured
+    /// `item_trigger_signal` directly. Mirrors `set_checked_for_test`
+    /// on `emCheckBox`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_triggered_item_index_for_test(&mut self, idx: Option<usize>) {
+        self.triggered_index = idx;
+    }
+
     // ── Item Panel Interface ─────────────────────────────────────────
 
     /// Get the item panel interface at the given index.

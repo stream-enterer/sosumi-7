@@ -76,6 +76,8 @@ The first seven are **inbound** (widget→Model). The eighth (`progress`) is **o
 
 The working-memory session must ratify R-A (or pick R-B/R-C) before implementation begins, and update D-002 with the resolution.
 
+> Now formalised as D-009-polling-intermediary-replacement (sighting #1).
+
 ## Accessor groups
 
 ### G1 — `emAutoplayViewModel.GetChangeSignal()`

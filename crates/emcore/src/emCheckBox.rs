@@ -86,6 +86,15 @@ impl emCheckBox {
         }
     }
 
+    /// Test-only setter that bypasses signal firing. Used by B-010 row 299/300/301
+    /// integration tests in `tests/rc_shim_b010.rs` to pre-stage `IsChecked()`
+    /// state before firing the captured `check_signal` directly. Production code
+    /// must use `SetChecked` (which atomically updates state + fires the signal).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_checked_for_test(&mut self, checked: bool) {
+        self.checked = checked;
+    }
+
     /// Compute the box + label geometry from the content rect (C++ lines 235-260).
     /// Returns (bx0, by0, bw0, lx, ly, lw, lh) where bx0/by0/bw0 are the outer
     /// box dimensions and lx/ly/lw/lh are the label area.

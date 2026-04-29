@@ -1,15 +1,19 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use slotmap::Key as _;
+
 use crate::emColor::emColor;
 use crate::emCoreConfig::emCoreConfig;
 use crate::emEngineCtx::PanelCtx;
 use crate::emLinearLayout::emLinearLayout;
 use crate::emPainter::emPainter;
 use crate::emPanel::{PanelBehavior, PanelState};
+use crate::emPanelTree::PanelId;
 use crate::emRasterLayout::emRasterLayout;
 use crate::emRec::emRec;
 use crate::emRecNodeConfigModel::emRecNodeConfigModel;
+use crate::emSignal::SignalId;
 use crate::emTiling::{AlignmentH, AlignmentV, ChildConstraint, Spacing};
 
 use super::emBorder::{emBorder, InnerBorderType, OuterBorderType};
@@ -290,8 +294,14 @@ impl PanelBehavior for KBGroup {
     }
 }
 
-/// Miscellaneous mouse settings group — 3 checkboxes.
-struct MouseMiscGroup {
+/// Miscellaneous mouse settings group — 3 checkboxes (stick / emu / pan).
+///
+/// Visibility: `pub(crate)` in production; gated up to `pub` under the
+/// `test-support` feature so the row 299/300/301 integration tests in
+/// `tests/rc_shim_b010.rs` can construct and drive it directly. Production
+/// callers reach it only through `MouseGroup::create_children`.
+#[cfg(any(test, feature = "test-support"))]
+pub struct MouseMiscGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
     generation: Rc<Cell<u64>>,
@@ -299,10 +309,38 @@ struct MouseMiscGroup {
     stick_possible: bool,
     border: emBorder,
     layout: emRasterLayout,
+    // B-010 rows 299/300/301: D-006 first-Cycle init + IsSignaled subscribe state.
+    subscribed_init: bool,
+    stick_sig: SignalId,
+    emu_sig: SignalId,
+    pan_sig: SignalId,
+    stick_id: Option<PanelId>,
+    emu_id: Option<PanelId>,
+    pan_id: Option<PanelId>,
+}
+
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) struct MouseMiscGroup {
+    config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
+    look: Rc<emLook>,
+    generation: Rc<Cell<u64>>,
+    last_generation: u64,
+    stick_possible: bool,
+    border: emBorder,
+    layout: emRasterLayout,
+    // B-010 rows 299/300/301: D-006 first-Cycle init + IsSignaled subscribe state.
+    subscribed_init: bool,
+    stick_sig: SignalId,
+    emu_sig: SignalId,
+    pan_sig: SignalId,
+    stick_id: Option<PanelId>,
+    emu_id: Option<PanelId>,
+    pan_id: Option<PanelId>,
 }
 
 impl MouseMiscGroup {
-    fn new(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
         generation: Rc<Cell<u64>>,
@@ -319,12 +357,121 @@ impl MouseMiscGroup {
                 .with_inner(InnerBorderType::Group)
                 .with_caption("Miscellaneous mouse settings"),
             layout: emRasterLayout::new().with_preferred_tallness(0.04),
+            subscribed_init: false,
+            stick_sig: SignalId::null(),
+            emu_sig: SignalId::null(),
+            pan_sig: SignalId::null(),
+            stick_id: None,
+            emu_id: None,
+            pan_id: None,
         }
     }
 
-    fn create_children(&self, ctx: &mut PanelCtx) {
-        let cfg = self.config.borrow();
-        let c = cfg.GetRec();
+    #[cfg(not(any(test, feature = "test-support")))]
+    pub(crate) fn new(
+        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
+        look: Rc<emLook>,
+        generation: Rc<Cell<u64>>,
+        stick_possible: bool,
+    ) -> Self {
+        let gen = generation.get();
+        Self {
+            config,
+            look,
+            generation,
+            last_generation: gen,
+            stick_possible,
+            border: emBorder::new(OuterBorderType::Group)
+                .with_inner(InnerBorderType::Group)
+                .with_caption("Miscellaneous mouse settings"),
+            layout: emRasterLayout::new().with_preferred_tallness(0.04),
+            subscribed_init: false,
+            stick_sig: SignalId::null(),
+            emu_sig: SignalId::null(),
+            pan_sig: SignalId::null(),
+            stick_id: None,
+            emu_id: None,
+            pan_id: None,
+        }
+    }
+
+    /// Test-only accessors for the captured check_signals. Used by
+    /// `tests/rc_shim_b010.rs` to fire each checkbox's signal directly without
+    /// exposing the `pub(crate)` `CheckBoxPanel` adapter.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn stick_sig_for_test(&self) -> SignalId {
+        self.stick_sig
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn emu_sig_for_test(&self) -> SignalId {
+        self.emu_sig
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn pan_sig_for_test(&self) -> SignalId {
+        self.pan_sig
+    }
+
+    /// Test-only helper: pre-stage a child checkbox's `IsChecked()` state via
+    /// the typed downcast `with_behavior_as::<CheckBoxPanel, _>`. Bypasses
+    /// signal firing — the test fires the captured signal explicitly via
+    /// `sched.fire(stick_sig_for_test())` after staging.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_stick_checked_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        checked: bool,
+    ) {
+        let id = self.stick_id.expect("stick_id set in create_children");
+        tree.with_behavior_as::<CheckBoxPanel, _>(id, |p| {
+            p.check_box.set_checked_for_test(checked);
+        });
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_emu_checked_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        checked: bool,
+    ) {
+        let id = self.emu_id.expect("emu_id set in create_children");
+        tree.with_behavior_as::<CheckBoxPanel, _>(id, |p| {
+            p.check_box.set_checked_for_test(checked);
+        });
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_pan_checked_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        checked: bool,
+    ) {
+        let id = self.pan_id.expect("pan_id set in create_children");
+        tree.with_behavior_as::<CheckBoxPanel, _>(id, |p| {
+            p.check_box.set_checked_for_test(checked);
+        });
+    }
+
+    /// Visibility: `pub(crate)` in production; gated up to `pub` under the
+    /// `test-support` feature so row 299/300/301 integration tests can drive
+    /// child creation without invoking the full `LayoutChildren` path.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn create_children(&mut self, ctx: &mut PanelCtx) {
+        self.create_children_impl(ctx);
+    }
+
+    #[cfg(not(any(test, feature = "test-support")))]
+    pub(crate) fn create_children(&mut self, ctx: &mut PanelCtx) {
+        self.create_children_impl(ctx);
+    }
+
+    fn create_children_impl(&mut self, ctx: &mut PanelCtx) {
+        let (stick_init, emu_init, pan_init) = {
+            let cfg = self.config.borrow();
+            let c = cfg.GetRec();
+            (
+                *c.StickMouseWhenNavigating.GetValue(),
+                *c.EmulateMiddleButton.GetValue(),
+                *c.PanFunction.GetValue(),
+            )
+        };
 
         // C++ emCoreConfigPanel.cpp:295: StickBox->SetEnableSwitch(StickPossible)
         // Disabled when the screen cannot move the mouse pointer.
@@ -336,19 +483,12 @@ impl MouseMiscGroup {
                 self.look.clone(),
             )
         };
-        stick.SetChecked(*c.StickMouseWhenNavigating.GetValue(), ctx);
-        let config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
-        stick.on_check = Some(Box::new(
-            move |checked, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                let mut cm = config.borrow_mut();
-                cm.modify(
-                    |c, sc| c.StickMouseWhenNavigating.SetValue(checked, sc),
-                    sched,
-                );
-                let _ = cm.TrySave(false);
-            },
-        ));
+        stick.SetChecked(stick_init, ctx);
+        // B-010 row 299: capture check_signal BEFORE the checkbox moves into
+        // the child behavior (SignalId is Copy).
+        self.stick_sig = stick.check_signal;
         let stick_id = ctx.create_child_with("stick", Box::new(CheckBoxPanel { check_box: stick }));
+        self.stick_id = Some(stick_id);
         if !self.stick_possible {
             ctx.tree
                 .SetEnableSwitch(stick_id, false, ctx.scheduler.as_deref_mut());
@@ -358,31 +498,21 @@ impl MouseMiscGroup {
             let mut sched = ctx.as_sched_ctx().expect("sched");
             emCheckBox::new(&mut sched, "Emulate\nmiddle button", self.look.clone())
         };
-        emu.SetChecked(*c.EmulateMiddleButton.GetValue(), ctx);
-        let config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
-        emu.on_check = Some(Box::new(
-            move |checked, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                let mut cm = config.borrow_mut();
-                cm.modify(|c, sc| c.EmulateMiddleButton.SetValue(checked, sc), sched);
-                let _ = cm.TrySave(false);
-            },
-        ));
-        ctx.create_child_with("emu", Box::new(CheckBoxPanel { check_box: emu }));
+        emu.SetChecked(emu_init, ctx);
+        // B-010 row 300: capture check_signal BEFORE child move.
+        self.emu_sig = emu.check_signal;
+        let emu_id = ctx.create_child_with("emu", Box::new(CheckBoxPanel { check_box: emu }));
+        self.emu_id = Some(emu_id);
 
         let mut pan = {
             let mut sched = ctx.as_sched_ctx().expect("sched");
             emCheckBox::new(&mut sched, "Pan\nfunction", self.look.clone())
         };
-        pan.SetChecked(*c.PanFunction.GetValue(), ctx);
-        let config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
-        pan.on_check = Some(Box::new(
-            move |checked, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                let mut cm = config.borrow_mut();
-                cm.modify(|c, sc| c.PanFunction.SetValue(checked, sc), sched);
-                let _ = cm.TrySave(false);
-            },
-        ));
-        ctx.create_child_with("pan", Box::new(CheckBoxPanel { check_box: pan }));
+        pan.SetChecked(pan_init, ctx);
+        // B-010 row 301: capture check_signal BEFORE child move.
+        self.pan_sig = pan.check_signal;
+        let pan_id = ctx.create_child_with("pan", Box::new(CheckBoxPanel { check_box: pan }));
+        self.pan_id = Some(pan_id);
     }
 }
 
@@ -422,6 +552,15 @@ impl PanelBehavior for MouseMiscGroup {
                 ctx.delete_child(id);
             }
             self.last_generation = gen;
+            // B-010: child PanelIds and signals are stale after rebuild;
+            // re-subscribe on the next Cycle once children are recreated.
+            self.subscribed_init = false;
+            self.stick_id = None;
+            self.emu_id = None;
+            self.pan_id = None;
+            self.stick_sig = SignalId::null();
+            self.emu_sig = SignalId::null();
+            self.pan_sig = SignalId::null();
         }
 
         if ctx.child_count() == 0 {
@@ -436,6 +575,94 @@ impl PanelBehavior for MouseMiscGroup {
             self.border
                 .content_canvas_color(ctx.GetCanvasColor(), &self.look, ctx.is_enabled());
         ctx.set_all_children_canvas_color(cc);
+    }
+
+    /// B-010 rows 299/300/301: D-006 first-Cycle init + IsSignaled subscribe shape.
+    ///
+    /// Mirrors C++ `emCoreConfigPanel::MouseMiscGroup::Cycle`
+    /// (emCoreConfigPanel.cpp:~245-275): subscribes to each checkbox's
+    /// CheckSignal and on `IsSignaled(...)` propagates `IsChecked()` to the
+    /// corresponding config field + Save (if changed). Branches in C++ source
+    /// order: stick → emu → pan.
+    fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        if !self.subscribed_init
+            && self.stick_id.is_some()
+            && self.emu_id.is_some()
+            && self.pan_id.is_some()
+        {
+            let eid = ectx.id();
+            ectx.connect(self.stick_sig, eid);
+            ectx.connect(self.emu_sig, eid);
+            ectx.connect(self.pan_sig, eid);
+            self.subscribed_init = true;
+            ectx.wake_up(eid);
+        }
+
+        // C++ guards stick branch with `&& StickPossible` (emCoreConfigPanel.cpp:~252).
+        if self.stick_possible && !self.stick_sig.is_null() && ectx.IsSignaled(self.stick_sig) {
+            let checked = ctx
+                .tree
+                .with_behavior_as::<CheckBoxPanel, _>(
+                    self.stick_id.expect("stick_id set in create_children"),
+                    |p| p.check_box.IsChecked(),
+                )
+                .unwrap_or(false);
+            let mut cm = self.config.borrow_mut();
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            cm.modify(
+                |c, sc| {
+                    if *c.StickMouseWhenNavigating.GetValue() != checked {
+                        c.StickMouseWhenNavigating.SetValue(checked, sc);
+                    }
+                },
+                &mut sched,
+            );
+            let _ = cm.TrySave(false);
+        }
+
+        if !self.emu_sig.is_null() && ectx.IsSignaled(self.emu_sig) {
+            let checked = ctx
+                .tree
+                .with_behavior_as::<CheckBoxPanel, _>(
+                    self.emu_id.expect("emu_id set in create_children"),
+                    |p| p.check_box.IsChecked(),
+                )
+                .unwrap_or(false);
+            let mut cm = self.config.borrow_mut();
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            cm.modify(
+                |c, sc| {
+                    if *c.EmulateMiddleButton.GetValue() != checked {
+                        c.EmulateMiddleButton.SetValue(checked, sc);
+                    }
+                },
+                &mut sched,
+            );
+            let _ = cm.TrySave(false);
+        }
+
+        if !self.pan_sig.is_null() && ectx.IsSignaled(self.pan_sig) {
+            let checked = ctx
+                .tree
+                .with_behavior_as::<CheckBoxPanel, _>(
+                    self.pan_id.expect("pan_id set in create_children"),
+                    |p| p.check_box.IsChecked(),
+                )
+                .unwrap_or(false);
+            let mut cm = self.config.borrow_mut();
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            cm.modify(
+                |c, sc| {
+                    if *c.PanFunction.GetValue() != checked {
+                        c.PanFunction.SetValue(checked, sc);
+                    }
+                },
+                &mut sched,
+            );
+            let _ = cm.TrySave(false);
+        }
+
+        false
     }
 }
 
@@ -759,14 +986,36 @@ impl PanelBehavior for MaxMemGroup {
 }
 
 /// Bare emLinearLayout wrapping the memory emScalarField.
-struct MemFieldLayoutPanel {
+///
+/// Visibility: `pub(crate)` in production; gated up to `pub` under the
+/// `test-support` feature so the row 563 integration test in
+/// `tests/rc_shim_b010.rs` can construct and drive it directly. Production
+/// callers reach it only through `MaxMemGroup::create_children`.
+#[cfg(any(test, feature = "test-support"))]
+pub struct MemFieldLayoutPanel {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
     layout: emLinearLayout,
+    // B-010 row 563: D-006 first-Cycle init + IsSignaled subscribe state.
+    subscribed_init: bool,
+    mem_sig: SignalId,
+    mem_id: Option<PanelId>,
+}
+
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) struct MemFieldLayoutPanel {
+    config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
+    look: Rc<emLook>,
+    layout: emLinearLayout,
+    // B-010 row 563: D-006 first-Cycle init + IsSignaled subscribe state.
+    subscribed_init: bool,
+    mem_sig: SignalId,
+    mem_id: Option<PanelId>,
 }
 
 impl MemFieldLayoutPanel {
-    fn new(config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>, look: Rc<emLook>) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>, look: Rc<emLook>) -> Self {
         Self {
             config,
             look,
@@ -777,12 +1026,72 @@ impl MemFieldLayoutPanel {
                 margin_bottom: 0.0,
                 ..Default::default()
             }),
+            subscribed_init: false,
+            mem_sig: SignalId::null(),
+            mem_id: None,
         }
     }
 
-    fn create_children(&self, ctx: &mut PanelCtx) {
-        let cfg = self.config.borrow();
-        let c = cfg.GetRec();
+    #[cfg(not(any(test, feature = "test-support")))]
+    pub(crate) fn new(
+        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
+        look: Rc<emLook>,
+    ) -> Self {
+        Self {
+            config,
+            look,
+            layout: emLinearLayout::horizontal().with_spacing(Spacing {
+                margin_left: 0.02,
+                margin_top: 0.05,
+                margin_right: 0.05,
+                margin_bottom: 0.0,
+                ..Default::default()
+            }),
+            subscribed_init: false,
+            mem_sig: SignalId::null(),
+            mem_id: None,
+        }
+    }
+
+    /// Test-only accessor for the captured value_signal. Used by
+    /// `tests/rc_shim_b010.rs` to fire the scalar field's signal directly
+    /// without exposing the `pub(crate)` `ScalarFieldPanel` adapter.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn mem_sig_for_test(&self) -> SignalId {
+        self.mem_sig
+    }
+
+    /// Test-only helper: pre-stage the child scalar field's `GetValue()` via
+    /// the typed downcast `with_behavior_as::<ScalarFieldPanel, _>`. Bypasses
+    /// signal firing — the test fires the captured signal explicitly via
+    /// `sched.fire(mem_sig_for_test())` after staging.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_mem_value_for_test(&self, tree: &mut crate::emPanelTree::PanelTree, value: f64) {
+        let id = self.mem_id.expect("mem_id set in create_children");
+        tree.with_behavior_as::<ScalarFieldPanel, _>(id, |p| {
+            p.scalar_field.set_value_for_test(value);
+        });
+    }
+
+    /// Visibility: `pub(crate)` in production; gated up to `pub` under the
+    /// `test-support` feature so row 563 integration test can drive child
+    /// creation without invoking the full `LayoutChildren` path.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn create_children(&mut self, ctx: &mut PanelCtx) {
+        self.create_children_impl(ctx);
+    }
+
+    #[cfg(not(any(test, feature = "test-support")))]
+    pub(crate) fn create_children(&mut self, ctx: &mut PanelCtx) {
+        self.create_children_impl(ctx);
+    }
+
+    fn create_children_impl(&mut self, ctx: &mut PanelCtx) {
+        let init_mb = {
+            let cfg = self.config.borrow();
+            let c = cfg.GetRec();
+            *c.MaxMegabytesPerView.GetValue() as i32
+        };
 
         // Memory field: log2 space, range 8..16384 → ~300..1400 in val space
         let min_val = mem_cfg_to_val(8);
@@ -792,21 +1101,16 @@ impl MemFieldLayoutPanel {
             emScalarField::new(&mut sched, min_val, max_val, self.look.clone())
         };
         sf.SetCaption("Max megabytes per view");
-        sf.set_initial_value(mem_cfg_to_val(*c.MaxMegabytesPerView.GetValue() as i32));
+        sf.set_initial_value(mem_cfg_to_val(init_mb));
         sf.SetScaleMarkIntervals(&[100, 10]);
         sf.SetTextBoxTallness(0.3);
         sf.border_mut().SetBorderScaling(1.5);
         sf.SetTextOfValueFunc(Box::new(mem_text_of_value));
-        let config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
-        sf.on_value = Some(Box::new(
-            move |val, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                let mb = mem_val_to_cfg(val).clamp(8, 16384) as i64;
-                let mut cm = config.borrow_mut();
-                cm.modify(|c, sc| c.MaxMegabytesPerView.SetValue(mb, sc), sched);
-                let _ = cm.TrySave(false);
-            },
-        ));
-        ctx.create_child_with("mem", Box::new(ScalarFieldPanel { scalar_field: sf }));
+        // B-010 row 563: capture value_signal BEFORE the field moves into the
+        // child behavior (SignalId is Copy).
+        self.mem_sig = sf.value_signal;
+        let mem_id = ctx.create_child_with("mem", Box::new(ScalarFieldPanel { scalar_field: sf }));
+        self.mem_id = Some(mem_id);
     }
 }
 
@@ -835,6 +1139,45 @@ impl PanelBehavior for MemFieldLayoutPanel {
         }
 
         self.layout.do_layout_skip(ctx, None, None);
+    }
+
+    /// B-010 row 563: D-006 first-Cycle init + IsSignaled subscribe shape.
+    ///
+    /// Mirrors C++ `emCoreConfigPanel::MaxMemGroup::Cycle`
+    /// (emCoreConfigPanel.cpp:503-519): subscribes to MemField's ValueSignal
+    /// and on `IsSignaled(...)` propagates `GetValue()` through
+    /// `mem_val_to_cfg` to `Config->MaxMegabytesPerView` + Save (if changed).
+    fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        if !self.subscribed_init && self.mem_id.is_some() {
+            let eid = ectx.id();
+            ectx.connect(self.mem_sig, eid);
+            self.subscribed_init = true;
+            ectx.wake_up(eid);
+        }
+
+        if !self.mem_sig.is_null() && ectx.IsSignaled(self.mem_sig) {
+            let val = ctx
+                .tree
+                .with_behavior_as::<ScalarFieldPanel, _>(
+                    self.mem_id.expect("mem_id set in create_children"),
+                    |p| p.scalar_field.GetValue(),
+                )
+                .unwrap_or(0.0);
+            let mb = mem_val_to_cfg(val).clamp(8, 16384) as i64;
+            let mut cm = self.config.borrow_mut();
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            cm.modify(
+                |c, sc| {
+                    if *c.MaxMegabytesPerView.GetValue() != mb {
+                        c.MaxMegabytesPerView.SetValue(mb, sc);
+                    }
+                },
+                &mut sched,
+            );
+            let _ = cm.TrySave(false);
+        }
+
+        false
     }
 }
 
@@ -987,17 +1330,46 @@ impl PanelBehavior for MaxMemTunnelPanel {
 }
 
 /// CPU group — MaxRenderThreads scalar field + AllowSIMD checkbox.
-struct CpuGroup {
+///
+/// Visibility: `pub(crate)` in production; gated up to `pub` under the
+/// `test-support` feature so the row 746/755 integration tests in
+/// `tests/rc_shim_b010.rs` can construct and drive it directly. Production
+/// callers reach it only through `PerformanceGroup::create_children`.
+#[cfg(any(test, feature = "test-support"))]
+pub struct CpuGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
     generation: Rc<Cell<u64>>,
     last_generation: u64,
     border: emBorder,
     layout: emLinearLayout,
+    // B-010 rows 746/755: D-006 first-Cycle init + IsSignaled subscribe state.
+    subscribed_init: bool,
+    threads_sig: SignalId,
+    simd_sig: SignalId,
+    threads_id: Option<PanelId>,
+    simd_id: Option<PanelId>,
+}
+
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) struct CpuGroup {
+    config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
+    look: Rc<emLook>,
+    generation: Rc<Cell<u64>>,
+    last_generation: u64,
+    border: emBorder,
+    layout: emLinearLayout,
+    // B-010 rows 746/755: D-006 first-Cycle init + IsSignaled subscribe state.
+    subscribed_init: bool,
+    threads_sig: SignalId,
+    simd_sig: SignalId,
+    threads_id: Option<PanelId>,
+    simd_id: Option<PanelId>,
 }
 
 impl CpuGroup {
-    fn new(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
         generation: Rc<Cell<u64>>,
@@ -1017,12 +1389,100 @@ impl CpuGroup {
                 inner_v: 0.1,
                 ..Default::default()
             }),
+            subscribed_init: false,
+            threads_sig: SignalId::null(),
+            simd_sig: SignalId::null(),
+            threads_id: None,
+            simd_id: None,
         }
     }
 
-    fn create_children(&mut self, ctx: &mut PanelCtx) {
-        let cfg = self.config.borrow();
-        let c = cfg.GetRec();
+    #[cfg(not(any(test, feature = "test-support")))]
+    pub(crate) fn new(
+        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
+        look: Rc<emLook>,
+        generation: Rc<Cell<u64>>,
+    ) -> Self {
+        let gen = generation.get();
+        let mut border = emBorder::new(OuterBorderType::Instrument)
+            .with_inner(InnerBorderType::Group)
+            .with_caption("CPU");
+        border.SetBorderScaling(1.5);
+        Self {
+            config,
+            look,
+            generation,
+            last_generation: gen,
+            border,
+            layout: emLinearLayout::vertical().with_spacing(Spacing {
+                inner_v: 0.1,
+                ..Default::default()
+            }),
+            subscribed_init: false,
+            threads_sig: SignalId::null(),
+            simd_sig: SignalId::null(),
+            threads_id: None,
+            simd_id: None,
+        }
+    }
+
+    /// Test-only accessors for the captured signals. Used by
+    /// `tests/rc_shim_b010.rs` to fire each child's signal directly without
+    /// exposing the `pub(crate)` `ScalarFieldPanel`/`CheckBoxPanel` adapters.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn threads_sig_for_test(&self) -> SignalId {
+        self.threads_sig
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn simd_sig_for_test(&self) -> SignalId {
+        self.simd_sig
+    }
+
+    /// Test-only helper: pre-stage the threads scalar field's `GetValue()` via
+    /// the typed downcast. Bypasses signal firing — the test fires the
+    /// captured signal explicitly via `sched.fire(threads_sig_for_test())`
+    /// after staging.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_threads_value_for_test(&self, tree: &mut crate::emPanelTree::PanelTree, value: f64) {
+        let id = self.threads_id.expect("threads_id set in create_children");
+        tree.with_behavior_as::<ScalarFieldPanel, _>(id, |p| {
+            p.scalar_field.set_value_for_test(value);
+        });
+    }
+
+    /// Test-only helper: pre-stage the SIMD checkbox's `IsChecked()` via the
+    /// typed downcast.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_simd_checked_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        checked: bool,
+    ) {
+        let id = self.simd_id.expect("simd_id set in create_children");
+        tree.with_behavior_as::<CheckBoxPanel, _>(id, |p| {
+            p.check_box.set_checked_for_test(checked);
+        });
+    }
+
+    /// Visibility: `pub(crate)` in production; gated up to `pub` under the
+    /// `test-support` feature so row 746/755 integration tests can drive
+    /// child creation without invoking the full `LayoutChildren` path.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn create_children(&mut self, ctx: &mut PanelCtx) {
+        self.create_children_impl(ctx);
+    }
+
+    #[cfg(not(any(test, feature = "test-support")))]
+    pub(crate) fn create_children(&mut self, ctx: &mut PanelCtx) {
+        self.create_children_impl(ctx);
+    }
+
+    fn create_children_impl(&mut self, ctx: &mut PanelCtx) {
+        let (threads_init, simd_init) = {
+            let cfg = self.config.borrow();
+            let c = cfg.GetRec();
+            (*c.MaxRenderThreads.GetValue(), *c.AllowSIMD.GetValue())
+        };
 
         // MaxRenderThreads: range 1-32
         let mut sf = {
@@ -1030,24 +1490,19 @@ impl CpuGroup {
             emScalarField::new(&mut sched, 1.0, 32.0, self.look.clone())
         };
         sf.SetCaption("Max render threads");
-        sf.set_initial_value(*c.MaxRenderThreads.GetValue() as f64);
+        sf.set_initial_value(threads_init as f64);
         sf.SetScaleMarkIntervals(&[1]);
         sf.border_mut().outer = OuterBorderType::None;
         sf.border_mut().inner = InnerBorderType::InputField;
         sf.border_mut().SetBorderScaling(1.5);
-        let config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
-        sf.on_value = Some(Box::new(
-            move |val, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                let threads = ((val + 0.5) as i64).clamp(1, 32);
-                let mut cm = config.borrow_mut();
-                cm.modify(|c, sc| c.MaxRenderThreads.SetValue(threads, sc), sched);
-                let _ = cm.TrySave(false);
-            },
-        ));
+        // B-010 row 746: capture value_signal BEFORE the field moves into
+        // the child behavior (SignalId is Copy).
+        self.threads_sig = sf.value_signal;
         let threads_id = ctx.create_child_with(
             "MaxRenderThreads",
             Box::new(ScalarFieldPanel { scalar_field: sf }),
         );
+        self.threads_id = Some(threads_id);
         self.layout.set_child_constraint(
             threads_id,
             ChildConstraint {
@@ -1061,16 +1516,11 @@ impl CpuGroup {
             let mut sched = ctx.as_sched_ctx().expect("sched");
             emCheckBox::new(&mut sched, "Allow SIMD", self.look.clone())
         };
-        cb.SetChecked(*c.AllowSIMD.GetValue(), ctx);
-        let config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
-        cb.on_check = Some(Box::new(
-            move |checked, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                let mut cm = config.borrow_mut();
-                cm.modify(|c, sc| c.AllowSIMD.SetValue(checked, sc), sched);
-                let _ = cm.TrySave(false);
-            },
-        ));
-        ctx.create_child_with("allowSIMD", Box::new(CheckBoxPanel { check_box: cb }));
+        cb.SetChecked(simd_init, ctx);
+        // B-010 row 755: capture check_signal BEFORE child move.
+        self.simd_sig = cb.check_signal;
+        let simd_id = ctx.create_child_with("allowSIMD", Box::new(CheckBoxPanel { check_box: cb }));
+        self.simd_id = Some(simd_id);
     }
 }
 
@@ -1110,6 +1560,13 @@ impl PanelBehavior for CpuGroup {
                 ctx.delete_child(id);
             }
             self.last_generation = gen;
+            // B-010: child PanelIds and signals are stale after rebuild;
+            // re-subscribe on the next Cycle once children are recreated.
+            self.subscribed_init = false;
+            self.threads_id = None;
+            self.simd_id = None;
+            self.threads_sig = SignalId::null();
+            self.simd_sig = SignalId::null();
         }
 
         if ctx.child_count() == 0 {
@@ -1125,20 +1582,135 @@ impl PanelBehavior for CpuGroup {
                 .content_canvas_color(ctx.GetCanvasColor(), &self.look, ctx.is_enabled());
         ctx.set_all_children_canvas_color(cc);
     }
+
+    /// B-010 rows 746/755: D-006 first-Cycle init + IsSignaled subscribe shape.
+    ///
+    /// Mirrors C++ `emCoreConfigPanel::PerformanceGroup::Cycle`
+    /// (emCoreConfigPanel.cpp:667-686): subscribes to MaxRenderThreadsField's
+    /// ValueSignal and AllowSIMDBox's CheckSignal; on `IsSignaled(...)`
+    /// propagates to `Config->MaxRenderThreads` / `Config->AllowSIMD` + Save
+    /// (if changed). Branches in C++ source order: threads → SIMD.
+    fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        if !self.subscribed_init && self.threads_id.is_some() && self.simd_id.is_some() {
+            let eid = ectx.id();
+            ectx.connect(self.threads_sig, eid);
+            ectx.connect(self.simd_sig, eid);
+            self.subscribed_init = true;
+            ectx.wake_up(eid);
+        }
+
+        if !self.threads_sig.is_null() && ectx.IsSignaled(self.threads_sig) {
+            let val = ctx
+                .tree
+                .with_behavior_as::<ScalarFieldPanel, _>(
+                    self.threads_id.expect("threads_id set in create_children"),
+                    |p| p.scalar_field.GetValue(),
+                )
+                .unwrap_or(0.0);
+            let threads = ((val + 0.5) as i64).clamp(1, 32);
+            let mut cm = self.config.borrow_mut();
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            cm.modify(
+                |c, sc| {
+                    if *c.MaxRenderThreads.GetValue() != threads {
+                        c.MaxRenderThreads.SetValue(threads, sc);
+                    }
+                },
+                &mut sched,
+            );
+            let _ = cm.TrySave(false);
+        }
+
+        if !self.simd_sig.is_null() && ectx.IsSignaled(self.simd_sig) {
+            let checked = ctx
+                .tree
+                .with_behavior_as::<CheckBoxPanel, _>(
+                    self.simd_id.expect("simd_id set in create_children"),
+                    |p| p.check_box.IsChecked(),
+                )
+                .unwrap_or(false);
+            let mut cm = self.config.borrow_mut();
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            cm.modify(
+                |c, sc| {
+                    if *c.AllowSIMD.GetValue() != checked {
+                        c.AllowSIMD.SetValue(checked, sc);
+                    }
+                },
+                &mut sched,
+            );
+            let _ = cm.TrySave(false);
+        }
+
+        false
+    }
+}
+
+/// Mirrors C++ `emCoreConfigPanel::PerformanceGroup::InvalidatePaintingOfAllWindows`
+/// (emCoreConfigPanel.cpp:828-843). Walks every window registered with the
+/// engine and marks its compositor cache fully dirty so the next frame
+/// repaints. Called from the Downscale/Upscale Cycle branches when the
+/// corresponding config field changes.
+fn InvalidatePaintingOfAllWindows(ectx: &mut crate::emEngineCtx::EngineCtx<'_>) {
+    #[cfg(any(test, feature = "test-support"))]
+    {
+        INVALIDATE_PAINTING_OF_ALL_WINDOWS_CALLS.with(|c| c.set(c.get() + 1));
+    }
+    for w in ectx.windows.values_mut() {
+        w.invalidate();
+    }
+}
+
+// Test-only counter incremented every time `InvalidatePaintingOfAllWindows`
+// fires. Used by `tests/rc_shim_b010.rs::row_791_…` to observe that the
+// upscale Cycle branch invokes the helper without requiring a populated
+// window registry in the test harness.
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    pub static INVALIDATE_PAINTING_OF_ALL_WINDOWS_CALLS: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Performance group — tunnel, CPU group, 2 quality scalar fields.
-struct PerformanceGroup {
+///
+/// Visibility: `pub(crate)` in production; gated up to `pub` under the
+/// `test-support` feature so the row 773/791 integration tests in
+/// `tests/rc_shim_b010.rs` can construct and drive it directly. Production
+/// callers reach it only through the root `emCoreConfigPanel` AutoExpand path.
+#[cfg(any(test, feature = "test-support"))]
+pub struct PerformanceGroup {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
     generation: Rc<Cell<u64>>,
     last_generation: u64,
     border: emBorder,
     layout: emRasterLayout,
+    // B-010 rows 773/791: D-006 first-Cycle init + IsSignaled subscribe state.
+    subscribed_init: bool,
+    downscale_sig: SignalId,
+    upscale_sig: SignalId,
+    downscale_id: Option<PanelId>,
+    upscale_id: Option<PanelId>,
+}
+
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) struct PerformanceGroup {
+    config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
+    look: Rc<emLook>,
+    generation: Rc<Cell<u64>>,
+    last_generation: u64,
+    border: emBorder,
+    layout: emRasterLayout,
+    // B-010 rows 773/791: D-006 first-Cycle init + IsSignaled subscribe state.
+    subscribed_init: bool,
+    downscale_sig: SignalId,
+    upscale_sig: SignalId,
+    downscale_id: Option<PanelId>,
+    upscale_id: Option<PanelId>,
 }
 
 impl PerformanceGroup {
-    fn new(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
         generation: Rc<Cell<u64>>,
@@ -1161,10 +1733,91 @@ impl PerformanceGroup {
                     margin_bottom: 0.1,
                     ..Default::default()
                 }),
+            subscribed_init: false,
+            downscale_sig: SignalId::null(),
+            upscale_sig: SignalId::null(),
+            downscale_id: None,
+            upscale_id: None,
         }
     }
 
-    fn create_children(&self, ctx: &mut PanelCtx) {
+    #[cfg(not(any(test, feature = "test-support")))]
+    pub(crate) fn new(
+        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
+        look: Rc<emLook>,
+        generation: Rc<Cell<u64>>,
+    ) -> Self {
+        let gen = generation.get();
+        Self {
+            config,
+            look,
+            generation,
+            last_generation: gen,
+            border: emBorder::new(OuterBorderType::Group)
+                .with_inner(InnerBorderType::Group)
+                .with_caption("Graphics Performance vs. Quality"),
+            layout: emRasterLayout::new()
+                .with_preferred_tallness(0.2)
+                .with_spacing(Spacing {
+                    margin_left: 0.05,
+                    margin_top: 0.1,
+                    margin_right: 0.05,
+                    margin_bottom: 0.1,
+                    ..Default::default()
+                }),
+            subscribed_init: false,
+            downscale_sig: SignalId::null(),
+            upscale_sig: SignalId::null(),
+            downscale_id: None,
+            upscale_id: None,
+        }
+    }
+
+    /// Test-only accessors for the captured downscale/upscale signals.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn downscale_sig_for_test(&self) -> SignalId {
+        self.downscale_sig
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn upscale_sig_for_test(&self) -> SignalId {
+        self.upscale_sig
+    }
+
+    /// Test-only helper: pre-stage the downscale scalar field's `GetValue()`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_downscale_value_for_test(
+        &self,
+        tree: &mut crate::emPanelTree::PanelTree,
+        value: f64,
+    ) {
+        let id = self
+            .downscale_id
+            .expect("downscale_id set in create_children");
+        tree.with_behavior_as::<ScalarFieldPanel, _>(id, |p| {
+            p.scalar_field.set_value_for_test(value);
+        });
+    }
+
+    /// Test-only helper: pre-stage the upscale scalar field's `GetValue()`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_upscale_value_for_test(&self, tree: &mut crate::emPanelTree::PanelTree, value: f64) {
+        let id = self.upscale_id.expect("upscale_id set in create_children");
+        tree.with_behavior_as::<ScalarFieldPanel, _>(id, |p| {
+            p.scalar_field.set_value_for_test(value);
+        });
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn create_children(&mut self, ctx: &mut PanelCtx) {
+        self.create_children_impl(ctx);
+    }
+
+    #[cfg(not(any(test, feature = "test-support")))]
+    pub(crate) fn create_children(&mut self, ctx: &mut PanelCtx) {
+        self.create_children_impl(ctx);
+    }
+
+    fn create_children_impl(&mut self, ctx: &mut PanelCtx) {
         let cfg = self.config.borrow();
         let c = cfg.GetRec();
 
@@ -1201,21 +1854,16 @@ impl PerformanceGroup {
         ds_sf.SetTextBoxTallness(0.3);
         ds_sf.border_mut().SetBorderScaling(1.5);
         ds_sf.SetTextOfValueFunc(Box::new(downscale_text));
-        let config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
-        ds_sf.on_value = Some(Box::new(
-            move |val, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                let q = ((val + 0.5) as i64).clamp(2, 6);
-                let mut cm = config.borrow_mut();
-                cm.modify(|c, sc| c.DownscaleQuality.SetValue(q, sc), sched);
-                let _ = cm.TrySave(false);
-            },
-        ));
-        ctx.create_child_with(
+        // B-010 row 773: capture value_signal BEFORE the field moves into
+        // the child behavior (SignalId is Copy).
+        self.downscale_sig = ds_sf.value_signal;
+        let downscale_id = ctx.create_child_with(
             "downscaleQuality",
             Box::new(ScalarFieldPanel {
                 scalar_field: ds_sf,
             }),
         );
+        self.downscale_id = Some(downscale_id);
 
         // UpscaleQuality: range 0-5 (0 = Nearest Pixel)
         let mut us_sf = {
@@ -1229,21 +1877,15 @@ impl PerformanceGroup {
         us_sf.SetTextBoxTallness(0.3);
         us_sf.border_mut().SetBorderScaling(1.5);
         us_sf.SetTextOfValueFunc(Box::new(upscale_text));
-        let config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
-        us_sf.on_value = Some(Box::new(
-            move |val, sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                let q = ((val + 0.5) as i64).clamp(0, 5);
-                let mut cm = config.borrow_mut();
-                cm.modify(|c, sc| c.UpscaleQuality.SetValue(q, sc), sched);
-                let _ = cm.TrySave(false);
-            },
-        ));
-        ctx.create_child_with(
+        // B-010 row 791: capture value_signal BEFORE child move.
+        self.upscale_sig = us_sf.value_signal;
+        let upscale_id = ctx.create_child_with(
             "upscaleQuality",
             Box::new(ScalarFieldPanel {
                 scalar_field: us_sf,
             }),
         );
+        self.upscale_id = Some(upscale_id);
     }
 }
 
@@ -1283,6 +1925,13 @@ impl PanelBehavior for PerformanceGroup {
                 ctx.delete_child(id);
             }
             self.last_generation = gen;
+            // B-010: child PanelIds and signals are stale after rebuild;
+            // re-subscribe on the next Cycle once children are recreated.
+            self.subscribed_init = false;
+            self.downscale_id = None;
+            self.upscale_id = None;
+            self.downscale_sig = SignalId::null();
+            self.upscale_sig = SignalId::null();
         }
 
         if ctx.child_count() == 0 {
@@ -1297,6 +1946,86 @@ impl PanelBehavior for PerformanceGroup {
             self.border
                 .content_canvas_color(ctx.GetCanvasColor(), &self.look, ctx.is_enabled());
         ctx.set_all_children_canvas_color(cc);
+    }
+
+    /// B-010 rows 773/791: D-006 first-Cycle init + IsSignaled subscribe shape.
+    ///
+    /// Mirrors C++ `emCoreConfigPanel::PerformanceGroup::Cycle`
+    /// (emCoreConfigPanel.cpp:687-712): subscribes to DownscaleQualityField's
+    /// and UpscaleQualityField's ValueSignal; on `IsSignaled(...)` propagates
+    /// the round/clamp transform to `Config->Downscale/UpscaleQuality` + Save,
+    /// and (for both fields, per cpp:701/710) calls
+    /// `InvalidatePaintingOfAllWindows` if the value actually changed.
+    /// Branches in C++ source order: downscale → upscale.
+    fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        if !self.subscribed_init && self.downscale_id.is_some() && self.upscale_id.is_some() {
+            let eid = ectx.id();
+            ectx.connect(self.downscale_sig, eid);
+            ectx.connect(self.upscale_sig, eid);
+            self.subscribed_init = true;
+            ectx.wake_up(eid);
+        }
+
+        if !self.downscale_sig.is_null() && ectx.IsSignaled(self.downscale_sig) {
+            let val = ctx
+                .tree
+                .with_behavior_as::<ScalarFieldPanel, _>(
+                    self.downscale_id
+                        .expect("downscale_id set in create_children"),
+                    |p| p.scalar_field.GetValue(),
+                )
+                .unwrap_or(0.0);
+            let q = ((val + 0.5) as i64).clamp(2, 6);
+            let changed = {
+                let mut cm = self.config.borrow_mut();
+                let mut sched = ctx.as_sched_ctx().expect("sched");
+                let before = *cm.GetRec().DownscaleQuality.GetValue();
+                cm.modify(
+                    |c, sc| {
+                        if *c.DownscaleQuality.GetValue() != q {
+                            c.DownscaleQuality.SetValue(q, sc);
+                        }
+                    },
+                    &mut sched,
+                );
+                let _ = cm.TrySave(false);
+                before != q
+            };
+            if changed {
+                InvalidatePaintingOfAllWindows(ectx);
+            }
+        }
+
+        if !self.upscale_sig.is_null() && ectx.IsSignaled(self.upscale_sig) {
+            let val = ctx
+                .tree
+                .with_behavior_as::<ScalarFieldPanel, _>(
+                    self.upscale_id.expect("upscale_id set in create_children"),
+                    |p| p.scalar_field.GetValue(),
+                )
+                .unwrap_or(0.0);
+            let q = ((val + 0.5) as i64).clamp(0, 5);
+            let changed = {
+                let mut cm = self.config.borrow_mut();
+                let mut sched = ctx.as_sched_ctx().expect("sched");
+                let before = *cm.GetRec().UpscaleQuality.GetValue();
+                cm.modify(
+                    |c, sc| {
+                        if *c.UpscaleQuality.GetValue() != q {
+                            c.UpscaleQuality.SetValue(q, sc);
+                        }
+                    },
+                    &mut sched,
+                );
+                let _ = cm.TrySave(false);
+                before != q
+            };
+            if changed {
+                InvalidatePaintingOfAllWindows(ectx);
+            }
+        }
+
+        false
     }
 }
 
@@ -1506,15 +2235,38 @@ impl PanelBehavior for MouseGroup {
 // ---------------------------------------------------------------------------
 
 /// Buttons panel — Reset To Defaults button.
-struct ButtonsPanel {
+///
+/// Visibility: `pub(crate)` in production; gated up to `pub` under the
+/// `test-support` feature so the row-80 integration test in
+/// `tests/rc_shim_b010.rs` can construct and drive it directly. Production
+/// callers reach it only through `emCoreConfigPanel::create_children`.
+#[cfg(any(test, feature = "test-support"))]
+pub struct ButtonsPanel {
     config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
     look: Rc<emLook>,
     generation: Rc<Cell<u64>>,
     layout: emLinearLayout,
+    // B-010 row 80: D-006 first-Cycle init + IsSignaled subscribe state.
+    subscribed_init: bool,
+    bt_reset_sig: SignalId,
+    reset_id: Option<PanelId>,
+}
+
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) struct ButtonsPanel {
+    config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
+    look: Rc<emLook>,
+    generation: Rc<Cell<u64>>,
+    layout: emLinearLayout,
+    // B-010 row 80: D-006 first-Cycle init + IsSignaled subscribe state.
+    subscribed_init: bool,
+    bt_reset_sig: SignalId,
+    reset_id: Option<PanelId>,
 }
 
 impl ButtonsPanel {
-    fn new(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(
         config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
         look: Rc<emLook>,
         generation: Rc<Cell<u64>>,
@@ -1526,47 +2278,67 @@ impl ButtonsPanel {
             layout: emLinearLayout::horizontal()
                 .with_alignment_h(AlignmentH::Right)
                 .with_alignment_v(AlignmentV::Bottom),
+            subscribed_init: false,
+            bt_reset_sig: SignalId::null(),
+            reset_id: None,
         }
     }
 
-    fn create_children(&self, ctx: &mut PanelCtx) {
-        let mut btn = {
+    #[cfg(not(any(test, feature = "test-support")))]
+    pub(crate) fn new(
+        config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>>,
+        look: Rc<emLook>,
+        generation: Rc<Cell<u64>>,
+    ) -> Self {
+        Self {
+            config,
+            look,
+            generation,
+            layout: emLinearLayout::horizontal()
+                .with_alignment_h(AlignmentH::Right)
+                .with_alignment_v(AlignmentV::Bottom),
+            subscribed_init: false,
+            bt_reset_sig: SignalId::null(),
+            reset_id: None,
+        }
+    }
+
+    /// Test-only accessor for the captured Reset-button click_signal.
+    /// Used by `tests/rc_shim_b010.rs` to fire the click without going through
+    /// the `pub(crate)` ButtonPanel adapter.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn bt_reset_sig_for_test(&self) -> SignalId {
+        self.bt_reset_sig
+    }
+
+    /// Visibility: `pub(crate)` in production; gated up to `pub` under the
+    /// `test-support` feature so the row-80 integration test can drive child
+    /// creation without invoking the full `LayoutChildren` path. Production
+    /// callers reach this only through `LayoutChildren`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn create_children(&mut self, ctx: &mut PanelCtx) {
+        let btn = {
             let mut sched = ctx.as_sched_ctx().expect("sched");
             emButton::new(&mut sched, "Reset To Defaults", self.look.clone())
         };
-        let config: Rc<RefCell<emRecNodeConfigModel<emCoreConfig>>> = Rc::clone(&self.config);
-        let generation = Rc::clone(&self.generation);
-        btn.on_click = Some(Box::new(
-            move |(), sched: &mut crate::emEngineCtx::SchedCtx<'_>| {
-                let mut cm = config.borrow_mut();
-                cm.modify(
-                    |c, sc| {
-                        c.StickMouseWhenNavigating.SetValue(false, sc);
-                        c.EmulateMiddleButton.SetValue(false, sc);
-                        c.PanFunction.SetValue(false, sc);
-                        c.MouseZoomSpeed.SetValue(1.0, sc);
-                        c.MouseScrollSpeed.SetValue(1.0, sc);
-                        c.MouseWheelZoomSpeed.SetValue(1.0, sc);
-                        c.MouseWheelZoomAcceleration.SetValue(1.0, sc);
-                        c.KeyboardZoomSpeed.SetValue(1.0, sc);
-                        c.KeyboardScrollSpeed.SetValue(1.0, sc);
-                        c.KineticZoomingAndScrolling.SetValue(1.0, sc);
-                        c.MagnetismRadius.SetValue(1.0, sc);
-                        c.MagnetismSpeed.SetValue(1.0, sc);
-                        c.VisitSpeed.SetValue(1.0, sc);
-                        c.MaxMegabytesPerView.SetValue(2048, sc);
-                        c.MaxRenderThreads.SetValue(8, sc);
-                        c.AllowSIMD.SetValue(true, sc);
-                        c.DownscaleQuality.SetValue(3, sc);
-                        c.UpscaleQuality.SetValue(2, sc);
-                    },
-                    sched,
-                );
-                let _ = cm.TrySave(false);
-                generation.set(generation.get() + 1);
-            },
-        ));
-        ctx.create_child_with("reset", Box::new(ButtonPanel { button: btn }));
+        // B-010 row 80: capture the click_signal BEFORE the button moves into
+        // the child behavior (SignalId is Copy).
+        self.bt_reset_sig = btn.click_signal;
+        let id = ctx.create_child_with("reset", Box::new(ButtonPanel { button: btn }));
+        self.reset_id = Some(id);
+    }
+
+    #[cfg(not(any(test, feature = "test-support")))]
+    pub(crate) fn create_children(&mut self, ctx: &mut PanelCtx) {
+        let btn = {
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            emButton::new(&mut sched, "Reset To Defaults", self.look.clone())
+        };
+        // B-010 row 80: capture the click_signal BEFORE the button moves into
+        // the child behavior (SignalId is Copy).
+        self.bt_reset_sig = btn.click_signal;
+        let id = ctx.create_child_with("reset", Box::new(ButtonPanel { button: btn }));
+        self.reset_id = Some(id);
     }
 }
 
@@ -1595,6 +2367,53 @@ impl PanelBehavior for ButtonsPanel {
         }
 
         self.layout.do_layout_skip(ctx, None, None);
+    }
+
+    /// B-010 row 80: D-006 first-Cycle init + IsSignaled subscribe shape.
+    ///
+    /// Mirrors C++ `emCoreConfigPanel::Cycle` (emCoreConfigPanel.cpp:42),
+    /// which subscribes to `ResetButton->GetClickSignal()` and on
+    /// `IsSignaled(...)` resets every config field to default + Save.
+    fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        if !self.subscribed_init && self.reset_id.is_some() && !self.bt_reset_sig.is_null() {
+            let eid = ectx.id();
+            ectx.connect(self.bt_reset_sig, eid);
+            self.subscribed_init = true;
+            ectx.wake_up(eid);
+        }
+        if !self.bt_reset_sig.is_null() && ectx.IsSignaled(self.bt_reset_sig) {
+            // Verbatim port of the deleted `btn.on_click` closure body
+            // (D-009 sighting #4 — the generation bump is load-bearing for
+            // visible Reset behaviour and must be preserved per design §2.1.1).
+            let mut cm = self.config.borrow_mut();
+            let mut sched = ctx.as_sched_ctx().expect("sched");
+            cm.modify(
+                |c, sc| {
+                    c.StickMouseWhenNavigating.SetValue(false, sc);
+                    c.EmulateMiddleButton.SetValue(false, sc);
+                    c.PanFunction.SetValue(false, sc);
+                    c.MouseZoomSpeed.SetValue(1.0, sc);
+                    c.MouseScrollSpeed.SetValue(1.0, sc);
+                    c.MouseWheelZoomSpeed.SetValue(1.0, sc);
+                    c.MouseWheelZoomAcceleration.SetValue(1.0, sc);
+                    c.KeyboardZoomSpeed.SetValue(1.0, sc);
+                    c.KeyboardScrollSpeed.SetValue(1.0, sc);
+                    c.KineticZoomingAndScrolling.SetValue(1.0, sc);
+                    c.MagnetismRadius.SetValue(1.0, sc);
+                    c.MagnetismSpeed.SetValue(1.0, sc);
+                    c.VisitSpeed.SetValue(1.0, sc);
+                    c.MaxMegabytesPerView.SetValue(2048, sc);
+                    c.MaxRenderThreads.SetValue(8, sc);
+                    c.AllowSIMD.SetValue(true, sc);
+                    c.DownscaleQuality.SetValue(3, sc);
+                    c.UpscaleQuality.SetValue(2, sc);
+                },
+                &mut sched,
+            );
+            let _ = cm.TrySave(false);
+            self.generation.set(self.generation.get() + 1);
+        }
+        false
     }
 }
 

@@ -311,6 +311,19 @@ impl emTextField {
         self.text.len()
     }
 
+    /// Test-only setter that bypasses signal firing. Used by B-010 row 514/540
+    /// integration tests in `tests/rc_shim_b010.rs` to pre-stage `GetText()`
+    /// state before firing the captured `text_signal` directly. Production code
+    /// must use `SetText` (which atomically updates state + fires the signal).
+    /// Mirrors `set_checked_for_test` on `emCheckBox`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_text_for_test(&mut self, text: &str) {
+        self.text = text.to_string();
+        self.cursor = self.text.len();
+        self.selection_anchor = None;
+        self.magic_col = None;
+    }
+
     pub fn SetPasswordMode(&mut self, enabled: bool) {
         if self.password_mode == enabled {
             return;

@@ -170,7 +170,7 @@ Stable IDs (`D-###`) are referenced from `inventory-enriched.json` and from `buc
 
 **Composition note (post-B-014):** D-007 + D-008 compose to handle bootstrap-only callsites benignly. Example from B-014: `emVirtualCosmosModel::Reload` is called only from inside `Acquire`'s bootstrap closure where ectx is unavailable; at that point no panel has subscribed, so `change_signal == SignalId::null()` and `ectx.fire(...)` would be a no-op. The mutator can keep its no-ectx signature with a `// CALLSITE-NOTE:` indicating future post-Acquire callers must thread ectx. First benign hybrid recorded.
 
-**Watch-list back-pointer:** the "Rust interposed a polling intermediary where C++ fires directly" pattern is now formalised as **D-009-polling-intermediary-replacement** (promoted by B-010 brainstorm `09f08710` after 4 sightings). See D-009 below for the canonical fix recipe.
+Watch-list: promoted to D-009-polling-intermediary-replacement; see § D-009 below (or above, depending on doc ordering).
 
 ---
 

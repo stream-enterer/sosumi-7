@@ -190,6 +190,15 @@ impl emScalarField {
         self.value = val.clamp(self.min, self.max);
     }
 
+    /// Test-only setter that bypasses signal firing. Used by B-010 row 563
+    /// integration test in `tests/rc_shim_b010.rs` to pre-stage `GetValue()`
+    /// before firing the captured `value_signal` directly. Production code
+    /// must use `SetValue` (which atomically updates state + fires the signal).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_value_for_test(&mut self, val: f64) {
+        self.value = val.clamp(self.min, self.max);
+    }
+
     /// Mirrors C++ `emScalarField::SetValue` (emScalarField.cpp:102-111):
     /// InvalidatePainting → Signal(ValueSignal) → ValueChanged.
     pub fn SetValue(&mut self, val: f64, ctx: &mut PanelCtx<'_>) {
