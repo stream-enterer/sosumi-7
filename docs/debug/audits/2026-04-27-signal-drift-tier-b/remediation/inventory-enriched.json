@@ -798,7 +798,7 @@
       "signal_expression": "GetVirFileStateSignal()",
       "signal_kind": "vir-file-state",
       "rust_file": "crates/emcore/src/emImageFile.rs",
-      "rust_status": "drifted",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "absent",
         "file": "crates/emcore/src/emImageFileImageFilePanel.rs",
@@ -811,7 +811,7 @@
       "forced_evidence": null,
       "preexisting_diverged_annotation": null,
       "consumers": null,
-      "notes": "C++ site is in emImageFilePanel constructor; Rust port lives in SPLIT file `crates/emcore/src/emImageFileImageFilePanel.rs` (per File and Name Correspondence — first SPLIT name `emImageFile{ImageFilePanel}.rs`). cpp-sites csv lists the original (un-split) emImageFile.rs path. The Rust panel has no Cycle, no connect, no IsSignaled — pure Paint-time read of `current_image`. No reaction to vir-file-state transitions; image redraw depends on outer emFilePanel's polling Cycle (emFilePanel-50 row) and call-site set_current_image.",
+      "notes": "C++ site is in emImageFilePanel constructor; Rust port lives in SPLIT file `crates/emcore/src/emImageFileImageFilePanel.rs` (per File and Name Correspondence — first SPLIT name `emImageFile{ImageFilePanel}.rs`). cpp-sites csv lists the original (un-split) emImageFile.rs path. The Rust panel has no Cycle, no connect, no IsSignaled — pure Paint-time read of `current_image`. No reaction to vir-file-state transitions; image redraw depends on outer emFilePanel's polling Cycle (emFilePanel-50 row) and call-site set_current_image. [B-004 emcore-slice 9b8ee012: accessor + consumer wired; deferred-fire pattern (Option B) for out-of-Cycle mutators.]",
       "enrichment": {
         "pattern_id": "P-001-no-subscribe-no-accessor",
         "decision_ids": [],
@@ -5471,7 +5471,7 @@
       "signal_expression": "GetVirFileStateSignal()",
       "signal_kind": "vir-file-state",
       "rust_file": "crates/emcore/src/emFilePanel.rs",
-      "rust_status": "gap-blocked",
+      "rust_status": "faithful",
       "rust_evidence": {
         "kind": "absent",
         "file": "crates/emcore/src/emFilePanel.rs",
@@ -5490,7 +5490,7 @@
         "emFileLinkPanel-54",
         "emStocksFilePanel-34"
       ],
-      "notes": "emFilePanel-derived panels (image, dir, dirstat, filelink, stocksfile) all subscribe to this in C++ to react to VFS state changes. In Rust they instead poll vir_file_state in their Cycle.",
+      "notes": "emFilePanel-derived panels (image, dir, dirstat, filelink, stocksfile) all subscribe to this in C++ to react to VFS state changes. In Rust they instead poll vir_file_state in their Cycle. [B-004 emcore-slice 9b8ee012: accessor + consumer wired; deferred-fire pattern (Option B) for out-of-Cycle mutators.]",
       "enrichment": {
         "pattern_id": "P-001-no-subscribe-no-accessor",
         "decision_ids": [

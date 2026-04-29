@@ -19,7 +19,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 7 | B-001-no-wire-emstocks | 0 | balanced | 71 | designed | [456fa5f7](../../../../superpowers/specs/2026-04-27-B-001-no-wire-emstocks-design.md) |
 | 8 | B-002-no-wire-emfileman | 0 | balanced | 4 | designed | [7fb3decd](../../../../superpowers/specs/2026-04-27-B-002-no-wire-emfileman-design.md) |
 | 9 | B-003-no-wire-autoplay | 0 | balanced | 3 | merged at eb9427db (12d3b4fe + 2ac6a627 + eb9427db) | [703fa462](../../../../superpowers/specs/2026-04-27-B-003-no-wire-autoplay-design.md) |
-| 10 | B-004-no-wire-misc | 0 | balanced | 4 | designed | [3497069d](../../../../superpowers/specs/2026-04-27-B-004-no-wire-misc-design.md) |
+| 10 | B-004-no-wire-misc | 0 | balanced | 4 | emcore-slice merged at 9b8ee012; emmain rows (emBookmarks-1479, emVirtualCosmosModel) remain designed | [3497069d](../../../../superpowers/specs/2026-04-27-B-004-no-wire-misc-design.md) |
 | 11 | B-016-polling-no-acc-emfileman | 0 | balanced | 3 | designed | [d837346b](../../../../superpowers/specs/2026-04-27-B-016-polling-no-acc-emfileman-design.md) |
 | 12 | B-017-polling-no-acc-emstocks | 0 | balanced | 3 | designed | [a27d2faa](../../../../superpowers/specs/2026-04-27-B-017-polling-no-acc-emstocks-design.md) |
 | 13 | B-009-typemismatch-emfileman | 0 | judgement-heavy | 14 | merged at 50994e26 (3b56e00b..50994e26) | [0a7d7fd3](../../../../superpowers/specs/2026-04-27-B-009-typemismatch-emfileman-design.md) |
@@ -383,3 +383,16 @@ Combined-reviewer template dispatched against `d15bbca0..91433733`. Result: **AP
 - **Pre-merge blockers caught and fixed:** (1) production Cycle unwired (Blocker 1 — resolved by wiring golden test wrappers); (2) design doc wrongly claimed C++ has no per-signal `IsSignaled` branches — C++ `emColorField.cpp:116-187` has 8 branches with distinct cascade flags (Blocker 2 — rewrite required); (3) `SliderTimerAction` was a D-009 violation (Blocker 3 — de-queued).
 - Test suite: 2881 → 2890 (+9 tests in `crates/emcore/tests/polling_b015.rs`).
 - **12 of 19 buckets merged. 7 remain** (B-001, B-002, B-004, B-012, B-013, B-016, B-017).
+
+### 2026-04-29 — B-004 emcore-slice merged (no-wire misc, emcore rows only)
+
+- **B-004 emcore-slice → merged at 9b8ee012**. 2 emcore rows only; 2 emmain rows (emBookmarks-1479, emVirtualCosmosModel-accessor-model-change) remain `designed`.
+- **emFilePanel-accessor-vir-file-state:** `vir_file_state_signal: SignalId` + `pending_vir_state_fire: bool` added. `GetVirFileStateSignal()` accessor ported (C++ `emFilePanel.h:80`). `ensure_vir_file_state_signal` / `fire_pending_vir_state` helpers; `SetFileModel`, `set_custom_error`, `clear_custom_error` set pending flag; `PanelBehavior::Cycle` allocates signal (deferred — see brief amendments), drains pending, fires on `cycle_inner` state change.
+- **emImageFile-117:** `emImageFilePanel::Cycle` augmented (not replaced) — B-007's ChangeSignal subscription kept (C++ `emImageFile.cpp:194-206` uses both); VirFileStateSignal subscription + `refresh_current_image_from_model` + `cycle_inner` call added alongside.
+- **Brief amendments (recorded for future bucket designers):**
+  1. `emFilePanel::new()` signature unchanged — deferred allocation (`ensure_vir_file_state_signal` called in Cycle) replaces the brief's `ConstructCtx` threading. 14 callers exist; same Option B rationale as B-015 row -50 (language-forced; construction sites have no EngineCtx).
+  2. `emImageFilePanel::Cycle` augmented, not replaced — dropping ChangeSignal would regress B-007 test.
+  3. `pending_vir_state_fire` deferred-fire pattern for out-of-Cycle mutators — language-forced 1-cycle delay from C++ synchronous `Signal(VirFileStateSignal)` at `emFilePanel.cpp:51,78,87`.
+- **Forward edges activated:** B-016 rows that prereq `emFilePanel::GetVirFileStateSignal` (per `inventory-enriched.json` hard prereq) are now unblocked. B-017 row 2 similarly unblocked.
+- Tests: `crates/emcore/tests/no_wire_b004_emcore.rs` (2 tests). Suite 2890 → 2892.
+- **13 of 19 buckets merged. 6 remain** (B-001, B-002, B-012, B-013, B-016, B-017 — all app-side, all deferred).

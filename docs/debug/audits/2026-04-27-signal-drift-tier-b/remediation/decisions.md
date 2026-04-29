@@ -139,6 +139,10 @@ Stable IDs (`D-###`) are referenced from `inventory-enriched.json` and from `buc
 
 **Ratified by implementation (post-B-005 merge `91433733`):** three implemented sightings — B-014 (`emVirtualCosmosPanel`), B-009 (`emFileManControlPanel`), B-005 (`emFileManControlPanel` 20 widget signals + `emFileLinkPanel-53` broadcast). The first-Cycle init shape is the canonical remediation pattern for P-002 (no-subscribe-accessor-present); subsequent P-002 buckets should adopt without re-litigation.
 
+**Option B override sightings (deferred signal allocation + pending-fire drain):**
+- **B-015 row -50 (`emFilePanel::SetFileModel`)** — subscribe deferred to Cycle because `SetFileModel` callers include constructors with no `EngineCtx`. `DIVERGED: language-forced` annotation at callsite.
+- **B-004 emcore-slice (`emFilePanel::vir_file_state_signal` allocation + mutator fire)** — `new()` unchanged; `ensure_vir_file_state_signal` allocates in Cycle; `pending_vir_state_fire: bool` set by `SetFileModel` / `set_custom_error` / `clear_custom_error` and drained in Cycle. Same constraint: 14 construction callsites have no `EngineCtx`. Observable timing: 1-cycle delay from C++'s synchronous `Signal(VirFileStateSignal)` at `emFilePanel.cpp:51,78,87`. Language-forced.
+
 **Open questions deferred to per-bucket design:**
 - Whether buckets with consumer rows that subscribe to type-mismatched accessors (P-003 family) need a sub-shape that handles the `u64`-vs-`SignalId` type at the connect call. Currently no — those connects must wait for the accessor flip (D-001) per the cross-bucket prereq.
 

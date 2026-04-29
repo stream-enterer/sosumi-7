@@ -33,6 +33,9 @@ Total = 178 actionable + 9 cleanup = 187 rows.
 **Sample rows:** see `inventory-enriched.json` filter.
 **Mechanical-vs-judgement:** balanced — wiring is mechanical once the accessor shape is decided; the accessor shape is a per-scope judgement call.
 **Row count:** 83 (73 drifted + 10 gap-blocked). +1 from B-014 reclassification of emVirtualCosmos-575.
+**First implementation sighting (B-004 emcore-slice, 9b8ee012):** `emFilePanel-accessor-vir-file-state` + `emImageFile-117`. Canonical sub-shapes confirmed:
+- **Accessor side (fill-in-scope, D-003 option A):** add `SignalId` field + `GetXxxSignal()` accessor + fire from every mutation site. Where mutation sites lack `EngineCtx` (construction callsites), use deferred-fire pattern: `pending_*_fire: bool` set by mutators, drained by `Cycle` — see D-006 Option B override sightings. Language-forced 1-cycle delay.
+- **Consumer side (D-006 first-Cycle init):** standard `subscribed_init` + `IsSignaled` shape. Where the consumer panel already has existing signal subscriptions from a prior bucket (B-007 ChangeSignal on `emImageFilePanel`), **augment** the existing Cycle — do not replace it. Read the C++ Cycle source to confirm all subscriptions before editing.
 
 ## P-002-no-subscribe-accessor-present
 
