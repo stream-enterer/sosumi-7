@@ -762,6 +762,18 @@ impl EngineScheduler {
         self.terminated
     }
 
+    /// Remove all registered engines so the Drop invariant holds at
+    /// shutdown. C++ achieves this via `emEngine::~emEngine` decrement;
+    /// Rust requires an explicit drain since engine lifetimes are managed
+    /// by `App`, not embedded in the scheduler. Called from `App::drop`.
+    pub(crate) fn drain_all_for_shutdown(&mut self) {
+        let ids: Vec<EngineId> = self.inner.engines.keys().collect();
+        for id in ids {
+            self.remove_engine(id);
+        }
+        self.abort_all_pending();
+    }
+
     // ── Internal helpers ────────────────────────────────────────────
 
     /// Drain pending signals and wake their connected engines.

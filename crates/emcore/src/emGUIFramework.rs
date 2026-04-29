@@ -977,12 +977,12 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
-        // Deregister the framework-owned InputDispatchEngine so the
-        // scheduler's drop-time invariant (no engines remaining) holds.
-        // `remove_engine` is idempotent on unknown ids so double-drop is
-        // safe; it is the only framework-owned engine registered in
-        // `App::new`.
-        self.scheduler.remove_engine(self.input_dispatch_engine_id);
+        // Drain every remaining engine so `EngineScheduler::drop`'s
+        // invariant holds. C++ achieves this via `emEngine::~emEngine`
+        // auto-decrement on each object's destructor; Rust requires an
+        // explicit sweep because engine lifetimes are managed by App
+        // fields that drop AFTER the scheduler in declaration order.
+        self.scheduler.drain_all_for_shutdown();
     }
 }
 
@@ -1480,6 +1480,22 @@ mod tests {
         let framework = App::new(Box::new(|_app, _el| {}));
         let _: &EngineScheduler = &framework.scheduler;
         assert!(framework.framework_actions.is_empty());
+    }
+
+    #[test]
+    fn app_drop_drains_all_engines() {
+        // Registers an extra engine beyond the framework-owned
+        // input_dispatch_engine_id to simulate window engines that exist at
+        // shutdown time. Before the drain-on-drop fix, App::drop only removed
+        // input_dispatch_engine_id, so this extra engine would trigger the
+        // EngineScheduler::drop debug_assert.
+        let mut app = App::new(Box::new(|_app, _el| {}));
+        let _extra = app.scheduler.register_engine(
+            Box::new(crate::emInputDispatchEngine::InputDispatchEngine),
+            crate::emEngine::Priority::Low,
+            crate::emPanelScope::PanelScope::Framework,
+        );
+        // app drops here — must not panic
     }
 
     /// Phase 3.5.A Task 9 tests for the pending-top-level install path.

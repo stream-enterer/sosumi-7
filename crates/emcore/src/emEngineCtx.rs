@@ -604,6 +604,31 @@ impl<'a> PanelCtx<'a> {
         })
     }
 
+    /// Build a `PanelCtx` for a sub-panel in a different tree, propagating
+    /// all available scheduler-reach handles from `self`. Split borrows on
+    /// distinct `PanelCtx` fields are sound under Rust NLL.
+    ///
+    /// Used by `emSubViewPanel::Input` so sub-panel behaviors that call
+    /// `as_sched_ctx()` receive full scheduling reach (scheduler,
+    /// framework_actions, root_context, framework_clipboard, pending_actions).
+    pub fn for_sub_panel<'b>(
+        &'b mut self,
+        sub_tree: &'b mut PanelTree,
+        id: PanelId,
+        pixel_tallness: f64,
+    ) -> PanelCtx<'b> {
+        PanelCtx {
+            tree: sub_tree,
+            id,
+            current_pixel_tallness: pixel_tallness,
+            scheduler: self.scheduler.as_deref_mut(),
+            framework_actions: self.framework_actions.as_deref_mut(),
+            root_context: self.root_context,
+            framework_clipboard: self.framework_clipboard,
+            pending_actions: self.pending_actions,
+        }
+    }
+
     /// Wake this panel's scheduler engine.
     pub fn wake_up(&mut self) {
         let id = self.id;
@@ -907,6 +932,51 @@ mod tests {
     impl emEngine for NoopEngine {
         fn Cycle(&mut self, _ctx: &mut EngineCtx<'_>) -> bool {
             false
+        }
+    }
+
+    #[test]
+    fn for_sub_panel_propagates_all_handles() {
+        use crate::emPanelTree::PanelTree;
+        let mut sched = EngineScheduler::new();
+        let mut actions = Vec::new();
+        let ctx_root = crate::emContext::emContext::NewRoot();
+        let cb: RefCell<Option<Box<dyn emClipboard>>> = RefCell::new(None);
+        let pa: Rc<RefCell<Vec<FrameworkDeferredAction>>> = Rc::new(RefCell::new(Vec::new()));
+        let mut outer_tree = PanelTree::new();
+        let outer_id = outer_tree.create_root("root", false);
+        let mut outer_ctx = PanelCtx::with_sched_reach(
+            &mut outer_tree,
+            outer_id,
+            1.0,
+            &mut sched,
+            &mut actions,
+            &ctx_root,
+            &cb,
+            &pa,
+        );
+
+        let mut sub_tree = PanelTree::new();
+        let sub_id = sub_tree.create_root("sub", false);
+        {
+            let sub_ctx = outer_ctx.for_sub_panel(&mut sub_tree, sub_id, 1.0);
+            assert!(sub_ctx.scheduler.is_some(), "scheduler must propagate");
+            assert!(
+                sub_ctx.framework_actions.is_some(),
+                "framework_actions must propagate"
+            );
+            assert!(
+                sub_ctx.root_context.is_some(),
+                "root_context must propagate"
+            );
+            assert!(
+                sub_ctx.framework_clipboard.is_some(),
+                "framework_clipboard must propagate"
+            );
+            assert!(
+                sub_ctx.pending_actions.is_some(),
+                "pending_actions must propagate"
+            );
         }
     }
 

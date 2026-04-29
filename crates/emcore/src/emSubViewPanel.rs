@@ -429,33 +429,14 @@ impl PanelBehavior for emSubViewPanel {
                     self.sub_tree.put_behavior(panel_id, behavior);
                     continue;
                 }
-                // Phase 1.76 Task 2: build a fresh per-sub-panel PanelCtx.
-                // PanelCtx is panel-specific (tree + id); we re-borrow the
-                // outer scheduler into a ctx scoped to this sub-panel's
-                // sub_tree + id.
+                // Thread all outer-ctx handles into the sub-panel PanelCtx via
+                // for_sub_panel so behaviors that call as_sched_ctx() receive full
+                // reach. Split borrows on distinct PanelCtx fields are sound under
+                // Rust NLL; the earlier SchedCtx uses of ctx.scheduler (set_active_panel,
+                // Update, VIF) are in closed scopes so there is no live borrow conflict.
                 let consumed = {
-                    let mut panel_ctx = match ctx.scheduler.as_deref_mut() {
-                        Some(sched) => crate::emEngineCtx::PanelCtx::with_scheduler(
-                            &mut self.sub_tree,
-                            panel_id,
-                            pixel_tallness,
-                            sched,
-                        ),
-                        None => crate::emEngineCtx::PanelCtx::new(
-                            &mut self.sub_tree,
-                            panel_id,
-                            pixel_tallness,
-                        ),
-                    };
-                    // Phase-3 B3.1: propagate framework_clipboard (pre-existing)
-                    // through the sub-panel ctx. framework_actions/root_context
-                    // are not threaded here because the outer PanelCtx's
-                    // borrow of those handles would conflict with the scheduler
-                    // re-borrow above; sub-view Input currently routes SchedCtx
-                    // synthesis through its own fw_input buffer (see above).
-                    if let Some(cb) = ctx.framework_clipboard {
-                        panel_ctx = panel_ctx.with_clipboard(cb);
-                    }
+                    let mut panel_ctx =
+                        ctx.for_sub_panel(&mut self.sub_tree, panel_id, pixel_tallness);
                     behavior.Input(&panel_ev, &panel_state, input_state, &mut panel_ctx)
                 };
                 self.sub_tree.put_behavior(panel_id, behavior);
