@@ -537,7 +537,7 @@ pub struct DlgPanel {
     ///
     /// Populated by emFileDialog::new in Task 3. `None` for plain emDialog.
     pub(crate) on_cycle_ext: Option<DialogCycleExt>,
-    /// DIVERGED (Phase 3.6 Task 3): file-dialog overwrite-confirmation
+    /// DIVERGED: (language-forced) file-dialog overwrite-confirmation
     /// sub-dialog. Set by `emFileDialog::CheckFinish` when Save-mode detects
     /// overwrite conflicts; consumed + torn down by the file-dialog
     /// on_cycle_ext closure at next Cycle. Port of C++
@@ -552,7 +552,7 @@ pub struct DlgPanel {
     /// `Rc<RefCell<Option<emDialog>>>` which would be a Do-NOT violation
     /// per CLAUDE.md.
     pub(crate) overwrite_dialog: Option<emDialog>,
-    /// DIVERGED (Phase 3.6 Task 3): `EngineId` of this dialog's
+    /// DIVERGED: (language-forced) `EngineId` of this dialog's
     /// `DialogPrivateEngine`, populated at install time (after register).
     /// Lets `emFileDialog::CheckFinish` subscribe the overwrite dialog's
     /// finish signal to this engine without a scheduler-scope walk. Port
@@ -560,12 +560,12 @@ pub struct DlgPanel {
     /// inheritance to reach its own private engine
     /// (emFileDialog.cpp:168 `AddWakeUpSignal(OverwriteDialog->GetFinishSignal())`).
     pub(crate) private_engine_id: Option<crate::emEngine::EngineId>,
-    /// DIVERGED (Phase 3.6 Task 3): text being confirmed for overwrite.
+    /// DIVERGED: (language-forced) text being confirmed for overwrite.
     /// Matches C++ `OverwriteAsked` in emFileDialog.h:202. Placement on
     /// DlgPanel mirrors `overwrite_dialog` for the same closure-reach
     /// reason.
     pub(crate) overwrite_asked: String,
-    /// DIVERGED (Phase 3.6 Task 3 fix): last-confirmed overwrite text.
+    /// DIVERGED: (language-forced) last-confirmed overwrite text.
     /// C++ `emFileDialog::OverwriteConfirmed` (emFileDialog.h:203).
     /// Lives on `DlgPanel` (not on `emFileDialog`) so the `on_cycle_ext`
     /// closure — which has only `&mut DlgPanel` + `&mut EngineCtx` — can
@@ -573,7 +573,7 @@ pub struct DlgPanel {
     /// without reaching back into `emFileDialog`. Placement rationale
     /// matches `overwrite_dialog` / `overwrite_asked`.
     pub(crate) overwrite_confirmed: String,
-    /// DIVERGED (Phase 3.6.1 Task 2): file-dialog mode mirrored from
+    /// DIVERGED: (language-forced) file-dialog mode mirrored from
     /// `emFileDialog::mode` onto DlgPanel so the `'static + FnMut`
     /// `on_check_finish` closure — which has only `&mut DlgPanel` +
     /// `&mut EngineCtx`, not `&mut emFileDialog` — reads fresh state per
@@ -585,12 +585,12 @@ pub struct DlgPanel {
     /// from `emFileDialog` (authoritative outward API) via
     /// `with_dlg_panel_mut` pre-show / `App::mutate_dialog_by_id` post-show.
     pub(crate) file_dialog_mode: Option<crate::emFileDialog::FileDialogMode>,
-    /// DIVERGED (Phase 3.6.1 Task 2): mirrors `emFileDialog::dir_allowed`
+    /// DIVERGED: (language-forced) mirrors `emFileDialog::dir_allowed`
     /// onto DlgPanel for the `on_check_finish` closure's read path. Same
     /// rationale as `file_dialog_mode` above. `false` default matches
     /// `emFileDialog::new` default.
     pub(crate) file_dialog_dir_allowed: bool,
-    /// DIVERGED (Phase 3.6.1 Task 2): mirrors `emFileDialog::fsb_panel_id`
+    /// DIVERGED: (language-forced) mirrors `emFileDialog::fsb_panel_id`
     /// onto DlgPanel so the `on_check_finish` closure can reach the
     /// emFileSelectionBox child via `take_behavior(fsb_panel_id)` through
     /// its `&mut EngineCtx` tree. `None` for plain emDialogs.

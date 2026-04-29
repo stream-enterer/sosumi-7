@@ -600,7 +600,7 @@ pub struct emView {
     /// `ApplicationHandler` dispatch model. C++ has no registry because
     /// the backend dispatches OS events to each `emWindow` via its own
     /// callback registration.
-    // DIVERGED (Phase 2 Task 2): Box<emWindow> instead of emWindow. Now
+    // DIVERGED: (language-forced) Box<emWindow> instead of emWindow. Now
     // that emWindow::view is a plain emView (not Rc<RefCell>), storing
     // emWindow inline here would create infinite-sized recursion
     // (emView -> emWindow -> emView). Box breaks the cycle. This is a
@@ -2069,7 +2069,7 @@ impl emView {
                     // `materialize_popup_surface` observes no Pending popup
                     // in any view and skips creation (natural cancellation).
                     //
-                    // DIVERGED (Phase-2 port-ownership-rewrite): the popup
+                    // DIVERGED: (language-forced) the popup
                     // `emWindow` is owned by `emView::PopupWindow` rather
                     // than by the closure (plain values can't be split
                     // between two owners). The framework-side materializer

@@ -195,6 +195,7 @@ impl emScalarField {
     /// before firing the captured `value_signal` directly. Production code
     /// must use `SetValue` (which atomically updates state + fires the signal).
     #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn set_value_for_test(&mut self, val: f64) {
         self.value = val.clamp(self.min, self.max);
     }

@@ -401,7 +401,7 @@ mod tests {
             None
         }
 
-        /// DIVERGED (ADR 2026-04-21-phase-4b-listener-tree-adr.md): user's
+        /// DIVERGED: (language-forced) user's
         /// derived compound forwards to inner struct AND every sibling leaf.
         /// Matches the C++ `UpperNode` chain semantics via the reified
         /// aggregate Vec.

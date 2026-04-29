@@ -35,7 +35,7 @@ struct ModelEntry {
 /// Children are stored as `Weak` references to avoid memory leaks.
 /// The child `Rc` is owned by whoever created it (typically a emView or Panel).
 ///
-/// DIVERGED (Phase-3 Task-2): the C++ `emRef<emClipboard>
+/// DIVERGED: (language-forced) the C++ `emRef<emClipboard>
 /// emClipboard::LookupInherited(emContext&)` mirror used to live here.
 /// It has been relocated to the framework per spec §3.4 / §3.6(a) so
 /// winit text-event callbacks can access it without `&mut framework`

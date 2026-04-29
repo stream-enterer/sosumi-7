@@ -4,7 +4,7 @@ use emcore::emClipboard::{emClipboard, emPrivateClipboard};
 
 /// Build a framework-style clipboard slot for testing.
 ///
-/// DIVERGED (Phase-3 Task-2): C++ `emClipboard::LookupInherited(emContext&)` walks
+/// DIVERGED: (language-forced) C++ `emClipboard::LookupInherited(emContext&)` walks
 /// the `emContext` parent chain. Rust relocates clipboard onto `emGUIFramework`
 /// (spec §3.4 / §3.6(a)), so tests install into a standalone
 /// `RefCell<Option<Box<dyn emClipboard>>>` that mirrors the framework slot.

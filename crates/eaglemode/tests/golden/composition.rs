@@ -66,7 +66,7 @@ macro_rules! require_golden {
 /// Settle: drive `rounds` scheduler slices. Matches C++ gen_golden.cpp
 /// `TerminateEngine ctrl(sched, N)` pattern — a real scheduler loop.
 ///
-/// DIVERGED (test-only): golden tests hold emView by &mut, not Rc. To give
+/// DIVERGED: (language-forced) golden tests hold emView by &mut, not Rc. To give
 /// engines a Weak<RefCell<emView>>, we'd need to thread the Rc through every
 /// test. Instead we register only PanelCycleEngines and drive DoTimeSlice
 /// against those; the view's Update is driven explicitly in the loop below

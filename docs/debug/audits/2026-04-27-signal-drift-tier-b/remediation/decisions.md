@@ -233,3 +233,15 @@ Watch-list: promoted to D-009-polling-intermediary-replacement; see § D-009 bel
 
 **Open questions deferred to per-bucket design:**
 - Whether to introduce a typed wrapper (e.g., `PollingIntermediary<T>`) to flag this drift shape at the type level. Currently no — pattern is recognizable enough by code review.
+
+---
+
+## Methodology Notes
+
+These are not decisions (no D-### ID) — they are process lessons captured for future bucket designers.
+
+### M-001 — Verify C++ Cycle branch structure directly
+
+**Lesson (from B-015 pre-merge):** Design-doc claims about C++ `Cycle()` branching behavior must not be trusted without reading the actual `.cpp` source. The B-015 design doc stated "C++ does not switch per signal in `emColorField::Cycle`." Direct read of `emColorField.cpp:116-187` showed 8 per-signal `IsSignaled` branches with distinct cascade flags (`rgbaChanged`, `hsvChanged`, `textChanged`). The naive `any() + sync_from_children` Rust shape would have caused observable cross-channel feedback (writing back to a slider the user is actively editing).
+
+**Rule:** Before writing the Rust `Cycle` body for any P-006/P-007/P-001 consumer, open the C++ `.cpp` file, count the `IsSignaled` calls, and confirm the per-branch logic. Do not rely on brainstorm summaries, design-doc prose, or LLM recall about branching. One `grep -n 'IsSignaled' emFoo.cpp` is the verification.

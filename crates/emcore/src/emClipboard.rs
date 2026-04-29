@@ -37,7 +37,7 @@ impl emPrivateClipboard {
 
     /// Install this clipboard into the framework's chartered clipboard slot.
     ///
-    /// DIVERGED (Phase-3 Task-2): C++ `emPrivateClipboard::Install(emContext&)`
+    /// DIVERGED: (language-forced) C++ `emPrivateClipboard::Install(emContext&)`
     /// installs into `emContext` via `LookupInherited`. Rust relocates the
     /// clipboard to `emGUIFramework::clipboard` (spec §3.4 / §3.6(a)), so
     /// `Install` takes the framework-owned `Option<Box<dyn emClipboard>>` slot

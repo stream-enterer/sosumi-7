@@ -317,6 +317,7 @@ impl emTextField {
     /// must use `SetText` (which atomically updates state + fires the signal).
     /// Mirrors `set_checked_for_test` on `emCheckBox`.
     #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn set_text_for_test(&mut self, text: &str) {
         self.text = text.to_string();
         self.cursor = self.text.len();
