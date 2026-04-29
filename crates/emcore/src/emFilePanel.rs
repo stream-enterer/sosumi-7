@@ -4,7 +4,7 @@ use std::rc::Rc;
 use slotmap::Key as _;
 
 use crate::emColor::emColor;
-use crate::emEngineCtx::PanelCtx;
+use crate::emEngineCtx::{ConstructCtx, PanelCtx, SignalCtx};
 use crate::emFileModel::{FileModelState, FileState};
 use crate::emPainter::{emPainter, TextAlignment, VAlign};
 use crate::emPanel::{FileLoadStatus, NoticeFlags, PanelBehavior, PanelState};
@@ -60,6 +60,17 @@ pub struct emFilePanel {
     /// Cycle so a model swap re-binds (Option B per kickoff brief — matches
     /// emImageFilePanel precedent for model-swap subscribe handling).
     subscribed_file_state_signal: SignalId,
+    /// B-004 emcore-slice: allocated on first Cycle (deferred allocation —
+    /// language-forced, same constraint as B-015 Option B: constructors have
+    /// no EngineCtx). Fires when VirtualFileState changes. Port of C++
+    /// `emFilePanel::VirFileStateSignal` member (emFilePanel.h:156).
+    vir_file_state_signal: SignalId,
+    /// B-004 emcore-slice: set to `true` by out-of-Cycle mutations
+    /// (SetFileModel, set_custom_error, clear_custom_error) that cannot fire
+    /// directly. Drained at the start of Cycle. Mirrors C++ synchronous
+    /// `Signal(VirFileStateSignal)` calls in emFilePanel.cpp:51,78,87 with
+    /// a 1-cycle delay (language-forced, same category as B-015 Option B).
+    pending_vir_state_fire: bool,
 }
 
 impl Default for emFilePanel {
@@ -78,6 +89,8 @@ impl emFilePanel {
             cached_priority: 0.0,
             cached_in_active_path: false,
             subscribed_file_state_signal: SignalId::null(),
+            vir_file_state_signal: SignalId::null(),
+            pending_vir_state_fire: false,
         }
     }
 
@@ -86,6 +99,9 @@ impl emFilePanel {
         self.model = model;
         let new_state = self.compute_vir_file_state();
         self.last_vir_file_state = new_state;
+        // B-004: mirror C++ Signal(VirFileStateSignal) at emFilePanel.cpp:51.
+        // Deferred because callers hold no EngineCtx (language-forced, same as B-015).
+        self.pending_vir_state_fire = true;
     }
 
     /// Whether a model is attached.
@@ -96,15 +112,50 @@ impl emFilePanel {
     pub fn set_custom_error(&mut self, message: &str) {
         self.custom_error = Some(message.to_string());
         self.last_vir_file_state = self.compute_vir_file_state();
+        // B-004: mirror C++ Signal(VirFileStateSignal) at emFilePanel.cpp:78. Deferred.
+        self.pending_vir_state_fire = true;
     }
 
     pub fn clear_custom_error(&mut self) {
-        self.custom_error = None;
-        self.last_vir_file_state = self.compute_vir_file_state();
+        // B-004: mirror C++ guard `if (CustomError)` at emFilePanel.cpp:85.
+        if self.custom_error.is_some() {
+            self.custom_error = None;
+            self.last_vir_file_state = self.compute_vir_file_state();
+            // B-004: mirror C++ Signal(VirFileStateSignal) at emFilePanel.cpp:87. Deferred.
+            self.pending_vir_state_fire = true;
+        }
     }
 
     pub fn GetCustomError(&self) -> Option<&str> {
         self.custom_error.as_deref()
+    }
+
+    /// Port of C++ emFilePanel::GetVirFileStateSignal (emFilePanel.h:80).
+    /// Returns the signal fired when VirtualFileState changes.
+    /// May be null before the first Cycle — callers that need the signal at
+    /// construction time must ensure the panel has cycled at least once.
+    pub fn GetVirFileStateSignal(&self) -> SignalId {
+        self.vir_file_state_signal
+    }
+
+    /// Allocate `vir_file_state_signal` on first call; return the (now non-null) id.
+    ///
+    /// Called at the start of every Cycle that may consume or fire the signal.
+    /// Deferred allocation matches B-015 Option B: no EngineCtx at construction.
+    pub(crate) fn ensure_vir_file_state_signal(&mut self, cc: &mut impl ConstructCtx) -> SignalId {
+        if self.vir_file_state_signal.is_null() {
+            self.vir_file_state_signal = cc.create_signal();
+        }
+        self.vir_file_state_signal
+    }
+
+    /// Fire the `VirFileStateSignal` for pending out-of-Cycle mutations and
+    /// reset the flag. No-op if the signal has not been allocated yet.
+    pub(crate) fn fire_pending_vir_state(&mut self, ctx: &mut impl SignalCtx) {
+        if self.pending_vir_state_fire && !self.vir_file_state_signal.is_null() {
+            ctx.fire(self.vir_file_state_signal);
+            self.pending_vir_state_fire = false;
+        }
     }
 
     /// Return the cached virtual file state.
@@ -418,6 +469,11 @@ impl PanelBehavior for emFilePanel {
     }
 
     fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, _ctx: &mut PanelCtx) -> bool {
+        // B-004: allocate VirFileStateSignal on first Cycle.
+        self.ensure_vir_file_state_signal(ectx);
+        // B-004: drain pending fires from out-of-Cycle mutations.
+        self.fire_pending_vir_state(ectx);
+
         // B-015 row -50: D-006 override, subscribe at Cycle time.
         //
         // DIVERGED: (language-forced) C++ `emFilePanel::SetFileModel` calls
@@ -445,7 +501,14 @@ impl PanelBehavior for emFilePanel {
             }
             self.subscribed_file_state_signal = target_sig;
         }
-        self.cycle_inner()
+
+        // B-004: fire VirFileStateSignal when VirtualFileState changes, mirroring
+        // C++ emFilePanel::Cycle Signal(VirFileStateSignal) at emFilePanel.cpp:158,179.
+        let changed = self.cycle_inner();
+        if changed && !self.vir_file_state_signal.is_null() {
+            ectx.fire(self.vir_file_state_signal);
+        }
+        changed
     }
 
     fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {

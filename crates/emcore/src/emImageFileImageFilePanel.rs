@@ -29,6 +29,12 @@ pub struct emImageFilePanel {
     subscribed_change_signal: SignalId,
     /// B-007 row -139: true after first-Cycle init has run.
     subscribed_init: bool,
+    /// B-004 emcore-slice: true after we have connected to file_panel's
+    /// VirFileStateSignal. No model-swap reset needed — VirFileStateSignal
+    /// belongs to file_panel, not the model. Mirrors C++ constructor
+    /// emImageFile.cpp:117 AddWakeUpSignal(GetVirFileStateSignal()) with
+    /// deferred first-Cycle subscribe per D-006 Option B.
+    subscribed_vir_state_init: bool,
 }
 
 impl Default for emImageFilePanel {
@@ -45,6 +51,7 @@ impl emImageFilePanel {
             image_model: None,
             subscribed_change_signal: SignalId::null(),
             subscribed_init: false,
+            subscribed_vir_state_init: false,
         }
     }
 
@@ -55,6 +62,7 @@ impl emImageFilePanel {
             image_model: None,
             subscribed_change_signal: SignalId::null(),
             subscribed_init: false,
+            subscribed_vir_state_init: false,
         }
     }
 
@@ -82,11 +90,31 @@ impl emImageFilePanel {
         self.image_model = model;
         // Reset subscribed_init so Cycle re-binds to the new model's signal.
         self.subscribed_init = false;
+        // Note: subscribed_vir_state_init is NOT reset on model swap —
+        // VirFileStateSignal belongs to file_panel, not the model.
     }
 
     /// Update the cached image for painting.
     pub fn set_current_image(&mut self, image: Option<emImage>) {
         self.current_image = image;
+    }
+
+    /// Populate or clear `current_image` from the bound model.
+    ///
+    /// Called when VirFileStateSignal fires. Mirrors the read that C++
+    /// `emImageFilePanel::Paint` (emImageFile.cpp:229-231) performs on every
+    /// paint call — in Rust the image is cached; this helper updates the cache
+    /// when the file state changes. If VFS is good and a model is bound,
+    /// clones the model's current image; otherwise clears the cache.
+    pub(crate) fn refresh_current_image_from_model(&mut self) {
+        if self.file_panel.GetVirFileState().is_good() {
+            self.current_image = self
+                .image_model
+                .as_ref()
+                .and_then(|m| m.borrow().GetImage().cloned());
+        } else {
+            self.current_image = None;
+        }
     }
 
     /// Test accessor: returns a reference to the current_image Option.
@@ -131,20 +159,22 @@ impl emImageFilePanel {
 }
 
 impl PanelBehavior for emImageFilePanel {
-    /// B-007 row -139: D-006 first-Cycle init + model-swap re-bind + IsSignaled reaction.
+    /// B-007 row -139 + B-004 emcore-slice: D-006 first-Cycle init, model-swap
+    /// re-bind, ChangeSignal + VirFileStateSignal reactions, inner cycle.
     ///
-    /// Mirrors C++ `emImageFilePanel::SetFileModel` subscribe pair + `Cycle` reaction:
-    ///   emImageFile.cpp:120-141 (SetFileModel subscribe/unsubscribe)
-    ///   + Cycle reaction that re-reads the image from the (now-loaded) model.
+    /// Mirrors C++ `emImageFilePanel::SetFileModel` subscribe pair + `Cycle`:
+    ///   emImageFile.cpp:120-141  (SetFileModel: subscribe/unsubscribe ChangeSignal)
+    ///   emImageFile.cpp:117      (ctor: AddWakeUpSignal(GetVirFileStateSignal()))
+    ///   emImageFile.cpp:194-206  (Cycle: react to ChangeSignal + VirFileStateSignal
+    ///                            + emFilePanel::Cycle inner state re-computation)
     fn Cycle(&mut self, ectx: &mut EngineCtx<'_>, _pctx: &mut PanelCtx) -> bool {
         let eid = ectx.id();
 
-        // Detect model swap: if the model changed since we last subscribed,
-        // disconnect from the old signal and reset init.
+        // B-007 row -139: Detect model swap. If ChangeSignal id changed, the
+        // bound model was replaced — disconnect from the old signal and re-init.
         if let Some(model_rc) = &self.image_model {
             let current_sig = model_rc.borrow().GetChangeSignal();
             if current_sig != self.subscribed_change_signal {
-                // Disconnect from the old signal if we had one.
                 if !self.subscribed_change_signal.is_null() {
                     ectx.disconnect(self.subscribed_change_signal, eid);
                 }
@@ -153,8 +183,8 @@ impl PanelBehavior for emImageFilePanel {
             }
         }
 
-        // B-007 row -139: D-006 first-Cycle init — subscribe to model's change signal.
-        // Mirrors C++ emImageFile.cpp:139 AddWakeUpSignal(model.GetChangeSignal()).
+        // B-007 row -139: D-006 first-Cycle init — subscribe to model's ChangeSignal.
+        // Mirrors C++ emImageFile.cpp:139 AddWakeUpSignal(model->GetChangeSignal()).
         if !self.subscribed_init {
             if let Some(model_rc) = &self.image_model {
                 let sig = model_rc.borrow().GetChangeSignal();
@@ -166,16 +196,44 @@ impl PanelBehavior for emImageFilePanel {
             self.subscribed_init = true;
         }
 
-        // B-007 row -139: IsSignaled reaction.
-        // Mirrors C++ emImageFilePanel::Cycle — if the model changed, invalidate
-        // the cached image so Paint re-reads it on the next repaint.
+        // B-007 row -139: ChangeSignal reaction — invalidate cached image.
+        // Mirrors C++ emImageFile.cpp:196-200: invalidate painting if VFS good.
         if !self.subscribed_change_signal.is_null()
             && ectx.IsSignaled(self.subscribed_change_signal)
         {
             self.current_image = None;
         }
 
-        false
+        // B-004 emcore-slice: ensure VirFileStateSignal is allocated and subscribe.
+        // Mirrors C++ emImageFile.cpp:117 AddWakeUpSignal(GetVirFileStateSignal())
+        // deferred to first Cycle per D-006 Option B (language-forced: no EngineCtx
+        // at construction; same category as B-015 and B-007 row -139).
+        self.file_panel.ensure_vir_file_state_signal(ectx);
+        self.file_panel.fire_pending_vir_state(ectx);
+        if !self.subscribed_vir_state_init {
+            let sig = self.file_panel.GetVirFileStateSignal();
+            if !sig.is_null() {
+                ectx.connect(sig, eid);
+            }
+            self.subscribed_vir_state_init = true;
+        }
+
+        // B-004: VirFileStateSignal reaction — refresh cached image from model.
+        // Mirrors C++ emImageFile.cpp:202-204: InvalidateControlPanel on VirFileState
+        // change. In Rust, the cache-population replaces the C++ direct-model-read in
+        // Paint (emImageFile.cpp:229-231).
+        if ectx.IsSignaled(self.file_panel.GetVirFileStateSignal()) {
+            self.refresh_current_image_from_model();
+        }
+
+        // B-004: run emFilePanel inner cycle (VFS state re-computation) and fire
+        // VirFileStateSignal if state changed. Mirrors C++ emFilePanel::Cycle()
+        // return at emImageFile.cpp:205.
+        let changed = self.file_panel.cycle_inner();
+        if changed && !self.file_panel.GetVirFileStateSignal().is_null() {
+            ectx.fire(self.file_panel.GetVirFileStateSignal());
+        }
+        changed
     }
 
     fn IsOpaque(&self) -> bool {
