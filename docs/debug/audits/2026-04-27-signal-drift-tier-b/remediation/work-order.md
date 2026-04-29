@@ -396,3 +396,14 @@ Combined-reviewer template dispatched against `d15bbca0..91433733`. Result: **AP
 - **Forward edges activated:** B-016 rows that prereq `emFilePanel::GetVirFileStateSignal` (per `inventory-enriched.json` hard prereq) are now unblocked. B-017 row 2 similarly unblocked.
 - Tests: `crates/emcore/tests/no_wire_b004_emcore.rs` (2 tests). Suite 2890 → 2892.
 - **13 of 19 buckets merged. 6 remain** (B-001, B-002, B-012, B-013, B-016, B-017 — all app-side, all deferred).
+
+### 2026-04-29 — D4 resolved (generation counter removal, emCoreConfigPanel)
+
+- **D4 → closed at 81b19c75** (9 commits: f6680879 design spec + 851dc235 plan + 2c4a3169 prerequisites + 3fe5d7fe–b2165951 implementation + 81b19c75 tests). D-009 sighting #4 resolved.
+- **`generation: Rc<Cell<u64>>` counter removed** from all 5 sub-panels in `emCoreConfigPanel.rs` (ButtonsPanel, MouseMiscGroup, MemFieldLayoutPanel, CpuGroup, PerformanceGroup).
+- **`FactorFieldPanel`** (new struct, local to `emCoreConfigPanel.rs`) wraps `emScalarField` and subscribes to its specific config field's value signal in `Cycle`, calling `set_value_silent` on fire. All 10 `make_factor_field` call sites + 4 direct constructions migrated.
+- **`MouseMiscGroup` and `CpuGroup`** now subscribe to the config aggregate via `emRecNodeConfigModel::GetChangeSignal()` and call `update_output()` in `Cycle` — syncing checkbox display via `set_checked_silent` without feedback.
+- **Prerequisites added:** `emScalarField::set_value_silent`, `emCheckBox::set_checked_silent`, `emRecNodeConfigModel::GetChangeSignal` (D-008 A1 combined-form; `RUST_ONLY: dependency-forced` channel reification).
+- **Observable timing deviation:** 1-cycle delay vs C++ synchronous `OnRecChanged`. `DIVERGED: language-forced` at `FactorFieldPanel::Cycle`. Same constraint as B-015 row -50 / B-004 deferred-fire pattern.
+- **Carry-forward (D4-follow):** `factor_cfg_to_val` function and `FactorFieldPanel` struct each exist as two `#[cfg]`-gated copies (production private + test-support public, currently identical bodies). Future edit must update both. Maintenance risk; not blocking.
+- Test suite: 2892 → 2895 (+3 tests in `crates/emcore/tests/rec_listener_b_d4.rs`).

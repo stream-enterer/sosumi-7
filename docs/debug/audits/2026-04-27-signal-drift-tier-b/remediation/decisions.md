@@ -212,7 +212,7 @@ Watch-list: promoted to D-009-polling-intermediary-replacement; see § D-009 bel
 1. `AutoplayFlags.progress` (B-003 brainstorm `703fa462`) — addressed by D-002 §1 R-A: drop the entire shim.
 2. `mw.to_reload` chain through `MainWindowEngine` (B-012 brainstorm `bf6e9bd5`) — addressed by routing reload through `mw.ReloadFiles(&self, ectx)` per D-007.
 3. `FsbEvents` closure-buffer drained by `emFileSelectionBox::Cycle` (B-010 brainstorm `09f08710`) — addressed by direct widget-state read in `IsSignaled` branches per D-006.
-4. `generation: Rc<Cell<u64>>` counter on `emCoreConfigPanel` (B-010, out of B-010 row scope) — TBD when its owning bucket reaches it; likely shape is a config-changed signal on `emRecNodeConfigModel` plus per-group subscribe + `UpdateOutput` handler mirroring C++ `emRecListener::OnRecChanged()`.
+4. `generation: Rc<Cell<u64>>` counter on `emCoreConfigPanel` (B-010 sighting; D4 resolution at `81b19c75`) — **resolved**. `FactorFieldPanel` subscribes to per-field value signals in `Cycle` via `set_value_silent`; `MouseMiscGroup`/`CpuGroup` subscribe to aggregate `emRecNodeConfigModel::GetChangeSignal()` and call `update_output()` via `set_checked_silent`. `DIVERGED: language-forced` 1-cycle delay at `FactorFieldPanel::Cycle`.
 
 **Origin:** Promoted by B-010 brainstorm after the 3-sighting threshold was reached (4 actual sightings at promotion time). Replaces the earlier watch-list paragraph in D-007.
 
