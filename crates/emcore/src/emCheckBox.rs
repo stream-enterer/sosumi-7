@@ -35,7 +35,7 @@ pub struct emCheckBox {
     pub on_check: Option<WidgetCallback<bool>>,
     /// Mirrors emCheckButton's CheckSignal.
     ///
-    /// DIVERGED (forced): C++ `emCheckBox` inherits `GetCheckSignal()` from
+    /// DIVERGED: (language-forced) C++ `emCheckBox` inherits `GetCheckSignal()` from
     /// `emCheckButton` (public inheritance chain emCheckBox → emCheckButton
     /// → emButton → emBorder → emPanel). Rust lacks C++ inheritance, so we
     /// mirror `emCheckButton::CheckSignal` explicitly on `emCheckBox` to
@@ -91,6 +91,7 @@ impl emCheckBox {
     /// state before firing the captured `check_signal` directly. Production code
     /// must use `SetChecked` (which atomically updates state + fires the signal).
     #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn set_checked_for_test(&mut self, checked: bool) {
         self.checked = checked;
     }

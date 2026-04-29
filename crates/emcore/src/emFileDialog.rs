@@ -652,7 +652,7 @@ fn build_overwrite_dialog<C: ConstructCtx>(ctx: &mut C, look: Rc<emLook>) -> emD
     od
 }
 
-/// DIVERGED (Phase 3.6.1 Task 2): shared validation body for the
+/// DIVERGED: (language-forced) shared validation body for the
 /// widened `DialogCheckFinishCb` closure installed by `emFileDialog::new`.
 /// Post-show-only. Ports C++ `emFileDialog::CheckFinish`
 /// (emFileDialog.cpp:110-199): dir-check, Open existence, Save overwrite

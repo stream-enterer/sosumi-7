@@ -949,6 +949,7 @@ impl emListBox {
     /// `SetSelectedIndices` (which atomically updates state + fires the
     /// signal). Mirrors `set_checked_for_test` on `emCheckBox`.
     #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn set_selected_indices_for_test(&mut self, indices: Vec<usize>) {
         for &idx in &self.selected_indices {
             if idx < self.items.len() {
@@ -973,6 +974,7 @@ impl emListBox {
     /// `item_trigger_signal` directly. Mirrors `set_checked_for_test`
     /// on `emCheckBox`.
     #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn set_triggered_item_index_for_test(&mut self, idx: Option<usize>) {
         self.triggered_index = idx;
     }

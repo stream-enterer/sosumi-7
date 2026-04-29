@@ -107,7 +107,7 @@ impl<T: emRecNode + 'static> emTArrayRec<T> {
     /// Resize to `count` elements, clipping to `[min_count, max_count]`.
     /// Mirrors `emArrayRec::SetCount`; see that module for the C++ refs.
     ///
-    /// DIVERGED (register_aggregate loop): C++ `emRec::Changed()` walks
+    /// DIVERGED: (language-forced) C++ `emRec::Changed()` walks
     /// `UpperNode`; Rust fires the reified chain. See ADR
     /// 2026-04-21-phase-4b-listener-tree-adr.md.
     //

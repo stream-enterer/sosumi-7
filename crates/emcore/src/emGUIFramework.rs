@@ -61,7 +61,7 @@ pub struct PendingTopLevel {
     /// build it at `install_pending_top_level` time with the known
     /// `materialized_wid`.
     pub private_engine_root_panel_id: crate::emPanelTree::PanelId,
-    /// DIVERGED (Phase 3.6 Task 3): additional wake-up signals to connect
+    /// DIVERGED: (language-forced) additional wake-up signals to connect
     /// to the `DialogPrivateEngine` at install time. Port of C++
     /// `emFileDialog` ctor calling `AddWakeUpSignal(Fsb->GetFileTriggerSignal())`
     /// (emFileDialog.cpp:41). In C++ the dialog subclass calls this on the
