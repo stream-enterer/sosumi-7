@@ -407,3 +407,11 @@ Combined-reviewer template dispatched against `d15bbca0..91433733`. Result: **AP
 - **Observable timing deviation:** 1-cycle delay vs C++ synchronous `OnRecChanged`. `DIVERGED: language-forced` at `FactorFieldPanel::Cycle`. Same constraint as B-015 row -50 / B-004 deferred-fire pattern.
 - **Carry-forward (D4-follow):** `factor_cfg_to_val` function and `FactorFieldPanel` struct each exist as two `#[cfg]`-gated copies (production private + test-support public, currently identical bodies). Future edit must update both. Maintenance risk; not blocking.
 - Test suite: 2892 → 2895 (+3 tests in `crates/emcore/tests/rec_listener_b_d4.rs`).
+
+### 2026-04-29 — emcore cleanup batch (D10 + *_for_test() + M-001)
+
+- **Cleanup batch → merged at 5d15a477** (commits: 22e64e78 implementation + 5cc7c20f CLAUDE.md). No new tests; 2895/2895.
+- **Task 1 — `#[doc(hidden)]` on `*_for_test()` accessors:** Added to 5 methods across 4 widget files (`emCheckBox`, `emScalarField`, `emListBox` ×2, `emTextField`). B-010 R2 inconsistency resolved.
+- **Task 2 — D10 pseudo-DIVERGED reclassification:** Plan identified 8 sites in `emDialog.rs`/`emFileDialog.rs`. The new `scan_malformed("DIVERGED (")` linter pass caught 10 additional sites across `emGUIFramework.rs`, `emContext.rs`, `emClipboard.rs`, `emView.rs` ×2, `emCheckBox.rs`, `emTArrayRec.rs`, `emStructRec.rs`, and two test files. All 18 reclassified to `DIVERGED: (language-forced)`. Linter now catches parenthetical-form annotations.
+- **Task 3 — M-001 methodology note:** "Verify C++ Cycle branch structure directly" appended to `decisions.md` under new Methodology Notes section.
+- **CLAUDE.md amended:** D-009 polling-intermediary failure mode added to Port Ideology §"Failure modes this prevents" (`5cc7c20f`).
