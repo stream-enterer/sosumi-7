@@ -414,6 +414,8 @@ pub struct MouseMiscGroup {
     layout: emRasterLayout,
     // B-010 rows 299/300/301: D-006 first-Cycle init + IsSignaled subscribe state.
     subscribed_init: bool,
+    // Config aggregate subscribe for update_output after Reset.
+    // Distinct from subscribed_init which gates per-checkbox wakeup subscriptions.
     subscribed_to_config: bool,
     config_sig: SignalId,
     stick_sig: SignalId,
@@ -435,6 +437,8 @@ pub(crate) struct MouseMiscGroup {
     layout: emRasterLayout,
     // B-010 rows 299/300/301: D-006 first-Cycle init + IsSignaled subscribe state.
     subscribed_init: bool,
+    // Config aggregate subscribe for update_output after Reset.
+    // Distinct from subscribed_init which gates per-checkbox wakeup subscriptions.
     subscribed_to_config: bool,
     config_sig: SignalId,
     stick_sig: SignalId,
@@ -729,6 +733,7 @@ impl PanelBehavior for MouseMiscGroup {
     /// corresponding config field + Save (if changed). Branches in C++ source
     /// order: stick → emu → pan.
     fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        // Config aggregate subscribe — distinct from per-checkbox subscribed_init.
         if !self.subscribed_to_config {
             ectx.connect(self.config_sig, ectx.id());
             self.subscribed_to_config = true;
@@ -1583,6 +1588,8 @@ pub struct CpuGroup {
     layout: emLinearLayout,
     // B-010 rows 746/755: D-006 first-Cycle init + IsSignaled subscribe state.
     subscribed_init: bool,
+    // Config aggregate subscribe for update_output after Reset.
+    // Distinct from subscribed_init which gates per-checkbox wakeup subscriptions.
     subscribed_to_config: bool,
     config_sig: SignalId,
     threads_sig: SignalId,
@@ -1601,6 +1608,8 @@ pub(crate) struct CpuGroup {
     layout: emLinearLayout,
     // B-010 rows 746/755: D-006 first-Cycle init + IsSignaled subscribe state.
     subscribed_init: bool,
+    // Config aggregate subscribe for update_output after Reset.
+    // Distinct from subscribed_init which gates per-checkbox wakeup subscriptions.
     subscribed_to_config: bool,
     config_sig: SignalId,
     threads_sig: SignalId,
@@ -1864,6 +1873,7 @@ impl PanelBehavior for CpuGroup {
     /// propagates to `Config->MaxRenderThreads` / `Config->AllowSIMD` + Save
     /// (if changed). Branches in C++ source order: threads → SIMD.
     fn Cycle(&mut self, ectx: &mut crate::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        // Config aggregate subscribe — distinct from per-checkbox subscribed_init.
         if !self.subscribed_to_config {
             ectx.connect(self.config_sig, ectx.id());
             self.subscribed_to_config = true;
