@@ -1262,6 +1262,9 @@ impl PanelBehavior for TestPanel {
 
         // PolyDraw — C++ name "PolyDraw" (emTestPanel.cpp:494).
         ctx.create_child_with("PolyDraw", Box::new(PolyDrawPanel::new()));
+
+        // Wake engine so Cycle runs to connect bg_color_signal on the first frame after expansion.
+        ctx.wake_up();
     }
 
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
