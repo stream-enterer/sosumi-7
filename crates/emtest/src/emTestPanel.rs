@@ -481,6 +481,9 @@ pub(crate) struct TestPanel {
 
 impl TestPanel {
     pub(crate) fn new(root_ctx: Rc<emContext>, initial_bg: emColor) -> Self {
+        // DIVERGED: (dependency-forced) C++ emGetInsResImage(GetRootContext(), "icons", "teddy.tga")
+        // resolves to $EM_DIR/res/icons/teddy.tga (monolithic install). Rust cdylib resources
+        // live under res/emTest/; call uses ("emTest", "icons/teddy.tga") → $EM_DIR/res/emTest/icons/teddy.tga.
         let test_image = emGetInsResImage("emTest", "icons/teddy.tga");
         Self {
             root_ctx,
@@ -1220,7 +1223,7 @@ impl PanelBehavior for TestPanel {
         }));
         ctx.create_child_with("BgColorField", Box::new(ColorFieldPanel { widget: cf }));
 
-        // PolyDraw — C++ name "PolyDraw" (flat placeholder; Task 11 restructures).
+        // PolyDraw — C++ name "PolyDraw" (emTestPanel.cpp:490).
         ctx.create_child_with("PolyDraw", Box::new(PolyDrawPanel::new()));
     }
 
@@ -2411,6 +2414,8 @@ impl PanelBehavior for CanvasPanel {
 
 /// Star polygon helper used in paint_primitives textured-polygon demos.
 /// Alternates outer (r=1.0) and inner (r=0.4) vertices around (cx, cy).
+// RUST_ONLY: (language-forced-utility) C++ inlines polygon vertices manually
+// (emTestPanel.cpp:372–413); Rust extracts the computation to avoid repetition.
 fn make_star(cx: f64, cy: f64, rx: f64, ry: f64, points: usize) -> Vec<(f64, f64)> {
     let mut verts = Vec::with_capacity(points * 2);
     for i in 0..(points * 2) {
