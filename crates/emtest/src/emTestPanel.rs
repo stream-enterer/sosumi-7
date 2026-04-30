@@ -6,7 +6,7 @@
 //! persisted via emVarModel keyed on the panel identity; the teddy.tga test
 //! image is loaded from embedded resources.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
 use std::rc::Rc;
 
@@ -2160,21 +2160,117 @@ impl PanelBehavior for TkTestPanel {
 // Controls sub-tree (radio groups, text fields, color fields) is deferred
 // to a later task; here we create only the CanvasPanel child so the
 // structural hierarchy matches C++.
-//
-// C++ sets `SetOrientationThresholdTallness(1.0)` in the constructor
-// (emTestPanel.cpp:1011) to switch horizontal/vertical based on aspect
-// ratio. Rust emLinearGroup only supports static orientation; with a
-// single child the observable layout is unchanged, so we use horizontal()
-// and mark this for when threshold-orientation lands.
 
 struct PolyDrawPanel {
     group: emLinearGroup,
+    // RadioGroup handles — read selected index in Cycle via group.borrow().GetChecked().
+    // Rc<RefCell<RadioGroup>> is justified by (b): context-registry typed singleton;
+    // the group handle must be shared between AutoExpand (radio buttons) and Cycle
+    // (reads selection), which cannot be expressed with plain ownership.
+    // Prefixed `_` until AutoExpand (Task 2) wires the controls sub-tree.
+    _type_group: Option<Rc<RefCell<RadioGroup>>>,
+    _stroke_dash_type_group: Option<Rc<RefCell<RadioGroup>>>,
+    _stroke_start_type_group: Option<Rc<RefCell<RadioGroup>>>,
+    _stroke_end_type_group: Option<Rc<RefCell<RadioGroup>>>,
+    // Signal IDs — None until AutoExpand wires them. 18 signals total.
+    // Prefixed `_` until Cycle (Task 3) reads them.
+    _type_signal: Option<SignalId>,
+    _vertex_count_signal: Option<SignalId>,
+    _with_canvas_color_signal: Option<SignalId>,
+    _fill_color_signal: Option<SignalId>,
+    _stroke_width_signal: Option<SignalId>,
+    _stroke_color_signal: Option<SignalId>,
+    _stroke_rounded_signal: Option<SignalId>,
+    _stroke_dash_type_signal: Option<SignalId>,
+    _dash_length_factor_signal: Option<SignalId>,
+    _gap_length_factor_signal: Option<SignalId>,
+    _stroke_start_type_signal: Option<SignalId>,
+    _stroke_start_inner_color_signal: Option<SignalId>,
+    _stroke_start_width_factor_signal: Option<SignalId>,
+    _stroke_start_length_factor_signal: Option<SignalId>,
+    _stroke_end_type_signal: Option<SignalId>,
+    _stroke_end_inner_color_signal: Option<SignalId>,
+    _stroke_end_width_factor_signal: Option<SignalId>,
+    _stroke_end_length_factor_signal: Option<SignalId>,
+    // Panel IDs for reading widget values in Cycle via downcast.
+    // Prefixed `_` until Cycle (Task 3) reads them.
+    _canvas_id: Option<PanelId>,
+    _vertex_count_id: Option<PanelId>,
+    _with_canvas_color_id: Option<PanelId>,
+    _fill_color_id: Option<PanelId>,
+    _stroke_width_id: Option<PanelId>,
+    _stroke_color_id: Option<PanelId>,
+    _stroke_rounded_id: Option<PanelId>,
+    _stroke_dash_type_id: Option<PanelId>,
+    _dash_length_factor_id: Option<PanelId>,
+    _gap_length_factor_id: Option<PanelId>,
+    _stroke_start_type_id: Option<PanelId>,
+    _stroke_start_inner_color_id: Option<PanelId>,
+    _stroke_start_width_factor_id: Option<PanelId>,
+    _stroke_start_length_factor_id: Option<PanelId>,
+    _stroke_end_type_id: Option<PanelId>,
+    _stroke_end_inner_color_id: Option<PanelId>,
+    _stroke_end_width_factor_id: Option<PanelId>,
+    _stroke_end_length_factor_id: Option<PanelId>,
 }
 
 impl PolyDrawPanel {
     fn new() -> Self {
+        let mut group = emLinearGroup::horizontal();
+        // C++ emTestPanel.cpp:1005–1009: caption and description set in constructor.
+        group.border.SetCaption("Poly Draw Test");
+        group.border.description =
+            "This allows manual testing of various paint functions. Main focus is\n\
+             on strokes an stroke ends, i.e. textures cannot be tested with this.\n"
+                .to_string();
+        // C++ emTestPanel.cpp:1011: SetOrientationThresholdTallness(1.0) — switches
+        // horizontal/vertical layout based on aspect ratio.
+        // DIVERGED: (upstream-gap-forced) emLinearGroup does not implement orientation
+        // threshold switching; the method is absent from the Rust emLinearGroup API.
+        // With a single CanvasPanel child the observable layout is unchanged until
+        // the controls sub-tree is added.
         Self {
-            group: emLinearGroup::horizontal(),
+            group,
+            _type_group: None,
+            _stroke_dash_type_group: None,
+            _stroke_start_type_group: None,
+            _stroke_end_type_group: None,
+            _type_signal: None,
+            _vertex_count_signal: None,
+            _with_canvas_color_signal: None,
+            _fill_color_signal: None,
+            _stroke_width_signal: None,
+            _stroke_color_signal: None,
+            _stroke_rounded_signal: None,
+            _stroke_dash_type_signal: None,
+            _dash_length_factor_signal: None,
+            _gap_length_factor_signal: None,
+            _stroke_start_type_signal: None,
+            _stroke_start_inner_color_signal: None,
+            _stroke_start_width_factor_signal: None,
+            _stroke_start_length_factor_signal: None,
+            _stroke_end_type_signal: None,
+            _stroke_end_inner_color_signal: None,
+            _stroke_end_width_factor_signal: None,
+            _stroke_end_length_factor_signal: None,
+            _canvas_id: None,
+            _vertex_count_id: None,
+            _with_canvas_color_id: None,
+            _fill_color_id: None,
+            _stroke_width_id: None,
+            _stroke_color_id: None,
+            _stroke_rounded_id: None,
+            _stroke_dash_type_id: None,
+            _dash_length_factor_id: None,
+            _gap_length_factor_id: None,
+            _stroke_start_type_id: None,
+            _stroke_start_inner_color_id: None,
+            _stroke_start_width_factor_id: None,
+            _stroke_start_length_factor_id: None,
+            _stroke_end_type_id: None,
+            _stroke_end_inner_color_id: None,
+            _stroke_end_width_factor_id: None,
+            _stroke_end_length_factor_id: None,
         }
     }
 }
