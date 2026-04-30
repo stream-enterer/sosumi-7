@@ -2184,8 +2184,10 @@ impl PanelBehavior for PolyDrawPanel {
         true
     }
 
-    fn auto_expand(&self) -> bool {
-        true
+    fn AutoExpand(&mut self, ctx: &mut PanelCtx) {
+        // C++ PolyDrawPanel::AutoExpand (emTestPanel.cpp:1260): creates CanvasPanel.
+        // Control widgets (C-1) are deferred to the PolyDrawPanel full-port plan.
+        ctx.create_child_with("CanvasPanel", Box::new(CanvasPanel::new()));
     }
 
     fn Paint(
@@ -2200,11 +2202,6 @@ impl PanelBehavior for PolyDrawPanel {
     }
 
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
-        if ctx.children().is_empty() {
-            // C++ AutoExpand: Canvas=new CanvasPanel(this,"CanvasPanel")
-            // (emTestPanel.cpp:1260)
-            ctx.create_child_with("CanvasPanel", Box::new(CanvasPanel::new()));
-        }
         self.group.LayoutChildren(ctx);
     }
 }
