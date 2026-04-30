@@ -1281,7 +1281,8 @@ impl PanelBehavior for TkTestGrpPanel {
     }
     fn AutoExpand(&mut self, ctx: &mut PanelCtx) {
         // C++ TkTestGrp::AutoExpand (emTestPanel.cpp:882–910): creates sp → sp1/sp2 → t1a/t1b/t2a/t2b.
-        // DIVERGED: (dependency-forced) emSplitter not yet ported; 2×2 grid used instead.
+        // DIVERGED: (dependency-forced) emSplitter is not yet ported; 2×2 grid laid out manually.
+        // Observable difference: panel proportions use fixed 80/20 splits instead of user-draggable splitters.
         ctx.create_child_with("t1a", Box::new(TkTestPanel::new(self.look.clone())));
         ctx.create_child_with("t1b", Box::new(TkTestPanel::new(self.look.clone())));
         ctx.create_child_with("t2a", Box::new(TkTestPanel::new(self.look.clone())));
