@@ -1,11 +1,10 @@
 //! emTestPanel — plugin port of C++ emTest/emTestPanel.cpp.
 //!
-//! Task 6 scope: TestPanel + TkTestGrp + TkTest with the core widget groups
-//! (Buttons, Check, Radio, Text, Scalar sf1–sf3, Color). Adds BgColor
-//! persistence via emVarModel keyed on the panel identity, plus the teddy.tga
-//! test image and a flat PolyDrawPanel placeholder. Extended widget groups
-//! (Tunnels, ListBoxes, dialogs, file selection) and the structured
-//! PolyDrawPanel are deferred to later tasks (7–11).
+//! Provides TestPanel + TkTestGrp + TkTest with the full widget set
+//! (Buttons, Check, Radio, Text, Scalar fields, Color, Tunnels, ListBoxes,
+//! dialogs, file selection) plus the PolyDrawPanel container. BgColor is
+//! persisted via emVarModel keyed on the panel identity; the teddy.tga test
+//! image is loaded from embedded resources.
 
 use std::cell::Cell;
 use std::f64::consts::PI;
@@ -41,7 +40,7 @@ use emcore::emRasterLayout::emRasterLayout;
 use emcore::emRes::emGetInsResImage;
 use emcore::emScalarField::emScalarField;
 use emcore::emSignal::SignalId;
-use emcore::emStroke::{emStroke, LineCap, LineJoin};
+use emcore::emStroke::{emStroke, DashType, LineCap, LineJoin};
 use emcore::emStrokeEnd::{emStrokeEnd, StrokeEndType};
 use emcore::emTextField::emTextField;
 use emcore::emTexture::{emTexture, ImageExtension, ImageQuality};
@@ -256,19 +255,27 @@ impl PanelBehavior for ScalarFieldPanel {
     }
 }
 
-/// sf6 "Play Position" wrapper that reads a dynamic max from a shared Cell before
-/// painting. The Cell is written by sf5's `on_value` callback (synchronously).
-/// The max update cannot use `SetMaxValue` (requires PanelCtx); `set_max_silent`
-/// keeps the display in sync without firing signals.
+/// sf6 "Play Position" wrapper. Mirrors C++ `TkTest::Cycle` behavior at
+/// emTestPanel.cpp:786 —
+///   `if (IsSignaled(SFLen->GetValueSignal())) SFPos->SetMaxValue(SFLen->GetValue());`
+/// — but relocated from `TkTest::Cycle` to sf6's own `Cycle` because Rust's
+/// `TkTestPanel::Cycle` cannot reach the sf6 child panel's widget directly.
+///
+/// DIVERGED: (language-forced) C++ has direct pointer access from `TkTest`
+/// to the sf6 widget (`SFPos->SetMaxValue(...)`); under our canonical ownership
+/// model child widgets are owned by the panel tree and not reachable from a
+/// sibling's `Cycle`. We use a shared `Rc<Cell<f64>>` written by sf5's
+/// `on_value` callback as the value pipe, and react to the same
+/// `value_signal` here so the timing is signal-driven (not Cycle-polled).
 struct ScalarFieldWithDynamicMax {
     widget: emScalarField,
     max_ref: Rc<Cell<f64>>,
+    sf5_len_signal: SignalId,
+    signal_connected: bool,
 }
 
 impl PanelBehavior for ScalarFieldWithDynamicMax {
     fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
-        let new_max = self.max_ref.get();
-        self.widget.set_max_silent(new_max);
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget
             .Paint(p, canvas_color, w, h, s.enabled, pixel_scale);
@@ -287,6 +294,18 @@ impl PanelBehavior for ScalarFieldWithDynamicMax {
     }
     fn IsOpaque(&self) -> bool {
         true
+    }
+    fn Cycle(&mut self, ectx: &mut EngineCtx<'_>, pctx: &mut PanelCtx) -> bool {
+        if !self.signal_connected {
+            ectx.connect(self.sf5_len_signal, ectx.engine_id);
+            self.signal_connected = true;
+            // Trigger one wake so initial connection observes any pending fire.
+            ectx.wake_up(ectx.engine_id);
+        }
+        if ectx.IsSignaled(self.sf5_len_signal) {
+            self.widget.SetMaxValue(self.max_ref.get(), pctx);
+        }
+        false
     }
 }
 
@@ -605,36 +624,186 @@ impl TestPanel {
             bg,
         );
 
-        // Ellipses (cx, cy, rx, ry).
-        p.PaintEllipse(0.055, 0.805, 0.005, 0.005, emColor::WHITE, bg);
-        p.PaintEllipse(0.07, 0.805, 0.01, 0.005, emColor::WHITE, bg);
-        p.PaintEllipse(0.0925, 0.805, 0.0025, 0.005, emColor::WHITE, bg);
+        // Ellipses — bounding-rect (x, y, w, h). C++ emTestPanel.cpp:276-278.
+        p.PaintEllipse(0.05, 0.80, 0.01, 0.01, emColor::WHITE, bg);
+        p.PaintEllipse(0.06, 0.80, 0.02, 0.01, emColor::WHITE, bg);
+        p.PaintEllipse(0.09, 0.80, 0.005, 0.01, emColor::WHITE, bg);
 
-        // Ellipse sectors.
-        p.PaintEllipseSector(0.105, 0.805, 0.005, 0.005, 45.0, 305.0, emColor::WHITE, bg);
-        p.PaintEllipseSector(0.12, 0.805, 0.01, 0.005, 45.0, -395.0, emColor::WHITE, bg);
+        // Ellipse sectors — C++ emTestPanel.cpp:279-282.
+        p.PaintEllipseSector(0.10, 0.80, 0.01, 0.01, 45.0, 350.0, emColor::WHITE, bg);
+        p.PaintEllipseSector(0.11, 0.80, 0.02, 0.01, 45.0, -350.0, emColor::WHITE, bg);
+        p.PaintEllipseSector(0.13, 0.80, 0.005, 0.01, 245.0, 50.0, emColor::WHITE, bg);
+        p.PaintEllipseSector(0.14, 0.80, 0.01, 0.01, 245.0, -50.0, emColor::WHITE, bg);
 
-        // Rect outlines.
-        let thin_stroke = emStroke::new(emColor::WHITE, 0.001);
-        p.PaintRectOutline(0.05, 0.82, 0.01, 0.01, &thin_stroke, bg);
-        let thick_stroke = emStroke::new(emColor::WHITE, 0.008);
-        p.PaintRectOutline(0.10, 0.82, 0.01, 0.01, &thick_stroke, bg);
+        // Rect outlines — C++ emTestPanel.cpp:284-287.
+        p.PaintRectOutline(
+            0.05,
+            0.82,
+            0.01,
+            0.01,
+            &emStroke::new(emColor::WHITE, 0.001),
+            bg,
+        );
+        {
+            let mut dashed_s = emStroke::new(emColor::WHITE, 0.001);
+            dashed_s.dash_type = DashType::Dashed;
+            p.PaintRectOutline(0.07, 0.82, 0.02, 0.01, &dashed_s, bg);
+        }
+        p.PaintRectOutline(
+            0.10,
+            0.82,
+            0.01,
+            0.01,
+            &emStroke::new(emColor::WHITE, 0.008),
+            bg,
+        );
+        p.PaintRectOutline(
+            0.13,
+            0.82,
+            0.01,
+            0.01,
+            &emStroke::new(emColor::WHITE, 0.011),
+            bg,
+        );
 
-        // Round rects.
+        // Round rects — C++ emTestPanel.cpp:289-293.
         p.PaintRoundRect(0.05, 0.84, 0.01, 0.01, 0.001, 0.001, emColor::WHITE, bg);
-        p.PaintRoundRect(0.07, 0.84, 0.02, 0.01, 0.002, 0.002, emColor::WHITE, bg);
-        p.PaintRoundRect(0.10, 0.84, 0.01, 0.01, 0.003, 0.003, emColor::WHITE, bg);
+        p.PaintRoundRect(0.07, 0.84, 0.02, 0.01, 0.001, 0.002, emColor::WHITE, bg);
+        p.PaintRoundRect(0.10, 0.84, 0.01, 0.01, 0.003, 0.002, emColor::WHITE, bg);
+        p.PaintRoundRect(0.13, 0.84, 0.01, 0.01, 0.001, 0.011, emColor::WHITE, bg);
+        p.PaintRoundRect(0.15, 0.84, 0.01, 0.01, 0.0, 0.0, emColor::WHITE, bg);
 
-        // Ellipse outlines.
-        let outline_stroke = emStroke::new(emColor::WHITE, 0.003);
-        p.PaintEllipseOutline(0.055, 0.865, 0.005, 0.005, &outline_stroke, bg);
-        let thin_outline = emStroke::new(emColor::WHITE, 0.001);
-        p.PaintEllipseOutline(0.075, 0.865, 0.01, 0.005, &thin_outline, bg);
+        // Ellipse outlines — C++ emTestPanel.cpp:295-302.
+        p.PaintEllipseOutline(
+            0.05,
+            0.86,
+            0.01,
+            0.01,
+            &emStroke::new(emColor::WHITE, 0.003),
+            bg,
+        );
+        p.PaintEllipseOutline(
+            0.065,
+            0.86,
+            0.02,
+            0.01,
+            &emStroke::new(emColor::WHITE, 0.001),
+            bg,
+        );
+        {
+            // C++ :297 emRoundedDottedStroke — rounded cap/join + dotted dash pattern.
+            let mut rd_s = emStroke::new(emColor::WHITE, 0.00025);
+            rd_s.cap = LineCap::Round;
+            rd_s.join = LineJoin::Round;
+            rd_s.dash_type = DashType::Dotted;
+            p.PaintEllipseOutline(0.09, 0.86, 0.005, 0.01, &rd_s, bg);
+        }
+        p.PaintEllipseArc(
+            0.10,
+            0.86,
+            0.01,
+            0.01,
+            90.0,
+            225.0,
+            &emStroke::new(emColor::WHITE, 0.001),
+            bg,
+        );
+        p.PaintEllipseSectorOutline(
+            0.11,
+            0.86,
+            0.02,
+            0.01,
+            45.0,
+            -320.0,
+            &emStroke::new(emColor::WHITE, 0.0001),
+            bg,
+        );
+        p.PaintEllipseArc(
+            0.13,
+            0.86,
+            0.005,
+            0.01,
+            245.0,
+            50.0,
+            &emStroke::new(emColor::WHITE, 0.001),
+            bg,
+        );
+        p.PaintEllipseArc(
+            0.14,
+            0.86,
+            0.01,
+            0.01,
+            245.0,
+            -50.0,
+            &emStroke::new(emColor::WHITE, 0.001),
+            bg,
+        );
+        {
+            // C++ :302 emRoundedStroke + LineArrow finish end.
+            let mut rounded_s = emStroke::new(emColor::WHITE, 0.0001);
+            rounded_s.cap = LineCap::Round;
+            rounded_s.join = LineJoin::Round;
+            rounded_s.start_end = emStrokeEnd::new(StrokeEndType::Cap);
+            rounded_s.finish_end = emStrokeEnd::new(StrokeEndType::LineArrow);
+            p.PaintEllipseArc(0.15, 0.86, 0.01, 0.01, 0.0, -145.0, &rounded_s, bg);
+        }
 
-        // Round rect outlines.
-        let rr_stroke = emStroke::new(emColor::WHITE, 0.001);
-        p.PaintRoundRectOutline(0.05, 0.88, 0.01, 0.01, 0.001, 0.001, &rr_stroke, bg);
-        p.PaintRoundRectOutline(0.07, 0.88, 0.02, 0.01, 0.002, 0.002, &rr_stroke, bg);
+        // Round rect outlines — C++ emTestPanel.cpp:304-309.
+        p.PaintRoundRectOutline(
+            0.05,
+            0.88,
+            0.01,
+            0.01,
+            0.001,
+            0.001,
+            &emStroke::new(emColor::WHITE, 0.001),
+            bg,
+        );
+        p.PaintRoundRectOutline(
+            0.07,
+            0.88,
+            0.02,
+            0.01,
+            0.001,
+            0.002,
+            &emStroke::new(emColor::WHITE, 0.001),
+            bg,
+        );
+        p.PaintRoundRectOutline(
+            0.10,
+            0.88,
+            0.01,
+            0.01,
+            0.003,
+            0.002,
+            &emStroke::new(emColor::WHITE, 0.003),
+            bg,
+        );
+        p.PaintRoundRectOutline(
+            0.12,
+            0.88,
+            0.01,
+            0.01,
+            0.001,
+            0.011,
+            &emStroke::new(emColor::WHITE, 0.0001),
+            bg,
+        );
+        {
+            let mut dd_s = emStroke::new(emColor::WHITE, 0.00002);
+            dd_s.dash_type = DashType::DashDotted;
+            p.PaintRoundRectOutline(0.135, 0.88, 0.01, 0.01, 0.001, 0.001, &dd_s, bg);
+        }
+        p.PaintRoundRectOutline(
+            0.15,
+            0.88,
+            0.01,
+            0.01,
+            -0.0004,
+            -0.0004,
+            &emStroke::new(emColor::WHITE, 0.001),
+            bg,
+        );
 
         // Bezier curves.
         p.PaintBezier(
@@ -811,11 +980,12 @@ impl TestPanel {
             emColor::rgba(0, 0x55, 0, 0xFF),
             bg,
         );
+        // C++ :425-428 — solid fallback for radial-gradient ellipse, bounding rect.
         p.PaintEllipse(
-            0.24,
-            0.945,
+            0.23,
+            0.94,
+            0.02,
             0.01,
-            0.005,
             emColor::rgba(0, 0xCC, 0x88, 0xFF),
             bg,
         );
@@ -917,6 +1087,9 @@ impl PanelBehavior for TestPanel {
         }
         if state.in_focused_path() {
             status += " InFocusedPath";
+        }
+        if state.window_focused {
+            status += " ViewFocused";
         }
         painter.PaintTextBoxed(
             0.05,
@@ -1200,10 +1373,12 @@ fn install_file_dialog_finish(fd: &mut emFileDialog, _ectx: &mut EngineCtx<'_>) 
                         msg.push_str("\n  ");
                         msg.push_str(name);
                     }
-                    // Port of C++ `str += emString("From:\n  ")+FileDlg->GetParentDirectory()`.
-                    // `get_selected_path_post_show` returns the first name; parent dir is
-                    // not directly accessible post-show via the free functions, so we omit
-                    // the "From:" line — observable only when names.len() > 1 with multi-selection.
+                    // DIVERGED: (language-forced) C++ `str += emString("From:\n  ")+FileDlg->GetParentDirectory()`
+                    // appends the dialog's parent directory to the multi-selection summary.
+                    // `get_selected_path_post_show` returns only the first selected name (filename);
+                    // the FSB's parent directory is not exposed by the post-show free-function API
+                    // and would require a second tree-access helper that does not yet exist. The
+                    // "From:" line is omitted; observable only with multi-selection (names.len() > 1).
                     msg
                 };
                 // C++ :838: emDialog::ShowMessage(GetView(),"Result",str).
@@ -1243,10 +1418,14 @@ struct TkTestPanel {
     border: emBorder,
     layout: emRasterLayout,
     children_created: bool,
-    /// PlayLength value signal (sf5) — stored for Cycle (Task 9).
+    /// PlayLength value signal (sf5) — retained for diagnostics; the actual
+    /// signal-driven update lives in `ScalarFieldWithDynamicMax::Cycle`.
     sf5_len_signal: Option<SignalId>,
-    /// Current max for sf6 "Play Position" — set by sf5's on_value callback,
-    /// read by ScalarFieldWithDynamicMax::Paint before rendering.
+    /// Value pipe from sf5's `on_value` callback to sf6's `Cycle`. The Cell
+    /// is written synchronously when sf5 fires its value_signal and read in
+    /// sf6's Cycle on the same fire — never polled. See
+    /// `ScalarFieldWithDynamicMax`'s DIVERGED block for the language-forced
+    /// rationale (no direct child-widget reach from a sibling's Cycle).
     sf6_max: Rc<Cell<f64>>,
     // ── Dialogs group signals + checkbox state (Task 9) ──────────────
     /// BtCreateDlg click signal — None until LayoutChildren creates the button.
@@ -1477,6 +1656,7 @@ impl TkTestPanel {
             ]);
             sf5.SetTextOfValueFunc(Box::new(text_of_time_value));
             self.sf5_len_signal = Some(sf5.value_signal);
+            let sf5_value_signal_for_sf6 = sf5.value_signal;
             sf5.on_value = Some(Box::new(move |val, _sched| {
                 sf6_max.set(val);
             }));
@@ -1484,9 +1664,11 @@ impl TkTestPanel {
             ctx.tree
                 .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf5 }));
 
-            // sf6 — Play Position — C++ :640-644. Dynamic max tracks sf5's value.
+            // sf6 — Play Position — C++ :640-644. Dynamic max tracks sf5's value
+            // via the wrapper's signal-driven Cycle (mirrors C++ TkTest::Cycle).
             let sf6_max_ref = Rc::clone(&self.sf6_max);
             let sf6_initial_max = self.sf6_max.get();
+            let sf5_len_signal = sf5_value_signal_for_sf6;
             let mut sf6 = emScalarField::new(ctx, 0.0, sf6_initial_max, look.clone());
             sf6.SetCaption("Play Position");
             sf6.SetEditable(true);
@@ -1500,6 +1682,8 @@ impl TkTestPanel {
                 Box::new(ScalarFieldWithDynamicMax {
                     widget: sf6,
                     max_ref: sf6_max_ref,
+                    sf5_len_signal,
+                    signal_connected: false,
                 }),
             );
         }

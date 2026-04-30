@@ -126,7 +126,8 @@ impl emLabel {
             .paint_label(painter, canvas_color, cr, &self.look, enabled);
     }
 
-    // DIVERGED: (language-forced) no C++ equivalent — Rust-only layout helper
+    // RUST_ONLY: (language-forced-utility) — no C++ analogue; Rust-only layout helper
+    // for callers that need a sizing hint outside emCore's panel layout pipeline.
     pub fn preferred_size(&self) -> (f64, f64) {
         let ch = 13.0;
         let tw = emPainter::measure_text_width(&self.border.caption, ch);
