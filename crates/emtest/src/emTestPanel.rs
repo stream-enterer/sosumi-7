@@ -1067,6 +1067,23 @@ impl Drop for TestPanel {
     }
 }
 
+// RUST_ONLY: (language-forced-utility) C++ uses emString::Format("%g") which has no Rust builtin equivalent.
+// Replicates %g behavior: 6 significant digits, no trailing zeros.
+fn format_g(v: f64) -> String {
+    if v == 0.0 {
+        return "0".to_string();
+    }
+    let abs = v.abs();
+    let exp = abs.log10().floor() as i32;
+    let prec = (5 - exp).max(0) as usize;
+    let s = format!("{:.prec$}", v, prec = prec);
+    if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
+    }
+}
+
 impl PanelBehavior for TestPanel {
     fn IsOpaque(&self) -> bool {
         self.bg_color().IsOpaque()
@@ -1230,8 +1247,8 @@ impl PanelBehavior for TestPanel {
             event.chars,
             event.repeat,
             event.source_variant,
-            event.mouse_x,
-            event.mouse_y,
+            format_g(event.mouse_x),
+            format_g(event.mouse_y),
         );
         if self.input_log.len() >= MAX_LOG_ENTRIES {
             self.input_log.remove(0);
