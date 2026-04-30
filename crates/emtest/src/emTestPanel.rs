@@ -25,9 +25,10 @@ use emcore::emFileDialog::{
 };
 use emcore::emFileSelectionBox::emFileSelectionBox;
 use emcore::emImage::emImage;
-use emcore::emInput::emInputEvent;
+use emcore::emInput::{emInputEvent, InputKey, InputVariant};
 use emcore::emInputState::emInputState;
 use emcore::emLabel::emLabel;
+use emcore::emLinearGroup::emLinearGroup;
 use emcore::emListBox::{emListBox, SelectionMode};
 use emcore::emLook::emLook;
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
@@ -1986,26 +1987,29 @@ impl PanelBehavior for TkTestPanel {
     }
 }
 
-// ─── PolyDrawPanel — flat placeholder ───────────────────────────────
+// ─── PolyDrawPanel — emLinearGroup container ────────────────────────
 //
-// Task 11 will restructure this to mirror the C++ PolyDrawPanel splitter
-// hierarchy; for Task 6 we keep a non-interactive flat panel that paints a
-// gradient + polygon so the layout slot is filled.
+// C++ `PolyDrawPanel : public emLinearGroup` (emTestPanel.h:132).
+// AutoExpand creates a Controls raster and CanvasPanel child. The
+// Controls sub-tree (radio groups, text fields, color fields) is deferred
+// to a later task; here we create only the CanvasPanel child so the
+// structural hierarchy matches C++.
+//
+// C++ sets `SetOrientationThresholdTallness(1.0)` in the constructor
+// (emTestPanel.cpp:1011) to switch horizontal/vertical based on aspect
+// ratio. Rust emLinearGroup only supports static orientation; with a
+// single child the observable layout is unchanged, so we use horizontal()
+// and mark this for when threshold-orientation lands.
 
 struct PolyDrawPanel {
-    vertices: Vec<(f64, f64)>,
+    group: emLinearGroup,
 }
 
 impl PolyDrawPanel {
     fn new() -> Self {
-        let n = 9;
-        let vertices: Vec<(f64, f64)> = (0..n)
-            .map(|i| {
-                let a = 2.0 * PI * i as f64 / n as f64;
-                (a.cos() * 0.4 + 0.5, a.sin() * 0.4 + 0.5)
-            })
-            .collect();
-        Self { vertices }
+        Self {
+            group: emLinearGroup::horizontal(),
+        }
     }
 }
 
@@ -2013,6 +2017,161 @@ impl PanelBehavior for PolyDrawPanel {
     fn IsOpaque(&self) -> bool {
         true
     }
+
+    fn auto_expand(&self) -> bool {
+        true
+    }
+
+    fn Paint(
+        &mut self,
+        p: &mut emPainter,
+        canvas_color: emColor,
+        w: f64,
+        h: f64,
+        state: &PanelState,
+    ) {
+        self.group.Paint(p, canvas_color, w, h, state);
+    }
+
+    fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
+        if ctx.children().is_empty() {
+            // C++ AutoExpand: Canvas=new CanvasPanel(this,"CanvasPanel")
+            // (emTestPanel.cpp:1260)
+            ctx.create_child_with("CanvasPanel", Box::new(CanvasPanel::new()));
+        }
+        self.group.LayoutChildren(ctx);
+    }
+}
+
+// ─── CanvasPanel — interactive polygon drawing ───────────────────────
+//
+// C++ `CanvasPanel : public emPanel` (emTestPanel.h:139).
+// Holds vertex positions and drag state; Paint draws gradient background
+// + polygon + handles; Input handles vertex dragging.
+//
+// The full C++ CanvasPanel also has Type/Stroke/StrokeEnd fields set
+// via Setup() from PolyDrawPanel::Cycle() when controls change. Those
+// fields and the Setup() call are deferred with the controls sub-tree.
+// Until then CanvasPanel always renders as PaintPolygon (type 0) with
+// default fill (white) and stroke (black, 0.01).
+
+struct CanvasPanel {
+    vertices: Vec<(f64, f64)>,
+    drag_idx: Option<usize>,
+    drag_offset: (f64, f64),
+    show_handles: bool,
+    fill_color: emColor,
+    // stroke_width and stroke_color are set via Setup() when the controls
+    // sub-tree is wired (deferred); stored here to match C++ CanvasPanel fields.
+    _stroke_width: f64,
+    _stroke_color: emColor,
+}
+
+impl CanvasPanel {
+    fn new() -> Self {
+        // C++ CanvasPanel::CanvasPanel: DragIdx=-1, no vertices initially.
+        // The first Setup() call from Cycle() populates XY from vertexCount.
+        // Here we pre-initialize to the default 9-vertex polygon
+        // (matching the default VertexCount="9" in C++ AutoExpand:1123).
+        let n = 9;
+        let vertices: Vec<(f64, f64)> = (0..n)
+            .map(|i| {
+                let a = 2.0 * PI * i as f64 / n as f64;
+                (a.cos() * 0.4 + 0.5, a.sin() * 0.4 + 0.5)
+            })
+            .collect();
+        Self {
+            vertices,
+            drag_idx: None,
+            drag_offset: (0.0, 0.0),
+            show_handles: false,
+            fill_color: emColor::WHITE,
+            _stroke_width: 0.01,
+            _stroke_color: emColor::BLACK,
+        }
+    }
+}
+
+impl PanelBehavior for CanvasPanel {
+    fn IsOpaque(&self) -> bool {
+        true
+    }
+
+    fn Input(
+        &mut self,
+        event: &emInputEvent,
+        _state: &PanelState,
+        input_state: &emInputState,
+        ctx: &mut PanelCtx,
+    ) -> bool {
+        let mx = event.mouse_x;
+        let my = event.mouse_y;
+
+        // C++ Input: left-press → find nearest vertex within ViewToPanelDeltaX(12px)
+        if self.drag_idx.is_none()
+            && event.key == InputKey::MouseLeft
+            && event.variant == InputVariant::Press
+        {
+            // Threshold: 12 view-pixels in panel space.
+            // panel_to_view_x(1) - panel_to_view_x(0) = viewed_width in pixels.
+            let viewed_w = ctx.panel_to_view_x(1.0) - ctx.panel_to_view_x(0.0);
+            let threshold = if viewed_w > 0.0 {
+                12.0 / viewed_w
+            } else {
+                0.03
+            };
+
+            let mut best_i = None;
+            let mut best_r = threshold;
+            for (i, &(vx, vy)) in self.vertices.iter().enumerate() {
+                let dx = vx - mx;
+                let dy = vy - my;
+                let r = (dx * dx + dy * dy).sqrt();
+                if r < best_r {
+                    best_i = Some(i);
+                    best_r = r;
+                }
+            }
+            if let Some(idx) = best_i {
+                self.drag_idx = Some(idx);
+                self.drag_offset = (self.vertices[idx].0 - mx, self.vertices[idx].1 - my);
+            }
+            return best_i.is_some();
+        }
+
+        // C++ Input: left-release → stop drag
+        if self.drag_idx.is_some() && !input_state.GetLeftButton() {
+            self.drag_idx = None;
+            return false;
+        }
+
+        // C++ Input: dragging → update vertex position; shift/ctrl/alt → snap to grid
+        if let Some(idx) = self.drag_idx {
+            let raw_x = (mx + self.drag_offset.0).clamp(0.0, 1.0);
+            let raw_y = (my + self.drag_offset.1).clamp(0.0, 1.0);
+            let (x, y) = if input_state.GetShift() || input_state.GetCtrl() || input_state.GetAlt()
+            {
+                // C++ snapping: find r s.t. PanelToViewDeltaX(r) <= 20px
+                let viewed_w = ctx.panel_to_view_x(1.0) - ctx.panel_to_view_x(0.0);
+                let mut r = 0.1;
+                while viewed_w > 0.0 && r * viewed_w > 20.0 {
+                    r *= 0.5;
+                }
+                ((raw_x / r).round() * r, (raw_y / r).round() * r)
+            } else {
+                (raw_x, raw_y)
+            };
+            self.vertices[idx] = (x, y);
+        }
+
+        // C++ Input: ShowHandles = dragging or mouse inside panel
+        let inside =
+            self.drag_idx.is_some() || ((0.0..1.0).contains(&mx) && (0.0..1.0).contains(&my));
+        self.show_handles = inside;
+
+        false
+    }
+
     fn Paint(
         &mut self,
         p: &mut emPainter,
@@ -2021,26 +2180,57 @@ impl PanelBehavior for PolyDrawPanel {
         h: f64,
         _state: &PanelState,
     ) {
-        p.PaintRect(
+        // C++ Paint: gradient background (emLinearGradientTexture)
+        p.paint_linear_gradient(
             0.0,
             0.0,
             w,
             h,
-            emColor::rgba(80, 80, 160, 0xFF),
+            emColor::rgba(80, 80, 160, 255),
+            emColor::rgba(160, 160, 80, 255),
+            false,
             canvas_color,
         );
+
+        // Scale vertices to (w, h) space for painting
         let scaled: Vec<(f64, f64)> = self
             .vertices
             .iter()
             .map(|&(vx, vy)| (vx * w, vy * h))
             .collect();
-        p.PaintPolygon(&scaled, emColor::WHITE, emColor::TRANSPARENT);
+
+        // C++ Paint type 0: PaintPolygon (default until controls are wired)
+        p.PaintPolygon(&scaled, self.fill_color, emColor::TRANSPARENT);
+
+        // C++ Paint: draw vertex handles when ShowHandles
+        if self.show_handles {
+            let r = (0.05f64).min(12.0 / w.max(1.0));
+            for (i, &(vx, vy)) in scaled.iter().enumerate() {
+                let c = if self.drag_idx == Some(i) {
+                    emColor::rgba(255, 255, 255, 200)
+                } else {
+                    emColor::rgba(0, 255, 0, 128)
+                };
+                p.PaintEllipse(vx - r, vy - r, 2.0 * r, 2.0 * r, c, emColor::TRANSPARENT);
+                let outline = emStroke::new(emColor::rgba(0, 0, 0, 128), r * 0.15);
+                p.PaintEllipseOutline(
+                    vx - r,
+                    vy - r,
+                    2.0 * r,
+                    2.0 * r,
+                    &outline,
+                    emColor::TRANSPARENT,
+                );
+            }
+        }
+
+        // C++ Paint: help text at bottom
         p.PaintTextBoxed(
             0.0,
             h - 0.05 * h,
             w,
             0.05 * h,
-            "Poly Draw",
+            "The vertices can be dragged with the left mouse button!\n(Hold shift for raster)",
             0.03 * h,
             emColor::WHITE,
             emColor::TRANSPARENT,
