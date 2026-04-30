@@ -2836,30 +2836,36 @@ impl PanelBehavior for PolyDrawPanel {
 // ─── CanvasPanel — interactive polygon drawing ───────────────────────
 //
 // C++ `CanvasPanel : public emPanel` (emTestPanel.h:139).
-// Holds vertex positions and drag state; Paint draws gradient background
-// + polygon + handles; Input handles vertex dragging.
-//
-// The full C++ CanvasPanel also has Type/Stroke/StrokeEnd fields set
-// via Setup() from PolyDrawPanel::Cycle() when controls change. Those
-// fields and the Setup() call are deferred with the controls sub-tree.
-// Until then CanvasPanel always renders as PaintPolygon (type 0) with
-// default fill (white) and stroke (black, 0.01).
+// Holds vertex positions, drag state, and render state; Paint draws gradient
+// background + polygon/bezier/rect/ellipse/etc. + handles; Input handles
+// vertex dragging.
 
 struct CanvasPanel {
+    // Drag state — set by Input.
     vertices: Vec<(f64, f64)>,
     drag_idx: Option<usize>,
     drag_offset: (f64, f64),
     show_handles: bool,
-    fill_color: emColor,
-    // stroke_width and stroke_color are set via Setup() when the controls
-    // sub-tree is wired (deferred); stored here to match C++ CanvasPanel fields.
-    _stroke_width: f64,
-    _stroke_color: emColor,
+    // Render state — set by Setup(), driven by PolyDrawPanel::Cycle.
+    // C++ emTestPanel.h:152–161. Fields prefixed `_` are not yet read by Paint
+    // (wired in the Cycle task); prefix removed once Paint branches on them.
+    _render_type: u8,         // C++ Type (emTestPanel.cpp:1278)
+    _with_canvas_color: bool, // C++ WithCanvasColor (emTestPanel.cpp:1293)
+    // DIVERGED: (upstream-gap-forced) C++ uses emTexture (which carries color,
+    // gradient, or image); Rust emTexture is not yet wired into CanvasPanel's
+    // Paint. fill_color stores the flat color used until full texture support
+    // is implemented.
+    fill_color: emColor,        // simplified from C++ Texture
+    _stroke_width: f64,         // C++ StrokeWidth (emTestPanel.cpp:1295)
+    _stroke: emStroke,          // C++ Stroke (emTestPanel.cpp:1296)
+    _stroke_start: emStrokeEnd, // C++ StrokeStart (emTestPanel.cpp:1297)
+    _stroke_end: emStrokeEnd,   // C++ StrokeEnd (emTestPanel.cpp:1298)
 }
 
 impl CanvasPanel {
     fn new() -> Self {
-        // C++ CanvasPanel::CanvasPanel: DragIdx=-1, no vertices initially.
+        // C++ CanvasPanel::CanvasPanel (emTestPanel.cpp:1270–1273):
+        // DragIdx=-1, no vertices initially; ShowHandles(false).
         // The first Setup() call from Cycle() populates XY from vertexCount.
         // Here we pre-initialize to the default 9-vertex polygon
         // (matching the default VertexCount="9" in C++ AutoExpand:1123).
@@ -2875,10 +2881,64 @@ impl CanvasPanel {
             drag_idx: None,
             drag_offset: (0.0, 0.0),
             show_handles: false,
+            _render_type: 0,
+            _with_canvas_color: false,
             fill_color: emColor::WHITE,
             _stroke_width: 0.01,
-            _stroke_color: emColor::BLACK,
+            _stroke: emStroke::new(emColor::BLACK, 0.01),
+            _stroke_start: emStrokeEnd::butt(),
+            _stroke_end: emStrokeEnd::butt(),
         }
+    }
+
+    /// C++ `CanvasPanel::Setup` (emTestPanel.cpp:1275–1299).
+    /// Called from PolyDrawPanel::Cycle() when controls change.
+    /// Prefixed `_` until Cycle (Task 4) calls it.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn _Setup(
+        &mut self,
+        render_type: u8,
+        vertex_count: usize,
+        with_canvas_color: bool,
+        fill_color: emColor,
+        stroke_width: f64,
+        stroke: emStroke,
+        stroke_start: emStrokeEnd,
+        stroke_end: emStrokeEnd,
+    ) {
+        self._render_type = render_type;
+
+        // C++ cpp:1285–1292: resize XY array (2 coords per vertex).
+        // When shrinking, drop trailing vertices and clear drag; when growing,
+        // append new vertices on a circle of radius 0.4 centred at (0.5, 0.5).
+        // C++ uses GetHeight() to scale the y-axis (XY.Set(i*2+1,
+        //   GetHeight()*(sin(...)*0.4+0.5))), but Setup() is called from Cycle()
+        // before a Paint context is available, so height is unknown here.
+        // We use 1.0 as the height placeholder; the Rust Paint path already
+        // scales vertices to (w, h) space, so the observable output is identical.
+        if self.vertices.len() > vertex_count {
+            self.vertices.truncate(vertex_count);
+            self.drag_idx = None;
+        } else if self.vertices.len() < vertex_count {
+            let current_len = self.vertices.len();
+            for i in current_len..vertex_count {
+                let angle = PI * 2.0 * i as f64 / vertex_count as f64;
+                let x = angle.cos() * 0.4 + 0.5;
+                let y = angle.sin() * 0.4 + 0.5;
+                self.vertices.push((x, y));
+            }
+            self.drag_idx = None;
+        }
+
+        self._with_canvas_color = with_canvas_color;
+        self.fill_color = fill_color;
+        self._stroke_width = stroke_width;
+        self._stroke = stroke;
+        self._stroke_start = stroke_start;
+        self._stroke_end = stroke_end;
+        // C++ cpp:1299: InvalidatePainting() — triggers repaint.
+        // In Rust, painting is always recomputed from the current frame state;
+        // no explicit invalidation is needed.
     }
 }
 
