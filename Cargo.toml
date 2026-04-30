@@ -6,6 +6,7 @@ members = [
     "crates/emmain",
     "crates/eaglemode",
     "crates/test_plugin",
+    "crates/emtest",
     "crates/xtask",
     "harness",
 ]
