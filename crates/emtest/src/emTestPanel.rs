@@ -1251,7 +1251,6 @@ impl PanelBehavior for TestPanel {
 struct TkTestGrpPanel {
     border: emBorder,
     look: Rc<emLook>,
-    children_created: bool,
 }
 
 impl TkTestGrpPanel {
@@ -1260,19 +1259,12 @@ impl TkTestGrpPanel {
         let border = emBorder::new(OuterBorderType::Group)
             .with_inner(InnerBorderType::Group)
             .with_caption("Toolkit Test");
-        Self {
-            border,
-            look,
-            children_created: false,
-        }
+        Self { border, look }
     }
 }
 
 impl PanelBehavior for TkTestGrpPanel {
     fn IsOpaque(&self) -> bool {
-        true
-    }
-    fn auto_expand(&self) -> bool {
         true
     }
     fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
@@ -1287,29 +1279,21 @@ impl PanelBehavior for TkTestGrpPanel {
             1.0,
         );
     }
+    fn AutoExpand(&mut self, ctx: &mut PanelCtx) {
+        // C++ TkTestGrp::AutoExpand (emTestPanel.cpp:882–910): creates sp → sp1/sp2 → t1a/t1b/t2a/t2b.
+        // DIVERGED: (dependency-forced) emSplitter not yet ported; 2×2 grid used instead.
+        ctx.create_child_with("t1a", Box::new(TkTestPanel::new(self.look.clone())));
+        ctx.create_child_with("t1b", Box::new(TkTestPanel::new(self.look.clone())));
+        ctx.create_child_with("t2a", Box::new(TkTestPanel::new(self.look.clone())));
+        let t2b_id = ctx.create_child_with(
+            "t2b",
+            Box::new(TkTestPanel::new(self.look.clone()).with_caption("Disabled")),
+        );
+        ctx.tree
+            .SetEnableSwitch(t2b_id, false, ctx.scheduler.as_deref_mut());
+    }
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
-        // DIVERGED: (dependency-forced) — emSplitter is not yet ported; 2×2 grid
-        // laid out manually. C++ TkTestGrp::AutoExpand creates nested emSplitter
-        // panels (emTestPanel.cpp:882-908). Observable difference: panel
-        // proportions use fixed 80/20 splits instead of user-draggable splitters.
         let rect = ctx.layout_rect();
-
-        if !self.children_created {
-            self.children_created = true;
-            // C++: t1a, t1b go in sp1 (vertical, left 80 %);
-            //      t2a, t2b go in sp2 (vertical, right 20 %).
-            ctx.create_child_with("t1a", Box::new(TkTestPanel::new(self.look.clone())));
-            ctx.create_child_with("t1b", Box::new(TkTestPanel::new(self.look.clone())));
-            ctx.create_child_with("t2a", Box::new(TkTestPanel::new(self.look.clone())));
-            let t2b_id = ctx.create_child_with(
-                "t2b",
-                // C++ emTestPanel.cpp:910: t2b->SetCaption("Disabled").
-                Box::new(TkTestPanel::new(self.look.clone()).with_caption("Disabled")),
-            );
-            // C++ emTestPanel.cpp:909: t2b->SetEnableSwitch(false).
-            ctx.tree
-                .SetEnableSwitch(t2b_id, false, ctx.scheduler.as_deref_mut());
-        }
 
         // sp->SetPos(0.8): horizontal split — sp1 left 80 %, sp2 right 20 %.
         // sp1->SetPos(0.8), sp2->SetPos(0.8): vertical split — top 80 %, bottom 20 %.

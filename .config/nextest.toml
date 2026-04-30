@@ -14,6 +14,5 @@ default-filter = """
  | test(=widget::widget_file_selection_box)
  | test(=try_create_file_panel_loads_plugin)
  | test(=try_create_file_panel_missing_symbol_errors)
- | test(=emTestPanel::tests::tktestgrp_auto_expands_children)
  | test(=emTestPanel::tests::polydrawpanel_auto_expands_canvas))
 """
