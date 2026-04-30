@@ -511,7 +511,7 @@ impl PanelBehavior for emSubViewPanel {
         // each frame via the outer scheduler; Rust mirrors the same path.
         if keep_awake {
             self.sub_view
-                .HandleNotice(&mut self.sub_tree, ectx.scheduler);
+                .HandleNotice(&mut self.sub_tree, ectx.scheduler, Some(ectx.root_context));
             let mut sc = ectx.as_sched_ctx();
             self.sub_view.Update(&mut self.sub_tree, &mut sc);
         }

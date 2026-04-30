@@ -125,7 +125,7 @@ fn notice_flag_propagation() {
     let mut view =
         emcore::emView::emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     let mut sched = emcore::emScheduler::EngineScheduler::new();
-    view.HandleNotice(&mut tree, &mut sched);
+    view.HandleNotice(&mut tree, &mut sched, None);
 
     // Verify notices were cleared after delivery
     assert!(tree.pending_notices(root).is_empty());

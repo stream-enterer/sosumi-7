@@ -875,7 +875,7 @@ fn composition_click_through_tree() {
     let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
     view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
     for _ in 0..200 {
-        view.HandleNotice(&mut tree, ts.sched_mut());
+        view.HandleNotice(&mut tree, ts.sched_mut(), None);
         ts.with(|sc| view.Update(&mut tree, sc));
     }
 

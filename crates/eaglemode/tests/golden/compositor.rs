@@ -45,7 +45,7 @@ impl PanelBehavior for ColorFillBehavior {
 fn settle(tree: &mut PanelTree, view: &mut emView) {
     let mut ts = TestSched::new();
     for _ in 0..5 {
-        view.HandleNotice(tree, ts.sched_mut());
+        view.HandleNotice(tree, ts.sched_mut(), None);
         ts.with(|sc| view.Update(tree, sc));
     }
 }

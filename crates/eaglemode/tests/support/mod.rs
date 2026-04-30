@@ -147,7 +147,8 @@ impl TestHarness {
             &self.framework_clipboard,
             &self.pending_actions,
         );
-        self.view.HandleNotice(&mut self.tree, &mut self.scheduler);
+        self.view
+            .HandleNotice(&mut self.tree, &mut self.scheduler, None);
         let mut sc = SchedCtx {
             scheduler: &mut self.scheduler,
             framework_actions: &mut self.framework_actions,

@@ -90,7 +90,7 @@ macro_rules! require_golden {
 fn settle(tree: &mut PanelTree, view: &mut emView, rounds: usize) {
     let mut ts = TestSched::new();
     for _ in 0..rounds {
-        view.HandleNotice(tree, ts.sched_mut());
+        view.HandleNotice(tree, ts.sched_mut(), None);
         ts.with(|sc| view.Update(tree, sc));
     }
 }

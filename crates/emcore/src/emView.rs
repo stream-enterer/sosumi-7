@@ -2638,7 +2638,7 @@ impl emView {
 
             // Drain all pending notices (C++ emView.cpp:1303-1314).
             if tree.has_pending_notices() {
-                self.HandleNotice(tree, ctx.scheduler);
+                self.HandleNotice(tree, ctx.scheduler, Some(ctx.root_context));
                 continue;
             }
 
@@ -3888,6 +3888,7 @@ impl emView {
         &mut self,
         tree: &mut PanelTree,
         sched: &mut crate::emScheduler::EngineScheduler,
+        root_context: Option<&Rc<crate::emContext::emContext>>,
     ) -> bool {
         if !tree.has_pending_notices() && self.notice_ring_head_next.is_none() {
             return false;
@@ -3942,7 +3943,7 @@ impl emView {
                 // C++ unlinks BEFORE calling HandleNotice (emView.cpp:1307-1310).
                 self.remove_from_notice_list(id, tree);
                 delivered = true;
-                self.handle_notice_one(tree, id, sched);
+                self.handle_notice_one(tree, id, sched, root_context);
             }
             // Re-scan if any tree-internal path set `has_pending_notices`
             // during the drain.
@@ -3991,6 +3992,7 @@ impl emView {
         tree: &mut PanelTree,
         id: PanelId,
         sched: &mut crate::emScheduler::EngineScheduler,
+        root_context: Option<&Rc<crate::emContext::emContext>>,
     ) {
         let pixel_tallness = self.CurrentPixelTallness;
         let window_focused = self.window_focused;
@@ -4011,6 +4013,7 @@ impl emView {
             if ae_expanded {
                 if let Some(mut behavior) = tree.take_behavior(id) {
                     let mut ctx = PanelCtx::with_scheduler(tree, id, pixel_tallness, sched);
+                    ctx.root_context = root_context;
                     behavior.AutoShrink(&mut ctx);
                     if tree.panels.contains_key(id) {
                         tree.put_behavior(id, behavior);
@@ -4076,6 +4079,7 @@ impl emView {
             if let Some(mut behavior) = tree.take_behavior(id) {
                 let state = tree.build_panel_state(id, window_focused, pixel_tallness);
                 let mut ctx = PanelCtx::with_scheduler(tree, id, pixel_tallness, sched);
+                ctx.root_context = root_context;
                 behavior.notice(flags, &state, &mut ctx);
                 // "Notice() is allowed to do a 'delete this'" — C++ emPanel.cpp:1421.
                 if tree.panels.contains_key(id) {
@@ -4113,6 +4117,7 @@ impl emView {
                 }
                 if let Some(mut behavior) = tree.take_behavior(id) {
                     let mut ctx = PanelCtx::with_scheduler(tree, id, pixel_tallness, sched);
+                    ctx.root_context = root_context;
                     behavior.AutoExpand(&mut ctx);
                     if tree.panels.contains_key(id) {
                         tree.put_behavior(id, behavior);
@@ -4137,6 +4142,7 @@ impl emView {
                 }
                 if let Some(mut behavior) = tree.take_behavior(id) {
                     let mut ctx = PanelCtx::with_scheduler(tree, id, pixel_tallness, sched);
+                    ctx.root_context = root_context;
                     behavior.AutoShrink(&mut ctx);
                     if tree.panels.contains_key(id) {
                         tree.put_behavior(id, behavior);
@@ -4164,6 +4170,7 @@ impl emView {
             if tree.GetFirstChild(id).is_some() {
                 if let Some(mut behavior) = tree.take_behavior(id) {
                     let mut ctx = PanelCtx::with_scheduler(tree, id, pixel_tallness, sched);
+                    ctx.root_context = root_context;
                     behavior.LayoutChildren(&mut ctx);
                     if tree.panels.contains_key(id) {
                         tree.put_behavior(id, behavior);
@@ -7870,7 +7877,7 @@ mod tests {
         );
 
         // Drive view_a's HandleNotice independently.
-        view_a.HandleNotice(&mut tree_a, &mut h.scheduler);
+        view_a.HandleNotice(&mut tree_a, &mut h.scheduler, None);
         // tree_a is drained; tree_b still has its notice.
         assert!(
             !tree_a.has_pending_notices(),
@@ -7882,7 +7889,7 @@ mod tests {
         );
 
         // Drive view_b's HandleNotice.
-        view_b.HandleNotice(&mut tree_b, &mut h.scheduler);
+        view_b.HandleNotice(&mut tree_b, &mut h.scheduler, None);
         assert!(
             !tree_b.has_pending_notices(),
             "tree_b drained after HandleNotice"
