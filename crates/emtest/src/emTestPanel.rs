@@ -3198,10 +3198,12 @@ struct CanvasPanel {
     // Simplified to emColor (flat fill) — C++ uses emTexture for gradient/image support.
     // Full emTexture integration deferred; follow up if golden comparison reveals divergence.
     texture: emColor,
-    // C++ stores Stroke, StrokeStart, StrokeEnd as three separate members.
-    // DIVERGED: (language-forced) emStroke already encodes start_end/finish_end; we fold
-    // the three C++ fields into one to match the Rust paint_line_stroked/PaintPolyline API.
-    stroke: emStroke, // C++ Stroke + StrokeStart + StrokeEnd (emTestPanel.cpp:1296–1298)
+    // C++ stores four separate members: StrokeWidth, Stroke, StrokeStart, StrokeEnd
+    // (emTestPanel.h:163–166). Rust emStroke encodes start_end/finish_end inline, so the
+    // four C++ fields (StrokeWidth + Stroke + StrokeStart + StrokeEnd) are folded into one
+    // here: stroke.width mirrors StrokeWidth, stroke.start_end mirrors StrokeStart, and
+    // stroke.finish_end mirrors StrokeEnd. Setup() receives all four separately and folds them.
+    stroke: emStroke,
 }
 
 impl CanvasPanel {
@@ -3270,9 +3272,9 @@ impl CanvasPanel {
 
         self.with_canvas_color = with_canvas_color;
         self.texture = texture;
-        // Fold stroke_start/stroke_end into the stroke struct to match Rust API
-        // (paint_line_stroked/PaintPolyline take &emStroke with start_end/finish_end inline).
-        // C++ cpp:1295–1298: StrokeWidth, Stroke, StrokeStart, StrokeEnd are stored separately.
+        // C++ cpp:1295–1298: StrokeWidth, Stroke, StrokeStart, StrokeEnd stored separately.
+        // Fold all four into self.stroke: width from stroke_width, start_end from stroke_start,
+        // finish_end from stroke_end (Rust emStroke encodes these inline).
         let mut s = stroke;
         s.width = stroke_width;
         s.start_end = stroke_start;
@@ -3402,16 +3404,8 @@ impl PanelBehavior for CanvasPanel {
             let bh = (vy2 - vy1).abs();
             (vx1, vy1, vx2, vy2, bx, by, bw, bh)
         } else {
-            (
-                0.1 * w,
-                0.1 * h,
-                0.9 * w,
-                0.9 * h,
-                0.1 * w,
-                0.1 * h,
-                0.8 * w,
-                0.8 * h,
-            )
+            // C++ cpp:1388: initializes x1=y1=x2=y2=0.0 when XY.GetCount()<4.
+            (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         };
 
         // C++ cpp:1397–1403: arc start/range angles from vertices 2 and 3.
@@ -3430,7 +3424,8 @@ impl PanelBehavior for CanvasPanel {
                 ra * 180.0 / std::f64::consts::PI,
             )
         } else {
-            (0.0, 360.0)
+            // C++ cpp:1397: initializes sa=ra=0.0 when XY.GetCount()<8; ra=0 means arc draws nothing.
+            (0.0, 0.0)
         };
 
         // Scale vertices to panel (w, h) space for drawing.
