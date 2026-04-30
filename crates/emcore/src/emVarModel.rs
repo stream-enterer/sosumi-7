@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use crate::emColor::emColor;
+use crate::emContext::emContext;
 use crate::emSignal::SignalId;
 
 /// An observable value that tracks whether it changed on set.
@@ -29,5 +34,50 @@ impl<T: PartialEq> WatchedVar<T> {
 
     pub fn signal_id(&self) -> SignalId {
         self.signal_id
+    }
+}
+
+/// Port of C++ `emVarModel<emColor>::GetAndRemove`. Retrieves and removes
+/// the stored color for `key` from the root context's var store. Returns
+/// `default` if absent.
+pub fn GetAndRemove(ctx: &Rc<emContext>, key: &str, default: emColor) -> emColor {
+    let store = ctx.acquire::<HashMap<String, emColor>>("emVarModel/emColor", HashMap::new);
+    let result = store.borrow_mut().remove(key).unwrap_or(default);
+    result
+}
+
+/// Port of C++ `emVarModel<emColor>::Set`. Inserts `value` into the root
+/// context's var store under `key`. Lifetime parameter omitted — Rust GC
+/// is not needed since the root context outlives all panels.
+pub fn Set(ctx: &Rc<emContext>, key: &str, value: emColor) {
+    let store = ctx.acquire::<HashMap<String, emColor>>("emVarModel/emColor", HashMap::new);
+    store.borrow_mut().insert(key.to_string(), value);
+}
+
+#[cfg(test)]
+mod tests_var_model {
+    use super::*;
+
+    fn make_ctx() -> Rc<emContext> {
+        emContext::NewRoot()
+    }
+
+    #[test]
+    fn get_and_remove_returns_default_when_absent() {
+        let ctx = make_ctx();
+        let default = emColor::rgba(1, 2, 3, 4);
+        let result = GetAndRemove(&ctx, "key1", default);
+        assert_eq!(result, default);
+    }
+
+    #[test]
+    fn set_then_get_and_remove_roundtrips() {
+        let ctx = make_ctx();
+        let color = emColor::rgba(10, 20, 30, 255);
+        Set(&ctx, "key2", color);
+        let got = GetAndRemove(&ctx, "key2", emColor::BLACK);
+        assert_eq!(got, color);
+        let again = GetAndRemove(&ctx, "key2", emColor::BLACK);
+        assert_eq!(again, emColor::BLACK);
     }
 }

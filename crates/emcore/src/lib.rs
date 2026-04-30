@@ -122,6 +122,7 @@ pub mod emTreeDump;
 pub mod emTunnel;
 pub mod emUnionRec;
 pub mod emVarModel;
+pub use emVarModel::{GetAndRemove as VarModelGet, Set as VarModelSet};
 pub mod emVarSigModel;
 pub mod emView;
 pub mod emViewAnimator;
