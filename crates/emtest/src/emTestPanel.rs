@@ -34,10 +34,12 @@ use emcore::emRasterGroup::emRasterGroup;
 use emcore::emRasterLayout::emRasterLayout;
 use emcore::emRes::emGetInsResImage;
 use emcore::emScalarField::emScalarField;
+use emcore::emSignal::SignalId;
 use emcore::emStroke::{emStroke, LineCap, LineJoin};
 use emcore::emStrokeEnd::{emStrokeEnd, StrokeEndType};
 use emcore::emTextField::emTextField;
 use emcore::emTexture::{emTexture, ImageExtension, ImageQuality};
+use emcore::emTunnel::emTunnel;
 use emcore::emVarModel;
 
 // ─── constants ──────────────────────────────────────────────────────
@@ -225,6 +227,40 @@ struct ScalarFieldPanel {
 }
 impl PanelBehavior for ScalarFieldPanel {
     fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
+        let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
+        self.widget
+            .Paint(p, canvas_color, w, h, s.enabled, pixel_scale);
+    }
+    fn Input(
+        &mut self,
+        e: &emInputEvent,
+        s: &PanelState,
+        is: &emInputState,
+        ctx: &mut PanelCtx,
+    ) -> bool {
+        self.widget.Input(e, s, is, ctx)
+    }
+    fn GetCursor(&self) -> emCursor {
+        self.widget.GetCursor()
+    }
+    fn IsOpaque(&self) -> bool {
+        true
+    }
+}
+
+/// sf6 "Play Position" wrapper that reads a dynamic max from a shared Cell before
+/// painting. The Cell is written by sf5's `on_value` callback (synchronously).
+/// The max update cannot use `SetMaxValue` (requires PanelCtx); `set_max_silent`
+/// keeps the display in sync without firing signals.
+struct ScalarFieldWithDynamicMax {
+    widget: emScalarField,
+    max_ref: Rc<Cell<f64>>,
+}
+
+impl PanelBehavior for ScalarFieldWithDynamicMax {
+    fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
+        let new_max = self.max_ref.get();
+        self.widget.set_max_silent(new_max);
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
         self.widget
             .Paint(p, canvas_color, w, h, s.enabled, pixel_scale);
@@ -1019,6 +1055,29 @@ impl PanelBehavior for TkTestGrpPanel {
     }
 }
 
+// ─── TkTest helper formatters ────────────────────────────────────────
+
+/// C++ `TextOfTimeValue` (emTestPanel.cpp:844-870).
+fn text_of_time_value(val: i64, mark_interval: u64) -> String {
+    let ms = val.unsigned_abs();
+    let h = ms / 3_600_000;
+    let m = (ms / 60_000) % 60;
+    let s = (ms / 1_000) % 60;
+    let ms_r = ms % 1_000;
+    match mark_interval {
+        0..=9 => format!("{h:02}:{m:02}:{s:02}\n.{ms_r:03}"),
+        10..=99 => format!("{h:02}:{m:02}:{s:02}\n.{:02}", ms_r / 10),
+        100..=999 => format!("{h:02}:{m:02}:{s:02}\n.{}", ms_r / 100),
+        1_000..=59_999 => format!("{h:02}:{m:02}:{s:02}"),
+        _ => format!("{h:02}:{m:02}"),
+    }
+}
+
+/// C++ `TextOfLevelValue` (emTestPanel.cpp:873-878).
+fn text_of_level_value(val: i64, _mark_interval: u64) -> String {
+    format!("Level {val}")
+}
+
 // ─── TkTestPanel — core widget groups ────────────────────────────────
 
 struct TkTestPanel {
@@ -1026,6 +1085,11 @@ struct TkTestPanel {
     border: emBorder,
     layout: emRasterLayout,
     children_created: bool,
+    /// PlayLength value signal (sf5) — stored for Cycle (Task 9).
+    sf5_len_signal: Option<SignalId>,
+    /// Current max for sf6 "Play Position" — set by sf5's on_value callback,
+    /// read by ScalarFieldWithDynamicMax::Paint before rendering.
+    sf6_max: Rc<Cell<f64>>,
 }
 
 impl TkTestPanel {
@@ -1035,11 +1099,15 @@ impl TkTestPanel {
             .with_caption("Toolkit Test");
         let mut layout = emRasterLayout::new();
         layout.preferred_child_tallness = 0.3;
+        // sf5 initial value is 4h in ms; sf6 max starts equal to sf5's initial value.
+        let sf5_initial = 4.0 * 3_600_000.0_f64;
         Self {
             look,
             border,
             layout,
             children_created: false,
+            sf5_len_signal: None,
+            sf6_max: Rc::new(Cell::new(sf5_initial)),
         }
     }
 
@@ -1064,7 +1132,7 @@ impl TkTestPanel {
         id
     }
 
-    fn create_all_categories(&self, ctx: &mut PanelCtx) {
+    fn create_all_categories(&mut self, ctx: &mut PanelCtx) {
         let look = self.look.clone();
 
         // 1. Buttons — C++ emTestPanel.cpp:556-566.
@@ -1171,7 +1239,7 @@ impl TkTestPanel {
                 .set_behavior(id, Box::new(TextFieldPanel { widget: mltf1 }));
         }
 
-        // 5. Scalar Fields (sf1–sf3 only) — C++ :611-624. Task 7 adds sf4–sf6.
+        // 5. Scalar Fields (sf1–sf6) — C++ :611-660.
         let gid = Self::make_category(ctx, "scalarfields", "Scalar Fields", Some(0.1));
         {
             let mut sf1 = emScalarField::new(ctx, 0.0, 10.0, look.clone());
@@ -1194,6 +1262,54 @@ impl TkTestPanel {
             let id = ctx.tree.create_child(gid, "sf3", None);
             ctx.tree
                 .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf3 }));
+
+            // sf4 — Level — C++ :624-630.
+            let mut sf4 = emScalarField::new(ctx, 1.0, 5.0, look.clone());
+            sf4.SetCaption("Level");
+            sf4.SetEditable(true);
+            sf4.SetTextBoxTallness(0.25);
+            sf4.set_initial_value(3.0);
+            sf4.SetTextOfValueFunc(Box::new(text_of_level_value));
+            let id = ctx.tree.create_child(gid, "sf4", None);
+            ctx.tree
+                .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf4 }));
+
+            // sf5 — Play Length — C++ :632-638. Captures sf6_max for on_value.
+            let sf6_max = Rc::clone(&self.sf6_max);
+            let mut sf5 = emScalarField::new(ctx, 0.0, 24.0 * 3_600_000.0, look.clone());
+            sf5.SetCaption("Play Length");
+            sf5.SetEditable(true);
+            sf5.set_initial_value(4.0 * 3_600_000.0);
+            sf5.SetScaleMarkIntervals(&[
+                3_600_000, 900_000, 300_000, 60_000, 10_000, 1_000, 100, 10, 1,
+            ]);
+            sf5.SetTextOfValueFunc(Box::new(text_of_time_value));
+            self.sf5_len_signal = Some(sf5.value_signal);
+            sf5.on_value = Some(Box::new(move |val, _sched| {
+                sf6_max.set(val);
+            }));
+            let id = ctx.tree.create_child(gid, "sf5", None);
+            ctx.tree
+                .set_behavior(id, Box::new(ScalarFieldPanel { widget: sf5 }));
+
+            // sf6 — Play Position — C++ :640-644. Dynamic max tracks sf5's value.
+            let sf6_max_ref = Rc::clone(&self.sf6_max);
+            let sf6_initial_max = self.sf6_max.get();
+            let mut sf6 = emScalarField::new(ctx, 0.0, sf6_initial_max, look.clone());
+            sf6.SetCaption("Play Position");
+            sf6.SetEditable(true);
+            sf6.SetScaleMarkIntervals(&[
+                3_600_000, 900_000, 300_000, 60_000, 10_000, 1_000, 100, 10, 1,
+            ]);
+            sf6.SetTextOfValueFunc(Box::new(text_of_time_value));
+            let id = ctx.tree.create_child(gid, "sf6", None);
+            ctx.tree.set_behavior(
+                id,
+                Box::new(ScalarFieldWithDynamicMax {
+                    widget: sf6,
+                    max_ref: sf6_max_ref,
+                }),
+            );
         }
 
         // 6. Color Fields — C++ :646-660.
@@ -1222,6 +1338,60 @@ impl TkTestPanel {
             let id = ctx.tree.create_child(gid, "cf3", None);
             ctx.tree
                 .set_behavior(id, Box::new(ColorFieldPanel { widget: cf3 }));
+        }
+
+        // 7. Tunnels — C++ :662-680.
+        // `emTunnel` implements `PanelBehavior` directly; content is created as
+        // a child of the tunnel panel in the tree (matching C++ parent/child hierarchy).
+        let gid = Self::make_category(ctx, "tunnels", "Tunnels", Some(0.4));
+        {
+            // t1: default depth, emButton content — C++ :666-667.
+            let t1 = emTunnel::new(look.clone()).with_caption("Tunnel");
+            let t1_id = ctx.tree.create_child(gid, "t1", None);
+            ctx.tree.set_behavior(t1_id, Box::new(t1));
+            {
+                let btn = emButton::new(ctx, "End Of Tunnel", look.clone());
+                let e_id = ctx.tree.create_child(t1_id, "e", None);
+                ctx.tree
+                    .set_behavior(e_id, Box::new(ButtonPanel { widget: btn }));
+            }
+
+            // t2: SetDepth(30.0), emRasterGroup content — C++ :669-671.
+            let mut t2 = emTunnel::new(look.clone()).with_caption("Deeper Tunnel");
+            t2.SetDepth(30.0);
+            let t2_id = ctx.tree.create_child(gid, "t2", None);
+            ctx.tree.set_behavior(t2_id, Box::new(t2));
+            {
+                let mut rg = emRasterGroup::new();
+                rg.border.caption = "End Of Tunnel".to_string();
+                let e_id = ctx.tree.create_child(t2_id, "e", None);
+                ctx.tree.set_behavior(e_id, Box::new(rg));
+            }
+
+            // t3: SetChildTallness(1.0), emRasterGroup content — C++ :673-675.
+            let mut t3 = emTunnel::new(look.clone()).with_caption("Square End");
+            t3.SetChildTallness(1.0);
+            let t3_id = ctx.tree.create_child(gid, "t3", None);
+            ctx.tree.set_behavior(t3_id, Box::new(t3));
+            {
+                let mut rg = emRasterGroup::new();
+                rg.border.caption = "End Of Tunnel".to_string();
+                let e_id = ctx.tree.create_child(t3_id, "e", None);
+                ctx.tree.set_behavior(e_id, Box::new(rg));
+            }
+
+            // t4: SetChildTallness(1.0), SetDepth(0.0), emRasterGroup content — C++ :677-680.
+            let mut t4 = emTunnel::new(look.clone()).with_caption("Square End, Zero Depth");
+            t4.SetChildTallness(1.0);
+            t4.SetDepth(0.0);
+            let t4_id = ctx.tree.create_child(gid, "t4", None);
+            ctx.tree.set_behavior(t4_id, Box::new(t4));
+            {
+                let mut rg = emRasterGroup::new();
+                rg.border.caption = "End Of Tunnel".to_string();
+                let e_id = ctx.tree.create_child(t4_id, "e", None);
+                ctx.tree.set_behavior(e_id, Box::new(rg));
+            }
         }
     }
 }

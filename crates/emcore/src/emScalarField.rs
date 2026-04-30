@@ -210,6 +210,23 @@ impl emScalarField {
         }
     }
 
+    /// Update the maximum value without firing signals or clamping via `SetValue`.
+    /// Used by `ScalarFieldWithDynamicMax` to sync the max before painting when
+    /// no `PanelCtx` is available. Does not trigger `on_value` or `value_signal`.
+    pub fn set_max_silent(&mut self, max: f64) {
+        if (self.max - max).abs() < f64::EPSILON {
+            return;
+        }
+        self.max = max;
+        if self.min > self.max {
+            self.min = self.max;
+        }
+        // Clamp value silently without firing signals.
+        if self.value > self.max {
+            self.value = self.max;
+        }
+    }
+
     /// Mirrors C++ `emScalarField::SetValue` (emScalarField.cpp:102-111):
     /// InvalidatePainting → Signal(ValueSignal) → ValueChanged.
     pub fn SetValue(&mut self, val: f64, ctx: &mut PanelCtx<'_>) {
