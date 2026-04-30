@@ -738,6 +738,63 @@ pub(crate) fn run_file_dialog_check_finish(
     }
 }
 
+/// Read selected file names post-show via the dialog's own panel tree.
+///
+/// Called from finish callbacks where `ectx.tree` is `Some` and holds the
+/// dialog's `PanelTree` (Toplevel-scoped engine). Navigates directly to the
+/// `emFileSelectionBox` child using the `fsb_panel_id` stored on the
+/// `DlgPanel` — no `dialog_windows` lookup needed because the engine's
+/// `ectx.tree` IS the dialog's tree at callback time.
+///
+/// Spec note: the implementation plan described a navigation via
+/// `DlgPanel.dialog_id → EngineCtx.dialog_windows → WindowId → windows →
+/// tree`; that path does not exist on `EngineCtx` (`dialog_windows` lives
+/// on `App`). The direct `ectx.tree` path is equivalent because the engine
+/// is already scoped to the dialog's window.
+///
+/// Returns an empty `Vec` if the FSB panel ID is not set (plain
+/// `emDialog` with no FSB child) or if the tree is absent.
+pub fn get_selected_names_post_show(
+    dlg_panel: &DlgPanel,
+    ectx: &mut crate::emEngineCtx::EngineCtx<'_>,
+) -> Vec<String> {
+    let fsb_pid = match dlg_panel.fsb_panel_id() {
+        Some(p) => p,
+        None => return vec![],
+    };
+    let tree = match ectx.tree.as_deref_mut() {
+        Some(t) => t,
+        None => return vec![],
+    };
+    let mut behavior = match tree.take_behavior(fsb_pid) {
+        Some(b) => b,
+        None => return vec![],
+    };
+    let names = behavior
+        .as_file_selection_box_mut()
+        .map(|fsb| fsb.GetSelectedNames().to_vec())
+        .unwrap_or_default();
+    tree.put_behavior(fsb_pid, behavior);
+    names
+}
+
+/// Convenience wrapper — returns the first selected path as a `PathBuf`.
+///
+/// Port of C++ `emFileDialog::GetSelectedPath` (emFileDialog.h:171):
+/// joins the parent directory with the first selected name. Here the
+/// parent-dir read would require a second FSB tree-walk; for the
+/// `emTestPanel` use case (display-only) only the name is needed, so
+/// we return it as a relative `PathBuf`. Callers that need the full
+/// absolute path should call `get_selected_names_post_show` and join
+/// with the known parent directory separately.
+pub fn get_selected_path_post_show(
+    dlg_panel: &DlgPanel,
+    ectx: &mut crate::emEngineCtx::EngineCtx<'_>,
+) -> std::path::PathBuf {
+    let names = get_selected_names_post_show(dlg_panel, ectx);
+    std::path::PathBuf::from(names.into_iter().next().unwrap_or_default())
+}
+
 fn mode_title_and_ok(mode: FileDialogMode) -> (&'static str, &'static str) {
     match mode {
         FileDialogMode::Select => ("Files", "OK"),

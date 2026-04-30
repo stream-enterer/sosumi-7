@@ -647,6 +647,15 @@ impl DlgPanel {
     pub(crate) fn SetTitle(&mut self, title: &str) {
         self.border.SetCaption(title);
     }
+
+    /// Expose the FSB panel ID for post-show path reading by `emFileDialog`.
+    ///
+    /// `get_selected_names_post_show` reads this to locate the
+    /// `emFileSelectionBox` child via `ectx.tree.take_behavior(fsb_pid)`.
+    /// Returns `None` for plain `emDialog` instances that have no FSB child.
+    pub(crate) fn fsb_panel_id(&self) -> Option<crate::emPanelTree::PanelId> {
+        self.fsb_panel_id_for_check_finish
+    }
 }
 
 impl PanelBehavior for DlgPanel {
