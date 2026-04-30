@@ -60,6 +60,8 @@ pub struct EngineCtx<'a> {
     pub tree: Option<&'a mut PanelTree>,
     pub windows: &'a mut HashMap<winit::window::WindowId, emWindow>,
     pub root_context: &'a Rc<emContext>,
+    /// Always `None` on this struct — populated only on `PanelCtx` by `handle_notice_one`.
+    /// Present so `ConstructCtx::view_context()` is callable uniformly across all context types.
     pub view_context: Option<&'a Rc<emContext>>,
     pub framework_actions: &'a mut Vec<DeferredAction>,
     /// Input-event queue drained by `InputDispatchEngine` (Phase 3,
@@ -88,6 +90,8 @@ pub struct SchedCtx<'a> {
     pub scheduler: &'a mut EngineScheduler,
     pub framework_actions: &'a mut Vec<DeferredAction>,
     pub root_context: &'a Rc<emContext>,
+    /// Always `None` on this struct — populated only on `PanelCtx` by `handle_notice_one`.
+    /// Present so `ConstructCtx::view_context()` is callable uniformly across all context types.
     pub view_context: Option<&'a Rc<emContext>>,
     /// Framework-level clipboard slot (spec §3.1, §3.6(a)). Borrowed from
     /// `emGUIFramework::clipboard`; callers access through `clipboard_mut`.
@@ -106,6 +110,8 @@ pub struct InitCtx<'a> {
     pub scheduler: &'a mut EngineScheduler,
     pub framework_actions: &'a mut Vec<DeferredAction>,
     pub root_context: &'a Rc<emContext>,
+    /// Always `None` on this struct — populated only on `PanelCtx` by `handle_notice_one`.
+    /// Present so `ConstructCtx::view_context()` is callable uniformly across all context types.
     pub view_context: Option<&'a Rc<emContext>>,
     /// Phase 3.5 Task 2: closure-rail handle. Plumbed from `App::pending_actions`
     /// at setup; lets construction code enqueue `FnOnce(&mut App, &ActiveEventLoop)`
@@ -156,6 +162,8 @@ pub trait ConstructCtx {
     // Phase 3.5 Task 2 — closure-rail + identity accessors.
     fn pending_actions(&self) -> &Rc<RefCell<Vec<FrameworkDeferredAction>>>;
     fn root_context(&self) -> &Rc<emContext>;
+    /// Returns the per-view context when dispatched via `handle_notice_one`; `None` in test harnesses.
+    /// Only `PanelCtx` is populated with `Some` in production; all other implementors return `None`.
     fn view_context(&self) -> Option<&Rc<emContext>>;
     fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId;
 }
