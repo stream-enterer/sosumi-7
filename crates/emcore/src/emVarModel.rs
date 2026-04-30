@@ -47,9 +47,14 @@ pub fn GetAndRemove(ctx: &Rc<emContext>, key: &str, default: emColor) -> emColor
 }
 
 /// Port of C++ `emVarModel<emColor>::Set`. Inserts `value` into the root
-/// context's var store under `key`. Lifetime parameter omitted — Rust GC
-/// is not needed since the root context outlives all panels.
-pub fn Set(ctx: &Rc<emContext>, key: &str, value: emColor) {
+/// context's var store under `key`.
+///
+/// `min_lifetime` mirrors C++ `SetMinCommonLifetime(minLifetime)` — the number
+/// of seconds the model should survive after all references drop. Rust uses
+/// plain `HashMap` storage keyed on the context, so there are no per-key model
+/// objects and no ref-count lifetime to manage. The parameter is accepted for
+/// API parity and ignored.
+pub fn Set(ctx: &Rc<emContext>, key: &str, value: emColor, _min_lifetime: usize) {
     let store = ctx.acquire::<HashMap<String, emColor>>("emVarModel/emColor", HashMap::new);
     store.borrow_mut().insert(key.to_string(), value);
 }
@@ -74,7 +79,7 @@ mod tests_var_model {
     fn set_then_get_and_remove_roundtrips() {
         let ctx = make_ctx();
         let color = emColor::rgba(10, 20, 30, 255);
-        Set(&ctx, "key2", color);
+        Set(&ctx, "key2", color, 10);
         let got = GetAndRemove(&ctx, "key2", emColor::BLACK);
         assert_eq!(got, color);
         let again = GetAndRemove(&ctx, "key2", emColor::BLACK);

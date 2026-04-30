@@ -483,6 +483,10 @@ type BgShared = Rc<Cell<emColor>>;
 pub(crate) struct TestPanel {
     /// Root-context handle for VarModel lookups in Drop.
     root_ctx: Rc<emContext>,
+    /// Per-view context for VarModel, mirroring C++ `GetView()` scope (emTestPanel.cpp:32, 47).
+    /// Captured in AutoExpand when `view_context()` is available.
+    /// Falls back to `root_ctx` if view context is unavailable.
+    view_ctx: Option<Rc<emContext>>,
     /// `"emTestPanel - BgColor of " + identity` — populated lazily on first
     /// `AutoExpand` once the tree assigns this panel its identity path.
     /// Empty until then; Drop checks for empty before persisting.
@@ -508,6 +512,7 @@ impl TestPanel {
         let test_image = emGetInsResImage("emTest", "icons/teddy.tga");
         Self {
             root_ctx,
+            view_ctx: None,
             identity_key: String::new(),
             bg_shared: Rc::new(Cell::new(initial_bg)),
             input_log: Vec::new(),
@@ -1062,7 +1067,10 @@ impl Drop for TestPanel {
         }
         let bg = self.bg_shared.get();
         if bg != DEFAULT_BG {
-            emVarModel::Set(&self.root_ctx, &self.identity_key, bg);
+            // C++ emTestPanel.cpp:46–50: Set(GetView(), key, BgColor, 10).
+            // 10 = minLifetime seconds; ignored in Rust (no per-key model objects).
+            let ctx_for_var = self.view_ctx.as_ref().unwrap_or(&self.root_ctx);
+            emVarModel::Set(ctx_for_var, &self.identity_key, bg, 10);
         }
     }
 }
@@ -1272,12 +1280,17 @@ impl PanelBehavior for TestPanel {
 
         // C++ emTestPanel constructor: BgColor = emVarModel<emColor>::GetAndRemove(GetView(), ...).
         // Identity is available here (panel is in the tree before AutoExpand fires).
+        // Capture view_context on first expansion — mirrors C++ GetView() scope (emTestPanel.cpp:32, 47).
+        if let Some(vc) = ctx.view_context() {
+            self.view_ctx = Some(vc.clone());
+        }
         if self.identity_key.is_empty() {
             let identity = ctx.tree.GetIdentity(ctx.id);
             // Mirror C++ key: "emTestPanel - BgColor of " + GetIdentity().
             let key = format!("emTestPanel - BgColor of {identity}");
-            // Restore persisted bg if present.
-            let bg = emVarModel::GetAndRemove(&self.root_ctx, &key, self.bg_shared.get());
+            // Restore persisted bg if present, using view context to match C++ GetView() scope.
+            let ctx_for_var = self.view_ctx.as_ref().unwrap_or(&self.root_ctx);
+            let bg = emVarModel::GetAndRemove(ctx_for_var, &key, self.bg_shared.get());
             self.bg_shared.set(bg);
             self.identity_key = key;
         }
