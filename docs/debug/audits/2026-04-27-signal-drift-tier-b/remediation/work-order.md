@@ -19,7 +19,7 @@ Buckets are ordered by topological layer over the prereq DAG (lower layer = no u
 | 7 | B-001-no-wire-emstocks | 0 | balanced | 71 | designed | [456fa5f7](../../../../superpowers/specs/2026-04-27-B-001-no-wire-emstocks-design.md) |
 | 8 | B-002-no-wire-emfileman | 0 | balanced | 4 | designed | [7fb3decd](../../../../superpowers/specs/2026-04-27-B-002-no-wire-emfileman-design.md) |
 | 9 | B-003-no-wire-autoplay | 0 | balanced | 3 | merged at eb9427db (12d3b4fe + 2ac6a627 + eb9427db) | [703fa462](../../../../superpowers/specs/2026-04-27-B-003-no-wire-autoplay-design.md) |
-| 10 | B-004-no-wire-misc | 0 | balanced | 4 | emcore-slice merged at 9b8ee012; emmain rows (emBookmarks-1479, emVirtualCosmosModel) remain designed | [3497069d](../../../../superpowers/specs/2026-04-27-B-004-no-wire-misc-design.md) |
+| 10 | B-004-no-wire-misc | 0 | balanced | 4 | emcore-slice merged at 9b8ee012; emVirtualCosmosModel-accessor-model-change reclassified merged via B-014 c2871547 (2026-05-01 reconciliation); only emBookmarks-1479 remains designed | [3497069d](../../../../superpowers/specs/2026-04-27-B-004-no-wire-misc-design.md) |
 | 11 | B-016-polling-no-acc-emfileman | 0 | balanced | 3 | designed | [d837346b](../../../../superpowers/specs/2026-04-27-B-016-polling-no-acc-emfileman-design.md) |
 | 12 | B-017-polling-no-acc-emstocks | 0 | balanced | 3 | designed | [a27d2faa](../../../../superpowers/specs/2026-04-27-B-017-polling-no-acc-emstocks-design.md) |
 | 13 | B-009-typemismatch-emfileman | 0 | judgement-heavy | 14 | merged at 50994e26 (3b56e00b..50994e26) | [0a7d7fd3](../../../../superpowers/specs/2026-04-27-B-009-typemismatch-emfileman-design.md) |
@@ -415,3 +415,63 @@ Combined-reviewer template dispatched against `d15bbca0..91433733`. Result: **AP
 - **Task 2 — D10 pseudo-DIVERGED reclassification:** Plan identified 8 sites in `emDialog.rs`/`emFileDialog.rs`. The new `scan_malformed("DIVERGED (")` linter pass caught 10 additional sites across `emGUIFramework.rs`, `emContext.rs`, `emClipboard.rs`, `emView.rs` ×2, `emCheckBox.rs`, `emTArrayRec.rs`, `emStructRec.rs`, and two test files. All 18 reclassified to `DIVERGED: (language-forced)`. Linter now catches parenthetical-form annotations.
 - **Task 3 — M-001 methodology note:** "Verify C++ Cycle branch structure directly" appended to `decisions.md` under new Methodology Notes section.
 - **CLAUDE.md amended:** D-009 polling-intermediary failure mode added to Port Ideology §"Failure modes this prevents" (`5cc7c20f`).
+
+### 2026-05-01 — adversarial-review pass over 6 remaining designs + writing-plans for B-001
+
+Workflow shift: prior buckets shipped via design doc alone, but implementers consistently surfaced actual mistakes/oversights mid-flight (stale line numbers, non-existent referents, pattern misfits, missed prereqs). Before dispatching the remaining 6 buckets, an orchestrated red-team pass was run — one fresh agent per bucket, charter to verify every cited file:line, cross-check C++ shape claims, hunt for missed rows / decision gaps / prereq gaps, and append findings as "## Adversarial Review — 2026-05-01" sections to each design doc. B-001 additionally got a hardened phased plan via `superpowers:writing-plans`.
+
+**Outputs:**
+- 7 design docs amended in place with Adversarial Review sections (B-001, B-002, B-004, B-012, B-013, B-016, B-017).
+- B-001 phased plan written to `docs/superpowers/plans/2026-05-01-B-001-no-wire-emstocks.md` (5 phases, 71/71 rows accounted for, TDD-first, per-phase verification gates).
+
+**Findings tally (Critical / Important / Minor / Notes):**
+
+| Bucket | C | I | M | N | Dispatch verdict |
+|---|---|---|---|---|---|
+| B-001 | 3 | 6 | 4 | 0 | needs amendment (D-008 retired-split form, D-007 mutator-bound type, row -566 wrong signal kind) — plan supersedes |
+| B-002 | 3 | 4 | 2 | 2 | needs amendment (G2 conflicts D-008 + D-007 ripple; G1 references non-existent `emcore::emTimer::emTimer` user struct) |
+| B-004 emmain | 2 | 4 | 2 | 1 | row `emVirtualCosmosModel-accessor-model-change` is **already implemented by B-014 at c2871547** — reconcile `designed → merged` not dispatch; `emBookmarks-1479` needs amendment (non-existent `bookmark.entry.LocationIdentity` etc., `PanelCtx::view()` API, `emView::Visit` arity) |
+| B-012 | 2 | 4 | 3 | 0 | needs amendment (non-existent `LCloseQuitPanel`/`LAbtCfgCmdPanel`; rows 222/223 are `emCheckButton` not `emButton`; stale line numbers) |
+| B-013 | 0 | 3 | 3 | 2 | **dispatchable** with 3 important guidance gaps (ListBox-as-FilePanel-engine framing, missing `disconnect` on cancel-old-dialog branch, snippet borrow handling) |
+| B-016 | 1 | 3 | 2 | 2 | needs amendment — proposed `GetVirFileStateSignal` subscribe is a **dead wire**: `emFilePanel` is composed (not base class), so `<emFilePanel as PanelBehavior>::Cycle` never runs for `emDirPanel`/`emDirStatPanel`/`emFileLinkPanel`. Must mandate the C++ `busy=emFilePanel::Cycle()` prefix in derived Cycles |
+| B-017 | 1 | 4 | 3 | 2 | needs amendment (borrow conflict at `emStocksFilePanel.rs:380` from row 3 ectx-threading; upstream subscribes for `emStocksPricesFetcher` not covered by B-001 G3) |
+
+**Aggregate:** 12 Critical, 28 Important, 19 Minor, 9 Notes across 7 designs.
+
+**Implications for ordering:**
+- B-013 is the only design dispatchable as-is (with notes folded in).
+- B-004 emmain slice is half-done by B-014 already — reclassify the duplicated row before re-counting bucket scope.
+- All others need design amendments before implementation. The adversarial-review sections enumerate the exact fixes; suggested next step is a designer pass per bucket to fold findings into the spec body, then dispatch.
+- B-001 plan is dispatchable by itself (the plan supersedes the design's retired-split D-008 form and re-grounds row -566).
+
+### 2026-05-01 — B-004 emmain reconciliation (G3 row reclassified merged-via-B-014)
+
+- **Row `emVirtualCosmosModel-accessor-model-change` reclassified `designed → merged`.** Already implemented at `crates/emmain/src/emVirtualCosmos.rs:215-287` by the B-014 merge (c2871547) on 2026-04-28: `change_signal: Cell<SignalId>` (line 225), combined-form `GetChangeSignal(&self, &mut impl SignalCtx)` (line 262, D-008 A1), `CALLSITE-NOTE` on `Reload` (lines 277-287) explaining benign-no-op bootstrap fire under D-007/D-008 composition. Verified by direct read.
+- **Bucket scope after reconciliation:** 4 audit rows total → 2 emcore (merged 9b8ee012) + 1 emmain merged-via-B-014 + **1 emmain remaining: `emBookmarks-1479`**.
+- **Design doc amended in place** (`docs/superpowers/specs/2026-04-27-B-004-no-wire-misc-design.md`): header status, scope summary, row table, accessor-group §G3, wiring-shape §"emVirtualCosmosModel::Reload", implementation sequencing Step 4, and test sketch all point to merged code; §G2 (`emBookmarks-1479`) rewritten to fix Adversarial Review C-2/I-1/I-2/I-3/I-4 (direct `bookmark.LocationIdentity` field paths, deferred-action `enqueue_visit_by_identity`, `DIVERGED: upstream-gap-forced` for absent ContentView, lazy `GetClickSignal(&mut impl SignalCtx)` per D-008 A1 instead of impossible `ConstructCtx` threading, click-detection deferral recommendation to B-013). Decisions-cited list grew to include D-007/D-008/D-009. Adversarial Review section preserved verbatim. Full Amendment Log appended.
+- **Dispatch verdict for `emBookmarks-1479`:** dispatchable once implementer picks click-detection scope option (a) defer to B-013 vs (b) partial-coverage `DIVERGED: language-forced`; recommendation (a). All other findings folded into the design body as concrete code guidance.
+
+### 2026-05-01 — design-doc amendment pass (folds adversarial-review findings into bodies)
+
+Six remaining designs (B-001, B-002, B-012, B-013, B-016, B-017) had their adversarial-review Critical+Important+Minor findings folded into the design body so an implementer reading the design alone receives correct guidance. Each design now carries an `## Amendment Log — 2026-05-01` section with per-finding resolutions; Adversarial Review sections preserved verbatim as audit trail.
+
+| Bucket | Resolved (C/I/M) | Dispatch status |
+|---|---|---|
+| B-001 | 3/6/4 | dispatchable (plan + amended design aligned) |
+| B-002 | 3/4/2 | dispatchable (G1 closed as behavioral-equivalence; G2→D-008 A1; D-007 ripple enumerated; 4→3 actionable rows) |
+| B-004 emmain | 2/4/2 | `emBookmarks-1479` dispatchable (click-scope choice flagged) — see prior 2026-05-01 reconciliation entry |
+| B-012 | 2/4/3 | dispatchable (real `LMainPanel`→`GeneralPanel`→`{AboutCfgPanel,CommandsPanel}` hierarchy; check-button click-signal subscription guarded against row-218 feedback) |
+| B-013 | 0/3/3 | dispatchable (engine-identity note added; cancel-old `disconnect` symmetric; Interest variant preserved) |
+| B-016 | 1/3/2 | dispatchable (mandatory `emFilePanel::Cycle` prefix quartet — `ensure_vir_file_state_signal` + `fire_pending_vir_state` + `cycle_inner` + conditional `ectx.fire` — added per-row; M-001 violation in `emFileLinkPanel` resolved as fix-not-annotate) |
+| B-017 | 1/4/3 | rows 2 & 3 dispatchable (split-borrow refactor at `:380` specced); **row 1 has a coordination deferral** — needs B-001 G3 to widen scope for `emStocksPricesFetcher` upstream FileModel subscribes (cpp:38-39) before dispatch |
+
+**Cross-bucket coordination flagged for B-001 plan:** B-017 row 1 depends on B-001 G3 covering the upstream `emStocksFileModel` subscribes that drive `emStocksPricesFetcher::ChangeSignal` firings. B-017 design now cross-references the B-001 plan; B-001 plan should be checked/widened before B-017 row 1 dispatches.
+
+**Aggregate amendment pass:** 12/12 Critical + 28/28 Important + 19/19 Minor folded into design bodies. Zero deferrals other than the one B-017↔B-001 coordination dependency above. All 6 amended designs and the B-001 plan are now dispatch-ready against the suggested order:
+1. B-004 emmain (`emBookmarks-1479`) — 1 row
+2. B-002 — 3 rows
+3. B-016 — 3 rows
+4. B-017 rows 2 & 3 (row 1 deferred to B-001 coordination) — 2 of 3 rows
+5. B-013 — 4 rows
+6. B-012 — 7 rows
+7. B-001 — 71 rows (plan-driven), then back-fill B-017 row 1

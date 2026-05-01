@@ -82,6 +82,31 @@ impl emFilePanel {
 
 **Subscribers wired by B-016:** all three rows in the bucket.
 
+## Mandatory `emFilePanel::Cycle` prefix in derived panels (post-2026-05-01 amendment)
+
+**Critical wiring requirement** (resolves Adversarial Review C-1, I-1).
+
+Because the Rust port composes `emFilePanel` as a **field** (`pub(crate) file_panel: emFilePanel`) rather than as a base class, the engine never invokes `<emFilePanel as PanelBehavior>::Cycle` for `emDirPanel`, `emDirStatPanel`, or `emFileLinkPanel`. That `Cycle` is the only production fire site for `VirFileStateSignal` (`crates/emcore/src/emFilePanel.rs:471-509`) and the only drain point for `pending_vir_state_fire` (set by `set_custom_error` / `clear_custom_error` at `emFilePanel.rs:104,116` and by `SetFileModel`).
+
+C++ derived panels start every `Cycle` with `busy = emFilePanel::Cycle()` (`emDirPanel.cpp:74`, `emDirStatPanel.cpp:55`, `emFileLinkPanel.cpp:81`). The Rust composition must reproduce that prefix explicitly. The implementer-of-record is `emImageFileImageFilePanel.rs:211-235` (verified): it runs the four-line preamble at the top of its derived `Cycle`:
+
+```rust
+self.file_panel.ensure_vir_file_state_signal(ectx);
+self.file_panel.fire_pending_vir_state(ectx);
+// ... subscribe-init block (extends existing one) ...
+// ... IsSignaled-gated reactions ...
+let changed = self.file_panel.cycle_inner();
+if changed && !self.file_panel.GetVirFileStateSignal().is_null() {
+    ectx.fire(self.file_panel.GetVirFileStateSignal());
+}
+```
+
+**Every B-016 row's `Cycle` MUST adopt this prefix verbatim.** Without it:
+- The subscribe is a dead wire — the signal emitter never runs (C-1).
+- `set_custom_error` / `clear_custom_error` in derived `Cycle` bodies (e.g., `emDirPanel.rs:355-361`) flip `pending_vir_state_fire` but the flag is never drained → no fire (I-1).
+
+The `cycle_inner` return value supersedes any local `stay_awake` calculation derived from `observed_state`; the existing per-state busy/awake logic remains as additional `||` terms in the final return only where C++ explicitly OR's them (e.g., C++ `emDirPanel::Cycle` returns `busy` from the base call, with no further OR on observed_state).
+
 ## Wiring-shape application (D-006)
 
 ### `emDirPanel::Cycle` (row `emDirPanel-37`)
@@ -92,50 +117,39 @@ impl emFilePanel {
 
 **B-016 row scope:** the `vir_file_state` subscribe (cpp:37) only. The `Config->GetChangeSignal` subscribe (cpp:38) is *not* in this row's scope; the existing `last_config_gen` u64 generation shim continues unchanged (audit-tracked under the emFileMan config-signal cluster, not B-016).
 
-**Field changes:**
+**Field changes:** **None.** Per Adversarial Review I-2 + M-2: an existing `subscribed_init: bool` flag already lives at `emDirPanel.rs:327` (added by B-009 for the Config->GetChangeSignal subscribe). B-016 **extends** that block with one additional `connect` call. `GetVirFileStateSignal()` returns a plain `SignalId` (eagerly initialized to `SignalId::null()` per `emFilePanel.rs:92`); store nothing — re-fetch each Cycle (idempotent, mirrors the existing `chg_sig` re-call at `emDirPanel.rs:336`).
 
-```rust
-pub struct emDirPanel {
-    // ... existing fields ...
-    /// Cached SignalId from emFilePanel::GetVirFileStateSignal, captured
-    /// at first-Cycle init time. None until subscribed_init flips true.
-    vir_file_state_sig: Option<SignalId>,
-    subscribed_init: bool,
-}
-```
-
-**Cycle wiring (D-006 first-Cycle init):**
+**Cycle wiring (D-006 first-Cycle init, extending the existing post-B-009 block):**
 
 ```rust
 fn Cycle(&mut self, ectx: &mut EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
-    // Lazy emDirModel registration is unchanged (existing block at :320-329).
+    let eid = ectx.id();
+
+    // (1) MANDATORY emFilePanel::Cycle prefix — see "Mandatory prefix" section above.
+    // Mirrors emImageFileImageFilePanel.rs:211-212.
+    self.file_panel.ensure_vir_file_state_signal(ectx);
+    self.file_panel.fire_pending_vir_state(ectx);
+
+    // Lazy emDirModel registration unchanged (existing block at :320-329).
     if self.dir_model.is_none() {
-        let dm_rc = emDirModel::Acquire(&self.ctx, &self.path);
-        emDirModel::ensure_engine_registered(&dm_rc, ectx.scheduler);
-        self.file_panel
-            .SetFileModel(/* ectx if B-004 G1's signature change is final */, Some(...));
-        self.dir_model = Some(dm_rc);
-        // ...
+        // ... existing body ...
     }
 
-    // First-Cycle init: subscribe to emFilePanel::GetVirFileStateSignal.
+    // (2) Extend the EXISTING subscribed_init block at emDirPanel.rs:327.
+    //     Do NOT add a new flag — the post-B-009 block already gates Config->GetChangeSignal.
     if !self.subscribed_init {
-        let sig = self.file_panel.GetVirFileStateSignal();
-        ectx.connect(sig, ectx.id());
-        self.vir_file_state_sig = Some(sig);
+        // existing: ectx.connect(self.config.borrow().GetChangeSignal(ectx), eid);
+        ectx.connect(self.file_panel.GetVirFileStateSignal(), eid); // NEW (B-016)
         self.subscribed_init = true;
     }
 
-    // IsSignaled-gated reaction (C++ emDirPanel.cpp:75-82).
-    let vfs_fired = self
-        .vir_file_state_sig
-        .map_or(false, |s| ectx.IsSignaled(s));
+    // IsSignaled-gated reaction (C++ emDirPanel.cpp:75-82). Re-fetch SignalId each Cycle.
+    let vfs_fired = ectx.IsSignaled(self.file_panel.GetVirFileStateSignal());
 
-    // Existing config-change generation-counter shim (out of B-016 scope).
-    let cfg_gen = self.config.borrow().GetChangeSignal();
-    let cfg_changed = cfg_gen != self.last_config_gen;
+    // Config->GetChangeSignal is ALREADY a D-006 subscribe post-B-009 (NOT a u64 shim).
+    // Existing IsSignaled branch at emDirPanel.rs:~336 — leave untouched.
+    let cfg_changed = ectx.IsSignaled(self.config.borrow().GetChangeSignal(ectx));
     if cfg_changed {
-        self.last_config_gen = cfg_gen;
         self.child_count = 0;
     }
 
@@ -148,8 +162,20 @@ fn Cycle(&mut self, ectx: &mut EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
         // semantically equivalent).
     }
 
-    // Existing observed_state match-arm body unchanged.
-    // ... (Loaded → update_children, LoadError → set_custom_error, Loading/Waiting → stay_awake) ...
+    // Existing observed_state match-arm body preserved (Loaded → update_children,
+    // LoadError → set_custom_error, Loading/Waiting → stay_awake). Note that
+    // set_custom_error / clear_custom_error inside this body flip
+    // pending_vir_state_fire; the (1) prefix above drains it on the NEXT Cycle.
+    // For same-Cycle observability, an additional fire_pending_vir_state(ectx)
+    // call at the end of this match-arm is permitted (mirrors C++ where
+    // VirFileStateSignal would have fired synchronously inside emFilePanel::Cycle).
+
+    // (3) MANDATORY emFilePanel::Cycle suffix — cycle_inner + conditional fire.
+    let changed = self.file_panel.cycle_inner();
+    if changed && !self.file_panel.GetVirFileStateSignal().is_null() {
+        ectx.fire(self.file_panel.GetVirFileStateSignal());
+    }
+    changed || /* existing stay_awake terms */ false
 }
 ```
 
@@ -165,41 +191,38 @@ fn Cycle(&mut self, ectx: &mut EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
 
 **B-016 row scope:** the `vir_file_state` subscribe only. No config-signal handling in this row's scope.
 
-**Field changes:**
+**Field changes:** **None.** Existing `subscribed_init` block is at `emDirStatPanel.rs:120` (post-B-009). Extend it.
 
-```rust
-pub struct emDirStatPanel {
-    pub(crate) file_panel: emFilePanel,
-    config: Rc<RefCell<emFileManViewConfig>>,
-    stats: DirStatistics,
-    /// Cached SignalId from emFilePanel::GetVirFileStateSignal.
-    vir_file_state_sig: Option<SignalId>,
-    subscribed_init: bool,
-}
-```
-
-**Cycle wiring (D-006 first-Cycle init):**
+**Cycle wiring (D-006, with mandatory prefix/suffix):**
 
 ```rust
 fn Cycle(&mut self, ectx: &mut EngineCtx<'_>, _ctx: &mut PanelCtx) -> bool {
+    let eid = ectx.id();
+
+    // (1) MANDATORY prefix.
+    self.file_panel.ensure_vir_file_state_signal(ectx);
+    self.file_panel.fire_pending_vir_state(ectx);
+
+    // (2) Extend existing post-B-009 subscribed_init block at emDirStatPanel.rs:120.
     if !self.subscribed_init {
-        let sig = self.file_panel.GetVirFileStateSignal();
-        ectx.connect(sig, ectx.id());
-        self.vir_file_state_sig = Some(sig);
+        // existing config subscribe preserved
+        ectx.connect(self.file_panel.GetVirFileStateSignal(), eid); // NEW
         self.subscribed_init = true;
     }
 
-    let vfs_fired = self
-        .vir_file_state_sig
-        .map_or(false, |s| ectx.IsSignaled(s));
-
+    let vfs_fired = ectx.IsSignaled(self.file_panel.GetVirFileStateSignal());
     if vfs_fired {
         // C++ emDirStatPanel.cpp:57-60: UpdateStatistics + InvalidatePainting.
         self.file_panel.refresh_vir_file_state();
         self.update_statistics();
     }
 
-    false
+    // (3) MANDATORY suffix.
+    let changed = self.file_panel.cycle_inner();
+    if changed && !self.file_panel.GetVirFileStateSignal().is_null() {
+        ectx.fire(self.file_panel.GetVirFileStateSignal());
+    }
+    changed
 }
 ```
 
@@ -213,50 +236,52 @@ fn Cycle(&mut self, ectx: &mut EngineCtx<'_>, _ctx: &mut PanelCtx) -> bool {
 
 **B-016 row scope:** the `GetVirFileStateSignal` subscribe (cpp:54) only. The other three C++ subscribes are out of scope — they are not exercised by the current Rust `Cycle` body. The first-Cycle init block in B-016 wires only the vir-file-state signal; the structure is shaped to admit future additions (other three connections added on the same `subscribed_init` flag) without rewrite.
 
-**Field changes:**
+**Field changes:** **None.** Existing `subscribed_init` block at `emFileLinkPanel.rs:186` (post-B-009). Extend.
 
-```rust
-pub struct emFileLinkPanel {
-    // ... existing fields ...
-    vir_file_state_sig: Option<SignalId>,
-    subscribed_init: bool,
-}
-```
-
-**Cycle wiring (D-006 first-Cycle init):**
+**Cycle wiring (D-006, with mandatory prefix/suffix + I-3 branch-fidelity restoration):**
 
 ```rust
 fn Cycle(&mut self, ectx: &mut EngineCtx<'_>, _ctx: &mut PanelCtx) -> bool {
+    let eid = ectx.id();
+
+    // (1) MANDATORY prefix.
+    self.file_panel.ensure_vir_file_state_signal(ectx);
+    self.file_panel.fire_pending_vir_state(ectx);
+
+    // (2) Extend existing post-B-009 subscribed_init block at emFileLinkPanel.rs:186.
     if !self.subscribed_init {
-        let sig = self.file_panel.GetVirFileStateSignal();
-        ectx.connect(sig, ectx.id());
-        self.vir_file_state_sig = Some(sig);
-        // Future additions (out of B-016 scope, listed for documentation):
-        //   - UpdateSignalModel->Sig (emFileLinkPanel.cpp:53)
-        //   - Config->GetChangeSignal() (emFileLinkPanel.cpp:55)
-        //   - Model->GetChangeSignal() (emFileLinkPanel.cpp:56)
+        // existing config/model/update subscribes preserved
+        ectx.connect(self.file_panel.GetVirFileStateSignal(), eid); // NEW (B-016)
         self.subscribed_init = true;
     }
 
-    let vfs_fired = self
-        .vir_file_state_sig
-        .map_or(false, |s| ectx.IsSignaled(s));
-
+    // (I-3) Per-branch fidelity to C++ emFileLinkPanel.cpp:84-101.
+    // 4 distinct branches with 3 distinct flags (do_update, dir_entry_up_to_date,
+    // invalidate_layout). Replace the current collapsed `needs_update` flag.
+    let vfs_fired = ectx.IsSignaled(self.file_panel.GetVirFileStateSignal());
     if vfs_fired {
-        // C++ emFileLinkPanel.cpp:85-88: InvalidatePainting + doUpdate=true →
-        // UpdateDataAndChildPanel. Rust shim:
         self.file_panel.refresh_vir_file_state();
-        // The full UpdateDataAndChildPanel is invoked from the existing
-        // AutoExpand path; in Cycle, refresh the cached state. When the
-        // remaining three subscribes are wired in a future bucket, the
-        // doUpdate path will be re-introduced here.
+        // C++ cpp:85-88: InvalidatePainting + doUpdate=true.
     }
+    // (UpdateSignalModel, Config, Model branches: out of B-016 row scope but
+    // the I-3 fidelity restoration MUST land in the same PR — see I-3 note below.)
 
-    false
+    // (3) MANDATORY suffix.
+    let changed = self.file_panel.cycle_inner();
+    if changed && !self.file_panel.GetVirFileStateSignal().is_null() {
+        ectx.fire(self.file_panel.GetVirFileStateSignal());
+    }
+    changed
 }
 ```
 
-**Reaction:** `refresh_vir_file_state` only, signal-gated. The full C++ `UpdateDataAndChildPanel` cascade depends on the three out-of-scope subscribes; B-016 does not introduce that call here because the other inputs aren't observed yet, and the panel currently does not call it from Cycle.
+**Reaction:** `refresh_vir_file_state`, signal-gated, with C++-faithful per-branch flag mutations.
+
+### I-3 disposition (emFileLinkPanel branch fidelity)
+
+**Decision:** **Fix the M-001 violation in this PR.** The pre-existing collapse of 4 C++ `IsSignaled` branches into one `needs_update` flag at `emFileLinkPanel.rs:199-222` is a **fidelity bug**, not a forced divergence — there is no language-, dependency-, upstream-gap-, or performance-forced category that justifies merging branches with distinct flag mutations (M-001 explicitly mandates per-branch porting). Per Port Ideology §"Forced divergence", lacking a forced category means the bug is fixed, not annotated. B-016 implementer must restore the 3 distinct flags (`do_update`, `dir_entry_up_to_date`, plus the layout-invalidation case) and the C++ branch shape verbatim, even though only the VFS branch is in B-016's row scope — touching this `Cycle` body without restoring the others would ratify the drift.
+
+If implementer encounters a load-bearing reason to defer (e.g., the other three subscribes aren't yet wired and reading-without-firing the flags is observably indistinguishable today), document it as a **forward-pointer audit row** in the bucket sketch and leave a `// TODO(M-001): restore per-branch flags` marker — but do not mark `DIVERGED:`. A `DIVERGED:` annotation here would be invalid (no forced category applies).
 
 ## Implementation sequencing
 
@@ -325,9 +350,9 @@ assert!(matches!(panel.borrow().file_panel.GetVirFileState(), VirtualFileState::
 
 ## Open questions for the implementer
 
-1. **`emFilePanel::SetFileModel` signature.** B-004 G1's design flags an open question: does `SetFileModel` need to thread `&mut EngineCtx` to fire `VirFileStateSignal` synchronously at swap time, or queue the fire for next Cycle? The B-016 caller at `emDirPanel.rs:325` (the lazy registration block) must be updated to match whichever shape G1 lands. If G1 picks the sync-thread shape, `emDirPanel`'s `Cycle` already has `ectx` in hand — pass it through; if G1 picks the deferred-fire shape, no caller change. Confirm with G1's final commit before wiring.
+1. ~~**`emFilePanel::SetFileModel` signature.**~~ **STRUCK 2026-05-01 (M-1).** Resolved by B-004 emcore-slice merge (commit 9b8ee012): `emFilePanel::new()` signature unchanged; `SetFileModel` uses the deferred `pending_vir_state_fire` flag path. No caller change required.
 2. **`InvalidatePainting` + `InvalidateChildrenLayout` parity.** C++ `emDirPanel::Cycle` calls `InvalidatePainting()` and `InvalidateChildrenLayout()` after a vir-file-state or config-change fire. Rust panel infra may or may not require explicit invalidation calls (some ports do this implicitly via the engine's dirty-tracking). Verify against the existing Rust panel invalidation API (look at `emPanel::InvalidatePainting` / `InvalidateChildrenLayout` if they exist; if absent, the engine's existing wake-on-Cycle dirty marking covers it). If absent in Rust, no annotation needed — below-surface.
-3. **`vir_file_state_sig: Option<SignalId>` vs `SignalId`.** `Option` lets us defer subscription to first Cycle (the `subscribed_init` flag is the trigger). An alternative is to capture the SignalId at panel construction time (since `emFilePanel::new` returns the field) and store as a plain `SignalId`; the `subscribed_init` flag still gates the `connect` call. The `Option` form makes the "not yet subscribed" state explicit; either is correct. Pick whichever matches the prevailing style in the surrounding panels post-B-005/B-008.
+3. ~~**`vir_file_state_sig: Option<SignalId>` vs `SignalId`.**~~ **STRUCK 2026-05-01 (M-2).** Resolved: store **no field** at all. `GetVirFileStateSignal()` returns plain `SignalId` (eagerly nulled at construction per `emFilePanel.rs:92`); re-fetch each Cycle (idempotent, mirrors `chg_sig` re-call at `emDirPanel.rs:336`). Caching `Option<SignalId>` invites two failure modes (cache-of-null staleness if Cycle order swaps, reallocation aliasing) — both eliminated by the no-cache shape.
 4. **Test harness fire helpers.** B-005's harness exposes `Harness::fire(SignalId)`. Confirm the harness exposes a way to fire `vir_file_state_signal` indirectly via a model state mutation (the natural path: `model.set_state(...)` triggers `cycle_inner` which fires the signal per B-004 G1). The test pattern above assumes this; if the indirect path is awkward, fall back to direct `h.fire(panel.borrow().file_panel.GetVirFileStateSignal())`.
 
 ## Open items deferred to working-memory session
@@ -345,3 +370,68 @@ assert!(matches!(panel.borrow().file_panel.GetVirFileState(), VirtualFileState::
 - `cargo clippy -D warnings` and `cargo-nextest ntr` pass.
 - New tests cover: each of the three panels' subscribe + signal-driven reaction.
 - B-016 status in `work-order.md` flips `pending → designed` (working-memory session reconciliation), and per-row commits flip to `merged` as they land (after B-004 G1 lands).
+
+## Adversarial Review — 2026-05-01
+
+### Summary
+- Critical: 1 | Important: 3 | Minor: 2 | Notes: 2
+
+### Findings
+
+**[Critical] C-1 — `vir_file_state_signal` is never fired from these three panels; the proposed subscribe is a dead wire.**
+
+Verified at `crates/emcore/src/emFilePanel.rs:471-509`: the only production fire site for `VirFileStateSignal` is inside `<emFilePanel as PanelBehavior>::Cycle` (calls `fire_pending_vir_state` + `cycle_inner` and fires on transition). In the three B-016 targets, `emFilePanel` is held as a **field** (`pub(crate) file_panel: emFilePanel`), not as a base class — so `<emFilePanel as PanelBehavior>::Cycle` is never invoked by the engine for these panels. Confirmed by grep: only `emImageFileImageFilePanel.rs:212,232` calls `file_panel.fire_pending_vir_state(ectx)` + `file_panel.cycle_inner()` from its derived Cycle. The three B-016 panels do **not** make those calls today (they call `refresh_vir_file_state()` which only mutates `last_vir_file_state` — no signal fire, no pending flag).
+
+C++ derived Cycle starts with `busy=emFilePanel::Cycle()` (verified: `emDirPanel.cpp:74`, `emDirStatPanel.cpp:55`, `emFileLinkPanel.cpp:81`); that call site is what fires `VirFileStateSignal` in C++. The Rust composition pattern silently drops it.
+
+Consequence: subscribing to `self.file_panel.GetVirFileStateSignal()` in `emDirPanel::Cycle` will never fire. The `vfs_fired` branch is unreachable; the panel reverts to its current "alive only because of external wakes" behavior, defeating the bucket's stated goal. The design's "Reaction" section asserts `Cycle is now scheduled by the engine when vir_file_state_signal fires (i.e., when emFilePanel::cycle_inner mutates last_vir_file_state, which itself fires inside emFilePanel::Cycle per B-004 G1's mutator audit)" — that fire chain is broken in composition mode.
+
+Required fix: each B-016 panel's `Cycle` must, at top, call `self.file_panel.fire_pending_vir_state(ectx)` and invoke `self.file_panel.cycle_inner()` (mirroring `emImageFilePanel` precedent at `emImageFileImageFilePanel.rs:212,232`, which is the implementer-of-record for the embedded-file_panel pattern). Without this, the subscribe is connected to a signal whose emitter is never run.
+
+**[Important] I-1 — Design omits mutator-callsite enumeration for `SetFileModel`/`set_custom_error`/`clear_custom_error`.**
+
+`emDirPanel.rs:355-361` (visible in current Cycle) calls `self.file_panel.clear_custom_error()` and `self.file_panel.set_custom_error(e)` directly. Both set `pending_vir_state_fire = true` but do not fire (verified at `emFilePanel.rs:104,116`). The pending flag is drained only inside `<emFilePanel as PanelBehavior>::Cycle` via `fire_pending_vir_state(ectx)`. Same composition gap as C-1: the pending flag is set, never drained → never fires. The design must mandate calling `file_panel.fire_pending_vir_state(ectx)` after every such mutation in the same Cycle invocation (or equivalently at top-of-Cycle every tick), not just at first-Cycle init. Currently neither the design nor any sibling code does this for the three target panels.
+
+**[Important] I-2 — `emDirPanel::Cycle` row scope conflicts with B-009-merged Config subscribe (already in tree).**
+
+The design (lines 134-140) describes the "existing config-change generation-counter shim" with `last_config_gen: u64` polling. That shim is already replaced: `emDirPanel.rs:325-336` (read above) now uses D-006 first-Cycle init for `Config->GetChangeSignal()` (post-B-009 SignalId-typed accessor with combined-form `GetChangeSignal(ectx)`). Same in `emDirStatPanel.rs:118-126` and `emFileLinkPanel.rs:185-196`. The design's "Cycle wiring" pseudocode introduces a second `subscribed_init` block — there is already exactly one. Implementer must extend the existing block with `connect(GetVirFileStateSignal(), eid)`, not add a new flag/block. Mis-describing the current shape risks duplicate fields and dead code.
+
+**[Important] I-3 — B-015 reconciliation lesson (M-001) not applied: `emFileLinkPanel::Cycle` C++ branch structure is partially preserved.**
+
+Per M-001 (decisions.md line 245), C++ `Cycle` branches must be ported individually. C++ `emFileLinkPanel.cpp:84-101` has 4 distinct `IsSignaled` branches with distinct flag mutations: VFS sets `doUpdate=true`+InvalidatePainting; UpdateSignal sets `DirEntryUpToDate=false`+`doUpdate=true`; Config sets InvalidatePainting+InvalidateChildrenLayout (no doUpdate); Model sets `doUpdate=true`. The Rust port today (lines 199-222) collapses everything into a single `needs_update` flag for VFS+UpdateSignal+Config — losing the `DirEntryUpToDate=false` distinction (UpdateSignal-only) and the "Config does NOT trigger doUpdate" distinction. The B-016 design preserves this collapse rather than fixing it (and B-015's blocker 2 was exactly this kind of design-doc oversight). Add a row note: when wiring VFS, also restore branch fidelity to `cpp:84-101` per M-001.
+
+**[Minor] M-1 — `SetFileModel` open-question §1 is already resolved.**
+
+Open question 1 (line 328) cites B-004 G1 as undecided on `SetFileModel` ectx threading. Resolved per work-order line 393: `emFilePanel::new()` signature unchanged; `SetFileModel` uses deferred `pending_vir_state_fire` flag. Strike the open question and reference work-order entry "B-004 emcore-slice merged" (commit 9b8ee012).
+
+**[Minor] M-2 — `Option<SignalId>` field is unnecessary given B-004's null-aware accessor.**
+
+Open question 3 (line 330) — `GetVirFileStateSignal()` returns `SignalId` directly (eagerly initialized to `SignalId::null()` per `emFilePanel.rs:92`; allocated on first `<emFilePanel as PanelBehavior>::Cycle` via `ensure_vir_file_state_signal`). Storing `Option<SignalId>` adds two failure modes: (a) caching `null` if the Cycle wires connect before `<emFilePanel as PanelBehavior>::Cycle` allocates, and (b) staleness if reallocation ever occurs. Plain `SignalId` field, re-fetched each Cycle (idempotent per B-014 precedent — same as the existing `chg_sig` re-call pattern at `emDirPanel.rs:336`), avoids both. Note: this also depends on resolving C-1 — without `<emFilePanel as PanelBehavior>::Cycle` running, the signal is never allocated regardless.
+
+### Notes
+
+- **N-1 — D-009 compliance: clean.** Proposed wire has no Cell-as-polling-intermediary. The `pending_vir_state_fire` flag inside `emFilePanel` is a per-instance defer-to-own-Cycle drain (D-006 Option B language-forced override, decisions.md:144), not a cross-engine intermediary.
+- **N-2 — Verification harness gap.** Test pattern at line 286 calls `model.borrow_mut().set_state(FileState::Loaded)` and expects `VirFileStateSignal` to fire on next Cycle. With C-1 unfixed this fires only inside `<emFilePanel as PanelBehavior>::Cycle`, which the Harness does not invoke for `emDirPanel`. Tests must explicitly drive the embedded `file_panel`'s pending-fire drain (or, post-fix, the new `emDirPanel::Cycle` does).
+
+### Recommended Pre-Implementation Actions
+
+1. **Resolve C-1 before dispatch.** Amend "Wiring-shape application" sections for all three rows to require, at top of `Cycle`: `self.file_panel.fire_pending_vir_state(ectx);` followed by `let changed = self.file_panel.cycle_inner(); if changed { ectx.fire(self.file_panel.GetVirFileStateSignal()); }`. Mirror `emImageFileImageFilePanel.rs:212,232`. Without this, the subscribe is dead.
+2. **Update I-2:** Replace "Field changes" pseudocode with "extend existing `subscribed_init` block at `emDirPanel.rs:327` / `emDirStatPanel.rs:120` / `emFileLinkPanel.rs:186` with one additional `ectx.connect(self.file_panel.GetVirFileStateSignal(), eid)` line." No new field, no new flag.
+3. **Address I-3:** Add a note that `emFileLinkPanel::Cycle` must restore per-branch flag distinctions per M-001 (4 branches, 3 flags). Alternatively scope this as out-of-bucket if the design refuses, with a forward-pointer audit row.
+4. **Strike M-1, M-2 open questions** per resolution above.
+5. **Re-read `emImageFileImageFilePanel::Cycle`** as the implementer-of-record reference. Its 4-line preamble (`fire_pending_vir_state` + `cycle_inner` + conditional `ectx.fire`) is the canonical B-004-aware embedded-`file_panel` Cycle prefix; B-016 must adopt it verbatim.
+
+## Amendment Log — 2026-05-01
+
+Adversarial Review findings (above) folded into the design body:
+
+- **C-1 (Critical) resolved.** Added new top-level section "Mandatory `emFilePanel::Cycle` prefix in derived panels (post-2026-05-01 amendment)" before "Wiring-shape application (D-006)". Mandates the `ensure_vir_file_state_signal` + `fire_pending_vir_state` + `cycle_inner` + conditional `ectx.fire` quartet at top/bottom of every B-016 derived `Cycle`, mirroring `emImageFileImageFilePanel.rs:211-235` (verified). All three per-row Cycle wiring blocks rewritten to include items (1) prefix, (2) extend-existing-init, (3) suffix.
+- **I-1 (Important) resolved.** Mandatory prefix drains `pending_vir_state_fire` set by `set_custom_error` / `clear_custom_error` (`emFilePanel.rs:104,116`). Added inline note in `emDirPanel` wiring re: same-Cycle drain via an additional `fire_pending_vir_state(ectx)` after the observed_state match-arm if same-tick observability is needed.
+- **I-2 (Important) resolved.** All "Field changes" subsections rewritten to **None** — the existing post-B-009 `subscribed_init` block at `emDirPanel.rs:327` / `emDirStatPanel.rs:120` / `emFileLinkPanel.rs:186` is **extended** with one `connect(GetVirFileStateSignal(), eid)` line. No new field, no new flag. Replaced the `last_config_gen` u64 shim language (which described pre-B-009 state) with the actual current `IsSignaled(GetChangeSignal(ectx))` shape.
+- **I-3 (Important) resolved — fix not annotate.** Added "I-3 disposition" subsection under `emFileLinkPanel::Cycle`. Decision: **fix the M-001 violation in this PR.** No forced category applies (not language/dependency/upstream-gap/performance-forced); per Port Ideology a `DIVERGED:` annotation would be invalid. Implementer must restore the 3 distinct C++ flags (`do_update`, `dir_entry_up_to_date`, layout-invalidate) and the 4-branch shape from `emFileLinkPanel.cpp:84-101`. A `// TODO(M-001)` marker plus a forward-pointer audit row is the only acceptable defer path; a `DIVERGED:` is not.
+- **M-1, M-2 (Minor) struck.** Open questions §1 (SetFileModel ectx threading) and §3 (Option vs plain SignalId) marked struck inline with resolutions. M-1 cites B-004 emcore-slice merge commit `9b8ee012`. M-2 mandates **no field** — re-fetch `GetVirFileStateSignal()` per Cycle (idempotent, sibling of `chg_sig` re-call at `emDirPanel.rs:336`).
+- **N-1, N-2 (Notes) acknowledged.** D-009 compliance unchanged. N-2's harness gap is now moot once the mandatory prefix lands: `emDirPanel::Cycle` itself runs `cycle_inner` + fires, so model-state mutations followed by an `emDirPanel` Cycle reach the signal naturally.
+
+Adversarial Review section above is preserved verbatim (no edits).
+
+**Dispatch readiness:** Design is dispatch-ready. C-1 fix is fully specified; I-1/I-2/I-3 each have concrete implementer instructions with file:line targets; M-1/M-2 struck. No deferrals.

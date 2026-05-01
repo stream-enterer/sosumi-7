@@ -67,7 +67,21 @@ The 4 existing `Rc<Cell<Option<DialogResult>>>` fields (`cut_stocks_result`, `pa
 
 **Signatures unchanged.** `CutStocks`, `PasteStocks`, `DeleteStocks`, `SetInterest` keep their `<C: ConstructCtx>` generic signature. No connect call here — the connect moves to `Cycle` per D-006 first-Cycle-init.
 
-**Per mutator, in the cancel-old-dialog branch:** add `self.<dlg>_subscribed = false;` next to the existing `self.<dlg>_result.set(None);`. (The new dialog will re-subscribe on its first Cycle observation; the old dialog's subscription is dropped when the dialog is closed via `pending_actions` and its `finish_signal` no longer fires.)
+**Per mutator, in the cancel-old-dialog branch (Finding I-2):** before pushing the close action onto `pending_actions`, **explicitly disconnect the old dialog's `finish_signal`** from the parent engine, then clear the subscribed flag and the result cell. Symmetric with the confirmed-branch disconnect in §3.3 — without this, the parent engine retains a live `(old_finish_signal → parent_engine)` connection until the old SignalId is reaped by the dialog teardown path, a slow leak. Concretely:
+
+```rust
+// Cancel-old-dialog branch (per mutator):
+if let Some(old) = self.cut_stocks_dialog.as_ref() {
+    if self.cut_subscribed {
+        ectx.disconnect(old.finish_signal, ectx.id());
+    }
+}
+self.cut_subscribed = false;
+self.cut_stocks_result.set(None);
+// ... existing pending_actions push to close the old dialog ...
+```
+
+The new dialog will re-subscribe on its first Cycle observation per §3.3.
 
 **Per mutator, after `self.<dlg>_dialog = Some(dialog);`:** add `self.<dlg>_subscribed = false;` (defensive — covers the no-prior-dialog case where the cancel-old branch did not run).
 
@@ -77,26 +91,55 @@ The `set_on_finish` closure that writes the cell **stays unchanged**. The `dialo
 
 **Signature change:** `pub fn Cycle<C: emcore::emEngineCtx::ConstructCtx>(&mut self, cc: &mut C, ...)` → `pub fn Cycle(&mut self, ectx: &mut emcore::emEngineCtx::EngineCtx<'_>, ...)`. Required because `IsSignaled` and `connect`/`disconnect` are not on `ConstructCtx`. The single production caller (`emStocksFilePanel.rs:380`) already passes `ectx: &mut EngineCtx<'_>` — no caller change needed. Tests at `emStocksListBox.rs:1171,1185,1201,1318` only invoke the four mutators (with `ask=false`, no Cycle invocation under dialog state); they remain unchanged.
 
+**Engine-identity note (Finding I-1).** In C++, `class emStocksListBox : public emListBox` (verified at `~/Projects/eaglemode-0.96.4/src/emStocks/emStocksListBox.h:29`) — the ListBox is its own `emEngine`, so `AddWakeUpSignal(...)` self-subscribes the ListBox engine. In the Rust port, `emStocksListBox` is **not** a registered engine; it is a plain member of `emStocksFilePanel`, whose `Cycle` (`crates/emstocks/src/emStocksFilePanel.rs:380`) calls `lb.Cycle(ectx, ...)` while still holding the FilePanel's `EngineCtx`. Therefore inside `lb.Cycle`, `ectx.id()` resolves to the **FilePanel** engine, not the ListBox. The `connect`/`disconnect` calls below subscribe the parent FilePanel engine to the dialog's `finish_signal`. This is observably correct — the FilePanel's `Cycle` is what reaches the polling block, so waking the FilePanel is exactly what causes the polling block to re-run on the next slice. The structural shift (composite host instead of inheritance) is preserved-design-intent of the Rust port; no `DIVERGED:` annotation, but the substitution of "subscribe the parent engine" for C++'s "subscribe self" is documented here so a reader of the snippet does not mistake it for a 1:1 mirror of `AddWakeUpSignal`.
+
 **Per-dialog block** (Cut shown; Paste/Delete/Interest are mechanical clones):
 
 ```rust
 // Poll cut dialog.
-if let Some(dialog) = self.cut_stocks_dialog.as_ref() {
+// Invariant: subscribe-then-check happens on the same Cycle slice; do not
+// split this block across two methods or two slices, or a fire could be
+// missed (cf. Adversarial Review Note 7).
+if let Some(sig) = self.cut_stocks_dialog.as_ref().map(|d| d.finish_signal) {
+    // `sig` is Copy (SignalId); the immutable borrow of self.cut_stocks_dialog
+    // ends at the end of this let-binding, so the &mut self uses below compile.
     if !self.cut_subscribed {
-        ectx.connect(dialog.finish_signal, ectx.id());
+        ectx.connect(sig, ectx.id()); // subscribes the parent FilePanel engine
         self.cut_subscribed = true;
     }
-    if ectx.IsSignaled(dialog.finish_signal) {
+    if ectx.IsSignaled(sig) {
         let confirmed =
             self.cut_stocks_result.take() == Some(DialogResult::Ok);
-        ectx.disconnect(dialog.finish_signal, ectx.id());
+        ectx.disconnect(sig, ectx.id());
         self.cut_stocks_dialog = None;
         self.cut_subscribed = false;
         if confirmed {
             self.CutStocks(ectx, rec, false); // ectx is ConstructCtx; OK
         }
+        // else-side cleanup is per-mutator: see §3.3a for the Interest variant.
     } else {
+        // Outer guard is Some(dialog); inner if/else distinguishes
+        // "signaled (consume)" from "still pending (busy)".
         busy = true;
+    }
+}
+```
+
+**§3.3a — Interest-block cancel-side cleanup (Finding I-5).** The Interest block today (`crates/emstocks/src/emStocksListBox.rs:782-784`) clears `self.interest_to_set = None` whenever the dialog finishes with non-Ok. That semantics must be preserved verbatim. The Interest per-dialog block therefore reads:
+
+```rust
+if ectx.IsSignaled(sig) {
+    let confirmed =
+        self.interest_result.take() == Some(DialogResult::Ok);
+    ectx.disconnect(sig, ectx.id());
+    self.interest_dialog = None;
+    self.interest_subscribed = false;
+    if confirmed {
+        if let Some(interest) = self.interest_to_set.take() {
+            // existing SetInterest(ectx, rec, interest, false) call
+        }
+    } else {
+        self.interest_to_set = None; // preserve cancel-side reset
     }
 }
 ```
@@ -133,15 +176,18 @@ D-008 not cited — no new model `SignalId` is allocated; the dialog's signal is
 
 If this lift lands as a future bucket, B-013's residual cells become drop candidates: trigger-side already converted; delivery-side could be replaced with the new sync reader. Same shape as D-008's A3 watch-list note — promote when enough consumers accumulate the shim, not now.
 
+**Scope tightening (Note 8).** This watch-list note is scoped to **confirmation-style dialogs** (Cut/Paste/Delete/Interest in B-013, plus analogous yes/no consumers) where the consumer needs a synchronous result read at the moment of signal observation. It does **not** extend to long-running dialogs that already drive their own Cycle (e.g. `emStocksFetchPricesDialog`) or to emFileDialog (cf. B-018 design line 65, which explicitly states the B-013 architectural concern does not generalize to emFileDialog). Avoids over-broad future scope.
+
 ## 6. Implementer's checklist
 
 1. `crates/emstocks/src/emStocksListBox.rs`:
    - Add 4 `pub(crate) <dlg>_subscribed: bool` fields to the struct.
    - Initialize them to `false` in `new()`.
    - Add a one-line `//` comment above the existing `*_result` cell cluster noting their role as delivery buffers from `on_finish`.
-   - In each of the 4 ask=true mutator branches: set `self.<dlg>_subscribed = false;` in the cancel-old-dialog block (next to `result.set(None)`) and after `self.<dlg>_dialog = Some(dialog);`.
+   - In each of the 4 ask=true mutator branches: in the cancel-old-dialog block, call `ectx.disconnect(old.finish_signal, ectx.id())` (guarded by the old `<dlg>_subscribed` flag) **before** pushing the close action, then set `self.<dlg>_subscribed = false;` next to `result.set(None)` (Finding I-2). After `self.<dlg>_dialog = Some(dialog);` set `self.<dlg>_subscribed = false;` defensively.
    - Change `Cycle` signature to `(&mut self, ectx: &mut emcore::emEngineCtx::EngineCtx<'_>, rec: &mut emStocksRec, config: &emStocksConfig) -> bool`.
-   - Replace each of the 4 per-dialog blocks in `Cycle` with the connect+IsSignaled+disconnect shape from §3.3.
+   - Replace each of the 4 per-dialog blocks in `Cycle` with the connect+IsSignaled+disconnect shape from §3.3 (use the `let Some(sig) = ...map(|d| d.finish_signal)` borrow-extraction pattern shown).
+   - **Interest block specifically:** preserve the existing `else { self.interest_to_set = None; }` cancel-side reset (§3.3a, Finding I-5). Cut/Paste/Delete have no analogous cancel-side state.
    - Confirm recursive `self.<Mutator>(ectx, ...)` calls still type-check (EngineCtx: ConstructCtx).
 
 2. `crates/emstocks/src/emStocksFilePanel.rs:380` already passes `ectx`. No change.
@@ -162,3 +208,52 @@ Working-memory session reconciliation tasks on design return:
 - Watch-list note in `decisions.md` D-008 neighborhood (or new watch-list section): "emDialog post-show synchronous `GetResult()` candidate framework lift" — first sighting B-013, affects all dialog consumers.
 
 No prereq edges introduced. No new D-### entries. B-013 status: pending → designed.
+
+## Adversarial Review — 2026-05-01
+
+### Summary
+- Critical: 0 | Important: 3 | Minor: 3 | Notes: 2
+
+### Findings
+
+1. **[Important] [§3.3 / engine-identity for connect]** — Design claims `ectx.connect(dialog.finish_signal, ectx.id())` mirrors C++ `AddWakeUpSignal(...)`. **Subtle but correct, and worth documenting.** In C++ `class emStocksListBox : public emListBox` (header line 29) — the ListBox **is** its own `emEngine`, so `AddWakeUpSignal` self-subscribes the ListBox engine. In Rust, `emStocksListBox` is **not** a registered engine; it is a member of `emStocksFilePanel` whose `Cycle` (`emStocksFilePanel.rs:349-387`) calls `lb.Cycle(ectx, …)` (line 380). Therefore inside `lb.Cycle`, `ectx.id()` is the **FilePanel's** engine, not the ListBox's. This still produces correct observable behavior — FilePanel's Cycle is what reaches the polling block, so waking FilePanel is what we want — but the design's "mirrors AddWakeUpSignal" framing elides the structural difference. **Fix:** add an explicit one-paragraph note in §2 or §3.3 stating that the Rust port subscribes the *parent* engine (FilePanel) because the ListBox is not an independent engine, and cite the C++ vs Rust class hierarchy difference. This is preserved-design-intent (FilePanel as composite host) — annotate, don't change.
+
+2. **[Important] [§3.3 / cancel-old subscription leak]** — In the cancel-old-dialog branch (each mutator), the design adds `self.<dlg>_subscribed = false;` next to the existing `self.<dlg>_result.set(None);` (e.g. parallel to `emStocksListBox.rs:495-503`). But the old dialog's `finish_signal` is **still connected to the parent engine** at this point (subscribed last time first-Cycle observation ran). The design relies on "the old dialog's subscription is dropped when the dialog is closed via `pending_actions` and its `finish_signal` no longer fires." Two issues: (a) `app.close_dialog_by_id` finalizes via `Finish(NEGATIVE)` which causes `DialogPrivateEngine` to call `fire(finish_signal)` exactly once (`emDialog.rs:1086`), waking the parent engine *after* `_subscribed=false` and after `<dlg>_dialog = Some(new_dialog)` has overwritten the slot; the parent's polling block observes `Some(new_dialog)` with `subscribed=false`, runs `connect` for the **new** signal, then checks `IsSignaled(new_dialog.finish_signal)` (false). The stale fire on the *old* signal does not enter the new block because we re-read `dialog.finish_signal` from the new dialog. Benign in practice. (b) But the parent engine still holds a live `(old_finish_signal → parent_engine)` connection until the old SignalId is removed (`emDialog`'s drop / scheduler cleanup). If signals are not removed promptly, this is a slow leak. **Fix:** in the cancel-old branch, call `ectx.disconnect(old.finish_signal, ectx.id())` *before* pushing the close action. Symmetric with the "confirmed" branch's disconnect.
+
+3. **[Important] [§3.3 / `else { busy = true }` collapse]** — Design says "the `else if self.<dlg>_dialog.is_some() { busy = true; }` branches collapse into the `else { busy = true; }` of the new shape." That collapse is correct **only if** the `else` is inside `if let Some(dialog) = self.<dlg>_dialog.as_ref()`. The proposed snippet has the `else` attached to `if ectx.IsSignaled(...)`, *inside* the outer `if let Some(dialog)`. So `else { busy = true }` only fires when the dialog exists but hasn't fired yet — exactly C++ shape. Confirmed correct. Risk: an implementer copying mechanically may flatten the structure differently. **Fix:** make the bracket structure explicit in §3.3 (one extra clarifying line, e.g. "outer guard is `Some(dialog)`; inner `if/else` distinguishes signaled vs not-yet").
+
+4. **[Minor] [§3.3 / borrow checker for `dialog.finish_signal`]** — `if let Some(dialog) = self.<dlg>_dialog.as_ref()` borrows `self` immutably; later `self.<dlg>_dialog = None;` and `self.CutStocks(ectx, rec, false)` need `&mut self`. Implementer must extract `let sig = dialog.finish_signal;` (Copy) and drop the immutable borrow before mutation, or use `.as_ref().map(|d| d.finish_signal)` patterns. **Fix:** show the borrow-handling explicitly in the §3.3 snippet to prevent the implementer from hitting compiler errors and improvising structure.
+
+5. **[Minor] [§3.3 / Interest result reset on Cancel]** — Existing code at `emStocksListBox.rs:782-784` resets `self.interest_to_set = None` when result is non-Ok. The design's per-dialog block snippet shows only the Cut shape; the implementer-checklist (§6 row 1.f) doesn't call out preserving the Interest-specific cancel-side cleanup. **Fix:** add an explicit bullet in §6 step 1 noting that the Interest block must keep the existing `else { self.interest_to_set = None; }` semantics (i.e. clear `interest_to_set` whenever the dialog finishes with non-Ok, not only on Ok-then-mutate).
+
+6. **[Minor] [§3.3 / disconnect timing — engine-id under recursion]** — The `confirmed` branch disconnects, sets `<dlg>_dialog = None`, then calls `self.CutStocks(ectx, rec, false)`. If the recursive call (ask=false path) creates another dialog through some indirect route, no harm — but the disconnect uses `ectx.id()` which is the parent engine. Verify that `ectx.id()` is stable across the synchronous recursion (it is: `engine_id` field, `emEngineCtx.rs:245-247`). Note only — no fix needed.
+
+7. **[Note] [Cross-reference B-018 latent gap]** — B-018's latent gap was a `CheckFinish` post-show *else-branch* missing `scheduler.connect`. B-013's analog is the *first-Cycle init* branch (`if !self.<dlg>_subscribed`). That branch is **always taken** before any IsSignaled check on the same Cycle slice — by construction, no else-branch can be skipped. So B-013 does not have a B-018-shaped gap. **However**, the inverse risk exists: if a future refactor splits `Cycle` into two methods such that one runs the first-Cycle init and another runs IsSignaled across a slice boundary, a fire could be missed. Document the invariant ("subscribe-then-check on the same slice") inline in §3.3 to harden against that future refactor.
+
+8. **[Note] [Watch-list / `emDialog::GetResult()`]** — §5 correctly identifies the framework-lift candidate. B-018 reconciliation explicitly states (line 65 of B-018 design) that the B-013 architectural concern does **not** generalize to emFileDialog. Confirm in B-013's reconciliation log that the watch-list note is scoped to confirmation-style dialogs (Cut/Paste/Delete/Interest) where the consumer needs a synchronous read on signal observation, not to long-running dialogs that already have their own Cycle (e.g. `emStocksFetchPricesDialog`). Avoids over-broad future scope.
+
+### Recommended Pre-Implementation Actions
+
+1. Amend §3.3: add a paragraph explicitly addressing engine-identity (Finding 1) — Rust subscribes the parent FilePanel engine because the ListBox is not an independent engine; cite C++ `class emStocksListBox : public emListBox` vs Rust composition.
+2. Amend §3.3 / §6: add `ectx.disconnect(old.finish_signal, ectx.id())` to the cancel-old-dialog branch in each of the four mutators (Finding 2). Place it before the `pending_actions` push.
+3. Amend §3.3 snippet: show borrow handling (`let sig = dialog.finish_signal; drop(...);`) and the precise outer/inner `if let Some / if/else` bracket structure (Findings 3 & 4).
+4. Amend §6 step 1: add an explicit bullet noting that the Interest block must preserve the `interest_to_set = None;` reset on non-Ok results (Finding 5).
+5. Add an inline invariant comment in the §3.3 snippet stating "subscribe-then-check happens on the same Cycle slice; do not split" (Finding 7).
+6. Tighten §5 watch-list scope to confirmation-style dialogs (Finding 8).
+
+No prereq buckets introduced. No global decisions changed. After amendments, B-013 is implementer-ready.
+
+## Amendment Log — 2026-05-01
+
+Folded Adversarial Review findings into the design body. Adversarial Review preserved verbatim above.
+
+- **I-1 (engine identity):** Added explicit "Engine-identity note" paragraph at the top of §3.3 explaining that Rust subscribes the parent FilePanel engine — not self — because `emStocksListBox` is composed inside `emStocksFilePanel` rather than inheriting from `emListBox`/`emEngine` as in C++ (`~/Projects/eaglemode-0.96.4/src/emStocks/emStocksListBox.h:29` vs `crates/emstocks/src/emStocksFilePanel.rs:380`). Preserved-design-intent of the Rust composite host; not a `DIVERGED:`.
+- **I-2 (cancel-old subscription leak):** Rewrote §3.2 cancel-old-dialog guidance to call `ectx.disconnect(old.finish_signal, ectx.id())` (guarded by old `_subscribed` flag) before the `pending_actions` close push. Symmetric with the confirmed-branch disconnect in §3.3. §6 checklist updated.
+- **I-3 (bracket structure):** §3.3 snippet now contains an explicit comment distinguishing outer `Some(dialog)` guard from inner signaled/not-yet branches.
+- **I-4 (borrow handling):** §3.3 snippet rewritten to extract `let Some(sig) = self.<dlg>_dialog.as_ref().map(|d| d.finish_signal)` so the immutable borrow drops before `&mut self` mutations.
+- **I-5 (Interest cancel-side reset):** Added §3.3a showing the Interest-specific block preserving `self.interest_to_set = None;` on non-Ok. §6 checklist gained an explicit Interest-block bullet.
+- **Note 7 (subscribe-then-check invariant):** Added an inline invariant comment in the §3.3 snippet ("subscribe-then-check happens on the same Cycle slice; do not split").
+- **Note 8 (watch-list scope):** §5 tightened to confirmation-style dialogs only; explicitly excludes `emStocksFetchPricesDialog` and emFileDialog (cf. B-018 design line 65).
+- **Minor 6 (engine-id stable under recursion):** No change required — finding self-resolves with citation in Adversarial Review; no design body change needed.
+
+B-013 status: designed → dispatch-ready.

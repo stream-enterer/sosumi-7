@@ -51,14 +51,16 @@ Group rows by the C++ signal they target. For each group: which model exposes th
 
 **Rust state today.** Underlying SignalId exists at `emcore/src/emFileModel.rs:117` (`change_signal: SignalId`). Accessor `emFileModel::GetChangeSignal()` returns `SignalId` (line 64). `emStocksFileModel` composes `emRecFileModel<emStocksRec>` but exposes no delegating accessor.
 
-**Fix.** Add a one-line delegating accessor on `emStocksFileModel`:
+**Fix.** Add a delegating accessor on `emStocksFileModel`. Per **D-008 A1 combined form** (third-precedent-confirmed at B-003 `eb9427db`, B-014 `c2871547`, B-009 `50994e26`), accessors take `&mut impl SignalCtx` and lazy-allocate via `Cell<SignalId>` on the underlying owner. For a delegating forward, the inner accessor performs the lazy alloc; the wrapper just forwards:
 
 ```rust
 /// Port of inherited C++ emFileModel::GetChangeSignal.
-pub fn GetChangeSignal(&self) -> SignalId {
-    self.file_model.GetChangeSignal()
+pub fn GetChangeSignal(&self, ectx: &mut impl SignalCtx) -> SignalId {
+    self.file_model.GetChangeSignal(ectx)
 }
 ```
+
+(If `emFileModel::GetChangeSignal` is not yet on the D-008 A1 combined form, flip it in this bucket alongside the delegating add — its current `&self`-only signature is itself a B-001 fix.)
 
 **Rows depending on G1 (consumer subscribes):**
 - `emStocksControlPanel-74` (outer ControlPanel.Cycle)
@@ -75,11 +77,13 @@ pub fn GetChangeSignal(&self) -> SignalId {
 **Fix.** Two choices — design picks **(B)**:
 
 - (A) Compose `emStocksConfig` with `emcore::emConfigModel::emConfigModel`. Mirrors C++ `class emStocksConfig : public emConfigModel`. Larger blast radius — the existing plain struct is read/written across the codebase as a value type with `Default` and `Clone`. Compositional ownership of an `emConfigModel` (which holds a SignalId, scheduler-bound) breaks the value-type usage.
-- (B) Add a `change_signal: SignalId` field directly to `emStocksConfig`, plus a `Signal(&mut self, ectx: &mut EngineCtx)` mutator that fires it. Add `GetChangeSignal(&self) -> SignalId` accessor. Skips the full `emConfigModel` port (consistent with current Rust: `emStocksConfig` is config data, not a configmodel singleton). Mark with `DIVERGED:` *only if* the divergence is observable at any golden site; otherwise the accessor's contract is identical and this is below-surface adaptation.
+- (B) Add a `change_signal: Cell<SignalId>` field directly to `emStocksConfig` (D-008 A1 lazy-alloc), plus a `Signal(&mut self, ectx: &mut impl SignalCtx)` mutator that fires it (D-007 post-B-009 amendment, `decisions.md:170` — broader bound than `&mut EngineCtx` because mutator may be reached from `PanelBehavior::Input` callsites that only carry `PanelCtx`). Add a `GetChangeSignal(&self, ectx: &mut impl SignalCtx) -> SignalId` accessor (D-008 A1 combined form) that lazy-allocates the SignalId on first call. Skips the full `emConfigModel` port (consistent with current Rust: `emStocksConfig` is config data, not a configmodel singleton).
+
+  **Derive incompatibility (forced).** The existing `#[derive(Debug, Clone, PartialEq)]` (line 127) does not derive cleanly through `Cell<SignalId>`: `Cell<T>` deliberately omits `PartialEq` (interior mutability). Hand-write `Clone` (semantics: a cloned `emStocksConfig` is a distinct broadcast endpoint — `change_signal` resets to `Cell::new(SignalId::null())`) and hand-write `PartialEq` (excluding `change_signal` from the comparison). The hand-written `Clone` carries `// DIVERGED: language-forced — Rust Cell<SignalId> is not Clone-derivable; clone produces a fresh broadcast endpoint, mirroring C++ copy-construction of an `emConfigModel` member which would re-init its signal.`
 
 **Why (B).** `emStocksConfig` is currently used as a plain Rust value passed by reference into Cycle methods (e.g., `lb.Cycle(ectx, rec, config)`). The C++ multi-inheritance of `emConfigModel` is itself a Rust language-forced divergence per the existing `emStocksFileModel` precedent (composition vs. MI). Going the full `emConfigModel`-composition path would force a re-architecting of every emstocks call-site that holds `emStocksConfig` by value or `&`. Option (B) is the smallest viable shape — adds the SignalId field plus accessor, keeps the value-type flow.
 
-**Caveat.** Option (B) requires mutator sites (every `config = new_config` write in `ReadFromWidgets` / config-load code) to *also* call `config.Signal(ectx)`. The implementer must enumerate those sites — primarily in `emStocksControlPanel::ReadFromWidgets` and the file-load path — and add the fire. Without this, G2 subscribers will never wake.
+**Caveat.** Option (B) requires mutator sites (every `config = new_config` write in `ReadFromWidgets` / config-load code) to *also* call `config.Signal(ectx)` where `ectx: &mut impl SignalCtx` (D-007 post-B-009 amendment). The implementer must enumerate those sites — primarily in `emStocksControlPanel::ReadFromWidgets` and the file-load path — and add the fire. Some of those sites are reachable from `PanelBehavior::Input` (which carries `PanelCtx` only), so the broader `impl SignalCtx` bound is mandatory; a narrowed `&mut EngineCtx<'_>` would block compile mid-Phase-4. Without the fire, G2 subscribers will never wake.
 
 **Rows depending on G2:**
 - `emStocksControlPanel-75`, `-1014` (CategoryPanel inner Cycle subscribes Config)
@@ -93,9 +97,16 @@ pub fn GetChangeSignal(&self) -> SignalId {
 
 **Rust state today.** `emStocksPricesFetcher` (struct at `emStocksPricesFetcher.rs:18`) has no SignalId field, no accessor.
 
-**Fix.** Add `change_signal: SignalId` to the struct, allocate in `new(...)` via `ctx.create_signal()` (so `new` must take `&mut C: ConstructCtx` or equivalent — currently `new` takes none, see header). Add `GetChangeSignal()` accessor. Add a private `signal_change(&mut self, ectx: &mut EngineCtx)` and call it from every internal state transition that the C++ original signals (consult `emStocksPricesFetcher.cpp` for `Signal(ChangeSignal)` call sites).
+**Fix.** Add `change_signal: Cell<SignalId>` to the struct (D-008 A1 lazy-alloc — no constructor signature change required). Add `GetChangeSignal(&self, ectx: &mut impl SignalCtx) -> SignalId` accessor (D-008 A1 combined form). Add a private `signal_change(&mut self, ectx: &mut impl SignalCtx)` (D-007 post-B-009 broader bound) and call it at every C++ `Signal(ChangeSignal)` site:
 
-**Rows depending on G3.** None of the 71 rows directly subscribe to G3 in this bucket (the audit's "PricesFetcher accessor missing" row stands alone). Per D-003, fill the accessor anyway — its absence blocks any future consumer (e.g., a fetch-progress UI). The design ports the accessor and leaves the consumer side to a future bucket if needed. Flag for working-memory session: confirm there is no consumer in B-001 that needs G3; if there is, add it here.
+- `emStocksPricesFetcher.cpp:70` (StartProcess setup)
+- `emStocksPricesFetcher.cpp:134` (PollProcess progress)
+- `emStocksPricesFetcher.cpp:264` (SetFailed)
+- `emStocksPricesFetcher.cpp:272` (HasFinished transition)
+
+**Cascade — `Cycle` ectx threading.** Threading `&mut impl SignalCtx` into the four mutator sites forces `emStocksPricesFetcher::Cycle` to gain ectx, which in turn forces `emStocksFetchPricesDialog::Cycle` (currently `pub fn Cycle(&mut self) -> bool` at `emStocksFetchPricesDialog.rs:91`) to gain ectx, and every caller of the dialog's `Cycle` likewise. This cascade is in-scope for B-001 even though the FetchPricesDialog *consumer* row lives in B-017 — the cascade is structural, not optional.
+
+**Rows depending on G3.** None of the 71 rows directly subscribe to G3 in this bucket; the consumer (FetchPricesDialog) is B-017 row 1 per the bucket-sketch reconciliation. Per D-003, land the accessor here so B-017 is unblocked.
 
 ### G4 — `emStocksListBox.GetSelectedDateSignal()`
 
@@ -103,7 +114,7 @@ pub fn GetChangeSignal(&self) -> SignalId {
 
 **Rust state today.** `emStocksListBox` has no `selected_date_signal` field; mutating `selected_date: String` is unsignalled. The setter path needs auditing — search for writes to `self.selected_date`.
 
-**Fix.** Add `selected_date_signal: SignalId` to `emStocksListBox`. Allocate in `new` (currently takes no args; either change `new` to `new(cc: &mut C)` or thread a `SignalId` from caller). Add `GetSelectedDateSignal()` accessor. Add a `signal_selected_date(&mut self, ectx: &mut EngineCtx)` helper. Wire it at every `selected_date` mutation site.
+**Fix.** Add `selected_date_signal: Cell<SignalId>` to `emStocksListBox` (D-008 A1 lazy-alloc — no `new` signature change required). Add `GetSelectedDateSignal(&self, ectx: &mut impl SignalCtx) -> SignalId` accessor (D-008 A1 combined form). Add a `signal_selected_date(&mut self, ectx: &mut impl SignalCtx)` helper (D-007 post-B-009 broader bound). Wire it at every `selected_date` mutation site.
 
 **Rows depending on G4 (consumer subscribes):**
 - `emStocksControlPanel-77`
@@ -115,15 +126,15 @@ pub fn GetChangeSignal(&self) -> SignalId {
 
 **Rust state today.** `selection_signal: SignalId` exists on `emListBox` (line 310). `emStocksListBox` exposes the inner `Option<emListBox>` as `pub(crate) list_box`.
 
-**Fix.** Add a delegating accessor on `emStocksListBox`:
+**Fix.** Add a delegating accessor on `emStocksListBox` in D-008 A1 combined form:
 
 ```rust
-pub fn GetSelectionSignal(&self) -> Option<SignalId> {
-    self.list_box.as_ref().map(|lb| lb.selection_signal)
+pub fn GetSelectionSignal(&self, ectx: &mut impl SignalCtx) -> Option<SignalId> {
+    self.list_box.as_ref().map(|lb| lb.GetSelectionSignal(ectx))
 }
 ```
 
-The `Option` wrapper is necessary because the inner emListBox is lazy-attached. Consumer subscribers must early-return if `None`, or the panel must defer subscribe until ListBox is attached (see §"Sequencing" below).
+The `Option` wrapper is necessary because the inner emListBox is lazy-attached. Consumer subscribers must early-return if `None`, or the panel must defer subscribe until ListBox is attached (see §"Sequencing" below). (If the inner `emListBox::GetSelectionSignal` is not yet on D-008 A1 form, flip it in this bucket — same pattern applies to `GetItemTriggerSignal` for G6.)
 
 **Rows depending on G5:**
 - `emStocksControlPanel-76`, `-1072` (FileSelectionBox-selection inside FileFieldPanel popup — different scope, see anomaly below), `-1143`
@@ -144,8 +155,8 @@ These rows subscribe to already-existing widget SignalIds. No accessor work; pur
 - `-448` `widgets.chart_period.value_signal`
 - `-466` per-button `widgets._min_visible_interest_buttons[i].check_signal` (3 buttons)
 - `-557` per-button `widgets._sorting_buttons[i].check_signal` (11 buttons)
-- `-566` `widgets.owned_shares_first.check_signal` (NB: C++ uses ClickSignal here on a checkbox; verify against C++)
-- `-626` `widgets.selected_date` — but Rust has `selected_date: String` not a TextField; needs widget add
+- `-566` `widgets.owned_shares_first.GetClickSignal(ectx)` — **definitive** per `~/Projects/eaglemode-0.96.4/src/emStocks/emStocksControlPanel.cpp:566`: C++ wires `OwnedSharesFirst->GetClickSignal()` (inherited from `emButton` via `emCheckButton`). Use `GetClickSignal`, NOT `GetCheckSignal`. Rust `emCheckBox` exposes both via inheritance; mirror the C++ contract exactly. Failure mode: `GetCheckSignal` may appear to work for keyboard-toggle but click-cycle observable behavior diverges.
+- (`-626` is a G8 widget-add row — see §G8; not duplicated here.)
 - `-756` `widgets.search_text.text_signal`
 
 **ItemPanel (existing widgets):**
@@ -200,6 +211,8 @@ This is 20 widget-add operations. Each is a small mechanical edit (add field, in
 
 ## Per-panel consumer wiring
 
+**M-001 enforcement.** Per `decisions.md` M-001, every panel's Cycle wiring task starts with a direct read of the C++ Cycle branch structure at the cited source line. Do not infer branch order or reaction targets from audit metadata or grep — open the cpp file, transcribe the branches, then port. Each Phase-4 sub-task in the plan begins with this M-001 pre-check.
+
 For every panel below, follow the D-006 shape exactly:
 
 ```rust
@@ -225,18 +238,27 @@ fn Cycle(&mut self, ectx: &mut EngineCtx, pctx: &mut PanelCtx) -> bool {
 
 Outer panel. Subscribes to G1, G2, G5, G7 (existing widgets), G8 (added widgets). The Cycle body mirrors C++ `emStocksControlPanel.cpp:97–`.
 
-Connect-list (in C++ source order):
-1. `self.file_model.borrow().GetChangeSignal()` — G1 row -74
-2. `self.config.borrow().GetChangeSignal()` — G2 row -75
-3. `self.list_box.GetSelectionSignal().expect(...)` — G5 row -76 (defer to second-Cycle if ListBox not yet attached; see §Sequencing)
-4. `self.list_box.GetSelectedDateSignal()` — G4 row -77
+Connect-list (in C++ source order; all accessor calls take `ectx: &mut impl SignalCtx`):
+1. `self.file_model.borrow().GetChangeSignal(ectx)` — G1 row -74
+2. `self.config.borrow().GetChangeSignal(ectx)` — G2 row -75
+3. `self.list_box.GetSelectionSignal(ectx).expect(...)` — G5 row -76 (defer to second-Cycle if ListBox not yet attached; see §Sequencing)
+4. `self.list_box.GetSelectedDateSignal(ectx)` — G4 row -77
 5. (in `AutoExpand` path, after widgets exist) all G7/G8 widget signals enumerated above
 
-IsSignaled branches (in C++ order, at top of Cycle):
-- `if ectx.IsSignaled(file_model.GetChangeSignal()) { update_controls_needed = true; }`
-- `if ectx.IsSignaled(config.GetChangeSignal()) { update_controls_needed = true; }`
-- `if ectx.IsSignaled(list_box.selected_date_signal) { update_controls_needed = true; /* update SelectedDate display */ }`
-- For each widget signal: corresponding mutator on Config or ListBox (mirror C++ `emStocksControlPanel::Cycle`).
+Inner `ControlCategoryPanel` rows -1014 (Config), -1143 (self-selection), -1144 (outer FileModel-change) all live in the same inner Cycle; land together. -1143 and -1144 are paired wires to two model-side targets and react in the same Cycle pass (M-001: read C++ source for branch order before implementing).
+
+IsSignaled branches (in C++ order, at top of Cycle). D-008 A1 accessors take `&mut impl SignalCtx`, so cache the SignalId to a local before the borrow-conflicting `ectx.IsSignaled` call:
+
+```rust
+let fm_sig = self.file_model.borrow().GetChangeSignal(ectx);
+if ectx.IsSignaled(fm_sig) { update_controls_needed = true; }
+let cfg_sig = self.config.borrow().GetChangeSignal(ectx);
+if ectx.IsSignaled(cfg_sig) { update_controls_needed = true; }
+let date_sig = self.list_box.GetSelectedDateSignal(ectx);
+if ectx.IsSignaled(date_sig) { update_controls_needed = true; /* update SelectedDate display */ }
+```
+
+For each widget signal: corresponding mutator on Config or ListBox (mirror C++ `emStocksControlPanel::Cycle`). Mutator signatures take `&mut impl SignalCtx` per D-007 post-B-009 amendment.
 
 Note the existing `update_controls_needed` flag matches C++'s `UpdateControlsNeeded` — reuse it.
 
@@ -247,13 +269,18 @@ Same shape. Connect-list:
 2. `list_box.GetSelectedDateSignal()` — row -75
 3. After AutoExpand — every widget signal in G7 list (12 rows of TextField/CheckBox/Button/RadioButton)
 
-The inner `CategoryPanel` (rows -831, -832, -914, -922) is a sub-panel with its own Cycle; treat as a separate panel applying the same D-006 shape. Currently the Rust `CategoryPanel` is a plain struct `pub struct CategoryPanel` (line 32) with no Cycle. Either (a) give it its own Cycle and a back-reference to outer FileModel/Config (mirror C++), or (b) move the subscribe up to `emStocksItemPanel::Cycle` and dispatch into the CategoryPanel's reactor. Design picks (a) for fidelity to C++ structure; flag for the implementer if back-reference plumbing is a structural problem.
+The inner `CategoryPanel` (rows -831, -832, -914, -922) is a sub-panel with its own Cycle; treat as a separate panel applying the same D-006 shape. Currently the Rust `CategoryPanel` (in `emStocksItemPanel.rs`, line 32) is a plain struct with no Cycle. Either (a) give it its own Cycle and a back-reference to outer FileModel/Config (mirror C++), or (b) move the subscribe up to `emStocksItemPanel::Cycle` and dispatch into the CategoryPanel's reactor. Design picks (a) for fidelity to C++ structure; flag for the implementer if back-reference plumbing is a structural problem.
+
+**Disambiguation — two distinct CategoryPanel types.** `emStocksControlPanel.rs:71-76` documents `ControlCategoryPanel` as *a different type* from `emStocksItemPanel::CategoryPanel`, mirroring two separate C++ inner classes. ControlPanel rows -1014/-1143/-1144 target `ControlCategoryPanel`; ItemPanel rows -831/-832/-914/-922 target `emStocksItemPanel::CategoryPanel`. Two separate Cycle implementations are required; do not collapse.
 
 ### emStocksItemChart (2 rows: -64, -65)
 
-`emStocksItemChart::new` currently takes no args and has no Cycle. Add:
+`emStocksItemChart::new` currently takes no args and has no Cycle (`crates/emstocks/src/emStocksItemChart.rs:38-93`). The C++ chart is itself an `emPanel` with engine via base (`~/Projects/eaglemode-0.96.4/src/emStocks/emStocksItemChart.cpp:55-75`); the Rust port is a plain struct. Add:
+
 - `subscribed_init: bool`
 - A `Cycle(&mut self, ectx, ..., config: &emStocksConfig, list_box: &emStocksListBox)` method.
+
+**Engine attachment pre-condition.** `ectx.connect(...)` is unreachable on a non-engine-bearing struct. Lift `emStocksItemChart` to engine-bearing before wiring (either by promoting it to a panel mirroring the C++ shape, or by adopting whatever engine-attachment lifecycle the surrounding emstocks code uses for sub-widgets). Without engine attachment, no `ectx.connect` is reachable and Phase 4 wiring will fail. Implementer triage required at task entry.
 
 C++ Cycle body (cpp:93–94) is a straight `IsSignaled` OR-check that triggers `UpdateData()`. Mirror exactly.
 
@@ -276,6 +303,8 @@ pub struct emStocksListBox {
 The parent `emStocksFilePanel` sets these refs at attach time (alongside `attach_list_box`). After attach, `emStocksListBox::Cycle` performs the D-006 init/check pattern itself.
 
 If this Rc<RefCell<>> addition pushes against the project's ownership defaults: the C++ original holds `FileModel` and `Config` as references in `emStocksListBox`; the Rust port currently routes around that by passing per-call. Since the C++ shape is observable (the ListBox subscribes from its own scope), preserving the C++ shape is design-intent per CLAUDE.md §"Port Ideology." Add the Rc<RefCell<>> with a `// (a) cross-Cycle reference per CLAUDE.md §Ownership` justification comment.
+
+**Parent-side ownership shape pre-condition.** Before adding the refs to ListBox, verify `emStocksFilePanel`'s current ownership of `emStocksConfig`/`emStocksFileModel`. If the parent holds `emStocksConfig` by value or by `&` (not by `Rc<RefCell<>>`), the "set them at the same site that calls `attach_list_box`" step is non-trivial and may force a parent-side ownership refactor. Run `rg -n 'lb\.Cycle\(' crates/emstocks/src/emStocksFilePanel.rs` and inspect the surrounding scope before Phase 3. If the parent shape needs refactoring, surface it before starting the ListBox phase.
 
 For row -53 (self-subscribe to `item_trigger_signal`), connect `self.list_box.as_ref().unwrap().item_trigger_signal` and react.
 
@@ -301,6 +330,8 @@ Single row: subscribes to PricesFetcher's G3. Implementer confirms target signal
 **Lazy-attached widgets / ListBox.** ControlPanel and ItemPanel use lazy AutoExpand: widgets are `None` until first expand. The first-Cycle init can't connect a `None` widget. Use one of two shapes:
 - (Preferred) Move widget-signal connects into a separate `subscribed_widgets: bool` flag; reset to `false` on AutoShrink, run on the first Cycle after AutoExpand. Two-tier init: model-level signals on first Cycle (always), widget-level signals on first Cycle-after-AutoExpand.
 - (Alternative) Always force AutoExpand at panel construction (eager). Larger memory footprint; unlikely acceptable.
+
+**Not a DIVERGED block.** The two-tier flag is structurally faithful to C++: read `~/Projects/eaglemode-0.96.4/src/emStocks/emStocksControlPanel.cpp:380-790` — `AddWakeUpSignal` calls (cpp:413-772) live inside `AutoExpand` after widget construction, exactly mirroring the Rust `subscribed_widgets` reset/run pattern. This is preserved-design-intent + below-surface adaptation; the `subscribed_widgets` field is **NOT** annotated `DIVERGED:`. (Do not add a DIVERGED block here.)
 
 The ListBox attach in `emStocksFilePanel` follows the same pattern: a `list_box_subscribed: bool` separate from `subscribed_init` allows attach-deferred subscribe.
 
@@ -346,3 +377,85 @@ For accessor rows (G1/G2/G3/G4): assert that firing `model.signal_change()` prop
 - `cargo clippy -D warnings` and `cargo-nextest ntr` pass.
 - New `tests/typed_subscribe_b001.rs` covers all 71 rows.
 - B-001 status in `work-order.md` flips `pending → designed`.
+
+---
+
+## Adversarial Review — 2026-05-01
+
+Review performed during plan-writing for `docs/superpowers/plans/2026-05-01-B-001-no-wire-emstocks.md`. Findings below cite real `file:line` and were verified by opening both Rust and C++ sources. Severity legend: **Critical** = breaks landing if not addressed before implementation; **Important** = will surface mid-flight as a B-005-style mistake unless preemptively patched; **Minor** = cosmetic / clarification.
+
+### Critical
+
+**C-1. D-008 A1 accessor signature in design doc is the retired split form, not the combined form.** §G2 shows a fix snippet (`pub fn GetChangeSignal(&self) -> SignalId`) and §G3 narrates "add `GetChangeSignal()` accessor" — both omit the `ectx: &mut impl SignalCtx` parameter. The combined form (`fn GetXxxSignal(&self, ectx: &mut impl SignalCtx) -> SignalId` with `Cell<SignalId>` lazy alloc) is the third-precedent-confirmed shape per `decisions.md` D-008 and the work-order entries for B-003 (`eb9427db`), B-014 (`c2871547`), and B-009 (`50994e26`). The design's snippets, taken at face value, would produce a Rust compile error for the `&self`-only signature (no way to allocate). The plan supersedes with the combined form; design doc snippet is stale and should be patched or annotated as superseded.
+
+**C-2. Mutator-fire bound is `&mut impl SignalCtx`, not `&mut EngineCtx`.** §G2 caveat says "every `config = new_config` write in `ReadFromWidgets` … must *also* call `config.Signal(ectx)`" but does not specify the bound. Per D-007 amendment (post-B-009 merge `50994e26`, `decisions.md:170`), mutator signatures use `&mut impl SignalCtx` because `PanelBehavior::Input` only carries `PanelCtx`. Some emstocks Input handlers may end up calling Config setters; if the design's narrowed `EngineCtx` bound is used, the implementer will hit a borrow/trait failure mid-Phase-4. Plan uses the broader bound throughout.
+
+**C-3. Row -566 (`OwnedSharesFirst`) signal kind is `GetClickSignal`, not `GetCheckSignal`.** Confirmed at `~/Projects/eaglemode-0.96.4/src/emStocks/emStocksControlPanel.cpp:566` and the Rust D22 divergence at `crates/emstocks/src/emStocksControlPanel.rs:194-195` (`owned_shares_first: emCheckBox`). C++ wires `OwnedSharesFirst->GetClickSignal()` (inherited from `emButton` via `emCheckButton`). The design doc §G7 entry for `-566` says "C++ uses ClickSignal here on a checkbox; verify against C++" — verified: it IS `GetClickSignal`. Design entry is correctly suspicious but ambiguous — make it definitive: the connect call must be `widgets.owned_shares_first.GetClickSignal()`, not `GetCheckSignal()`. Rust `emCheckBox` exposes both via inheritance but the C++ contract is click; mirror exactly. (Failure mode: if implementer uses `GetCheckSignal`, the reaction may still work for keyboard-toggle but observable behavior on click cycle differs.)
+
+### Important
+
+**I-1. `emStocksItemChart::new` signature change blocks callers.** §emStocksItemChart says "`emStocksItemChart::new` currently takes no args and has no Cycle. Add … a `Cycle` method." But adding a Cycle that does `ectx.connect(...)` requires either (a) routing the chart through an engine attachment lifecycle, or (b) lazy `ConstructCtx`-time engine acquire. The design does not specify which. Read `~/Projects/eaglemode-0.96.4/src/emStocks/emStocksItemChart.cpp:55-75` shows the C++ chart is itself an `emPanel` with engine via base — Rust `emStocksItemChart` at `crates/emstocks/src/emStocksItemChart.rs:38-93` is currently a plain struct, not a panel. The plan flags this for implementer triage in Task 4.3 but the design doc should explicitly note: "lift `emStocksItemChart` to engine-bearing if not already; without engine attachment, no `ectx.connect` is reachable."
+
+**I-2. `emStocksFetchPricesDialog::Cycle` signature cascade is undocumented.** Threading G3 mutator-fire through `emStocksPricesFetcher::Cycle` (4 fire sites) cascades to `emStocksFetchPricesDialog::Cycle` (currently `pub fn Cycle(&mut self) -> bool`, line 91) which takes no `ectx`. Every caller of the dialog's `Cycle` then needs ectx too. Design §"emStocksFetchPricesDialog" says "Single row: subscribes to PricesFetcher's G3" — but B-001's row table does NOT contain a FetchPricesDialog row (it's in B-017). The sweep is structural: even without an in-bucket consumer, threading ectx into `emStocksPricesFetcher` mutators forces the dialog Cycle to gain ectx. Plan documents this in Phase 1 Task 1.3 but design doc misses the cascade.
+
+**I-3. Inner CategoryPanel ownership in `emStocksControlPanel` is two distinct types.** `emStocksControlPanel.rs:71-76` documents `ControlCategoryPanel` is *a different type* from `emStocksItemPanel::CategoryPanel`. The design doc §emStocksItemPanel uses bare "CategoryPanel" without disambiguating. Rows -1014/-1143/-1144 in ControlPanel target `ControlCategoryPanel`; rows -831/-832/-914/-922 in ItemPanel target `emStocksItemPanel::CategoryPanel`. Two separate Cycle implementations are required (mirroring two C++ inner classes). Plan calls these out explicitly per task; design doc should add a one-line note.
+
+**I-4. `emStocksConfig` `Clone`+`PartialEq` derives are incompatible with `Cell<SignalId>`.** §G2 Option B says "add a `change_signal: SignalId` field directly" — but the existing `#[derive(Debug, Clone, PartialEq)]` (line 127) does not derive through `Cell<SignalId>` cleanly: `Cell<T>` does not impl `PartialEq` (intentionally — interior mutability). Implementer must hand-write `Clone` (with semantics: clone resets to null per design — a cloned Config is a distinct broadcast endpoint) and hand-write `PartialEq` (excluding `change_signal`). The hand-written `Clone` is itself an annotation-required divergence (`DIVERGED: language-forced` — C++ copy-construction inheriting `emConfigModel` is well-defined; Rust must explicitly reset). Plan documents in Task 1.2 Step 4. Design doc is silent.
+
+**I-5. ListBox `Rc<RefCell<emStocksConfig>>` may force callsite refactor.** §emStocksListBox says "C++ original holds `FileModel` and `Config` as references; Rust port currently routes around that by passing per-call." But the parent `emStocksFilePanel` may not currently hold `Rc<RefCell<emStocksConfig>>` — it may hold `emStocksConfig` by value or via a different shape. If the parent holds by value, the Phase 3 step "Set them in `emStocksFilePanel` at the same site that calls `attach_list_box`" is non-trivial. Plan flags as a Phase 3 pre-check (`rg -n 'lb\.Cycle\(' crates/emstocks/src/emStocksFilePanel.rs`); design doc should include the parent-side ownership shape verification as a §Sequencing pre-condition.
+
+**I-6. `subscribed_widgets` reset on AutoShrink is not symmetric with C++.** Design §Sequencing says "reset to `false` on AutoShrink, run on the first Cycle after AutoExpand." C++ does not have an AutoShrink/AutoExpand divide for subscriptions — its `AutoExpand`/`AutoShrink` rebuild widgets, but `AddWakeUpSignal` is called inside `AutoExpand` after widget construction, mirroring the Rust `subscribed_widgets` reset. Verify: read `~/Projects/eaglemode-0.96.4/src/emStocks/emStocksControlPanel.cpp:380-790` (`AutoExpand`) and confirm widget signal subscribes happen there (they do, per the cpp:413-772 `AddWakeUpSignal` calls). The Rust two-tier flag is structurally faithful. Design's "DIVERGED candidate?" framing is unwarranted — this is preserved-design-intent + below-surface adaptation, no annotation required. Plan reflects this; design doc's "If multiple buckets rediscover, may warrant promotion to D-007" wording is fine but the framing implicitly invites a DIVERGED block which the implementer should NOT add.
+
+### Minor
+
+**M-1. Row -626 double role.** §G7 lists `-626 widgets.selected_date — but Rust has selected_date: String not a TextField; needs widget add` — and §G8 lists `-626 SelectedDate (TextField — currently a String)`. Same row in two groups. Plan resolves by treating it as a Phase 2 G8 widget-add row (Task 2.1). Design doc should pick one home.
+
+**M-2. The 1144-vs-1143 pairing in `ControlCategoryPanel`.** Rows -1143 (self-selection) and -1144 (subscribes outer FileModel-change) both belong to inner `ControlCategoryPanel`. Both subscribe targets are model-side, both react in the same inner Cycle. Reasonable to land together; plan does so within Task 4.1.
+
+**M-3. PricesFetcher ChangeSignal fires at 4 sites, not "every internal state transition."** §G3 says "call it from every internal state transition that the C++ original signals (consult `emStocksPricesFetcher.cpp` for `Signal(ChangeSignal)` call sites)." Confirmed: 4 sites at cpp:70 (StartProcess setup), :134 (PollProcess progress), :264 (SetFailed), :272 (HasFinished transition). Plan enumerates these in Task 1.3 Step 4; design doc could pre-list them.
+
+**M-4. M-001 enforcement.** Design doc does not cite `decisions.md` M-001 (verify C++ Cycle branch structure directly). Every Phase 4 task in the plan adds an M-001 pre-check. Design should reference M-001 in §"Per-panel consumer wiring."
+
+### Coverage check
+
+All 71 rows accounted for in the bucket sketch table at `buckets/B-001-no-wire-emstocks.md` are mapped to a phase/task in the plan. No rows recommended for deferral or escalation. G3 (`emStocksPricesFetcher.GetChangeSignal`) consumer absence is already resolved per the bucket sketch reconciliation (B-017 row 1 is the consumer; landing the accessor here is correct and the sketch has been corrected).
+
+### Recommendation
+
+No rows to escalate or defer. Two design-doc patches suggested before implementation (post this review): (1) update G2/G3 accessor snippets to D-008 A1 combined form; (2) state row -566 signal kind explicitly as `GetClickSignal`. Plan is safe to execute as-is — it supersedes the stale snippets correctly.
+
+---
+
+## Amendment Log — 2026-05-01
+
+This log records body-level amendments folding the Adversarial Review findings into the design itself. The Adversarial Review section above is preserved verbatim as audit trail; readers of the design body should now find corrected guidance inline without needing to cross-reference the review.
+
+### Critical (3/3 resolved)
+
+- **C-1 — D-008 A1 retired-split form.** Updated G1 snippet, G2 fix narration, G3 fix narration, G4 fix narration, and G5 snippet to D-008 A1 combined form (`fn GetXxxSignal(&self, ectx: &mut impl SignalCtx) -> SignalId` with `Cell<SignalId>` lazy alloc). G6 narration updated by reference within G5.
+- **C-2 — Mutator-fire bound.** Replaced `&mut EngineCtx` with `&mut impl SignalCtx` in G2 fix narration, G2 caveat, G3 fix narration, G4 fix narration, and the §emStocksControlPanel IsSignaled snippet, citing D-007 post-B-009 amendment at `decisions.md:170`.
+- **C-3 — Row -566 signal kind.** §G7 entry rewritten as definitive: `widgets.owned_shares_first.GetClickSignal(ectx)`, with C++ source citation (`emStocksControlPanel.cpp:566`) and explicit failure-mode warning against `GetCheckSignal`.
+
+### Important (6/6 resolved)
+
+- **I-1 — ItemChart engine attachment.** §emStocksItemChart amended with explicit "Engine attachment pre-condition" subsection: lift to engine-bearing before wiring, or `ectx.connect` is unreachable. Cites C++ panel base and current Rust plain-struct shape.
+- **I-2 — FetchPricesDialog Cycle ectx cascade.** §G3 Fix amended with "Cascade — `Cycle` ectx threading" subsection: enumerates the cascade through `emStocksPricesFetcher::Cycle` to `emStocksFetchPricesDialog::Cycle:91` and its callers, marked structural in-scope for B-001 even though the consumer row is B-017.
+- **I-3 — Two distinct CategoryPanel types.** §emStocksItemPanel amended with "Disambiguation" subsection naming `ControlCategoryPanel` (rows -1014/-1143/-1144) versus `emStocksItemPanel::CategoryPanel` (rows -831/-832/-914/-922) as separate types per `emStocksControlPanel.rs:71-76`.
+- **I-4 — `Cell<SignalId>` Clone/PartialEq derive incompatibility.** §G2 Option (B) amended with "Derive incompatibility (forced)" paragraph: hand-written `Clone` (DIVERGED: language-forced; clone produces fresh broadcast endpoint) and hand-written `PartialEq` (excluding `change_signal`).
+- **I-5 — ListBox parent ownership shape.** §emStocksListBox amended with "Parent-side ownership shape pre-condition" paragraph: requires verifying parent's current ownership of `emStocksConfig`/`emStocksFileModel` before Phase 3 with the documented `rg` pre-check.
+- **I-6 — `subscribed_widgets` reset NOT DIVERGED.** §Sequencing amended with "Not a DIVERGED block" paragraph: explicit instruction NOT to annotate the two-tier flag, citing C++ AddWakeUpSignal sites at `emStocksControlPanel.cpp:380-790` (cpp:413-772 inside AutoExpand) as preserved-design-intent equivalence.
+
+### Minor (4/4 resolved)
+
+- **M-1 — Row -626 double-listing.** §G7 entry for -626 removed (note added pointing to G8). G8 retains -626 as canonical home (TextField widget-add).
+- **M-2 — Paired -1143/-1144 wiring.** §emStocksControlPanel Connect-list amended to explicitly group `ControlCategoryPanel` rows -1014/-1143/-1144 in the same inner Cycle, with M-001 reference.
+- **M-3 — PricesFetcher fire sites enumeration.** §G3 Fix amended to pre-list the four `Signal(ChangeSignal)` sites at `emStocksPricesFetcher.cpp:70/134/264/272`.
+- **M-4 — M-001 reference.** §Per-panel consumer wiring prefaced with explicit M-001 enforcement paragraph requiring direct C++ Cycle-branch read before each panel task.
+
+### Notes-only acknowledgements
+
+None. All findings folded into the body. The Adversarial Review section retained verbatim as the audit trail for which findings were addressed and how.
+
+### Dispatchability
+
+Design body now matches the plan's superseding guidance throughout: D-008 A1 combined-form accessors, `&mut impl SignalCtx` mutator bound, definitive row -566 click-signal, ItemChart engine attachment pre-condition, FetchPricesDialog cascade, two distinct CategoryPanel types, `Cell<SignalId>` derive handling, ListBox parent ownership pre-check, and the `subscribed_widgets` non-DIVERGED instruction. Implementer reading the design body alone will receive corrected guidance without needing to cross-reference the Adversarial Review.

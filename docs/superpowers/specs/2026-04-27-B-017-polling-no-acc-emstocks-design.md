@@ -244,7 +244,17 @@ fn Cycle(
         }
     }
 
-    // ListBox confirmation-dialog state machine — unchanged (out of B-017 scope).
+    // ListBox confirmation-dialog state machine.
+    // C-1 RESOLUTION (Adversarial Review 2026-05-01): the previous shape
+    //     lb.Cycle(ectx, model.GetWritableRec(), config)
+    // cannot survive row 3's ectx-threaded `GetWritableRec` (two `&mut ectx`
+    // borrows would coexist). Sequence the borrows: take a non-ectx mutable
+    // borrow of the rec first (rec write does NOT call into the scheduler;
+    // it only sets a `dirty: bool` flag — see row 3 §Mutator changes), drive
+    // lb.Cycle, then call `model.touch_save_timer(ectx)` AFTER lb.Cycle
+    // returns to advance the SaveTimer. This keeps `&mut ectx` exclusive
+    // across the start_timer call and decouples the timer side-effect from
+    // the rec-write side-effect.
     let list_box_busy = {
         let Self {
             list_box,
@@ -253,11 +263,20 @@ fn Cycle(
             ..
         } = self;
         if let Some(lb) = list_box.as_mut() {
-            lb.Cycle(ectx, model.GetWritableRec(), config)
+            // GetWritableRec is now split: rec-mutation only, no scheduler.
+            // It sets `model.dirty = true` and returns &mut emStocksRec.
+            let rec = model.GetWritableRec();
+            lb.Cycle(ectx, rec, config)
         } else {
             false
         }
     };
+
+    // Drive the SaveTimer if any rec write happened during lb.Cycle.
+    // This is the ectx-using half of the previous unified GetWritableRec.
+    if self.model.dirty_since_last_touch() {
+        self.model.touch_save_timer(ectx);
+    }
 
     state_changed || self.fetch_dialog.is_some() || list_box_busy
 }
@@ -312,11 +331,16 @@ pub fn new<C: ConstructCtx>(cc: &mut C, path: PathBuf) -> Self {
 }
 ```
 
-**Mutator changes:** every site that previously set `save_timer_deadline = Some(Instant::now() + AUTOSAVE_DELAY)` now calls `scheduler.start_timer(self.save_timer_id, 15000, false)`. Sites:
-- `OnRecChanged` (mirrors C++ `OnRecChanged: SaveTimer.Start(15000)`).
-- `GetWritableRec` (the existing path that lazily starts the timer).
+**Mutator changes (split-borrow shape, per Adversarial Review C-1 resolution):**
 
-The implementer must thread `&mut EngineCtx` (or `&mut Scheduler`) into both. If signature churn is too wide, an alternative: keep the existing `OnRecChanged` shape but defer the `start_timer` call to the next `Cycle` invocation via a `pending_start_timer: bool` flag. **Default: thread `ectx`** — the equivalent change is already required for emFileModel mutator sites per B-004 G1's pattern.
+The C++ unified site `SaveTimer.Start(15000)` is split in Rust into two half-mutators to avoid the C-1 borrow conflict at `emStocksFilePanel.rs:380`:
+
+1. **Rec-mutation half** — `GetWritableRec(&mut self) -> &mut emStocksRec`. Sets `self.dirty = true` and returns the rec. Does **not** touch the scheduler. Borrow shape: takes `&mut self` only — composes with `lb.Cycle(ectx, rec, config)` because `ectx` is borrowed disjointly from `model`.
+2. **Timer-arming half** — `touch_save_timer(&mut self, ectx: &mut EngineCtx<'_>)`. Calls `ectx.scheduler_mut().start_timer(self.save_timer_id, 15000, false)`. Called **after** `lb.Cycle` returns, gated on `self.dirty_since_last_touch()` (a getter that returns `true` iff `dirty` is set and clears the per-touch latch).
+
+`OnRecChanged` (mirrors C++ `OnRecChanged: SaveTimer.Start(15000)`) calls both halves in sequence — it has `&mut ectx` available at its existing call site (the `emRecFileModel` change handler), so the unified shape is preserved there.
+
+The split is a forced divergence (language-forced — Rust's aliasing rules forbid the C++ unified `SaveTimer.Start` inside `lb.Cycle(ectx, GetWritableRec(), config)`). Mark with `DIVERGED:` at both halves citing C-1.
 
 **Cycle wiring (D-006 first-Cycle init + IsSignaled):**
 
@@ -416,13 +440,26 @@ assert!(/* model.file_model state reflects Save attempt */);
 - **The `emRecFileModel<T>` base's own change/file-state signals.** Out of B-017 row scope; B-001 G1 owns the `emStocksFileModel::GetChangeSignal` delegating accessor (which forwards to `emFileModel::GetChangeSignal` on the embedded base). B-017 does not consume that accessor.
 - **`emStocksFetchPricesDialog`'s `fetcher.GetError()` / `GetCurrentStockId()` re-reads inside `UpdateControls`.** These remain unconditional reads inside the gated body — the gate ensures `UpdateControls` only runs when the fetcher signaled change, which is when those getters can have changed. Mirrors C++ exactly.
 
-## Open questions for the implementer
+## Resolutions from Adversarial Review (2026-05-01)
 
-1. **`emStocksFileModel::new` constructor-signature change.** Threading `&mut C: ConstructCtx` (or `&mut Scheduler`) through `new` propagates to every call site that constructs the model — currently `emStocksFilePanel::new:401` and any test code. Audit those sites; mirror B-001 G3 / B-004 G1's analogous signature changes for shape precedent.
-2. **`emStocksFileModel` engine registration.** No precedent today for an embedded `emStocksFileModel` registering itself as an engine. The `emDirModel::ensure_engine_registered` pattern (referenced in B-016) is the closest analogue; adapt it. If the registration call has to happen in `emStocksFilePanel::Cycle` (lazy, on first wake), the model needs to be wrapped in `Rc<RefCell<>>` — currently held by value at `emStocksFilePanel::model`. Either change the field to `Rc<RefCell<emStocksFileModel>>` (justified: cross-engine reference held by scheduler callback registry — falls under CLAUDE.md §Ownership rule (a)) or use a static thread-local registry pattern. Default: `Rc<RefCell<>>`, with the justification comment cited.
-3. **`Drop` impl for `emStocksFileModel`.** Current `Drop` saves if a deadline was set. Post-port, `Drop` cannot easily access the scheduler (no back-pointer per CLAUDE.md). Two options: (a) add a `dirty: bool` flag set by every mutator and consulted in `Drop` to call `Save` directly (no signal involvement); (b) accept that on-drop save happens via the scheduler's normal Cycle path before drop runs (rely on graceful shutdown). C++ depends on the destructor running, so option (a) is the closer mirror. Default: (a).
-4. **`emStocksPricesFetcher` mutator-fire enumeration.** B-001 G3's design lists the C++ Signal call sites at lines 70/134/264/272 of `emStocksPricesFetcher.cpp`. The B-001 implementer must enumerate the equivalent Rust mutator sites and add `Signal(self.change_signal)` calls (via `ectx`). If B-001 G3's implementation defers any of those fires, B-017 row 1's tests will reveal the gap (the `UpdateControls`-on-progress assertion would silently pass at zero progress). Coordinate via working-memory session.
-5. **Test harness signature.** B-005's harness exposes `Harness::fire(SignalId)` and `Harness::run_cycle(closure)`. Confirm the harness is reachable from emstocks tests; if not, add a minimal local harness mirroring `crates/emfileman/tests/` patterns.
+The original "open questions" §1-§4 are resolved here by the adversarial review; §5 remains open.
+
+1. **I-2 resolved — `emStocksFileModel::new` ctx-threading callsite enumeration.** Threading `&mut C: ConstructCtx` through `emStocksFileModel::new` ripples to the following exact callsites; the implementer must update each as part of row 3:
+   - `crates/emstocks/src/emStocksFilePanel.rs:401` — `emStocksFilePanel::new()` constructs the embedded model. Either (a) propagate `cc` to `emStocksFilePanel::new<C: ConstructCtx>(cc: &mut C)` or (b) defer model construction to a lazy first-Cycle init. **Default: (a) propagate** — matches B-001 G3 / B-004 G1 precedent.
+   - `crates/emstocks/src/emStocksFpPlugin.rs:30` — `emStocksFpPluginFunc(_ctx: &mut dyn ConstructCtx, ...)`. The plugin already has `_ctx`; rename to `ctx` and forward to `emStocksFilePanel::new(ctx, ...)`.
+   - Six tests in `emStocksFilePanel.rs:448-502` that call `emStocksFilePanel::new()` without a ctx. Update each to construct via the test harness's `cc()` (mirrors B-005/B-016 test harness pattern).
+2. **I-3 resolved — `emStocksFileModel` ownership shape: by-value + proxy-engine.** `Rc<RefCell<emStocksFileModel>>` is rejected because it does not fit CLAUDE.md §Ownership justifications (a)/(b). Instead: the **owning `emStocksFilePanel` registers itself (or a thin proxy engine it owns) as the scheduler engine** for the SaveTimer signal, and forwards Cycle into `self.model` via `&mut`. The model stays held by value at `emStocksFilePanel::model`. This dissolves I-2's wrapping concern and avoids amending CLAUDE.md. The `emDirModel::ensure_engine_registered` precedent at `crates/emfileman/src/emDirModel.rs:293` is **not** mirrored; document the divergence with a `RUST_ONLY:` (language-forced — `Rc<RefCell<>>` charter does not admit scheduler engine wrappers) comment at the registration site.
+3. **I-4 resolved — `dirty: bool` clear-points.** Add `dirty: bool` to `emStocksFileModel`. **Set sites:** every `OnRecChanged` invocation, every `GetWritableRec` invocation. **Clear sites (must be exhaustive):**
+   - Inside `Save` (after the filesystem write succeeds).
+   - Inside `SaveIfNeeded` (the no-op path leaves `dirty` unchanged; the save path clears).
+   - At the end of the `Cycle` `Save(true)` branch (post-`Save` call).
+   - Inside `Drop`'s on-shutdown save (final clear, defensive).
+   The `dirty_since_last_touch()` getter used by C-1's split-borrow shape returns `dirty && !timer_already_armed_this_dirty_window` — implement as a paired latch (`dirty_unobserved: bool` set by mutators, cleared by `touch_save_timer`). Without exhaustive clears, Drop will redundantly write the file (Adversarial Review I-4).
+4. **I-1 resolved (cross-bucket) — `emStocksPricesFetcher` upstream subscribes.** B-001 G3's mutator-fire enumeration (cpp:70/134/264/272) covers the *internal* state-transition fires of `Signal(ChangeSignal)`. C++ `emStocksPricesFetcher.cpp:38-39` ALSO calls `AddWakeUpSignal(FileModel->GetChangeSignal())` and `AddWakeUpSignal(FileModel->GetFileStateSignal())` in the fetcher ctor — the fetcher is itself an engine subscribed to FileModel signals. **B-001 G3 may not cover these upstream subscribes** (B-001's design treats G3 as the accessor port; the *consumer wiring* of the fetcher's own Cycle to FileModel signals is implicit-at-best). **Coordination:** see `docs/superpowers/plans/2026-05-01-B-001-no-wire-emstocks.md` — B-001 G3's scope MAY need to widen to include (a) porting the fetcher's own `Cycle` body, (b) first-Cycle init wiring for `FileModel::GetChangeSignal` + `GetFileStateSignal`, and (c) the fires at cpp:70/134/264/272 driven by those upstream events. Until B-001 G3 widens, B-017 row 1 is silently undertested: the dialog will subscribe to `Fetcher.GetChangeSignal()` correctly, but the fetcher will never *fire* that signal in response to FileModel state changes, so the dialog's `UpdateControls` will not run for those transitions. **Action:** flag this as a B-001 plan amendment candidate before B-001 G3 lands. B-017 row 1 cannot reach `merged` until B-001 G3 either widens or explicitly documents the gap.
+
+### Open question (still open)
+
+5. **Test harness signature.** B-005's harness exposes `Harness::fire(SignalId)` and `Harness::run_cycle(closure)`. Confirm the harness is reachable from emstocks tests; if not, add a minimal local harness mirroring `crates/emfileman/tests/` patterns. Row 2's `set_vfs_good_for_test()` (Adversarial Review M-1) is a new public test-only setter on `emStocksFilePanel` — name it `pub(crate) fn set_vfs_good_for_test(&mut self, ectx: &mut EngineCtx<'_>)` and have it mutate `vir_file_state` + fire the cached `vir_file_state_sig`.
 
 ## Open items deferred to working-memory session
 
@@ -443,3 +480,61 @@ assert!(/* model.file_model state reflects Save attempt */);
 - `cargo clippy -D warnings` and `cargo-nextest ntr` pass.
 - New tests cover: each of the three sites' subscribe + signal-driven reaction.
 - B-017 status in `work-order.md` flips `pending → designed` on commit; per-row commits flip to `merged` as they land (after both B-001 G3 and B-004 G1 land).
+- **(Adversarial Review M-2)** Row 1 eliminates the pre-fix unconditional per-frame `UpdateControls` invocation; this is an intended observable change that *fixes* a real signal-drift relative to C++ (which gates `UpdateControls` inside `IsSignaled(Fetcher.GetChangeSignal())`). Not a regression.
+- **(Adversarial Review M-3)** Row 1's `Cycle` return semantics: `false` means "dialog finished, parent should drop." Verified at `emStocksFilePanel.rs:365` — caller treats `false` as "drop the dialog" (`self.fetch_dialog = None`). The post-fix shape preserves this contract; the only difference is that the `false` transition now occurs on a fetcher-signal-driven Cycle rather than every frame.
+- **(Adversarial Review I-4)** `dirty: bool` is cleared in all four sites enumerated in §"Resolutions" item 3. Implementer must verify exhaustiveness before merge.
+
+## Adversarial Review — 2026-05-01
+
+### Summary
+- Critical: 1 | Important: 4 | Minor: 3 | Notes: 2
+
+### Findings
+
+**C-1 (Critical): Borrow conflict between `lb.Cycle(ectx, model.GetWritableRec(), config)` and the new save-timer mutator path.** At `emStocksFilePanel.rs:380`, ListBox.Cycle is invoked with `model.GetWritableRec()` as a reborrow argument; `GetWritableRec` today sets `save_timer_deadline = Some(...)` (rs:45-47). After row 3, `GetWritableRec` must call `ectx.scheduler_mut().start_timer(...)`, requiring `&mut ectx` — but `ectx` is *also* the first argument of `lb.Cycle`. Two `&mut` borrows of ectx cannot coexist. Design’s "thread `ectx` into mutators" prescription (§Mutator changes) does not address this callsite. The fix is non-trivial: either (a) hoist the timer-start to the panel’s Cycle after `lb.Cycle` returns (using a `dirty` flag mirrored from the rec write), or (b) change `lb.Cycle`’s signature to take `&mut emStocksRec` separately and have the panel call `model.touch_save_timer(ectx)` after lb.Cycle returns. Pick before dispatch.
+
+**I-1 (Important): `emStocksPricesFetcher` C++ is itself an engine subscribed to FileModel signals (`emStocksPricesFetcher.cpp:38-39: AddWakeUpSignal(FileModel->GetChangeSignal()/GetFileStateSignal())`); the Rust port has no FileModel reference and no Cycle.** Row 1’s plan only consumes `Fetcher.GetChangeSignal()` from the dialog side. But the C++ fetcher *fires* its own ChangeSignal as a downstream reaction to those upstream subscribes. If B-001 G3 enumerates only the four "Signal(ChangeSignal)" sites at cpp:70/134/264/272 without porting the upstream subscribe, the fetcher’s firing schedule diverges and the dialog will never see UpdateControls run for state transitions that C++ drives from FileModel changes. Confirm B-001 G3 covers the upstream subscribes too (cpp:38-39), or document the gap and the test that would catch it.
+
+**I-2 (Important): `emStocksFilePanel::new()` callsite cannot satisfy `emStocksFileModel::new<C: ConstructCtx>` without touching `emStocksFpPlugin`.** `emStocksFilePanel::new()` at `emStocksFilePanel.rs:395` constructs the embedded model via `emStocksFileModel::new(PathBuf::from(""))` (rs:401). After row 3, `new` requires `&mut C: ConstructCtx`. `emStocksFpPlugin::emStocksFpPluginFunc` (rs:17-30) has `_ctx: &mut dyn ConstructCtx` available but currently passes nothing — both `emStocksFilePanel::new` and the plugin call have to thread ctx. Six tests at rs:448-502 also call `emStocksFilePanel::new()` with no ctx. Design’s open-question §1 acknowledges this in the abstract; explicit callsite enumeration is missing.
+
+**I-3 (Important): `Rc<RefCell<emStocksFileModel>>` wrapping (open-question §2) does not cleanly fit the CLAUDE.md §Ownership justifications.** CLAUDE.md admits `Rc<RefCell<T>>` only for "(a) cross-closure reference held by winit/wgpu callbacks, or (b) context-registry typed singleton." Engine-registration via the scheduler is neither. emDirModel’s precedent (`emDirModel::ensure_engine_registered` at `emfileman/src/emDirModel.rs:293`) does take `&Rc<RefCell<emDirModel>>` but predates the current rule. Either (a) document a third charter category at the design level (and update CLAUDE.md), or (b) keep `emStocksFileModel` by-value and use a different engine-registration pattern (e.g., a thin proxy engine the panel owns that calls into the model via `&mut`). Picking by-value also dissolves I-2.
+
+**I-4 (Important): `Drop`-time save semantics shift.** C++ destructor checks `SaveTimer.IsRunning()` (cpp:46-49). The proposed Rust `dirty: bool` flag is set by every mutator; that fires on Drop even if Save was already executed by a prior signal-driven Cycle (since `dirty` would need to be cleared on Save). Design names this option (a) but doesn’t spec when `dirty` clears. Clear it inside `Save`/`SaveIfNeeded`, and in the Cycle’s `Save(true)` branch — verify all three sites in the implementation. Without this, Drop may double-save (observable: redundant filesystem write).
+
+### Minor
+
+**M-1:** Test pattern for row 2 (`panel.set_vfs_good_for_test()`) doesn’t exist; B-016’s analogue uses a Harness helper. Adding a public test-only setter is itself a new API surface — fine, but the design should name it.
+
+**M-2:** Design says "the redundant per-frame `UpdateControls` invocation is eliminated" (row 1) — confirm this is intended observable change vs. C++. C++ only calls UpdateControls inside `IsSignaled(...)` branch. Pre-fix Rust calls it unconditionally. Post-fix matches C++; that is *fixing* a real signal-drift, not a regression. Note explicitly in the success-criteria block.
+
+**M-3:** `emStocksFetchPricesDialog.rs:91` `Cycle` returns `bool` — the design changes the meaning from "active-while-not-finished" to "active-while-not-finished, after possibly transitioning to finished on this signal." Existing callers in `emStocksFilePanel::Cycle:365` interpret `false` as "drop the dialog." Verify no caller treats a single-Cycle false transition specially.
+
+### Notes
+
+**N-1:** No double-counting between B-017 and B-001. B-001 contains `emStocksFilePanel-255` (different cpp line, different row); B-017 contains `emStocksFilePanel-34` only. The C++ AddWakeUpSignal census in `emStocksFilePanel.cpp` is exactly two sites (34, 255), and they are split correctly by audit pattern. No missed B-017 rows in `src/emStocks/*.cpp`: the three row sites are the only AddWakeUpSignal occurrences whose subscribe is *missing-accessor* shaped (others are P-001/P-002 in B-001).
+
+**N-2:** D-008/D-009 compliance: row 3’s in-row `save_timer_signal` allocation uses `Scheduler::create_signal` + `create_timer` (not lazy-Cell as D-008 prescribes for accessor-flips); this is acceptable because D-008 governs *external* accessor allocation shape and row 3 is internal/self-subscribed. D-009 (no polling intermediary) is satisfied by row 3 — the `Option<Instant>` field is an intermediary-style poll (`Instant::now() >= deadline`) and is removed.
+
+### Recommended Pre-Implementation Actions
+
+1. **Resolve C-1 borrow conflict** (one-paragraph spec append) before implementer dispatch. Pick option (a) panel-side `dirty`-driven `touch_save_timer(ectx)` after lb.Cycle, or (b) lb.Cycle signature change.
+2. **Verify B-001 G3 covers cpp:38-39 upstream subscribes** (I-1) by reading the B-001 design’s G3 mutator-fire enumeration and the C++ fetcher Cycle. If B-001 G3 omits, file an amendment before B-001 lands.
+3. **Decide ownership shape** for `emStocksFileModel` (I-3): by-value + proxy-engine vs. `Rc<RefCell<>>` + charter amendment. Default: by-value, smaller blast radius, no CLAUDE.md change.
+4. **Enumerate `emStocksFilePanel::new()` ctx-threading callsites** (I-2): plugin func, six tests. Update plan.
+5. **Spec `dirty` clear-points** (I-4): `Save`, `SaveIfNeeded`, post-`Save(true)` in Cycle. Add to success criteria.
+
+## Amendment Log — 2026-05-01
+
+Folded the Adversarial Review (above) into the design body; the review block is preserved verbatim. Changes:
+
+- **C-1 (Critical) resolved** in §"Wiring-shape application" → row 2 (`emStocksFilePanel::Cycle`): replaced the conflicting `lb.Cycle(ectx, model.GetWritableRec(), config)` shape with a sequenced split-borrow. `GetWritableRec` is now mutation-only (sets `dirty`, no scheduler); a separate `model.touch_save_timer(ectx)` call after `lb.Cycle` returns advances the SaveTimer. Inline comment at the callsite cites C-1.
+- **C-1 propagation** in §"Wiring-shape application" → row 3 (`emStocksFileModel::Cycle`) §"Mutator changes": rewrote the mutator section to spec the split (`GetWritableRec` rec-mutation half + `touch_save_timer` ectx half); marked the split as language-forced divergence (`DIVERGED:` annotation prescribed at both halves).
+- **I-1 (Important) flagged** in new §"Resolutions" item 4: added cross-reference to `docs/superpowers/plans/2026-05-01-B-001-no-wire-emstocks.md`. B-001 G3 may not cover the fetcher's upstream subscribes at `emStocksPricesFetcher.cpp:38-39` (`FileModel->GetChangeSignal()` + `GetFileStateSignal()`); without those, B-017 row 1 is silently undertested. **Coordination deferral**: B-017 row 1 blocked until B-001 G3 widens or documents the gap. Filed as B-001 amendment candidate.
+- **I-2 (Important) resolved** in §"Resolutions" item 1: enumerated the exact ripple of threading `&mut C: ConstructCtx` through `emStocksFileModel::new` — `emStocksFilePanel::new()` at `emStocksFilePanel.rs:401`, `emStocksFpPlugin::emStocksFpPluginFunc` at `emStocksFpPlugin.rs:30`, six tests at `emStocksFilePanel.rs:448-502`.
+- **I-3 (Important) resolved** in §"Resolutions" item 2: ownership shape is **by-value + proxy-engine** (panel registers itself or a thin proxy as the scheduler engine; model stays held by value). Rejects the prior `Rc<RefCell<emStocksFileModel>>` default. No CLAUDE.md amendment required.
+- **I-4 (Important) resolved** in §"Resolutions" item 3 + Success Criteria: enumerated the four `dirty: bool` clear-points (`Save`, `SaveIfNeeded`, post-`Save(true)` in Cycle, Drop). Spec'd the `dirty_unobserved: bool` paired latch consumed by `dirty_since_last_touch()`.
+- **M-1 addressed** in §"Open question (still open)" item 5: named the test-only setter `pub(crate) fn set_vfs_good_for_test(&mut self, ectx: &mut EngineCtx<'_>)`.
+- **M-2 noted** in Success Criteria as an intended observable fix (not a regression).
+- **M-3 verified** in Success Criteria: `emStocksFilePanel.rs:365` caller semantics for `dialog.Cycle() == false` preserved.
+
+**Dispatch status:** Dispatch-ready for rows 2 and 3 once prereqs (B-004 G1) land. **Row 1 has a coordination deferral** pending B-001 G3 scope-widening on the fetcher's upstream FileModel subscribes (I-1) — must be resolved (or explicitly accepted as a known undertest) before row 1 dispatch.
