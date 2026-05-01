@@ -2857,3 +2857,36 @@ fn testpanel_expanded() {
         200,
     );
 }
+
+/// PolyDrawPanel standalone — mirrors gen_polydrawpanel_default_render() in
+/// gen_golden.cpp. The panel is the view root at 800x600 with default AE
+/// threshold (150) so AutoExpand fires and the Controls raster + widgets +
+/// CanvasPanel are created and painted.
+#[test]
+fn polydrawpanel_default_render() {
+    require_golden!();
+    let expected = load_compositor_golden("polydrawpanel_default_render");
+
+    let mut tree = PanelTree::new();
+    let root = tree.create_root_deferred_view("polydraw");
+    tree.set_behavior(root, emTestPanel::new_poly_draw_panel());
+    // C++ gen: pd->Layout(0, 0, 800.0/600.0, 1.0) — fills 800x600 viewport exactly.
+    tree.Layout(root, 0.0, 0.0, 800.0 / 600.0, 1.0, 1.0, None);
+    // Default AE threshold is 150.0 (VCT_AREA). At 800x600, vc = 480000 >> 150 → expands.
+
+    let mut view = emView::new(emcore::emContext::emContext::NewRoot(), root, 800.0, 600.0);
+    view.flags.insert(ViewFlags::NO_ACTIVE_HIGHLIGHT);
+    // C++ golden gen doesn't focus the window — match unfocused state.
+    view.SetFocused(&mut tree, false);
+
+    // C++ gen_golden.cpp: TerminateEngine ctrl(sched, 200)
+    render_testpanel(
+        "polydrawpanel_default_render",
+        &mut tree,
+        &mut view,
+        &expected,
+        0,
+        0.0,
+        200,
+    );
+}

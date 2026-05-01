@@ -7,6 +7,9 @@ edition = "2021"
 name = "emTestPanel"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+test-support = []
+
 [lints]
 workspace = true
 

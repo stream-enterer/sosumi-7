@@ -55,6 +55,9 @@
 // TkTest factory — defined in tktest_factory.cpp (compiled against scaffold header)
 extern emPanel* create_tktest(emPanel::ParentArg parent, const emString& name);
 
+// PolyDraw factory — defined in polydraw_factory.cpp (compiled against scaffold header)
+extern emPanel* create_polydraw(emPanel::ParentArg parent, const emString& name);
+
 #include "golden_format.h"
 
 // ═══════════════════════════════════════════════════════════════════
@@ -4376,6 +4379,24 @@ static void gen_tktest_2x() {
     render_and_dump_sized("tktest_2x", vp, ctx, 800, 600);
 }
 
+// PolyDrawPanel standalone — emTestPanel::PolyDrawPanel as root panel in an
+// 800x600 viewport with default AE threshold (150) so AutoExpand fires and the
+// Controls raster + widgets + CanvasPanel are all created and painted.
+static void gen_polydrawpanel_default_render() {
+    emStandardScheduler sched;
+    emRootContext ctx(sched);
+    StubClipboard::Setup(ctx);
+    emView view(ctx, emView::VF_NO_ACTIVE_HIGHLIGHT);
+    GoldenViewPort vp(view);
+    vp.DoSetViewGeometry(0, 0, 800, 600, 1.0);
+
+    auto* pd = create_polydraw(view, "polydraw");
+    pd->Layout(0, 0, 800.0 / 600.0, 1.0);
+
+    { TerminateEngine ctrl(sched, 200); sched.Run(); }
+    render_and_dump_sized("polydrawpanel_default_render", vp, ctx, 800, 600);
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Splitter drag + layout — numeric test of child rects after position changes
 // ═══════════════════════════════════════════════════════════════════
@@ -5567,6 +5588,9 @@ int main() {
     printf("Generating TkTest integration golden files...\n");
     gen_tktest_1x();
     gen_tktest_2x();
+
+    printf("Generating PolyDrawPanel integration golden files...\n");
+    gen_polydrawpanel_default_render();
 
     printf("Generating composed border nest golden files...\n");
     gen_composed_border_nest();

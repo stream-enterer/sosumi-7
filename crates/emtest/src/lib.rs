@@ -3,6 +3,9 @@
 
 mod emTestPanel;
 
+#[cfg(any(test, feature = "test-support"))]
+pub use emTestPanel::new_poly_draw_panel;
+
 use emcore::emEngineCtx::ConstructCtx;
 use emcore::emFpPlugin::{emFpPlugin, PanelParentArg};
 use emcore::emPanel::PanelBehavior;

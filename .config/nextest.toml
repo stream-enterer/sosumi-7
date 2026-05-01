@@ -9,6 +9,7 @@ default-filter = """
  | test(=notice::notice_add_and_activate)
  | test(=notice::notice_children_changed)
  | test(=notice::notice_window_resize)
+ | test(=test_panel::polydrawpanel_default_render)
  | test(=test_panel::testpanel_expanded)
  | test(=test_panel::testpanel_root)
  | test(=widget::widget_file_selection_box)

@@ -20,6 +20,7 @@ emstocks = { path = "../emstocks" }
 
 [dev-dependencies]
 emcore = { workspace = true, features = ["test-support"] }
+emtest = { path = "../emtest", features = ["test-support"] }
 rand = { workspace = true }
 slotmap = { workspace = true }
 criterion = { workspace = true }

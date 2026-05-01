@@ -772,6 +772,7 @@ dependencies = [
  "emfileman",
  "emmain",
  "emstocks",
+ "emtest",
  "gungraun",
  "rand",
  "slotmap",
