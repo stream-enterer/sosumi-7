@@ -251,6 +251,10 @@ pub trait PanelBehavior: AsAny {
 
     /// Called by child item panel behaviors to dispatch selection/trigger logic
     /// to the owning listbox. Default no-op; override in container behaviors.
+    ///
+    /// `child_panel_id` is the calling panel's own PanelId (from `ctx.id`). The
+    /// container resolves the item index via `item_index_for_child` at dispatch
+    /// time, avoiding stale indices after `MoveItem`/`RemoveItem`.
     fn dispatch_item_input(
         &mut self,
         _child_panel_id: PanelId,

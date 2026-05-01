@@ -2726,8 +2726,11 @@ impl emView {
         }
 
         // DIVERGED: (language-forced) Rust-only focus request drain. C++ calls
-        // panel->Focus() directly; Rust item panels post via PanelCtx::request_focus
-        // and emView grants focus here each frame.
+        // panel->Focus() directly from within ProcessItemInput. In Rust, ownership
+        // flows emView → PanelTree → PanelBehavior::Input; PanelCtx holds
+        // &mut PanelTree but not &mut emView, so emView::set_focus cannot be
+        // called synchronously from within a panel's Input handler. Panels post
+        // via PanelCtx::request_focus; emView grants focus here each frame.
         for panel_id in tree.drain_focus_requests() {
             self.set_focus(Some(panel_id));
         }

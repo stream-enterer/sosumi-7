@@ -247,6 +247,8 @@ impl PanelBehavior for DefaultItemPanelBehavior {
         _is: &emInputState,
         ctx: &mut crate::emEngineCtx::PanelCtx,
     ) -> bool {
+        // Item identity resolved via PanelId at dispatch time — no cached
+        // item_index to keep consistent after MoveItem/RemoveItem.
         let child_id = ctx.id;
         let result = ctx
             .with_parent_behavior(|parent, ctx| {
