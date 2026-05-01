@@ -132,7 +132,6 @@ impl ItemPanelInterface for DefaultItemPanel {
 /// Each item becomes a real child panel in the tree, painting its own
 /// selection highlight and text. Matches C++ `emListBox::DefaultItemPanel`.
 pub(crate) struct DefaultItemPanelBehavior {
-    item_index: usize,
     text: String,
     selected: bool,
     look: Rc<emLook>,
@@ -142,7 +141,6 @@ pub(crate) struct DefaultItemPanelBehavior {
 
 impl DefaultItemPanelBehavior {
     pub fn new(
-        index: usize,
         text: String,
         selected: bool,
         look: Rc<emLook>,
@@ -150,7 +148,6 @@ impl DefaultItemPanelBehavior {
         enabled: bool,
     ) -> Self {
         Self {
-            item_index: index,
             text,
             selected,
             look,
@@ -250,9 +247,11 @@ impl PanelBehavior for DefaultItemPanelBehavior {
         _is: &emInputState,
         ctx: &mut crate::emEngineCtx::PanelCtx,
     ) -> bool {
-        let idx = self.item_index;
+        let child_id = ctx.id;
         let result = ctx
-            .with_parent_behavior(|parent, ctx| parent.dispatch_item_input(idx, event, state, ctx))
+            .with_parent_behavior(|parent, ctx| {
+                parent.dispatch_item_input(child_id, event, state, ctx)
+            })
             .unwrap_or_default();
         if result.focus_self {
             ctx.request_focus();
@@ -1135,7 +1134,6 @@ impl emListBox {
                     )
                 } else {
                     Box::new(DefaultItemPanelBehavior::new(
-                        i,
                         self.items[i].text.clone(),
                         self.items[i].selected,
                         look.clone(),
@@ -1349,6 +1347,17 @@ impl emListBox {
 
     // ── Input ───────────────────────────────────────────────────────
 
+    /// Find the index of the item whose child panel has the given PanelId.
+    /// Used by `ListBoxPanel::dispatch_item_input` to resolve index from child identity.
+    pub fn item_index_for_child(
+        &self,
+        child_panel_id: crate::emPanelTree::PanelId,
+    ) -> Option<usize> {
+        self.items
+            .iter()
+            .position(|item| item.child_panel_id == Some(child_panel_id))
+    }
+
     /// Dispatch selection/trigger for an item panel's input event.
     /// Called by item panel behaviors via `dispatch_item_input`.
     /// Port of C++ `emListBox::ProcessItemInput`.
@@ -1359,9 +1368,6 @@ impl emListBox {
         _state: &PanelState,
         ctx: &mut PanelCtx,
     ) -> ItemInputResult {
-        if !self.enabled {
-            return ItemInputResult::default();
-        }
         let mut result = ItemInputResult::default();
         match event.key {
             InputKey::MouseLeft
@@ -2709,13 +2715,16 @@ mod tests {
 
         fn dispatch_item_input(
             &mut self,
-            item_index: usize,
+            child_panel_id: PanelId,
             event: &emInputEvent,
             state: &PanelState,
             ctx: &mut PanelCtx,
         ) -> ItemInputResult {
-            self.widget
-                .process_item_input(item_index, event, state, ctx)
+            if let Some(idx) = self.widget.item_index_for_child(child_panel_id) {
+                self.widget.process_item_input(idx, event, state, ctx)
+            } else {
+                ItemInputResult::default()
+            }
         }
     }
 

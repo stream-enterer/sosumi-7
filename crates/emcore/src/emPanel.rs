@@ -253,7 +253,7 @@ pub trait PanelBehavior: AsAny {
     /// to the owning listbox. Default no-op; override in container behaviors.
     fn dispatch_item_input(
         &mut self,
-        _item_index: usize,
+        _child_panel_id: PanelId,
         _event: &emInputEvent,
         _state: &PanelState,
         _ctx: &mut PanelCtx,
