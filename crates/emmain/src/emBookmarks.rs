@@ -721,16 +721,20 @@ impl PanelBehavior for emBookmarkButton {
         // React to click (mirrors C++ `emBookmarks.cpp:1523-1535`).
         let sig = self.click_signal.get();
         if !sig.is_null() && ectx.IsSignaled(sig) {
-            // DIVERGED: (upstream-gap-forced) — Rust `emView` has not
-            // ported the multi-view content/control split, so the C++
-            // `emBookmarkButton::ContentView` field
-            // (`emBookmarks.cpp:1470,1523-1535`), which lets a button
-            // visit a view *other* than its owning view, has no Rust
-            // counterpart. We enqueue a navigation against the home
-            // window's content sub-view; multi-view bookmark
-            // configurations observably diverge from C++. Tracked as a
-            // follow-up row for when the multi-view content/control
-            // split lands.
+            // DIVERGED: (upstream-gap-forced) — In C++, each
+            // `emBookmarkButton` holds a configurable `ContentView*`
+            // pointer (`emBookmarks.cpp:1470`) that lets individual
+            // bookmarks target a specific `emView` (e.g. a different
+            // window's content view). Rust hardcodes "the home window's
+            // content sub-view" for all bookmarks. Single-window installs
+            // are observably equivalent; multi-window installs that
+            // configure per-bookmark targeting diverge. Tracked as
+            // future-work item B2 in the scratch dump
+            // (`docs/scratch/2026-05-02-future-work-dump.md`); trigger to
+            // schedule is "someone actually uses multi-window bookmark
+            // targeting." The dispatch below correctly uses the ported
+            // `emSubViewPanel::visit_by_identity` path for the home-window
+            // case (matches C++ `emBookmarks.cpp:1523-1535`).
             let identity = self.bookmark.LocationIdentity.clone();
             let rel_x = self.bookmark.LocationRelX;
             let rel_y = self.bookmark.LocationRelY;
