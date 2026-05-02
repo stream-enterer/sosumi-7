@@ -124,6 +124,20 @@ pub struct emStocksListBox {
     /// dialog `*_subscribed` flags above (those gate dialog finish-signal
     /// connects).
     pub(crate) subscribed_init: bool,
+
+    /// B-001 row -51 — cached `emStocksFileModel::GetChangeSignal()` id
+    /// captured at the first-Cycle init step, so the IsSignaled gate below
+    /// can read it without re-borrowing `file_model_ref`.
+    pub(crate) file_model_change_sig: Option<SignalId>,
+    /// B-001 row -52 — cached `emStocksConfig::GetChangeSignal()` id; same
+    /// rationale as `file_model_change_sig`.
+    pub(crate) config_change_sig: Option<SignalId>,
+    /// B-001 row -53 — cached inherited `emListBox::GetItemTriggerSignal()`
+    /// id, captured once the inner emListBox has been attached. Distinct
+    /// init step from `subscribed_init` (model/config above) because the
+    /// inner emListBox is `None` until `attach_list_box`; the connect is
+    /// retried each Cycle until then.
+    pub(crate) item_trigger_sig: Option<SignalId>,
 }
 
 impl Default for emStocksListBox {
@@ -162,6 +176,9 @@ impl emStocksListBox {
             file_model_ref: None,
             config_ref: None,
             subscribed_init: false,
+            file_model_change_sig: None,
+            config_change_sig: None,
+            item_trigger_sig: None,
         }
     }
 
@@ -187,6 +204,30 @@ impl emStocksListBox {
     #[doc(hidden)]
     pub fn has_config_ref(&self) -> bool {
         self.config_ref.is_some()
+    }
+
+    /// B-001 rows -51 / -52 — install pre-allocated FileModel/Config
+    /// ChangeSignal ids on the ListBox so its `Cycle` can observe them via
+    /// `IsSignaled` without re-borrowing the parent's `Rc<RefCell<>>` (the
+    /// parent holds `model.borrow_mut()` across `lb.Cycle`; a second borrow
+    /// from inside would panic). The parent (`emStocksFilePanel::Cycle`)
+    /// calls this in its own first-Cycle init slice where it has clean
+    /// access to model/config + ectx. After the call returns,
+    /// `subscribed_init` is true and the ListBox's `Cycle` reactions begin
+    /// firing. Idempotent — the parent gates on `subscribed_init` already.
+    /// Observable behavior matches C++ `emStocksListBox` ctor's
+    /// `AddWakeUpSignal(FileModel.GetChangeSignal())` /
+    /// `AddWakeUpSignal(Config.GetChangeSignal())` (cpp:51-52); the only
+    /// difference is which scope owns the `connect` call (parent vs. self),
+    /// which is unobservable to subscribers.
+    pub fn wire_change_signals(
+        &mut self,
+        file_model_change_sig: SignalId,
+        config_change_sig: SignalId,
+    ) {
+        self.file_model_change_sig = Some(file_model_change_sig);
+        self.config_change_sig = Some(config_change_sig);
+        self.subscribed_init = true;
     }
 
     /// B-001 Phase 3 — install the cross-Cycle FileModel/Config refs.
@@ -230,6 +271,27 @@ impl emStocksListBox {
     #[doc(hidden)]
     pub fn selected_date_signal_for_test(&self) -> SignalId {
         self.selected_date_signal.get()
+    }
+
+    /// B-001 row -51 test accessor: cached FileModel ChangeSignal id, or
+    /// `None` before the first Cycle has wired it.
+    #[doc(hidden)]
+    pub fn file_model_change_signal_for_test(&self) -> Option<SignalId> {
+        self.file_model_change_sig
+    }
+
+    /// B-001 row -52 test accessor: cached Config ChangeSignal id, or `None`
+    /// before the first Cycle has wired it.
+    #[doc(hidden)]
+    pub fn config_change_signal_for_test(&self) -> Option<SignalId> {
+        self.config_change_sig
+    }
+
+    /// B-001 row -53 test accessor: cached inherited ItemTriggerSignal id,
+    /// or `None` before the inner emListBox has been attached.
+    #[doc(hidden)]
+    pub fn item_trigger_signal_for_test(&self) -> Option<SignalId> {
+        self.item_trigger_sig
     }
 
     /// Port of inherited C++ `emListBox::GetSelectionSignal`. Delegates to the
@@ -904,6 +966,83 @@ impl emStocksListBox {
         config: &emStocksConfig,
     ) -> bool {
         let mut busy = false;
+
+        // ───────────────────────────────────────────────────────────────────
+        // B-001 rows -51 / -52 / -53 — D-006 first-Cycle init for the
+        // FileModel / Config / ItemTrigger subscribe trio. Mirrors C++
+        // `emStocksListBox` constructor (cpp:51-53):
+        //
+        //     AddWakeUpSignal(FileModel.GetChangeSignal());
+        //     AddWakeUpSignal(Config.GetChangeSignal());
+        //     AddWakeUpSignal(GetItemTriggerSignal());
+        //
+        // The Rust port wires these on the first Cycle slice that observes
+        // both `file_model_ref` / `config_ref` populated by the parent
+        // (`emStocksFilePanel::set_refs` — Phase 3). The ItemTrigger leg is
+        // attach-deferred per the design's two-tier note: the inner
+        // `emListBox` is `None` until `attach_list_box`, and
+        // `GetItemTriggerSignal()` returns `None` while the inner box is
+        // unattached. We therefore guard the connect on `Some(_)` and re-
+        // attempt on every Cycle until attach lands; a separate
+        // `item_trigger_sig` cache prevents double-connect once attached.
+        // ───────────────────────────────────────────────────────────────────
+        // Note: we do NOT re-borrow `self.file_model_ref` / `self.config_ref`
+        // inside `Cycle` because the parent `emStocksFilePanel::Cycle` is the
+        // only call site, and it already holds `model.borrow_mut()` /
+        // `config.borrow()` across the `lb.Cycle(...)` call (see the split-
+        // borrow comment in the parent for B-017 row 2). Re-borrowing the
+        // same `Rc<RefCell<>>` here would panic at runtime. Instead, the
+        // parent allocates the model/config ChangeSignal ids at first-Cycle
+        // init time (where it has clean access to model/config + ectx) and
+        // installs them via `wire_change_signals`. The `subscribed_init`
+        // gate observed below is flipped by that installer; the install also
+        // performs the `ectx.connect` so the engine is wired. The
+        // `file_model_ref` / `config_ref` fields remain on the struct as
+        // structural mirrors of the C++ `FileModel & / Config &` members
+        // (cited at the field definitions); they are observed indirectly
+        // through the cached signal ids below.
+
+        if self.item_trigger_sig.is_none() {
+            if let Some(sig) = self.GetItemTriggerSignal() {
+                let eid = ectx.id();
+                ectx.connect(sig, eid);
+                self.item_trigger_sig = Some(sig);
+            }
+        }
+
+        // ── Reactions, in C++ source order (cpp:635-654) ─────────────────
+        // Row -51: FileModel.ChangeSignal → UpdateItems.
+        if let Some(sig) = self.file_model_change_sig {
+            if ectx.IsSignaled(sig) {
+                self.UpdateItems(rec, config);
+            }
+        }
+        // Row -52: Config.ChangeSignal → UpdateItems.
+        if let Some(sig) = self.config_change_sig {
+            if ectx.IsSignaled(sig) {
+                self.UpdateItems(rec, config);
+            }
+        }
+        // Row -53: ItemTriggerSignal → open first web page if configured.
+        if let Some(sig) = self.item_trigger_sig {
+            if ectx.IsSignaled(sig) {
+                let triggered: Option<usize> = self
+                    .list_box
+                    .as_ref()
+                    .and_then(|lb| lb.GetTriggeredItemIndex());
+                if let Some(item_idx) = triggered {
+                    if config.triggering_opens_web_page {
+                        if let Some(stock) = self.GetStockByItemIndex(item_idx, rec) {
+                            if let Some(page) = stock.web_pages.first() {
+                                if !page.is_empty() {
+                                    let _ = open::that(page);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Poll delete dialog.
         // Invariant (B-013 Note 7): subscribe-then-check happens on the same

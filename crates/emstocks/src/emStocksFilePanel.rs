@@ -70,6 +70,20 @@ pub struct emStocksFilePanel {
     /// D-006 first-Cycle init flag. Set after the panel allocates its model's
     /// SaveTimer infrastructure and connects subscribes.
     subscribed_init: bool,
+    /// B-001 row `emStocksFilePanel-255` — deferred-attach init flag for the
+    /// `ListBox::GetSelectedDateSignal` subscribe. Set true once the ListBox
+    /// has been materialised (VFS Loaded) and the panel's engine has been
+    /// connected to the signal. Mirrors C++
+    /// `emStocksFilePanel.cpp:255 AddWakeUpSignal(ListBox->GetSelectedDateSignal())`,
+    /// which lives inside `UpdateControls` immediately after the new
+    /// `emStocksListBox` is constructed — i.e. attach-deferred per the design's
+    /// "list_box_subscribed" two-tier pattern (§Sequencing → "Lazy-attached
+    /// widgets / ListBox").
+    selected_date_subscribed: bool,
+    /// Cached `SelectedDateSignal` id captured at attach-time so the
+    /// IsSignaled gate below the init block can read it without re-borrowing
+    /// `self.list_box`.
+    selected_date_sig: Option<SignalId>,
 }
 
 impl PanelBehavior for emStocksFilePanel {
@@ -475,7 +489,47 @@ impl PanelBehavior for emStocksFilePanel {
                 // ChangeSignals without being passed them per-call. Mirrors
                 // C++ emStocksListBox member references.
                 lb.set_refs(self.model.clone(), self.config.clone());
+                // B-001 rows -51 / -52 — pre-allocate the FileModel and
+                // Config ChangeSignal ids and connect the panel's engine
+                // (which is what drives `lb.Cycle` via the call site below).
+                // Doing the allocation here — rather than from inside
+                // `lb.Cycle` — sidesteps the runtime double-borrow of the
+                // parent's `Rc<RefCell<>>`s (the panel already holds
+                // `model.borrow_mut()` / `config.borrow()` across the
+                // `lb.Cycle(...)` call below; see `wire_change_signals`
+                // doc for full rationale).
+                let eid = ectx.engine_id;
+                let model_sig = self.model.borrow().GetChangeSignal(ectx);
+                ectx.connect(model_sig, eid);
+                let cfg_sig = self.config.borrow().GetChangeSignal(ectx);
+                ectx.connect(cfg_sig, eid);
+                lb.wire_change_signals(model_sig, cfg_sig);
                 self.list_box = Some(lb);
+            }
+        }
+
+        // B-001 row -255 — deferred-attach subscribe to ListBox's
+        // `SelectedDateSignal`. Mirrors C++
+        // `emStocksFilePanel::UpdateControls` (cpp:254-255):
+        //
+        //     ListBox=new emStocksListBox(this,"",*FileModel,*Config);
+        //     AddWakeUpSignal(ListBox->GetSelectedDateSignal());
+        //
+        // The Rust `list_box` is materialised in the VFS-fired branch above; on
+        // the first Cycle slice that observes `list_box.is_some()` and has not
+        // yet wired the connect, we allocate the SelectedDateSignal (lazy
+        // D-008 A1 via `GetSelectedDateSignal(ectx)`) and connect the panel
+        // engine. C++ has no separate `IsSignaled(GetSelectedDateSignal())`
+        // branch in `emStocksFilePanel::Cycle` (cpp:58-69 only checks
+        // `GetVirFileStateSignal()`); the wake-up alone is the contract — it
+        // keeps the panel cycling so that downstream consumers (control panel,
+        // ItemChart, etc.) drain their own subscribed reactions.
+        if !self.selected_date_subscribed {
+            if let Some(ref lb) = self.list_box {
+                let sig = lb.GetSelectedDateSignal(ectx);
+                ectx.connect(sig, ectx.engine_id);
+                self.selected_date_sig = Some(sig);
+                self.selected_date_subscribed = true;
             }
         }
 
@@ -552,6 +606,8 @@ impl emStocksFilePanel {
             file_panel: emFilePanel::new(),
             vir_file_state_sig: None,
             subscribed_init: false,
+            selected_date_subscribed: false,
+            selected_date_sig: None,
         }
     }
 }
@@ -568,6 +624,21 @@ impl emStocksFilePanel {
     #[doc(hidden)]
     pub fn vir_file_state_signal_for_test(&self) -> Option<SignalId> {
         self.vir_file_state_sig
+    }
+
+    /// B-001 row -255 test accessor: cached `SelectedDateSignal` id captured
+    /// at the deferred-attach init step, or `None` before the ListBox has
+    /// been materialised and the subscribe wired.
+    #[doc(hidden)]
+    pub fn selected_date_signal_for_test(&self) -> Option<SignalId> {
+        self.selected_date_sig
+    }
+
+    /// B-001 row -255 test accessor: reports whether the ListBox's
+    /// SelectedDate subscribe has been wired by `Cycle`.
+    #[doc(hidden)]
+    pub fn selected_date_subscribed_for_test(&self) -> bool {
+        self.selected_date_subscribed
     }
 
     /// B-017 row 3 test accessor: `SaveTimer` signal id allocated on the
@@ -994,6 +1065,72 @@ mod tests {
             &input_state,
             &mut make_test_pctx(&mut tree, root)
         ));
+    }
+
+    // ── B-001 row -255 — SelectedDate subscribe (deferred-attach) ─────
+    #[test]
+    fn cycle_wires_selected_date_subscribe_after_listbox_materialises() {
+        // Mirrors C++ emStocksFilePanel::UpdateControls (cpp:254-255):
+        //   ListBox=new emStocksListBox(this,"",*FileModel,*Config);
+        //   AddWakeUpSignal(ListBox->GetSelectedDateSignal());
+        //
+        // The in-crate path: pre-set list_box + run a Cycle. The Cycle's
+        // deferred-attach init must allocate and connect SelectedDateSignal.
+        use emcore::emEngine::Priority;
+        use emcore::emPanelScope::PanelScope;
+        use emcore::test_view_harness::TestViewHarness;
+
+        struct NoopEngine;
+        impl emcore::emEngine::emEngine for NoopEngine {
+            fn Cycle(&mut self, _ctx: &mut emcore::emEngineCtx::EngineCtx<'_>) -> bool {
+                false
+            }
+        }
+
+        let mut h = TestViewHarness::new();
+        let mut panel = emStocksFilePanel::default();
+        let eid = h.scheduler.register_engine(
+            Box::new(NoopEngine),
+            Priority::Medium,
+            PanelScope::Framework,
+        );
+
+        // Inject the list_box directly (skipping the VFS-Loaded materialise
+        // path that is also tested elsewhere). The B-001-255 contract under
+        // test is "Cycle wires the subscribe iff list_box is Some".
+        panel.list_box = Some(emStocksListBox::new());
+
+        // Pre-condition.
+        assert!(!panel.selected_date_subscribed_for_test());
+        assert!(panel.selected_date_signal_for_test().is_none());
+
+        // First Cycle.
+        let (mut tree, root) = make_test_tree();
+        {
+            let mut pctx = make_test_pctx(&mut tree, root);
+            let mut ectx = h.engine_ctx(eid);
+            let _ = panel.Cycle(&mut ectx, &mut pctx);
+        }
+
+        assert!(
+            panel.selected_date_subscribed_for_test(),
+            "selected_date_subscribed must flip to true on the Cycle slice that observes list_box.is_some()"
+        );
+        assert!(
+            panel.selected_date_signal_for_test().is_some(),
+            "selected_date_sig must be Some(_) after subscribe"
+        );
+
+        h.scheduler.remove_engine(eid);
+        let mut eids: Vec<emcore::emEngine::EngineId> =
+            h.scheduler.engines_for_scope(PanelScope::Framework);
+        for wid in h.windows.keys().copied().collect::<Vec<_>>() {
+            eids.extend(h.scheduler.engines_for_scope(PanelScope::Toplevel(wid)));
+        }
+        for eid in eids {
+            h.scheduler.remove_engine(eid);
+        }
+        h.scheduler.flush_signals_for_test();
     }
 
     #[test]
