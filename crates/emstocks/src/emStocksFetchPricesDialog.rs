@@ -131,6 +131,12 @@ impl emStocksFetchPricesDialog {
         self.fetcher.AddStockIds(ectx, stock_ids);
     }
 
+    /// Port of C++ inline `emStocksFetchPricesDialog::AddListBox`
+    /// (`emStocksFetchPricesDialog.h:78-81`). Delegates to the fetcher.
+    pub fn AddListBox(&mut self, list_box: &Rc<RefCell<crate::emStocksListBox::emStocksListBox>>) {
+        self.fetcher.AddListBox(list_box);
+    }
+
     /// Port of C++ Cycle (`emStocksFetchPricesDialog.cpp:71-87`). Returns
     /// `true` while the dialog is still active, `false` once finished.
     ///
@@ -533,5 +539,20 @@ mod tests {
         assert!(dialog.fetcher_change_sig.is_some());
 
         cleanup(&mut h, eid);
+    }
+
+    #[test]
+    fn dialog_add_list_box_delegates_to_fetcher() {
+        let mut d = emStocksFetchPricesDialog::new("script", "", "key");
+        let lb = Rc::new(RefCell::new(crate::emStocksListBox::emStocksListBox::new()));
+        d.AddListBox(&lb);
+        assert_eq!(
+            d.fetcher
+                .list_boxes
+                .iter()
+                .filter(|w| w.upgrade().is_some())
+                .count(),
+            1,
+        );
     }
 }

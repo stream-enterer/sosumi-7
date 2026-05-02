@@ -62,6 +62,18 @@ pub struct emStocksPricesFetcher {
     /// the fetcher across scheduler ticks and reaches into the model
     /// through this ref.
     file_model: Option<Rc<RefCell<emStocksFileModel>>>,
+    /// Mirrors C++ `emArray<emCrossPtr<emStocksListBox>> ListBoxes`
+    /// (emStocksPricesFetcher.h:88). Holds weak references for dedup in
+    /// `AddListBox`. The strong `Rc<RefCell<emStocksListBox>>` lives in the
+    /// owning view tree; this field is purely a tracking back-channel that
+    /// the C++ implementation uses to surface progress to the listbox(es).
+    ///
+    /// RUST_ONLY: (language-forced-utility) — Rust has no `emCrossPtr<>`.
+    /// `Weak<RefCell<>>` is the codebase's canonical analogue
+    /// (CLAUDE.md §Ownership, paired with an (a)-justified `Rc<RefCell<>>`
+    /// strong owner held elsewhere in the panel tree).
+    pub(crate) list_boxes:
+        Vec<std::rc::Weak<std::cell::RefCell<super::emStocksListBox::emStocksListBox>>>,
     /// First-Cycle init latch for the FileModel signal subscribes (B-001-followup
     /// Phase E.1). Mirrors C++ ctor `AddWakeUpSignal(...)` at
     /// `emStocksPricesFetcher.cpp:38-39`, deferred to first `cycle()` per
@@ -104,6 +116,7 @@ impl emStocksPricesFetcher {
             current_process: emProcess::new(),
             change_signal: Cell::new(SignalId::null()),
             file_model: None,
+            list_boxes: Vec::new(),
             subscribed_init: false,
             file_model_change_sig: None,
             file_model_state_sig: None,
@@ -119,6 +132,25 @@ impl emStocksPricesFetcher {
     pub fn with_file_model(mut self, file_model: Rc<RefCell<emStocksFileModel>>) -> Self {
         self.file_model = Some(file_model);
         self
+    }
+
+    /// Port of C++ `emStocksPricesFetcher::AddListBox`
+    /// (`emStocksPricesFetcher.cpp:48-56`). Dedups by Rc identity (C++ uses
+    /// emCrossPtr equality on the underlying pointer).
+    ///
+    /// Does not fire any signal — C++ body has no `Signal(...)` call.
+    /// Therefore no `SignalCtx` parameter is threaded (D-007).
+    pub fn AddListBox(&mut self, list_box: &Rc<RefCell<super::emStocksListBox::emStocksListBox>>) {
+        // Dedup: skip if any existing weak ref still points at the same
+        // allocation as the incoming Rc.
+        for w in &self.list_boxes {
+            if let Some(existing) = w.upgrade() {
+                if Rc::ptr_eq(&existing, list_box) {
+                    return;
+                }
+            }
+        }
+        self.list_boxes.push(Rc::downgrade(list_box));
     }
 
     /// Port of inherited C++ `emConfigModel::GetChangeSignal` (the C++ emStocksPricesFetcher
@@ -948,5 +980,41 @@ mod tests {
         // Should have skipped past it without activating
         assert!(!fetcher.current_process_active);
         assert!(fetcher.HasFinished());
+    }
+
+    #[test]
+    fn add_list_box_appends_and_dedups() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        let mut f = emStocksPricesFetcher::new("script", "", "key");
+        let lb = Rc::new(RefCell::new(crate::emStocksListBox::emStocksListBox::new()));
+        f.AddListBox(&lb);
+        f.AddListBox(&lb); // dedup
+        assert_eq!(
+            f.list_boxes
+                .iter()
+                .filter(|w| w.upgrade().is_some())
+                .count(),
+            1,
+            "AddListBox must dedup repeat calls (C++ emStocksPricesFetcher.cpp:48-56)"
+        );
+    }
+
+    #[test]
+    fn add_list_box_distinct_appends() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        let mut f = emStocksPricesFetcher::new("script", "", "key");
+        let lb1 = Rc::new(RefCell::new(crate::emStocksListBox::emStocksListBox::new()));
+        let lb2 = Rc::new(RefCell::new(crate::emStocksListBox::emStocksListBox::new()));
+        f.AddListBox(&lb1);
+        f.AddListBox(&lb2);
+        assert_eq!(
+            f.list_boxes
+                .iter()
+                .filter(|w| w.upgrade().is_some())
+                .count(),
+            2
+        );
     }
 }
