@@ -11,6 +11,7 @@ use emcore::emInput::{emInputEvent, InputKey, InputVariant};
 use emcore::emInputState::emInputState;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{PanelBehavior, PanelState};
+use emcore::emSignal::SignalId;
 
 use super::emStocksConfig::{emStocksConfig, Sorting};
 use super::emStocksFetchPricesDialog::emStocksFetchPricesDialog;
@@ -50,6 +51,13 @@ pub struct emStocksFilePanel {
     pub(crate) list_box: Option<emStocksListBox>,
     pub(crate) model: emStocksFileModel,
     pub(crate) file_panel: emFilePanel,
+    /// B-017 row 2: cached `emFilePanel::GetVirFileStateSignal()` from the
+    /// embedded `file_panel`. Captured at first-Cycle init time. Mirrors C++
+    /// emStocksFilePanel.cpp:34 `AddWakeUpSignal(GetVirFileStateSignal())`.
+    vir_file_state_sig: Option<SignalId>,
+    /// D-006 first-Cycle init flag. Set after the panel allocates its model's
+    /// SaveTimer infrastructure and connects subscribes.
+    subscribed_init: bool,
 }
 
 impl PanelBehavior for emStocksFilePanel {
@@ -384,14 +392,65 @@ impl PanelBehavior for emStocksFilePanel {
         ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
         _ctx: &mut PanelCtx,
     ) -> bool {
-        let old_state = self.file_panel.GetVirFileState();
-        self.file_panel.refresh_vir_file_state();
-        let new_state = self.file_panel.GetVirFileState();
-        let state_changed = old_state != new_state;
-        if state_changed && new_state.is_good() && self.list_box.is_none() {
-            self.list_box = Some(emStocksListBox::new());
+        // B-017 row 2 + row 3: D-006 first-Cycle init.
+        // Mirrors C++ emStocksFilePanel ctor `AddWakeUpSignal(GetVirFileStateSignal())`
+        // (emStocksFilePanel.cpp:34) AND C++ emStocksFileModel ctor
+        // `AddWakeUpSignal(SaveTimer.GetSignal())` (emStocksFileModel.cpp:21).
+        // The model's SaveTimer subscribe is hosted on the panel because the
+        // embedded model has no independent scheduler reach — see the
+        // `emStocksFileModel` DIVERGED block for the I-3 by-value + proxy-engine
+        // rationale.
+        if !self.subscribed_init {
+            let eid = ectx.engine_id;
+
+            // Row 2: subscribe to file_panel.GetVirFileStateSignal().
+            // The signal is allocated by `emFilePanel::Cycle` on its own
+            // first-cycle prefix (`ensure_vir_file_state_signal`); we read it
+            // here and capture for the IsSignaled gate. Note: `emStocksFilePanel`
+            // does NOT delegate to `emFilePanel::Cycle` (composition shape — the
+            // panel does not embed an `emFilePanel` in a way that lets us call
+            // its `Cycle` from here), so we allocate the VFS signal directly via
+            // the public `ensure_vir_file_state_signal` helper.
+            let vfs_sig = self.file_panel.ensure_vir_file_state_signal(ectx);
+            ectx.connect(vfs_sig, eid);
+            self.vir_file_state_sig = Some(vfs_sig);
+
+            // Row 3: allocate SaveTimer signal/timer on the model and connect
+            // the panel's engine to it. After this point IsSignaled drives Save.
+            self.model.ensure_save_timer(ectx, eid);
+
+            self.subscribed_init = true;
         }
-        self.model.CheckSaveTimer(ectx);
+
+        // Row 2 reaction: refresh VirFileState only when its signal fires.
+        // Mirrors C++ emStocksFilePanel.cpp:60-65
+        // `if (IsSignaled(GetVirFileStateSignal())) UpdateControls();` — the
+        // Rust analogue of `UpdateControls` is the `refresh_vir_file_state`
+        // re-read + lazy `list_box` materialization on Loaded.
+        let vfs_fired = self
+            .vir_file_state_sig
+            .map(|s| ectx.IsSignaled(s))
+            .unwrap_or(false);
+        let mut state_changed = false;
+        if vfs_fired {
+            let old_state = self.file_panel.GetVirFileState();
+            self.file_panel.refresh_vir_file_state();
+            let new_state = self.file_panel.GetVirFileState();
+            state_changed = old_state != new_state;
+            if state_changed && new_state.is_good() && self.list_box.is_none() {
+                self.list_box = Some(emStocksListBox::new());
+            }
+        }
+
+        // Row 3 reaction: signal-driven Save. Replaces the previous per-frame
+        // `model.CheckSaveTimer(ectx)` Instant-poll. Mirrors C++
+        // emStocksFileModel.cpp:33-38
+        // `if (IsSignaled(SaveTimer.GetSignal())) Save(true);`. The model's
+        // SaveTimer signal is allocated above in the first-Cycle init.
+        let save_fired = ectx.IsSignaled(self.model.save_timer_signal_for_test());
+        if save_fired {
+            self.model.save_on_timer_fire(ectx);
+        }
 
         // Poll fetch dialog
         if let Some(ref mut dialog) = self.fetch_dialog {
@@ -435,7 +494,7 @@ impl PanelBehavior for emStocksFilePanel {
             self.model.touch_save_timer(ectx);
         }
 
-        state_changed || self.fetch_dialog.is_some() || list_box_busy
+        state_changed || save_fired || self.fetch_dialog.is_some() || list_box_busy
     }
 
     fn GetIconFileName(&self) -> Option<String> {
@@ -452,6 +511,8 @@ impl emStocksFilePanel {
             list_box: None,
             model: emStocksFileModel::new(PathBuf::from("")),
             file_panel: emFilePanel::new(),
+            vir_file_state_sig: None,
+            subscribed_init: false,
         }
     }
 }
@@ -459,6 +520,36 @@ impl emStocksFilePanel {
 impl Default for emStocksFilePanel {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl emStocksFilePanel {
+    /// B-017 row 2 test accessor: cached `VirFileStateSignal` id, or `None`
+    /// before the panel's first Cycle has populated it.
+    #[doc(hidden)]
+    pub fn vir_file_state_signal_for_test(&self) -> Option<SignalId> {
+        self.vir_file_state_sig
+    }
+
+    /// B-017 row 3 test accessor: `SaveTimer` signal id allocated on the
+    /// embedded model. Null until the panel's first Cycle.
+    #[doc(hidden)]
+    pub fn save_timer_signal_for_test(&self) -> SignalId {
+        self.model.save_timer_signal_for_test()
+    }
+
+    /// B-017 row 3 test accessor: dirty flag (whether there are pending writes).
+    #[doc(hidden)]
+    pub fn model_dirty_for_test(&self) -> bool {
+        self.model.dirty_for_test()
+    }
+
+    /// B-017 row 3 test accessor: mutate the model's rec, marking dirty.
+    /// Threads `&mut impl SignalCtx` like the production `GetWritableRec`
+    /// half-mutator. Used by external tests that cannot reach `pub(crate) model`.
+    #[doc(hidden)]
+    pub fn mark_rec_dirty_for_test<C: emcore::emEngineCtx::SignalCtx>(&mut self, ectx: &mut C) {
+        let _ = self.model.GetWritableRec(ectx);
     }
 }
 
