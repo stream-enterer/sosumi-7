@@ -467,7 +467,7 @@
     {
       "id": "F019",
       "kind": "fix",
-      "status": "open",
+      "status": "needs-manual-verification",
       "priority": "low",
       "title": "emFilePanel::SetFileModel does not connect FileStateSignal to panel engine; panels poll instead of waking on signal",
       "description": "Surfaced during F017 implementation. C++ emFilePanel::SetFileModel connects the model's FileStateSignal to the panel's engine so a state-change fire wakes the panel for repaint and observe-only transitions; Rust SetFileModel stores the model but does not establish the signal-to-engine connection. Compounding this, emDirModel's change_signal is SignalId::default() because emFileModel::new is called inside emDirModel::Acquire which has no scheduler reach (Acquire's closure cannot allocate signals). Net effect: an observe-only emDirPanel::Cycle that returns false would never wake to observe Loaded, so the F017 fix returns true while Loading|Waiting as a polling workaround — the panel wakes every 50ms slice instead of only on state-change fires. Observably correct but burns ~20 needless cycles/sec per directory in the active path.",
@@ -475,12 +475,12 @@
       "caused_by": null,
       "introduced_commit": null,
       "introduced_date": "2026-04-25",
-      "fix_note": "Partial progress as of 2026-05-02. (2) Panel-side connect/disconnect landed via Tier-B B-015 (D-006 Cycle-time subscribe pattern, emFilePanel.rs:514-541): emFilePanel::Cycle reads model.GetFileStateSignal(), connects/disconnects on model-swap, mirrored from emImageFilePanel B-007 precedent. Annotated DIVERGED (language-forced) because SetFileModel callers hold no EngineCtx. (1) emDirModel side still unresolved — emDirModel::Acquire constructs file_model with SignalId::default() (emDirModel.rs:282); ensure_engine_registered does not allocate a real signal. (3) emDirPanel::Cycle still returns stay_awake=true while loading (emDirPanel.rs:393-421). Residual fix: thread a SchedCtx-equivalent reach into the dirmodel-creation path so Acquire (or ensure_engine_registered) can call create_signal, then drop emDirPanel's stay_awake polling. Audit other emFileModel subclasses (emImageFile etc.) for parity gaps before committing.",
+      "fix_note": "F019 model-side fix landed 2026-05-02 across two commits on impl/f019. Task 1 (commit 9605eebd) made emFileModel<T>::file_state_signal a Cell<SignalId> with a lazy allocator ensure_file_state_signal(&self, ectx: &mut impl SignalCtx). The FileModelState trait kept GetFileStateSignal(&self) -> SignalId as a non-allocating dyn-safe reader and gained ensure_file_state_signal_dyn(&self, ectx: &mut EngineCtx<'_>) -> SignalId as a dyn-safe lazy allocator (concrete-arg form needed because dyn FileModelState is used extensively). Model self-allocates and fires via signal_file_state(&self, ectx) helper inside emFileModel::Cycle. emDirModel::Acquire constructs file_model without any signal arg. Task 2 (commit e08f4472) retired emDirPanel::Cycle's stay_awake-while-loading polling. Because emDirPanel composes emFilePanel as a field rather than implementing PanelBehavior, B-015's D-006 subscribe block was extracted from emFilePanel::PanelBehavior::Cycle into an inherent helper emFilePanel::connect_file_state_signal that derived-panel Cycle implementations call explicitly. emDirPanel::Cycle now subscribes via this helper at the top of its body, then runs observe-only and returns false (no stay_awake). Manual verification: observe directory loading at parity with the F017 baseline (no observable regression in load speed or interactivity). The proof-of-fix integration test loading_dir_wakes_panel_via_filestatesignal_not_polling and the strengthened notice_ctx_child_engine_fires_in_same_slice both assert O(state-changes) panel-cycle counts using the new attach_cycle_counter probe. Follow-ups (not in this fix): emFileLinkPanel and emImageFileImageFilePanel likely share the same composition-vs-PanelBehavior gap and may need the same connect_file_state_signal lift; out of scope here.",
       "investigation_file": null,
       "root_cause_file": null,
       "blocked_question": null,
-      "fixed_in_commit": null,
-      "fixed_date": null,
+      "fixed_in_commit": "e08f4472",
+      "fixed_date": "2026-05-02",
       "repro": "After F017 fix (commit 9ecf1148), profile emDirPanel::Cycle invocation count during a long directory load. Each panel in the active path will tick once per 50ms scheduler slice while loading, regardless of whether state actually changed. C++ ticks only on FileStateSignal fire (entry batches landed)."
     },
     {
