@@ -24,6 +24,7 @@ use emcore::emLook::emLook;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{NoticeFlags, PanelBehavior, PanelState};
 use emcore::emPanelTree::PanelId;
+use emcore::emSignal::SignalId;
 use emcore::emTiling::{ChildConstraint, Orientation, Spacing};
 use emcore::emWindow::WindowFlags;
 
@@ -32,18 +33,21 @@ use crate::emAutoplayControlPanel::emAutoplayControlPanel;
 use crate::emBookmarks::emBookmarksPanel;
 use crate::emMainConfig::emMainConfig;
 
-// ── Click flags ──────────────────────────────────────────────────────────────
-// Shared state between button on_click callbacks and the Cycle method.
+// ── ButtonSignals ────────────────────────────────────────────────────────────
+// One-shot init handoff from CommandsPanel::create_children (where the four
+// commands buttons are constructed) up to emMainControlPanel::Cycle (where the
+// signals are subscribed). Not a polling intermediary — the Cell is read once
+// at first Cycle and not consulted thereafter.
+//
+// `SignalId` is `Copy` (slotmap key types are Copy; see emSignal.rs:7), so
+// `ButtonSignals` derives Copy and `Cell<ButtonSignals>` compiles.
 
-#[derive(Default)]
-struct ClickFlags {
-    new_window: Cell<bool>,
-    fullscreen: Cell<bool>,
-    auto_hide_control_view: Cell<bool>,
-    auto_hide_slider: Cell<bool>,
-    reload: Cell<bool>,
-    close: Cell<bool>,
-    quit: Cell<bool>,
+#[derive(Clone, Copy, Default)]
+struct ButtonSignals {
+    new_window: SignalId,
+    reload: SignalId,
+    close: SignalId,
+    quit: SignalId,
 }
 
 // ── ButtonPanel ──────────────────────────────────────────────────────────────
@@ -154,7 +158,11 @@ pub struct emMainControlPanel {
     /// Top-level linear layout: 2 children (lMain, contentControlPanel).
     /// C++ SetChildWeight(0, 11.37) SetChildWeight(1, 21.32).
     layout_main: emLinearLayout,
-    click_flags: Rc<ClickFlags>,
+    /// One-shot handoff: CommandsPanel::create_children writes the click_signal
+    /// of each of the four commands buttons into this cell; emMainControlPanel::Cycle
+    /// reads it at first Cycle to populate `bt_*_sig` fields. Not polled across ticks.
+    /// Rc<Cell<>> justification (a): cross-closure shared with sub-panel constructor.
+    button_signals_handoff: Rc<Cell<ButtonSignals>>,
     autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     // Panel IDs for child widgets (used for layout weight assignment).
     lmain_panel: Option<PanelId>,
@@ -181,6 +189,21 @@ pub struct emMainControlPanel {
     /// bt_auto_hide_control_view — detached until HaveAux/emRasterGroup infrastructure ports.
     /// Rc<RefCell<>> justification (b): shared widget handle for Cycle mutation + future panel-tree placement.
     pub(crate) bt_auto_hide_slider: Option<Rc<RefCell<emCheckButton>>>,
+
+    // ── B-012 D-006 cached signal IDs for click-signal subscriptions. ──
+    // Populated at first Cycle from owned buttons (rows 221/222/223) and from
+    // `button_signals_handoff` (rows 220/224/225/226). Mirror C++
+    // emMainControlPanel.cpp:220-226 `AddWakeUpSignal(BtX->GetClickSignal())`.
+    bt_new_window_sig: SignalId,
+    bt_fullscreen_sig: SignalId,
+    bt_auto_hide_control_view_sig: SignalId,
+    bt_auto_hide_slider_sig: SignalId,
+    bt_reload_sig: SignalId,
+    bt_close_sig: SignalId,
+    bt_quit_sig: SignalId,
+    /// Set true after `bt_*_sig` fields are populated and `ectx.connect`-ed.
+    /// Distinct from `subscribed_init` (which gates rows 218/219 from B-006).
+    click_subscribed_init: bool,
 }
 
 impl emMainControlPanel {
@@ -229,7 +252,7 @@ impl emMainControlPanel {
             border,
             look: emLook::default(),
             layout_main,
-            click_flags: Rc::new(ClickFlags::default()),
+            button_signals_handoff: Rc::new(Cell::new(ButtonSignals::default())),
             autoplay_model,
             lmain_panel: None,
             content_ctrl_panel: None,
@@ -238,6 +261,14 @@ impl emMainControlPanel {
             bt_fullscreen: None,
             bt_auto_hide_control_view: None,
             bt_auto_hide_slider: None,
+            bt_new_window_sig: SignalId::default(),
+            bt_fullscreen_sig: SignalId::default(),
+            bt_auto_hide_control_view_sig: SignalId::default(),
+            bt_auto_hide_slider_sig: SignalId::default(),
+            bt_reload_sig: SignalId::default(),
+            bt_close_sig: SignalId::default(),
+            bt_quit_sig: SignalId::default(),
+            click_subscribed_init: false,
         }
     }
 
@@ -271,7 +302,7 @@ impl emMainControlPanel {
     ///   child 1: contentControlPanel (weight 21.32) — placeholder for now
     fn create_children(&mut self, ctx: &mut PanelCtx) {
         let look = Rc::new(self.look.clone());
-        let flags = Rc::clone(&self.click_flags);
+        let signals_handoff = Rc::clone(&self.button_signals_handoff);
 
         // ── Allocate shared button handles ────────────────────────────────
         // These Rc<RefCell<emCheckButton>> are shared between emMainControlPanel
@@ -323,7 +354,7 @@ impl emMainControlPanel {
         let lmain = Box::new(LMainPanel::new(
             Rc::clone(&self.ctx),
             Rc::clone(&look),
-            Rc::clone(&flags),
+            Rc::clone(&signals_handoff),
             Rc::clone(&self.autoplay_model),
             bt_fullscreen_opt,
         ));
@@ -458,43 +489,113 @@ impl PanelBehavior for emMainControlPanel {
             }
         }
 
-        // Poll click flags and dispatch to main window.
-        // Port of C++ Cycle() signal handling.
-        let flags = &self.click_flags;
+        // ── B-012 D-006 first-Cycle init for rows 220-226 click signals. ──
+        // Mirrors C++ emMainControlPanel.cpp:220-226
+        //   AddWakeUpSignal(BtX->GetClickSignal())
+        // Rows 221/222/223: signal id read from owned check buttons (the buttons
+        // are emMainControlPanel fields — no handoff needed). Rows 220/224/225/226:
+        // signal ids handed off through `button_signals_handoff` from
+        // CommandsPanel::create_children.
+        if !self.click_subscribed_init {
+            // Rows 220/224/225/226 — handoff cell.
+            let handoff = self.button_signals_handoff.get();
+            self.bt_new_window_sig = handoff.new_window;
+            self.bt_reload_sig = handoff.reload;
+            self.bt_close_sig = handoff.close;
+            self.bt_quit_sig = handoff.quit;
+            // Rows 221/222/223 — owned check buttons.
+            if let Some(bt) = &self.bt_fullscreen {
+                self.bt_fullscreen_sig = bt.borrow().click_signal;
+            }
+            if let Some(bt) = &self.bt_auto_hide_control_view {
+                self.bt_auto_hide_control_view_sig = bt.borrow().click_signal;
+            }
+            if let Some(bt) = &self.bt_auto_hide_slider {
+                self.bt_auto_hide_slider_sig = bt.borrow().click_signal;
+            }
+            // Connect each non-null signal. Skip nulls so layout-only test
+            // contexts (no scheduler at create_children time) degrade gracefully.
+            let eid = ectx.id();
+            use slotmap::Key as _;
+            for sig in [
+                self.bt_new_window_sig,
+                self.bt_fullscreen_sig,
+                self.bt_auto_hide_control_view_sig,
+                self.bt_auto_hide_slider_sig,
+                self.bt_reload_sig,
+                self.bt_close_sig,
+                self.bt_quit_sig,
+            ] {
+                if !sig.is_null() {
+                    ectx.connect(sig, eid);
+                }
+            }
+            // Only mark subscribed_init done if all 7 sigs are populated (i.e.
+            // create_children ran with a scheduler). Otherwise keep retrying so
+            // late-arriving construction (post-LayoutChildren) is picked up.
+            self.click_subscribed_init = !self.bt_new_window_sig.is_null()
+                && !self.bt_fullscreen_sig.is_null()
+                && !self.bt_auto_hide_control_view_sig.is_null()
+                && !self.bt_auto_hide_slider_sig.is_null()
+                && !self.bt_reload_sig.is_null()
+                && !self.bt_close_sig.is_null()
+                && !self.bt_quit_sig.is_null();
+        }
 
-        if flags.new_window.take() {
-            // C++ MainWin.Duplicate() — not yet implemented, log it.
+        // ── Reactions for rows 220-226. ──
+        // Mirrors C++ emMainControlPanel.cpp:262-290 IsSignaled branches.
+        use slotmap::Key as _;
+
+        // Row 220: BtNewWindow click → MainWin.Duplicate()
+        if !self.bt_new_window_sig.is_null() && ectx.IsSignaled(self.bt_new_window_sig) {
+            // App-bound stub; reaction body unchanged from pre-B-012 (App access
+            // from Cycle is not yet reachable). Subscription drift fixed; reaction
+            // body residual tracked separately.
             log::info!("emMainControlPanel: New Window requested (Duplicate not yet implemented)");
         }
 
-        if flags.fullscreen.take() {
-            crate::emMainWindow::with_main_window(|mw| {
-                log::info!("emMainControlPanel: Fullscreen toggle requested (requires App access)");
-                let _ = mw;
-            });
+        // Row 221: BtFullscreen click → MainWin.ToggleFullscreen()
+        if !self.bt_fullscreen_sig.is_null() && ectx.IsSignaled(self.bt_fullscreen_sig) {
+            // App-bound stub; same residual as row 220.
+            log::info!("emMainControlPanel: Fullscreen toggle requested (requires App access)");
         }
 
-        if flags.auto_hide_control_view.take() {
-            log::info!("emMainControlPanel: AutoHideControlView toggled");
+        // Row 222: BtAutoHideControlView click → MainConfig->AutoHideControlView.Invert();Save()
+        if !self.bt_auto_hide_control_view_sig.is_null()
+            && ectx.IsSignaled(self.bt_auto_hide_control_view_sig)
+        {
+            let new_val = !self.config.borrow().GetAutoHideControlView();
+            // D-007 ectx-threading: SetAutoHideControlView fires the change signal
+            // via the scheduler accessible through `ctx.as_sched_ctx()`.
+            self.config.borrow_mut().SetAutoHideControlView(new_val);
+            self.config.borrow_mut().Save();
         }
 
-        if flags.auto_hide_slider.take() {
-            log::info!("emMainControlPanel: AutoHideSlider toggled");
+        // Row 223: BtAutoHideSlider click → MainConfig->AutoHideSlider.Invert();Save()
+        if !self.bt_auto_hide_slider_sig.is_null() && ectx.IsSignaled(self.bt_auto_hide_slider_sig)
+        {
+            let new_val = !self.config.borrow().GetAutoHideSlider();
+            self.config.borrow_mut().SetAutoHideSlider(new_val);
+            self.config.borrow_mut().Save();
         }
 
-        if flags.reload.take() {
-            crate::emMainWindow::with_main_window(|mw| {
-                mw.to_reload = true;
-            });
+        // Row 224: BtReload click → MainWin.ReloadFiles()
+        if !self.bt_reload_sig.is_null() && ectx.IsSignaled(self.bt_reload_sig) {
+            // D-007 + D-009: synchronous fire of file_update_signal from inside
+            // the click reaction (not a two-hop relay through MainWindowEngine).
+            crate::emMainWindow::with_main_window(|mw| mw.ReloadFiles(ectx));
         }
 
-        if flags.close.take() {
+        // Row 225: BtClose click → MainWin.Close()
+        if !self.bt_close_sig.is_null() && ectx.IsSignaled(self.bt_close_sig) {
             crate::emMainWindow::with_main_window(|mw| {
                 mw.Close();
             });
         }
 
-        if flags.quit.take() {
+        // Row 226: BtQuit click → MainWin.Quit()
+        if !self.bt_quit_sig.is_null() && ectx.IsSignaled(self.bt_quit_sig) {
+            // App-bound stub; Quit needs &mut App for scheduler.InitiateTermination.
             log::info!(
                 "emMainControlPanel: Quit requested (requires App access for InitiateTermination)"
             );
@@ -532,7 +633,7 @@ struct LMainPanel {
     ctx: Rc<emContext>,
     look: Rc<emLook>,
     layout: emLinearLayout,
-    click_flags: Rc<ClickFlags>,
+    button_signals_handoff: Rc<Cell<ButtonSignals>>,
     autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     /// Shared fullscreen button handle threaded from emMainControlPanel.
     /// None in layout-only test contexts (no scheduler).
@@ -546,7 +647,7 @@ impl LMainPanel {
     fn new(
         ctx: Rc<emContext>,
         look: Rc<emLook>,
-        click_flags: Rc<ClickFlags>,
+        button_signals_handoff: Rc<Cell<ButtonSignals>>,
         autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
         bt_fullscreen: Option<Rc<RefCell<emCheckButton>>>,
     ) -> Self {
@@ -564,7 +665,7 @@ impl LMainPanel {
                 },
                 ..emLinearLayout::horizontal()
             },
-            click_flags,
+            button_signals_handoff,
             autoplay_model,
             bt_fullscreen,
             general_panel: None,
@@ -578,7 +679,7 @@ impl LMainPanel {
         let general = Box::new(GeneralPanel::new(
             Rc::clone(&self.ctx),
             Rc::clone(&self.look),
-            Rc::clone(&self.click_flags),
+            Rc::clone(&self.button_signals_handoff),
             Rc::clone(&self.autoplay_model),
             self.bt_fullscreen.clone(),
         ));
@@ -632,7 +733,7 @@ struct GeneralPanel {
     ctx: Rc<emContext>,
     look: Rc<emLook>,
     layout: emLinearLayout,
-    click_flags: Rc<ClickFlags>,
+    button_signals_handoff: Rc<Cell<ButtonSignals>>,
     autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     /// Shared fullscreen button handle threaded from emMainControlPanel.
     /// None in layout-only test contexts.
@@ -646,7 +747,7 @@ impl GeneralPanel {
     fn new(
         ctx: Rc<emContext>,
         look: Rc<emLook>,
-        click_flags: Rc<ClickFlags>,
+        button_signals_handoff: Rc<Cell<ButtonSignals>>,
         autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
         bt_fullscreen: Option<Rc<RefCell<emCheckButton>>>,
     ) -> Self {
@@ -664,7 +765,7 @@ impl GeneralPanel {
                 },
                 ..emLinearLayout::horizontal()
             },
-            click_flags,
+            button_signals_handoff,
             autoplay_model,
             bt_fullscreen,
             about_cfg_panel: None,
@@ -682,7 +783,7 @@ impl GeneralPanel {
         // Child 1: Main Commands (grCommands)
         let commands = Box::new(CommandsPanel::new(
             Rc::clone(&self.look),
-            Rc::clone(&self.click_flags),
+            Rc::clone(&self.button_signals_handoff),
             Rc::clone(&self.autoplay_model),
             self.bt_fullscreen.clone(),
         ));
@@ -882,7 +983,7 @@ struct CommandsPanel {
     look: Rc<emLook>,
     border: emBorder,
     layout: emLinearLayout,
-    click_flags: Rc<ClickFlags>,
+    button_signals_handoff: Rc<Cell<ButtonSignals>>,
     autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
     /// Shared fullscreen button handle from emMainControlPanel.
     /// Rc<RefCell<>> justification (b): context-registry-style shared widget
@@ -896,7 +997,7 @@ struct CommandsPanel {
 impl CommandsPanel {
     fn new(
         look: Rc<emLook>,
-        click_flags: Rc<ClickFlags>,
+        button_signals_handoff: Rc<Cell<ButtonSignals>>,
         autoplay_model: Rc<RefCell<emAutoplayViewModel>>,
         bt_fullscreen: Option<Rc<RefCell<emCheckButton>>>,
     ) -> Self {
@@ -909,7 +1010,7 @@ impl CommandsPanel {
             // Rust uses emLinearLayout vertical since emPackLayout doesn't
             // support tallness preferences in the same way.
             layout: emLinearLayout::vertical(),
-            click_flags,
+            button_signals_handoff,
             autoplay_model,
             bt_fullscreen,
             children_created: false,
@@ -918,30 +1019,26 @@ impl CommandsPanel {
 
     fn create_children(&mut self, ctx: &mut PanelCtx) {
         let look = Rc::clone(&self.look);
-        let flags = Rc::clone(&self.click_flags);
+
+        // B-012 D-006: capture each button's click_signal at construction and
+        // hand it off to emMainControlPanel via the one-shot Cell. Replaces the
+        // pre-B-012 Rc<ClickFlags> shim — no on_click closure needed because
+        // emButton::Input fires `click_signal` directly on user click.
 
         // ── BtNewWindow ──
-        let flag = Rc::clone(&flags);
         let mut btn_nw = {
             let mut sched = ctx.as_sched_ctx().expect("sched");
             emButton::new(&mut sched, "New Window", Rc::clone(&look))
         };
         btn_nw.SetDescription("Create a new window showing the same location.\n\nHotkey: F4");
-        btn_nw.on_click = Some(Box::new(
-            move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
-                flag.new_window.set(true);
-            },
-        ));
+        let new_window_sig = btn_nw.click_signal;
         let nw_id =
             ctx.create_child_with("new window", Box::new(MainButtonPanel { button: btn_nw }));
 
         // ── BtFullscreen ──
-        // Use the shared Rc<RefCell<emCheckButton>> threaded from emMainControlPanel.
-        // The on_check callback sets click_flags.fullscreen; the D-006 row-218
-        // reaction in emMainControlPanel::Cycle sets check state from window flags.
-        // If no button was allocated (layout-only test context), fall back to
-        // creating a standalone button for the panel tree only (click-through wire
-        // is not available in that context; row-218 reaction requires a scheduler).
+        // Use the shared Rc<RefCell<emCheckButton>> threaded from emMainControlPanel
+        // (its click_signal is read directly from the owned button, not via handoff).
+        // Layout-only test contexts (no scheduler) fall back to a standalone button.
         let bt_fs = if let Some(ref bt) = self.bt_fullscreen {
             Rc::clone(bt)
         } else {
@@ -952,14 +1049,6 @@ impl CommandsPanel {
                 Rc::clone(&look),
             )))
         };
-        {
-            let flag = Rc::clone(&flags);
-            bt_fs.borrow_mut().on_check = Some(Box::new(
-                move |_checked, _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
-                    flag.fullscreen.set(true);
-                },
-            ));
-        }
         let fs_id = ctx.create_child_with(
             "fullscreen",
             Box::new(MainCheckButtonPanel {
@@ -968,7 +1057,6 @@ impl CommandsPanel {
         );
 
         // ── BtReload ──
-        let flag = Rc::clone(&flags);
         let mut btn_reload = {
             let mut sched = ctx.as_sched_ctx().expect("sched");
             emButton::new(&mut sched, "Reload Files", Rc::clone(&look))
@@ -976,11 +1064,7 @@ impl CommandsPanel {
         btn_reload.SetDescription(
             "Reload files and directories which are currently shown by this program.\n\nHotkey: F5",
         );
-        btn_reload.on_click = Some(Box::new(
-            move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
-                flag.reload.set(true);
-            },
-        ));
+        let reload_sig = btn_reload.click_signal;
         let reload_id =
             ctx.create_child_with("reload", Box::new(MainButtonPanel { button: btn_reload }));
 
@@ -992,21 +1076,15 @@ impl CommandsPanel {
         let autoplay_id = ctx.create_child_with("autoplay", autoplay);
 
         // ── Close / Quit (lCloseQuit) ──
-        let flag_close = Rc::clone(&flags);
         let mut btn_close = {
             let mut sched = ctx.as_sched_ctx().expect("sched");
             emButton::new(&mut sched, "Close", Rc::clone(&look))
         };
         btn_close.SetDescription("Close this window.\n\nHotkey: Alt+F4");
-        btn_close.on_click = Some(Box::new(
-            move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
-                flag_close.close.set(true);
-            },
-        ));
+        let close_sig = btn_close.click_signal;
         let close_id =
             ctx.create_child_with("close", Box::new(MainButtonPanel { button: btn_close }));
 
-        let flag_quit = Rc::clone(&flags);
         let mut btn_quit = {
             let mut sched = ctx.as_sched_ctx().expect("sched");
             emButton::new(&mut sched, "Quit", Rc::clone(&look))
@@ -1014,12 +1092,16 @@ impl CommandsPanel {
         btn_quit.SetDescription(
             "Close all windows of this process (and terminate this process).\n\nHotkey: Shift+Alt+F4",
         );
-        btn_quit.on_click = Some(Box::new(
-            move |(), _sched: &mut emcore::emEngineCtx::SchedCtx<'_>| {
-                flag_quit.quit.set(true);
-            },
-        ));
+        let quit_sig = btn_quit.click_signal;
         let quit_id = ctx.create_child_with("quit", Box::new(MainButtonPanel { button: btn_quit }));
+
+        // Hand off the four commands buttons' click signals to emMainControlPanel.
+        self.button_signals_handoff.set(ButtonSignals {
+            new_window: new_window_sig,
+            reload: reload_sig,
+            close: close_sig,
+            quit: quit_sig,
+        });
 
         // C++ grCommands child weights:
         //   0: new window (1.0), 1: fullscreen (1.09), 2: reload (1.0),
@@ -1146,24 +1228,6 @@ mod tests {
         let ctx = emcore::emContext::emContext::NewRoot();
         let panel = emMainControlPanel::new(Rc::clone(&ctx), None);
         let _: Box<dyn PanelBehavior> = Box::new(panel);
-    }
-
-    #[test]
-    fn test_click_flags_default() {
-        let flags = ClickFlags::default();
-        assert!(!flags.new_window.get());
-        assert!(!flags.fullscreen.get());
-        assert!(!flags.reload.get());
-        assert!(!flags.close.get());
-        assert!(!flags.quit.get());
-    }
-
-    #[test]
-    fn test_click_flag_roundtrip() {
-        let flags = Rc::new(ClickFlags::default());
-        flags.close.set(true);
-        assert!(flags.close.take());
-        assert!(!flags.close.get());
     }
 
     #[test]

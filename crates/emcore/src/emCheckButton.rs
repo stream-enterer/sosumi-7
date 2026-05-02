@@ -29,6 +29,14 @@ pub struct emCheckButton {
     /// Allocated at construction; fired from `SetChecked` / Input toggle.
     /// Mirrors C++ `emCheckButton::GetCheckSignal()`.
     pub check_signal: SignalId,
+    /// Allocated at construction; fired from the user-click toggle path only
+    /// (`Input` → `toggle`). NOT fired from `SetChecked` (programmatic).
+    /// Mirrors C++ `emButton::GetClickSignal()` — emCheckButton inherits emButton
+    /// in C++; in Rust the structs are sibling ports so the inherited accessor is
+    /// reproduced as a separate `pub` field. Distinct from `check_signal` because
+    /// subscribers to user-click reactions (e.g. emMainControlPanel rows 222/223)
+    /// must not feedback-loop with programmatic SetChecked from a sibling row.
+    pub click_signal: SignalId,
 }
 
 impl emCheckButton {
@@ -49,6 +57,7 @@ impl emCheckButton {
             last_h: 0.0,
             on_check: None,
             check_signal: ctx.create_signal(),
+            click_signal: ctx.create_signal(),
         }
     }
 
@@ -351,10 +360,12 @@ impl emCheckButton {
     /// CheckSignal + on_check callback via `SetChecked` semantics.
     fn toggle(&mut self, ctx: &mut PanelCtx<'_>) {
         self.checked = !self.checked;
-        // C++ emCheckButton::SetChecked (emCheckButton.cpp:39-48):
-        // InvalidatePainting → Signal(CheckSignal) → CheckChanged.
-        // Rust fires signal then invokes callback (the Rust analog of CheckChanged).
+        // C++ emButton::Click() (emButton.cpp:55-58): Signal(ClickSignal); Clicked();
+        // emCheckButton overrides Clicked() to flip checked + Signal(CheckSignal).
+        // So a user-click toggle fires both ClickSignal and CheckSignal; a
+        // programmatic SetChecked fires only CheckSignal.
         if let Some(mut sched) = ctx.as_sched_ctx() {
+            sched.fire(self.click_signal);
             sched.fire(self.check_signal);
             if let Some(cb) = self.on_check.as_mut() {
                 cb(self.checked, &mut sched);
@@ -517,6 +528,81 @@ mod tests {
             btn.Input(&emInputEvent::press(InputKey::Enter), &ps, &is, &mut ctx);
         }
         assert_eq!(*states.borrow(), vec![true, false]);
+    }
+
+    /// B-012 click_signal vs check_signal feedback-loop guard.
+    ///
+    /// User-click toggle (`Input` → `toggle`) fires BOTH `click_signal` and
+    /// `check_signal`. Programmatic `SetChecked` fires ONLY `check_signal`,
+    /// not `click_signal`. This separation prevents emMainControlPanel rows
+    /// 222/223 (which subscribe to `click_signal`) from feedback-looping with
+    /// row 218's programmatic `SetChecked` on the same button.
+    #[test]
+    fn b012_set_checked_does_not_fire_click_signal() {
+        let look = emLook::new();
+        let mut init = TestInit::new();
+        let mut btn = emCheckButton::new(&mut init.ctx(), "CB", look);
+        let click_sig = btn.click_signal;
+        let check_sig = btn.check_signal;
+        let (mut tree, tid) = test_tree();
+        let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        {
+            let mut ctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                tid,
+                1.0,
+                &mut init.sched,
+                &mut init.fw,
+                &init.root,
+                &fw_cb,
+                &init.pa,
+            );
+            // Programmatic SetChecked: must fire check_signal but NOT click_signal.
+            btn.SetChecked(true, &mut ctx);
+        }
+        assert!(
+            init.sched.is_pending(check_sig),
+            "SetChecked must fire check_signal"
+        );
+        assert!(
+            !init.sched.is_pending(click_sig),
+            "SetChecked must NOT fire click_signal (feedback-loop guard)"
+        );
+    }
+
+    /// B-012: user-click toggle path fires both click_signal and check_signal.
+    #[test]
+    fn b012_user_click_fires_both_click_and_check_signals() {
+        let look = emLook::new();
+        let mut init = TestInit::new();
+        let mut btn = emCheckButton::new(&mut init.ctx(), "CB", look);
+        let click_sig = btn.click_signal;
+        let check_sig = btn.check_signal;
+        let ps = default_panel_state();
+        let is = default_input_state();
+        let (mut tree, tid) = test_tree();
+        let fw_cb: RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> = RefCell::new(None);
+        {
+            let mut ctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                tid,
+                1.0,
+                &mut init.sched,
+                &mut init.fw,
+                &init.root,
+                &fw_cb,
+                &init.pa,
+            );
+            btn.Input(&emInputEvent::press(InputKey::Enter), &ps, &is, &mut ctx);
+        }
+        assert!(
+            init.sched.is_pending(click_sig),
+            "user-click must fire click_signal"
+        );
+        assert!(
+            init.sched.is_pending(check_sig),
+            "user-click must fire check_signal"
+        );
     }
 
     #[test]

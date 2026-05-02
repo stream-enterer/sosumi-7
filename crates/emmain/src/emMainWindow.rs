@@ -6,7 +6,7 @@
 // autoplay input is wired via emAutoplayViewModel, and the window is persisted
 // across frames via thread_local (set_main_window / with_main_window).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use winit::event_loop::ActiveEventLoop;
@@ -75,7 +75,13 @@ pub struct emMainWindow {
     pub(crate) control_window_id: Option<winit::window::WindowId>,
     pub(crate) startup_engine_id: Option<EngineId>,
     pub to_close: bool,
-    pub to_reload: bool,
+    /// Cache of `app.file_update_signal`, populated post-construction by
+    /// `create_main_window` (which has `&mut App`). `mw::new` runs without
+    /// `&App` so we cannot eager-cache at construction — the cell is
+    /// interior-mutable to permit late assignment. `ReloadFiles(ectx)` reads
+    /// it; falls back to lazy-allocate (D-008 A1) for test paths that build
+    /// `mw` without going through `create_main_window`.
+    pub(crate) file_update_signal: Cell<Option<SignalId>>,
     pub(crate) _close_signal: Option<SignalId>,
     pub(crate) _visit_identity: Option<String>,
     pub(crate) _visit_rel_x: f64,
@@ -103,7 +109,7 @@ impl emMainWindow {
             control_window_id: None,
             startup_engine_id: None,
             to_close: false,
-            to_reload: false,
+            file_update_signal: Cell::new(None),
             _close_signal: None,
             _visit_identity: None,
             _visit_rel_x: 0.0,
@@ -126,10 +132,30 @@ impl emMainWindow {
         }
     }
 
-    /// Port of C++ `emMainWindow::ReloadFiles`.
+    /// Port of C++ `emMainWindow::ReloadFiles` (emMainWindow.cpp:281).
     /// Fires the global file-update signal so all listening file models reload.
-    pub fn ReloadFiles(&self, app: &mut App) {
-        app.scheduler.fire(app.file_update_signal);
+    ///
+    /// B-012 D-007 + D-009: takes `&mut EngineCtx` and fires synchronously from
+    /// the click reaction in `emMainControlPanel::Cycle`. Replaces the pre-B-012
+    /// two-hop relay (`mw.to_reload = true` polled by `MainWindowEngine::Cycle`).
+    /// The `file_update_signal` is lazily cached on first call (D-008 A1) since
+    /// `mw::new` does not receive the signal id at construction time.
+    pub fn ReloadFiles(&self, ectx: &mut EngineCtx<'_>) {
+        let sig = match self.file_update_signal.get() {
+            Some(s) => s,
+            None => {
+                // Lazy-allocate: create a new signal and memoize it. The
+                // production wiring (`create_main_window`) sets this cell to
+                // `app.file_update_signal` so listeners hear the same signal;
+                // in test contexts where wiring is missing, allocate one so
+                // the call path does not panic. Production code paths through
+                // `create_main_window` populate this before the first click.
+                let s = ectx.create_signal();
+                self.file_update_signal.set(Some(s));
+                s
+            }
+        };
+        ectx.fire(sig);
     }
 
     /// Port of C++ `emMainWindow::ToggleControlView` (emMainWindow.cpp:144-158).
@@ -269,7 +295,12 @@ impl emMainWindow {
             InputKey::F5
                 if !input_state.GetShift() && !input_state.GetCtrl() && !input_state.GetAlt() =>
             {
-                self.ReloadFiles(app);
+                // B-012: input-path reload bifurcates from the click-path
+                // `ReloadFiles(&self, ectx)`. The input handler holds
+                // `&mut App`, not `&mut EngineCtx`, so it open-codes the fire
+                // (1-line) rather than threading a shim. Click-path Cycle
+                // route is the canonical C++-named one.
+                app.scheduler.fire(app.file_update_signal);
                 true
             }
             // F11 no modifier: Toggle fullscreen (C++ emMainWindow.cpp:225-228)
@@ -348,7 +379,6 @@ where
 pub(crate) struct MainWindowEngine {
     close_signal: SignalId,
     title_signal: Option<SignalId>,
-    file_update_signal: SignalId,
     window_id: Option<winit::window::WindowId>,
     startup_done: bool,
 }
@@ -386,15 +416,9 @@ impl emEngine for MainWindowEngine {
             }
         }
 
-        // Poll reload flag set by emMainControlPanel::Cycle and fire the
-        // file_update_signal (C++ emMainWindow::ReloadFiles).
-        let to_reload = with_main_window(|mw| mw.to_reload).unwrap_or(false);
-        if to_reload {
-            with_main_window(|mw| {
-                mw.to_reload = false;
-            });
-            ctx.fire(self.file_update_signal);
-        }
+        // B-012/D-009: removed the to_reload polling intermediary. Reload
+        // now fires synchronously inside emMainControlPanel::Cycle via
+        // `mw.ReloadFiles(ectx)`.
 
         // Self-delete if to_close (C++ emMainWindow.cpp:184-187).
         let to_close = with_main_window(|mw| mw.to_close).unwrap_or(false);
@@ -1111,10 +1135,15 @@ pub fn create_main_window(
     if let Some(win) = app.windows.get_mut(&window_id) {
         win.view_mut().set_title_signal(title_signal);
     }
+    // B-012 D-008 A1: eager-cache the file_update_signal on the emMainWindow
+    // so `mw.ReloadFiles(ectx)` can fire it without a lazy-allocate path. The
+    // signal originates from `App` (set at App::new), so we wire it here at
+    // window creation rather than threading `app` into `mw::new`.
+    mw.file_update_signal.set(Some(app.file_update_signal));
+
     let mw_engine = MainWindowEngine {
         close_signal,
         title_signal: Some(title_signal),
-        file_update_signal: app.file_update_signal,
         window_id: Some(window_id),
         startup_done: false,
     };
