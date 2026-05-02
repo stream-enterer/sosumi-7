@@ -332,13 +332,46 @@ impl emMainWindow {
             && let Some(hotkey) = Hotkey::from_event_and_state(event.key, input_state)
         {
             let hotkey_str = hotkey.to_string();
-            let bm = bm_model.borrow();
-            if let Some(rec) = bm.GetRec().SearchBookmarkByHotkey(&hotkey_str) {
-                // BLOCKED: C++ calls MainPanel->GetContentView().Visit() with
-                // identity-based navigation. Rust uses the visiting animator
-                // directly on the window. Full wiring requires identity-based
-                // Visit on emView (not yet ported).
-                log::info!("Bookmark hotkey {}: visit {}", hotkey_str, rec.entry.Name);
+            // Resolve the bookmark record under a short-lived borrow, then
+            // drop the borrow before mutating `app` (which re-borrows the
+            // bookmarks model transitively via the home tree). Mirrors the
+            // click-reaction path in `emBookmarks.rs:721-781`, but runs
+            // synchronously because `&mut App` is already in scope here
+            // (the click path defers via `pending_actions` only because
+            // `Cycle` lacks `&mut App`).
+            let dispatch = {
+                let bm = bm_model.borrow();
+                bm.GetRec().SearchBookmarkByHotkey(&hotkey_str).map(|rec| {
+                    (
+                        rec.LocationIdentity.clone(),
+                        rec.LocationRelX,
+                        rec.LocationRelY,
+                        rec.LocationRelA,
+                        rec.entry.Name.clone(),
+                    )
+                })
+            };
+            if let Some((identity, rel_x, rel_y, rel_a, subject)) = dispatch {
+                if let Some(main_panel_id) = self.main_panel_id
+                    && let Some(content_view_id) = app
+                        .home_tree_mut()
+                        .with_behavior_as::<crate::emMainPanel::emMainPanel, _>(
+                            main_panel_id,
+                            |mp| mp.GetContentViewPanelId(),
+                        )
+                        .flatten()
+                {
+                    app.with_home_tree_and_sched_ctx(|tree, sc| {
+                        tree.with_behavior_as::<emcore::emSubViewPanel::emSubViewPanel, _>(
+                            content_view_id,
+                            |svp| {
+                                svp.visit_by_identity(
+                                    &identity, rel_x, rel_y, rel_a, true, &subject, sc,
+                                );
+                            },
+                        );
+                    });
+                }
                 return true;
             }
         }
