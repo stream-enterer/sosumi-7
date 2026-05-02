@@ -78,3 +78,69 @@ fn get_file_state_signal_returns_null_until_ensured() {
         "post-ensure, GetFileStateSignal must return the live id"
     );
 }
+
+#[test]
+fn try_load_fires_file_state_signal() {
+    // TryLoad on a non-existent path transitions to LoadError; per FU-005,
+    // both ChangeSignal and FileStateSignal must fire on the transition.
+    let mut h = TestViewHarness::new();
+    let mut m = emRecFileModel::<DummyRec>::new(PathBuf::from(
+        "/tmp/fu005_does_not_exist_xyz_load.rec",
+    ));
+
+    // Promote both signals (mirrors first-Cycle subscriber wiring).
+    let (change_sig, state_sig) = {
+        let mut sc = h.sched_ctx();
+        let c = m.GetChangeSignal(&mut sc);
+        let s = m.ensure_file_state_signal(&mut sc);
+        (c, s)
+    };
+    assert!(!change_sig.is_null());
+    assert!(!state_sig.is_null());
+
+    // Drive TryLoad — fires happen synchronously via signal_change /
+    // signal_file_state, marking both signals pending.
+    {
+        let mut sc = h.sched_ctx();
+        m.TryLoad(&mut sc);
+    }
+
+    assert!(
+        h.scheduler.is_pending(change_sig),
+        "TryLoad must fire ChangeSignal (existing behavior)"
+    );
+    assert!(
+        h.scheduler.is_pending(state_sig),
+        "TryLoad must fire FileStateSignal (FU-005 new behavior)"
+    );
+
+    // Clean up pending signals so the scheduler drop-asserts pass.
+    h.scheduler.flush_signals_for_test();
+}
+
+#[test]
+fn hard_reset_fires_file_state_signal() {
+    // hard_reset transitions any state → Waiting; FU-005 requires both signals fire.
+    let mut h = TestViewHarness::new();
+    let mut m = emRecFileModel::<DummyRec>::new(PathBuf::from("/tmp/fu005_hard_reset.rec"));
+
+    let (change_sig, state_sig) = {
+        let mut sc = h.sched_ctx();
+        let c = m.GetChangeSignal(&mut sc);
+        let s = m.ensure_file_state_signal(&mut sc);
+        (c, s)
+    };
+
+    {
+        let mut sc = h.sched_ctx();
+        m.hard_reset(&mut sc);
+    }
+
+    assert!(h.scheduler.is_pending(change_sig));
+    assert!(
+        h.scheduler.is_pending(state_sig),
+        "hard_reset must fire FileStateSignal (FU-005)"
+    );
+
+    h.scheduler.flush_signals_for_test();
+}

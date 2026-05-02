@@ -173,7 +173,9 @@ impl<T: Record + Default> emRecFileModel<T> {
         }
         // D-007: C++ `emFileModel::Load` (and the inherited `Step` driver)
         // calls `Signal(ChangeSignal)` synchronously when the load completes.
+        // FU-005: parallel FileStateSignal fire mirrors C++ FileStateSignal.
         self.signal_change(ectx);
+        self.signal_file_state(ectx);
     }
 
     /// Synchronously save the file. Port of C++ `Save(true)`.
@@ -191,7 +193,9 @@ impl<T: Record + Default> emRecFileModel<T> {
             if let Err(e) = std::fs::create_dir_all(parent) {
                 self.state = FileState::SaveError(e.to_string());
                 // D-007: C++ fires ChangeSignal on the SaveError transition.
+                // FU-005: parallel FileStateSignal fire on every transition.
                 self.signal_change(ectx);
+                self.signal_file_state(ectx);
                 return;
             }
         }
@@ -199,12 +203,14 @@ impl<T: Record + Default> emRecFileModel<T> {
         if let Err(e) = std::fs::write(&self.path, &content) {
             self.state = FileState::SaveError(e.to_string());
             self.signal_change(ectx);
+            self.signal_file_state(ectx);
             return;
         }
 
         if let Err(e) = self.try_fetch_date() {
             self.state = FileState::SaveError(e);
             self.signal_change(ectx);
+            self.signal_file_state(ectx);
             return;
         }
 
@@ -219,7 +225,9 @@ impl<T: Record + Default> emRecFileModel<T> {
         }
         // D-007: C++ `emFileModel::Save` calls `Signal(ChangeSignal)`
         // synchronously on the Loaded transition.
+        // FU-005: parallel FileStateSignal fire mirrors C++ FileStateSignal.
         self.signal_change(ectx);
+        self.signal_file_state(ectx);
     }
 
     /// Port of C++ `Update()`. Re-check file freshness; reset stale states.
@@ -240,7 +248,9 @@ impl<T: Record + Default> emRecFileModel<T> {
         if !matches!((&prev, &self.state), (FileState::Loaded, FileState::Loaded))
             && std::mem::discriminant(&prev) != std::mem::discriminant(&self.state)
         {
+            // FU-005: parallel FileStateSignal fire on every transition.
             self.signal_change(ectx);
+            self.signal_file_state(ectx);
         }
     }
 
@@ -259,7 +269,9 @@ impl<T: Record + Default> emRecFileModel<T> {
         self.last_size = 0;
         // D-007: C++ `emFileModel::HardResetFileState` calls
         // `Signal(ChangeSignal)` synchronously.
+        // FU-005: parallel FileStateSignal fire mirrors C++ FileStateSignal.
         self.signal_change(ectx);
+        self.signal_file_state(ectx);
     }
 
     /// Port of C++ `ClearSaveError()`. Transition SaveError → Unsaved.
@@ -269,7 +281,9 @@ impl<T: Record + Default> emRecFileModel<T> {
             self.error_text.clear();
             // D-007: C++ `emFileModel::ClearSaveError` calls
             // `Signal(ChangeSignal)` synchronously on SaveError → Unsaved.
+            // FU-005: parallel FileStateSignal fire mirrors C++ FileStateSignal.
             self.signal_change(ectx);
+            self.signal_file_state(ectx);
         }
     }
 
@@ -283,7 +297,9 @@ impl<T: Record + Default> emRecFileModel<T> {
             // D-007: C++ `emFileModel::SetUnsavedState`/`GetWritableMap` call
             // `Signal(ChangeSignal)` synchronously on Loaded/SaveError →
             // Unsaved. `GetWritableMap` is covered transitively via this site.
+            // FU-005: parallel FileStateSignal fire mirrors C++ FileStateSignal.
             self.signal_change(ectx);
+            self.signal_file_state(ectx);
         }
     }
 
