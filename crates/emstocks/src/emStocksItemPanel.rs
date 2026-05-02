@@ -36,6 +36,9 @@ pub enum CategoryType {
 pub struct CategoryPanel {
     pub category_type: CategoryType,
     pub preserved_category: String,
+    /// C++-mirrored: `emStocksItemPanel::CategoryPanel::UpdateControlsNeeded` uses the same set-and-Cycle-drain shape.
+    /// Setter context lacks the ctx required for synchronous fire; matching C++ on this point.
+    /// (D-009 verified non-issue per FU-004 inventory 2026-05-02.)
     pub update_controls_needed: bool,
     pub have_list_box_content: bool,
 }
@@ -206,6 +209,9 @@ pub struct emStocksItemPanel {
     /// `emStocksListBox::CreateItemPanel` factory.
     pub(crate) item_index: usize,
     stock_rec_index: Option<usize>,
+    /// C++-mirrored: `emStocksItemPanel::UpdateControlsNeeded` (parallels `emStocksControlPanel.cpp:35,…,225`) uses the same set-and-Cycle-drain shape.
+    /// Setter context lacks the ctx required for synchronous fire; matching C++ on this point.
+    /// (D-009 verified non-issue per FU-004 inventory 2026-05-02.)
     pub(crate) update_controls_needed: bool,
 
     pub country: CategoryPanel,

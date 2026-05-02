@@ -74,6 +74,9 @@ pub struct emMainWindow {
     /// Window ID of the detached control window created by `CreateControlWindow`.
     pub(crate) control_window_id: Option<winit::window::WindowId>,
     pub(crate) startup_engine_id: Option<EngineId>,
+    /// C++-mirrored: `emMainWindow.cpp:163` (`ToClose=true;`) drained at `cpp:184` uses the same set-and-Cycle-drain shape.
+    /// Setter context lacks the ctx required for synchronous fire; matching C++ on this point.
+    /// (D-009 verified non-issue per FU-004 inventory 2026-05-02.)
     pub to_close: bool,
     /// Cache of `app.file_update_signal`, populated post-construction by
     /// `create_main_window` (which has `&mut App`). `mw::new` runs without

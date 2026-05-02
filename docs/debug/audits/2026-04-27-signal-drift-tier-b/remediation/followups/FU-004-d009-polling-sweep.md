@@ -43,3 +43,21 @@ This is the only known sighting at Tier-B close, but no tree-wide scan was perfo
 
 - Discovery-led: do not pre-write a row table. The first phase produces one.
 - D-009 is a CLAUDE.md-level rule now; new code is expected to comply. This bucket clears the legacy debt, then ongoing compliance is a code-review concern, not an audit concern.
+
+## Inventory (2026-05-02)
+
+The verified row table lives in [FU-004-inventory.md](FU-004-inventory.md) — moved to a sibling file because the table plus per-row evidence prose exceeded the bucket-file size threshold (~80 lines). See that file for the 17-row inventory, the D-007 candidates section, the needs-deeper-audit section, and the closure note.
+
+## Closure (2026-05-02)
+
+Inventory verified per `docs/superpowers/specs/2026-05-02-FU-004-d009-inventory-design.md`.
+
+- Candidates enumerated: 17.
+- `C++-mirrored`: 9.
+- `forced retention`: 1.
+- `vestigial`: 1.
+- `in-progress-migration`: 3.
+- `D-007 candidate`: 1.
+- `needs deeper audit`: 2.
+
+Status: **open** — 1 D-007 candidate (`emVirtualCosmosPanel::needs_update`) pending its own follow-up spec; 2 needs-deeper-audit candidates (`emVirtualCosmosItemPanel::update_needed` port-completion fidelity-bug; `emView::needs_animator_abort` VIEW-003 dispatch-chain audit) pending their own follow-up buckets.

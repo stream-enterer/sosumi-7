@@ -32,6 +32,9 @@ pub(crate) enum FileFieldType {
 pub(crate) struct FileFieldPanel {
     pub(crate) field_type: FileFieldType,
     pub(crate) widget: emFileSelectionBox,
+    /// C++-mirrored: `emStocksControlPanel.cpp:35,98,102,106,110,225` uses the same set-and-Cycle-drain shape (`UpdateControlsNeeded`).
+    /// Setter context lacks the ctx required for synchronous fire; matching C++ on this point.
+    /// (D-009 verified non-issue per FU-004 inventory 2026-05-02.)
     pub(crate) update_controls_needed: bool,
 }
 
@@ -468,6 +471,9 @@ pub struct emStocksControlPanel {
     /// FilePanel wraps the ListBox in `Rc<RefCell<>>` (Task A.1) so the
     /// ControlPanel can hold a clone of the same handle.
     pub(crate) list_box: Rc<RefCell<emStocksListBox>>,
+    /// C++-mirrored: `emStocksControlPanel.cpp:35,98,…,225` (`UpdateControlsNeeded`) uses the same set-and-Cycle-drain shape.
+    /// Setter context lacks the ctx required for synchronous fire; matching C++ on this point.
+    /// (D-009 verified non-issue per FU-004 inventory 2026-05-02.)
     pub(crate) update_controls_needed: bool,
     pub(crate) widgets: Option<ControlWidgets>,
     /// D-006 first-Cycle init flag; mirrors the B-001 ListBox pattern at

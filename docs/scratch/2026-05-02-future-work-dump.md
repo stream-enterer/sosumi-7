@@ -145,6 +145,26 @@ Action: spend one pass reading the 4 marker locations to confirm understanding. 
 - Periodically (monthly?) reread the whole file. Promote anything that's grown teeth into a real bucket; delete anything that's been resolved-and-recorded elsewhere.
 - New surfaced items go in the natural section, or in K if it's a decision-shaped thing rather than a work-shaped thing.
 
+## FU-004 vestigial sweeps
+
+Fields with no production setter — placeholders for unimplemented features.
+Cleanup trigger: whoever finishes the named feature deletes these fields.
+
+- `crates/emmain/src/emBookmarks.rs::emBookmarkButton::pending_click_fire` — placeholder for the unwritten Input handler (B-013 stub). Trigger: B-013 input handler implementation will either wire production setters (then this becomes C++-mirrored) or the field is deleted alongside the placeholder Cycle-drain block at lines 705-707.
+
+## FU-004 D-007 candidates
+
+Verified divergences awaiting their own follow-up spec.
+
+- `crates/emmain/src/emVirtualCosmos.rs::emVirtualCosmosPanel::needs_update` — C++ `Notice(NF_VIEWING_CHANGED)` calls `UpdateChildren()` synchronously at `emVirtualCosmos.cpp:613`; Rust drains in Cycle (line 923) because `notice` lacks a `PanelCtx`. Resolution: thread the needed ctx into the `notice` signature, fire synchronously, drop the flag — canonical CLAUDE.md D-009 fix. Spec needed.
+
+## FU-004 needs-deeper-audit candidates
+
+Verification-budget exceeded; each split into its own follow-up bucket rather than expanding FU-004's scope.
+
+- `crates/emmain/src/emVirtualCosmos.rs::emVirtualCosmosItemPanel::update_needed` — C++ has `UpdateFromRecNeeded` set in `OnRecChanged` (cpp:480-485) and drained in `Cycle` via `UpdateFromRec` (cpp:304-307, cpp:511-543). Rust port has the field and setters but no `UpdateFromRec` method and no Cycle drain — incomplete port (fidelity-bug pending UpdateFromRec port). Trigger: emVirtualCosmosItemPanel port-completion bucket.
+- `crates/emcore/src/emView.rs::emView::needs_animator_abort` — VIEW-003 tracking ID. Set by scroll/zoom mutators; consumed by the winit window loop. Whether this is a D-007 candidate (synchronous abort at the mutation site) or dependency-forced retention (winit event-loop boundary forces deferral) requires reading the full animator-abort dispatch chain plus winit redraw integration. Trigger: VIEW-003 audit bucket.
+
 ## Source / origin notes
 
 This dump was compiled at the close of the FU-001 brainstorm on 2026-05-02. It mixes:

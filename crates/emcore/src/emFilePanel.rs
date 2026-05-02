@@ -70,6 +70,15 @@ pub struct emFilePanel {
     /// directly. Drained at the start of Cycle. Mirrors C++ synchronous
     /// `Signal(VirFileStateSignal)` calls in emFilePanel.cpp:51,78,87 with
     /// a 1-cycle delay (language-forced, same category as B-015 Option B).
+    // DIVERGED: (language-forced) — `SetFileModel` / `set_custom_error` /
+    // `clear_custom_error` are mutator methods on `&mut self` with no
+    // `SignalCtx`/`EngineCtx` reach (the canonical Rust ownership model
+    // forbids carrying the scheduler through a `&mut self` borrow chain in
+    // these constructors/setters). C++ fires `Signal(VirFileStateSignal)`
+    // synchronously at emFilePanel.cpp:51,78,87; Rust deferred-fires at the
+    // start of Cycle, accepting the documented 1-cycle delay.
+    // C++ counterpart: emFilePanel.cpp:51,78,87.
+    // Verified per FU-004 inventory 2026-05-02.
     pending_vir_state_fire: bool,
 }
 
