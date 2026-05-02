@@ -156,6 +156,24 @@ impl emDirPanel {
         &self.path
     }
 
+    /// B-016 test accessor: VFS signal id of the embedded `emFilePanel`.
+    #[doc(hidden)]
+    pub fn vir_file_state_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.file_panel.GetVirFileStateSignal()
+    }
+
+    /// B-016 test accessor: cached virtual-file-state of the embedded `emFilePanel`.
+    #[doc(hidden)]
+    pub fn vir_file_state_for_test(&self) -> emcore::emFilePanel::VirtualFileState {
+        self.file_panel.GetVirFileState()
+    }
+
+    /// B-016 test mutator: drive a custom error onto the embedded `emFilePanel`.
+    #[doc(hidden)]
+    pub fn set_custom_error_for_test(&mut self, msg: &str) {
+        self.file_panel.set_custom_error(msg);
+    }
+
     pub(crate) fn SelectAll(&self, ectx: &mut impl emcore::emEngineCtx::SignalCtx) {
         if let Some(ref dm_rc) = self.dir_model {
             let show_hidden = self.config.borrow().GetShowHiddenFiles();
@@ -308,6 +326,15 @@ impl PanelBehavior for emDirPanel {
     }
 
     fn Cycle(&mut self, ectx: &mut emcore::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        // B-016 (1) MANDATORY emFilePanel::Cycle prefix in derived panel.
+        // Mirrors C++ `busy=emFilePanel::Cycle()` at emDirPanel.cpp:74.
+        // The Rust composition pattern (emFilePanel as field, not base
+        // class) means `<emFilePanel as PanelBehavior>::Cycle` is never
+        // invoked by the engine for this panel; we must run its prefix
+        // explicitly. Implementer-of-record: emImageFileImageFilePanel.rs:211-235.
+        self.file_panel.ensure_vir_file_state_signal(ectx);
+        self.file_panel.fire_pending_vir_state(ectx);
+
         // Port of C++ emFilePanel::Cycle (emFilePanel.cpp:151-161): observe
         // the file model's state and refresh the painted view; never drive
         // loading from the panel. Loading is owned by emDirModelEngine,
@@ -323,18 +350,32 @@ impl PanelBehavior for emDirPanel {
         }
 
         // D-006 first-Cycle init: lazy-allocate ChangeSignal and connect.
-        // Mirrors C++ emDirPanel ctor `AddWakeUpSignal(...)` (row 38).
+        // Mirrors C++ emDirPanel ctor `AddWakeUpSignal(...)` (rows 37-38).
         if !self.subscribed_init {
             let eid = ectx.engine_id;
             let chg_sig = self.config.borrow().GetChangeSignal(ectx);
             ectx.connect(chg_sig, eid);
+            // B-016: subscribe to emFilePanel::GetVirFileStateSignal.
+            // Mirrors C++ emDirPanel.cpp:37 AddWakeUpSignal(GetVirFileStateSignal()).
+            let vfs_sig = self.file_panel.GetVirFileStateSignal();
+            if !vfs_sig.is_null() {
+                ectx.connect(vfs_sig, eid);
+            }
             self.subscribed_init = true;
         }
 
-        // Mirrors C++ emDirPanel.cpp:78 — config-driven force-rebuild.
+        // Mirrors C++ emDirPanel.cpp:75-82 — fire-driven invalidation/rebuild.
+        //   if (IsSignaled(GetVirFileStateSignal()) || IsSignaled(Config->GetChangeSignal())) {
+        //       InvalidatePainting(); UpdateChildren(); InvalidateChildrenLayout();
+        //   }
         // Re-call combined-form accessor (B-014 precedent): idempotent.
         let chg_sig = self.config.borrow().GetChangeSignal(ectx);
-        if !chg_sig.is_null() && ectx.IsSignaled(chg_sig) {
+        let cfg_changed = !chg_sig.is_null() && ectx.IsSignaled(chg_sig);
+        let vfs_fired = ectx.IsSignaled(self.file_panel.GetVirFileStateSignal());
+        if cfg_changed || vfs_fired {
+            // Force rebuild on next observed_state==Loaded match-arm.
+            // (Rust's `update_children` is gated on `child_count == 0`,
+            // which doubles as the "needs rebuild" predicate.)
             self.child_count = 0;
         }
 
@@ -365,8 +406,19 @@ impl PanelBehavior for emDirPanel {
             _ => false,
         };
 
-        self.file_panel.refresh_vir_file_state();
-        stay_awake
+        // Same-Cycle drain: set_custom_error / clear_custom_error above flip
+        // pending_vir_state_fire; drain so VirFileStateSignal observers see
+        // the fire this tick (mirrors C++ where the signal would have fired
+        // synchronously inside emFilePanel::Cycle).
+        self.file_panel.fire_pending_vir_state(ectx);
+
+        // B-016 (3) MANDATORY emFilePanel::Cycle suffix — cycle_inner +
+        // conditional fire. Mirrors emImageFileImageFilePanel.rs:232-235.
+        let changed = self.file_panel.cycle_inner();
+        if changed && !self.file_panel.GetVirFileStateSignal().is_null() {
+            ectx.fire(self.file_panel.GetVirFileStateSignal());
+        }
+        changed || stay_awake
     }
 
     fn Input(

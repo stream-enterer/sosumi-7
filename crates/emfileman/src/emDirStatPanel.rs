@@ -107,6 +107,24 @@ impl emDirStatPanel {
     pub fn set_entries(&mut self, entries: &[crate::emDirEntry::emDirEntry]) {
         self.stats = DirStatistics::from_entries(entries);
     }
+
+    /// B-016 test accessor: VFS signal id of the embedded `emFilePanel`.
+    #[doc(hidden)]
+    pub fn vir_file_state_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.file_panel.GetVirFileStateSignal()
+    }
+
+    /// B-016 test accessor: cached virtual-file-state of the embedded `emFilePanel`.
+    #[doc(hidden)]
+    pub fn vir_file_state_for_test(&self) -> emcore::emFilePanel::VirtualFileState {
+        self.file_panel.GetVirFileState()
+    }
+
+    /// B-016 test mutator.
+    #[doc(hidden)]
+    pub fn set_custom_error_for_test(&mut self, msg: &str) {
+        self.file_panel.set_custom_error(msg);
+    }
 }
 
 impl PanelBehavior for emDirStatPanel {
@@ -115,21 +133,39 @@ impl PanelBehavior for emDirStatPanel {
         ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
         _ctx: &mut PanelCtx,
     ) -> bool {
-        // D-006 first-Cycle init: lazy-allocate ChangeSignal and connect.
-        // Mirrors C++ emDirStatPanel ctor `AddWakeUpSignal(...)` (row 39).
+        // B-016 (1) MANDATORY emFilePanel::Cycle prefix in derived panel.
+        // Mirrors C++ `busy=emFilePanel::Cycle()` at emDirStatPanel.cpp:55.
+        // See implementer-of-record at emImageFileImageFilePanel.rs:211-235.
+        self.file_panel.ensure_vir_file_state_signal(ectx);
+        self.file_panel.fire_pending_vir_state(ectx);
+
+        // D-006 first-Cycle init: lazy-allocate signals and connect.
+        // Mirrors C++ emDirStatPanel ctor `AddWakeUpSignal(...)` (rows 30, 39).
         if !self.subscribed_init {
             let eid = ectx.engine_id;
             let chg_sig = self.config.borrow().GetChangeSignal(ectx);
             ectx.connect(chg_sig, eid);
+            // B-016: subscribe to emFilePanel::GetVirFileStateSignal.
+            // Mirrors C++ emDirStatPanel.cpp:30
+            // AddWakeUpSignal(GetVirFileStateSignal()).
+            let vfs_sig = self.file_panel.GetVirFileStateSignal();
+            if !vfs_sig.is_null() {
+                ectx.connect(vfs_sig, eid);
+            }
             self.subscribed_init = true;
         }
 
-        // Mirrors C++ emDirStatPanel.cpp:61 — config-driven invalidation.
+        // C++ emDirStatPanel.cpp:56-65: per-signal IsSignaled branches.
         // Re-call combined-form accessor (B-014 precedent): idempotent.
+        let vfs_fired = ectx.IsSignaled(self.file_panel.GetVirFileStateSignal());
+        if vfs_fired {
+            // C++ cpp:56-59: UpdateStatistics + InvalidatePainting.
+            self.update_statistics();
+        }
         let chg_sig = self.config.borrow().GetChangeSignal(ectx);
         if !chg_sig.is_null() && ectx.IsSignaled(chg_sig) {
-            // C++ invalidates and repaints; Rust reset stats so update_statistics
-            // re-derives from a fresh entries snapshot on next set_entries.
+            // C++ cpp:60-63: InvalidatePainting (Rust reset stats so
+            // update_statistics re-derives from a fresh entries snapshot).
             self.stats = DirStatistics {
                 total_count: -1,
                 file_count: -1,
@@ -139,9 +175,12 @@ impl PanelBehavior for emDirStatPanel {
             };
         }
 
-        self.file_panel.refresh_vir_file_state();
-        self.update_statistics();
-        false
+        // B-016 (3) MANDATORY suffix — cycle_inner + conditional fire.
+        let changed = self.file_panel.cycle_inner();
+        if changed && !self.file_panel.GetVirFileStateSignal().is_null() {
+            ectx.fire(self.file_panel.GetVirFileStateSignal());
+        }
+        changed
     }
 
     fn IsOpaque(&self) -> bool {

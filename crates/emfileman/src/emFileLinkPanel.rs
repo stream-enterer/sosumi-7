@@ -67,7 +67,20 @@ pub struct emFileLinkPanel {
     have_dir_entry_panel: bool,
     full_path: String,
     child_panel: Option<PanelId>,
-    needs_update: bool,
+    /// B-016 / M-001: per-branch flag fidelity to C++ emFileLinkPanel.cpp:84-101.
+    /// `do_update` is set by VFS / UpdateSignal / Model branches → triggers
+    /// `update_data_and_child_panel` in LayoutChildren. The Config branch does
+    /// NOT set this flag in C++ (cpp:95-98 only invalidates layout/painting).
+    do_update: bool,
+    /// B-016 / M-001: set false by UpdateSignal and Model branches (cpp:90,
+    /// cpp:100). Tracks whether the cached DirEntry view is up to date with
+    /// the file-update broadcast / model state. The Rust `update_data_and_child_panel`
+    /// re-resolves the link target whenever this is false.
+    dir_entry_up_to_date: bool,
+    /// B-016 / M-001: set true by Config branch (cpp:97). Distinct from
+    /// `do_update` because Config-change does not require re-resolving the
+    /// link target — only re-laying out the child panel.
+    invalidate_layout: bool,
     last_viewed: bool,
     /// First-Cycle init guard for D-006 subscribe shape.
     subscribed_init: bool,
@@ -90,7 +103,12 @@ impl emFileLinkPanel {
             have_dir_entry_panel: false,
             full_path: String::new(),
             child_panel: None,
-            needs_update: true,
+            // M-001 fidelity: initial state — we want the first viewed
+            // LayoutChildren to populate the child panel, mirroring C++
+            // ctor's `UpdateDataAndChildPanel()` call (cpp:64).
+            do_update: true,
+            dir_entry_up_to_date: false,
+            invalidate_layout: false,
             last_viewed: false,
             subscribed_init: false,
             model_subscribed: false,
@@ -115,6 +133,10 @@ impl emFileLinkPanel {
         // B-002: re-run the model-change subscribe in the next Cycle. Mirrors
         // C++ `RemoveWakeUpSignal(old)` + `AddWakeUpSignal(new)` semantics.
         self.model_subscribed = false;
+        // C++ cpp:73: `UpdateDataAndChildPanel()` after SetFileModel — drive
+        // a re-resolve of the new link target.
+        self.do_update = true;
+        self.dir_entry_up_to_date = false;
     }
 
     fn update_data_and_child_panel(&mut self, ctx: &mut PanelCtx, viewed: bool) {
@@ -161,6 +183,34 @@ impl emFileLinkPanel {
         }
     }
 
+    /// B-016 test accessor: VFS signal id of the embedded `emFilePanel`.
+    #[doc(hidden)]
+    pub fn vir_file_state_signal_for_test(&self) -> emcore::emSignal::SignalId {
+        self.file_panel.GetVirFileStateSignal()
+    }
+
+    /// B-016 test accessor: cached virtual-file-state of the embedded `emFilePanel`.
+    #[doc(hidden)]
+    pub fn vir_file_state_for_test(&self) -> emcore::emFilePanel::VirtualFileState {
+        self.file_panel.GetVirFileState()
+    }
+
+    /// B-016 test mutator.
+    #[doc(hidden)]
+    pub fn set_custom_error_for_test(&mut self, msg: &str) {
+        self.file_panel.set_custom_error(msg);
+    }
+
+    /// B-016 / M-001 test accessor: per-branch flag inspection.
+    #[doc(hidden)]
+    pub fn flags_for_test(&self) -> (bool, bool, bool) {
+        (
+            self.do_update,
+            self.dir_entry_up_to_date,
+            self.invalidate_layout,
+        )
+    }
+
     fn layout_child_panel(&self, ctx: &mut PanelCtx, panel_height: f64) {
         if let Some(child) = self.child_panel {
             let config = self.config.borrow();
@@ -200,8 +250,14 @@ impl PanelBehavior for emFileLinkPanel {
         ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
         _ctx: &mut PanelCtx,
     ) -> bool {
-        // D-006 first-Cycle init: lazy-allocate ChangeSignal and connect.
-        // Mirrors C++ emFileLinkPanel ctor `AddWakeUpSignal(...)` (rows 53, 55).
+        // B-016 (1) MANDATORY emFilePanel::Cycle prefix in derived panel.
+        // Mirrors C++ `busy=emFilePanel::Cycle()` at emFileLinkPanel.cpp:81.
+        // See implementer-of-record at emImageFileImageFilePanel.rs:211-235.
+        self.file_panel.ensure_vir_file_state_signal(ectx);
+        self.file_panel.fire_pending_vir_state(ectx);
+
+        // D-006 first-Cycle init: lazy-allocate signals and connect.
+        // Mirrors C++ emFileLinkPanel ctor `AddWakeUpSignal(...)` (rows 53-56).
         if !self.subscribed_init {
             let eid = ectx.engine_id;
             let chg_sig = self.config.borrow().GetChangeSignal(ectx);
@@ -211,12 +267,19 @@ impl PanelBehavior for emFileLinkPanel {
             // `AddWakeUpSignal(UpdateSignalModel->Sig)`.
             let update_sig = emcore::emFileModel::emFileModel::<()>::AcquireUpdateSignalModel(ectx);
             ectx.connect(update_sig, eid);
+            // B-016: subscribe to emFilePanel::GetVirFileStateSignal.
+            // Mirrors C++ emFileLinkPanel.cpp:54
+            // AddWakeUpSignal(GetVirFileStateSignal()).
+            let vfs_sig = self.file_panel.GetVirFileStateSignal();
+            if !vfs_sig.is_null() {
+                ectx.connect(vfs_sig, eid);
+            }
             self.subscribed_init = true;
         }
 
         // B-002 rows emFileLinkPanel-56 / -72 (single shared callsite): wire
         // the model's ChangeSignal once per model. C++ does the equivalent in
-        // ctor (`emFileLinkPanel.cpp:55`) and `SetFileModel` (`:72`); the
+        // ctor (`emFileLinkPanel.cpp:56`) and `SetFileModel` (`:72`); the
         // Rust ctor branch is structurally dead because `model: None` at
         // construction and `set_link_model` is the only path to a non-null
         // model. `set_link_model` resets `model_subscribed = false`, this
@@ -229,46 +292,51 @@ impl PanelBehavior for emFileLinkPanel {
                 self.model_subscribed = true;
             }
         }
-        // Mirrors C++ emFileLinkPanel.cpp:95 — config-driven invalidation/repaint.
-        // Re-call combined-form accessor (B-014 precedent): idempotent.
-        let chg_sig = self.config.borrow().GetChangeSignal(ectx);
-        if !chg_sig.is_null() && ectx.IsSignaled(chg_sig) {
-            self.needs_update = true;
-        }
-        // B-005 row emFileLinkPanel-53: react to the shared file-update
-        // broadcast. Mirrors C++ emFileLinkPanel.cpp:90-93
-        // (`DirEntryUpToDate=false; doUpdate=true;`). The Rust analog is to
-        // mark `needs_update`, which `LayoutChildren` consumes by re-running
-        // `update_data_and_child_panel` (re-resolves the link target and
-        // recreates the child panel if the target has changed).
-        //
-        // No explicit InvalidatePainting is required here. C++ at this site
-        // (cpp:90-93) likewise does not call InvalidatePainting; that call
-        // lives in the adjacent VirFileState (cpp:85-88) and ChangeSignal
-        // (cpp:95-98) branches. Recreating the child panel from
-        // update_data_and_child_panel naturally triggers a downstream paint
-        // invalidation when the new child is laid out.
-        let update_sig = emcore::emFileModel::emFileModel::<()>::AcquireUpdateSignalModel(ectx);
-        if ectx.IsSignaled(update_sig) {
-            self.needs_update = true;
+
+        // B-016 / M-001: per-branch fidelity to C++ emFileLinkPanel.cpp:84-101.
+        // 4 distinct IsSignaled branches with 3 distinct flag mutations:
+        //   (a) VFS:           InvalidatePainting + doUpdate=true
+        //   (b) UpdateSignal:  DirEntryUpToDate=false + doUpdate=true
+        //   (c) Config:        InvalidatePainting + InvalidateChildrenLayout (no doUpdate)
+        //   (d) Model:         doUpdate=true
+        // The previously-collapsed `needs_update` flag was an M-001 violation
+        // (no forced category applied); restored here.
+
+        // (a) C++ cpp:85-88: VirFileStateSignal branch.
+        if ectx.IsSignaled(self.file_panel.GetVirFileStateSignal()) {
+            self.do_update = true;
         }
 
-        // B-002: react to the model's ChangeSignal. Mirrors C++
-        // `emFileLinkPanel.cpp:99-104`:
-        //     if (Model && IsSignaled(Model->GetChangeSignal())) {
-        //         DirEntryUpToDate=false;
-        //         doUpdate=true;
-        //     }
-        // Re-call combined-form accessor (B-014 precedent at line 200): idempotent.
+        // (b) C++ cpp:90-93: UpdateSignalModel branch.
+        let update_sig = emcore::emFileModel::emFileModel::<()>::AcquireUpdateSignalModel(ectx);
+        if ectx.IsSignaled(update_sig) {
+            self.dir_entry_up_to_date = false;
+            self.do_update = true;
+        }
+
+        // (c) C++ cpp:95-98: Config->GetChangeSignal branch — invalidates
+        // layout but does NOT set doUpdate. Re-call combined-form accessor
+        // (B-014 precedent): idempotent.
+        let chg_sig = self.config.borrow().GetChangeSignal(ectx);
+        if !chg_sig.is_null() && ectx.IsSignaled(chg_sig) {
+            self.invalidate_layout = true;
+        }
+
+        // (d) C++ cpp:100-103: Model->GetChangeSignal branch.
         if let Some(ref model_rc) = self.model {
             let chg = model_rc.borrow().GetChangeSignal(ectx);
             if !chg.is_null() && ectx.IsSignaled(chg) {
-                self.needs_update = true;
+                self.dir_entry_up_to_date = false;
+                self.do_update = true;
             }
         }
 
-        self.file_panel.refresh_vir_file_state();
-        false
+        // B-016 (3) MANDATORY suffix — cycle_inner + conditional fire.
+        let changed = self.file_panel.cycle_inner();
+        if changed && !self.file_panel.GetVirFileStateSignal().is_null() {
+            ectx.fire(self.file_panel.GetVirFileStateSignal());
+        }
+        changed
     }
 
     fn AutoExpand(&mut self, ctx: &mut PanelCtx) {
@@ -311,7 +379,10 @@ impl PanelBehavior for emFileLinkPanel {
     fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::VIEWING_CHANGED) {
             self.last_viewed = state.viewed;
-            self.needs_update = true;
+            // C++ emFileLinkPanel::Notice (cpp:108): NF_VIEWING_CHANGED →
+            // UpdateDataAndChildPanel(). Sets do_update; does NOT touch
+            // dir_entry_up_to_date (target hasn't necessarily changed).
+            self.do_update = true;
         }
     }
 
@@ -410,9 +481,19 @@ impl PanelBehavior for emFileLinkPanel {
     /// panels. The timing difference is at most one frame. This matches the
     /// established pattern in emDirEntryPanel.
     fn LayoutChildren(&mut self, ctx: &mut PanelCtx) {
-        if self.needs_update {
+        // M-001: per-branch flag consumption.
+        if self.do_update {
             self.update_data_and_child_panel(ctx, self.last_viewed);
-            self.needs_update = false;
+            self.do_update = false;
+            // After a successful re-resolve, dir-entry view is current again.
+            self.dir_entry_up_to_date = true;
+        }
+        // The Config branch sets invalidate_layout without do_update — the
+        // child panel itself is unchanged but its layout may have shifted
+        // (e.g., border padding). Re-laying out via layout_child_panel below
+        // covers this; we just clear the flag.
+        if self.invalidate_layout {
+            self.invalidate_layout = false;
         }
         let rect = ctx.layout_rect();
         self.layout_child_panel(ctx, rect.h);
