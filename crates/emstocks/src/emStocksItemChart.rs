@@ -1,5 +1,8 @@
 // Port of C++ emStocksItemChart.h / emStocksItemChart.cpp
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use emcore::emColor::emColor;
 use emcore::emPainter::emPainter;
 use emcore::emPainter::{TextAlignment, VAlign};
@@ -7,6 +10,7 @@ use emcore::emStroke::emStroke;
 use emcore::emTexture::emTexture;
 
 use super::emStocksConfig::emStocksConfig;
+use super::emStocksListBox::emStocksListBox;
 use super::emStocksRec::{
     AddDaysToDate, AddDaysToDateParts, GetCurrentDate, GetDateDifference, GetDateDifferenceParts,
     GetDaysOfMonth, ParseDate, SharePriceToString, StockRec,
@@ -36,6 +40,20 @@ impl Price {
 /// View context (pixels_per_unit, viewed state) is provided by the parent
 /// panel via set_view_context() instead of C++ emBorder/emPanel inheritance.
 pub struct emStocksItemChart {
+    /// C++ `emStocksListBox & ListBox;` member reference
+    /// (emStocksItemChart.h). (a)-justified `Rc<RefCell<>>`: shared across
+    /// `emStocksFilePanel::Cycle` (owner) and the chart's own `Cycle` (which
+    /// reads `GetSelectedDateSignal` + `GetSelectedDate()`).
+    pub(crate) list_box: Rc<RefCell<emStocksListBox>>,
+    /// C++ `emStocksConfig & Config;` member reference. (a)-justified —
+    /// co-borrowed with FilePanel + ItemPanel + ControlPanel; chart's own
+    /// `Cycle` reads `GetChangeSignal` from the same `Rc`.
+    pub(crate) config: Rc<RefCell<emStocksConfig>>,
+    /// D-006 first-Cycle init flag for ListBox.SelectedDate + Config.Change.
+    /// Mirrors the Phase A `emStocksControlPanel` pattern. Phase D wires the
+    /// actual subscribes inside the gated branch.
+    pub(crate) subscribed_init: bool,
+
     // Data state
     data_up_to_date: bool,
 
@@ -82,16 +100,19 @@ pub struct emStocksItemChart {
     pub(crate) viewed: bool,
 }
 
-impl Default for emStocksItemChart {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl emStocksItemChart {
-    /// Port of C++ constructor defaults.
-    pub fn new() -> Self {
+    /// Port of C++ ctor at `emStocksItemChart.cpp:25-66`. C++ takes
+    /// `(ParentArg, name, listBox, config)`; the parent/name scaffolding is
+    /// provided by the panel-tree owner site. Subscribes (cpp:64-65) are
+    /// deferred to the first `Cycle` per D-006.
+    pub fn new(
+        list_box: Rc<RefCell<emStocksListBox>>,
+        config: Rc<RefCell<emStocksConfig>>,
+    ) -> Self {
         Self {
+            list_box,
+            config,
+            subscribed_init: false,
             data_up_to_date: false,
             start_date: String::new(),
             start_year: 0,
@@ -1324,6 +1345,58 @@ impl emStocksItemChart {
 }
 
 #[cfg(test)]
+impl emStocksItemChart {
+    /// Phase C test accessor — strong_count probes for the `Rc<RefCell<>>`
+    /// member refs so the tests can confirm the ctor wires them through.
+    /// Not called from production code; the refs are read by Phase D's
+    /// wired `Cycle` body.
+    #[doc(hidden)]
+    pub(crate) fn list_box_strong_count(&self) -> usize {
+        Rc::strong_count(&self.list_box)
+    }
+
+    #[doc(hidden)]
+    pub(crate) fn config_strong_count(&self) -> usize {
+        Rc::strong_count(&self.config)
+    }
+}
+
+/// Phase C structural scaffold — first-Cycle latch only.
+///
+/// Phase D will replace the no-op gated body with the rows -64 / -65 D-006
+/// subscribes (Config.GetChangeSignal + ListBox.GetSelectedDateSignal). For
+/// now the body only flips `subscribed_init` to pin the latch contract.
+impl emcore::emPanel::PanelBehavior for emStocksItemChart {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        _pctx: &mut emcore::emEngineCtx::PanelCtx,
+    ) -> bool {
+        if !self.subscribed_init {
+            // Phase D will replace these placeholders with the real subscribes
+            // (rows -64 / -65). For now we touch the refs so the structural
+            // ctor wiring is exercised by the live `Cycle` path rather than
+            // only by tests.
+            let _ = self.list_box.borrow();
+            let _ = self.config.borrow();
+            self.subscribed_init = true;
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+impl emStocksItemChart {
+    /// Test-only fixture mirroring Phase A `emStocksControlPanel::for_test`.
+    pub(crate) fn for_test() -> Self {
+        Self::new(
+            Rc::new(RefCell::new(emStocksListBox::new())),
+            Rc::new(RefCell::new(emStocksConfig::default())),
+        )
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::emStocksConfig::ChartPeriod;
@@ -1353,15 +1426,77 @@ mod tests {
 
     #[test]
     fn chart_new_defaults() {
-        let chart = emStocksItemChart::new();
+        let chart = emStocksItemChart::for_test();
         assert!(!chart.data_up_to_date);
         assert_eq!(chart.total_days, 1);
         assert_eq!(chart.days_per_price, 1);
     }
 
+    /// B-001-followup C.2 — verify the ctor wires the two member-ref
+    /// `Rc<RefCell<>>`s through (strong_count goes to 2 once held both by
+    /// the test scope and by the chart). Mirrors the Phase A `holds_member_refs`
+    /// shape on `emStocksControlPanel`.
+    #[test]
+    fn chart_holds_member_refs() {
+        let list_box = Rc::new(RefCell::new(emStocksListBox::new()));
+        let config = Rc::new(RefCell::new(emStocksConfig::default()));
+        let chart = emStocksItemChart::new(list_box.clone(), config.clone());
+        assert_eq!(chart.list_box_strong_count(), 2);
+        assert_eq!(chart.config_strong_count(), 2);
+        assert!(!chart.subscribed_init);
+        drop(chart);
+        assert_eq!(Rc::strong_count(&list_box), 1);
+        assert_eq!(Rc::strong_count(&config), 1);
+    }
+
+    /// B-001-followup C.3 — first-Cycle latch flips `subscribed_init`.
+    /// Phase D will replace the no-op gated body with the rows -64 / -65
+    /// D-006 row subscribes; this test pins the latch contract until then.
+    #[test]
+    fn chart_first_cycle_flips_subscribed_init() {
+        use emcore::emEngine::Priority;
+        use emcore::emPanelScope::PanelScope;
+        use emcore::test_view_harness::TestViewHarness;
+
+        struct NoopEngine;
+        impl emcore::emEngine::emEngine for NoopEngine {
+            fn Cycle(&mut self, _ctx: &mut emcore::emEngineCtx::EngineCtx<'_>) -> bool {
+                false
+            }
+        }
+
+        let mut h = TestViewHarness::new();
+        let eid = h.scheduler.register_engine(
+            Box::new(NoopEngine),
+            Priority::Medium,
+            PanelScope::Framework,
+        );
+
+        let mut chart = emStocksItemChart::for_test();
+        assert!(!chart.subscribed_init);
+
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let id = tree.create_root("ic", false);
+        {
+            let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
+            let mut ectx = h.engine_ctx(eid);
+            let _ = <emStocksItemChart as emcore::emPanel::PanelBehavior>::Cycle(
+                &mut chart, &mut ectx, &mut pctx,
+            );
+        }
+
+        assert!(
+            chart.subscribed_init,
+            "first Cycle must flip subscribed_init"
+        );
+
+        h.scheduler.remove_engine(eid);
+        h.scheduler.flush_signals_for_test();
+    }
+
     #[test]
     fn chart_update_data_no_stock() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         let config = emStocksConfig::default();
         chart.UpdateData(None, &config);
         assert!(chart.prices.is_empty());
@@ -1369,7 +1504,7 @@ mod tests {
 
     #[test]
     fn chart_update_data_with_stock() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         chart.selected_date = "2024-06-15".to_string();
         let config = emStocksConfig {
             chart_period: ChartPeriod::Week1,
@@ -1386,7 +1521,7 @@ mod tests {
 
     #[test]
     fn calculate_days_per_price() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         // viewed=false: returns total_days directly
         chart.total_days = 365;
         assert_eq!(chart.CalculateDaysPerPrice(), 365);
@@ -1402,7 +1537,7 @@ mod tests {
 
     #[test]
     fn chart_trade_price_text() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         chart.selected_date = "2024-06-15".to_string();
         let config = emStocksConfig {
             chart_period: ChartPeriod::Week1,
@@ -1421,7 +1556,7 @@ mod tests {
 
     #[test]
     fn chart_desired_price() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         chart.selected_date = "2024-06-15".to_string();
         let config = emStocksConfig {
             chart_period: ChartPeriod::Week1,
@@ -1439,7 +1574,7 @@ mod tests {
 
     #[test]
     fn chart_transformation_valid() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         chart.selected_date = "2024-06-15".to_string();
         let config = emStocksConfig {
             chart_period: ChartPeriod::Week1,
@@ -1457,7 +1592,7 @@ mod tests {
 
     #[test]
     fn chart_invalidate_resets_flag() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         let config = emStocksConfig::default();
         chart.UpdateData(None, &config);
         assert!(chart.data_up_to_date);
@@ -1471,7 +1606,7 @@ mod tests {
 
     #[test]
     fn view_context_methods() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         chart.set_view_context(800.0, 400.0, true);
         assert!((chart.ViewToPanelDeltaX(14.0) - 14.0 / 800.0).abs() < 1e-12);
         assert!((chart.ViewToPanelDeltaY(14.0) - 14.0 / 400.0).abs() < 1e-12);
@@ -1480,7 +1615,7 @@ mod tests {
 
     #[test]
     fn calculate_y_scale_level_range_basic() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         // Set up a chart with price range 50..150
         chart.lower_price = 50.0;
         chart.upper_price = 150.0;
@@ -1502,7 +1637,7 @@ mod tests {
 
     #[test]
     fn calculate_y_scale_level_range_small_range() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         chart.lower_price = 99.0;
         chart.upper_price = 101.0;
         chart.y_factor = -0.5;
@@ -1520,7 +1655,7 @@ mod tests {
 
     #[test]
     fn paint_content_no_crash_empty() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         chart.set_view_context(800.0, 400.0, true);
         let mut img = emcore::emImage::emImage::new(100, 100, 4);
         let mut painter = emPainter::new(&mut img);
@@ -1530,7 +1665,7 @@ mod tests {
 
     #[test]
     fn paint_content_no_crash_with_data() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         chart.selected_date = "2024-06-15".to_string();
         let config = emStocksConfig {
             chart_period: ChartPeriod::Week1,
@@ -1559,7 +1694,7 @@ mod tests {
 
     #[test]
     fn paint_desired_price_no_crash() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         chart.selected_date = "2024-06-15".to_string();
         let config = emStocksConfig {
             chart_period: ChartPeriod::Week1,
@@ -1578,7 +1713,7 @@ mod tests {
 
     #[test]
     fn paint_graph_no_crash() {
-        let mut chart = emStocksItemChart::new();
+        let mut chart = emStocksItemChart::for_test();
         chart.selected_date = "2024-06-15".to_string();
         let config = emStocksConfig {
             chart_period: ChartPeriod::Week1,
@@ -1603,7 +1738,7 @@ mod tests {
     fn paint_price_bar_profit_and_loss() {
         // Test both profit (owning + price up) and loss (owning + price down)
         for (price_str, expected_profit) in &[("55", true), ("45", false)] {
-            let mut chart = emStocksItemChart::new();
+            let mut chart = emStocksItemChart::for_test();
             chart.selected_date = "2024-06-15".to_string();
             let config = emStocksConfig {
                 chart_period: ChartPeriod::Week1,

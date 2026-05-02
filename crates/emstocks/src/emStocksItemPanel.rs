@@ -15,6 +15,9 @@ use emcore::emRadioButton::{emRadioButton, RadioGroup};
 use emcore::emTextField::emTextField;
 
 use super::emStocksConfig::emStocksConfig;
+use super::emStocksFileModel::emStocksFileModel;
+use super::emStocksItemChart::emStocksItemChart;
+use super::emStocksListBox::emStocksListBox;
 use super::emStocksRec::{GetCurrentDate, Interest, ParseDate, PaymentPriceToString, StockRec};
 
 /// Number of web page slots, matching C++ NUM_WEB_PAGES.
@@ -184,6 +187,23 @@ impl ItemWidgets {
 /// AutoExpand can create real widget instances.
 pub struct emStocksItemPanel {
     pub(crate) look: Rc<emLook>,
+    /// C++ `emStocksFileModel & FileModel;` member reference
+    /// (emStocksItemPanel.h). (a)-justified `Rc<RefCell<>>`: shared across
+    /// `emStocksFilePanel::Cycle` (owner) and the per-item panel `Cycle`s,
+    /// each of which must read/mutate the same model.
+    pub(crate) file_model: Rc<RefCell<emStocksFileModel>>,
+    /// C++ `emStocksConfig & Config;` member reference. (a)-justified —
+    /// co-borrowed with FilePanel + ControlPanel + ItemChart.
+    pub(crate) config: Rc<RefCell<emStocksConfig>>,
+    /// C++ `emStocksListBox & ListBox;` member reference
+    /// (emStocksItemPanel.h). (a)-justified — FilePanel wraps the ListBox
+    /// in `Rc<RefCell<>>` (Phase 3 of B-001) so each ItemPanel holds a
+    /// clone of the same handle.
+    pub(crate) list_box: Rc<RefCell<emStocksListBox>>,
+    /// C++ `ItemPanelInterface(parent,itemIndex)` — the index of this
+    /// item within the parent ListBox. Initialised by the
+    /// `emStocksListBox::CreateItemPanel` factory.
+    pub(crate) item_index: usize,
     stock_rec_index: Option<usize>,
     pub(crate) update_controls_needed: bool,
 
@@ -195,6 +215,28 @@ pub struct emStocksItemPanel {
     /// `Option<ItemWidgets>` — `None` = shrunk, `Some` = expanded.
     pub(crate) widgets: Option<ItemWidgets>,
 
+    /// C++ `emStocksItemChart * Chart` — owned child constructed inside
+    /// `AutoExpand` (cpp:549). `None` while shrunk, `Some` while expanded.
+    ///
+    /// Note: C++ wraps the chart in an `emLinearGroup` named `l1`
+    /// (cpp:549 `Chart=new emStocksItemChart(l1,"Chart",...)`); the Rust
+    /// port owns the chart directly because emcore has no `emLinearGroup`
+    /// analogue yet. The flattening is below the observable surface
+    /// (the chart still paints inside the parent panel's content area)
+    /// and will be revisited when emcore ports the linear-group widget.
+    pub(crate) chart: Option<emStocksItemChart>,
+
+    /// D-006 first-Cycle init flag. Mirrors Phase A `subscribed_init` on
+    /// `emStocksControlPanel`. Phase D wires the actual G2/G4 subscribes
+    /// (C++ ctor body cpp:74-75 — Config.GetChangeSignal +
+    /// ListBox.GetSelectedDateSignal) inside the gated branch.
+    pub(crate) subscribed_init: bool,
+    /// Widget subscribes are deferred until `AutoExpand` materialises the
+    /// `ItemWidgets`. Reset to `false` on every `AutoExpand` so a fresh
+    /// expand re-subscribes. Mirrors Phase A `subscribed_widgets` on
+    /// `emStocksControlPanel`.
+    pub(crate) subscribed_widgets: bool,
+
     // Previous values for OwningShares toggle (C++ PrevOwnShares etc.)
     pub prev_own_shares: String,
     pub prev_purchase_price: String,
@@ -204,15 +246,34 @@ pub struct emStocksItemPanel {
 }
 
 impl emStocksItemPanel {
-    pub fn new(look: Rc<emLook>) -> Self {
+    /// Port of C++ ctor at `emStocksItemPanel.cpp:26-77`. C++ takes
+    /// `(emStocksListBox & parent, name, itemIndex, FileModel, Config)`;
+    /// the parent/name scaffolding is provided by the panel-tree owner
+    /// site (the `emStocksListBox::CreateItemPanel` factory). C++
+    /// ctor-body subscribes (cpp:74-75) are deferred to the first
+    /// `Cycle` per D-006 / Phase D.
+    pub fn new(
+        look: Rc<emLook>,
+        file_model: Rc<RefCell<emStocksFileModel>>,
+        config: Rc<RefCell<emStocksConfig>>,
+        list_box: Rc<RefCell<emStocksListBox>>,
+        item_index: usize,
+    ) -> Self {
         emStocksItemPanel {
             look,
+            file_model,
+            config,
+            list_box,
+            item_index,
             stock_rec_index: None,
             update_controls_needed: true,
             country: CategoryPanel::new(CategoryType::Country),
             sector: CategoryPanel::new(CategoryType::Sector),
             collection: CategoryPanel::new(CategoryType::Collection),
             widgets: None,
+            chart: None,
+            subscribed_init: false,
+            subscribed_widgets: false,
             prev_own_shares: String::new(),
             prev_purchase_price: String::new(),
             prev_purchase_date: String::new(),
@@ -244,16 +305,27 @@ impl emStocksItemPanel {
 
     /// Port of C++ AutoExpand — creates real widget tree.
     /// D44: Creates ItemWidgets with real emcore widget instances.
+    /// B-001-followup C.5: also constructs the owned `emStocksItemChart`
+    /// child mirroring C++ `emStocksItemPanel.cpp:549`
+    /// (`Chart=new emStocksItemChart(l1,"Chart",ListBox,Config)`). The
+    /// `l1` linear-group wrapper around it is not modeled separately —
+    /// see RUST_ONLY note on the `chart` field.
     pub fn AutoExpand<C: emcore::emEngineCtx::ConstructCtx>(&mut self, cc: &mut C) {
         if self.widgets.is_none() {
             self.widgets = Some(ItemWidgets::new(cc, self.look.clone()));
+            self.chart = Some(emStocksItemChart::new(
+                self.list_box.clone(),
+                self.config.clone(),
+            ));
             self.update_controls_needed = true;
+            self.subscribed_widgets = false;
         }
     }
 
-    /// Port of C++ AutoShrink — destroys widget instances.
+    /// Port of C++ AutoShrink — destroys widget instances and the chart child.
     pub fn AutoShrink(&mut self) {
         self.widgets = None;
+        self.chart = None;
     }
 
     /// Port of C++ emStocksItemPanel::Cycle OwningShares toggle logic.
@@ -580,6 +652,102 @@ impl emStocksItemPanel {
     }
 }
 
+/// Phase C structural scaffold — first-Cycle latch only.
+///
+/// Phase D will replace the no-op gated body with the C++ ctor-body
+/// subscribes (Config.GetChangeSignal + ListBox.GetSelectedDateSignal,
+/// cpp:74-75) plus the ~27 widget signals from `ItemWidgets`. For now
+/// the body only flips `subscribed_init` to pin the latch contract.
+impl emcore::emPanel::PanelBehavior for emStocksItemPanel {
+    fn Cycle(
+        &mut self,
+        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        _pctx: &mut emcore::emEngineCtx::PanelCtx,
+    ) -> bool {
+        if !self.subscribed_init {
+            // Phase D will replace these placeholders with the real
+            // subscribes. Touching the refs here keeps the structural
+            // ctor wiring exercised by the live `Cycle` path rather
+            // than only by tests.
+            let _ = self.file_model.borrow();
+            let _ = self.config.borrow();
+            let _ = self.list_box.borrow();
+            self.subscribed_init = true;
+        }
+        false
+    }
+}
+
+/// Port of C++ `ItemPanelInterface(parent,itemIndex)` inheritance.
+/// The factory installed on the inner `emListBox` (Task C.4) hands a
+/// boxed `dyn ItemPanelInterface` back — `emStocksItemPanel` is the
+/// concrete type behind that box.
+impl emcore::emListBox::ItemPanelInterface for emStocksItemPanel {
+    fn item_text_changed(&mut self, _text: &str) {
+        // C++ override is empty for emStocksItemPanel; data flows in
+        // through SetStockRec instead. Phase D will treat any incoming
+        // text change as a `update_controls_needed` flag bump.
+        self.update_controls_needed = true;
+    }
+
+    fn item_data_changed(&mut self) {
+        self.update_controls_needed = true;
+    }
+
+    fn item_selection_changed(&mut self, _selected: bool) {
+        self.update_controls_needed = true;
+    }
+
+    fn item_index(&self) -> usize {
+        self.item_index
+    }
+
+    fn set_item_index(&mut self, index: usize) {
+        self.item_index = index;
+    }
+
+    fn GetText(&self) -> &str {
+        ""
+    }
+
+    fn IsSelected(&self) -> bool {
+        false
+    }
+}
+
+#[cfg(test)]
+impl emStocksItemPanel {
+    /// Test-only fixture mirroring Phase A `emStocksControlPanel::for_test`.
+    pub(crate) fn for_test() -> Self {
+        Self::new(
+            emLook::new(),
+            Rc::new(RefCell::new(emStocksFileModel::new(
+                std::path::PathBuf::from("/tmp/item_panel_test.emStocks"),
+            ))),
+            Rc::new(RefCell::new(emStocksConfig::default())),
+            Rc::new(RefCell::new(emStocksListBox::new())),
+            0,
+        )
+    }
+
+    /// Phase C test accessors — strong_count probes for the `Rc<RefCell<>>`
+    /// member refs so the tests can confirm the ctor wires them through.
+    #[doc(hidden)]
+    pub(crate) fn file_model_strong_count(&self) -> usize {
+        Rc::strong_count(&self.file_model)
+    }
+
+    #[doc(hidden)]
+    pub(crate) fn config_strong_count(&self) -> usize {
+        Rc::strong_count(&self.config)
+    }
+
+    #[doc(hidden)]
+    pub(crate) fn list_box_strong_count(&self) -> usize {
+        Rc::strong_count(&self.list_box)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,10 +780,6 @@ mod tests {
         }
     }
 
-    fn make_look() -> Rc<emLook> {
-        emLook::new()
-    }
-
     /// Scratch `PanelCtx` for tests that call setters requiring a ctx param.
     /// Returns a ctx with no scheduler reach — setters will update state but
     /// callbacks will silently not fire (B3.3 semantics).
@@ -629,9 +793,95 @@ mod tests {
     #[test]
     fn item_panel_new() {
         let mut __init = TestInit::new();
-        let panel = emStocksItemPanel::new(make_look());
+        let panel = emStocksItemPanel::for_test();
         assert!(panel.GetStockRecIndex().is_none());
         assert!(panel.update_controls_needed);
+    }
+
+    /// B-001-followup C.1 — verify the ctor wires the three member-ref
+    /// `Rc<RefCell<>>`s through (strong_count goes to 2 once held both by
+    /// the test scope and by the panel).
+    #[test]
+    fn item_panel_holds_member_refs() {
+        let model = Rc::new(RefCell::new(
+            crate::emStocksFileModel::emStocksFileModel::new(std::path::PathBuf::from(
+                "/tmp/ip_c1.emStocks",
+            )),
+        ));
+        let config = Rc::new(RefCell::new(emStocksConfig::default()));
+        let list_box = Rc::new(RefCell::new(emStocksListBox::new()));
+        let look = emLook::new();
+        let panel =
+            emStocksItemPanel::new(look, model.clone(), config.clone(), list_box.clone(), 7);
+        assert_eq!(panel.file_model_strong_count(), 2);
+        assert_eq!(panel.config_strong_count(), 2);
+        assert_eq!(panel.list_box_strong_count(), 2);
+        assert_eq!(panel.item_index, 7);
+        assert!(!panel.subscribed_init);
+        assert!(panel.chart.is_none());
+        drop(panel);
+        assert_eq!(Rc::strong_count(&model), 1);
+        assert_eq!(Rc::strong_count(&config), 1);
+        assert_eq!(Rc::strong_count(&list_box), 1);
+    }
+
+    /// B-001-followup C.3 — first-Cycle latch flips `subscribed_init`.
+    /// Phase D will replace the no-op gated body with the C++ ctor-body
+    /// subscribes plus widget signals; this test pins the latch contract
+    /// until then.
+    #[test]
+    fn item_panel_first_cycle_flips_subscribed_init() {
+        use emcore::emEngine::Priority;
+        use emcore::emPanelScope::PanelScope;
+        use emcore::test_view_harness::TestViewHarness;
+
+        struct NoopEngine;
+        impl emcore::emEngine::emEngine for NoopEngine {
+            fn Cycle(&mut self, _ctx: &mut emcore::emEngineCtx::EngineCtx<'_>) -> bool {
+                false
+            }
+        }
+
+        let mut h = TestViewHarness::new();
+        let eid = h.scheduler.register_engine(
+            Box::new(NoopEngine),
+            Priority::Medium,
+            PanelScope::Framework,
+        );
+
+        let mut panel = emStocksItemPanel::for_test();
+        assert!(!panel.subscribed_init);
+
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let id = tree.create_root("ip", false);
+        {
+            let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
+            let mut ectx = h.engine_ctx(eid);
+            let _ = <emStocksItemPanel as emcore::emPanel::PanelBehavior>::Cycle(
+                &mut panel, &mut ectx, &mut pctx,
+            );
+        }
+
+        assert!(
+            panel.subscribed_init,
+            "first Cycle must flip subscribed_init"
+        );
+
+        h.scheduler.remove_engine(eid);
+        h.scheduler.flush_signals_for_test();
+    }
+
+    /// B-001-followup C.5 — `AutoExpand` constructs the owned `emStocksItemChart`
+    /// child mirroring C++ `emStocksItemPanel.cpp:549`.
+    #[test]
+    fn auto_expand_constructs_chart() {
+        let mut __init = TestInit::new();
+        let mut panel = emStocksItemPanel::for_test();
+        assert!(panel.chart.is_none());
+        panel.AutoExpand(&mut __init.ctx());
+        assert!(panel.chart.is_some(), "AutoExpand must construct chart");
+        panel.AutoShrink();
+        assert!(panel.chart.is_none(), "AutoShrink must drop chart");
     }
 
     #[test]
@@ -674,7 +924,7 @@ mod tests {
     #[test]
     fn auto_expand_creates_widgets() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         assert!(panel.widgets.is_none());
         panel.AutoExpand(&mut __init.ctx());
         assert!(panel.widgets.is_some());
@@ -684,7 +934,7 @@ mod tests {
     #[test]
     fn auto_shrink_destroys_widgets() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         panel.AutoShrink();
         assert!(panel.widgets.is_none());
@@ -693,7 +943,7 @@ mod tests {
     #[test]
     fn auto_expand_idempotent() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         panel.update_controls_needed = false;
         panel.AutoExpand(&mut __init.ctx());
@@ -715,7 +965,7 @@ mod tests {
     #[test]
     fn toggle_owning_to_not_owning() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         let mut stock = make_owning_stock();
 
         panel.ToggleOwningShares(&mut stock);
@@ -736,7 +986,7 @@ mod tests {
     #[test]
     fn toggle_not_owning_to_owning() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         // Pre-populate previous values (simulating earlier toggle)
         panel.prev_own_shares = "100".to_string();
         panel.prev_purchase_price = "50.00".to_string();
@@ -763,7 +1013,7 @@ mod tests {
     #[test]
     fn toggle_round_trip_preserves_data() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         let mut stock = make_owning_stock();
 
         // Toggle off
@@ -781,7 +1031,7 @@ mod tests {
     fn toggle_to_owning_with_nonempty_own_shares_is_noop_on_fields() {
         let mut __init = TestInit::new();
         // C++ guard: if OwnShares is NOT empty when toggling to owning, skip restore
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         let mut stock = StockRec::default();
         stock.owning_shares = false;
         stock.own_shares = "50".to_string();
@@ -801,7 +1051,7 @@ mod tests {
     fn toggle_to_not_owning_with_empty_own_shares_is_noop_on_fields() {
         let mut __init = TestInit::new();
         // C++ guard: if OwnShares IS empty when toggling to not-owning, skip save
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         let mut stock = StockRec::default();
         stock.owning_shares = true;
         stock.own_shares.clear();
@@ -820,7 +1070,7 @@ mod tests {
     #[test]
     fn update_controls_without_widgets_is_noop() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         let stock = StockRec::default();
         with_scratch_ctx(|ctx| panel.UpdateControls(&stock, "2024-03-15", ctx));
         assert!(!panel.update_controls_needed);
@@ -830,7 +1080,7 @@ mod tests {
     #[test]
     fn update_controls_name_label_owning() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.name = "ACME Corp".to_string();
@@ -846,7 +1096,7 @@ mod tests {
     #[test]
     fn update_controls_name_label_not_owning() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let stock = StockRec::default(); // owning_shares = false by default
 
@@ -860,7 +1110,7 @@ mod tests {
     #[test]
     fn update_controls_trade_captions_owning() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.owning_shares = true;
@@ -877,7 +1127,7 @@ mod tests {
     #[test]
     fn update_controls_trade_captions_not_owning() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let stock = StockRec::default();
 
@@ -893,7 +1143,7 @@ mod tests {
     #[test]
     fn update_controls_computed_values_owning() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.owning_shares = true;
@@ -914,7 +1164,7 @@ mod tests {
     #[test]
     fn update_controls_computed_values_not_owning() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let stock = StockRec::default();
 
@@ -929,7 +1179,7 @@ mod tests {
     #[test]
     fn update_controls_text_fields() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.name = "Test Stock".to_string();
@@ -968,7 +1218,7 @@ mod tests {
     #[test]
     fn update_controls_web_pages() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.web_pages = vec![
@@ -993,7 +1243,7 @@ mod tests {
     #[test]
     fn update_controls_fetch_enabled_with_symbol() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.symbol = "TST".to_string();
@@ -1007,7 +1257,7 @@ mod tests {
     #[test]
     fn update_controls_fetch_disabled_without_symbol() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let stock = StockRec::default();
 
@@ -1020,7 +1270,7 @@ mod tests {
     #[test]
     fn update_controls_price_and_price_date() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let mut stock = StockRec::default();
         stock.last_price_date = "2024-03-15".to_string();
@@ -1036,7 +1286,7 @@ mod tests {
     #[test]
     fn update_controls_empty_price_clears_date() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let stock = StockRec::default();
 
@@ -1050,7 +1300,7 @@ mod tests {
     #[test]
     fn update_controls_clears_flag() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         assert!(panel.update_controls_needed);
 
@@ -1068,7 +1318,7 @@ mod tests {
     #[test]
     fn read_from_widgets_no_widgets_is_noop() {
         let mut __init = TestInit::new();
-        let panel = emStocksItemPanel::new(make_look());
+        let panel = emStocksItemPanel::for_test();
         let mut stock = StockRec::default();
         stock.name = "Before".to_string();
         let config = make_config();
@@ -1080,7 +1330,7 @@ mod tests {
     #[test]
     fn read_from_widgets_basic_text_fields() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
@@ -1119,7 +1369,7 @@ mod tests {
     #[test]
     fn read_from_widgets_symbol_change_clears_prices() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
@@ -1145,7 +1395,7 @@ mod tests {
     #[test]
     fn read_from_widgets_same_symbol_preserves_prices() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
@@ -1163,7 +1413,7 @@ mod tests {
     #[test]
     fn read_from_widgets_interest_radio() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
@@ -1189,7 +1439,7 @@ mod tests {
     #[test]
     fn read_from_widgets_web_pages() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 
@@ -1211,7 +1461,7 @@ mod tests {
     #[test]
     fn read_from_widgets_owning_shares_flag_updated() {
         let mut __init = TestInit::new();
-        let mut panel = emStocksItemPanel::new(make_look());
+        let mut panel = emStocksItemPanel::for_test();
         panel.AutoExpand(&mut __init.ctx());
         let config = make_config();
 

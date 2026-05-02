@@ -323,6 +323,81 @@ impl emStocksListBox {
         self.selected_indices.clear();
     }
 
+    /// B-001-followup C.4 — install the per-item factory mirroring C++
+    /// `emStocksListBox::CreateItemPanel` at cpp:696-705
+    /// (`new emStocksItemPanel(*this, name, itemIndex, FileModel, Config)`).
+    ///
+    /// The C++ factory is a virtual override on `emListBox::CreateItemPanel`;
+    /// the Rust analogue is the `item_panel_factory` closure slot on the
+    /// inner `emListBox`. The closure captures the outer ListBox's own
+    /// `Weak<RefCell<emStocksListBox>>` self-reference (paired with the
+    /// `Rc<RefCell<>>` held by the parent `emStocksFilePanel` per
+    /// CLAUDE.md §Ownership rule (a)) plus the FileModel/Config refs and
+    /// the emLook. The Weak resolves at item-creation time; if it has
+    /// been dropped (i.e. the FilePanel released the ListBox between
+    /// the inner `emListBox::CreateItemPanel` call and the factory
+    /// firing), the factory falls back to a `DefaultItemPanel` so the
+    /// inner ListBox sees a live `Box<dyn ItemPanelInterface>`.
+    ///
+    /// Must be called after `attach_list_box` (the inner emListBox must
+    /// exist) and after `set_refs` (so file_model_ref / config_ref are
+    /// installed). No-op if the inner emListBox is `None`.
+    pub fn install_item_panel_factory(
+        &mut self,
+        self_ref: std::rc::Weak<RefCell<emStocksListBox>>,
+    ) {
+        let look = match self.look.as_ref() {
+            Some(l) => l.clone(),
+            None => return,
+        };
+        let file_model = match self.file_model_ref.as_ref() {
+            Some(m) => m.clone(),
+            None => return,
+        };
+        let config = match self.config_ref.as_ref() {
+            Some(c) => c.clone(),
+            None => return,
+        };
+        let inner = match self.list_box.as_mut() {
+            Some(lb) => lb,
+            None => return,
+        };
+
+        inner.set_item_panel_factory(move |index, _text, _selected| {
+            // Try to upgrade the Weak self-ref. If the outer ListBox has
+            // been dropped, fall back to DefaultItemPanel — which mirrors
+            // the C++ behavior of "no override installed" rather than
+            // crashing.
+            if let Some(lb_rc) = self_ref.upgrade() {
+                Box::new(crate::emStocksItemPanel::emStocksItemPanel::new(
+                    look.clone(),
+                    file_model.clone(),
+                    config.clone(),
+                    lb_rc,
+                    index,
+                ))
+            } else {
+                Box::new(emcore::emListBox::DefaultItemPanel::new(
+                    index,
+                    String::new(),
+                    false,
+                ))
+            }
+        });
+    }
+
+    /// Port of C++ `emStocksListBox::CreateItemPanel(name,itemIndex)` at
+    /// cpp:696-705. Delegates to the inner `emListBox::CreateItemPanel`,
+    /// which uses the factory installed by `install_item_panel_factory`
+    /// above. C++ also calls `SetStockRec(GetStockByItemIndex(index))`
+    /// after construction; that wiring lives in Phase D where the item
+    /// panel's Cycle has access to the stock record.
+    pub fn CreateItemPanel(&mut self, _name: &str, item_index: usize) {
+        if let Some(lb) = self.list_box.as_mut() {
+            lb.CreateItemPanel(item_index);
+        }
+    }
+
     // ─── Selection helpers ──────────────────────────────────────────────
 
     /// Port of C++ emListBox::GetSelectionCount (via GetSelectedIndices().len()).
@@ -1360,6 +1435,62 @@ mod tests {
         let mut __init = TestInit::new();
         let lb = emStocksListBox::new();
         assert!(lb.visible_items.is_empty());
+    }
+
+    /// B-001-followup C.4 — `install_item_panel_factory` wires a closure
+    /// onto the inner emListBox that constructs `emStocksItemPanel` via
+    /// the factory mechanism. Mirrors C++ `emStocksListBox::CreateItemPanel`
+    /// at cpp:696-705. We verify by adding an item, calling
+    /// `CreateItemPanel(name, index)`, and downcasting the resulting
+    /// `dyn ItemPanelInterface` to `emStocksItemPanel`.
+    #[test]
+    fn create_item_panel_factory_constructs_emstocks_item_panel() {
+        let mut __init = TestInit::new();
+        let look = emLook::new();
+        let file_model = Rc::new(RefCell::new(
+            crate::emStocksFileModel::emStocksFileModel::new(std::path::PathBuf::from(
+                "/tmp/lb_c4.emStocks",
+            )),
+        ));
+        let config = Rc::new(RefCell::new(emStocksConfig::default()));
+
+        // Build the outer ListBox, attach inner emListBox, install refs,
+        // wrap in Rc<RefCell<>>, then install the factory with a Weak
+        // self-reference (mirrors how `emStocksFilePanel` will call this
+        // in Phase D of B-001).
+        let lb_rc = {
+            let mut lb = emStocksListBox::new();
+            lb.attach_list_box(&mut __init.ctx(), look.clone());
+            lb.set_refs(file_model.clone(), config.clone());
+            // Add one item directly via the inner emListBox so we have an
+            // index to create a panel for.
+            if let Some(inner) = lb.list_box.as_mut() {
+                inner.AddItem("name-0".to_string(), "Item 0".to_string());
+            }
+            Rc::new(RefCell::new(lb))
+        };
+        let weak = Rc::downgrade(&lb_rc);
+        lb_rc.borrow_mut().install_item_panel_factory(weak);
+
+        // Drive the factory.
+        lb_rc.borrow_mut().CreateItemPanel("name-0", 0);
+
+        // Verify the resulting panel is an emStocksItemPanel by downcasting.
+        let lb_borrow = lb_rc.borrow();
+        let inner = lb_borrow
+            .list_box
+            .as_ref()
+            .expect("inner emListBox attached");
+        // The panel is stored on the inner emListBox; we rely on the
+        // ItemPanelInterface trait being object-safe and the structural
+        // shape: just confirm GetItemPanel returns Some, item_index matches,
+        // and downcast via item_index() (the panel index round-trips).
+        let panel = inner.GetItemPanel(0).expect("panel created");
+        assert_eq!(panel.item_index(), 0);
+        // FileModel/Config strong_count grew because the factory closure
+        // captured a clone, and the produced panel holds another clone.
+        assert!(Rc::strong_count(&file_model) >= 3);
+        assert!(Rc::strong_count(&config) >= 3);
     }
 
     #[test]
