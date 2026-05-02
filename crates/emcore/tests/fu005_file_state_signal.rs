@@ -62,7 +62,10 @@ fn get_file_state_signal_returns_null_until_ensured() {
         let mut sc = h.sched_ctx();
         m.ensure_file_state_signal(&mut sc)
     };
-    assert!(!id1.is_null(), "ensure_file_state_signal must return a real id");
+    assert!(
+        !id1.is_null(),
+        "ensure_file_state_signal must return a real id"
+    );
 
     // Idempotent: second call returns the same id.
     let id2 = {
@@ -84,9 +87,8 @@ fn try_load_fires_file_state_signal() {
     // TryLoad on a non-existent path transitions to LoadError; per FU-005,
     // both ChangeSignal and FileStateSignal must fire on the transition.
     let mut h = TestViewHarness::new();
-    let mut m = emRecFileModel::<DummyRec>::new(PathBuf::from(
-        "/tmp/fu005_does_not_exist_xyz_load.rec",
-    ));
+    let mut m =
+        emRecFileModel::<DummyRec>::new(PathBuf::from("/tmp/fu005_does_not_exist_xyz_load.rec"));
 
     // Promote both signals (mirrors first-Cycle subscriber wiring).
     let (change_sig, state_sig) = {
