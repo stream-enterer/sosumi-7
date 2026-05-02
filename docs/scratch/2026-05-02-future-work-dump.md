@@ -31,6 +31,24 @@ what we caught).
 - **`emDialog::ShowMessage`** missing in Rust emcore. ShowWebPages error path is logged-and-swallowed in FU-001. emfileman / emstocks likely have other error-message-display sites with similar workarounds.
 - **`widget_checkbox_toggle.widget_state.golden`** may need regeneration during FU-001 Phase 1 (depending on what state it captured). Establish convention: when adding a new signal field that didn't exist before, do golden tests need explicit "before/after" rationale in the commit message? Probably yes.
 
+### From FU-003 (rescope + carve-offs)
+
+- **FU-003 was rescoped 2026-05-02.** Original framing ("emView multi-view content/control split port — large standalone upstream port") was wrong: the multi-view infrastructure (`emSubViewPanel`, `emView::VisitByIdentity`, sub-view dispatch) is already ported and used correctly in `emBookmarks.rs`'s click reaction. Bucket file rewritten to a 2-site wire-up (~30 LoC). Original framing preserved here for reference.
+- **B2 — per-bookmark target view (multi-window).** C++ `emBookmarkButton::ContentView*` is a per-button pointer letting individual bookmarks target a specific view. Rust hardcodes "home window's content sub-view" for all bookmarks. Single-window installs are observably equivalent; multi-window installs that configure bookmark targeting diverge. **Trigger to schedule:** someone actually uses multi-window bookmark targeting and reports/needs the divergence fixed. ~15-30 LoC: add a target-view field on `emBookmarkEntryUnion::Bookmark` (or `emBookmarkButton`) and route the reaction body through it.
+- **C — `emFileManControlPanel::select_all` ContentView active-panel introspection.** `emFileManControlPanel.rs:624` has `DIVERGED: (language-forced)` citing C++ `ContentView.GetActivePanel()` walking the parent chain to find the active emDirPanel. Rust uses cached `dir_path` workaround. **Same axis as the introspection-via-active-panel pattern**, not navigation. **Trigger to schedule:** select_all behavior diverges from C++ in a way users notice (e.g., when multiple DirPanels are visible simultaneously and the cached path gets stale). Two paths if scheduled: (C1) add `pub fn GetActivePanelId(&self) -> Option<PanelId>` on `emSubViewPanel` (~5 LoC) + (C2) rewire select_all (~30 LoC). Or accept the cache (C3, current state).
+- **Other BLOCKED / `upstream-gap-forced` markers surfaced by the FU-003 sweep** (none multi-view-related, but recording for general inventory):
+  - `emViewAnimator.rs:3283` — active-animator registry / velocity tracking.
+  - `emMainControlPanel.rs:954` — emCoreConfigPanel full construction.
+  - `emBookmarks.rs:273` — InsertNewBookmark / InsertNewGroup mutation API.
+  - `emBookmarks.rs:518` — emBookmarkEntryAuxPanel / emBookmarksAuxPanel editing UI.
+  - `emAutoplayControlPanel.rs:165` — PaintEllipseArc rendering API.
+  - `emDirEntryPanel.rs:423` — Linux-only Windows-attribute gap.
+  - `emTestPanel.rs:2572` — emLinearGroup orientation.
+  - `emView.rs:849` — CurrentViewPort delegation.
+  - `emTreeDump.rs:606,860` — emContext introspection / CPU TSC.
+
+  Each is its own axis; collect into a future "BLOCKED-comment audit" bucket if/when one is needed.
+
 ### From FU-002
 
 - **`enqueue_main_window_action` helper generalization.** FU-002 ships the helper as `pub(crate)` in `emMainWindow.rs` for the 3 known sites. If a second non-MainWindow deferred-App-action use case appears (e.g., emWindow-level deferred actions, or a different long-lived singleton), generalize: factor a `enqueue_thread_local_action<T>(...)` over an arbitrary thread_local `T`, or just lift the pattern into emcore. Don't preemptively generalize.
