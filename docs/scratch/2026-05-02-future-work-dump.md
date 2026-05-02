@@ -21,7 +21,7 @@ what we caught).
 | FU-004 — D-009 polling-intermediary sweep | Bucket file only. **Brainstorm pending.** Discovery-led; first phase is enumeration. | `…/followups/FU-004-d009-polling-sweep.md` |
 | FU-005 — `emFileModel` file-state-signal conflation fix | **Bucket file not yet written.** Created during FU-001 brainstorm when scan revealed `change_signal` is allocated but never fired and `GetFileStateSignal()` returns it (conflated with what should be a distinct ChangeSignal). 15 C++ fire sites; ~10 Rust state-mutation sites need D-007 ectx-threading audit. Cross-crate consumer audit needed. | (to be written) |
 
-## B. Surfaced during FU-001 brainstorm — beyond FU-001's scope
+## B. Surfaced during FU-001 / FU-002 brainstorms — beyond their scope
 
 - **emCheckBox embed-vs-mirror redesign.** Considered and rejected for FU-001 (would override B-012's deliberate mirror-sibling-port pattern, expand emCheckButton's API). Open question whether the widget chain (emButton → emCheckButton → emCheckBox; also emRadioBox, etc.) should be revisited at the hierarchy level. If yes: dedicated brainstorm. If no: document the mirror pattern as a project decision so future contributors don't re-litigate.
 - **Mirror-sibling-port pattern is partially undocumented.** B-012 codified it in code comments but there is no decision-catalog entry or design-doc that names it as the canonical Rust idiom for C++ public IS-A. Recommend a `D-###` decision-catalog entry promoting the pattern, so it's discoverable without grepping for the comment block.
@@ -30,6 +30,12 @@ what we caught).
 - **`emStocksFetchPricesDialog` ctor doesn't take a view.** C++ takes `GetView()`; Rust ctor takes only the model. Means `Raise()` is moot, focus/keyboard delivery may diverge, dialog isn't parented under a window in the panel tree. Affects FU-001 implementation (Raise stub) and any other dialog construction.
 - **`emDialog::ShowMessage`** missing in Rust emcore. ShowWebPages error path is logged-and-swallowed in FU-001. emfileman / emstocks likely have other error-message-display sites with similar workarounds.
 - **`widget_checkbox_toggle.widget_state.golden`** may need regeneration during FU-001 Phase 1 (depending on what state it captured). Establish convention: when adding a new signal field that didn't exist before, do golden tests need explicit "before/after" rationale in the commit message? Probably yes.
+
+### From FU-002
+
+- **`enqueue_main_window_action` helper generalization.** FU-002 ships the helper as `pub(crate)` in `emMainWindow.rs` for the 3 known sites. If a second non-MainWindow deferred-App-action use case appears (e.g., emWindow-level deferred actions, or a different long-lived singleton), generalize: factor a `enqueue_thread_local_action<T>(...)` over an arbitrary thread_local `T`, or just lift the pattern into emcore. Don't preemptively generalize.
+- **`pending_actions` polling-vs-event-driven shape.** The queue is drained on the next winit tick — that's a kind of polling intermediary (D-009 territory). C++ `Quit()` etc. dispatch synchronously through panel-tree traversal; Rust defers by one tick. Currently treated as idiom adaptation (below observable surface) since the deferral is bounded to the next event loop iteration. **Open question:** if a future test or behavior is sensitive to the one-tick latency, this becomes a real D-009 concern — the queue would need rethinking. Worth keeping in mind during FU-004 (D-009 sweep).
+- **Click vs keyboard path equivalence.** FU-002 explicitly relies on the keyboard paths (F4/F11/Shift+Alt+F4) at `emMainWindow.rs:269/283/302` being correct and assumes click paths should match. **Worth a one-time audit** that verifies all keyboard shortcuts that wrap MainWindow methods have a corresponding click-path subscription, or vice versa. Likely already caught by Tier-B but not formally stated.
 
 ## C. Tier-B residuals tracked elsewhere — risk of being forgotten
 
@@ -61,8 +67,6 @@ Action: spend one pass reading the 4 marker locations to confirm understanding. 
 - **The DIVERGED-vs-preserved-design-intent boundary** is currently a judgment call in CLAUDE.md ("When unsure whether a difference is forced or design intent: assume design intent, match C++ exactly, and mark the point of departure explicitly"). The annotation vocabulary doesn't have a way to mark "I deliberately preserved design intent" — only forced divergence and Rust-only. Recommend a `PRESERVED-INTENT:` annotation? or keep the convention "no annotation = matches C++" and let absence speak. Open question.
 
 ## F. Workflow / process observations from this session
-
-- **FU-002 lesson — bucket-file "architectural decision" framing.** FU-002's bucket file said "first phase: architectural decision (a/b/c)." Research showed all three options were preempted by an existing pervasive pattern (`pending_actions` queue). Future bucket files should frame architectural-decision phases as **"verify whether an existing pattern applies"** before listing fresh options. Saves a spec round.
 
 - **"Verify before recommending" is the de facto rule now.** I escalated to (b) embed-not-mirror without checking emCheckButton's existing structure — the verification flipped the recommendation. Worth memorializing: when a design choice could go either way, prefer the path that's already established in the codebase, and *check what's already established* before recommending the alternative.
 - **Adversarial review pass before SDD dispatch** was a workflow innovation during Tier-B — caught real issues in design docs before implementer time was spent. Should be promoted into the SDD skill or at least the project methodology.
