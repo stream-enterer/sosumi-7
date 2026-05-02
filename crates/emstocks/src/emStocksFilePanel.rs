@@ -1,6 +1,8 @@
 // Port of C++ emStocksFilePanel.h / emStocksFilePanel.cpp
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use emcore::emColor::emColor;
 #[cfg(test)]
@@ -49,10 +51,17 @@ fn writable_rec<'a>(model: &'a mut emStocksFileModel, ctx: &mut PanelCtx) -> &'a
 /// Port of C++ emStocksFilePanel.
 pub struct emStocksFilePanel {
     pub(crate) bg_color: emColor,
-    pub(crate) config: emStocksConfig,
+    /// Cross-Cycle-shared config per CLAUDE.md §Ownership rule (a) — the
+    /// emStocksListBox holds a clone of this `Rc<RefCell<>>` (Phase 3 of
+    /// B-001) so its own `Cycle` can subscribe to `Config::GetChangeSignal`
+    /// without being passed it per-call. Mirrors C++ `emStocksConfig & Config;`
+    /// member reference on `emStocksFilePanel`/`emStocksListBox`.
+    pub(crate) config: Rc<RefCell<emStocksConfig>>,
     pub(crate) fetch_dialog: Option<emStocksFetchPricesDialog>,
     pub(crate) list_box: Option<emStocksListBox>,
-    pub(crate) model: emStocksFileModel,
+    /// Cross-Cycle-shared model per CLAUDE.md §Ownership rule (a) — same
+    /// rationale as `config`. Mirrors C++ `emStocksFileModel & FileModel;`.
+    pub(crate) model: Rc<RefCell<emStocksFileModel>>,
     pub(crate) file_panel: emFilePanel,
     /// B-017 row 2: cached `emFilePanel::GetVirFileStateSignal()` from the
     /// embedded `file_panel`. Captured at first-Cycle init time. Mirrors C++
@@ -111,65 +120,66 @@ impl PanelBehavior for emStocksFilePanel {
             match event.key {
                 // Interest filter
                 InputKey::Key('H') => {
-                    self.config.min_visible_interest = Interest::High;
+                    self.config.borrow_mut().min_visible_interest = Interest::High;
                     return true;
                 }
                 InputKey::Key('M') => {
-                    self.config.min_visible_interest = Interest::Medium;
+                    self.config.borrow_mut().min_visible_interest = Interest::Medium;
                     return true;
                 }
                 InputKey::Key('L') => {
-                    self.config.min_visible_interest = Interest::Low;
+                    self.config.borrow_mut().min_visible_interest = Interest::Low;
                     return true;
                 }
                 // Sorting
                 InputKey::Key('N') => {
-                    self.config.sorting = Sorting::ByName;
+                    self.config.borrow_mut().sorting = Sorting::ByName;
                     return true;
                 }
                 InputKey::Key('T') => {
-                    self.config.sorting = Sorting::ByTradeDate;
+                    self.config.borrow_mut().sorting = Sorting::ByTradeDate;
                     return true;
                 }
                 InputKey::Key('I') => {
-                    self.config.sorting = Sorting::ByInquiryDate;
+                    self.config.borrow_mut().sorting = Sorting::ByInquiryDate;
                     return true;
                 }
                 InputKey::Key('A') => {
-                    self.config.sorting = Sorting::ByAchievement;
+                    self.config.borrow_mut().sorting = Sorting::ByAchievement;
                     return true;
                 }
                 InputKey::Key('1') => {
-                    self.config.sorting = Sorting::ByOneWeekRise;
+                    self.config.borrow_mut().sorting = Sorting::ByOneWeekRise;
                     return true;
                 }
                 InputKey::Key('3') => {
-                    self.config.sorting = Sorting::ByThreeWeekRise;
+                    self.config.borrow_mut().sorting = Sorting::ByThreeWeekRise;
                     return true;
                 }
                 InputKey::Key('9') => {
-                    self.config.sorting = Sorting::ByNineWeekRise;
+                    self.config.borrow_mut().sorting = Sorting::ByNineWeekRise;
                     return true;
                 }
                 InputKey::Key('D') => {
-                    self.config.sorting = Sorting::ByDividend;
+                    self.config.borrow_mut().sorting = Sorting::ByDividend;
                     return true;
                 }
                 InputKey::Key('P') => {
-                    self.config.sorting = Sorting::ByPurchaseValue;
+                    self.config.borrow_mut().sorting = Sorting::ByPurchaseValue;
                     return true;
                 }
                 InputKey::Key('V') => {
-                    self.config.sorting = Sorting::ByValue;
+                    self.config.borrow_mut().sorting = Sorting::ByValue;
                     return true;
                 }
                 InputKey::Key('F') => {
-                    self.config.sorting = Sorting::ByDifference;
+                    self.config.borrow_mut().sorting = Sorting::ByDifference;
                     return true;
                 }
                 // OwnedSharesFirst toggle
                 InputKey::Key('O') => {
-                    self.config.owned_shares_first = !self.config.owned_shares_first;
+                    let mut c = self.config.borrow_mut();
+                    c.owned_shares_first = !c.owned_shares_first;
                     return true;
                 }
                 _ => {}
@@ -180,10 +190,8 @@ impl PanelBehavior for emStocksFilePanel {
         if input_state.IsCtrlMod() {
             match event.key {
                 InputKey::Key('J') => {
-                    let Self {
-                        list_box, model, ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let model = self.model.borrow();
                         // B-001 G4: GoBackInHistory may fire SelectedDateSignal.
                         // Mirrors `writable_rec` PanelCtx-as_sched_ctx pattern.
                         if let Some(mut sc) = ctx.as_sched_ctx() {
@@ -204,10 +212,8 @@ impl PanelBehavior for emStocksFilePanel {
                     return true;
                 }
                 InputKey::Key('K') => {
-                    let Self {
-                        list_box, model, ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let model = self.model.borrow();
                         if let Some(mut sc) = ctx.as_sched_ctx() {
                             lb.GoForwardInHistory(&mut sc, model.GetRec());
                         } else {
@@ -227,25 +233,19 @@ impl PanelBehavior for emStocksFilePanel {
                 }
                 InputKey::Key('N') => {
                     // C++: ListBox->NewStock()
-                    let Self {
-                        list_box,
-                        model,
-                        config,
-                        ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
-                        let rec = writable_rec(model, ctx);
-                        lb.NewStock(rec, config);
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let mut model = self.model.borrow_mut();
+                        let config = self.config.borrow();
+                        let rec = writable_rec(&mut model, ctx);
+                        lb.NewStock(rec, &config);
                     }
                     return true;
                 }
                 InputKey::Key('X') => {
                     // C++: ListBox->CutStocks()
-                    let Self {
-                        list_box, model, ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
-                        let rec = writable_rec(model, ctx);
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let mut model = self.model.borrow_mut();
+                        let rec = writable_rec(&mut model, ctx);
                         lb.CutStocks(ctx, rec, false);
                     }
                     return true;
@@ -253,21 +253,17 @@ impl PanelBehavior for emStocksFilePanel {
                 InputKey::Key('C') => {
                     // C++: ListBox->CopyStocks()
                     if let Some(ref mut list_box) = self.list_box {
-                        list_box.CopyStocks(self.model.GetRec());
+                        list_box.CopyStocks(self.model.borrow().GetRec());
                     }
                     return true;
                 }
                 InputKey::Key('V') => {
                     // C++: ListBox->PasteStocks()
-                    let Self {
-                        list_box,
-                        model,
-                        config,
-                        ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
-                        let rec = writable_rec(model, ctx);
-                        let _ = lb.PasteStocks(ctx, rec, config, false);
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let mut model = self.model.borrow_mut();
+                        let config = self.config.borrow();
+                        let rec = writable_rec(&mut model, ctx);
+                        let _ = lb.PasteStocks(ctx, rec, &config, false);
                     }
                     return true;
                 }
@@ -278,14 +274,17 @@ impl PanelBehavior for emStocksFilePanel {
                     let ids = self
                         .list_box
                         .as_ref()
-                        .map(|lb| lb.GetVisibleStockIds(self.model.GetRec()))
+                        .map(|lb| lb.GetVisibleStockIds(self.model.borrow().GetRec()))
                         .unwrap_or_default();
                     if !ids.is_empty() {
-                        let mut dialog = emStocksFetchPricesDialog::new(
-                            &self.config.api_script,
-                            &self.config.api_script_interpreter,
-                            &self.config.api_key,
-                        );
+                        let mut dialog = {
+                            let cfg = self.config.borrow();
+                            emStocksFetchPricesDialog::new(
+                                &cfg.api_script,
+                                &cfg.api_script_interpreter,
+                                &cfg.api_key,
+                            )
+                        };
                         // B-001 G3: AddStockIds fires `Signal(ChangeSignal)`.
                         // Mirrors `writable_rec` precedent for PanelCtx ectx-reach.
                         if let Some(mut sc) = ctx.as_sched_ctx() {
@@ -309,33 +308,25 @@ impl PanelBehavior for emStocksFilePanel {
                 InputKey::Key('W') => {
                     // C++: ListBox->ShowFirstWebPages()
                     if let Some(ref mut list_box) = self.list_box {
-                        list_box.ShowFirstWebPages(self.model.GetRec());
+                        list_box.ShowFirstWebPages(self.model.borrow().GetRec());
                     }
                     return true;
                 }
                 InputKey::Key('H') => {
                     // C++: ListBox->FindSelected()
-                    let Self {
-                        list_box,
-                        model,
-                        config,
-                        ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
-                        let _found = lb.FindSelected(model.GetRec(), config);
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let model = self.model.borrow();
+                        let mut config = self.config.borrow_mut();
+                        let _found = lb.FindSelected(model.GetRec(), &mut config);
                     }
                     return true;
                 }
                 InputKey::Key('G') => {
                     // C++: ListBox->FindNext()
-                    let Self {
-                        list_box,
-                        model,
-                        config,
-                        ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
-                        let _found = lb.FindNext(model.GetRec(), config);
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let model = self.model.borrow();
+                        let config = self.config.borrow();
+                        let _found = lb.FindNext(model.GetRec(), &config);
                     }
                     return true;
                 }
@@ -349,20 +340,16 @@ impl PanelBehavior for emStocksFilePanel {
                 InputKey::Key('W') => {
                     // C++: ListBox->ShowAllWebPages()
                     if let Some(ref mut list_box) = self.list_box {
-                        list_box.ShowAllWebPages(self.model.GetRec());
+                        list_box.ShowAllWebPages(self.model.borrow().GetRec());
                     }
                     return true;
                 }
                 InputKey::Key('G') => {
                     // C++: ListBox->FindPrevious()
-                    let Self {
-                        list_box,
-                        model,
-                        config,
-                        ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
-                        let _found = lb.FindPrevious(model.GetRec(), config);
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let model = self.model.borrow();
+                        let config = self.config.borrow();
+                        let _found = lb.FindPrevious(model.GetRec(), &config);
                     }
                     return true;
                 }
@@ -373,11 +360,9 @@ impl PanelBehavior for emStocksFilePanel {
         // ── No-modifier shortcuts ──
         if input_state.IsNoMod() && event.key == InputKey::Delete {
             // C++: ListBox->DeleteStocks()
-            let Self {
-                list_box, model, ..
-            } = self;
-            if let Some(lb) = list_box.as_mut() {
-                let rec = writable_rec(model, ctx);
+            if let Some(lb) = self.list_box.as_mut() {
+                let mut model = self.model.borrow_mut();
+                let rec = writable_rec(&mut model, ctx);
                 lb.DeleteStocks(ctx, rec, false);
             }
             return true;
@@ -388,33 +373,27 @@ impl PanelBehavior for emStocksFilePanel {
             match event.key {
                 InputKey::Key('H') => {
                     // C++: ListBox->SetInterest(HIGH_INTEREST)
-                    let Self {
-                        list_box, model, ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
-                        let rec = writable_rec(model, ctx);
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let mut model = self.model.borrow_mut();
+                        let rec = writable_rec(&mut model, ctx);
                         lb.SetInterest(ctx, rec, Interest::High, false);
                     }
                     return true;
                 }
                 InputKey::Key('M') => {
                     // C++: ListBox->SetInterest(MEDIUM_INTEREST)
-                    let Self {
-                        list_box, model, ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
-                        let rec = writable_rec(model, ctx);
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let mut model = self.model.borrow_mut();
+                        let rec = writable_rec(&mut model, ctx);
                         lb.SetInterest(ctx, rec, Interest::Medium, false);
                     }
                     return true;
                 }
                 InputKey::Key('L') => {
                     // C++: ListBox->SetInterest(LOW_INTEREST)
-                    let Self {
-                        list_box, model, ..
-                    } = self;
-                    if let Some(lb) = list_box.as_mut() {
-                        let rec = writable_rec(model, ctx);
+                    if let Some(lb) = self.list_box.as_mut() {
+                        let mut model = self.model.borrow_mut();
+                        let rec = writable_rec(&mut model, ctx);
                         lb.SetInterest(ctx, rec, Interest::Low, false);
                     }
                     return true;
@@ -469,7 +448,7 @@ impl PanelBehavior for emStocksFilePanel {
 
             // Row 3: allocate SaveTimer signal/timer on the model and connect
             // the panel's engine to it. After this point IsSignaled drives Save.
-            self.model.ensure_save_timer(ectx, eid);
+            self.model.borrow_mut().ensure_save_timer(ectx, eid);
 
             self.subscribed_init = true;
         }
@@ -490,7 +469,13 @@ impl PanelBehavior for emStocksFilePanel {
             let new_state = self.file_panel.GetVirFileState();
             state_changed = old_state != new_state;
             if state_changed && new_state.is_good() && self.list_box.is_none() {
-                self.list_box = Some(emStocksListBox::new());
+                let mut lb = emStocksListBox::new();
+                // Phase 3: hand the ListBox cross-Cycle refs to the model and
+                // config so its own Cycle (Phase 4.5) can subscribe to their
+                // ChangeSignals without being passed them per-call. Mirrors
+                // C++ emStocksListBox member references.
+                lb.set_refs(self.model.clone(), self.config.clone());
+                self.list_box = Some(lb);
             }
         }
 
@@ -501,11 +486,12 @@ impl PanelBehavior for emStocksFilePanel {
         // SaveTimer signal is allocated above in the first-Cycle init.
         let save_fired = self
             .model
+            .borrow()
             .save_timer_signal()
             .map(|s| ectx.IsSignaled(s))
             .unwrap_or(false);
         if save_fired {
-            self.model.save_on_timer_fire(ectx);
+            self.model.borrow_mut().save_on_timer_fire(ectx);
         }
 
         // Poll fetch dialog
@@ -528,16 +514,12 @@ impl PanelBehavior for emStocksFilePanel {
         // `touch_save_timer(ectx)` half, gated on `dirty_since_last_touch()`.
         // This keeps `&mut ectx` exclusive across both halves.
         let list_box_busy = {
-            let Self {
-                list_box,
-                model,
-                config,
-                ..
-            } = self;
-            if let Some(lb) = list_box.as_mut() {
+            if let Some(lb) = self.list_box.as_mut() {
+                let mut model = self.model.borrow_mut();
+                let config = self.config.borrow();
                 // Rec-mutation half: takes only `&mut model`, no ectx use.
                 let rec = model.GetWritableRec(ectx);
-                lb.Cycle(ectx, rec, config)
+                lb.Cycle(ectx, rec, &config)
             } else {
                 false
             }
@@ -546,8 +528,9 @@ impl PanelBehavior for emStocksFilePanel {
         // Timer-arming half, sequenced after `lb.Cycle` returns. Gated on
         // the paired latch so we re-arm only when lb.Cycle actually wrote
         // through GetWritableRec.
-        if self.model.dirty_since_last_touch() {
-            self.model.touch_save_timer(ectx);
+        let need_touch = self.model.borrow_mut().dirty_since_last_touch();
+        if need_touch {
+            self.model.borrow_mut().touch_save_timer(ectx);
         }
 
         state_changed || save_fired || self.fetch_dialog.is_some() || list_box_busy
@@ -562,10 +545,10 @@ impl emStocksFilePanel {
     pub(crate) fn new() -> Self {
         Self {
             bg_color: emColor::from_packed(0x131520FF),
-            config: emStocksConfig::default(),
+            config: Rc::new(RefCell::new(emStocksConfig::default())),
             fetch_dialog: None,
             list_box: None,
-            model: emStocksFileModel::new(PathBuf::from("")),
+            model: Rc::new(RefCell::new(emStocksFileModel::new(PathBuf::from("")))),
             file_panel: emFilePanel::new(),
             vir_file_state_sig: None,
             subscribed_init: false,
@@ -591,13 +574,13 @@ impl emStocksFilePanel {
     /// embedded model. Null until the panel's first Cycle.
     #[doc(hidden)]
     pub fn save_timer_signal_for_test(&self) -> SignalId {
-        self.model.save_timer_signal_for_test()
+        self.model.borrow().save_timer_signal_for_test()
     }
 
     /// B-017 row 3 test accessor: dirty flag (whether there are pending writes).
     #[doc(hidden)]
     pub fn model_dirty_for_test(&self) -> bool {
-        self.model.dirty_for_test()
+        self.model.borrow().dirty_for_test()
     }
 
     /// B-017 row 3 test accessor: mutate the model's rec, marking dirty.
@@ -605,7 +588,7 @@ impl emStocksFilePanel {
     /// half-mutator. Used by external tests that cannot reach `pub(crate) model`.
     #[doc(hidden)]
     pub fn mark_rec_dirty_for_test<C: emcore::emEngineCtx::SignalCtx>(&mut self, ectx: &mut C) {
-        let _ = self.model.GetWritableRec(ectx);
+        let _ = self.model.borrow_mut().GetWritableRec(ectx);
     }
 }
 
@@ -719,7 +702,7 @@ mod tests {
             &input_state,
             &mut make_test_pctx(&mut tree, root)
         ));
-        assert_eq!(panel.config.min_visible_interest, Interest::High);
+        assert_eq!(panel.config.borrow().min_visible_interest, Interest::High);
     }
 
     #[test]
@@ -737,7 +720,7 @@ mod tests {
             &input_state,
             &mut make_test_pctx(&mut tree, root)
         ));
-        assert_eq!(panel.config.min_visible_interest, Interest::Medium);
+        assert_eq!(panel.config.borrow().min_visible_interest, Interest::Medium);
     }
 
     #[test]
@@ -755,14 +738,14 @@ mod tests {
             &input_state,
             &mut make_test_pctx(&mut tree, root)
         ));
-        assert_eq!(panel.config.min_visible_interest, Interest::Low);
+        assert_eq!(panel.config.borrow().min_visible_interest, Interest::Low);
     }
 
     #[test]
     fn shift_alt_n_sets_sort_by_name() {
         let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
-        panel.config.sorting = Sorting::ByValue; // set non-default
+        panel.config.borrow_mut().sorting = Sorting::ByValue; // set non-default
         let mut input_state = emInputState::new();
         input_state.press(InputKey::Shift);
         input_state.press(InputKey::Alt);
@@ -774,7 +757,7 @@ mod tests {
             &input_state,
             &mut make_test_pctx(&mut tree, root)
         ));
-        assert_eq!(panel.config.sorting, Sorting::ByName);
+        assert_eq!(panel.config.borrow().sorting, Sorting::ByName);
     }
 
     #[test]
@@ -809,7 +792,8 @@ mod tests {
                 "Shift+Alt+{key} should consume"
             );
             assert_eq!(
-                panel.config.sorting, expected_sorting,
+                panel.config.borrow().sorting,
+                expected_sorting,
                 "Shift+Alt+{key} should set {expected_sorting:?}"
             );
         }
@@ -819,7 +803,7 @@ mod tests {
     fn shift_alt_o_toggles_owned_shares_first() {
         let (mut tree, root) = make_test_tree();
         let mut panel = make_active_panel();
-        assert!(!panel.config.owned_shares_first);
+        assert!(!panel.config.borrow().owned_shares_first);
         let mut input_state = emInputState::new();
         input_state.press(InputKey::Shift);
         input_state.press(InputKey::Alt);
@@ -831,7 +815,7 @@ mod tests {
             &input_state,
             &mut make_test_pctx(&mut tree, root)
         ));
-        assert!(panel.config.owned_shares_first);
+        assert!(panel.config.borrow().owned_shares_first);
         // Toggle back
         assert!(panel.Input(
             &event,
@@ -839,7 +823,7 @@ mod tests {
             &input_state,
             &mut make_test_pctx(&mut tree, root)
         ));
-        assert!(!panel.config.owned_shares_first);
+        assert!(!panel.config.borrow().owned_shares_first);
     }
 
     #[test]
@@ -851,7 +835,12 @@ mod tests {
         stock.AddPrice("2024-06-14", "100");
         stock.AddPrice("2024-06-15", "101");
         let mut null = DropOnlySignalCtx;
-        panel.model.GetWritableRec(&mut null).stocks.push(stock);
+        panel
+            .model
+            .borrow_mut()
+            .GetWritableRec(&mut null)
+            .stocks
+            .push(stock);
         panel
             .list_box
             .as_mut()
@@ -882,7 +871,12 @@ mod tests {
         stock.AddPrice("2024-06-14", "100");
         stock.AddPrice("2024-06-15", "101");
         let mut null = DropOnlySignalCtx;
-        panel.model.GetWritableRec(&mut null).stocks.push(stock);
+        panel
+            .model
+            .borrow_mut()
+            .GetWritableRec(&mut null)
+            .stocks
+            .push(stock);
         panel
             .list_box
             .as_mut()

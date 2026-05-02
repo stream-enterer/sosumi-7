@@ -1,6 +1,6 @@
 // Port of C++ emStocksListBox.h / emStocksListBox.cpp
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::rc::Rc;
 
@@ -103,6 +103,27 @@ pub struct emStocksListBox {
     /// `GoBackInHistory` / `GoForwardInHistory` only when the value actually
     /// changed (matches C++ `emSignal::Signal()` semantics).
     selected_date_signal: Cell<SignalId>,
+
+    /// B-001 Phase 3 — cross-Cycle reference to the parent's `emStocksFileModel`,
+    /// per CLAUDE.md §Ownership rule (a). Mirrors C++ `emStocksListBox.h`
+    /// member `emStocksFileModel & FileModel;`. Required so the ListBox's own
+    /// `Cycle` (Phase 4.5) can subscribe to `FileModel::GetChangeSignal()`
+    /// without being passed it per-call. `None` until `set_refs` is invoked
+    /// by the parent panel at attach time (B-001 sequencing — ListBox is
+    /// constructed before the parent has materialized its file model link
+    /// in some test paths).
+    pub(crate) file_model_ref: Option<Rc<RefCell<crate::emStocksFileModel::emStocksFileModel>>>,
+
+    /// B-001 Phase 3 — cross-Cycle reference to the parent's `emStocksConfig`.
+    /// Same rationale as `file_model_ref`. Mirrors C++ `emStocksConfig & Config;`.
+    pub(crate) config_ref: Option<Rc<RefCell<emStocksConfig>>>,
+
+    /// B-001 Phase 3 — D-006 first-Cycle init flag for the model/config
+    /// subscribe pair. Set true by Phase 4.5 wiring once `ectx.connect`s
+    /// run for the FileModel/Config ChangeSignals. Distinct from the per-
+    /// dialog `*_subscribed` flags above (those gate dialog finish-signal
+    /// connects).
+    pub(crate) subscribed_init: bool,
 }
 
 impl Default for emStocksListBox {
@@ -138,7 +159,50 @@ impl emStocksListBox {
             delete_subscribed: false,
             interest_subscribed: false,
             selected_date_signal: Cell::new(SignalId::null()),
+            file_model_ref: None,
+            config_ref: None,
+            subscribed_init: false,
         }
+    }
+
+    /// B-001 Phase 3 test accessor: reports whether the FileModel/Config
+    /// subscribe pair has been wired by `Cycle`. Read-only; flipped to true
+    /// by the Phase 4.5 `Cycle` implementation. Externally visible so the
+    /// Phase 3 sanity tests (and Phase 4.5 TDD harness) can observe the
+    /// transition without touching `pub(crate)` fields.
+    #[doc(hidden)]
+    pub fn subscribed_init_for_test(&self) -> bool {
+        self.subscribed_init
+    }
+
+    /// B-001 Phase 3 test accessor: borrowed handle to the installed FileModel
+    /// ref, or `None` if `set_refs` has not been called. Used by Phase 3 tests
+    /// to confirm the parent installs the refs at attach time.
+    #[doc(hidden)]
+    pub fn has_file_model_ref(&self) -> bool {
+        self.file_model_ref.is_some()
+    }
+
+    /// B-001 Phase 3 test accessor: see `has_file_model_ref`.
+    #[doc(hidden)]
+    pub fn has_config_ref(&self) -> bool {
+        self.config_ref.is_some()
+    }
+
+    /// B-001 Phase 3 — install the cross-Cycle FileModel/Config refs.
+    /// Called by `emStocksFilePanel` at the same site that materializes the
+    /// ListBox (after VFS becomes Loaded). Idempotent: re-installing
+    /// the same Rcs is a no-op visible to subscribers because Phase 4.5's
+    /// `subscribed_init` gate already prevents double-connect; callers that
+    /// want to re-target a different model/config must build a fresh
+    /// `emStocksListBox`.
+    pub fn set_refs(
+        &mut self,
+        file_model: Rc<RefCell<crate::emStocksFileModel::emStocksFileModel>>,
+        config: Rc<RefCell<emStocksConfig>>,
+    ) {
+        self.file_model_ref = Some(file_model);
+        self.config_ref = Some(config);
     }
 
     /// Port of C++ `emStocksListBox::GetSelectedDateSignal` (header line 89).
@@ -1792,5 +1856,33 @@ mod tests {
         assert!(lb.paste_stocks_result.get().is_none());
         assert!(lb.delete_stocks_result.get().is_none());
         assert!(lb.interest_result.get().is_none());
+    }
+
+    // B-001 Phase 3: cross-Cycle FileModel/Config refs default to None.
+    #[test]
+    fn b001_phase3_cross_cycle_refs_default_unset() {
+        let lb = emStocksListBox::new();
+        assert!(!lb.has_file_model_ref());
+        assert!(!lb.has_config_ref());
+        assert!(!lb.subscribed_init_for_test());
+    }
+
+    // B-001 Phase 3: `set_refs` installs both cross-Cycle handles.
+    #[test]
+    fn b001_phase3_set_refs_installs_both_handles() {
+        use crate::emStocksFileModel::emStocksFileModel;
+        use std::path::PathBuf;
+        let mut lb = emStocksListBox::new();
+        let model = Rc::new(RefCell::new(emStocksFileModel::new(PathBuf::from("/t"))));
+        let config = Rc::new(RefCell::new(emStocksConfig::default()));
+        lb.set_refs(model.clone(), config.clone());
+        assert!(lb.has_file_model_ref());
+        assert!(lb.has_config_ref());
+        // Phase 4.5 has not yet wired the subscribe — flag remains false.
+        assert!(!lb.subscribed_init_for_test());
+        // Refs alias the parent's handles (Rc::ptr_eq mirrors C++ `&FileModel`
+        // pointing at the same instance).
+        assert!(Rc::ptr_eq(lb.file_model_ref.as_ref().unwrap(), &model));
+        assert!(Rc::ptr_eq(lb.config_ref.as_ref().unwrap(), &config));
     }
 }
