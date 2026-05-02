@@ -46,3 +46,22 @@ The Rust port has full `emView` + `emSubViewPanel` infrastructure: identity-base
   - `~/Projects/eaglemode-0.96.4/src/emMain/emBookmarks.cpp:1470,1523-1535` — emBookmarkButton ContentView field and click reaction.
 - Rust precedent: `crates/emmain/src/emBookmarks.rs:748-780` — working multi-view dispatch via `pending_actions` + `with_main_window` + `home_tree.with_behavior_as::<emSubViewPanel>(...)`.
 - Sweep results: `docs/scratch/2026-05-02-future-work-dump.md` (FU-003 carve-offs).
+
+## Closure (2026-05-02)
+
+Both call sites identified in the rescoped spec are resolved:
+
+- `crates/emmain/src/emMainWindow.rs:330-344` — bookmark hotkey now
+  dispatches synchronously through `emSubViewPanel::visit_by_identity`,
+  matching the click-reaction path. BLOCKED comment removed.
+- `crates/emmain/src/emBookmarks.rs:723-733` — DIVERGED comment
+  rewritten to accurately describe the residual per-bookmark
+  configurable-target-view divergence (multi-window only; tracked as
+  future-work B2 in `docs/scratch/2026-05-02-future-work-dump.md`).
+
+Out-of-scope items (B2, FileMan select_all ContentView introspection,
+and other unrelated BLOCKED markers found during the FU-003 sweep)
+remain in the scratch dump.
+
+Acceptance gates run at closure: `cargo-nextest ntr` green, `cargo
+clippy -- -D warnings` green, `cargo xtask annotations` clean.
