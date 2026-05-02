@@ -637,30 +637,10 @@ impl<'a> PanelCtx<'a> {
         }
     }
 
-    /// Create a context with a scheduler so engine wakeups are propagated.
-    pub fn with_scheduler(
-        tree: &'a mut PanelTree,
-        id: PanelId,
-        current_pixel_tallness: f64,
-        scheduler: &'a mut EngineScheduler,
-    ) -> Self {
-        Self {
-            tree,
-            id,
-            current_pixel_tallness,
-            scheduler: Some(scheduler),
-            framework_clipboard: None,
-            framework_actions: None,
-            root_context: None,
-            view_context: None,
-            pending_actions: None,
-        }
-    }
-
     /// Attach the framework-level clipboard slot. Builder-style config per
     /// CLAUDE.md Code Rules (`with_*(self) -> Self`): chain after
-    /// `with_scheduler` so behaviors can build `SchedCtx` without losing
-    /// clipboard access.
+    /// `with_sched_reach` or `with_sched_reach_for_notice` so behaviors can
+    /// build `SchedCtx` without losing clipboard access.
     pub fn with_clipboard(
         mut self,
         framework_clipboard: &'a RefCell<Option<Box<dyn emClipboard>>>,
@@ -670,8 +650,9 @@ impl<'a> PanelCtx<'a> {
     }
 
     /// Attach the closure-rail handle. Builder-style config per CLAUDE.md
-    /// Code Rules (`with_*(self) -> Self`): chain after `with_scheduler` so
-    /// behaviors can call `ConstructCtx::pending_actions`. Phase 3.5 Task 2.
+    /// Code Rules (`with_*(self) -> Self`): chain after `with_sched_reach`
+    /// or `with_sched_reach_for_notice` so behaviors can call
+    /// `ConstructCtx::pending_actions`. Phase 3.5 Task 2.
     pub fn with_pending_actions(
         mut self,
         pending_actions: &'a Rc<RefCell<Vec<FrameworkDeferredAction>>>,

@@ -1094,6 +1094,21 @@ mod tests {
 
         let mut behavior = tree.take_behavior(root_id).expect("behavior for Cycle");
         {
+            let sched_ptr: *mut emcore::emScheduler::EngineScheduler = &mut sched;
+            let fw_ptr: *mut Vec<emcore::emEngineCtx::DeferredAction> = &mut fw_actions;
+            // SAFETY: ectx.scheduler/framework_actions and pctx.scheduler/framework_actions
+            // alias the same values. Single-threaded; mirrors PanelCycleEngine's identical
+            // unsafe split.
+            let mut pctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                root_id,
+                1.0,
+                unsafe { &mut *sched_ptr },
+                unsafe { &mut *fw_ptr },
+                &root_ctx,
+                &fc,
+                &pa,
+            );
             let mut ectx = EngineCtx {
                 scheduler: &mut sched,
                 tree: None,
@@ -1107,11 +1122,6 @@ mod tests {
                 engine_id,
                 pending_actions: &pa,
             };
-            // SAFETY: ectx.scheduler and pctx.scheduler alias the same EngineScheduler.
-            // Single-threaded; mirrors PanelCycleEngine's identical unsafe split.
-            let sched_ptr: *mut emcore::emScheduler::EngineScheduler = &mut *ectx.scheduler;
-            let mut pctx =
-                PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
             behavior.Cycle(&mut ectx, &mut pctx);
         }
         tree.put_behavior(root_id, behavior);

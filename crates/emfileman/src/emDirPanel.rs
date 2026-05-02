@@ -784,7 +784,7 @@ mod tests {
     // ── Notice-path engine registration/firing diagnostics ──────────────────
     //
     // Regression guard: a panel created via create_child_with + wake_up_panel
-    // inside a notice handler (PanelCtx::with_scheduler context, as used by
+    // inside a notice handler (PanelCtx::with_sched_reach context, as used by
     // emView::HandleNotice → handle_notice_one) must get engine_id registered
     // and its PanelCycleEngine must fire in the same DoTimeSlice.
     //
@@ -792,7 +792,7 @@ mod tests {
     // → update_content_panel → create_child_with(emDirPanel) + wake_up_panel —
     // after which emDirPanel::Cycle never fired.
 
-    /// Verifies that a child created inside a PanelCtx::with_scheduler context
+    /// Verifies that a child created inside a PanelCtx::with_sched_reach context
     /// (identical to handle_notice_one's ctx) results in wake_up_panel leaving
     /// an awake engine in the scheduler.
     ///
@@ -822,9 +822,26 @@ mod tests {
         // adds to the queue.
         let awake_before = sched.has_awake_engines();
 
-        // Simulate handle_notice_one's PanelCtx + update_content_panel
+        // Simulate handle_notice_one's PanelCtx + update_content_panel.
+        // with_sched_reach mirrors the full-reach context used in production
+        // (handle_notice_one switched from with_scheduler to with_sched_reach
+        // per the notice-dispatch-reach fix).
+        let mut fw_actions: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+        let fw_cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        let pa: std::rc::Rc<std::cell::RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         {
-            let mut ctx = PanelCtx::with_scheduler(&mut tree, parent, 1.0, &mut sched);
+            let mut ctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                parent,
+                1.0,
+                &mut sched,
+                &mut fw_actions,
+                &emctx,
+                &fw_cb,
+                &pa,
+            );
             let child_id = ctx.create_child_with(
                 "content",
                 Box::new(emDirPanel::new(Rc::clone(&emctx), "/tmp".to_string())),
@@ -878,8 +895,25 @@ mod tests {
 
         // Simulate notice-path: create emDirPanel child + wake, exactly as
         // handle_notice_one → update_content_panel does.
+        // with_sched_reach mirrors the full-reach context used in production
+        // (handle_notice_one switched from with_scheduler to with_sched_reach
+        // per the notice-dispatch-reach fix).
+        let mut fw_actions: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+        let fw_cb: std::cell::RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        let pa: std::rc::Rc<std::cell::RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let child_id = {
-            let mut ctx = PanelCtx::with_scheduler(&mut tree, parent, 1.0, &mut sched);
+            let mut ctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                parent,
+                1.0,
+                &mut sched,
+                &mut fw_actions,
+                &emctx,
+                &fw_cb,
+                &pa,
+            );
             let cid = ctx.create_child_with(
                 "content",
                 Box::new(emDirPanel::new(Rc::clone(&emctx), "/tmp".to_string())),
@@ -1974,8 +2008,25 @@ mod tests {
 
         // Create emDirPanel child + wake it. Mirrors
         // notice_ctx_child_engine_fires_in_same_slice fixture shape.
+        // with_sched_reach mirrors the full-reach context used in production
+        // (handle_notice_one switched from with_scheduler to with_sched_reach
+        // per the notice-dispatch-reach fix).
         let child_id = {
-            let mut ctx = PanelCtx::with_scheduler(&mut tree, parent, 1.0, &mut sched);
+            let mut notice_fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+            let notice_cb: RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> =
+                RefCell::new(None);
+            let notice_pa: Rc<RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+                Rc::new(RefCell::new(Vec::new()));
+            let mut ctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                parent,
+                1.0,
+                &mut sched,
+                &mut notice_fw,
+                &emctx,
+                &notice_cb,
+                &notice_pa,
+            );
             let cid = ctx.create_child_with(
                 "content",
                 Box::new(emDirPanel::new(Rc::clone(&emctx), path.clone())),

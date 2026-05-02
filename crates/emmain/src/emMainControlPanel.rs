@@ -1350,11 +1350,21 @@ mod tests {
             Vec::new();
         let mut input_state = emcore::emInputState::emInputState::new();
 
-        // SAFETY: ectx.scheduler and pctx.scheduler alias the same EngineScheduler.
-        // Single-threaded; mirrors PanelCycleEngine's identical unsafe split.
+        // SAFETY: ectx.scheduler/framework_actions and pctx.scheduler/framework_actions
+        // alias the same values. Single-threaded; mirrors PanelCycleEngine's identical
+        // unsafe split.
         let sched_ptr: *mut EngineScheduler = &mut sched;
-        let mut pctx =
-            PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
+        let fw_ptr: *mut Vec<emcore::emEngineCtx::DeferredAction> = &mut fw_actions;
+        let mut pctx = PanelCtx::with_sched_reach(
+            &mut tree,
+            root_id,
+            1.0,
+            unsafe { &mut *sched_ptr },
+            unsafe { &mut *fw_ptr },
+            &root_ctx,
+            &fw_cb,
+            &pa,
+        );
         let mut ectx = EngineCtx {
             scheduler: &mut sched,
             tree: None,
@@ -1504,8 +1514,19 @@ mod tests {
         let mut input_state = emcore::emInputState::emInputState::new();
 
         let sched_ptr: *mut EngineScheduler = &mut sched;
-        let mut pctx =
-            PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
+        let fw_ptr: *mut Vec<emcore::emEngineCtx::DeferredAction> = &mut fw_actions;
+        // SAFETY: ectx.scheduler/framework_actions and pctx.scheduler/framework_actions
+        // alias the same values; single-threaded.
+        let mut pctx = PanelCtx::with_sched_reach(
+            &mut tree,
+            root_id,
+            1.0,
+            unsafe { &mut *sched_ptr },
+            unsafe { &mut *fw_ptr },
+            &root_ctx,
+            &fw_cb,
+            &pa,
+        );
         let mut ectx = EngineCtx {
             scheduler: &mut sched,
             tree: None,
@@ -1629,8 +1650,19 @@ mod tests {
         let mut input_state = emcore::emInputState::emInputState::new();
         {
             let sched_ptr: *mut EngineScheduler = &mut sched;
-            let mut pctx =
-                PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
+            let fw_ptr: *mut Vec<emcore::emEngineCtx::DeferredAction> = &mut fw_actions;
+            // SAFETY: ectx.scheduler/framework_actions and pctx.scheduler/framework_actions
+            // alias the same values; single-threaded.
+            let mut pctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                root_id,
+                1.0,
+                unsafe { &mut *sched_ptr },
+                unsafe { &mut *fw_ptr },
+                &root_ctx,
+                &fw_cb,
+                &pa,
+            );
             let mut ectx = EngineCtx {
                 scheduler: &mut sched,
                 tree: None,
@@ -1694,8 +1726,19 @@ mod tests {
         // ── Cycle #2: retry must populate all 7 sigs and flip click_subscribed_init.
         {
             let sched_ptr: *mut EngineScheduler = &mut sched;
-            let mut pctx =
-                PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
+            let fw_ptr: *mut Vec<emcore::emEngineCtx::DeferredAction> = &mut fw_actions;
+            // SAFETY: ectx.scheduler/framework_actions and pctx.scheduler/framework_actions
+            // alias the same values; single-threaded.
+            let mut pctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                root_id,
+                1.0,
+                unsafe { &mut *sched_ptr },
+                unsafe { &mut *fw_ptr },
+                &root_ctx,
+                &fw_cb,
+                &pa,
+            );
             let mut ectx = EngineCtx {
                 scheduler: &mut sched,
                 tree: None,

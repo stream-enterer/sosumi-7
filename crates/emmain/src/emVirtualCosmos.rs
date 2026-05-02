@@ -1397,15 +1397,21 @@ mod tests {
         // No fire pending → update_children should not be called.
         let mut behavior_slot = tree.take_behavior(root_id).expect("behavior");
         {
-            // SAFETY: single-threaded test; `pctx` (via sched_ptr) and `ectx`
-            // (via &mut sched) both hold a mutable scheduler reference, but
-            // Cycle uses them sequentially within a single call frame with no
-            // overlapping &mut access across the two paths. The aliasing is
-            // restricted to test setup that mirrors how the real frame-driver
-            // would hand both contexts to a panel.
+            // SAFETY: ectx.scheduler/framework_actions and pctx.scheduler/framework_actions
+            // alias the same values for the duration of Cycle. Single-threaded; mirrors how
+            // the real frame-driver hands both contexts to a panel.
             let sched_ptr: *mut EngineScheduler = &mut sched;
-            let mut pctx =
-                PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
+            let fw_ptr: *mut Vec<emcore::emEngineCtx::DeferredAction> = &mut fw_actions;
+            let mut pctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                root_id,
+                1.0,
+                unsafe { &mut *sched_ptr },
+                unsafe { &mut *fw_ptr },
+                &root_ctx,
+                &fw_cb,
+                &pa,
+            );
             let mut ectx = EngineCtx {
                 scheduler: &mut sched,
                 tree: None,
@@ -1455,11 +1461,20 @@ mod tests {
 
         let mut behavior_slot = tree.take_behavior(root_id).expect("behavior");
         {
-            // SAFETY: see SAFETY comment on the first Cycle invocation above —
-            // same aliasing rationale applies to this second Cycle call.
+            // SAFETY: ectx.scheduler/framework_actions and pctx.scheduler/framework_actions
+            // alias the same values; same aliasing rationale as the first Cycle invocation.
             let sched_ptr: *mut EngineScheduler = &mut sched;
-            let mut pctx =
-                PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
+            let fw_ptr: *mut Vec<emcore::emEngineCtx::DeferredAction> = &mut fw_actions;
+            let mut pctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                root_id,
+                1.0,
+                unsafe { &mut *sched_ptr },
+                unsafe { &mut *fw_ptr },
+                &root_ctx,
+                &fw_cb,
+                &pa,
+            );
             let mut ectx = EngineCtx {
                 scheduler: &mut sched,
                 tree: None,
@@ -1560,10 +1575,19 @@ mod tests {
         let mut input_state = emcore::emInputState::emInputState::new();
 
         let sched_ptr: *mut EngineScheduler = &mut sched;
-        // SAFETY: ectx.scheduler and pctx.scheduler alias the same scheduler;
-        // single-threaded, mirrors B-006 row_218 click-through pattern.
-        let mut pctx =
-            PanelCtx::with_scheduler(&mut tree, root_id, 1.0, unsafe { &mut *sched_ptr });
+        let fw_ptr: *mut Vec<emcore::emEngineCtx::DeferredAction> = &mut fw_actions;
+        // SAFETY: ectx.scheduler/framework_actions and pctx.scheduler/framework_actions
+        // alias the same values; single-threaded, mirrors B-006 row_218 click-through pattern.
+        let mut pctx = PanelCtx::with_sched_reach(
+            &mut tree,
+            root_id,
+            1.0,
+            unsafe { &mut *sched_ptr },
+            unsafe { &mut *fw_ptr },
+            &root_ctx,
+            &fw_cb,
+            &pa,
+        );
         let mut ectx = EngineCtx {
             scheduler: &mut sched,
             tree: None,

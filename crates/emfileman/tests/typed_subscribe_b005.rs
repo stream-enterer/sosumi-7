@@ -190,8 +190,7 @@ fn assert_sort_radio_drives(idx: usize, expected: SortCriterion) {
     {
         let mut tree = PanelTree::new();
         let tid = tree.create_root("t", false);
-        let mut pctx =
-            emcore::emEngineCtx::PanelCtx::with_scheduler(&mut tree, tid, 1.0, &mut h.scheduler);
+        let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
         panel
             .sort_group_for_test()
             .borrow_mut()
@@ -251,8 +250,7 @@ fn dirs_first_check_row_336() {
     {
         let mut tree = PanelTree::new();
         let tid = tree.create_root("t", false);
-        let mut pctx =
-            emcore::emEngineCtx::PanelCtx::with_scheduler(&mut tree, tid, 1.0, &mut h.scheduler);
+        let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
         panel
             .dirs_first_check_for_test()
             .SetChecked(true, &mut pctx);
@@ -278,8 +276,7 @@ fn show_hidden_check_row_337() {
     {
         let mut tree = PanelTree::new();
         let tid = tree.create_root("t", false);
-        let mut pctx =
-            emcore::emEngineCtx::PanelCtx::with_scheduler(&mut tree, tid, 1.0, &mut h.scheduler);
+        let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
         panel
             .show_hidden_check_for_test()
             .SetChecked(true, &mut pctx);
@@ -305,8 +302,7 @@ fn autosave_check_row_341() {
     {
         let mut tree = PanelTree::new();
         let tid = tree.create_root("t", false);
-        let mut pctx =
-            emcore::emEngineCtx::PanelCtx::with_scheduler(&mut tree, tid, 1.0, &mut h.scheduler);
+        let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
         panel.autosave_check_for_test().SetChecked(true, &mut pctx);
     }
     {
@@ -331,8 +327,7 @@ fn assert_nss_radio_drives(idx: usize, expected: NameSortingStyle) {
     {
         let mut tree = PanelTree::new();
         let tid = tree.create_root("t", false);
-        let mut pctx =
-            emcore::emEngineCtx::PanelCtx::with_scheduler(&mut tree, tid, 1.0, &mut h.scheduler);
+        let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
         panel
             .nss_group_for_test()
             .borrow_mut()
@@ -366,8 +361,7 @@ fn nss_radio_per_locale_row_338() {
     {
         let mut tree = PanelTree::new();
         let tid = tree.create_root("t", false);
-        let mut pctx =
-            emcore::emEngineCtx::PanelCtx::with_scheduler(&mut tree, tid, 1.0, &mut h.scheduler);
+        let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
         panel
             .nss_group_for_test()
             .borrow_mut()
@@ -382,8 +376,7 @@ fn nss_radio_per_locale_row_338() {
     {
         let mut tree = PanelTree::new();
         let tid = tree.create_root("t", false);
-        let mut pctx =
-            emcore::emEngineCtx::PanelCtx::with_scheduler(&mut tree, tid, 1.0, &mut h.scheduler);
+        let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, tid, 1.0);
         panel
             .nss_group_for_test()
             .borrow_mut()
