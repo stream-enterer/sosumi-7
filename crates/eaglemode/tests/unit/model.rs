@@ -7,7 +7,7 @@ use emcore::emFileModel::{emFileModel, FileModelOps, FileState};
 
 use emcore::emRecParser::RecError;
 
-use emcore::emEngineCtx::NullSignalCtx;
+use emcore::emEngineCtx::DropOnlySignalCtx;
 use emcore::emRecFileModel::emRecFileModel;
 
 use emcore::emRecRecord::Record;
@@ -204,7 +204,7 @@ fn rec_file_model_load_roundtrip() {
     write_test_rec(&path, "hello", 42);
 
     let mut m = emRecFileModel::<TestRecord>::new(path);
-    let mut sc = NullSignalCtx;
+    let mut sc = DropOnlySignalCtx;
     m.TryLoad(&mut sc);
 
     assert_eq!(*m.GetFileState(), FileState::Loaded);
@@ -216,7 +216,7 @@ fn rec_file_model_load_roundtrip() {
 fn rec_file_model_load_error_missing() {
     let path = PathBuf::from("/tmp/eaglemode_rfm_no_such_file_xyz.rec");
     let mut m = emRecFileModel::<TestRecord>::new(path);
-    let mut sc = NullSignalCtx;
+    let mut sc = DropOnlySignalCtx;
     m.TryLoad(&mut sc);
     assert!(matches!(*m.GetFileState(), FileState::LoadError(_)));
 }
@@ -229,7 +229,7 @@ fn rec_file_model_load_error_bad_rec() {
     std::fs::write(&path, b"{{not valid rec content!!!").unwrap();
 
     let mut m = emRecFileModel::<TestRecord>::new(path);
-    let mut sc = NullSignalCtx;
+    let mut sc = DropOnlySignalCtx;
     m.TryLoad(&mut sc);
     assert!(matches!(*m.GetFileState(), FileState::LoadError(_)));
 }
@@ -241,7 +241,7 @@ fn rec_file_model_save_roundtrip() {
     write_test_rec(&path, "original", 1);
 
     let mut m = emRecFileModel::<TestRecord>::new(path.clone());
-    let mut sc = NullSignalCtx;
+    let mut sc = DropOnlySignalCtx;
     m.TryLoad(&mut sc);
     assert_eq!(*m.GetFileState(), FileState::Loaded);
 
@@ -264,7 +264,7 @@ fn rec_file_model_out_of_date() {
     write_test_rec(&path, "v1", 1);
 
     let mut m = emRecFileModel::<TestRecord>::new(path.clone());
-    let mut sc = NullSignalCtx;
+    let mut sc = DropOnlySignalCtx;
     m.TryLoad(&mut sc);
     assert_eq!(*m.GetFileState(), FileState::Loaded);
 
@@ -283,7 +283,7 @@ fn rec_file_model_hard_reset() {
     write_test_rec(&path, "data", 7);
 
     let mut m = emRecFileModel::<TestRecord>::new(path);
-    let mut sc = NullSignalCtx;
+    let mut sc = DropOnlySignalCtx;
     m.TryLoad(&mut sc);
     assert_eq!(*m.GetFileState(), FileState::Loaded);
 
@@ -300,7 +300,7 @@ fn rec_file_model_clear_save_error() {
     write_test_rec(&path, "x", 0);
 
     let mut m = emRecFileModel::<TestRecord>::new(path.clone());
-    let mut sc = NullSignalCtx;
+    let mut sc = DropOnlySignalCtx;
     m.TryLoad(&mut sc);
     assert_eq!(*m.GetFileState(), FileState::Loaded);
 
@@ -333,7 +333,7 @@ fn rec_file_model_memory_limit() {
 
     let mut m = emRecFileModel::<TestRecord>::new(path);
     m.set_memory_limit(1);
-    let mut sc = NullSignalCtx;
+    let mut sc = DropOnlySignalCtx;
     m.TryLoad(&mut sc);
 
     assert_eq!(*m.GetFileState(), FileState::TooCostly);
@@ -346,7 +346,7 @@ fn rec_file_model_protect_file_state() {
     write_test_rec(&path, "protected", 3);
 
     let mut m = emRecFileModel::<TestRecord>::new(path);
-    let mut sc = NullSignalCtx;
+    let mut sc = DropOnlySignalCtx;
     m.TryLoad(&mut sc);
 
     // Loading internally guards data mutations with protect_file_state,

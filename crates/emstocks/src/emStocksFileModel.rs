@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use emcore::emCrossPtr::emCrossPtr;
-use emcore::emEngineCtx::{NullSignalCtx, SignalCtx};
+use emcore::emEngineCtx::{DropOnlySignalCtx, SignalCtx};
 use emcore::emFileModel::FileState;
 use emcore::emRecFileModel::emRecFileModel;
 
@@ -107,7 +107,7 @@ impl Drop for emStocksFileModel {
     // `~emStocksFileModel` runs synchronously through `this`'s scheduler
     // reference (per-instance `emEngine` ownership), so its `Save` call's
     // `Signal(ChangeSignal)` fires synchronously. The Rust port keeps the
-    // last-chance autosave but uses `NullSignalCtx` to drop the ChangeSignal
+    // last-chance autosave but uses `DropOnlySignalCtx` to drop the ChangeSignal
     // fire on the floor: at drop time the model is being destroyed and any
     // subscriber observers are tearing down with it, so the missed fire has
     // no observable consequence (D-007 §170 single-callsite escape hatch
@@ -115,7 +115,7 @@ impl Drop for emStocksFileModel {
     fn drop(&mut self) {
         if self.save_timer_deadline.is_some() {
             self.save_timer_deadline = None;
-            let mut null = NullSignalCtx;
+            let mut null = DropOnlySignalCtx;
             self.file_model.Save(&mut null);
         }
     }
@@ -150,7 +150,7 @@ mod tests {
         let mut model = emStocksFileModel::new(PathBuf::from("/tmp/test.emStocks"));
         model.OnRecChanged();
         // Timer just started, shouldn't fire yet
-        let mut null = NullSignalCtx;
+        let mut null = DropOnlySignalCtx;
         assert!(!model.CheckSaveTimer(&mut null));
     }
 
@@ -159,7 +159,7 @@ mod tests {
         let mut model = emStocksFileModel::new(PathBuf::from("/tmp/test.emStocks"));
         model.OnRecChanged();
         assert!(model.save_timer_deadline.is_some());
-        let mut null = NullSignalCtx;
+        let mut null = DropOnlySignalCtx;
         model.SaveIfNeeded(&mut null);
         assert!(model.save_timer_deadline.is_none());
     }
@@ -168,7 +168,7 @@ mod tests {
     fn file_model_get_writable_rec_starts_timer() {
         let mut model = emStocksFileModel::new(PathBuf::from("/tmp/test.emStocks"));
         assert!(model.save_timer_deadline.is_none());
-        let mut null = NullSignalCtx;
+        let mut null = DropOnlySignalCtx;
         let _rec = model.GetWritableRec(&mut null);
         assert!(model.save_timer_deadline.is_some());
     }

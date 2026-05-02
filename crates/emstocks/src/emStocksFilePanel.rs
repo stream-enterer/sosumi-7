@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use emcore::emColor::emColor;
 #[cfg(test)]
-use emcore::emEngineCtx::NullSignalCtx;
+use emcore::emEngineCtx::DropOnlySignalCtx;
 use emcore::emEngineCtx::PanelCtx;
 use emcore::emFilePanel::emFilePanel;
 use emcore::emInput::{emInputEvent, InputKey, InputVariant};
@@ -21,20 +21,24 @@ use super::emStocksRec::{emStocksRec, Interest};
 /// Best-available `&mut emStocksRec` access for `Input` handlers. Production
 /// `PanelCtx` instances under `PanelCycleEngine` carry full scheduler reach
 /// (`as_sched_ctx() -> Some`), so the threaded ctx fires the synchronous
-/// `ChangeSignal` per D-007. Layout-only test contexts construct `PanelCtx`
-/// without scheduler reach (`as_sched_ctx() -> None`); fall back to
-/// `NullSignalCtx` so the mutator runs but the (necessarily null, because no
-/// subscriber has called `GetChangeSignal` in such tests) signal is dropped on
-/// the floor — observably equivalent per D-007/D-008 composition.
+/// `ChangeSignal` per D-007. The else branch is reachable only from layout-
+/// only / unit-test `PanelCtx` constructions; a regression that loses
+/// scheduler reach in production must fail loudly rather than silently drop
+/// ChangeSignal fires.
 fn writable_rec<'a>(model: &'a mut emStocksFileModel, ctx: &mut PanelCtx) -> &'a mut emStocksRec {
     if let Some(mut sc) = ctx.as_sched_ctx() {
         model.GetWritableRec(&mut sc)
     } else {
-        let mut null = emcore::emEngineCtx::NullSignalCtx;
-        // SAFETY of timing: in this branch, change_signal is necessarily null
-        // (no subscriber has reached GetChangeSignal with a real ctx); the
-        // dropped fire is a no-op per C++ "Signal()-with-zero-subscribers".
-        model.GetWritableRec(&mut null)
+        #[cfg(not(test))]
+        panic!("emStocksFilePanel::Input requires scheduler reach in production");
+        // Test-only path: ChangeSignal is necessarily null (no subscriber has
+        // reached GetChangeSignal with a real ctx); the dropped fire is a
+        // no-op per C++ "Signal()-with-zero-subscribers".
+        #[cfg(test)]
+        {
+            let mut null = DropOnlySignalCtx;
+            model.GetWritableRec(&mut null)
+        }
     }
 }
 
@@ -681,7 +685,7 @@ mod tests {
         let mut stock = crate::emStocksRec::StockRec::default();
         stock.AddPrice("2024-06-14", "100");
         stock.AddPrice("2024-06-15", "101");
-        let mut null = NullSignalCtx;
+        let mut null = DropOnlySignalCtx;
         panel.model.GetWritableRec(&mut null).stocks.push(stock);
         panel
             .list_box
@@ -712,7 +716,7 @@ mod tests {
         let mut stock = crate::emStocksRec::StockRec::default();
         stock.AddPrice("2024-06-14", "100");
         stock.AddPrice("2024-06-15", "101");
-        let mut null = NullSignalCtx;
+        let mut null = DropOnlySignalCtx;
         panel.model.GetWritableRec(&mut null).stocks.push(stock);
         panel
             .list_box

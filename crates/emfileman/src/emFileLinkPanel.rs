@@ -8,7 +8,9 @@ use emcore::emContext::emContext;
 use emcore::emFileModel::FileModelState;
 use emcore::emFilePanel::emFilePanel;
 
-use emcore::emEngineCtx::{NullSignalCtx, PanelCtx};
+#[cfg(test)]
+use emcore::emEngineCtx::DropOnlySignalCtx;
+use emcore::emEngineCtx::PanelCtx;
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
 use emcore::emPanel::{FileLoadStatus, NoticeFlags, PanelBehavior, PanelState};
 use emcore::emPanelTree::PanelId;
@@ -280,12 +282,18 @@ impl PanelBehavior for emFileLinkPanel {
             if let Some(mut sc) = ctx.as_sched_ctx() {
                 let _ = model_rc.borrow_mut().ensure_loaded(&mut sc);
             } else {
-                // Layout-only / unit-test PanelCtx (no scheduler reach). The
-                // panel was not constructed under a full Cycle, so ChangeSignal
-                // has no observers — fall back to a no-op signal context to
-                // preserve the load.
-                let mut null = NullSignalCtx;
-                let _ = model_rc.borrow_mut().ensure_loaded(&mut null);
+                // Production `AutoExpand` runs under `PanelCycleEngine` with
+                // full scheduler reach; the else branch is reachable only from
+                // layout-only / unit-test `PanelCtx` constructions. A regression
+                // that loses scheduler reach in production must fail loudly
+                // rather than silently drop ChangeSignal fires.
+                #[cfg(not(test))]
+                panic!("emFileLinkPanel::AutoExpand requires scheduler reach in production");
+                #[cfg(test)]
+                {
+                    let mut null = DropOnlySignalCtx;
+                    let _ = model_rc.borrow_mut().ensure_loaded(&mut null);
+                }
             }
         }
         // Force viewed=true so update_data_and_child_panel creates

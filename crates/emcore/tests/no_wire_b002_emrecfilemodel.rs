@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use slotmap::Key as _;
 
-use emcore::emEngineCtx::NullSignalCtx;
+use emcore::emEngineCtx::DropOnlySignalCtx;
 use emcore::emRecFileModel::emRecFileModel;
 use emcore::emRecParser::{RecError, RecStruct};
 use emcore::emRecRecord::Record;
@@ -71,8 +71,8 @@ fn pre_subscribe_signal_change_is_no_op() {
     // Per D-007 + D-008 composition: signal_change must be a silent no-op when
     // change_signal is still null (no subscriber has called GetChangeSignal).
     let mut m = emRecFileModel::<TestRec>::new(PathBuf::from("/tmp/b002_preno.rec"));
-    let mut null = NullSignalCtx;
-    // Mutators all fire signal_change internally; with NullSignalCtx and a
+    let mut null = DropOnlySignalCtx;
+    // Mutators all fire signal_change internally; with DropOnlySignalCtx and a
     // null change_signal slot, none of these must panic.
     m.hard_reset(&mut null);
     m.clear_save_error(&mut null);
@@ -121,7 +121,7 @@ fn get_writable_map_from_waiting_does_not_transition() {
     // signal_change is not fired. The mutator-firing test is observable via
     // state, not via flag drain.
     let mut m = emRecFileModel::<TestRec>::new(PathBuf::from("/tmp/b002_unsaved.rec"));
-    let mut null = NullSignalCtx;
+    let mut null = DropOnlySignalCtx;
     m.hard_reset(&mut null); // Waiting
     let _ = m.GetWritableMap(&mut null);
     assert_eq!(

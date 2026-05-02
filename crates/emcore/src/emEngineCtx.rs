@@ -142,18 +142,23 @@ impl SignalCtx for EngineCtx<'_> {
 }
 
 /// DIVERGED: (language-forced) — A `SignalCtx` that returns null IDs and
-/// drops fires on the floor. Required at sites where a mutator threaded with
-/// `&mut impl SignalCtx` per D-007 must run, but no real scheduler is reachable
-/// (Rust `Drop::drop` has no parameters; layout-only test `PanelCtx` instances
-/// without a scheduler reach). At those sites no observer can be subscribed
-/// (the signal is null because nothing has called `GetChangeSignal(ectx)` with
-/// a real ctx), so dropping the fire is observably equivalent to C++'s
+/// drops fires on the floor.
+///
+/// Use only at language-forced sites where Rust has no parameter to thread an
+/// `&mut impl SignalCtx` through (Rust `Drop::drop`). Any other use site is
+/// suspect and likely masks a production wiring bug.
+///
+/// At a legitimate `Drop` site no observer can be subscribed (the signal is
+/// null because nothing has called `GetChangeSignal(ectx)` with a real ctx),
+/// so dropping the fire is observably equivalent to C++'s
 /// "Signal()-with-zero-subscribers is a no-op" semantics. This is the
 /// CALLSITE-NOTE escape hatch in D-007 §170 made into a typed handle so callers
-/// don't fabricate ad-hoc fakes.
-pub struct NullSignalCtx;
+/// don't fabricate ad-hoc fakes — and the name self-flags any non-Drop callsite
+/// for review.
+#[derive(Default)]
+pub struct DropOnlySignalCtx;
 
-impl SignalCtx for NullSignalCtx {
+impl SignalCtx for DropOnlySignalCtx {
     fn create_signal(&mut self) -> SignalId {
         SignalId::default()
     }

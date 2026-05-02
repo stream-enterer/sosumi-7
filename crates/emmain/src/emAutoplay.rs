@@ -1141,13 +1141,13 @@ mod tests {
 
     /// No-op SignalCtx for unit tests that don't need signal delivery.
     /// Signals allocated here go nowhere; fire() is a no-op.
-    struct NullSignalCtx;
-    impl NullSignalCtx {
+    struct DropOnlySignalCtx;
+    impl DropOnlySignalCtx {
         fn new() -> Self {
             Self
         }
     }
-    impl SignalCtx for NullSignalCtx {
+    impl SignalCtx for DropOnlySignalCtx {
         fn create_signal(&mut self) -> SignalId {
             SignalId::null()
         }
@@ -1231,7 +1231,7 @@ mod tests {
 
     #[test]
     fn test_view_model_setters() {
-        let mut sc = NullSignalCtx::new();
+        let mut sc = DropOnlySignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
         vm.SetDurationMS(&mut sc, 2000);
         vm.SetRecursive(&mut sc, true);
@@ -1245,7 +1245,7 @@ mod tests {
 
     #[test]
     fn test_view_model_clamp_duration() {
-        let mut sc = NullSignalCtx::new();
+        let mut sc = DropOnlySignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
         // C++ SetDurationMS does not clamp; it stores the value verbatim
         // (emAutoplay.cpp:856 `DurationMS=ms.max(0)` only floors negatives).
@@ -1808,7 +1808,7 @@ mod tests {
 
     #[test]
     fn test_view_model_set_autoplaying_activates() {
-        let mut sc = NullSignalCtx::new();
+        let mut sc = DropOnlySignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
         vm.Recursive = true;
         vm.Loop = true;
@@ -1822,7 +1822,7 @@ mod tests {
 
     #[test]
     fn test_view_model_set_autoplaying_deactivates() {
-        let mut sc = NullSignalCtx::new();
+        let mut sc = DropOnlySignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
         vm.SetAutoplaying(&mut sc, true);
         vm.PlayingItem = true;
@@ -1835,7 +1835,7 @@ mod tests {
 
     #[test]
     fn test_view_model_can_continue_last() {
-        let mut sc = NullSignalCtx::new();
+        let mut sc = DropOnlySignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
         // Not autoplaying, no last location → cannot continue
         assert!(!vm.CanContinueLastAutoplay());
@@ -1852,7 +1852,7 @@ mod tests {
 
     #[test]
     fn test_view_model_item_progress_clamped() {
-        let mut sc = NullSignalCtx::new();
+        let mut sc = DropOnlySignalCtx::new();
         let mut vm = emAutoplayViewModel::new();
         vm.SetItemProgress(&mut sc, 1.5);
         assert!((vm.GetItemProgress() - 1.0).abs() < 1e-10);
