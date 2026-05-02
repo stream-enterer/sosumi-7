@@ -366,6 +366,29 @@ where
     MAIN_WINDOW.with(|cell| cell.borrow_mut().as_mut().map(f))
 }
 
+/// Enqueue a deferred action that runs with `&mut emMainWindow` and `&mut App`.
+///
+/// The closure executes during the next `pending_actions` drain on the winit
+/// main loop tick. This composes the `with_main_window` thread-local accessor
+/// with the framework's `pending_actions` rail so reaction bodies inside
+/// `Cycle` (which has `EngineCtx` but not `&mut App`) can invoke
+/// `emMainWindow` methods that require `&mut App`.
+///
+/// Mirrors the pattern at `emBookmarks.rs:748` and `emMainWindow::Duplicate`
+/// (line 233). Use from `Cycle` reaction bodies that need to invoke
+/// MainWindow methods with the `&mut App` parameter (`Duplicate`,
+/// `ToggleFullscreen`, `Quit`).
+pub(crate) fn enqueue_main_window_action<F>(ectx: &mut EngineCtx<'_>, action: F)
+where
+    F: FnOnce(&mut emMainWindow, &mut App) + 'static,
+{
+    ectx.pending_actions
+        .borrow_mut()
+        .push(Box::new(move |app, _event_loop| {
+            with_main_window(|mw| action(mw, app));
+        }));
+}
+
 /// Engine for emMainWindow, matching C++ emMainWindow::Cycle()
 /// (emMainWindow.cpp:174-190).
 pub(crate) struct MainWindowEngine {

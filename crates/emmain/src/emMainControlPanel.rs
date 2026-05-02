@@ -32,6 +32,7 @@ use crate::emAutoplay::emAutoplayViewModel;
 use crate::emAutoplayControlPanel::emAutoplayControlPanel;
 use crate::emBookmarks::emBookmarksPanel;
 use crate::emMainConfig::emMainConfig;
+use crate::emMainWindow::enqueue_main_window_action;
 
 // ── ButtonSignals ────────────────────────────────────────────────────────────
 // One-shot init handoff from CommandsPanel::create_children (where the four
@@ -558,18 +559,19 @@ impl PanelBehavior for emMainControlPanel {
         // Mirrors C++ emMainControlPanel.cpp:262-290 IsSignaled branches.
 
         // Row 220: BtNewWindow click → MainWin.Duplicate()
+        // FU-002: deferred via App.pending_actions because Duplicate needs
+        // &mut App + &ActiveEventLoop (window creation). Same pattern as the
+        // F4 keyboard path through emMainWindow::Input.
         if !self.bt_new_window_sig.is_null() && ectx.IsSignaled(self.bt_new_window_sig) {
-            // TODO(B-012-followup): wire to MainWin.Duplicate() — App-bound
-            // (needs App access from Cycle, not yet reachable). Subscription
-            // drift fixed in B-012; reaction body residual tracked here.
-            log::info!("emMainControlPanel: New Window requested (Duplicate not yet implemented)");
+            enqueue_main_window_action(ectx, |mw, app| mw.Duplicate(app));
         }
 
         // Row 221: BtFullscreen click → MainWin.ToggleFullscreen()
+        // FU-002: deferred via App.pending_actions; ToggleFullscreen needs
+        // &mut App for SetWindowFlags. Shares the F11 keyboard path's
+        // downstream call.
         if !self.bt_fullscreen_sig.is_null() && ectx.IsSignaled(self.bt_fullscreen_sig) {
-            // TODO(B-012-followup): wire to MainWin.ToggleFullscreen() — same
-            // App-access residual as row 220.
-            log::info!("emMainControlPanel: Fullscreen toggle requested (requires App access)");
+            enqueue_main_window_action(ectx, |mw, app| mw.ToggleFullscreen(app));
         }
 
         // Row 222: BtAutoHideControlView click → MainConfig->AutoHideControlView.Invert();Save()
@@ -606,12 +608,11 @@ impl PanelBehavior for emMainControlPanel {
         }
 
         // Row 226: BtQuit click → MainWin.Quit()
+        // FU-002: deferred via App.pending_actions; Quit needs &mut App for
+        // scheduler.InitiateTermination. Shares the Shift+Alt+F4 keyboard
+        // path's downstream call.
         if !self.bt_quit_sig.is_null() && ectx.IsSignaled(self.bt_quit_sig) {
-            // TODO(B-012-followup): wire to MainWin.Quit() — needs &mut App
-            // for scheduler.InitiateTermination.
-            log::info!(
-                "emMainControlPanel: Quit requested (requires App access for InitiateTermination)"
-            );
+            enqueue_main_window_action(ectx, |mw, app| mw.Quit(app));
         }
 
         false
