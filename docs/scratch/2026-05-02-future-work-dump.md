@@ -62,6 +62,8 @@ Action: spend one pass reading the 4 marker locations to confirm understanding. 
 
 ## F. Workflow / process observations from this session
 
+- **FU-002 lesson — bucket-file "architectural decision" framing.** FU-002's bucket file said "first phase: architectural decision (a/b/c)." Research showed all three options were preempted by an existing pervasive pattern (`pending_actions` queue). Future bucket files should frame architectural-decision phases as **"verify whether an existing pattern applies"** before listing fresh options. Saves a spec round.
+
 - **"Verify before recommending" is the de facto rule now.** I escalated to (b) embed-not-mirror without checking emCheckButton's existing structure — the verification flipped the recommendation. Worth memorializing: when a design choice could go either way, prefer the path that's already established in the codebase, and *check what's already established* before recommending the alternative.
 - **Adversarial review pass before SDD dispatch** was a workflow innovation during Tier-B — caught real issues in design docs before implementer time was spent. Should be promoted into the SDD skill or at least the project methodology.
 - **Per-task nextest skipping in SDD loops** is now the codified pattern (memory entry exists). Pre-commit hook is the per-commit gate; full nextest at the end of phase.
