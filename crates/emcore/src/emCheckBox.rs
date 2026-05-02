@@ -42,6 +42,19 @@ pub struct emCheckBox {
     /// preserve observable signal-dispatch behavior. Spec §3.5 D6.1. Phase-3
     /// B3.4c: allocated and fired at Input-driven toggle sites.
     pub check_signal: SignalId,
+    /// Allocated at construction; fired from the user-toggle path only
+    /// (`Input` → `toggle`). NOT fired from `SetChecked` (programmatic).
+    /// Mirrors C++ `emButton::GetClickSignal()` — emCheckBox inherits emButton
+    /// in C++ via emCheckButton; in Rust the structs are sibling ports so the
+    /// inherited accessor is reproduced as a separate `pub` field.
+    ///
+    /// DIVERGED: (language-forced) Rust lacks public inheritance; the
+    /// codebase has codified the mirror-sibling-port pattern at
+    /// `emCheckButton.rs:32-40` (B-012). FU-001 extends it to the leaf
+    /// `emCheckBox` widget so subscribers needing user-click semantics
+    /// (e.g. emStocksControlPanel `owned_shares_first`, cpp:135) do not
+    /// feedback-loop with a sibling row's programmatic `SetChecked`.
+    pub click_signal: SignalId,
 }
 
 impl emCheckBox {
@@ -61,6 +74,7 @@ impl emCheckBox {
             last_h: 0.0,
             on_check: None,
             check_signal: ctx.create_signal(),
+            click_signal: ctx.create_signal(),
         }
     }
 
@@ -466,17 +480,35 @@ impl emCheckBox {
     }
 
     /// Internal toggle helper (private). Implements the action C++ does in
-    /// its protected virtual `Clicked()` override.
+    /// its protected virtual `Clicked()` override. Fires BOTH `click_signal`
+    /// and `check_signal` — user-click toggle path, distinct from
+    /// programmatic `SetChecked` (which fires only `check_signal`).
+    /// Mirrors emCheckButton::toggle (`emCheckButton.rs:470-480`) — B-012
+    /// feedback-loop guard.
     fn toggle(&mut self, ctx: &mut PanelCtx<'_>) {
         self.checked = !self.checked;
         // Mirrors emCheckButton::SetChecked C++ order
-        // (invalidate → Signal(CheckSignal) → CheckChanged).
+        // (invalidate → Signal(ClickSignal) → Signal(CheckSignal) → CheckChanged).
         if let Some(mut sched) = ctx.as_sched_ctx() {
+            sched.fire(self.click_signal);
             sched.fire(self.check_signal);
             if let Some(cb) = self.on_check.as_mut() {
                 cb(self.checked, &mut sched);
             }
         }
+    }
+
+    /// Mirrors C++ `emCheckButton::GetCheckSignal()`. Field access
+    /// (`self.check_signal`) is also permitted; this accessor exists for
+    /// C++ surface parity.
+    pub fn GetCheckSignal(&self) -> SignalId {
+        self.check_signal
+    }
+
+    /// Mirrors C++ `emButton::GetClickSignal()` (inherited via emCheckButton).
+    /// Field access (`self.click_signal`) is also permitted.
+    pub fn GetClickSignal(&self) -> SignalId {
+        self.click_signal
     }
 }
 
@@ -624,6 +656,74 @@ mod tests {
             cb.Input(&emInputEvent::press(InputKey::Enter), &ps, &is, &mut ctx);
         }
         assert!(init.sched.is_pending(sig));
+    }
+
+    #[test]
+    fn check_box_user_toggle_fires_both_signals() {
+        let look = emLook::new();
+        let mut init = TestInit::new();
+        let mut cb = emCheckBox::new(&mut init.ctx(), "Enable", look);
+        let click = cb.click_signal;
+        let check = cb.check_signal;
+        let ps = default_panel_state();
+        let is = default_input_state();
+        let (mut tree, tid) = test_tree();
+        let fw_cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        {
+            let mut ctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                tid,
+                1.0,
+                &mut init.sched,
+                &mut init.fw,
+                &init.root,
+                &fw_cb,
+                &init.pa,
+            );
+            cb.Input(&emInputEvent::press(InputKey::Enter), &ps, &is, &mut ctx);
+        }
+        assert!(
+            init.sched.is_pending(click),
+            "click_signal must fire on user toggle"
+        );
+        assert!(
+            init.sched.is_pending(check),
+            "check_signal must fire on user toggle"
+        );
+    }
+
+    #[test]
+    fn check_box_set_checked_fires_only_check_signal() {
+        let look = emLook::new();
+        let mut init = TestInit::new();
+        let mut cb = emCheckBox::new(&mut init.ctx(), "Enable", look);
+        let click = cb.click_signal;
+        let check = cb.check_signal;
+        let (mut tree, tid) = test_tree();
+        let fw_cb: std::cell::RefCell<Option<Box<dyn crate::emClipboard::emClipboard>>> =
+            std::cell::RefCell::new(None);
+        {
+            let mut ctx = PanelCtx::with_sched_reach(
+                &mut tree,
+                tid,
+                1.0,
+                &mut init.sched,
+                &mut init.fw,
+                &init.root,
+                &fw_cb,
+                &init.pa,
+            );
+            cb.SetChecked(true, &mut ctx);
+        }
+        assert!(
+            init.sched.is_pending(check),
+            "check_signal must fire on SetChecked"
+        );
+        assert!(
+            !init.sched.is_pending(click),
+            "click_signal MUST NOT fire on programmatic SetChecked (B-012 feedback-loop guard)"
+        );
     }
 
     #[test]
