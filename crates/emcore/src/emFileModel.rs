@@ -61,7 +61,7 @@ impl<T> FileModelState for emFileModel<T> {
         self.memory_need
     }
     fn GetFileStateSignal(&self) -> SignalId {
-        self.change_signal
+        self.file_state_signal
     }
 }
 
@@ -114,7 +114,7 @@ pub struct emFileModel<T> {
     path: PathBuf,
     state: FileState,
     error_text: String,
-    change_signal: SignalId,
+    file_state_signal: SignalId,
     memory_limit: usize,
     memory_need: u64,
     file_progress: f64,
@@ -128,13 +128,13 @@ pub struct emFileModel<T> {
 }
 
 impl<T> emFileModel<T> {
-    pub fn new(path: PathBuf, signal_id: SignalId) -> Self {
+    pub fn new(path: PathBuf, file_state_signal: SignalId) -> Self {
         Self {
             data: None,
             path,
             state: FileState::Waiting,
             error_text: String::new(),
-            change_signal: signal_id,
+            file_state_signal,
             memory_limit: usize::MAX,
             memory_need: 0,
             file_progress: 0.0,
@@ -165,7 +165,7 @@ impl<T> emFileModel<T> {
     }
 
     pub fn GetFileStateSignal(&self) -> SignalId {
-        self.change_signal
+        self.file_state_signal
     }
 
     pub fn set_memory_limit(&mut self, limit: usize) {
@@ -522,7 +522,7 @@ impl<T> emFileModel<T> {
             state_changed = true;
         }
         if state_changed {
-            ctx.fire(self.change_signal);
+            ctx.fire(self.file_state_signal);
         }
 
         matches!(self.state, FileState::Loading { .. })
@@ -530,7 +530,7 @@ impl<T> emFileModel<T> {
 
     /// Port of C++ `emFileModel::UpdateFileProgress` (`emFileModel.cpp:462-490`).
     /// 250 ms throttle; returns `true` if the cached progress changed
-    /// (caller fires `change_signal`).
+    /// (caller fires `file_state_signal`).
     pub fn UpdateFileProgress<O: FileModelOps>(&mut self, ops: &O) -> bool {
         let new_progress = match &self.state {
             FileState::Loading { .. } | FileState::Saving => ops.calc_file_progress(),
