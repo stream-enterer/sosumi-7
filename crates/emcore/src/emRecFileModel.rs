@@ -30,6 +30,11 @@ pub struct emRecFileModel<T: Record + Default> {
     /// Port of C++ inherited `emFileModel::ChangeSignal` (B-002 / D-008 A1).
     /// Lazy-allocated on first `GetChangeSignal(&self, ectx)` call; null until then.
     change_signal: Cell<SignalId>,
+    /// Port of inherited C++ `emFileModel::FileStateSignal` (FU-005).
+    /// Lazy-allocated on first `ensure_file_state_signal(ectx)` call; null
+    /// until then. Mirrors the sibling `change_signal` lazy pattern (D-006:
+    /// `emRecFileModel::new()` has no `EngineCtx` reach for eager alloc).
+    file_state_signal: Cell<SignalId>,
 }
 
 impl<T: Record + Default> emRecFileModel<T> {
@@ -46,6 +51,7 @@ impl<T: Record + Default> emRecFileModel<T> {
             protect_file_state: 0,
             read_buffer: None,
             change_signal: Cell::new(SignalId::null()),
+            file_state_signal: Cell::new(SignalId::null()),
         }
     }
 
@@ -75,6 +81,38 @@ impl<T: Record + Default> emRecFileModel<T> {
     /// with zero subscribers per D-007 + D-008 composition in decisions.md).
     pub fn signal_change(&self, ectx: &mut impl SignalCtx) {
         let s = self.change_signal.get();
+        if !s.is_null() {
+            ectx.fire(s);
+        }
+    }
+
+    /// Port of inherited C++ `emFileModel::GetFileStateSignal()` with lazy
+    /// allocation (FU-005). Allocates on first call; returns the live id
+    /// thereafter. Subscribers call this at first-Cycle subscribe time so
+    /// the connect wires into a real id before any fires can occur. Mirrors
+    /// `GetChangeSignal` (line 56) and `emFilePanel::ensure_vir_file_state_signal`.
+    pub fn ensure_file_state_signal(&self, ectx: &mut impl SignalCtx) -> SignalId {
+        let cur = self.file_state_signal.get();
+        if cur.is_null() {
+            let new_id = ectx.create_signal();
+            self.file_state_signal.set(new_id);
+            new_id
+        } else {
+            cur
+        }
+    }
+
+    /// Test-only accessor for the raw `file_state_signal` slot (without allocating).
+    #[doc(hidden)]
+    pub fn file_state_signal_for_test(&self) -> SignalId {
+        self.file_state_signal.get()
+    }
+
+    /// Synchronous fire of `file_state_signal` (FU-005). No-op when null
+    /// (matches C++ `emSignal::Signal()` with zero subscribers per D-007).
+    /// Called alongside `signal_change` at every state-mutating site.
+    pub fn signal_file_state(&self, ectx: &mut impl SignalCtx) {
+        let s = self.file_state_signal.get();
         if !s.is_null() {
             ectx.fire(s);
         }
@@ -355,15 +393,11 @@ impl<T: Record + Default> FileModelState for emRecFileModel<T> {
         self.memory_need
     }
 
-    // emRecFileModel ports the C++ `emFileModel::ChangeSignal` lazily via
-    // `GetChangeSignal(&self, ectx)` (B-002). The trait-level
-    // `GetFileStateSignal` here is a separate signal (file-state transitions
-    // observed by `emFilePanel`), which the standalone-port emRecFileModel
-    // does not expose; consumers that need it subscribe through the wrapping
-    // `emFileLinkModel`/`emStocksFileModel` if those expose one. Returning
-    // `SignalId::default()` (the null key) is safe — the panel-side `connect`
-    // checks `is_null` and skips the wire.
+    /// Port of inherited C++ `emFileModel::GetFileStateSignal` (FU-005).
+    /// Returns the lazy-allocated `file_state_signal` id, or null if no
+    /// subscriber has called `ensure_file_state_signal(ectx)` yet. Once
+    /// promoted, the id is stable for the lifetime of this model.
     fn GetFileStateSignal(&self) -> SignalId {
-        SignalId::default()
+        self.file_state_signal.get()
     }
 }
