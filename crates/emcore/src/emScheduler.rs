@@ -497,6 +497,7 @@ impl EngineScheduler {
         self.inner.instr.reset();
         let slice_t0 = std::time::Instant::now();
         let slice_clock_start = self.inner.clock;
+        let slice_carry_in = self.inner.pending_signals.len() as u32;
 
         // Drain deferred engine removals queued when remove() was called
         // without a scheduler context (e.g. from test cleanup or non-Cycle
@@ -564,10 +565,11 @@ impl EngineScheduler {
                     use std::fmt::Write as _;
                     let _ = writeln!(
                         buf,
-                        "SLICE|t_us={}|clock_start={}|clock_end={}|cycled={}|drain_pushes={}|fire={}|timer={}|direct={}|max_pending={}|rearms={}",
+                        "SLICE|t_us={}|clock_start={}|clock_end={}|carry_in={}|cycled={}|drain_pushes={}|fire={}|timer={}|direct={}|max_pending={}|rearms={}",
                         elapsed_us,
                         slice_clock_start,
                         self.inner.clock,
+                        slice_carry_in,
                         self.inner.instr.cycled.get(),
                         self.inner.instr.drain_pushes.get(),
                         self.inner.instr.fire_pushes.get(),
