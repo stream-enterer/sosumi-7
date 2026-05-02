@@ -1,119 +1,175 @@
 #!/usr/bin/env python3
-"""Phase C analyzer for hang-instrumentation log.
+"""Phase 0 v3 analyzer for hang-instrumentation log.
 
-Streams /tmp/em_instr.phase0.log (or path passed on argv). Asserts the
-reconciliation invariant. Emits a verdict row from the Phase 0 decision
-matrix. Exits 1 if invariants fail OR no verdict can be produced.
+Streams /tmp/em_instr.phase0.log (or path passed on argv). Parses
+SLICE, CB, AW, RENDER, MARKER lines. Slices the timeline between the
+first two MARKER lines (or the whole log if fewer than 2 markers) and
+emits a ranked breakdown of where wall-clock went per chokepoint type.
 
-Invariant: per slice, drain_pushes == carry_in + fire + timer.
-A violation indicates a push to pending_signals from a path the
-instrumentation does not see — typically the cdylib hazard (fire()
-called from a plugin-resident copy that does not bump the shared
-counter, but the data field IS shared, so the push still drains).
-
-Reality-check: in this codebase, EngineCtxInner.instr is on the same
-data instance that all callers (binary + cdylibs) reach via &mut
-EngineScheduler, so fire() bumping `self.inner.instr.fire_pushes` is
-visible regardless of which compiled copy of fire() ran. A violation
-therefore indicates *some other* push site, not a cdylib copy hazard.
+No magic thresholds. Verdict is the dominant chokepoint.
 """
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 
-def parse(path):
-    rows = []
-    with open(path) as f:
-        for line in f:
-            if not line.startswith("SLICE|"):
-                continue
-            kv = {}
-            for part in line.rstrip("\n").split("|")[1:]:
-                k, _, v = part.partition("=")
-                try:
-                    kv[k] = int(v)
-                except ValueError:
-                    kv[k] = v
-            rows.append(kv)
-    return rows
+def parse_kv(line):
+    parts = line.rstrip("\n").split("|")
+    head = parts[0]
+    kv = {}
+    for part in parts[1:]:
+        k, _, v = part.partition("=")
+        try:
+            kv[k] = int(v)
+        except ValueError:
+            kv[k] = v
+    return head, kv
 
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "/tmp/em_instr.phase0.log"
-    rows = parse(path)
+    rows = []
+    with open(path) as f:
+        for line in f:
+            if not line or "|" not in line:
+                continue
+            rows.append(parse_kv(line))
+
     if not rows:
-        print(f"FAIL: no SLICE lines in {path}", file=sys.stderr)
+        print(f"FAIL: empty log {path}", file=sys.stderr)
         return 1
 
-    print(f"Parsed {len(rows)} slices from {path}")
+    markers = [r for r in rows if r[0] == "MARKER"]
+    if len(markers) >= 2:
+        t_start = markers[0][1]["wall_us"]
+        t_end = markers[1][1]["wall_us"]
+        window_label = f"between markers {t_start}us and {t_end}us"
+    elif len(markers) == 1:
+        t_start = markers[0][1]["wall_us"]
+        t_end = max(
+            (r[1].get("wall_exit_us") or r[1].get("exit_us") or r[1].get("present_done_us") or 0)
+            for r in rows
+        )
+        window_label = f"from marker {t_start}us to end {t_end}us"
+    else:
+        t_start = 0
+        all_t = []
+        for r in rows:
+            for k in ("wall_enter_us", "enter_us", "wall_us"):
+                if k in r[1]:
+                    all_t.append(r[1][k])
+                    break
+        t_end = max(all_t) if all_t else 0
+        window_label = f"full log 0us to {t_end}us (no markers)"
 
-    # Section 1: invariant
-    violations = []
-    for r in rows:
-        expected = r["carry_in"] + r["fire"] + r["timer"]
-        if r["drain_pushes"] != expected:
-            violations.append(r)
+    duration_us = t_end - t_start
+    if duration_us <= 0:
+        print(f"FAIL: marker window has zero duration ({window_label})",
+              file=sys.stderr)
+        return 1
+    if duration_us < 5_000_000 and len(markers) >= 2:
+        print(f"WARN: marker window only {duration_us}us "
+              f"(<5s); hang may not have built up enough.",
+              file=sys.stderr)
 
-    if violations:
-        print(f"\nINVARIANT FAIL: {len(violations)} slices violate "
-              f"drain == carry_in + fire + timer")
-        v = violations[0]
-        print(f"  first: clock_start={v['clock_start']} "
-              f"drain={v['drain_pushes']} carry_in={v['carry_in']} "
-              f"fire={v['fire']} timer={v['timer']} "
-              f"gap={v['drain_pushes'] - (v['carry_in']+v['fire']+v['timer'])}")
-        print("\nVerdict: COUNTING_HOLE — pushes to pending_signals from a "
-              "path not covered by fire() or the timer phase.")
-        print("Phase A row: 7-HOLE. Add PEND_PRE/POST around each Cycle to "
-              "bisect which Cycle body is mutating pending_signals.")
-        return 0
+    print(f"Window: {window_label}")
+    print(f"Duration: {duration_us} us = {duration_us/1e6:.2f} s\n")
 
-    # Section 2: hot-slice gate
-    hot = [r for r in rows if r["cycled"] > 5000]
-    print(f"\nInvariant holds across all slices.")
-    print(f"Hot slices (cycled>5000): {len(hot)}")
-    if len(hot) < 10:
-        print("FAIL: fewer than 10 hot slices — hang did not build up. "
-              "Rerun. Two consecutive failures escalate.", file=sys.stderr)
+    bucket_us = defaultdict(int)
+    bucket_n = defaultdict(int)
+
+    for head, kv in rows:
+        # Filter to events whose enter timestamp is in window.
+        if head == "CB":
+            t = kv.get("enter_us", 0)
+            if not (t_start <= t <= t_end):
+                continue
+            name = kv.get("name", "?")
+            ev = kv.get("event", "")
+            key = f"CB:{name}" + (f":{ev}" if ev else "")
+            bucket_us[key] += kv.get("dur_us", 0)
+            bucket_n[key] += 1
+        elif head == "RENDER":
+            t = kv.get("enter_us", 0)
+            if not (t_start <= t <= t_end):
+                continue
+            bucket_us["RENDER:paint"] += kv.get("paint_dur_us", 0)
+            bucket_us["RENDER:present"] += kv.get("present_dur_us", 0)
+            bucket_n["RENDER:paint"] += 1
+            bucket_n["RENDER:present"] += 1
+        elif head == "SLICE":
+            t = kv.get("wall_enter_us", 0)
+            if not (t_start <= t <= t_end):
+                continue
+            bucket_us["SLICE:scheduler"] += kv.get("t_us", 0)
+            bucket_n["SLICE:scheduler"] += 1
+
+    # RENDER is nested inside CB:window_event:redraw. Subtract so the
+    # ranking attributes time to the innermost chokepoint that we
+    # measured, not the wrapper.
+    nested = bucket_us.get("RENDER:paint", 0) + bucket_us.get("RENDER:present", 0)
+    if nested and "CB:window_event:redraw" in bucket_us:
+        bucket_us["CB:window_event:redraw"] = max(
+            0, bucket_us["CB:window_event:redraw"] - nested
+        )
+
+    aw_in_window = [
+        kv for h, kv in rows
+        if h == "AW" and t_start <= kv.get("wall_us", 0) <= t_end
+    ]
+    aw_total = len(aw_in_window)
+    aw_awake = sum(1 for kv in aw_in_window if kv.get("has_awake") == 1)
+
+    print("Chokepoint breakdown (sorted by total wall-clock):")
+    print(f"{'bucket':40s} {'count':>8s} {'total_us':>14s} {'pct':>6s} {'avg_us':>8s}")
+    print("-" * 80)
+    items = sorted(bucket_us.items(), key=lambda kv: -kv[1])
+    for k, total in items:
+        n = bucket_n[k]
+        pct = (total / duration_us) * 100
+        avg = total // n if n else 0
+        print(f"{k:40s} {n:>8d} {total:>14d} {pct:>5.1f}% {avg:>8d}")
+
+    print()
+    print(f"AW lines: {aw_total}, has_awake=1 in {aw_awake} ({100*aw_awake/aw_total if aw_total else 0:.1f}%)")
+    print()
+
+    if not items:
+        print("FAIL: no events in marker window", file=sys.stderr)
         return 1
 
-    # Section 3: verdict matrix
-    agg = Counter()
-    for r in hot:
-        for k in ("cycled", "drain_pushes", "fire", "timer", "direct",
-                  "rearms", "carry_in"):
-            agg[k] += r[k]
+    top_bucket, top_us = items[0]
+    top_pct = (top_us / duration_us) * 100
 
-    cycled = agg["cycled"]
-    drain = agg["drain_pushes"]
-    rearms = agg["rearms"]
-    fire = agg["fire"]
-    timer = agg["timer"]
+    print(f"Verdict: dominant chokepoint is {top_bucket} ({top_pct:.1f}% of window)")
 
-    print(f"\nAggregate hot-slice totals: cycled={cycled} drain={drain} "
-          f"fire={fire} timer={timer} rearms={rearms} direct={agg['direct']}")
-
-    if drain == 0 and rearms > cycled // 2:
-        print("\nVerdict: SELF_REARM — cycled high, no signal traffic, "
-              "stay_awake dominates.")
-        print("Phase A row: 7-REARM. Log per-engine stay_awake returns to "
-              "identify the offender.")
-        return 0
-    if drain > cycled // 2:
-        if fire > timer * 5:
-            print("\nVerdict: WAKE_FIREHOSE_FIRE — fire() dominates pushes.")
-        elif timer > fire * 5:
-            print("\nVerdict: WAKE_FIREHOSE_TIMER — timer collection "
-                  "dominates pushes.")
+    if top_bucket == "RENDER:paint":
+        print("→ Phase A row: 7-RENDER. Paint dominates. Instrument inside")
+        print("  emWindow::render to break down: dirty-tile detection,")
+        print("  view.Paint, tile_cache uploads. Identify what marks tiles")
+        print("  dirty every frame.")
+    elif top_bucket == "RENDER:present":
+        print("→ Phase A row: 7-PRESENT. Present (wgpu submit/vsync) dominates.")
+        print("  Investigate present mode and surface configuration.")
+    elif top_bucket.startswith("CB:window_event:redraw") and (
+        bucket_us.get("RENDER:paint", 0) + bucket_us.get("RENDER:present", 0)
+        < top_us * 0.5
+    ):
+        print("→ CB:redraw is hot but RENDER is small — render bracket may be")
+        print("  missing some work. Add inner-render instrumentation.")
+    elif top_bucket.startswith("CB:window_event"):
+        print(f"→ Phase A row: 7-INPUT. {top_bucket} dominates. Log per-handler")
+        print("  inner work for that variant.")
+    elif top_bucket == "SLICE:scheduler":
+        if aw_awake == aw_total and aw_total > 0:
+            print("→ Phase A row: 7-LOOP-CHAIN. Scheduler dominates AND")
+            print("  has_awake_engines() stays true throughout. Self-perpetuating")
+            print("  redraw chain at emGUIFramework.rs:1307 likely at fault.")
         else:
-            print(f"\nVerdict: WAKE_FIREHOSE_MIXED — fire={fire} timer={timer}")
-        print("Phase A row: 7-FIREHOSE. Log WAKE per-event with caller, "
-              "REG per engine.")
-        return 0
+            print("→ Phase A row: scheduler-internal (FIREHOSE/REARM/HOTCYC/HOLE).")
+            print("  Drop into the v2 verdict matrix for further breakdown.")
+    else:
+        print(f"→ Phase A row: investigate {top_bucket} internals.")
 
-    print(f"\nVerdict: HOT_CYCLE — cycled={cycled} but drain={drain} "
-          f"and rearms={rearms} both low.")
-    print("Phase A row: 7-HOTCYC. Wrap dispatch in Instant timing.")
     return 0
 
 
