@@ -11,6 +11,7 @@ use emcore::emEngineCtx::PanelCtx;
 use emcore::emFilePanel::emFilePanel;
 use emcore::emInput::{emInputEvent, InputKey, InputVariant};
 use emcore::emInputState::emInputState;
+use emcore::emLook::emLook;
 use emcore::emPainter::emPainter;
 use emcore::emPanel::{PanelBehavior, PanelState};
 use emcore::emSignal::SignalId;
@@ -615,6 +616,40 @@ impl PanelBehavior for emStocksFilePanel {
     fn GetIconFileName(&self) -> Option<String> {
         Some("documents.tga".to_string())
     }
+
+    /// Port of C++ `emStocksFilePanel::CreateControlPanel`
+    /// (emStocksFilePanel.cpp:237-247):
+    /// ```text
+    /// if (FileModel && ListBox) {
+    ///     return new emStocksControlPanel(parent,name,*FileModel,*Config,*ListBox);
+    /// } else {
+    ///     return emFilePanel::CreateControlPanel(parent,name);
+    /// }
+    /// ```
+    /// Returning `None` from the trait override delegates upward through the
+    /// tree walker, which is the Rust analogue of falling back to the
+    /// `emFilePanel::CreateControlPanel` parent virtual.
+    fn CreateControlPanel(
+        &mut self,
+        parent_ctx: &mut emcore::emEngineCtx::PanelCtx,
+        name: &str,
+        _self_is_active: bool,
+    ) -> Option<emcore::emPanelTree::PanelId> {
+        // VFS-not-good path: delegate upstream (mirrors C++ `emFilePanel::
+        // CreateControlPanel` fallback when FileModel is absent or ListBox has
+        // not yet been materialised).
+        if !self.file_panel.GetVirFileState().is_good() {
+            return None;
+        }
+        let list_box = self.list_box.as_ref()?.clone();
+        let cp = super::emStocksControlPanel::emStocksControlPanel::new(
+            emLook::new(),
+            self.model.clone(),
+            self.config.clone(),
+            list_box,
+        );
+        Some(parent_ctx.create_child_with(name, Box::new(cp)))
+    }
 }
 
 impl emStocksFilePanel {
@@ -1089,6 +1124,63 @@ mod tests {
             &input_state,
             &mut make_test_pctx(&mut tree, root)
         ));
+    }
+
+    // ── B-001-followup A.4 — CreateControlPanel factory ─────────────────
+    /// Mirrors C++ emStocksFilePanel.cpp:237-247 — VFS-good path with a
+    /// materialised ListBox returns a freshly constructed
+    /// `emStocksControlPanel`. The returned `PanelId` is a child of the
+    /// supplied parent.
+    #[test]
+    fn create_control_panel_returns_some_when_vfs_good_and_listbox_set() {
+        let mut tree = PanelTree::new();
+        let parent = tree.create_root("fp", false);
+        let mut panel = emStocksFilePanel::new();
+        panel.set_vfs_good_for_test();
+        panel.list_box = Some(Rc::new(RefCell::new(emStocksListBox::new())));
+
+        let mut pctx = PanelCtx::new(&mut tree, parent, 1.0);
+        let cp_id = panel.CreateControlPanel(&mut pctx, "ctrl", false);
+        assert!(
+            cp_id.is_some(),
+            "VFS-good FilePanel with materialised ListBox must yield a ControlPanel"
+        );
+    }
+
+    /// Mirrors C++ fallback path: no ListBox → return `None` so the tree
+    /// walker falls back to `emFilePanel::CreateControlPanel`.
+    #[test]
+    fn create_control_panel_returns_none_without_listbox() {
+        let mut tree = PanelTree::new();
+        let parent = tree.create_root("fp", false);
+        let mut panel = emStocksFilePanel::new();
+        panel.set_vfs_good_for_test();
+        panel.list_box = None;
+
+        let mut pctx = PanelCtx::new(&mut tree, parent, 1.0);
+        let cp_id = panel.CreateControlPanel(&mut pctx, "ctrl", false);
+        assert!(
+            cp_id.is_none(),
+            "missing ListBox must return None to delegate upstream"
+        );
+    }
+
+    /// VFS-not-good path returns None to delegate to the parent emFilePanel
+    /// virtual.
+    #[test]
+    fn create_control_panel_returns_none_when_vfs_not_good() {
+        let mut tree = PanelTree::new();
+        let parent = tree.create_root("fp", false);
+        let mut panel = emStocksFilePanel::new();
+        // No set_vfs_good — file_panel state defaults to !is_good().
+        panel.list_box = Some(Rc::new(RefCell::new(emStocksListBox::new())));
+
+        let mut pctx = PanelCtx::new(&mut tree, parent, 1.0);
+        let cp_id = panel.CreateControlPanel(&mut pctx, "ctrl", false);
+        assert!(
+            cp_id.is_none(),
+            "VFS-not-good must return None to delegate upstream"
+        );
     }
 
     // ── B-001 row -255 — SelectedDate subscribe (deferred-attach) ─────
