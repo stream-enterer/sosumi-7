@@ -16,7 +16,6 @@ use std::rc::Rc;
 use emcore::emFileModel::{emFileModel, FileModelState};
 use emcore::emFilePanel::emFilePanel;
 use emcore::emPanelTree::{PanelId, PanelTree};
-use emcore::emSignal::SignalId;
 use emcore::emView::emView;
 use emcore::test_view_harness::TestSched;
 
@@ -72,7 +71,6 @@ fn build_minimal_tree() -> (PanelTree, PanelId) {
 
     let model: Rc<RefCell<emFileModel<String>>> = Rc::new(RefCell::new(emFileModel::new(
         PathBuf::from("/tmp/f018_iv3_svpchoice_invalidation.test"),
-        SignalId::default(),
     )));
 
     let mut panel = emFilePanel::new();

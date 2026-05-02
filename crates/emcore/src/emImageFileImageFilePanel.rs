@@ -294,14 +294,10 @@ mod tests {
         let file_update_signal = sched.create_signal();
         sched.file_update_signal = file_update_signal;
 
-        let change_sig = sched.create_signal();
         let data_change_sig = sched.create_signal();
 
-        let mut model_inner = emImageFileModel::new(
-            PathBuf::from("/tmp/b007_inner_row139.tga"),
-            change_sig,
-            data_change_sig,
-        );
+        let mut model_inner =
+            emImageFileModel::new(PathBuf::from("/tmp/b007_inner_row139.tga"), data_change_sig);
         model_inner
             .file_model_mut()
             .complete_load(ImageFileData::default());

@@ -262,9 +262,26 @@ fn emcolorfield_auto_shrink_clears_subscribed_state() {
 /// Mini FileModelState impl backed by `emFileModel<()>` so the test can
 /// drive `GetFileStateSignal` arrival deterministically.
 fn make_model(sched: &mut EngineScheduler) -> Rc<RefCell<emFileModel<()>>> {
-    let change_sig = sched.create_signal();
-    let mut m = emFileModel::<()>::new(PathBuf::from("/tmp/b015_filepanel"), change_sig);
+    let mut m = emFileModel::<()>::new(PathBuf::from("/tmp/b015_filepanel"));
     m.complete_load(()); // → FileState::Loaded so VirtualFileState is computable
+                         // F019: emFileModel's file_state_signal is now lazy — allocate it
+                         // eagerly here so this test can observe distinct signals across two
+                         // models without driving each through a Cycle.
+    let root_ctx = emcore::emContext::emContext::NewRoot();
+    let mut fw: Vec<emcore::emEngineCtx::DeferredAction> = Vec::new();
+    let cb: RefCell<Option<Box<dyn emcore::emClipboard::emClipboard>>> = RefCell::new(None);
+    let pa: Rc<RefCell<Vec<emcore::emGUIFramework::DeferredAction>>> =
+        Rc::new(RefCell::new(Vec::new()));
+    let mut sc = emcore::emEngineCtx::SchedCtx {
+        scheduler: sched,
+        framework_actions: &mut fw,
+        root_context: &root_ctx,
+        view_context: None,
+        framework_clipboard: &cb,
+        current_engine: None,
+        pending_actions: &pa,
+    };
+    m.ensure_file_state_signal(&mut sc);
     Rc::new(RefCell::new(m))
 }
 

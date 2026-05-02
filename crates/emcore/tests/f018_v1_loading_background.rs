@@ -23,7 +23,6 @@ use emcore::emColor::emColor;
 use emcore::emFileModel::{emFileModel, FileModelState};
 use emcore::emFilePanel::{emFilePanel, VirtualFileState};
 use emcore::emPanelTree::{PanelId, PanelTree};
-use emcore::emSignal::SignalId;
 use emcore::emView::emView;
 use emcore::emViewRenderer::SoftwareCompositor;
 use emcore::test_view_harness::TestSched;
@@ -100,7 +99,6 @@ fn build_loading_directory_panel() -> (PanelTree, PanelId) {
     // mid-progress value (any non-final progress puts it in VFS_LOADING).
     let model: Rc<RefCell<emFileModel<String>>> = Rc::new(RefCell::new(emFileModel::new(
         PathBuf::from("/tmp/f018_v1_loading_background.test"),
-        SignalId::default(),
     )));
     {
         let mut m = model.borrow_mut();

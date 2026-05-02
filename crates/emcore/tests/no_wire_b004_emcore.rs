@@ -121,11 +121,9 @@ impl emEngine for VirStateObserver {
 fn vir_file_state_signal_fires_on_set_file_model_and_cycle_change() {
     let mut sched = EngineScheduler::new();
 
-    let file_state_sig = sched.create_signal();
-    let model_rc = Rc::new(RefCell::new(emFileModel::<String>::new(
-        PathBuf::from("/tmp/b004_vfs_signal"),
-        file_state_sig,
-    )));
+    let model_rc = Rc::new(RefCell::new(emFileModel::<String>::new(PathBuf::from(
+        "/tmp/b004_vfs_signal",
+    ))));
 
     let panel_rc: Rc<RefCell<emFilePanel>> = Rc::new(RefCell::new(emFilePanel::new()));
 
@@ -222,13 +220,9 @@ impl emEngine for ImagePanelB004Engine {
 fn image_panel_refreshes_current_image_after_load() {
     let mut sched = EngineScheduler::new();
 
-    let change_sig = sched.create_signal();
     let data_change_sig = sched.create_signal();
-    let mut model_inner = emImageFileModel::new(
-        PathBuf::from("/tmp/b004_image_panel.tga"),
-        change_sig,
-        data_change_sig,
-    );
+    let mut model_inner =
+        emImageFileModel::new(PathBuf::from("/tmp/b004_image_panel.tga"), data_change_sig);
 
     // Complete the load with a non-empty image so GetImage() returns Some.
     let image_data = ImageFileData {

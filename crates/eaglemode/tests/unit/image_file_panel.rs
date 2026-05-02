@@ -48,10 +48,8 @@ fn file_panel_delegation() {
     use std::path::PathBuf;
     use std::rc::Rc;
 
-    let model: Rc<RefCell<emFileModel<String>>> = Rc::new(RefCell::new(emFileModel::new(
-        PathBuf::from("/tmp/test"),
-        Default::default(),
-    )));
+    let model: Rc<RefCell<emFileModel<String>>> =
+        Rc::new(RefCell::new(emFileModel::new(PathBuf::from("/tmp/test"))));
     model.borrow_mut().complete_load("data".to_string());
 
     let mut panel = emImageFilePanel::new();

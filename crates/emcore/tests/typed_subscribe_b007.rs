@@ -266,14 +266,9 @@ fn row_139_get_change_signal_stable_and_non_null() {
     use slotmap::Key as _;
 
     let mut sched = EngineScheduler::new();
-    let change_sig = sched.create_signal();
     let data_change_sig = sched.create_signal();
 
-    let model = emImageFileModel::new(
-        PathBuf::from("/tmp/b007_stable.tga"),
-        change_sig,
-        data_change_sig,
-    );
+    let model = emImageFileModel::new(PathBuf::from("/tmp/b007_stable.tga"), data_change_sig);
 
     let sig = model.GetChangeSignal();
     assert_eq!(
@@ -307,14 +302,9 @@ fn row_139_panel_change_signal_accessible_after_set_model() {
     use slotmap::Key as _;
 
     let mut sched = EngineScheduler::new();
-    let change_sig = sched.create_signal();
     let data_change_sig = sched.create_signal();
 
-    let mut model = emImageFileModel::new(
-        PathBuf::from("/tmp/b007_panel.tga"),
-        change_sig,
-        data_change_sig,
-    );
+    let mut model = emImageFileModel::new(PathBuf::from("/tmp/b007_panel.tga"), data_change_sig);
     model
         .file_model_mut()
         .complete_load(ImageFileData::default());
@@ -359,14 +349,10 @@ fn row_139_cycle_clears_image_on_change_signal() {
     let file_update_signal = sched.create_signal();
     sched.file_update_signal = file_update_signal;
 
-    let change_sig = sched.create_signal();
     let data_change_sig = sched.create_signal();
 
-    let mut model_inner = emImageFileModel::new(
-        PathBuf::from("/tmp/b007_cycle_clear.tga"),
-        change_sig,
-        data_change_sig,
-    );
+    let mut model_inner =
+        emImageFileModel::new(PathBuf::from("/tmp/b007_cycle_clear.tga"), data_change_sig);
     model_inner
         .file_model_mut()
         .complete_load(ImageFileData::default());

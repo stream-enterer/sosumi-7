@@ -729,14 +729,12 @@ impl emStocksFilePanel {
 impl emStocksFilePanel {
     pub(crate) fn set_vfs_good_for_test(&mut self) {
         use emcore::emFileModel::{emFileModel, FileModelState};
-        use emcore::emSignal::SignalId;
         use std::cell::RefCell;
         use std::path::PathBuf;
         use std::rc::Rc;
-        let model = Rc::new(RefCell::new(emFileModel::<String>::new(
-            PathBuf::from("/tmp/test"),
-            SignalId::default(),
-        )));
+        let model = Rc::new(RefCell::new(emFileModel::<String>::new(PathBuf::from(
+            "/tmp/test",
+        ))));
         model.borrow_mut().complete_load("test".to_string());
         self.file_panel
             .SetFileModel(Some(model as Rc<RefCell<dyn FileModelState>>));

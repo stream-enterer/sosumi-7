@@ -628,14 +628,10 @@ pub fn map_vir_state(state: &VirtualFileState) -> FileLoadStatus {
 mod tests {
     use super::*;
     use crate::emFileModel::emFileModel;
-    use crate::emSignal::SignalId;
     use std::path::PathBuf;
 
     fn make_panel_with_model() -> (emFilePanel, Rc<RefCell<emFileModel<String>>>) {
-        let model = Rc::new(RefCell::new(emFileModel::new(
-            PathBuf::from("/tmp/test"),
-            SignalId::default(),
-        )));
+        let model = Rc::new(RefCell::new(emFileModel::new(PathBuf::from("/tmp/test"))));
         let mut panel = emFilePanel::new();
         panel.SetFileModel(Some(model.clone() as Rc<RefCell<dyn FileModelState>>));
         (panel, model)
@@ -689,10 +685,9 @@ mod tests {
         assert!(panel.GetVirFileState().is_good());
 
         // Reset to waiting by creating a new model
-        let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(
-            PathBuf::from("/tmp/test2"),
-            SignalId::default(),
-        )));
+        let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(PathBuf::from(
+            "/tmp/test2",
+        ))));
         panel.SetFileModel(Some(model2 as Rc<RefCell<dyn FileModelState>>));
         assert!(!panel.GetVirFileState().is_good());
     }
@@ -757,10 +752,9 @@ mod tests {
         assert_eq!(panel.GetVirFileState(), VirtualFileState::TooCostly);
 
         // LoadError — need a fresh model since fail_load works from Waiting
-        let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(
-            PathBuf::from("/tmp/test2"),
-            SignalId::default(),
-        )));
+        let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(PathBuf::from(
+            "/tmp/test2",
+        ))));
         panel.SetFileModel(Some(model2.clone() as Rc<RefCell<dyn FileModelState>>));
         model2.borrow_mut().fail_load("e".to_string());
         panel.refresh_vir_file_state();
@@ -780,10 +774,9 @@ mod tests {
         assert_eq!(panel.GetCanvasColor(), error_color);
 
         // SaveError — need fresh model
-        let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(
-            PathBuf::from("/tmp/test2"),
-            SignalId::default(),
-        )));
+        let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(PathBuf::from(
+            "/tmp/test2",
+        ))));
         panel.SetFileModel(Some(model2.clone() as Rc<RefCell<dyn FileModelState>>));
         model2.borrow_mut().complete_load("data".to_string());
         model2.borrow_mut().SetUnsavedState();
@@ -923,10 +916,9 @@ mod tests {
         assert_eq!(panel.IsContentReady(), (true, false));
 
         // Reset to test error state
-        let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(
-            PathBuf::from("/tmp/test2"),
-            SignalId::default(),
-        )));
+        let model2 = Rc::new(RefCell::new(emFileModel::<String>::new(PathBuf::from(
+            "/tmp/test2",
+        ))));
         panel.SetFileModel(Some(model2.clone() as Rc<RefCell<dyn FileModelState>>));
         model2.borrow_mut().fail_load("err".to_string());
         panel.refresh_vir_file_state();

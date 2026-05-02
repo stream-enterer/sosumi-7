@@ -279,7 +279,7 @@ impl emEngine for emDirModelEngine {
 impl emDirModel {
     pub fn Acquire(ctx: &Rc<emcore::emContext::emContext>, name: &str) -> Rc<RefCell<Self>> {
         ctx.acquire::<Self>(name, || Self {
-            file_model: emFileModel::new(PathBuf::from(name), SignalId::default()),
+            file_model: emFileModel::new(PathBuf::from(name)),
             data: emDirModelData::new(PathBuf::from(name)),
             path: name.to_string(),
             engine_id: None,
@@ -720,6 +720,10 @@ mod tests {
         if let Some(eid) = eid {
             sched.remove_engine(eid);
         }
+        // F019: emFileModel::Cycle now lazily allocates and fires
+        // file_state_signal on state change. With no subscribers connected
+        // in this test, the fire goes pending; drain it before drop.
+        sched.abort_all_pending();
 
         assert!(
             primed_ok,
