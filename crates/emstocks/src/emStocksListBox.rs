@@ -17,6 +17,7 @@ use emcore::emSignal::SignalId;
 use slotmap::Key as _;
 
 use super::emStocksConfig::{emStocksConfig, Sorting};
+use super::emStocksFetchPricesDialog::emStocksFetchPricesDialog;
 use super::emStocksRec::{emStocksRec, CompareDates, Interest, StockRec};
 
 /// B-013 cancel-old-dialog helper. Centralises the four cancel-old branches
@@ -1282,6 +1283,140 @@ impl emStocksListBox {
             .collect()
     }
 
+    /// Port of C++ `emStocksListBox::StartToFetchSharePrices()` zero-arg
+    /// overload (`emStocksListBox.cpp:371-383`). Iterates all visible items
+    /// and forwards their stock ids to the array overload.
+    ///
+    /// C++ overload of StartToFetchSharePrices.
+    ///
+    /// Rust has no function overloading; the array overload keeps the C++
+    /// name (`StartToFetchSharePrices`) and the zero-arg variant is renamed
+    /// `StartToFetchAllSharePrices` (descriptive). Both methods carry this
+    /// cite-comment.
+    ///
+    /// DIVERGED: (language-forced) Rust lacks function overloading. Renamed
+    /// from the C++ zero-arg overload to a descriptive name; behavior
+    /// matches the C++ overload-resolution result exactly.
+    pub fn StartToFetchAllSharePrices(&mut self, ectx: &mut impl SignalCtx, rec: &emStocksRec) {
+        let stock_ids = self.GetVisibleStockIds(rec);
+        self.StartToFetchSharePrices(ectx, &stock_ids);
+    }
+
+    /// Port of C++ `emStocksListBox::StartToFetchSharePrices(const
+    /// emArray<emString> & stockIds)` (`emStocksListBox.cpp:386-410`).
+    ///
+    /// C++ overload of StartToFetchSharePrices.
+    ///
+    /// Reads `config_ref` (api script/key) and `file_model_ref`
+    /// (PricesFetchingDialog owner slot, GetLatestPricesDate). Mirrors C++
+    /// dialog-creation-or-raise + AddStockIds. Does NOT call AddListBox on
+    /// the dialog (the listbox cannot produce an `Rc<RefCell<Self>>` to
+    /// itself); the reaction caller wires AddListBox after this returns
+    /// using its own `Rc<RefCell<emStocksListBox>>` strong owner.
+    ///
+    /// DIVERGED: (language-forced) C++'s `dialog->AddListBox(*this)` takes
+    /// `*this` because C++ supports raw self-references. Rust safe code
+    /// cannot synthesize an `Rc<RefCell<Self>>` from `&mut self`; the
+    /// reaction caller (which holds the Rc) performs that step. Observable
+    /// behavior matches C++ exactly when the reaction caller honors the
+    /// contract documented above.
+    pub fn StartToFetchSharePrices(&mut self, ectx: &mut impl SignalCtx, stock_ids: &[String]) {
+        // Acquire FileModel + Config refs (codebase pattern: optional until
+        // attach time; bail out gracefully if either is missing).
+        let file_model_rc = match self.file_model_ref.as_ref() {
+            Some(r) => r.clone(),
+            None => return,
+        };
+        let config_rc = match self.config_ref.as_ref() {
+            Some(r) => r.clone(),
+            None => return,
+        };
+
+        // Snapshot config strings — release the borrow before mutating
+        // the file model.
+        let (api_script, api_interpreter, api_key) = {
+            let cfg = config_rc.borrow();
+            (
+                cfg.api_script.clone(),
+                cfg.api_script_interpreter.clone(),
+                cfg.api_key.clone(),
+            )
+        };
+
+        // Determine date BEFORE creating dialog (C++ reads
+        // FileModel.GetLatestPricesDate() from the existing model state;
+        // mirrors emStocksListBox.cpp:402-403).
+        let mut date = file_model_rc.borrow().GetRec().GetLatestPricesDate();
+        if date.is_empty() {
+            date = super::emStocksRec::GetCurrentDate();
+        }
+
+        // Mirror C++ dialog-create-or-raise (cpp:392-401).
+        let mut model = file_model_rc.borrow_mut();
+        if model.prices_fetching_dialog.is_some() {
+            // C++ FileModel.PricesFetchingDialog->Raise().
+            // TODO(FU-001): port emDialog::Raise once view-parenting lands
+            // (UPSTREAM-GAP — Rust dialog ctor takes no view).
+            eprintln!("[FU-001] PricesFetchingDialog::Raise (no-op stub)");
+        } else {
+            let dialog = emStocksFetchPricesDialog::new_with_model(
+                &api_script,
+                &api_interpreter,
+                &api_key,
+                file_model_rc.clone(),
+            );
+            model.prices_fetching_dialog = Some(dialog);
+        }
+
+        // Forward stock_ids to the dialog before releasing the borrow.
+        if let Some(dialog) = model.prices_fetching_dialog.as_mut() {
+            dialog.AddStockIds(ectx, stock_ids);
+        }
+        drop(model);
+
+        // SetSelectedDate fires SelectedDateSignal only if the value
+        // changed; matches C++ cpp:404.
+        self.SetSelectedDate(ectx, &date);
+    }
+
+    /// Port of C++ `emStocksListBox::ShowWebPages(const emArray<emString>
+    /// & webPages) const` (`emStocksListBox.cpp:496-516`). `&self` matches
+    /// the C++ `const`. Reads `config_ref.web_browser` and spawns the
+    /// browser process.
+    pub fn ShowWebPages(&self, web_pages: &[String]) {
+        if web_pages.is_empty() {
+            return;
+        }
+        let config_rc = match self.config_ref.as_ref() {
+            Some(r) => r.clone(),
+            None => return,
+        };
+        let browser = config_rc.borrow().web_browser.clone();
+        if browser.is_empty() {
+            // TODO(FU-001): replace with emDialog::ShowMessage when ported.
+            eprintln!("[emStocksListBox::ShowWebPages] Web browser is not configured.");
+            return;
+        }
+        let mut args: Vec<&str> = Vec::with_capacity(1 + web_pages.len());
+        args.push(browser.as_str());
+        for p in web_pages {
+            args.push(p.as_str());
+        }
+        let env: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        if let Err(e) = emcore::emProcess::emProcess::TryStartUnmanaged(
+            &args,
+            &env,
+            None,
+            emcore::emProcess::StartFlags::DEFAULT,
+        ) {
+            // TODO(FU-001): replace with emDialog::ShowMessage when ported.
+            eprintln!(
+                "[emStocksListBox::ShowWebPages] Failed to start browser: {}",
+                e
+            );
+        }
+    }
+
     // ─── Find operations ────────────────────────────────────────────────
 
     /// Port of C++ FindSelected.
@@ -2188,5 +2323,118 @@ mod tests {
         // pointing at the same instance).
         assert!(Rc::ptr_eq(lb.file_model_ref.as_ref().unwrap(), &model));
         assert!(Rc::ptr_eq(lb.config_ref.as_ref().unwrap(), &config));
+    }
+
+    // ── FU-001 Unit 3 tests ──
+
+    fn make_lb_with_refs() -> (
+        emStocksListBox,
+        Rc<RefCell<crate::emStocksFileModel::emStocksFileModel>>,
+        Rc<RefCell<emStocksConfig>>,
+        EngineScheduler,
+    ) {
+        let model = Rc::new(RefCell::new(
+            crate::emStocksFileModel::emStocksFileModel::new(std::path::PathBuf::from(
+                "/tmp/fu001_unit3.emStocks",
+            )),
+        ));
+        let config = Rc::new(RefCell::new(emStocksConfig::default()));
+        let mut lb = emStocksListBox::new();
+        lb.set_refs(model.clone(), config.clone());
+        let sched = EngineScheduler::new();
+        (lb, model, config, sched)
+    }
+
+    #[test]
+    fn start_to_fetch_share_prices_creates_dialog_when_absent() {
+        let (mut lb, model, _cfg, mut sched) = make_lb_with_refs();
+        assert!(model.borrow().prices_fetching_dialog.is_none());
+        let mut sc = TestSignalCtx { sched: &mut sched };
+        lb.StartToFetchSharePrices(&mut sc, &["AAPL".to_string()]);
+        assert!(model.borrow().prices_fetching_dialog.is_some());
+        // Stock id was forwarded to the fetcher.
+        assert!(model
+            .borrow()
+            .prices_fetching_dialog
+            .as_ref()
+            .unwrap()
+            .fetcher
+            .stock_ids
+            .iter()
+            .any(|s| s == "AAPL"));
+    }
+
+    #[test]
+    fn start_to_fetch_share_prices_reuses_existing_dialog() {
+        let (mut lb, model, _cfg, mut sched) = make_lb_with_refs();
+        {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            lb.StartToFetchSharePrices(&mut sc, &["AAPL".into()]);
+        }
+        let first_addr = model
+            .borrow()
+            .prices_fetching_dialog
+            .as_ref()
+            .map(|d| d as *const _ as usize);
+        {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            lb.StartToFetchSharePrices(&mut sc, &["MSFT".into()]);
+        }
+        let second_addr = model
+            .borrow()
+            .prices_fetching_dialog
+            .as_ref()
+            .map(|d| d as *const _ as usize);
+        assert_eq!(
+            first_addr, second_addr,
+            "second call must reuse the existing dialog (C++ Raise() branch)"
+        );
+        // MSFT was queued onto the same dialog.
+        assert!(model
+            .borrow()
+            .prices_fetching_dialog
+            .as_ref()
+            .unwrap()
+            .fetcher
+            .stock_ids
+            .iter()
+            .any(|s| s == "MSFT"));
+    }
+
+    #[test]
+    fn start_to_fetch_all_share_prices_forwards_visible_ids() {
+        let (mut lb, model, _cfg, mut sched) = make_lb_with_refs();
+        // Build a rec with two visible stocks.
+        let mut rec = emStocksRec::default();
+        rec.stocks.push(make_stock("S1", "Alpha", Interest::High));
+        rec.stocks.push(make_stock("S2", "Beta", Interest::Medium));
+        lb.visible_items = vec![0, 1];
+        let mut sc = TestSignalCtx { sched: &mut sched };
+        lb.StartToFetchAllSharePrices(&mut sc, &rec);
+        let m = model.borrow();
+        let queued: Vec<String> = m
+            .prices_fetching_dialog
+            .as_ref()
+            .unwrap()
+            .fetcher
+            .stock_ids
+            .clone();
+        assert!(queued.iter().any(|s| s == "S1"));
+        assert!(queued.iter().any(|s| s == "S2"));
+    }
+
+    #[test]
+    fn show_web_pages_no_browser_returns_silently() {
+        let (mut lb, _model, config, _sched) = make_lb_with_refs();
+        config.borrow_mut().web_browser.clear();
+        // Must not panic, must not spawn a process.
+        lb.ShowWebPages(&["https://example.com".into()]);
+        let _ = &mut lb; // suppress unused-mut hint when nothing else mutates
+    }
+
+    #[test]
+    fn show_web_pages_empty_list_is_noop() {
+        let (lb, _model, _cfg, _sched) = make_lb_with_refs();
+        lb.ShowWebPages(&[]);
     }
 }

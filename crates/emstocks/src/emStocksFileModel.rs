@@ -39,6 +39,23 @@ const AUTOSAVE_DELAY_MS: u64 = 15000;
 pub struct emStocksFileModel {
     pub file_model: emRecFileModel<emStocksRec>,
     pub PricesFetchingDialog: emCrossPtr<emStocksFetchPricesDialog>,
+    /// Strong owner for the active PricesFetchingDialog. Mirrors C++
+    /// `FileModel.PricesFetchingDialog = new emStocksFetchPricesDialog(...)`
+    /// (emStocksListBox.cpp:392-396) — C++ stores the dialog directly on the
+    /// FileModel as a `new`-allocated owned pointer; the legacy
+    /// `PricesFetchingDialog: emCrossPtr` slot above models the cross-ptr
+    /// surface but cannot be a strong owner. This adjacent field is the
+    /// strong owner that `emStocksListBox::StartToFetchSharePrices` populates
+    /// (FU-001 Unit 3). `is_some()` is the Rust analogue of C++
+    /// `FileModel.PricesFetchingDialog` being non-null.
+    ///
+    /// DIVERGED: (language-forced) Rust has no raw owning pointer + weak
+    /// alias on the same field; emCrossPtr in this codebase is weak-only
+    /// (see emCrossPtr.rs:23). Splitting the slot into "strong owner +
+    /// optional emCrossPtr" preserves observable behavior — both views are
+    /// read-only on the ListBox/Dialog side and only the strong owner is
+    /// mutated.
+    pub prices_fetching_dialog: Option<emStocksFetchPricesDialog>,
     /// SaveTimer signal. Allocated lazily by `ensure_save_timer` from the
     /// owning panel's first-Cycle init. Mirrors C++ `SaveTimer.GetSignal()`.
     /// Null until the panel first cycles.
@@ -73,6 +90,7 @@ impl emStocksFileModel {
         Self {
             file_model: emRecFileModel::new(path),
             PricesFetchingDialog: emCrossPtr::new(),
+            prices_fetching_dialog: None,
             save_timer_signal: SignalId::default(),
             save_timer_id: None,
             dirty: false,
