@@ -1,4 +1,5 @@
 use emcore::emColor::emColor;
+use emcore::emEngineCtx::SignalCtx;
 use emcore::emPainter::emPainter;
 
 use super::emStocksPricesFetcher::emStocksPricesFetcher;
@@ -80,15 +81,21 @@ impl emStocksFetchPricesDialog {
         }
     }
 
-    /// Port of C++ AddStockIds.
-    pub fn AddStockIds(&mut self, stock_ids: &[String]) {
-        self.fetcher.AddStockIds(stock_ids);
+    /// Port of C++ AddStockIds. Threads `ectx` per D-007 to forward the
+    /// `Signal(ChangeSignal)` fire from the fetcher.
+    pub fn AddStockIds(&mut self, ectx: &mut impl SignalCtx, stock_ids: &[String]) {
+        self.fetcher.AddStockIds(ectx, stock_ids);
     }
 
     /// Port of C++ Cycle.
     /// Polls the fetcher and updates the dialog controls. Returns `true` if the
     /// dialog is still active and needs further cycling, `false` if finished.
-    pub fn Cycle(&mut self) -> bool {
+    /// Threads `ectx` per D-007: B-001 G3 cascade — `fetcher.Signal(ChangeSignal)`
+    /// fires into ectx from `StartProcess`/`PollProcess`/`SetFailed`. The ectx
+    /// is currently unused at this layer (Rust Dialog::Cycle does not yet drive
+    /// fetcher.Cycle — that wires up in B-017 row 1, the consumer subscribe);
+    /// the parameter is added now to lock in the cascade signature.
+    pub fn Cycle(&mut self, _ectx: &mut impl SignalCtx) -> bool {
         self.UpdateControls();
         if self.fetcher.HasFinished() {
             let error = self.fetcher.GetError();
@@ -127,6 +134,7 @@ impl emStocksFetchPricesDialog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use emcore::emEngineCtx::DropOnlySignalCtx;
     use emcore::emImage::emImage;
 
     // ── ProgressBarPanel tests ──
@@ -211,7 +219,7 @@ mod tests {
     #[test]
     fn dialog_add_stock_ids() {
         let mut dialog = emStocksFetchPricesDialog::new("script.pl", "perl", "key");
-        dialog.AddStockIds(&["1".to_string(), "2".to_string()]);
+        dialog.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string(), "2".to_string()]);
         assert!(!dialog.fetcher.HasFinished());
     }
 
@@ -227,7 +235,9 @@ mod tests {
     #[test]
     fn dialog_update_controls_error_first() {
         let mut dialog = emStocksFetchPricesDialog::new("", "", "");
-        dialog.fetcher.SetFailed("network error");
+        dialog
+            .fetcher
+            .SetFailed(&mut DropOnlySignalCtx, "network error");
         dialog.UpdateControls();
         assert_eq!(dialog.label_text, "Error: network error");
     }
@@ -235,7 +245,10 @@ mod tests {
     #[test]
     fn dialog_update_controls_in_progress() {
         let mut dialog = emStocksFetchPricesDialog::new("", "", "");
-        dialog.AddStockIds(&["AAPL".to_string(), "GOOG".to_string()]);
+        dialog.AddStockIds(
+            &mut DropOnlySignalCtx,
+            &["AAPL".to_string(), "GOOG".to_string()],
+        );
         dialog.UpdateControls();
         // Current stock ID should be the label
         assert_eq!(dialog.label_text, "AAPL");
@@ -246,7 +259,7 @@ mod tests {
     #[test]
     fn dialog_cycle_finishes_immediately_when_no_stocks() {
         let mut dialog = emStocksFetchPricesDialog::new("", "", "");
-        let active = dialog.Cycle();
+        let active = dialog.Cycle(&mut DropOnlySignalCtx);
         assert!(!active);
         assert!(dialog.finished);
         assert!(dialog.finish_error.is_empty());
@@ -256,8 +269,8 @@ mod tests {
     #[test]
     fn dialog_cycle_returns_true_when_in_progress() {
         let mut dialog = emStocksFetchPricesDialog::new("", "", "");
-        dialog.AddStockIds(&["AAPL".to_string()]);
-        let active = dialog.Cycle();
+        dialog.AddStockIds(&mut DropOnlySignalCtx, &["AAPL".to_string()]);
+        let active = dialog.Cycle(&mut DropOnlySignalCtx);
         assert!(active);
         assert!(!dialog.finished);
     }
@@ -265,8 +278,8 @@ mod tests {
     #[test]
     fn dialog_cycle_captures_error_on_finish() {
         let mut dialog = emStocksFetchPricesDialog::new("", "", "");
-        dialog.fetcher.SetFailed("timeout");
-        let active = dialog.Cycle();
+        dialog.fetcher.SetFailed(&mut DropOnlySignalCtx, "timeout");
+        let active = dialog.Cycle(&mut DropOnlySignalCtx);
         assert!(!active);
         assert!(dialog.finished);
         assert_eq!(dialog.finish_error, "timeout");

@@ -21,6 +21,7 @@ emcore = { workspace = true }
 libc = { workspace = true }
 arboard = { workspace = true }
 open = { workspace = true }
+slotmap = { workspace = true }
 
 [dev-dependencies]
 emcore = { workspace = true, features = ["test-support"] }

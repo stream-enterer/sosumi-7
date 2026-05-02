@@ -136,6 +136,13 @@ impl emStocksFileModel {
             .unwrap_or(false)
     }
 
+    /// Port of inherited C++ `emFileModel::GetChangeSignal`. Delegates to the
+    /// composed `emRecFileModel<emStocksRec>` (which inherits from `emFileModel`).
+    /// D-008 A1 combined-form: lazy-allocates on first call via the inner model.
+    pub fn GetChangeSignal(&self, ectx: &mut impl SignalCtx) -> SignalId {
+        self.file_model.GetChangeSignal(ectx)
+    }
+
     /// Access the record data.
     pub fn GetRec(&self) -> &emStocksRec {
         self.file_model.GetMap()
@@ -278,6 +285,41 @@ impl Drop for emStocksFileModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use emcore::emScheduler::EngineScheduler;
+    use slotmap::Key as _;
+
+    /// Minimal SignalCtx adapter wrapping `EngineScheduler` for unit tests
+    /// (mirrors the `TestSignalCtx` pattern in emmain/tests/no_wire_b004_emmain.rs).
+    struct TestSignalCtx<'a> {
+        sched: &'a mut EngineScheduler,
+    }
+
+    impl SignalCtx for TestSignalCtx<'_> {
+        fn create_signal(&mut self) -> SignalId {
+            self.sched.create_signal()
+        }
+        fn fire(&mut self, id: SignalId) {
+            self.sched.fire(id);
+        }
+    }
+
+    #[test]
+    fn get_change_signal_delegates_and_is_stable() {
+        // G1: delegating accessor must lazy-alloc on inner emRecFileModel and
+        // return the same id on subsequent calls.
+        let model = emStocksFileModel::new(PathBuf::from("/tmp/g1.emStocks"));
+        let mut sched = EngineScheduler::new();
+        let sig_a = {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            model.GetChangeSignal(&mut sc)
+        };
+        assert!(!sig_a.is_null(), "first call must lazy-alloc a non-null id");
+        let sig_b = {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            model.GetChangeSignal(&mut sc)
+        };
+        assert_eq!(sig_a, sig_b, "GetChangeSignal must be stable across calls");
+    }
 
     #[test]
     fn file_model_create() {

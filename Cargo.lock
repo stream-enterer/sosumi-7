@@ -848,6 +848,7 @@ dependencies = [
  "gungraun",
  "libc",
  "open",
+ "slotmap",
 ]
 
 [[package]]

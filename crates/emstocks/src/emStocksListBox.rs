@@ -6,13 +6,15 @@ use std::rc::Rc;
 
 use emcore::emColor::emColor;
 use emcore::emDialog::{emDialog, DialogResult};
-use emcore::emEngineCtx::{ConstructCtx, EngineCtx};
+use emcore::emEngineCtx::{ConstructCtx, EngineCtx, SignalCtx};
 use emcore::emGUIFramework::DialogId;
 use emcore::emListBox::emListBox;
 use emcore::emLook::emLook;
 use emcore::emPainter::{emPainter, TextAlignment, VAlign};
 use emcore::emRecParser::{parse_rec_with_format, write_rec_with_format};
 use emcore::emRecRecord::Record;
+use emcore::emSignal::SignalId;
+use slotmap::Key as _;
 
 use super::emStocksConfig::{emStocksConfig, Sorting};
 use super::emStocksRec::{emStocksRec, CompareDates, Interest, StockRec};
@@ -95,6 +97,12 @@ pub struct emStocksListBox {
     pub(crate) paste_subscribed: bool,
     pub(crate) delete_subscribed: bool,
     pub(crate) interest_subscribed: bool,
+    /// G4: lazy-allocated SignalId for SelectedDate changes per D-008 A1.
+    /// Mirrors C++ `emStocksListBox::SelectedDateSignal` (header line 89).
+    /// Fired by `signal_selected_date` from `SetSelectedDate` /
+    /// `GoBackInHistory` / `GoForwardInHistory` only when the value actually
+    /// changed (matches C++ `emSignal::Signal()` semantics).
+    selected_date_signal: Cell<SignalId>,
 }
 
 impl Default for emStocksListBox {
@@ -129,7 +137,50 @@ impl emStocksListBox {
             paste_subscribed: false,
             delete_subscribed: false,
             interest_subscribed: false,
+            selected_date_signal: Cell::new(SignalId::null()),
         }
+    }
+
+    /// Port of C++ `emStocksListBox::GetSelectedDateSignal` (header line 89).
+    /// D-008 A1 combined-form lazy accessor.
+    pub fn GetSelectedDateSignal(&self, ectx: &mut impl SignalCtx) -> SignalId {
+        let cur = self.selected_date_signal.get();
+        if cur.is_null() {
+            let new_id = ectx.create_signal();
+            self.selected_date_signal.set(new_id);
+            new_id
+        } else {
+            cur
+        }
+    }
+
+    /// Synchronous fire of SelectedDateSignal per D-007. No-op when unallocated.
+    fn signal_selected_date(&self, ectx: &mut impl SignalCtx) {
+        let s = self.selected_date_signal.get();
+        if !s.is_null() {
+            ectx.fire(s);
+        }
+    }
+
+    /// Test-only accessor for the raw SignalId slot without allocating.
+    #[doc(hidden)]
+    pub fn selected_date_signal_for_test(&self) -> SignalId {
+        self.selected_date_signal.get()
+    }
+
+    /// Port of inherited C++ `emListBox::GetSelectionSignal`. Delegates to the
+    /// inner `Option<emListBox>`. Returns `None` while the inner emListBox is
+    /// unattached (lazy AutoExpand). Phase 4 consumers must early-return their
+    /// Cycle subscribe when `None` (the "two-tier subscribed_widgets" pattern
+    /// in `2026-05-01-B-001-no-wire-emstocks.md`).
+    pub fn GetSelectionSignal(&self) -> Option<SignalId> {
+        self.list_box.as_ref().map(|lb| lb.selection_signal)
+    }
+
+    /// Port of inherited C++ `emListBox::GetItemTriggerSignal`. Delegates as
+    /// `GetSelectionSignal` does; same Option-wrapped deferred-attach contract.
+    pub fn GetItemTriggerSignal(&self) -> Option<SignalId> {
+        self.list_box.as_ref().map(|lb| lb.item_trigger_signal)
     }
 
     /// Attach an emListBox backed by the given look.
@@ -222,26 +273,31 @@ impl emStocksListBox {
         &self.selected_date
     }
 
-    /// Port of C++ SetSelectedDate.
-    pub fn SetSelectedDate(&mut self, date: &str) {
-        self.selected_date = date.to_string();
+    /// Port of C++ SetSelectedDate. Fires `SelectedDateSignal` only when the
+    /// value actually changed, mirroring C++ `emStocksListBox::SetSelectedDate`
+    /// (cpp:99-104). D-007 ectx-threading.
+    pub fn SetSelectedDate(&mut self, ectx: &mut impl SignalCtx, date: &str) {
+        if self.selected_date != date {
+            self.selected_date = date.to_string();
+            self.signal_selected_date(ectx);
+        }
     }
 
     /// Port of C++ GoBackInHistory.
     // C++ reads from owned FileModel reference. Rust passes rec explicitly — avoids shared mutable state.
-    pub fn GoBackInHistory(&mut self, rec: &emStocksRec) {
+    pub fn GoBackInHistory(&mut self, ectx: &mut impl SignalCtx, rec: &emStocksRec) {
         let date = rec.GetPricesDateBefore(&self.selected_date);
         if !date.is_empty() {
-            self.selected_date = date;
+            self.SetSelectedDate(ectx, &date);
         }
     }
 
     /// Port of C++ GoForwardInHistory.
     // C++ reads from owned FileModel reference. Rust passes rec explicitly — avoids shared mutable state.
-    pub fn GoForwardInHistory(&mut self, rec: &emStocksRec) {
+    pub fn GoForwardInHistory(&mut self, ectx: &mut impl SignalCtx, rec: &emStocksRec) {
         let date = rec.GetPricesDateAfter(&self.selected_date);
         if !date.is_empty() {
-            self.selected_date = date;
+            self.SetSelectedDate(ectx, &date);
         }
     }
 
@@ -1045,8 +1101,22 @@ impl emStocksListBox {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use emcore::emEngineCtx::{DeferredAction, InitCtx};
+    use emcore::emEngineCtx::{DeferredAction, DropOnlySignalCtx, InitCtx};
     use emcore::emScheduler::EngineScheduler;
+
+    /// Minimal SignalCtx adapter wrapping `EngineScheduler` for unit tests
+    /// that need a real (non-null) SignalId allocator.
+    struct TestSignalCtx<'a> {
+        sched: &'a mut EngineScheduler,
+    }
+    impl SignalCtx for TestSignalCtx<'_> {
+        fn create_signal(&mut self) -> SignalId {
+            self.sched.create_signal()
+        }
+        fn fire(&mut self, id: SignalId) {
+            self.sched.fire(id);
+        }
+    }
 
     struct TestInit {
         sched: EngineScheduler,
@@ -1176,7 +1246,7 @@ mod tests {
     fn selected_date_management() {
         let mut __init = TestInit::new();
         let mut lb = emStocksListBox::new();
-        lb.SetSelectedDate("2024-06-15");
+        lb.SetSelectedDate(&mut DropOnlySignalCtx, "2024-06-15");
         assert_eq!(lb.GetSelectedDate(), "2024-06-15");
     }
 
@@ -1190,9 +1260,62 @@ mod tests {
         rec.stocks.push(stock);
 
         let mut lb = emStocksListBox::new();
-        lb.SetSelectedDate("2024-06-15");
-        lb.GoBackInHistory(&rec);
+        lb.SetSelectedDate(&mut DropOnlySignalCtx, "2024-06-15");
+        lb.GoBackInHistory(&mut DropOnlySignalCtx, &rec);
         assert_eq!(lb.GetSelectedDate(), "2024-06-14");
+    }
+
+    #[test]
+    fn get_selected_date_signal_lazy_alloc_is_stable() {
+        // G4: D-008 A1 — first call allocates, subsequent calls return same id.
+        let lb = emStocksListBox::new();
+        assert!(lb.selected_date_signal_for_test().is_null());
+        let mut sched = EngineScheduler::new();
+        let sig_a = {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            lb.GetSelectedDateSignal(&mut sc)
+        };
+        assert!(!sig_a.is_null());
+        let sig_b = {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            lb.GetSelectedDateSignal(&mut sc)
+        };
+        assert_eq!(sig_a, sig_b);
+    }
+
+    #[test]
+    fn selection_and_item_trigger_signals_none_until_attach() {
+        // G5/G6: delegating accessors return None when the inner emListBox is
+        // unattached (pre-AutoExpand). Phase 4 consumers must early-return.
+        let lb = emStocksListBox::new();
+        assert!(lb.GetSelectionSignal().is_none());
+        assert!(lb.GetItemTriggerSignal().is_none());
+    }
+
+    #[test]
+    fn selection_and_item_trigger_signals_some_after_attach() {
+        // After attach_list_box, the delegators forward the inner ids.
+        let mut __init = TestInit::new();
+        let mut lb = emStocksListBox::new();
+        let look = emLook::new();
+        lb.attach_list_box(&mut __init.ctx(), look);
+        let sel = lb.GetSelectionSignal();
+        let trig = lb.GetItemTriggerSignal();
+        assert!(sel.is_some());
+        assert!(trig.is_some());
+        assert!(!sel.unwrap().is_null());
+        assert!(!trig.unwrap().is_null());
+    }
+
+    #[test]
+    fn set_selected_date_no_fire_when_unchanged() {
+        // G4: only fire when value actually changed (mirrors C++ cpp:99-104).
+        let mut lb = emStocksListBox::new();
+        lb.SetSelectedDate(&mut DropOnlySignalCtx, "2024-06-15");
+        // Repeating the same value must not even allocate the signal.
+        assert!(lb.selected_date_signal_for_test().is_null());
+        lb.SetSelectedDate(&mut DropOnlySignalCtx, "2024-06-15");
+        assert!(lb.selected_date_signal_for_test().is_null());
     }
 
     // ─── New tests for stock operations ──────────────────────────────────

@@ -4,6 +4,7 @@ use std::rc::Rc;
 use emStocks::emStocksPricesFetcher::emStocksPricesFetcher;
 use emStocks::emStocksRec::{emStocksRec, SharePriceToString, StockRec};
 use emcore::emCrossPtr::{emCrossPtr, emCrossPtrList};
+use emcore::emEngineCtx::DropOnlySignalCtx;
 
 // ─── emCrossPtr patterns used by emStocks ───
 
@@ -53,7 +54,7 @@ fn fetcher_process_out_buffer_lines_multiple() {
     stock.id = "1".to_string();
     stock.symbol = "TST".to_string();
     rec.stocks.push(stock);
-    fetcher.AddStockIds(&["1".to_string()]);
+    fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string()]);
 
     // Multiple lines with different line endings
     fetcher.out_buffer = b"2024-03-14 99.0\r\n2024-03-15 100.5\n".to_vec();
@@ -78,7 +79,7 @@ fn fetcher_process_out_buffer_line_with_extra_whitespace() {
     let mut stock = StockRec::default();
     stock.id = "1".to_string();
     rec.stocks.push(stock);
-    fetcher.AddStockIds(&["1".to_string()]);
+    fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string()]);
 
     // Leading whitespace should be handled
     fetcher.ProcessOutBufferLine("  2024-03-15  100.50  ", &mut rec);
@@ -91,8 +92,8 @@ fn fetcher_process_out_buffer_line_with_extra_whitespace() {
 #[test]
 fn fetcher_add_stock_ids_dedup() {
     let mut fetcher = emStocksPricesFetcher::new("script", "perl", "key");
-    fetcher.AddStockIds(&["A".to_string(), "B".to_string()]);
-    fetcher.AddStockIds(&["B".to_string(), "C".to_string()]);
+    fetcher.AddStockIds(&mut DropOnlySignalCtx, &["A".to_string(), "B".to_string()]);
+    fetcher.AddStockIds(&mut DropOnlySignalCtx, &["B".to_string(), "C".to_string()]);
     // B should not be duplicated
     assert_eq!(fetcher.stock_ids.len(), 3);
 }

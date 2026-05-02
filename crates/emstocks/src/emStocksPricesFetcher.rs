@@ -4,11 +4,14 @@
 // limitation of the trait pattern. The direct Cycle(&mut rec) method is used instead.
 // Uses BTreeMap<String, Option<usize>> instead of C++ emAvlTreeMap<String, emCrossPtr<StockRec>> — BTreeMap is Rust's idiomatic ordered map; cross-pointers don't apply when StockRecs live in a Vec.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 
 use emcore::emEngine::emEngine;
-use emcore::emEngineCtx::EngineCtx;
+use emcore::emEngineCtx::{EngineCtx, SignalCtx};
 use emcore::emProcess::{emProcess, PipeResult, StartFlags};
+use emcore::emSignal::SignalId;
+use slotmap::Key as _;
 
 use super::emStocksRec::{
     emStocksRec, AddDaysToDate, CompareDates, GetCurrentDate, GetDateDifference,
@@ -33,6 +36,12 @@ pub struct emStocksPricesFetcher {
     pub(crate) latest_prices_date: String,
     error: String,
     current_process: emProcess,
+    /// Lazy-allocated per D-008 A1. Null until first subscriber.
+    /// Mirrors C++ `emSignal ChangeSignal` (emStocksPricesFetcher.h:103).
+    /// RUST_ONLY: (language-forced-utility) — Rust struct does not inherit from
+    /// `emConfigModel`; the SignalId lives directly per design Option B
+    /// (mirrors G2 in `2026-04-27-B-001-no-wire-emstocks-design.md` §G3).
+    change_signal: Cell<SignalId>,
 }
 
 impl emStocksPricesFetcher {
@@ -54,11 +63,50 @@ impl emStocksPricesFetcher {
             latest_prices_date: String::new(),
             error: String::new(),
             current_process: emProcess::new(),
+            change_signal: Cell::new(SignalId::null()),
         }
     }
 
-    /// Port of C++ AddStockIds.
-    pub fn AddStockIds(&mut self, stock_ids: &[String]) {
+    /// Port of inherited C++ `emConfigModel::GetChangeSignal` (the C++ emStocksPricesFetcher
+    /// owns the `ChangeSignal` directly). D-008 A1 combined-form: lazy alloc.
+    pub fn GetChangeSignal(&self, ectx: &mut impl SignalCtx) -> SignalId {
+        let cur = self.change_signal.get();
+        if cur.is_null() {
+            let new_id = ectx.create_signal();
+            self.change_signal.set(new_id);
+            new_id
+        } else {
+            cur
+        }
+    }
+
+    /// Port of C++ `emSignal::Signal()` on `ChangeSignal`. Synchronous fire per
+    /// D-007 (`&mut impl SignalCtx`). No-op when `change_signal` is null
+    /// (matches C++ `emSignal::Signal()` with zero subscribers).
+    ///
+    /// Mirrors C++ `Signal(ChangeSignal)` callsites at
+    /// `emStocksPricesFetcher.cpp:70, 134, 264, 272`. The Rust analogues are
+    /// `AddStockIds`, `CalculateDate` (post-success path), and the two
+    /// `PollProcess` end-of-cycle paths. CALLSITE-NOTE: Rust mutator-fire is
+    /// wired here via `pub fn Signal`; the consumer-side subscribe lives in
+    /// B-017 row 1 (`emStocksFetchPricesDialog-62`), not B-001 — accessor is
+    /// added now to unblock that bucket.
+    pub fn Signal(&self, ectx: &mut impl SignalCtx) {
+        let s = self.change_signal.get();
+        if !s.is_null() {
+            ectx.fire(s);
+        }
+    }
+
+    /// Test-only accessor for the raw SignalId slot without allocating.
+    #[doc(hidden)]
+    pub fn change_signal_for_test(&self) -> SignalId {
+        self.change_signal.get()
+    }
+
+    /// Port of C++ AddStockIds. Mirrors C++ fire site at
+    /// `emStocksPricesFetcher.cpp:70` (`Signal(ChangeSignal)` after Error.Clear).
+    pub fn AddStockIds(&mut self, ectx: &mut impl SignalCtx, stock_ids: &[String]) {
         for id in stock_ids {
             if !self.stock_index_map.contains_key(id) {
                 self.stock_ids.push(id.clone());
@@ -66,6 +114,7 @@ impl emStocksPricesFetcher {
             }
         }
         self.error.clear();
+        self.Signal(ectx);
     }
 
     /// Port of C++ GetCurrentStockId.
@@ -94,10 +143,12 @@ impl emStocksPricesFetcher {
         &self.error
     }
 
-    /// Port of C++ SetFailed.
-    pub fn SetFailed(&mut self, error: &str) {
+    /// Port of C++ SetFailed. Mirrors C++ fire site at
+    /// `emStocksPricesFetcher.cpp:272` (`Signal(ChangeSignal)` after error set).
+    pub fn SetFailed(&mut self, ectx: &mut impl SignalCtx, error: &str) {
         self.Clear();
         self.error = error.to_string();
+        self.Signal(ectx);
     }
 
     /// Port of C++ Clear.
@@ -270,18 +321,20 @@ impl emStocksPricesFetcher {
     /// Port of C++ Cycle.
     /// File-state guard: caller ensures model is in loaded/unsaved state before calling Cycle.
     /// This matches the explicit-parameter pattern (no shared FileModel reference).
-    pub fn Cycle(&mut self, rec: &mut emStocksRec) -> bool {
+    pub fn Cycle(&mut self, ectx: &mut impl SignalCtx, rec: &mut emStocksRec) -> bool {
         if self.current_process_active {
-            self.PollProcess(rec);
+            self.PollProcess(ectx, rec);
         }
         if !self.current_process_active {
-            self.StartProcess(rec);
+            self.StartProcess(ectx, rec);
         }
         self.current_process_active
     }
 
-    /// Port of C++ StartProcess.
-    pub fn StartProcess(&mut self, rec: &mut emStocksRec) {
+    /// Port of C++ StartProcess. Mirrors C++ fire site at
+    /// `emStocksPricesFetcher.cpp:134` (`Signal(ChangeSignal)` inside the
+    /// skip-loop after `CurrentIndex++`).
+    pub fn StartProcess(&mut self, ectx: &mut impl SignalCtx, rec: &mut emStocksRec) {
         if self.current_process_active {
             return;
         }
@@ -299,6 +352,7 @@ impl emStocksPricesFetcher {
                 }
                 _ => {
                     self.current_index += 1;
+                    self.Signal(ectx);
                     continue;
                 }
             }
@@ -313,7 +367,7 @@ impl emStocksPricesFetcher {
         self.CalculateDate(stock_rec);
 
         if self.api_script.is_empty() {
-            self.SetFailed("API script is not set.");
+            self.SetFailed(ectx, "API script is not set.");
             return;
         }
 
@@ -322,12 +376,14 @@ impl emStocksPricesFetcher {
         let env = HashMap::new();
         let flags = StartFlags::PIPE_STDOUT | StartFlags::PIPE_STDERR;
         if let Err(e) = self.current_process.TryStart(&argv_refs, &env, None, flags) {
-            self.SetFailed(&e.to_string());
+            self.SetFailed(ectx, &e.to_string());
         }
     }
 
-    /// Port of C++ PollProcess.
-    pub fn PollProcess(&mut self, rec: &mut emStocksRec) {
+    /// Port of C++ PollProcess. Mirrors C++ fire site at
+    /// `emStocksPricesFetcher.cpp:264` (`Signal(ChangeSignal)` at end of
+    /// per-stock completion before returning).
+    pub fn PollProcess(&mut self, ectx: &mut impl SignalCtx, rec: &mut emStocksRec) {
         if !self.current_process_active {
             return;
         }
@@ -339,7 +395,7 @@ impl emStocksPricesFetcher {
             let result = match self.current_process.TryRead(&mut tmp) {
                 Ok(r) => r,
                 Err(e) => {
-                    self.SetFailed(&e.to_string());
+                    self.SetFailed(ectx, &e.to_string());
                     return;
                 }
             };
@@ -348,7 +404,7 @@ impl emStocksPricesFetcher {
                     self.out_buffer.extend_from_slice(&tmp[..n]);
                     self.ProcessOutBufferLines(rec);
                     if self.out_buffer.len() > 100000 {
-                        self.SetFailed("API script printed a too long line.");
+                        self.SetFailed(ectx, "API script printed a too long line.");
                         return;
                     }
                 }
@@ -367,7 +423,7 @@ impl emStocksPricesFetcher {
             let result = match self.current_process.TryReadErr(&mut tmp) {
                 Ok(r) => r,
                 Err(e) => {
-                    self.SetFailed(&e.to_string());
+                    self.SetFailed(ectx, &e.to_string());
                     return;
                 }
             };
@@ -375,7 +431,7 @@ impl emStocksPricesFetcher {
                 PipeResult::Bytes(n) => {
                     self.err_buffer.extend_from_slice(&tmp[..n]);
                     if self.err_buffer.len() > 100000 {
-                        self.SetFailed("API script printed too much data on stderr.");
+                        self.SetFailed(ectx, "API script printed too much data on stderr.");
                         return;
                     }
                 }
@@ -401,10 +457,13 @@ impl emStocksPricesFetcher {
         let exit_status = self.current_process.GetExitStatus().unwrap_or(-1);
         if exit_status != 0 {
             let err_str = String::from_utf8_lossy(&self.err_buffer);
-            self.SetFailed(&format!(
-                "API script failed for \"{}\":\n{}",
-                self.current_symbol, err_str
-            ));
+            self.SetFailed(
+                ectx,
+                &format!(
+                    "API script failed for \"{}\":\n{}",
+                    self.current_symbol, err_str
+                ),
+            );
             return;
         }
 
@@ -418,10 +477,10 @@ impl emStocksPricesFetcher {
 
         if !self.no_data_stocks.is_empty() && self.current_index + 1 >= self.stock_ids.len() as i32
         {
-            self.SetFailed(&format!(
-                "Could not fetch any new data for:\n{}",
-                self.no_data_stocks
-            ));
+            self.SetFailed(
+                ectx,
+                &format!("Could not fetch any new data for:\n{}", self.no_data_stocks),
+            );
             return;
         }
 
@@ -435,6 +494,7 @@ impl emStocksPricesFetcher {
         if self.current_index as usize >= self.stock_ids.len() {
             self.Clear();
         }
+        self.Signal(ectx);
     }
 
     /// Resolve stock ID to StockRec index in the emStocksRec.
@@ -482,6 +542,22 @@ impl emEngine for emStocksPricesFetcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use emcore::emEngineCtx::DropOnlySignalCtx;
+    use emcore::emScheduler::EngineScheduler;
+
+    /// Minimal SignalCtx adapter wrapping `EngineScheduler` for unit tests.
+    struct TestSignalCtx<'a> {
+        sched: &'a mut EngineScheduler,
+    }
+
+    impl SignalCtx for TestSignalCtx<'_> {
+        fn create_signal(&mut self) -> SignalId {
+            self.sched.create_signal()
+        }
+        fn fire(&mut self, id: SignalId) {
+            self.sched.fire(id);
+        }
+    }
 
     #[test]
     fn fetcher_initially_finished() {
@@ -490,9 +566,27 @@ mod tests {
     }
 
     #[test]
+    fn get_change_signal_lazy_alloc_is_stable() {
+        // G3: D-008 A1 — first call allocates, subsequent calls return same id.
+        let fetcher = emStocksPricesFetcher::new("", "", "");
+        assert!(fetcher.change_signal_for_test().is_null());
+        let mut sched = EngineScheduler::new();
+        let sig_a = {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            fetcher.GetChangeSignal(&mut sc)
+        };
+        assert!(!sig_a.is_null());
+        let sig_b = {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            fetcher.GetChangeSignal(&mut sc)
+        };
+        assert_eq!(sig_a, sig_b);
+    }
+
+    #[test]
     fn fetcher_add_stock_ids() {
         let mut fetcher = emStocksPricesFetcher::new("script.pl", "perl", "key123");
-        fetcher.AddStockIds(&["1".to_string(), "2".to_string()]);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string(), "2".to_string()]);
         assert!(!fetcher.HasFinished());
         assert_eq!(fetcher.GetCurrentStockId(), Some("1"));
     }
@@ -500,7 +594,7 @@ mod tests {
     #[test]
     fn fetcher_progress() {
         let mut fetcher = emStocksPricesFetcher::new("", "", "");
-        fetcher.AddStockIds(&["1".to_string(), "2".to_string()]);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string(), "2".to_string()]);
         // At index 0 of 2: (0 + 0.5) * 100 / 2 = 25.0
         assert_eq!(fetcher.GetProgressInPercent(), 25.0);
     }
@@ -508,8 +602,8 @@ mod tests {
     #[test]
     fn fetcher_no_duplicate_stock_ids() {
         let mut fetcher = emStocksPricesFetcher::new("", "", "");
-        fetcher.AddStockIds(&["1".to_string(), "2".to_string()]);
-        fetcher.AddStockIds(&["2".to_string(), "3".to_string()]);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string(), "2".to_string()]);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["2".to_string(), "3".to_string()]);
         assert_eq!(fetcher.stock_ids.len(), 3); // 1, 2, 3
     }
 
@@ -522,7 +616,7 @@ mod tests {
         stock.id = "1".to_string();
         stock.symbol = "TST".to_string();
         rec.stocks.push(stock);
-        fetcher.AddStockIds(&["1".to_string()]);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string()]);
 
         fetcher.ProcessOutBufferLine("2024-03-15 100.50", &mut rec);
         assert_eq!(
@@ -539,7 +633,7 @@ mod tests {
         let mut stock = StockRec::default();
         stock.id = "1".to_string();
         rec.stocks.push(stock);
-        fetcher.AddStockIds(&["1".to_string()]);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string()]);
 
         fetcher.ProcessOutBufferLine("2024-03-15 100.50", &mut rec);
         assert_eq!(rec.stocks[0].GetPriceOfDate("2024-03-15"), "");
@@ -565,7 +659,7 @@ mod tests {
         let mut stock = StockRec::default();
         stock.id = "1".to_string();
         rec.stocks.push(stock);
-        fetcher.AddStockIds(&["1".to_string()]);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string()]);
 
         fetcher.out_buffer = b"2024-03-14 99.0\n2024-03-15 100.5\n2024-03-".to_vec();
         fetcher.ProcessOutBufferLines(&mut rec);
@@ -630,9 +724,9 @@ mod tests {
 
         // Use /bin/echo as the "script" so the process actually starts
         fetcher.api_script = "/bin/echo".to_string();
-        fetcher.AddStockIds(&["1".to_string(), "2".to_string()]);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string(), "2".to_string()]);
 
-        fetcher.StartProcess(&mut rec);
+        fetcher.StartProcess(&mut DropOnlySignalCtx, &mut rec);
         // current_index should have advanced past stock 1
         assert_eq!(fetcher.current_index, 1);
         assert_eq!(fetcher.current_symbol, "TST");
@@ -649,8 +743,8 @@ mod tests {
         s.symbol = "TST".to_string();
         rec.stocks.push(s);
 
-        fetcher.AddStockIds(&["1".to_string()]);
-        fetcher.StartProcess(&mut rec);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string()]);
+        fetcher.StartProcess(&mut DropOnlySignalCtx, &mut rec);
 
         assert_eq!(fetcher.GetError(), "API script is not set.");
         assert!(fetcher.HasFinished());
@@ -660,7 +754,7 @@ mod tests {
     fn cycle_returns_false_when_finished() {
         let mut fetcher = emStocksPricesFetcher::new("", "", "");
         let mut rec = emStocksRec::default();
-        assert!(!fetcher.Cycle(&mut rec));
+        assert!(!fetcher.Cycle(&mut DropOnlySignalCtx, &mut rec));
     }
 
     #[test]
@@ -676,11 +770,11 @@ mod tests {
         s.id = "1".to_string();
         s.symbol = "TST".to_string();
         rec.stocks.push(s);
-        fetcher.AddStockIds(&["1".to_string()]);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string()]);
 
         // PollProcess with no real child: pipes return Closed, process not running,
         // exit status is None (maps to -1), so it should fail.
-        fetcher.PollProcess(&mut rec);
+        fetcher.PollProcess(&mut DropOnlySignalCtx, &mut rec);
 
         // Should have set error since exit status != 0
         assert!(!fetcher.GetError().is_empty());
@@ -692,7 +786,7 @@ mod tests {
         let mut fetcher = emStocksPricesFetcher::new("script.py", "", "key");
         let mut rec = emStocksRec::default();
         // No stocks added — StartProcess should return immediately
-        fetcher.StartProcess(&mut rec);
+        fetcher.StartProcess(&mut DropOnlySignalCtx, &mut rec);
         assert!(!fetcher.current_process_active);
     }
 
@@ -701,8 +795,8 @@ mod tests {
         let mut fetcher = emStocksPricesFetcher::new("script.py", "", "key");
         let mut rec = emStocksRec::default();
         // Add stock ID "1" but no matching StockRec in rec
-        fetcher.AddStockIds(&["1".to_string()]);
-        fetcher.StartProcess(&mut rec);
+        fetcher.AddStockIds(&mut DropOnlySignalCtx, &["1".to_string()]);
+        fetcher.StartProcess(&mut DropOnlySignalCtx, &mut rec);
         // Should have skipped past it without activating
         assert!(!fetcher.current_process_active);
         assert!(fetcher.HasFinished());

@@ -180,14 +180,48 @@ impl PanelBehavior for emStocksFilePanel {
         if input_state.IsCtrlMod() {
             match event.key {
                 InputKey::Key('J') => {
-                    if let Some(ref mut list_box) = self.list_box {
-                        list_box.GoBackInHistory(self.model.GetRec());
+                    let Self {
+                        list_box, model, ..
+                    } = self;
+                    if let Some(lb) = list_box.as_mut() {
+                        // B-001 G4: GoBackInHistory may fire SelectedDateSignal.
+                        // Mirrors `writable_rec` PanelCtx-as_sched_ctx pattern.
+                        if let Some(mut sc) = ctx.as_sched_ctx() {
+                            lb.GoBackInHistory(&mut sc, model.GetRec());
+                        } else {
+                            #[cfg(not(test))]
+                            panic!(
+                                "emStocksFilePanel::Input: PanelCtx::as_sched_ctx() returned None — \
+                                 production PanelCycleEngine must thread scheduler reach (D-007)"
+                            );
+                            #[cfg(test)]
+                            {
+                                let mut null = emcore::emEngineCtx::DropOnlySignalCtx;
+                                lb.GoBackInHistory(&mut null, model.GetRec());
+                            }
+                        }
                     }
                     return true;
                 }
                 InputKey::Key('K') => {
-                    if let Some(ref mut list_box) = self.list_box {
-                        list_box.GoForwardInHistory(self.model.GetRec());
+                    let Self {
+                        list_box, model, ..
+                    } = self;
+                    if let Some(lb) = list_box.as_mut() {
+                        if let Some(mut sc) = ctx.as_sched_ctx() {
+                            lb.GoForwardInHistory(&mut sc, model.GetRec());
+                        } else {
+                            #[cfg(not(test))]
+                            panic!(
+                                "emStocksFilePanel::Input: PanelCtx::as_sched_ctx() returned None — \
+                                 production PanelCycleEngine must thread scheduler reach (D-007)"
+                            );
+                            #[cfg(test)]
+                            {
+                                let mut null = emcore::emEngineCtx::DropOnlySignalCtx;
+                                lb.GoForwardInHistory(&mut null, model.GetRec());
+                            }
+                        }
                     }
                     return true;
                 }
@@ -252,7 +286,22 @@ impl PanelBehavior for emStocksFilePanel {
                             &self.config.api_script_interpreter,
                             &self.config.api_key,
                         );
-                        dialog.AddStockIds(&ids);
+                        // B-001 G3: AddStockIds fires `Signal(ChangeSignal)`.
+                        // Mirrors `writable_rec` precedent for PanelCtx ectx-reach.
+                        if let Some(mut sc) = ctx.as_sched_ctx() {
+                            dialog.AddStockIds(&mut sc, &ids);
+                        } else {
+                            #[cfg(not(test))]
+                            panic!(
+                                "emStocksFilePanel::Input: PanelCtx::as_sched_ctx() returned None — \
+                                 production PanelCycleEngine must thread scheduler reach (D-007)"
+                            );
+                            #[cfg(test)]
+                            {
+                                let mut null = emcore::emEngineCtx::DropOnlySignalCtx;
+                                dialog.AddStockIds(&mut null, &ids);
+                            }
+                        }
                         self.fetch_dialog = Some(dialog);
                     }
                     return true;
@@ -461,7 +510,7 @@ impl PanelBehavior for emStocksFilePanel {
 
         // Poll fetch dialog
         if let Some(ref mut dialog) = self.fetch_dialog {
-            if !dialog.Cycle() {
+            if !dialog.Cycle(ectx) {
                 // Dialog finished — clean up
                 self.fetch_dialog = None;
             }
@@ -807,7 +856,7 @@ mod tests {
             .list_box
             .as_mut()
             .unwrap()
-            .SetSelectedDate("2024-06-15");
+            .SetSelectedDate(&mut DropOnlySignalCtx, "2024-06-15");
 
         let mut input_state = emInputState::new();
         input_state.press(InputKey::Ctrl);
@@ -838,7 +887,7 @@ mod tests {
             .list_box
             .as_mut()
             .unwrap()
-            .SetSelectedDate("2024-06-14");
+            .SetSelectedDate(&mut DropOnlySignalCtx, "2024-06-14");
 
         let mut input_state = emInputState::new();
         input_state.press(InputKey::Ctrl);

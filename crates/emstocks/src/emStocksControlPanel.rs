@@ -645,7 +645,7 @@ impl Default for emStocksControlPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use emcore::emEngineCtx::{DeferredAction, InitCtx};
+    use emcore::emEngineCtx::{DeferredAction, DropOnlySignalCtx, InitCtx};
     use emcore::emScheduler::EngineScheduler;
 
     struct TestInit {
@@ -970,7 +970,7 @@ mod tests {
 
         let mut list_box = emStocksListBox::new();
         list_box.visible_items = vec![0];
-        list_box.SetSelectedDate("2024-06-15");
+        list_box.SetSelectedDate(&mut DropOnlySignalCtx, "2024-06-15");
 
         with_scratch_ctx(|ctx| panel.UpdateControls(&config, &rec, &list_box, ctx));
 

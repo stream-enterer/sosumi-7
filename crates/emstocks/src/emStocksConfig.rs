@@ -1,10 +1,14 @@
 // Port of C++ emStocksConfig.h / emStocksConfig.cpp
 
+use std::cell::Cell;
 use std::fmt;
 use std::str::FromStr;
 
+use emcore::emEngineCtx::SignalCtx;
 use emcore::emRecParser::{RecStruct, RecValue};
 use emcore::emRecRecord::{RecError, Record};
+use emcore::emSignal::SignalId;
+use slotmap::Key as _;
 
 use super::emStocksRec::{GetDateDifferenceParts, GetDaysOfMonth, Interest, ParseDate};
 
@@ -124,7 +128,14 @@ impl FromStr for Sorting {
 // ─── emStocksConfig ──────────────────────────────────────────────────────────
 
 /// Port of C++ emStocksConfig.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// DIVERGED: (language-forced) — `Clone` is hand-written below because
+/// `Cell<SignalId>` is `Clone` but cloning would share the broadcast endpoint
+/// across instances. C++ uses copy-construction inheriting `emConfigModel`;
+/// in Rust, a cloned `emStocksConfig` is an independent value (e.g., readback
+/// scratch in tests) and must NOT inherit the parent's allocated SignalId.
+/// `PartialEq` is also hand-written to exclude `change_signal` from equality.
+#[derive(Debug)]
 pub struct emStocksConfig {
     pub api_script: String,
     pub api_script_interpreter: String,
@@ -140,6 +151,16 @@ pub struct emStocksConfig {
     pub sorting: Sorting,
     pub owned_shares_first: bool,
     pub search_text: String,
+    /// Lazy-allocated per D-008 A1. Null until first subscriber requests it.
+    /// RUST_ONLY: (language-forced-utility) — C++ `emStocksConfig : public emConfigModel`
+    /// inherits the ChangeSignal; Rust composes via direct field per design
+    /// Option B (composing `emConfigModel` rejected for ownership-blast-radius
+    /// in `2026-04-27-B-001-no-wire-emstocks-design.md` §G2).
+    /// Visibility is `pub` so external crates (eaglemode integration tests,
+    /// etc.) can use struct literal `..Default::default()` syntax. The field
+    /// is otherwise opaque — production access is through `GetChangeSignal` /
+    /// `Signal`.
+    pub change_signal: Cell<SignalId>,
 }
 
 impl Default for emStocksConfig {
@@ -159,11 +180,88 @@ impl Default for emStocksConfig {
             sorting: Sorting::ByName,
             owned_shares_first: false,
             search_text: String::new(),
+            change_signal: Cell::new(SignalId::null()),
         }
     }
 }
 
+// DIVERGED: (language-forced) — see `emStocksConfig` doc-comment above.
+// Cloned values are independent broadcast endpoints; the SignalId is reset.
+impl Clone for emStocksConfig {
+    fn clone(&self) -> Self {
+        Self {
+            api_script: self.api_script.clone(),
+            api_script_interpreter: self.api_script_interpreter.clone(),
+            api_key: self.api_key.clone(),
+            web_browser: self.web_browser.clone(),
+            auto_update_dates: self.auto_update_dates,
+            triggering_opens_web_page: self.triggering_opens_web_page,
+            chart_period: self.chart_period,
+            min_visible_interest: self.min_visible_interest,
+            visible_countries: self.visible_countries.clone(),
+            visible_sectors: self.visible_sectors.clone(),
+            visible_collections: self.visible_collections.clone(),
+            sorting: self.sorting,
+            owned_shares_first: self.owned_shares_first,
+            search_text: self.search_text.clone(),
+            change_signal: Cell::new(SignalId::null()),
+        }
+    }
+}
+
+// DIVERGED: (language-forced) — `change_signal` is excluded from equality so
+// readback / round-trip tests remain meaningful (the lazy-allocated SignalId
+// is incidental state, not value identity).
+impl PartialEq for emStocksConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.api_script == other.api_script
+            && self.api_script_interpreter == other.api_script_interpreter
+            && self.api_key == other.api_key
+            && self.web_browser == other.web_browser
+            && self.auto_update_dates == other.auto_update_dates
+            && self.triggering_opens_web_page == other.triggering_opens_web_page
+            && self.chart_period == other.chart_period
+            && self.min_visible_interest == other.min_visible_interest
+            && self.visible_countries == other.visible_countries
+            && self.visible_sectors == other.visible_sectors
+            && self.visible_collections == other.visible_collections
+            && self.sorting == other.sorting
+            && self.owned_shares_first == other.owned_shares_first
+            && self.search_text == other.search_text
+    }
+}
+
 impl emStocksConfig {
+    /// Port of inherited C++ `emConfigModel::GetChangeSignal`.
+    /// D-008 A1 combined-form: lazy-allocates on first call.
+    pub fn GetChangeSignal(&self, ectx: &mut impl SignalCtx) -> SignalId {
+        let cur = self.change_signal.get();
+        if cur.is_null() {
+            let new_id = ectx.create_signal();
+            self.change_signal.set(new_id);
+            new_id
+        } else {
+            cur
+        }
+    }
+
+    /// Port of inherited C++ `emConfigModel::Signal(ChangeSignal)`. Synchronous
+    /// fire per D-007 (`&mut impl SignalCtx`). No-op when no subscriber has
+    /// allocated the signal (matches C++ `emSignal::Signal()` with zero
+    /// subscribers per D-008 null-fire-noop semantics).
+    pub fn Signal(&self, ectx: &mut impl SignalCtx) {
+        let s = self.change_signal.get();
+        if !s.is_null() {
+            ectx.fire(s);
+        }
+    }
+
+    /// Test-only accessor for the raw SignalId slot without allocating.
+    #[doc(hidden)]
+    pub fn change_signal_for_test(&self) -> SignalId {
+        self.change_signal.get()
+    }
+
     /// Port of C++ GetFormatName.
     pub fn GetFormatName(&self) -> &str {
         "emStocksConfig"
@@ -296,6 +394,7 @@ impl Record for emStocksConfig {
             sorting,
             owned_shares_first: rec.get_bool("OwnedSharesFirst").unwrap_or(false),
             search_text: get_str("SearchText"),
+            change_signal: Cell::new(SignalId::null()),
         })
     }
 
@@ -332,6 +431,78 @@ impl Record for emStocksConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use emcore::emScheduler::EngineScheduler;
+
+    /// Minimal SignalCtx adapter wrapping `EngineScheduler` for unit tests.
+    struct TestSignalCtx<'a> {
+        sched: &'a mut EngineScheduler,
+    }
+
+    impl SignalCtx for TestSignalCtx<'_> {
+        fn create_signal(&mut self) -> SignalId {
+            self.sched.create_signal()
+        }
+        fn fire(&mut self, id: SignalId) {
+            self.sched.fire(id);
+        }
+    }
+
+    #[test]
+    fn get_change_signal_lazy_alloc_is_stable() {
+        // G2: D-008 A1 — first call allocates, subsequent calls return same id.
+        let cfg = emStocksConfig::default();
+        assert!(cfg.change_signal_for_test().is_null());
+        let mut sched = EngineScheduler::new();
+        let sig_a = {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            cfg.GetChangeSignal(&mut sc)
+        };
+        assert!(!sig_a.is_null());
+        let sig_b = {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            cfg.GetChangeSignal(&mut sc)
+        };
+        assert_eq!(sig_a, sig_b);
+    }
+
+    #[test]
+    fn signal_is_noop_when_unallocated() {
+        // No subscribers → null SignalId → fire is a no-op (matches C++
+        // emSignal::Signal() with zero subscribers per D-008).
+        let cfg = emStocksConfig::default();
+        let mut sched = EngineScheduler::new();
+        let mut sc = TestSignalCtx { sched: &mut sched };
+        cfg.Signal(&mut sc); // must not panic / must not allocate
+        assert!(cfg.change_signal_for_test().is_null());
+    }
+
+    #[test]
+    fn clone_resets_signal_id() {
+        // DIVERGED Clone: clone must not share the broadcast endpoint.
+        let cfg = emStocksConfig::default();
+        let mut sched = EngineScheduler::new();
+        let sig = {
+            let mut sc = TestSignalCtx { sched: &mut sched };
+            cfg.GetChangeSignal(&mut sc)
+        };
+        assert!(!sig.is_null());
+        let cloned = cfg.clone();
+        assert!(
+            cloned.change_signal_for_test().is_null(),
+            "clone must not inherit parent's allocated SignalId"
+        );
+    }
+
+    #[test]
+    fn partial_eq_excludes_change_signal() {
+        // DIVERGED PartialEq: signal allocation state does not affect equality.
+        let a = emStocksConfig::default();
+        let b = emStocksConfig::default();
+        let mut sched = EngineScheduler::new();
+        let mut sc = TestSignalCtx { sched: &mut sched };
+        let _ = a.GetChangeSignal(&mut sc); // allocate on a only
+        assert_eq!(a, b, "equality must ignore change_signal");
+    }
 
     #[test]
     fn chart_period_from_str() {
