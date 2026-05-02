@@ -87,3 +87,32 @@ Because nothing fires the signal, current behavior is "no consumer ever observes
 - Rust source: `crates/emcore/src/emFileModel.rs:117,167` (single conflated signal); `crates/emcore/src/emRecFileModel.rs:366` (null delegate workaround).
 - Downstream UPSTREAM-GAP markers: `crates/emstocks/src/emStocksFileModel.rs:149`, `crates/emstocks/src/emStocksPricesFetcher.rs:78,425`.
 - FU-001 brainstorm origin: `docs/superpowers/specs/2026-05-02-FU-001-emstocks-reaction-bodies-design.md` (Summary section + Out-of-scope §"GetFileStateSignal conflation fix").
+
+## Closure (2026-05-02)
+
+Resolved across three phased commits on `impl/fu-005`:
+- Phase 1: `emFileModel<T>.change_signal` renamed to `file_state_signal`;
+  `emRecFileModel` given lazy `file_state_signal` cell + `ensure_file_state_signal` /
+  `signal_file_state` helpers. `GetFileStateSignal` trait impl now reads the cell
+  instead of returning null.
+- Phase 2: parallel `signal_file_state(ectx)` fires added at all 9
+  existing `signal_change(ectx)` sites in `emRecFileModel` (TryLoad,
+  Save success + 3 error paths, update, hard_reset, clear_save_error,
+  set_unsaved_state_internal which transitively covers GetWritableMap).
+- Phase 3: emstocks UPSTREAM-GAP comments removed from
+  `emStocksFileModel` and `emStocksPricesFetcher`;
+  `emStocksPricesFetcher`'s first-Cycle subscribe wires through
+  `ensure_file_state_signal` so the connect lands on a real id.
+
+Adapted vs original spec: `emRecFileModel<T>` does not compose
+`emFileModel<T>` in this port (standalone per file header), so
+delegation through `self.file_model.GetFileStateSignal()` is not
+possible. Adapted: gave `emRecFileModel` its own lazy-allocated
+`file_state_signal` cell mirroring the existing `change_signal` lazy
+pattern. Observably equivalent: subscribers go through `ensure_*` at
+first Cycle and get a real id before any fires can happen.
+
+Verification: 3006 workspace tests pass (`cargo nextest run`); annotations
+clean; emcore + emstocks lib clippy clean. New behavioral test
+`crates/emcore/tests/fu005_file_state_signal.rs` covers null-until-ensured,
+TryLoad fire, hard_reset fire.

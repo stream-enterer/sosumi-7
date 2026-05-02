@@ -143,26 +143,20 @@ impl emStocksFileModel {
         self.file_model.GetChangeSignal(ectx)
     }
 
-    /// Port of inherited C++ `emFileModel::GetFileStateSignal`. Delegates to
-    /// the composed `emRecFileModel<emStocksRec>`.
-    ///
-    /// UPSTREAM-GAP: the standalone-port `emRecFileModel::GetFileStateSignal`
-    /// trait impl returns `SignalId::default()` (null) — the Rust port
-    /// collapses the C++ separate `FileStateSignal` into the unified
-    /// `ChangeSignal` (see `emRecFileModel.rs:358-368` for the rationale).
-    /// Subscribers must tolerate a null id; `EngineCtx::connect` is null-safe
-    /// (the SlotMap lookup misses and the call is a no-op).
-    ///
-    /// Exposed for B-001-followup Phase E: the `emStocksPricesFetcher`
-    /// upstream subscribe at `emStocksPricesFetcher.cpp:39`
-    /// (`AddWakeUpSignal(FileModel->GetFileStateSignal())`) needs an accessor
-    /// even though the underlying signal is null in the Rust port — the
-    /// connect site is preserved so future emRecFileModel work that promotes
-    /// FileStateSignal to a real signal will plug in here without callsite
-    /// changes.
+    /// Port of inherited C++ `emFileModel::GetFileStateSignal` (FU-005).
+    /// Delegates to the composed `emRecFileModel<emStocksRec>` lazy-allocated
+    /// `file_state_signal`. Returns null until a subscriber has called
+    /// `ensure_file_state_signal(ectx)` at first Cycle.
     pub fn GetFileStateSignal(&self) -> SignalId {
         use emcore::emFileModel::FileModelState as _;
         self.file_model.GetFileStateSignal()
+    }
+
+    /// Port of inherited C++ `emFileModel::GetFileStateSignal()` lazy
+    /// allocator (FU-005). First-Cycle subscriber pass-through to the
+    /// composed `emRecFileModel`. Mirrors `GetChangeSignal`.
+    pub fn ensure_file_state_signal(&self, ectx: &mut impl SignalCtx) -> SignalId {
+        self.file_model.ensure_file_state_signal(ectx)
     }
 
     /// Access the record data.

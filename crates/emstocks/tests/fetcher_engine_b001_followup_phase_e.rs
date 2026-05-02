@@ -75,12 +75,12 @@ fn fetcher_subscribes_to_file_model_signals_on_first_cycle() {
         dialog.fetcher_file_model_change_sig_for_test().is_some(),
         "fetcher must cache FileModel.GetChangeSignal id"
     );
-    // GetFileStateSignal is currently null per the upstream-gap on the
-    // standalone-port emRecFileModel; the cached Option<SignalId> is still
-    // Some(_) (carrying the null SignalId), preserving the subscribe site.
+    // Post-FU-005: the fetcher subscribes via `ensure_file_state_signal`
+    // which lazy-promotes the cell to a real (non-null) id. The cached
+    // Option<SignalId> carries that real id.
     assert!(
         dialog.fetcher_file_model_state_sig_for_test().is_some(),
-        "fetcher must cache (possibly-null) FileModel.GetFileStateSignal id"
+        "fetcher must cache FileModel.GetFileStateSignal id"
     );
 
     h.scheduler.remove_engine(eid);

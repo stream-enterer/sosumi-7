@@ -73,13 +73,10 @@ pub struct emStocksPricesFetcher {
     /// (emStocksPricesFetcher.cpp:38).
     file_model_change_sig: Option<SignalId>,
     /// Cached `emStocksFileModel::GetFileStateSignal` id captured at first
-    /// `cycle()`. `None` until `subscribed_init` flips. Mirrors C++ ctor
+    /// `cycle()` via `ensure_file_state_signal(ectx)`. `None` until
+    /// `subscribed_init` flips. Mirrors C++ ctor
     /// `AddWakeUpSignal(FileModel->GetFileStateSignal())`
-    /// (emStocksPricesFetcher.cpp:39). UPSTREAM-GAP: the underlying signal
-    /// id is `SignalId::default()` (null) in the standalone-port
-    /// `emRecFileModel`; the connect call below is a no-op for null but the
-    /// subscribe site is preserved per the upstream-gap convention so a
-    /// future emRecFileModel promotion plugs in without callsite changes.
+    /// (emStocksPricesFetcher.cpp:39).
     file_model_state_sig: Option<SignalId>,
 }
 
@@ -418,15 +415,12 @@ impl emStocksPricesFetcher {
             return false;
         };
 
-        // First-Cycle subscribe — D-006 deferred init.
+        // First-Cycle subscribe — D-006 deferred init. Both signals are
+        // lazy-allocated in emRecFileModel; the `ensure_*` accessors promote
+        // the cells to real ids on first call (FU-005).
         if !self.subscribed_init {
-            // GetChangeSignal lazily allocates if needed; capture into the
-            // option slot. GetFileStateSignal currently delegates to a null
-            // SignalId per the UPSTREAM-GAP on emRecFileModel; connect is
-            // null-safe so we still preserve the subscribe site for future
-            // promotion.
             let change_sig = file_model.borrow().GetChangeSignal(ectx);
-            let state_sig = file_model.borrow().GetFileStateSignal();
+            let state_sig = file_model.borrow().ensure_file_state_signal(ectx);
             ectx.connect(change_sig, eid);
             ectx.connect(state_sig, eid);
             self.file_model_change_sig = Some(change_sig);
