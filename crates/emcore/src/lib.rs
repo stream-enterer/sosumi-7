@@ -53,6 +53,7 @@ pub mod emInputDispatchEngine;
 pub mod emInputHotkey;
 pub mod emInputState;
 pub mod emInstallInfo;
+pub mod emInstr;
 pub mod emIntRec;
 pub mod emJob;
 pub mod emLabel;
