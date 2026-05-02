@@ -11,6 +11,11 @@ crate-type = ["cdylib", "rlib"]
 [lints]
 workspace = true
 
+[features]
+# Enables `_for_test` accessors and other helpers used by integration tests
+# in `tests/`. Activated automatically via `dev-dependencies` self-reference.
+test-support = []
+
 [dependencies]
 emcore = { workspace = true }
 libc = { workspace = true }
@@ -19,4 +24,5 @@ open = { workspace = true }
 
 [dev-dependencies]
 emcore = { workspace = true, features = ["test-support"] }
+emstocks = { path = ".", features = ["test-support"] }
 gungraun = { workspace = true }

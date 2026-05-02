@@ -844,6 +844,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "emcore",
+ "emstocks",
  "gungraun",
  "libc",
  "open",

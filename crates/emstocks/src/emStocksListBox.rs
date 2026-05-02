@@ -50,12 +50,22 @@ pub struct emStocksListBox {
     pub(crate) paste_stocks_dialog: Option<emDialog>,
     pub(crate) delete_stocks_dialog: Option<emDialog>,
     pub(crate) interest_dialog: Option<emDialog>,
-    // Phase 3.5 Task 14: result slots written by on_finish closures.
+    // Delivery buffers written by `on_finish` callbacks (idiom adaptation:
+    // bridges DialogPrivateEngine's scope to the consumer panel's scope; the
+    // observable trigger is the dialog's `finish_signal` per §3.2 of the
+    // B-013 design — see `Cycle` below).
     pub(crate) cut_stocks_result: Rc<Cell<Option<DialogResult>>>,
     pub(crate) paste_stocks_result: Rc<Cell<Option<DialogResult>>>,
     pub(crate) delete_stocks_result: Rc<Cell<Option<DialogResult>>>,
     pub(crate) interest_result: Rc<Cell<Option<DialogResult>>>,
     pub(crate) interest_to_set: Option<Interest>,
+    // B-013: per-dialog first-Cycle-init flags (D-006 subscribe-shape).
+    // Set true after `ectx.connect(dialog.finish_signal, ectx.id())` runs;
+    // cleared on disconnect (signal observed) and on cancel-old-dialog.
+    pub(crate) cut_subscribed: bool,
+    pub(crate) paste_subscribed: bool,
+    pub(crate) delete_subscribed: bool,
+    pub(crate) interest_subscribed: bool,
 }
 
 impl Default for emStocksListBox {
@@ -86,6 +96,10 @@ impl emStocksListBox {
             delete_stocks_result: Rc::new(Cell::new(None)),
             interest_result: Rc::new(Cell::new(None)),
             interest_to_set: None,
+            cut_subscribed: false,
+            paste_subscribed: false,
+            delete_subscribed: false,
+            interest_subscribed: false,
         }
     }
 
@@ -492,7 +506,17 @@ impl emStocksListBox {
         if ask {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
+                // B-013: symmetric with the confirmed-branch disconnect in
+                // `Cycle` — without this, the parent engine would retain a
+                // live `(old_finish_signal → engine)` connection until the
+                // SignalId is reaped by dialog teardown (slow leak).
                 if let Some(old) = self.delete_stocks_dialog.take() {
+                    if self.delete_subscribed {
+                        if let Some(eid) = cc.current_engine_id() {
+                            cc.disconnect(old.finish_signal, eid);
+                        }
+                    }
+                    self.delete_subscribed = false;
                     let did: DialogId = old.dialog_id;
                     cc.pending_actions()
                         .borrow_mut()
@@ -513,6 +537,9 @@ impl emStocksListBox {
                 dialog.set_on_finish(Box::new(move |r, _sched| cell.set(Some(*r))));
                 dialog.show(cc);
                 self.delete_stocks_dialog = Some(dialog);
+                // Defensive — covers the no-prior-dialog case where the
+                // cancel-old branch above did not run.
+                self.delete_subscribed = false;
             }
             return; // Defer until Cycle() observes dialog confirmation.
         }
@@ -549,7 +576,14 @@ impl emStocksListBox {
         if ask {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
+                // B-013: see DeleteStocks for cancel-old-disconnect rationale.
                 if let Some(old) = self.cut_stocks_dialog.take() {
+                    if self.cut_subscribed {
+                        if let Some(eid) = cc.current_engine_id() {
+                            cc.disconnect(old.finish_signal, eid);
+                        }
+                    }
+                    self.cut_subscribed = false;
                     let did: DialogId = old.dialog_id;
                     cc.pending_actions()
                         .borrow_mut()
@@ -567,6 +601,7 @@ impl emStocksListBox {
                 dialog.set_on_finish(Box::new(move |r, _sched| cell.set(Some(*r))));
                 dialog.show(cc);
                 self.cut_stocks_dialog = Some(dialog);
+                self.cut_subscribed = false;
             }
             return; // Defer until Cycle() observes dialog confirmation.
         }
@@ -596,7 +631,14 @@ impl emStocksListBox {
         if ask {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
+                // B-013: see DeleteStocks for cancel-old-disconnect rationale.
                 if let Some(old) = self.paste_stocks_dialog.take() {
+                    if self.paste_subscribed {
+                        if let Some(eid) = cc.current_engine_id() {
+                            cc.disconnect(old.finish_signal, eid);
+                        }
+                    }
+                    self.paste_subscribed = false;
                     let did: DialogId = old.dialog_id;
                     cc.pending_actions()
                         .borrow_mut()
@@ -612,6 +654,7 @@ impl emStocksListBox {
                 dialog.set_on_finish(Box::new(move |r, _sched| cell.set(Some(*r))));
                 dialog.show(cc);
                 self.paste_stocks_dialog = Some(dialog);
+                self.paste_subscribed = false;
             }
             return Ok(Vec::new()); // Defer until Cycle() observes dialog confirmation.
         }
@@ -695,7 +738,14 @@ impl emStocksListBox {
         if ask {
             if let Some(ref look) = self.look {
                 // Cancel any in-flight dialog before creating a new one.
+                // B-013: see DeleteStocks for cancel-old-disconnect rationale.
                 if let Some(old) = self.interest_dialog.take() {
+                    if self.interest_subscribed {
+                        if let Some(eid) = cc.current_engine_id() {
+                            cc.disconnect(old.finish_signal, eid);
+                        }
+                    }
+                    self.interest_subscribed = false;
                     let did: DialogId = old.dialog_id;
                     cc.pending_actions()
                         .borrow_mut()
@@ -711,6 +761,7 @@ impl emStocksListBox {
                 dialog.set_on_finish(Box::new(move |r, _sched| cell.set(Some(*r))));
                 dialog.show(cc);
                 self.interest_dialog = Some(dialog);
+                self.interest_subscribed = false;
                 self.interest_to_set = Some(interest);
             }
             return; // Defer until Cycle() observes dialog confirmation.
@@ -730,60 +781,118 @@ impl emStocksListBox {
     /// Polls persistent confirmation dialogs and executes deferred operations
     /// when the user confirms. Returns true while any dialog is still open
     /// (signals the parent panel to keep cycling).
-    pub fn Cycle<C: emcore::emEngineCtx::ConstructCtx>(
+    ///
+    /// B-013 — D-002 rule-1 trigger conversion. Each per-dialog block
+    /// subscribes to `dialog.finish_signal` (D-006 first-Cycle init) and uses
+    /// `IsSignaled` as the wakeup trigger; the existing `*_result` cell is
+    /// preserved as the delivery buffer (idiom adaptation, not a divergence).
+    ///
+    /// Engine-identity note: in C++ `class emStocksListBox : public emListBox`
+    /// (`emStocksListBox.h:29`) — the ListBox is its own `emEngine`, so
+    /// `AddWakeUpSignal(...)` self-subscribes the ListBox engine. In the Rust
+    /// port, `emStocksListBox` is composed inside `emStocksFilePanel` (see
+    /// `emStocksFilePanel.rs:491` `lb.Cycle(ectx, ...)`), so `ectx.id()` here
+    /// resolves to the **FilePanel** engine, not the ListBox. The connect/
+    /// disconnect calls subscribe the parent FilePanel engine to the dialog's
+    /// `finish_signal`. Behaviorally correct (the FilePanel's `Cycle` is what
+    /// reaches this polling block, so waking the FilePanel is what fires the
+    /// next Cycle). The composition vs inheritance is preserved-design-intent
+    /// of the Rust port — not a forced divergence (no `DIVERGED` annotation).
+    pub fn Cycle(
         &mut self,
-        cc: &mut C,
+        ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
         rec: &mut emStocksRec,
         config: &emStocksConfig,
     ) -> bool {
         let mut busy = false;
 
         // Poll delete dialog.
-        if let Some(result) = self.delete_stocks_result.take() {
-            let confirmed = result == DialogResult::Ok;
-            self.delete_stocks_dialog = None;
-            if confirmed {
-                self.DeleteStocks(cc, rec, false);
+        // Invariant (B-013 Note 7): subscribe-then-check happens on the same
+        // Cycle slice; do not split this block across two methods or two
+        // slices, or a fire could be missed.
+        if let Some(sig) = self.delete_stocks_dialog.as_ref().map(|d| d.finish_signal) {
+            // The immutable borrow of self.delete_stocks_dialog ends here
+            // (`sig` is Copy SignalId), so the &mut self uses below compile.
+            if !self.delete_subscribed {
+                ectx.connect(sig, ectx.id()); // subscribes the parent FilePanel engine
+                self.delete_subscribed = true;
             }
-        } else if self.delete_stocks_dialog.is_some() {
-            busy = true;
+            if ectx.IsSignaled(sig) {
+                let confirmed = self.delete_stocks_result.take() == Some(DialogResult::Ok);
+                ectx.disconnect(sig, ectx.id());
+                self.delete_stocks_dialog = None;
+                self.delete_subscribed = false;
+                if confirmed {
+                    self.DeleteStocks(ectx, rec, false);
+                }
+            } else {
+                // Outer guard is Some(dialog); inner if/else distinguishes
+                // "signaled (consume)" from "still pending (busy)".
+                busy = true;
+            }
         }
 
         // Poll cut dialog.
-        if let Some(result) = self.cut_stocks_result.take() {
-            let confirmed = result == DialogResult::Ok;
-            self.cut_stocks_dialog = None;
-            if confirmed {
-                self.CutStocks(cc, rec, false);
+        if let Some(sig) = self.cut_stocks_dialog.as_ref().map(|d| d.finish_signal) {
+            if !self.cut_subscribed {
+                ectx.connect(sig, ectx.id());
+                self.cut_subscribed = true;
             }
-        } else if self.cut_stocks_dialog.is_some() {
-            busy = true;
+            if ectx.IsSignaled(sig) {
+                let confirmed = self.cut_stocks_result.take() == Some(DialogResult::Ok);
+                ectx.disconnect(sig, ectx.id());
+                self.cut_stocks_dialog = None;
+                self.cut_subscribed = false;
+                if confirmed {
+                    self.CutStocks(ectx, rec, false);
+                }
+            } else {
+                busy = true;
+            }
         }
 
         // Poll paste dialog.
-        if let Some(result) = self.paste_stocks_result.take() {
-            let confirmed = result == DialogResult::Ok;
-            self.paste_stocks_dialog = None;
-            if confirmed {
-                let _ = self.PasteStocks(cc, rec, config, false);
+        if let Some(sig) = self.paste_stocks_dialog.as_ref().map(|d| d.finish_signal) {
+            if !self.paste_subscribed {
+                ectx.connect(sig, ectx.id());
+                self.paste_subscribed = true;
             }
-        } else if self.paste_stocks_dialog.is_some() {
-            busy = true;
+            if ectx.IsSignaled(sig) {
+                let confirmed = self.paste_stocks_result.take() == Some(DialogResult::Ok);
+                ectx.disconnect(sig, ectx.id());
+                self.paste_stocks_dialog = None;
+                self.paste_subscribed = false;
+                if confirmed {
+                    let _ = self.PasteStocks(ectx, rec, config, false);
+                }
+            } else {
+                busy = true;
+            }
         }
 
         // Poll interest dialog.
-        if let Some(result) = self.interest_result.take() {
-            let confirmed = result == DialogResult::Ok;
-            self.interest_dialog = None;
-            if confirmed {
-                if let Some(interest) = self.interest_to_set.take() {
-                    self.SetInterest(cc, rec, interest, false);
+        // §3.3a — Interest-block cancel-side cleanup: preserve the existing
+        // `interest_to_set = None;` reset on non-Ok finish.
+        if let Some(sig) = self.interest_dialog.as_ref().map(|d| d.finish_signal) {
+            if !self.interest_subscribed {
+                ectx.connect(sig, ectx.id());
+                self.interest_subscribed = true;
+            }
+            if ectx.IsSignaled(sig) {
+                let confirmed = self.interest_result.take() == Some(DialogResult::Ok);
+                ectx.disconnect(sig, ectx.id());
+                self.interest_dialog = None;
+                self.interest_subscribed = false;
+                if confirmed {
+                    if let Some(interest) = self.interest_to_set.take() {
+                        self.SetInterest(ectx, rec, interest, false);
+                    }
+                } else {
+                    self.interest_to_set = None;
                 }
             } else {
-                self.interest_to_set = None;
+                busy = true;
             }
-        } else if self.interest_dialog.is_some() {
-            busy = true;
         }
 
         busy
@@ -899,6 +1008,58 @@ impl emStocksListBox {
                 return None;
             }
         }
+    }
+}
+
+// Test-only accessors for the B-013 integration test
+// (`tests/dialog_signals_b013.rs`), which lives outside the crate and so
+// cannot reach `pub(crate)` fields directly. Gated on `cfg(any(test,
+// feature = "test-support"))` so production builds drop them.
+#[cfg(any(test, feature = "test-support"))]
+impl emStocksListBox {
+    pub fn cut_stocks_dialog_for_test(&self) -> Option<&emDialog> {
+        self.cut_stocks_dialog.as_ref()
+    }
+    pub fn paste_stocks_dialog_for_test(&self) -> Option<&emDialog> {
+        self.paste_stocks_dialog.as_ref()
+    }
+    pub fn delete_stocks_dialog_for_test(&self) -> Option<&emDialog> {
+        self.delete_stocks_dialog.as_ref()
+    }
+    pub fn interest_dialog_for_test(&self) -> Option<&emDialog> {
+        self.interest_dialog.as_ref()
+    }
+    pub fn cut_stocks_result_for_test(&self) -> &Rc<Cell<Option<DialogResult>>> {
+        &self.cut_stocks_result
+    }
+    pub fn paste_stocks_result_for_test(&self) -> &Rc<Cell<Option<DialogResult>>> {
+        &self.paste_stocks_result
+    }
+    pub fn delete_stocks_result_for_test(&self) -> &Rc<Cell<Option<DialogResult>>> {
+        &self.delete_stocks_result
+    }
+    pub fn interest_result_for_test(&self) -> &Rc<Cell<Option<DialogResult>>> {
+        &self.interest_result
+    }
+    pub fn cut_subscribed_for_test(&self) -> bool {
+        self.cut_subscribed
+    }
+    pub fn paste_subscribed_for_test(&self) -> bool {
+        self.paste_subscribed
+    }
+    pub fn delete_subscribed_for_test(&self) -> bool {
+        self.delete_subscribed
+    }
+    pub fn interest_subscribed_for_test(&self) -> bool {
+        self.interest_subscribed
+    }
+    pub fn interest_to_set_for_test(&self) -> Option<Interest> {
+        self.interest_to_set
+    }
+    /// Inject `look` without wiring an `emListBox`. Used by integration
+    /// tests that drive the fallback `selected_indices` selection path.
+    pub fn set_look_for_test(&mut self, look: Rc<emLook>) {
+        self.look = Some(look);
     }
 }
 

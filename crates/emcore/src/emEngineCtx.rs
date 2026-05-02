@@ -190,6 +190,20 @@ pub trait ConstructCtx {
     /// Only `PanelCtx` is populated with `Some` in production; all other implementors return `None`.
     fn view_context(&self) -> Option<&Rc<emContext>>;
     fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId;
+
+    // B-013 dialog-cells: cancel-old-dialog symmetric disconnect needs to
+    // reach the scheduler from a `<C: ConstructCtx>` mutator parameter (the
+    // mutators are dispatched both from `PanelCtx`-typed `Input` and
+    // `EngineCtx`-typed `Cycle`). Both ctx types already wrap a scheduler;
+    // exposing `disconnect` here is symmetric with the existing
+    // `register_engine` / `wake_up` / `create_signal` cluster.
+    fn disconnect(&mut self, signal: SignalId, engine: EngineId);
+
+    /// Returns the engine whose `Cycle` is currently running, when the ctx
+    /// was constructed inside an engine dispatch (`EngineCtx`); `None`
+    /// otherwise (`InitCtx`, layout-only `PanelCtx`, etc.). Used by mutators
+    /// that need to disconnect a previously self-connected signal.
+    fn current_engine_id(&self) -> Option<EngineId>;
 }
 
 impl EngineCtx<'_> {
@@ -378,6 +392,14 @@ impl ConstructCtx for EngineCtx<'_> {
     fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId {
         self.scheduler.allocate_dialog_id()
     }
+
+    fn disconnect(&mut self, signal: SignalId, engine: EngineId) {
+        self.scheduler.disconnect(signal, engine);
+    }
+
+    fn current_engine_id(&self) -> Option<EngineId> {
+        Some(self.engine_id)
+    }
 }
 
 impl ConstructCtx for SchedCtx<'_> {
@@ -413,6 +435,14 @@ impl ConstructCtx for SchedCtx<'_> {
     fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId {
         self.scheduler.allocate_dialog_id()
     }
+
+    fn disconnect(&mut self, signal: SignalId, engine: EngineId) {
+        self.scheduler.disconnect(signal, engine);
+    }
+
+    fn current_engine_id(&self) -> Option<EngineId> {
+        self.current_engine
+    }
 }
 
 impl ConstructCtx for InitCtx<'_> {
@@ -447,6 +477,15 @@ impl ConstructCtx for InitCtx<'_> {
 
     fn allocate_dialog_id(&mut self) -> crate::emGUIFramework::DialogId {
         self.scheduler.allocate_dialog_id()
+    }
+
+    fn disconnect(&mut self, signal: SignalId, engine: EngineId) {
+        self.scheduler.disconnect(signal, engine);
+    }
+
+    fn current_engine_id(&self) -> Option<EngineId> {
+        // InitCtx is not dispatched from inside an engine's Cycle.
+        None
     }
 }
 
@@ -501,6 +540,21 @@ impl ConstructCtx for PanelCtx<'_> {
             .as_deref_mut()
             .expect("PanelCtx: scheduler required for ConstructCtx::allocate_dialog_id")
             .allocate_dialog_id()
+    }
+
+    fn disconnect(&mut self, signal: SignalId, engine: EngineId) {
+        if let Some(sched) = self.scheduler.as_deref_mut() {
+            sched.disconnect(signal, engine);
+        }
+    }
+
+    fn current_engine_id(&self) -> Option<EngineId> {
+        // PanelCtx is dispatched from `emView::Update` etc., not from inside
+        // an engine's `Cycle`. Mutators called via this ctx (e.g. `Input`)
+        // never reach the cancel-old `disconnect` branch in production
+        // because `_subscribed` is set true only by the EngineCtx-typed
+        // `Cycle` path.
+        None
     }
 }
 
