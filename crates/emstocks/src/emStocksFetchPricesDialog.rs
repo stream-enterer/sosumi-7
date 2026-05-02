@@ -1,8 +1,12 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use emcore::emColor::emColor;
 use emcore::emEngineCtx::{EngineCtx, SignalCtx};
 use emcore::emPainter::emPainter;
 use emcore::emSignal::SignalId;
 
+use super::emStocksFileModel::emStocksFileModel;
 use super::emStocksPricesFetcher::emStocksPricesFetcher;
 
 /// Port of C++ emStocksFetchPricesDialog::ProgressBarPanel.
@@ -79,9 +83,39 @@ pub struct emStocksFetchPricesDialog {
 }
 
 impl emStocksFetchPricesDialog {
+    /// Construct the dialog without an attached `emStocksFileModel`. Useful
+    /// for tests that exercise the UI surface without driving the fetcher's
+    /// engine-mirror `cycle()`. Production callers must use
+    /// [`new_with_model`](Self::new_with_model) so the fetcher can subscribe
+    /// to `FileModel.GetChangeSignal()` + `GetFileStateSignal()` via the
+    /// dialog's proxy `Cycle` (B-001-followup Phase E).
     pub fn new(api_script: &str, api_script_interpreter: &str, api_key: &str) -> Self {
         Self {
             fetcher: emStocksPricesFetcher::new(api_script, api_script_interpreter, api_key),
+            label_text: String::new(),
+            progress_bar: ProgressBarPanel::new(),
+            finished: false,
+            finish_error: String::new(),
+            fetcher_change_sig: None,
+            subscribed_init: false,
+        }
+    }
+
+    /// Construct the dialog with an attached `emStocksFileModel` so the
+    /// fetcher's proxy-engine `cycle()` can subscribe to FileModel signals
+    /// (B-001-followup Phase E.1). Mirrors C++ ctor at
+    /// `emStocksFetchPricesDialog.cpp:35-...` which receives the
+    /// `emStocksFileModel &` and threads it into the fetcher's
+    /// `emStocksPricesFetcher` ctor (`emStocksPricesFetcher.cpp:24`).
+    pub fn new_with_model(
+        api_script: &str,
+        api_script_interpreter: &str,
+        api_key: &str,
+        file_model: Rc<RefCell<emStocksFileModel>>,
+    ) -> Self {
+        Self {
+            fetcher: emStocksPricesFetcher::new(api_script, api_script_interpreter, api_key)
+                .with_file_model(file_model),
             label_text: String::new(),
             progress_bar: ProgressBarPanel::new(),
             finished: false,
@@ -108,17 +142,14 @@ impl emStocksFetchPricesDialog {
     /// C++ exactly — eliminating the pre-fix per-frame `UpdateControls` poll
     /// that drifted from C++ semantics.
     ///
-    /// TODO(B-001-followup): the upstream `emStocksPricesFetcher` does not
-    /// yet subscribe to its `FileModel` signals (C++ ctor
-    /// `emStocksPricesFetcher.cpp:38-39` `AddWakeUpSignal(FileModelClient.
-    /// GetFileStateSignal())` + `AddWakeUpSignal(FileModelClient.
-    /// GetChangeSignal())`). Until that lands, the consumer subscribe wired
-    /// here will only observe fires from the four mutator-side
-    /// `Signal(ChangeSignal)` callsites ported by B-001 G3 (`AddStockIds`,
-    /// post-success `CalculateDate`, `PollProcess` end-of-cycle, `SetFailed`).
-    /// That is sufficient for the dialog's UI loop because the dialog drives
-    /// the fetcher itself; the upstream FileModel cascade only matters once
-    /// the fetcher's `Cycle` is wired to consume FileModel state changes.
+    /// B-001-followup Phase E (this block): drive the fetcher's
+    /// engine-mirror `cycle(ectx, eid)` after the consumer-side IsSignaled
+    /// gate. The dialog acts as proxy engine for the fetcher per the panel-
+    /// as-proxy-engine pattern (B-017 SaveTimer precedent at
+    /// `emStocksFilePanel.cpp:454-...`); first call performs the deferred
+    /// upstream subscribes (cpp:38-39), every call evaluates the C++ Cycle
+    /// switch on `FileModel->GetFileState()` and runs the PollProcess /
+    /// StartProcess body when state permits.
     pub fn Cycle(&mut self, ectx: &mut EngineCtx<'_>) -> bool {
         // First-Cycle init: subscribe to Fetcher.GetChangeSignal (D-006).
         // C++ analogue: ctor `AddWakeUpSignal(Fetcher.GetChangeSignal())` at
@@ -149,10 +180,52 @@ impl emStocksFetchPricesDialog {
             }
         }
 
+        // B-001-followup Phase E.2: drive the fetcher's proxy engine via the
+        // dialog's engine. Mirrors C++ `emStocksPricesFetcher` inheriting
+        // `emEngine` (cpp:38-39 upstream subscribes); Rust language-forced
+        // proxy because the fetcher is owned by the dialog and `emEngine`
+        // identity is panel/dialog-bound in this codebase. No-op when no
+        // FileModel was attached at construction (legacy `new()` callers).
+        let eid = ectx.id();
+        let _fetcher_active = self.fetcher.cycle(ectx, eid);
+
         // Mirror C++ `return emDialog::Cycle();` — the Rust dialog struct does
         // not embed an emDialog base today, so preserve the prior "active
-        // while not finished" return value.
+        // while not finished" return value. The fetcher's own `cycle()`
+        // returns its CurrentProcessActive flag, but the dialog's
+        // active/finished signal is the established contract here.
         !self.finished
+    }
+
+    /// Test/internal accessor for the fetcher's upstream-subscribe latch.
+    /// Used by `tests/fetcher_engine_b001_followup_phase_e.rs`.
+    #[doc(hidden)]
+    pub fn fetcher_subscribed_init_for_test(&self) -> bool {
+        self.fetcher.subscribed_init_for_test()
+    }
+
+    /// Test/internal accessor for the fetcher's cached upstream-change SignalId.
+    #[doc(hidden)]
+    pub fn fetcher_file_model_change_sig_for_test(&self) -> Option<SignalId> {
+        self.fetcher.file_model_change_sig_for_test()
+    }
+
+    /// Test/internal accessor for the fetcher's cached upstream-state SignalId.
+    #[doc(hidden)]
+    pub fn fetcher_file_model_state_sig_for_test(&self) -> Option<SignalId> {
+        self.fetcher.file_model_state_sig_for_test()
+    }
+
+    /// Test/internal accessor for the fetcher's `current_process_active`.
+    #[doc(hidden)]
+    pub fn fetcher_current_process_active_for_test(&self) -> bool {
+        self.fetcher.current_process_active
+    }
+
+    /// Test/internal accessor for the fetcher's GetError.
+    #[doc(hidden)]
+    pub fn fetcher_get_error_for_test(&self) -> &str {
+        self.fetcher.GetError()
     }
 
     /// Port of C++ UpdateControls.

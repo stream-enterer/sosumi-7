@@ -303,10 +303,15 @@ impl PanelBehavior for emStocksFilePanel {
                     if !ids.is_empty() {
                         let mut dialog = {
                             let cfg = self.config.borrow();
-                            emStocksFetchPricesDialog::new(
+                            // B-001-followup Phase E.1: wire the FileModel ref
+                            // into the dialog so the fetcher's proxy-engine
+                            // `cycle()` can subscribe to FileModel signals
+                            // (cpp:38-39).
+                            emStocksFetchPricesDialog::new_with_model(
                                 &cfg.api_script,
                                 &cfg.api_script_interpreter,
                                 &cfg.api_key,
+                                self.model.clone(),
                             )
                         };
                         // B-001 G3: AddStockIds fires `Signal(ChangeSignal)`.

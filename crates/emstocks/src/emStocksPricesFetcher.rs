@@ -4,15 +4,18 @@
 // limitation of the trait pattern. The direct Cycle(&mut rec) method is used instead.
 // Uses BTreeMap<String, Option<usize>> instead of C++ emAvlTreeMap<String, emCrossPtr<StockRec>> — BTreeMap is Rust's idiomatic ordered map; cross-pointers don't apply when StockRecs live in a Vec.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
+use std::rc::Rc;
 
-use emcore::emEngine::emEngine;
+use emcore::emEngine::{emEngine, EngineId};
 use emcore::emEngineCtx::{EngineCtx, SignalCtx};
+use emcore::emFileModel::FileState;
 use emcore::emProcess::{emProcess, PipeResult, StartFlags};
 use emcore::emSignal::SignalId;
 use slotmap::Key as _;
 
+use super::emStocksFileModel::emStocksFileModel;
 use super::emStocksRec::{
     emStocksRec, AddDaysToDate, CompareDates, GetCurrentDate, GetDateDifference,
     SharePriceToString, StockRec,
@@ -42,6 +45,42 @@ pub struct emStocksPricesFetcher {
     /// `emConfigModel`; the SignalId lives directly per design Option B
     /// (mirrors G2 in `2026-04-27-B-001-no-wire-emstocks-design.md` §G3).
     change_signal: Cell<SignalId>,
+    /// Optional reference to the owning FileModel. Mirrors C++
+    /// `emRef<emStocksFileModel> FileModel;` (emStocksPricesFetcher.h:85).
+    /// `None` is permitted at construction time (legacy ctor flow) and for
+    /// the bare unit tests that exercise the fetch state machine without an
+    /// owning model; `Some(_)` is required for the engine-mirror `cycle()`
+    /// path (B-001-followup Phase E).
+    ///
+    /// RUST_ONLY: (language-forced-utility) — Rust has no by-reference
+    /// member field equivalent to C++ `emRef<>`; `Rc<RefCell<>>` is the
+    /// canonical codebase shape for cross-Cycle-shared model references
+    /// (CLAUDE.md §Ownership rule (a) — engine-callback-held). The C++
+    /// inline `emRef<emStocksFileModel> FileModel;` is provided implicitly
+    /// by the language; the Rust wrapper makes the same shape explicit.
+    /// Justification: the proxy-engine driver (the dialog's `Cycle`) holds
+    /// the fetcher across scheduler ticks and reaches into the model
+    /// through this ref.
+    file_model: Option<Rc<RefCell<emStocksFileModel>>>,
+    /// First-Cycle init latch for the FileModel signal subscribes (B-001-followup
+    /// Phase E.1). Mirrors C++ ctor `AddWakeUpSignal(...)` at
+    /// `emStocksPricesFetcher.cpp:38-39`, deferred to first `cycle()` per
+    /// D-006 (the `new()` ctor has no `EngineCtx`/`engine_id` reach).
+    subscribed_init: bool,
+    /// Cached `emStocksFileModel::GetChangeSignal` id captured at first
+    /// `cycle()`. `None` until `subscribed_init` flips. Mirrors C++ ctor
+    /// `AddWakeUpSignal(FileModel->GetChangeSignal())`
+    /// (emStocksPricesFetcher.cpp:38).
+    file_model_change_sig: Option<SignalId>,
+    /// Cached `emStocksFileModel::GetFileStateSignal` id captured at first
+    /// `cycle()`. `None` until `subscribed_init` flips. Mirrors C++ ctor
+    /// `AddWakeUpSignal(FileModel->GetFileStateSignal())`
+    /// (emStocksPricesFetcher.cpp:39). UPSTREAM-GAP: the underlying signal
+    /// id is `SignalId::default()` (null) in the standalone-port
+    /// `emRecFileModel`; the connect call below is a no-op for null but the
+    /// subscribe site is preserved per the upstream-gap convention so a
+    /// future emRecFileModel promotion plugs in without callsite changes.
+    file_model_state_sig: Option<SignalId>,
 }
 
 impl emStocksPricesFetcher {
@@ -64,7 +103,22 @@ impl emStocksPricesFetcher {
             error: String::new(),
             current_process: emProcess::new(),
             change_signal: Cell::new(SignalId::null()),
+            file_model: None,
+            subscribed_init: false,
+            file_model_change_sig: None,
+            file_model_state_sig: None,
         }
+    }
+
+    /// Builder-style attach for the owning `emStocksFileModel`. Mirrors C++
+    /// ctor parameter `emStocksFileModel & fileModel` at
+    /// `emStocksPricesFetcher.cpp:24`. Required for the engine-mirror
+    /// `cycle()` path; B-001-followup Phase E.1 wires this from
+    /// `emStocksFetchPricesDialog::new` so the dialog's proxy-engine
+    /// `Cycle` can drive the fetcher with full FileModel reach.
+    pub fn with_file_model(mut self, file_model: Rc<RefCell<emStocksFileModel>>) -> Self {
+        self.file_model = Some(file_model);
+        self
     }
 
     /// Port of inherited C++ `emConfigModel::GetChangeSignal` (the C++ emStocksPricesFetcher
@@ -329,6 +383,100 @@ impl emStocksPricesFetcher {
             self.StartProcess(ectx, rec);
         }
         self.current_process_active
+    }
+
+    /// Engine-mirror Cycle entry point (B-001-followup Phase E.1). Port of
+    /// C++ `emStocksPricesFetcher::Cycle()` at `emStocksPricesFetcher.cpp:102-116`:
+    ///
+    /// ```cpp
+    /// bool emStocksPricesFetcher::Cycle()
+    /// {
+    ///     switch (FileModel->GetFileState()) {
+    ///         case emFileModel::FS_LOADED:
+    ///         case emFileModel::FS_UNSAVED:
+    ///             break;
+    ///         default:
+    ///             return false;
+    ///     }
+    ///     if (CurrentProcessActive) PollProcess();
+    ///     if (!CurrentProcessActive) StartProcess();
+    ///     return CurrentProcessActive;
+    /// }
+    /// ```
+    ///
+    /// The dialog's proxy `Cycle` invokes this on every slice; on the first
+    /// call this method performs the deferred upstream-subscribe step (C++
+    /// ctor `AddWakeUpSignal(FileModel->GetChangeSignal())` +
+    /// `AddWakeUpSignal(FileModel->GetFileStateSignal())` at cpp:38-39),
+    /// using the dialog's `engine_id` per the panel-as-proxy-engine pattern
+    /// (B-017 SaveTimer precedent at `emStocksFilePanel.cpp:454-...`).
+    ///
+    /// Returns `false` (idle) if no FileModel has been attached or if the
+    /// model is not in `Loaded`/`Unsaved` — mirrors C++ `default: return false`.
+    pub fn cycle(&mut self, ectx: &mut EngineCtx<'_>, eid: EngineId) -> bool {
+        let Some(file_model) = self.file_model.clone() else {
+            return false;
+        };
+
+        // First-Cycle subscribe — D-006 deferred init.
+        if !self.subscribed_init {
+            // GetChangeSignal lazily allocates if needed; capture into the
+            // option slot. GetFileStateSignal currently delegates to a null
+            // SignalId per the UPSTREAM-GAP on emRecFileModel; connect is
+            // null-safe so we still preserve the subscribe site for future
+            // promotion.
+            let change_sig = file_model.borrow().GetChangeSignal(ectx);
+            let state_sig = file_model.borrow().GetFileStateSignal();
+            ectx.connect(change_sig, eid);
+            ectx.connect(state_sig, eid);
+            self.file_model_change_sig = Some(change_sig);
+            self.file_model_state_sig = Some(state_sig);
+            self.subscribed_init = true;
+        }
+
+        // C++ Cycle body: file-state guard, then drive PollProcess /
+        // StartProcess. The `IsSignaled` checks are NOT used to gate the
+        // body — C++ `Cycle()` always evaluates the switch and runs the
+        // body when state permits; the wakeup signals only ensure the
+        // engine is woken when upstream changes. We mirror that exactly.
+        let file_state_ok = matches!(
+            file_model.borrow().GetFileState(),
+            FileState::Loaded | FileState::Unsaved
+        );
+        if !file_state_ok {
+            return false;
+        }
+
+        // Borrow rec mutably from the model; the existing PollProcess /
+        // StartProcess paths consume `&mut emStocksRec`. We hold the borrow
+        // only for the duration of the body — no nested model borrows.
+        let mut model = file_model.borrow_mut();
+        let rec = model.GetWritableRec(ectx);
+        if self.current_process_active {
+            self.PollProcess(ectx, rec);
+        }
+        if !self.current_process_active {
+            self.StartProcess(ectx, rec);
+        }
+        self.current_process_active
+    }
+
+    /// Test/internal accessor for the upstream-subscribe latch.
+    #[doc(hidden)]
+    pub fn subscribed_init_for_test(&self) -> bool {
+        self.subscribed_init
+    }
+
+    /// Test/internal accessor for the cached upstream-change SignalId.
+    #[doc(hidden)]
+    pub fn file_model_change_sig_for_test(&self) -> Option<SignalId> {
+        self.file_model_change_sig
+    }
+
+    /// Test/internal accessor for the cached upstream-state SignalId.
+    #[doc(hidden)]
+    pub fn file_model_state_sig_for_test(&self) -> Option<SignalId> {
+        self.file_model_state_sig
     }
 
     /// Port of C++ StartProcess. Mirrors C++ fire site at

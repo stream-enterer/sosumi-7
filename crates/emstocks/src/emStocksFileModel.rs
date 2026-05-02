@@ -143,6 +143,28 @@ impl emStocksFileModel {
         self.file_model.GetChangeSignal(ectx)
     }
 
+    /// Port of inherited C++ `emFileModel::GetFileStateSignal`. Delegates to
+    /// the composed `emRecFileModel<emStocksRec>`.
+    ///
+    /// UPSTREAM-GAP: the standalone-port `emRecFileModel::GetFileStateSignal`
+    /// trait impl returns `SignalId::default()` (null) — the Rust port
+    /// collapses the C++ separate `FileStateSignal` into the unified
+    /// `ChangeSignal` (see `emRecFileModel.rs:358-368` for the rationale).
+    /// Subscribers must tolerate a null id; `EngineCtx::connect` is null-safe
+    /// (the SlotMap lookup misses and the call is a no-op).
+    ///
+    /// Exposed for B-001-followup Phase E: the `emStocksPricesFetcher`
+    /// upstream subscribe at `emStocksPricesFetcher.cpp:39`
+    /// (`AddWakeUpSignal(FileModel->GetFileStateSignal())`) needs an accessor
+    /// even though the underlying signal is null in the Rust port — the
+    /// connect site is preserved so future emRecFileModel work that promotes
+    /// FileStateSignal to a real signal will plug in here without callsite
+    /// changes.
+    pub fn GetFileStateSignal(&self) -> SignalId {
+        use emcore::emFileModel::FileModelState as _;
+        self.file_model.GetFileStateSignal()
+    }
+
     /// Access the record data.
     pub fn GetRec(&self) -> &emStocksRec {
         self.file_model.GetMap()
