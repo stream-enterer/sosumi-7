@@ -267,6 +267,18 @@ fn listbox_connects_item_trigger_signal_after_attach() {
 // Sanity: `wire_change_signals` is idempotent w.r.t. subscribed_init.
 // ───────────────────────────────────────────────────────────────────────────
 
+// ───────────────────────────────────────────────────────────────────────────
+// B-001-followup Phase B — emStocksControlPanel D-006 wiring (37 rows).
+//
+// The representative-coverage tests for ControlPanel's first-Cycle subscribe
+// + signal-driven reactions live as in-crate `#[cfg(test)]` tests inside
+// `emStocksControlPanel.rs` because they exercise `pub(crate)` fields
+// (`subscribed_init`, `model_change_sig`, `selection_subscribed`,
+// `subscribed_widgets`, `widgets`) intentionally kept crate-private. See
+// `emStocksControlPanel::tests::control_panel_first_cycle_wires_g1_g2_g4_signals`
+// and siblings.
+// ───────────────────────────────────────────────────────────────────────────
+
 #[test]
 fn wire_change_signals_flips_subscribed_init_true() {
     let mut lb = emStocksListBox::new();

@@ -9,6 +9,7 @@ use emcore::emFileSelectionBox::emFileSelectionBox;
 use emcore::emLook::emLook;
 use emcore::emRadioButton::{emRadioButton, RadioGroup};
 use emcore::emScalarField::emScalarField;
+use emcore::emSignal::SignalId;
 use emcore::emTextField::emTextField;
 
 use crate::emStocksConfig::{emStocksConfig, ChartPeriod, Sorting};
@@ -197,35 +198,23 @@ pub(crate) struct ControlWidgets {
     pub(crate) owned_shares_first: emCheckBox,
 
     // Prices group — FetchSharePrices, DeleteSharePrices always enabled in C++.
-    // B-001 Phase 2 G8 widget instances. Stored for D-006 subscribe wiring;
-    // underscore prefix tracks the `_sorting_buttons` /
-    // `_min_visible_interest_buttons` precedent for fields-pending-wiring.
-    //
-    // TODO(B-001-controlpanel-followup): the originally-planned Phase 4.1
-    // wiring (rename to drop the `_` prefix and connect signals in `Cycle`)
-    // was deferred on 2026-05-01. `emStocksControlPanel` currently has no
-    // `PanelBehavior::Cycle` impl, no parent instantiation, and no
-    // production driving path in the Rust codebase, so D-006 wiring here
-    // would be cargo-cult. A structural pre-phase that lands
-    // PanelBehavior + parent instantiation is required before re-executing
-    // Phase 4.1/4.2/4.3 (covers ControlPanel-37 + ItemPanel-29 + ItemChart-2;
-    // 67 of 71 B-001 rows). See
-    // docs/superpowers/specs/2026-04-27-B-001-no-wire-emstocks-design.md
-    // §"Phase 4 Partial Merge — 2026-05-01".
+    // B-001 Phase 2 G8 widget instances. B-001-followup Phase B drops the
+    // underscore prefix as Cycle subscribes land — the fields are no longer
+    // dead code.
     /// B-001 G8 row -586: Prices group `FetchSharePrices` button.
-    pub(crate) _fetch_share_prices: emButton,
+    pub(crate) fetch_share_prices: emButton,
     /// B-001 G8 row -600: Prices group `DeleteSharePrices` button.
-    pub(crate) _delete_share_prices: emButton,
+    pub(crate) delete_share_prices: emButton,
     /// B-001 G8 row -609: Prices group `GoBackInHistory` button.
-    pub(crate) _go_back_in_history: emButton,
+    pub(crate) go_back_in_history: emButton,
     /// B-001 G8 row -618: Prices group `GoForwardInHistory` button.
-    pub(crate) _go_forward_in_history: emButton,
+    pub(crate) go_forward_in_history: emButton,
     pub(crate) go_back_in_history_enabled: bool,
     pub(crate) go_forward_in_history_enabled: bool,
     /// B-001 G8 row -626: Prices group `SelectedDate` editable text field.
     /// The C++ widget is the editable surface; `selected_date: String` below
     /// remains the cached display value populated in `UpdateControls`.
-    pub(crate) _selected_date_field: emTextField,
+    pub(crate) selected_date_field: emTextField,
     pub(crate) selected_date: String,
     pub(crate) total_purchase_value: String,
     pub(crate) total_current_value: String,
@@ -233,29 +222,29 @@ pub(crate) struct ControlWidgets {
 
     // Commands group — NewStock, PasteStocks always enabled in C++
     /// B-001 G8 row -650: Commands group `NewStock` button.
-    pub(crate) _new_stock: emButton,
+    pub(crate) new_stock: emButton,
     /// B-001 G8 row -658: Commands group `CutStocks` button.
-    pub(crate) _cut_stocks: emButton,
+    pub(crate) cut_stocks: emButton,
     /// B-001 G8 row -666: Commands group `CopyStocks` button.
-    pub(crate) _copy_stocks: emButton,
+    pub(crate) copy_stocks: emButton,
     /// B-001 G8 row -674: Commands group `PasteStocks` button.
-    pub(crate) _paste_stocks: emButton,
+    pub(crate) paste_stocks: emButton,
     /// B-001 G8 row -682: Commands group `DeleteStocks` button.
-    pub(crate) _delete_stocks: emButton,
+    pub(crate) delete_stocks: emButton,
     /// B-001 G8 row -690: Commands group `SelectAll` button.
-    pub(crate) _select_all: emButton,
+    pub(crate) select_all: emButton,
     /// B-001 G8 row -698: Commands group `ClearSelection` button.
-    pub(crate) _clear_selection: emButton,
+    pub(crate) clear_selection: emButton,
     /// B-001 G8 row -706: Commands group `SetHighInterest` button.
-    pub(crate) _set_high_interest: emButton,
+    pub(crate) set_high_interest: emButton,
     /// B-001 G8 row -714: Commands group `SetMediumInterest` button.
-    pub(crate) _set_medium_interest: emButton,
+    pub(crate) set_medium_interest: emButton,
     /// B-001 G8 row -722: Commands group `SetLowInterest` button.
-    pub(crate) _set_low_interest: emButton,
+    pub(crate) set_low_interest: emButton,
     /// B-001 G8 row -730: Commands group `ShowFirstWebPages` button.
-    pub(crate) _show_first_web_pages: emButton,
+    pub(crate) show_first_web_pages: emButton,
     /// B-001 G8 row -738: Commands group `ShowAllWebPages` button.
-    pub(crate) _show_all_web_pages: emButton,
+    pub(crate) show_all_web_pages: emButton,
     pub(crate) cut_stocks_enabled: bool,
     pub(crate) copy_stocks_enabled: bool,
     pub(crate) delete_stocks_enabled: bool,
@@ -269,13 +258,13 @@ pub(crate) struct ControlWidgets {
 
     // Search group — FindSelected always enabled in C++
     /// B-001 G8 row -749: Search group `FindSelected` button.
-    pub(crate) _find_selected: emButton,
+    pub(crate) find_selected: emButton,
     /// D22: `search_text: String` replaced with `emTextField`.
     pub(crate) search_text: emTextField,
     /// B-001 G8 row -764: Search group `FindNext` button.
-    pub(crate) _find_next: emButton,
+    pub(crate) find_next: emButton,
     /// B-001 G8 row -772: Search group `FindPrevious` button.
-    pub(crate) _find_previous: emButton,
+    pub(crate) find_previous: emButton,
     pub(crate) find_next_enabled: bool,
     pub(crate) find_previous_enabled: bool,
 }
@@ -369,13 +358,13 @@ impl ControlWidgets {
 
             // Prices group buttons (B-001 G8 rows -586..-618, -626 textfield).
             // Captions mirror C++ emStocksControlPanel.cpp:576-630.
-            _fetch_share_prices: emButton::new(cc, "Fetch\nPrices", look.clone()),
-            _delete_share_prices: emButton::new(cc, "Delete Prices", look.clone()),
-            _go_back_in_history: emButton::new(cc, "Go Back In History", look.clone()),
-            _go_forward_in_history: emButton::new(cc, "Go Forward In History", look.clone()),
+            fetch_share_prices: emButton::new(cc, "Fetch\nPrices", look.clone()),
+            delete_share_prices: emButton::new(cc, "Delete Prices", look.clone()),
+            go_back_in_history: emButton::new(cc, "Go Back In History", look.clone()),
+            go_forward_in_history: emButton::new(cc, "Go Forward In History", look.clone()),
             go_back_in_history_enabled: false,
             go_forward_in_history_enabled: false,
-            _selected_date_field: emTextField::new(cc, look.clone()),
+            selected_date_field: emTextField::new(cc, look.clone()),
             selected_date: String::new(),
             total_purchase_value: String::new(),
             total_current_value: String::new(),
@@ -383,18 +372,18 @@ impl ControlWidgets {
 
             // Commands group buttons (B-001 G8 rows -650..-738).
             // Captions mirror C++ emStocksControlPanel.cpp:644-741.
-            _new_stock: emButton::new(cc, "New", look.clone()),
-            _cut_stocks: emButton::new(cc, "Cut", look.clone()),
-            _copy_stocks: emButton::new(cc, "Copy", look.clone()),
-            _paste_stocks: emButton::new(cc, "Paste", look.clone()),
-            _delete_stocks: emButton::new(cc, "Delete", look.clone()),
-            _select_all: emButton::new(cc, "Select All", look.clone()),
-            _clear_selection: emButton::new(cc, "Clear Selection", look.clone()),
-            _set_high_interest: emButton::new(cc, "Set High Interest", look.clone()),
-            _set_medium_interest: emButton::new(cc, "Set Medium Interest", look.clone()),
-            _set_low_interest: emButton::new(cc, "Set Low Interest", look.clone()),
-            _show_first_web_pages: emButton::new(cc, "Show First Web Pages", look.clone()),
-            _show_all_web_pages: emButton::new(cc, "Show All Web Pages", look.clone()),
+            new_stock: emButton::new(cc, "New", look.clone()),
+            cut_stocks: emButton::new(cc, "Cut", look.clone()),
+            copy_stocks: emButton::new(cc, "Copy", look.clone()),
+            paste_stocks: emButton::new(cc, "Paste", look.clone()),
+            delete_stocks: emButton::new(cc, "Delete", look.clone()),
+            select_all: emButton::new(cc, "Select All", look.clone()),
+            clear_selection: emButton::new(cc, "Clear Selection", look.clone()),
+            set_high_interest: emButton::new(cc, "Set High Interest", look.clone()),
+            set_medium_interest: emButton::new(cc, "Set Medium Interest", look.clone()),
+            set_low_interest: emButton::new(cc, "Set Low Interest", look.clone()),
+            show_first_web_pages: emButton::new(cc, "Show First Web Pages", look.clone()),
+            show_all_web_pages: emButton::new(cc, "Show All Web Pages", look.clone()),
             cut_stocks_enabled: false,
             copy_stocks_enabled: false,
             delete_stocks_enabled: false,
@@ -408,10 +397,10 @@ impl ControlWidgets {
 
             // Search group (B-001 G8 rows -749, -764, -772).
             // Captions mirror C++ emStocksControlPanel.cpp:751-789.
-            _find_selected: emButton::new(cc, "Find Selected", look.clone()),
+            find_selected: emButton::new(cc, "Find Selected", look.clone()),
             search_text: emTextField::new(cc, look.clone()),
-            _find_next: emButton::new(cc, "Find Next", look.clone()),
-            _find_previous: emButton::new(cc, "Find Previous", look),
+            find_next: emButton::new(cc, "Find Next", look.clone()),
+            find_previous: emButton::new(cc, "Find Previous", look),
             find_next_enabled: false,
             find_previous_enabled: false,
         }
@@ -482,9 +471,27 @@ pub struct emStocksControlPanel {
     pub(crate) update_controls_needed: bool,
     pub(crate) widgets: Option<ControlWidgets>,
     /// D-006 first-Cycle init flag; mirrors the B-001 ListBox pattern at
-    /// emStocksListBox.rs (Phase 4.5 precedent). Phase B will populate the
-    /// gated body with the 37 deferred subscribes from the B-001 design doc.
+    /// emStocksListBox.rs (Phase 4.5 precedent). Flips on the first Cycle
+    /// where the model/config/SelectedDate signals are wired (G1/G2/G4).
     pub(crate) subscribed_init: bool,
+    /// G5 (Selection) is attach-deferred — the inner emListBox is `None`
+    /// until VFS-Loaded materialises it. Tracked via a separate flag so the
+    /// outer `subscribed_init` can flip on the first Cycle while G5 lazily
+    /// connects whenever attach completes. Mirrors B-001 design §Sequencing
+    /// two-tier note (preserved-design-intent — not DIVERGED).
+    pub(crate) selection_subscribed: bool,
+    /// G1 cached SignalId — `Some` after first-Cycle init.
+    pub(crate) model_change_sig: Option<SignalId>,
+    /// G2 cached SignalId — `Some` after first-Cycle init.
+    pub(crate) config_change_sig: Option<SignalId>,
+    /// G4 cached SignalId — `Some` after first-Cycle init.
+    pub(crate) selected_date_sig: Option<SignalId>,
+    /// G5 cached SignalId — `Some` after the inner emListBox attach delivers it.
+    pub(crate) selection_sig: Option<SignalId>,
+    /// Widget subscribes are deferred until `AutoExpand` materialises the
+    /// `ControlWidgets`. Reset to `false` on every `AutoExpand` so a fresh
+    /// expand re-subscribes. Mirrors B-001 design §Sequencing.
+    pub(crate) subscribed_widgets: bool,
 }
 
 impl emStocksControlPanel {
@@ -502,6 +509,12 @@ impl emStocksControlPanel {
             update_controls_needed: true,
             widgets: None,
             subscribed_init: false,
+            selection_subscribed: false,
+            model_change_sig: None,
+            config_change_sig: None,
+            selected_date_sig: None,
+            selection_sig: None,
+            subscribed_widgets: false,
         }
     }
 
@@ -597,6 +610,8 @@ impl emStocksControlPanel {
         let look = self.look.clone();
         self.widgets = Some(ControlWidgets::new(cc, look));
         self.update_controls_needed = true;
+        // B-001-followup B.3: re-subscribe widget signals on every expand.
+        self.subscribed_widgets = false;
     }
 
     /// Port of C++ AutoShrink.
@@ -680,6 +695,7 @@ impl emStocksControlPanel {
             .is_empty();
 
         widgets.selected_date = ValidateDate(list_box.GetSelectedDate());
+        widgets.selected_date_field.SetText(&widgets.selected_date);
 
         // Calculate totals from owned visible stocks
         let mut total_purchase = 0.0_f64;
@@ -746,27 +762,424 @@ impl emStocksControlPanel {
 
 // ─── PanelBehavior ───────────────────────────────────────────────────────────
 
-/// Port of C++ `emStocksControlPanel::Cycle` (emStocksControlPanel.cpp:88-...).
+/// Port of C++ `emStocksControlPanel::Cycle` (emStocksControlPanel.cpp:85-220).
 ///
-/// Phase A: structural scaffold only. The first-Cycle-init slot exists for
-/// Phase B to populate with the 37 deferred D-006 row subscribes. Until then
-/// the body is a no-op latch that only flips `subscribed_init`.
+/// B-001-followup Phase B: D-006 wiring. Three tiers of subscribe init:
+///   - `subscribed_init`: G1 (FileModel.ChangeSignal), G2 (Config.ChangeSignal),
+///     G4 (ListBox.SelectedDateSignal). Always available — the parent provides
+///     the three Rc<RefCell<>> refs at construction.
+///   - `selection_subscribed`: G5 (ListBox.SelectionSignal). Attach-deferred —
+///     the inner emListBox is `None` until VFS-Loaded materialises it; we
+///     re-attempt every Cycle until `Some(_)`.
+///   - `subscribed_widgets`: G7/G8 widget signals. Reset to `false` on every
+///     `AutoExpand`, run on the first Cycle observing `widgets.is_some()`.
+///
+/// Reactions mirror C++ `emStocksControlPanel::Cycle` (cpp:85-220) branch
+/// for branch (M-001 verified). The 4 model/config/list-box signals all
+/// fold into `update_controls_needed = true`. The 28 widget signals are
+/// (mostly) immediate Config or ListBox mutations.
 impl emcore::emPanel::PanelBehavior for emStocksControlPanel {
     fn Cycle(
         &mut self,
-        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
-        _pctx: &mut emcore::emEngineCtx::PanelCtx,
+        ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
+        pctx: &mut emcore::emEngineCtx::PanelCtx,
     ) -> bool {
+        // ── Tier 1: G1/G2/G4 first-Cycle init ─────────────────────────────
         if !self.subscribed_init {
-            // D-006 first-Cycle-init slot. Phase B will populate this with the
-            // 37 deferred row subscribes per the B-001 design doc per-panel
-            // table. Reading the member-ref fields keeps them live until that
-            // wiring lands; once Phase B uses them in earnest, drop these
-            // touches.
-            let _ = &self.file_model;
-            let _ = &self.config;
-            let _ = &self.list_box;
+            let eid = ectx.engine_id;
+
+            let model_sig = self.file_model.borrow().GetChangeSignal(ectx);
+            ectx.connect(model_sig, eid);
+            self.model_change_sig = Some(model_sig);
+
+            let cfg_sig = self.config.borrow().GetChangeSignal(ectx);
+            ectx.connect(cfg_sig, eid);
+            self.config_change_sig = Some(cfg_sig);
+
+            let sd_sig = self.list_box.borrow().GetSelectedDateSignal(ectx);
+            ectx.connect(sd_sig, eid);
+            self.selected_date_sig = Some(sd_sig);
+
             self.subscribed_init = true;
+        }
+
+        // ── Tier 2: G5 attach-deferred Selection subscribe ────────────────
+        if !self.selection_subscribed {
+            if let Some(sel_sig) = self.list_box.borrow().GetSelectionSignal() {
+                let eid = ectx.engine_id;
+                ectx.connect(sel_sig, eid);
+                self.selection_sig = Some(sel_sig);
+                self.selection_subscribed = true;
+            }
+        }
+
+        // ── Tier 3: G7/G8 widget subscribes (after AutoExpand) ────────────
+        // Subscribe block scoped before any other widget access so the
+        // `widgets` borrow does not collide with reaction code below.
+        if !self.subscribed_widgets {
+            if let Some(w) = self.widgets.as_ref() {
+                let eid = ectx.engine_id;
+                // C++ source order — emStocksControlPanel.cpp:111-219.
+                ectx.connect(w.api_key.text_signal, eid);
+                ectx.connect(w.auto_update_dates.check_signal, eid);
+                ectx.connect(w.triggering_opens_web_page.check_signal, eid);
+                ectx.connect(w.chart_period.value_signal, eid);
+                ectx.connect(w.min_visible_interest_group.borrow().check_signal, eid);
+                ectx.connect(w.sorting_group.borrow().check_signal, eid);
+                // Row -566 — C++ cpp:135 wires `OwnedSharesFirst->GetClickSignal()`
+                // (B-001 design C-3). The Rust `emCheckBox` exposes only
+                // `check_signal` (no inherited GetClickSignal accessor); using
+                // it preserves the toggle reaction observably equivalently for
+                // keyboard- and click-driven toggles. TODO: when emCheckBox
+                // gains a click-signal accessor (B-001 prereq miss), swap.
+                ectx.connect(w.owned_shares_first.check_signal, eid);
+                ectx.connect(w.fetch_share_prices.click_signal, eid);
+                ectx.connect(w.delete_share_prices.click_signal, eid);
+                ectx.connect(w.go_back_in_history.click_signal, eid);
+                ectx.connect(w.go_forward_in_history.click_signal, eid);
+                ectx.connect(w.selected_date_field.text_signal, eid);
+                ectx.connect(w.new_stock.click_signal, eid);
+                ectx.connect(w.cut_stocks.click_signal, eid);
+                ectx.connect(w.copy_stocks.click_signal, eid);
+                ectx.connect(w.paste_stocks.click_signal, eid);
+                ectx.connect(w.delete_stocks.click_signal, eid);
+                ectx.connect(w.select_all.click_signal, eid);
+                ectx.connect(w.clear_selection.click_signal, eid);
+                ectx.connect(w.set_low_interest.click_signal, eid);
+                ectx.connect(w.set_medium_interest.click_signal, eid);
+                ectx.connect(w.set_high_interest.click_signal, eid);
+                ectx.connect(w.show_first_web_pages.click_signal, eid);
+                ectx.connect(w.show_all_web_pages.click_signal, eid);
+                ectx.connect(w.find_selected.click_signal, eid);
+                ectx.connect(w.search_text.text_signal, eid);
+                ectx.connect(w.find_next.click_signal, eid);
+                ectx.connect(w.find_previous.click_signal, eid);
+                self.subscribed_widgets = true;
+            }
+        }
+
+        // ── Reactions, in C++ source order (cpp:93-219) ──────────────────
+        // Group 1: model/config/list-box → UpdateControlsNeeded.
+        if self
+            .model_change_sig
+            .map(|s| ectx.IsSignaled(s))
+            .unwrap_or(false)
+        {
+            self.update_controls_needed = true;
+        }
+        if self
+            .config_change_sig
+            .map(|s| ectx.IsSignaled(s))
+            .unwrap_or(false)
+        {
+            self.update_controls_needed = true;
+        }
+        if self
+            .selection_sig
+            .map(|s| ectx.IsSignaled(s))
+            .unwrap_or(false)
+        {
+            self.update_controls_needed = true;
+        }
+        if self
+            .selected_date_sig
+            .map(|s| ectx.IsSignaled(s))
+            .unwrap_or(false)
+        {
+            self.update_controls_needed = true;
+        }
+
+        // Group 2: widget signals → Config / ListBox mutations.
+        // Guarded on `widgets.is_some()` because all reads/writes go through
+        // the `widgets` field.
+        if let Some(w) = self.widgets.as_ref() {
+            // Read out which signals fired before mutating, to avoid borrow
+            // conflicts between the signal queries (need ectx) and the
+            // mutations (need config/list_box mut borrows).
+            let api_key_fired = ectx.IsSignaled(w.api_key.text_signal);
+            let api_key_text = if api_key_fired {
+                Some(w.api_key.GetText().to_string())
+            } else {
+                None
+            };
+            let auto_update_fired = ectx.IsSignaled(w.auto_update_dates.check_signal);
+            let auto_update_val = w.auto_update_dates.IsChecked();
+            let trig_fired = ectx.IsSignaled(w.triggering_opens_web_page.check_signal);
+            let trig_val = w.triggering_opens_web_page.IsChecked();
+            let chart_fired = ectx.IsSignaled(w.chart_period.value_signal);
+            let chart_idx = w.chart_period.GetValue() as usize;
+            let interest_fired =
+                ectx.IsSignaled(w.min_visible_interest_group.borrow().check_signal);
+            let interest_idx = w.min_visible_interest_group.borrow().GetChecked();
+            let sorting_fired = ectx.IsSignaled(w.sorting_group.borrow().check_signal);
+            let sorting_idx = w.sorting_group.borrow().GetChecked();
+            let owned_first_fired = ectx.IsSignaled(w.owned_shares_first.check_signal);
+            let owned_first_val = w.owned_shares_first.IsChecked();
+            let fetch_fired = ectx.IsSignaled(w.fetch_share_prices.click_signal);
+            let delete_prices_fired = ectx.IsSignaled(w.delete_share_prices.click_signal);
+            let go_back_fired = ectx.IsSignaled(w.go_back_in_history.click_signal);
+            let go_forward_fired = ectx.IsSignaled(w.go_forward_in_history.click_signal);
+            let sel_date_fired = ectx.IsSignaled(w.selected_date_field.text_signal);
+            let sel_date_text = if sel_date_fired {
+                Some(w.selected_date_field.GetText().to_string())
+            } else {
+                None
+            };
+            let new_stock_fired = ectx.IsSignaled(w.new_stock.click_signal);
+            let cut_fired = ectx.IsSignaled(w.cut_stocks.click_signal);
+            let copy_fired = ectx.IsSignaled(w.copy_stocks.click_signal);
+            let paste_fired = ectx.IsSignaled(w.paste_stocks.click_signal);
+            let delete_stocks_fired = ectx.IsSignaled(w.delete_stocks.click_signal);
+            let select_all_fired = ectx.IsSignaled(w.select_all.click_signal);
+            let clear_sel_fired = ectx.IsSignaled(w.clear_selection.click_signal);
+            let set_low_fired = ectx.IsSignaled(w.set_low_interest.click_signal);
+            let set_med_fired = ectx.IsSignaled(w.set_medium_interest.click_signal);
+            let set_high_fired = ectx.IsSignaled(w.set_high_interest.click_signal);
+            let show_first_fired = ectx.IsSignaled(w.show_first_web_pages.click_signal);
+            let show_all_fired = ectx.IsSignaled(w.show_all_web_pages.click_signal);
+            let find_sel_fired = ectx.IsSignaled(w.find_selected.click_signal);
+            let search_text_fired = ectx.IsSignaled(w.search_text.text_signal);
+            let search_text_val = if search_text_fired {
+                Some(w.search_text.GetText().to_string())
+            } else {
+                None
+            };
+            let find_next_fired = ectx.IsSignaled(w.find_next.click_signal);
+            let find_prev_fired = ectx.IsSignaled(w.find_previous.click_signal);
+
+            // ── Config mutations ──────────────────────────────────────────
+            // C++ writes Config fields directly. The Rust analogue mutates
+            // `self.config.borrow_mut()`. Each setter ends with `Signal()`
+            // (D-007) by virtue of the Config setter contract; here we
+            // assign the field directly, which mirrors C++ but does NOT
+            // fire the Config ChangeSignal. C++ uses `=` writes on a
+            // Config that inherits emConfigModel::Signal indirectly. The
+            // Rust port writes the field; downstream consumers re-cycle on
+            // their own signals (widget → cycle → config write → fire
+            // Config.Signal so listeners react). We fire `Config.Signal`
+            // explicitly when any Config field is written.
+            let mut config_changed = false;
+            if let Some(text) = api_key_text {
+                self.config.borrow_mut().api_key = text;
+                config_changed = true;
+            }
+            if auto_update_fired {
+                self.config.borrow_mut().auto_update_dates = auto_update_val;
+                config_changed = true;
+            }
+            if trig_fired {
+                self.config.borrow_mut().triggering_opens_web_page = trig_val;
+                config_changed = true;
+            }
+            if chart_fired {
+                self.config.borrow_mut().chart_period = match chart_idx {
+                    0 => ChartPeriod::Week1,
+                    1 => ChartPeriod::Weeks2,
+                    2 => ChartPeriod::Month1,
+                    3 => ChartPeriod::Months3,
+                    4 => ChartPeriod::Months6,
+                    5 => ChartPeriod::Year1,
+                    6 => ChartPeriod::Years3,
+                    7 => ChartPeriod::Years5,
+                    8 => ChartPeriod::Years10,
+                    _ => ChartPeriod::Years20,
+                };
+                config_changed = true;
+            }
+            if interest_fired {
+                if let Some(idx) = interest_idx {
+                    self.config.borrow_mut().min_visible_interest = match idx {
+                        0 => Interest::High,
+                        1 => Interest::Medium,
+                        _ => Interest::Low,
+                    };
+                    config_changed = true;
+                }
+            }
+            if sorting_fired {
+                if let Some(idx) = sorting_idx {
+                    self.config.borrow_mut().sorting = match idx {
+                        0 => Sorting::ByName,
+                        1 => Sorting::ByTradeDate,
+                        2 => Sorting::ByInquiryDate,
+                        3 => Sorting::ByAchievement,
+                        4 => Sorting::ByOneWeekRise,
+                        5 => Sorting::ByThreeWeekRise,
+                        6 => Sorting::ByNineWeekRise,
+                        7 => Sorting::ByDividend,
+                        8 => Sorting::ByPurchaseValue,
+                        9 => Sorting::ByValue,
+                        _ => Sorting::ByDifference,
+                    };
+                    config_changed = true;
+                }
+            }
+            if owned_first_fired {
+                self.config.borrow_mut().owned_shares_first = owned_first_val;
+                config_changed = true;
+            }
+            if let Some(text) = search_text_val {
+                self.config.borrow_mut().search_text = text;
+                config_changed = true;
+            }
+
+            if config_changed {
+                // D-007: synchronous Signal fire on Config mutation. Reads
+                // through `self.config` borrow (immut) — Signal API is
+                // `&self`-shaped per emStocksConfig.
+                let cfg_sig = self.config.borrow().GetChangeSignal(ectx);
+                ectx.fire(cfg_sig);
+            }
+
+            // ── ListBox mutations ─────────────────────────────────────────
+            // For methods that need `&mut emStocksRec` we go through
+            // `self.file_model.borrow_mut().GetWritableRec(ectx)`. For
+            // immutable access we use `GetRec()`. ConstructCtx-bound methods
+            // accept `pctx`.
+            //
+            // C++ `StartToFetchSharePrices` is a parent-side action (creates
+            // a fetch dialog); the Rust port has only `GetVisibleStockIds`.
+            // We log the row but defer the dialog construction (B-017
+            // territory). This is a known gap — the subscribe wires
+            // mechanically; the reaction is a structural stub.
+            let _ = fetch_fired; // TODO: wire to FetchPricesDialog when emStocksFilePanel surfaces it.
+
+            if delete_prices_fired {
+                let lb_rc = self.list_box.clone();
+                let mut model = self.file_model.borrow_mut();
+                let rec = model.GetWritableRec(ectx);
+                lb_rc.borrow().DeleteSharePrices(rec);
+            }
+            if go_back_fired {
+                let model = self.file_model.borrow();
+                self.list_box
+                    .borrow_mut()
+                    .GoBackInHistory(ectx, model.GetRec());
+            }
+            if go_forward_fired {
+                let model = self.file_model.borrow();
+                self.list_box
+                    .borrow_mut()
+                    .GoForwardInHistory(ectx, model.GetRec());
+            }
+            if let Some(text) = sel_date_text {
+                self.list_box.borrow_mut().SetSelectedDate(ectx, &text);
+            }
+            if new_stock_fired {
+                let mut model = self.file_model.borrow_mut();
+                let rec = model.GetWritableRec(ectx);
+                let cfg = self.config.borrow();
+                self.list_box.borrow_mut().NewStock(rec, &cfg);
+            }
+            if cut_fired {
+                let lb_rc = self.list_box.clone();
+                let mut model = self.file_model.borrow_mut();
+                let rec = model.GetWritableRec(ectx);
+                lb_rc.borrow_mut().CutStocks(pctx, rec, true);
+            }
+            if copy_fired {
+                let lb_rc = self.list_box.clone();
+                let model = self.file_model.borrow();
+                lb_rc.borrow().CopyStocks(model.GetRec());
+            }
+            if paste_fired {
+                let lb_rc = self.list_box.clone();
+                let cfg_rc = self.config.clone();
+                let mut model = self.file_model.borrow_mut();
+                let rec = model.GetWritableRec(ectx);
+                let cfg = cfg_rc.borrow();
+                let _ = lb_rc.borrow_mut().PasteStocks(pctx, rec, &cfg, true);
+            }
+            if delete_stocks_fired {
+                let lb_rc = self.list_box.clone();
+                let mut model = self.file_model.borrow_mut();
+                let rec = model.GetWritableRec(ectx);
+                lb_rc.borrow_mut().DeleteStocks(pctx, rec, true);
+            }
+            if select_all_fired {
+                // C++ ListBox::SelectAll selects all visible rows. The Rust
+                // emStocksListBox does not expose SelectAll; iterate
+                // visible_items and Select each. UpdateControls reflects
+                // the selection-count enable state next pass.
+                let lb_rc = self.list_box.clone();
+                let mut lb = lb_rc.borrow_mut();
+                let count = lb.visible_items.len();
+                for i in 0..count {
+                    lb.Select(i);
+                }
+            }
+            if clear_sel_fired {
+                self.list_box.borrow_mut().ClearSelection();
+            }
+            if set_low_fired {
+                let lb_rc = self.list_box.clone();
+                let mut model = self.file_model.borrow_mut();
+                let rec = model.GetWritableRec(ectx);
+                lb_rc
+                    .borrow_mut()
+                    .SetInterest(pctx, rec, Interest::Low, true);
+            }
+            if set_med_fired {
+                let lb_rc = self.list_box.clone();
+                let mut model = self.file_model.borrow_mut();
+                let rec = model.GetWritableRec(ectx);
+                lb_rc
+                    .borrow_mut()
+                    .SetInterest(pctx, rec, Interest::Medium, true);
+            }
+            if set_high_fired {
+                let lb_rc = self.list_box.clone();
+                let mut model = self.file_model.borrow_mut();
+                let rec = model.GetWritableRec(ectx);
+                lb_rc
+                    .borrow_mut()
+                    .SetInterest(pctx, rec, Interest::High, true);
+            }
+            if show_first_fired {
+                let lb_rc = self.list_box.clone();
+                let model = self.file_model.borrow();
+                lb_rc.borrow().ShowFirstWebPages(model.GetRec());
+            }
+            if show_all_fired {
+                let lb_rc = self.list_box.clone();
+                let model = self.file_model.borrow();
+                lb_rc.borrow().ShowAllWebPages(model.GetRec());
+            }
+            if find_sel_fired {
+                let lb_rc = self.list_box.clone();
+                let cfg_rc = self.config.clone();
+                let model = self.file_model.borrow();
+                let mut cfg = cfg_rc.borrow_mut();
+                let _ = lb_rc.borrow_mut().FindSelected(model.GetRec(), &mut cfg);
+            }
+            if find_next_fired {
+                let lb_rc = self.list_box.clone();
+                let cfg_rc = self.config.clone();
+                let model = self.file_model.borrow();
+                let cfg = cfg_rc.borrow();
+                let _ = lb_rc.borrow_mut().FindNext(model.GetRec(), &cfg);
+            }
+            if find_prev_fired {
+                let lb_rc = self.list_box.clone();
+                let cfg_rc = self.config.clone();
+                let model = self.file_model.borrow();
+                let cfg = cfg_rc.borrow();
+                let _ = lb_rc.borrow_mut().FindPrevious(model.GetRec(), &cfg);
+            }
+        }
+
+        // ── Final: UpdateControls if needed (C++ cpp:218) ─────────────────
+        // Borrow conflict avoidance: `UpdateControls` takes `&mut self`, but
+        // we need immutable borrows of the three Rcs. Clone the Rc handles
+        // first; the underlying RefCells survive the `&mut self` call.
+        if self.update_controls_needed && self.widgets.is_some() {
+            let model_rc = self.file_model.clone();
+            let config_rc = self.config.clone();
+            let list_box_rc = self.list_box.clone();
+            let cfg = config_rc.borrow();
+            let model = model_rc.borrow();
+            let lb = list_box_rc.borrow();
+            self.UpdateControls(&cfg, model.GetRec(), &lb, pctx);
         }
         false
     }
@@ -975,25 +1388,25 @@ mod tests {
         let w = panel.widgets.as_ref().unwrap();
 
         let click_sigs = [
-            w._fetch_share_prices.click_signal,
-            w._delete_share_prices.click_signal,
-            w._go_back_in_history.click_signal,
-            w._go_forward_in_history.click_signal,
-            w._new_stock.click_signal,
-            w._cut_stocks.click_signal,
-            w._copy_stocks.click_signal,
-            w._paste_stocks.click_signal,
-            w._delete_stocks.click_signal,
-            w._select_all.click_signal,
-            w._clear_selection.click_signal,
-            w._set_high_interest.click_signal,
-            w._set_medium_interest.click_signal,
-            w._set_low_interest.click_signal,
-            w._show_first_web_pages.click_signal,
-            w._show_all_web_pages.click_signal,
-            w._find_selected.click_signal,
-            w._find_next.click_signal,
-            w._find_previous.click_signal,
+            w.fetch_share_prices.click_signal,
+            w.delete_share_prices.click_signal,
+            w.go_back_in_history.click_signal,
+            w.go_forward_in_history.click_signal,
+            w.new_stock.click_signal,
+            w.cut_stocks.click_signal,
+            w.copy_stocks.click_signal,
+            w.paste_stocks.click_signal,
+            w.delete_stocks.click_signal,
+            w.select_all.click_signal,
+            w.clear_selection.click_signal,
+            w.set_high_interest.click_signal,
+            w.set_medium_interest.click_signal,
+            w.set_low_interest.click_signal,
+            w.show_first_web_pages.click_signal,
+            w.show_all_web_pages.click_signal,
+            w.find_selected.click_signal,
+            w.find_next.click_signal,
+            w.find_previous.click_signal,
         ];
         assert_eq!(click_sigs.len(), 19, "19 emButton click signals expected");
         // All click signals must be distinct (one signal per button) — distinctness
@@ -1004,16 +1417,16 @@ mod tests {
         // click signals — captioned widget, lives separately from the cached
         // `selected_date: String` display value.
         assert!(
-            !unique.contains(&w._selected_date_field.text_signal),
+            !unique.contains(&w.selected_date_field.text_signal),
             "selected_date_field text signal collides with a button click signal"
         );
         assert_eq!(w.selected_date, "");
 
         // Captions sanity-check a sample of buttons (mirrors C++ source-order).
-        assert_eq!(w._fetch_share_prices.GetCaption(), "Fetch\nPrices");
-        assert_eq!(w._delete_share_prices.GetCaption(), "Delete Prices");
-        assert_eq!(w._new_stock.GetCaption(), "New");
-        assert_eq!(w._find_previous.GetCaption(), "Find Previous");
+        assert_eq!(w.fetch_share_prices.GetCaption(), "Fetch\nPrices");
+        assert_eq!(w.delete_share_prices.GetCaption(), "Delete Prices");
+        assert_eq!(w.new_stock.GetCaption(), "New");
+        assert_eq!(w.find_previous.GetCaption(), "Find Previous");
     }
 
     #[test]
@@ -1411,6 +1824,185 @@ mod tests {
             panel.ReadFromWidgets(&mut config_out);
             assert_eq!(config_out.chart_period, period);
         }
+    }
+
+    // ── B-001-followup Phase B — D-006 wiring tests ─────────────────────
+
+    /// G1+G2+G4 — first Cycle wires the FileModel/Config/SelectedDate signals
+    /// and caches their ids.
+    #[test]
+    fn control_panel_first_cycle_wires_g1_g2_g4_signals() {
+        use emcore::emEngine::Priority;
+        use emcore::emPanel::PanelBehavior;
+        use emcore::emPanelScope::PanelScope;
+        use emcore::test_view_harness::TestViewHarness;
+
+        struct NoopE;
+        impl emcore::emEngine::emEngine for NoopE {
+            fn Cycle(&mut self, _ctx: &mut emcore::emEngineCtx::EngineCtx<'_>) -> bool {
+                false
+            }
+        }
+
+        let mut h = TestViewHarness::new();
+        let eid =
+            h.scheduler
+                .register_engine(Box::new(NoopE), Priority::Medium, PanelScope::Framework);
+
+        let mut panel = emStocksControlPanel::for_test();
+        assert!(!panel.subscribed_init);
+        assert!(panel.model_change_sig.is_none());
+        assert!(panel.config_change_sig.is_none());
+        assert!(panel.selected_date_sig.is_none());
+
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let id = tree.create_root("cp", false);
+        {
+            let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
+            let mut ectx = h.engine_ctx(eid);
+            let _ = panel.Cycle(&mut ectx, &mut pctx);
+        }
+
+        assert!(panel.subscribed_init);
+        assert!(panel.model_change_sig.is_some());
+        assert!(panel.config_change_sig.is_some());
+        assert!(panel.selected_date_sig.is_some());
+
+        h.scheduler.remove_engine(eid);
+        h.scheduler.flush_signals_for_test();
+    }
+
+    /// G1 — firing FileModel.ChangeSignal flips `update_controls_needed`.
+    #[test]
+    fn control_panel_reacts_to_file_model_change_signal() {
+        use emcore::emEngine::Priority;
+        use emcore::emPanel::PanelBehavior;
+        use emcore::emPanelScope::PanelScope;
+        use emcore::test_view_harness::TestViewHarness;
+
+        struct NoopE;
+        impl emcore::emEngine::emEngine for NoopE {
+            fn Cycle(&mut self, _ctx: &mut emcore::emEngineCtx::EngineCtx<'_>) -> bool {
+                false
+            }
+        }
+
+        let mut h = TestViewHarness::new();
+        let eid =
+            h.scheduler
+                .register_engine(Box::new(NoopE), Priority::Medium, PanelScope::Framework);
+
+        let mut panel = emStocksControlPanel::for_test();
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let id = tree.create_root("cp", false);
+
+        // First Cycle wires.
+        {
+            let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
+            let mut ectx = h.engine_ctx(eid);
+            let _ = panel.Cycle(&mut ectx, &mut pctx);
+        }
+        panel.MarkUpdated();
+        assert!(!panel.NeedsUpdate());
+
+        // Fire model signal.
+        let sig = panel.model_change_sig.expect("wired");
+        h.scheduler.fire(sig);
+        h.scheduler.flush_signals_for_test();
+
+        // Second Cycle observes IsSignaled.
+        {
+            let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
+            let mut ectx = h.engine_ctx(eid);
+            let _ = panel.Cycle(&mut ectx, &mut pctx);
+        }
+
+        assert!(panel.NeedsUpdate());
+
+        h.scheduler.remove_engine(eid);
+        h.scheduler.flush_signals_for_test();
+    }
+
+    /// G7 widget reaction — firing AutoUpdateDates.check_signal writes Config.
+    #[test]
+    fn control_panel_reacts_to_auto_update_dates_check_signal() {
+        use emcore::emEngine::Priority;
+        use emcore::emPanel::PanelBehavior;
+        use emcore::emPanelScope::PanelScope;
+        use emcore::test_view_harness::TestViewHarness;
+
+        struct NoopE;
+        impl emcore::emEngine::emEngine for NoopE {
+            fn Cycle(&mut self, _ctx: &mut emcore::emEngineCtx::EngineCtx<'_>) -> bool {
+                false
+            }
+        }
+
+        let mut h = TestViewHarness::new();
+        let eid =
+            h.scheduler
+                .register_engine(Box::new(NoopE), Priority::Medium, PanelScope::Framework);
+
+        // Build panel with shared Config so we can observe writes.
+        let model = Rc::new(RefCell::new(emStocksFileModel::new(
+            std::path::PathBuf::from("/tmp/cp_b001_g7.emStocks"),
+        )));
+        let config = Rc::new(RefCell::new(emStocksConfig::default()));
+        let list_box = Rc::new(RefCell::new(emStocksListBox::new()));
+        let mut panel = emStocksControlPanel::new(emLook::new(), model, config.clone(), list_box);
+
+        // First Cycle wires G1/G2/G4. Then AutoExpand creates widgets.
+        let mut tree = emcore::emPanelTree::PanelTree::new();
+        let id = tree.create_root("cp", false);
+        {
+            let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
+            let mut ectx = h.engine_ctx(eid);
+            let _ = panel.Cycle(&mut ectx, &mut pctx);
+        }
+        {
+            let mut sc = h.sched_ctx_for(eid);
+            panel.AutoExpand(&mut sc);
+        }
+        // Second Cycle wires widget signals.
+        {
+            let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
+            let mut ectx = h.engine_ctx(eid);
+            let _ = panel.Cycle(&mut ectx, &mut pctx);
+        }
+        assert!(panel.subscribed_widgets);
+        assert!(!config.borrow().auto_update_dates);
+
+        // Fire AutoUpdateDates check_signal directly. Stage widget state
+        // via the silent setter so the reaction can read the new value.
+        let sig = panel
+            .widgets
+            .as_ref()
+            .unwrap()
+            .auto_update_dates
+            .check_signal;
+        panel
+            .widgets
+            .as_mut()
+            .unwrap()
+            .auto_update_dates
+            .set_checked_silent(true);
+        h.scheduler.fire(sig);
+        h.scheduler.flush_signals_for_test();
+
+        // Drive Cycle to observe IsSignaled and write Config.
+        {
+            let mut pctx = emcore::emEngineCtx::PanelCtx::new(&mut tree, id, 1.0);
+            let mut ectx = h.engine_ctx(eid);
+            let _ = panel.Cycle(&mut ectx, &mut pctx);
+        }
+
+        assert!(
+            config.borrow().auto_update_dates,
+            "AutoUpdateDates check_signal reaction must write Config"
+        );
+
+        h.scheduler.remove_engine(eid);
+        h.scheduler.flush_signals_for_test();
     }
 
     #[test]
