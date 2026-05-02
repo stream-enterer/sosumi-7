@@ -833,12 +833,11 @@ impl emcore::emPanel::PanelBehavior for emStocksControlPanel {
                 ectx.connect(w.min_visible_interest_group.borrow().check_signal, eid);
                 ectx.connect(w.sorting_group.borrow().check_signal, eid);
                 // Row -566 — C++ cpp:135 wires `OwnedSharesFirst->GetClickSignal()`
-                // (B-001 design C-3). The Rust `emCheckBox` exposes only
-                // `check_signal` (no inherited GetClickSignal accessor); using
-                // it preserves the toggle reaction observably equivalently for
-                // keyboard- and click-driven toggles. TODO: when emCheckBox
-                // gains a click-signal accessor (B-001 prereq miss), swap.
-                ectx.connect(w.owned_shares_first.check_signal, eid);
+                // (B-001 design C-3). Per FU-001 Unit 1, emCheckBox now mirrors
+                // click_signal (B-012 mirror-sibling-port pattern); use it
+                // exactly as C++ does — preserves user-click semantics,
+                // suppresses programmatic-SetChecked feedback.
+                ectx.connect(w.owned_shares_first.click_signal, eid);
                 ectx.connect(w.fetch_share_prices.click_signal, eid);
                 ectx.connect(w.delete_share_prices.click_signal, eid);
                 ectx.connect(w.go_back_in_history.click_signal, eid);
@@ -919,7 +918,7 @@ impl emcore::emPanel::PanelBehavior for emStocksControlPanel {
             let interest_idx = w.min_visible_interest_group.borrow().GetChecked();
             let sorting_fired = ectx.IsSignaled(w.sorting_group.borrow().check_signal);
             let sorting_idx = w.sorting_group.borrow().GetChecked();
-            let owned_first_fired = ectx.IsSignaled(w.owned_shares_first.check_signal);
+            let owned_first_fired = ectx.IsSignaled(w.owned_shares_first.click_signal);
             let owned_first_val = w.owned_shares_first.IsChecked();
             let fetch_fired = ectx.IsSignaled(w.fetch_share_prices.click_signal);
             let delete_prices_fired = ectx.IsSignaled(w.delete_share_prices.click_signal);
@@ -1043,12 +1042,23 @@ impl emcore::emPanel::PanelBehavior for emStocksControlPanel {
             // immutable access we use `GetRec()`. ConstructCtx-bound methods
             // accept `pctx`.
             //
-            // C++ `StartToFetchSharePrices` is a parent-side action (creates
-            // a fetch dialog); the Rust port has only `GetVisibleStockIds`.
-            // We log the row but defer the dialog construction (B-017
-            // territory). This is a known gap — the subscribe wires
-            // mechanically; the reaction is a structural stub.
-            let _ = fetch_fired; // TODO: wire to FetchPricesDialog when emStocksFilePanel surfaces it.
+            // FU-001 Unit 4 — wire to ListBox.StartToFetchAllSharePrices.
+            // After the listbox creates/raises the dialog into FileModel,
+            // hand the listbox's strong-owner Rc to the dialog so it can
+            // surface progress (C++ cpp:406 `dialog->AddListBox(*this)`).
+            if fetch_fired {
+                let lb_rc = self.list_box.clone();
+                let model_rc = self.file_model.clone();
+                {
+                    let mut lb = lb_rc.borrow_mut();
+                    let model = model_rc.borrow();
+                    lb.StartToFetchAllSharePrices(ectx, model.GetRec());
+                }
+                let mut model_mut = model_rc.borrow_mut();
+                if let Some(dialog) = model_mut.prices_fetching_dialog.as_mut() {
+                    dialog.AddListBox(&lb_rc);
+                }
+            }
 
             if delete_prices_fired {
                 let lb_rc = self.list_box.clone();

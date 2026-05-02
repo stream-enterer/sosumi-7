@@ -1019,16 +1019,54 @@ impl emcore::emPanel::PanelBehavior for emStocksItemPanel {
             }
         }
 
-        // FetchSharePrice / ShowWebPage / ShowAllWebPages: parent-side
-        // actions (StartToFetchSharePrices / ShowWebPages on the listbox).
-        // C++ calls `ListBox.StartToFetchSharePrices(...)` /
-        // `ListBox.ShowWebPages(...)`. The Rust ListBox port has neither
-        // method yet (B-017 territory); record the firing as a TODO mark
-        // mirroring Phase B's same-shape gap on ControlPanel row -626.
-        let _ = fetch_share_price_fired; // TODO: wire to StartToFetchSharePrices when ListBox exposes it.
-        let _ = show_all_fired; // TODO: wire to ShowWebPages when ListBox exposes it.
-        for &fired in show_web_fired.iter() {
-            let _ = fired; // TODO: wire to ShowWebPages.
+        // FU-001 Unit 4 — wire FetchSharePrice / ShowWebPage[i] /
+        // ShowAllWebPages reactions. C++ cpp:566/586/650+ call
+        // `ListBox.StartToFetchSharePrices(...)` /
+        // `ListBox.ShowWebPages(...)` directly. We snapshot the stock
+        // record's id and web_pages first to release the model borrow
+        // before mutating the listbox.
+        if fetch_share_price_fired || show_all_fired || show_web_fired.iter().any(|&b| b) {
+            let (stock_id, web_pages_snap): (Option<String>, Vec<String>) = {
+                let model = self.file_model.borrow();
+                let rec = model.GetRec();
+                if let Some(stock) = rec.stocks.get(stock_idx) {
+                    (Some(stock.id.clone()), stock.web_pages.clone())
+                } else {
+                    (None, Vec::new())
+                }
+            };
+
+            if fetch_share_price_fired {
+                if let Some(id) = stock_id.as_ref() {
+                    let lb_rc = self.list_box.clone();
+                    let model_rc = self.file_model.clone();
+                    {
+                        let mut lb = lb_rc.borrow_mut();
+                        lb.StartToFetchSharePrices(ectx, std::slice::from_ref(id));
+                    }
+                    let mut model_mut = model_rc.borrow_mut();
+                    if let Some(dialog) = model_mut.prices_fetching_dialog.as_mut() {
+                        dialog.AddListBox(&lb_rc);
+                    }
+                }
+            }
+            if show_all_fired {
+                let urls: Vec<String> = web_pages_snap
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .cloned()
+                    .collect();
+                if !urls.is_empty() {
+                    self.list_box.borrow().ShowWebPages(&urls);
+                }
+            }
+            for (i, &fired) in show_web_fired.iter().enumerate() {
+                if fired && i < web_pages_snap.len() && !web_pages_snap[i].is_empty() {
+                    self.list_box
+                        .borrow()
+                        .ShowWebPages(std::slice::from_ref(&web_pages_snap[i]));
+                }
+            }
         }
 
         false

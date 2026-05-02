@@ -33,3 +33,24 @@ Tier-B B-001-followup completed signal subscribes for emstocks ControlPanel / It
 - FU-001-1 may grow if other emCheckBox consumers surface during execution — keep accessor minimal (1 line); do not add reactive-state APIs.
 - FU-001-7 changes the `emFileModel` public surface in emcore. Audit consumers before lifting; plan needs verification step.
 - Single bucket recommended (cohesive scope, shared C++ files); do not split per row.
+
+## Closure (2026-05-02)
+
+**Status:** Resolved. All five reaction-body stubs replaced; emCheckBox click_signal mirror landed.
+
+**Commits (this branch, `impl/fu-001`):**
+- Unit 1 (emCheckBox click_signal mirror) — emcore-isolated. `95c58dc4`
+- Unit 2 (PricesFetcher + FetchPricesDialog AddListBox). `57f8a5f8`
+- Unit 3 (ListBox StartToFetchSharePrices x2 + ShowWebPages). `94063006`
+- Unit 4 (Reaction-body wiring + owned_shares_first signal swap). `df070588`
+
+**Departures from plan (forced):**
+- ListBox method does NOT call `dialog->AddListBox(*this)` (C++ cpp:406): safe Rust cannot synthesize `Rc<RefCell<Self>>` from `&mut self` without a pre-installed `Weak<>` field, and the codebase's call sites do not currently install one. The reaction caller (ItemPanel/ControlPanel) holds the strong `Rc<RefCell<emStocksListBox>>` and performs the `AddListBox` step itself, immediately after the listbox method returns. Observable behavior matches C++.
+- Strong owner for the active dialog is a new `prices_fetching_dialog: Option<emStocksFetchPricesDialog>` field on `emStocksFileModel`; the legacy `PricesFetchingDialog: emCrossPtr<>` field is left in place for surface compatibility. emCrossPtr in this codebase is weak-only (cannot own).
+
+**Out of scope (deferred, tracked at source):**
+- emDialog::Raise port — UPSTREAM-GAP (view-parenting). TODO(FU-001) at emStocksListBox::StartToFetchSharePrices.
+- emDialog::ShowMessage port — separate emcore work. TODO(FU-001) at emStocksListBox::ShowWebPages.
+- FU-001-7 (`GetFileStateSignal` lift) — split out to FU-005 per planning.
+
+**Verification:** cargo check, cargo clippy -D warnings, cargo nextest run (3013 passed, 17 baseline skipped), cargo xtask annotations — all green.
