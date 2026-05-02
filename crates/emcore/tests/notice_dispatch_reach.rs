@@ -123,9 +123,11 @@ fn notice_dispatch_sites_carry_full_reach_autoshrink_phase1() {
     // Phase-1 AutoShrink path: ae_invalid=true + ae_expanded=true.
     tree.set_ae_invalid_pub(root, true);
     tree.set_ae_expanded_pub(root, true);
-    // Enroll root in the safety-net scan (HandleNotice picks up panels with
-    // ae_invalid via the safety-net when has_pending_notices is set).
-    tree.mark_pending_notices_pub();
+    // Enroll root in the notice ring via a queued notice — the safety-net
+    // scan enrolls panels with `pending_notices` non-empty, then
+    // handle_notice_one hits Phase 1 FIRST (before Phase 2) because
+    // ae_invalid is checked before pending_notices.
+    tree.queue_notice(root, NoticeFlags::SOUGHT_NAME_CHANGED, None);
 
     view.HandleNotice(&mut tree, &mut sched, None, None);
 
