@@ -624,6 +624,48 @@ impl PanelTree {
         self.seek_pos_child_name = child_name.to_string();
     }
 
+    /// Test-support: set `ae_invalid` on a panel directly.
+    ///
+    /// Not a C++ analogue — test-support only (integration tests need a
+    /// public setter because `PanelData` fields are `pub(crate)`).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_ae_invalid_pub(&mut self, id: PanelId, value: bool) {
+        if let Some(p) = self.panels.get_mut(id) {
+            p.ae_invalid = value;
+        }
+    }
+
+    /// Test-support: set `ae_expanded` on a panel directly.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_ae_expanded_pub(&mut self, id: PanelId, value: bool) {
+        if let Some(p) = self.panels.get_mut(id) {
+            p.ae_expanded = value;
+        }
+    }
+
+    /// Test-support: set `ae_decision_invalid` on a panel directly.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_ae_decision_invalid_pub(&mut self, id: PanelId, value: bool) {
+        if let Some(p) = self.panels.get_mut(id) {
+            p.ae_decision_invalid = value;
+        }
+    }
+
+    /// Test-support: set `children_layout_invalid` on a panel directly.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_children_layout_invalid_pub(&mut self, id: PanelId, value: bool) {
+        if let Some(p) = self.panels.get_mut(id) {
+            p.children_layout_invalid = value;
+        }
+    }
+
+    /// Test-support: set `has_pending_notices = true` so that
+    /// `HandleNotice`'s safety-net scan enrolls panels with dirty bits.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn mark_pending_notices_pub(&mut self) {
+        self.has_pending_notices = true;
+    }
+
     fn register_engine_for(&mut self, id: PanelId, sched: Option<&mut EngineScheduler>) {
         if self.panels.get(id).and_then(|p| p.engine_id).is_some() {
             return; // idempotent re-attachment guard
