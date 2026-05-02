@@ -1,10 +1,10 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use emcore::emColor::emColor;
 use emcore::emConfigModel::emConfigModel;
 use emcore::emContext::emContext;
-use emcore::emEngineCtx::PanelCtx;
+use emcore::emEngineCtx::{ConstructCtx, PanelCtx, SignalCtx};
 use emcore::emImage::emImage;
 use emcore::emInstallInfo::{InstallDirType, emGetInstallPath};
 use emcore::emPainter::{TextAlignment, VAlign, emPainter};
@@ -532,6 +532,23 @@ pub struct emBookmarkButton {
     // emTryGetResImage then calls SetIcon(img) on the emBorder.
     icon_load_attempted: bool,
     icon: Option<emImage>,
+    /// Port of C++ inherited `emButton::ClickSignal` (referenced as
+    /// `GetClickSignal()` at `emBookmarks.cpp:1479,1523`). Lazily allocated
+    /// per D-008-signal-allocation-shape (A1 combined-form). Precedent:
+    /// `emVirtualCosmosModel::change_signal` at
+    /// `crates/emmain/src/emVirtualCosmos.rs:225`. Construction via
+    /// `LayoutChildren` (`emBookmarks.rs:736`) only has access to
+    /// `&mut PanelCtx`, not a full `&mut impl ConstructCtx` with a
+    /// scheduler handle, so the signal is allocated on the first
+    /// subscriber call (the panel's own `Cycle`). See B-004 emcore-slice
+    /// precedent (work-order 2026-04-29 amendment 1).
+    click_signal: Cell<SignalId>,
+    /// Set by the (future) input handler when a click is detected; drained
+    /// next `Cycle` per D-007 deferred-fire shape. Input runs without a
+    /// `SignalCtx`, so we cannot fire synchronously from the input site.
+    pending_click_fire: Cell<bool>,
+    /// First-Cycle init flag per D-006-subscribe-shape.
+    subscribed_init: bool,
 }
 
 impl emBookmarkButton {
@@ -540,6 +557,50 @@ impl emBookmarkButton {
             bookmark,
             icon_load_attempted: false,
             icon: None,
+            click_signal: Cell::new(SignalId::null()),
+            pending_click_fire: Cell::new(false),
+            subscribed_init: false,
+        }
+    }
+
+    /// Port of C++ inherited `emButton::GetClickSignal` (used at
+    /// `emBookmarks.cpp:1479,1523`). D-008 A1 combined-form: lazily
+    /// allocates the signal on first call.
+    #[allow(non_snake_case)]
+    pub fn GetClickSignal(&self, ectx: &mut impl SignalCtx) -> SignalId {
+        let sig = self.click_signal.get();
+        if sig.is_null() {
+            let new_sig = ectx.create_signal();
+            self.click_signal.set(new_sig);
+            new_sig
+        } else {
+            sig
+        }
+    }
+
+    /// Test/B-013-handoff hook: simulate the click trigger that the
+    /// (future) input handler will set. Click-detection itself is deferred
+    /// to B-013-rc-shim-emcore (button input handling) per the B-004
+    /// design's recommendation (option a). Once B-013 lands, the input
+    /// path inside `<emBookmarkButton as PanelBehavior>::input` will set
+    /// `pending_click_fire` directly.
+    #[doc(hidden)]
+    pub fn set_pending_click_fire_for_test(&self) {
+        self.pending_click_fire.set(true);
+    }
+
+    /// Test/B-013-handoff hook: drain `pending_click_fire` and fire the
+    /// click signal — mirrors the drain-half of `Cycle` on a context where
+    /// constructing a full `EngineCtx` (with panel tree, windows, etc.) is
+    /// not required.  Returns whether a click was drained.
+    #[doc(hidden)]
+    pub fn fire_pending_click_for_test(&self, sc: &mut impl SignalCtx) -> bool {
+        if self.pending_click_fire.replace(false) {
+            let sig = self.GetClickSignal(sc);
+            sc.fire(sig);
+            true
+        } else {
+            false
         }
     }
 
@@ -635,12 +696,94 @@ impl PanelBehavior for emBookmarkButton {
         }
     }
 
-    fn Cycle(
-        &mut self,
-        _ectx: &mut emcore::emEngineCtx::EngineCtx<'_>,
-        _ctx: &mut PanelCtx,
-    ) -> bool {
-        // Navigation is not wired yet — log intent for now.
+    fn Cycle(&mut self, ectx: &mut emcore::emEngineCtx::EngineCtx<'_>, ctx: &mut PanelCtx) -> bool {
+        // Drain any pending click fire (D-007 deferred-fire pattern;
+        // input handler — to be wired by B-013 — sets `pending_click_fire`
+        // because input runs without a `SignalCtx`).
+        if self.pending_click_fire.replace(false) {
+            let sig = self.GetClickSignal(ectx);
+            ectx.fire(sig);
+        }
+
+        // First-Cycle subscribe (D-006). Mirrors C++
+        // `emBookmarks.cpp:1479` `AddWakeUpSignal(GetClickSignal())`.
+        if !self.subscribed_init {
+            let sig = self.GetClickSignal(ectx);
+            let eid = ectx.id();
+            ectx.connect(sig, eid);
+            self.subscribed_init = true;
+        }
+
+        // React to click (mirrors C++ `emBookmarks.cpp:1523-1535`).
+        let sig = self.click_signal.get();
+        if !sig.is_null() && ectx.IsSignaled(sig) {
+            // DIVERGED: (upstream-gap-forced) — Rust `emView` has not
+            // ported the multi-view content/control split, so the C++
+            // `emBookmarkButton::ContentView` field
+            // (`emBookmarks.cpp:1470,1523-1535`), which lets a button
+            // visit a view *other* than its owning view, has no Rust
+            // counterpart. We enqueue a navigation against the home
+            // window's content sub-view; multi-view bookmark
+            // configurations observably diverge from C++. Tracked as a
+            // follow-up row for when the multi-view content/control
+            // split lands.
+            let identity = self.bookmark.LocationIdentity.clone();
+            let rel_x = self.bookmark.LocationRelX;
+            let rel_y = self.bookmark.LocationRelY;
+            let rel_a = self.bookmark.LocationRelA;
+            // C++ passes `bmRec->Name.Get()` as `subject`
+            // (`emBookmarks.cpp:1532`).
+            let subject = self.bookmark.entry.Name.clone();
+            // Enqueue onto the framework's pending-actions rail (the
+            // canonical closure-rail pattern; precedent:
+            // `emMainWindow::Duplicate` and `emDialog`'s push sites).
+            // The framework drains this on the next App tick and invokes
+            // `emView::VisitByIdentity` via the home window's content
+            // sub-view (the same path `RecreateContentPanels` uses to
+            // restore visit state).
+            ectx.pending_actions().borrow_mut().push(Box::new(
+                move |app: &mut emcore::emGUIFramework::App, _el| {
+                    let main_panel_id = match crate::emMainWindow::with_main_window(|mw| {
+                        mw.main_panel_id
+                    })
+                    .flatten()
+                    {
+                        Some(id) => id,
+                        None => return,
+                    };
+                    let content_view_id = match app
+                        .home_tree_mut()
+                        .with_behavior_as::<crate::emMainPanel::emMainPanel, _>(
+                            main_panel_id,
+                            |mp| mp.GetContentViewPanelId(),
+                        )
+                        .flatten()
+                    {
+                        Some(id) => id,
+                        None => return,
+                    };
+                    app.with_home_tree_and_sched_ctx(|tree, sc| {
+                        tree.with_behavior_as::<emcore::emSubViewPanel::emSubViewPanel, _>(
+                            content_view_id,
+                            |svp| {
+                                svp.visit_by_identity(
+                                    &identity, rel_x, rel_y, rel_a, true, &subject, sc,
+                                );
+                            },
+                        );
+                    });
+                },
+            ));
+            let _ = ctx;
+        }
+
+        // M-001: C++ `emBookmarkButton::Cycle` also calls `emButton::Cycle()`
+        // and runs an `UpToDate` Update path (`emBookmarks.cpp:1511-1538`).
+        // The Update path is the icon-load section (`Update()` body at
+        // `emBookmarks.cpp:1547-...`); Rust handles icon load lazily inside
+        // `Paint` (`load_icon` self-cache), so no explicit Cycle hook is
+        // required. The `emButton::Cycle()` call is part of the
+        // click-detection chain that B-013 will own; not ported here.
         false
     }
 }
