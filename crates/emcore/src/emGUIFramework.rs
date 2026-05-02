@@ -992,7 +992,19 @@ impl Drop for App {
 
 impl ApplicationHandler<CtrlMsg> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: CtrlMsg) {
+        let _instr_t0 = crate::emInstr::wall_us();
         crate::emCtrlSocket::handle_main_thread(self, event_loop, event);
+        let _instr_t1 = crate::emInstr::wall_us();
+        let mut buf = String::with_capacity(96);
+        use std::fmt::Write as _;
+        let _ = writeln!(
+            buf,
+            "CB|name=user_event|enter_us={}|exit_us={}|dur_us={}",
+            _instr_t0,
+            _instr_t1,
+            _instr_t1 - _instr_t0
+        );
+        crate::emInstr::write_line(&buf);
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -1021,6 +1033,18 @@ impl ApplicationHandler<CtrlMsg> for App {
         window_id: WindowId,
         event: WindowEvent,
     ) {
+        let _instr_t0 = crate::emInstr::wall_us();
+        let _instr_event_name = match &event {
+            WindowEvent::RedrawRequested => "redraw",
+            WindowEvent::CloseRequested => "close",
+            WindowEvent::Resized(_) => "resize",
+            WindowEvent::CursorMoved { .. } => "cursor_moved",
+            WindowEvent::MouseInput { .. } => "mouse",
+            WindowEvent::KeyboardInput { .. } => "key",
+            WindowEvent::MouseWheel { .. } => "wheel",
+            WindowEvent::Focused(_) => "focused",
+            _ => "other",
+        };
         match event {
             WindowEvent::CloseRequested => {
                 // Top-level close: auto-delete from `windows` and fire its
@@ -1204,9 +1228,22 @@ impl ApplicationHandler<CtrlMsg> for App {
                 }
             }
         }
+        let _instr_t1 = crate::emInstr::wall_us();
+        let mut buf = String::with_capacity(128);
+        use std::fmt::Write as _;
+        let _ = writeln!(
+            buf,
+            "CB|name=window_event|event={}|enter_us={}|exit_us={}|dur_us={}",
+            _instr_event_name,
+            _instr_t0,
+            _instr_t1,
+            _instr_t1 - _instr_t0
+        );
+        crate::emInstr::write_line(&buf);
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let _instr_t0 = crate::emInstr::wall_us();
         crate::emCtrlSocket::check_pending_wait_idle(self);
         crate::emCtrlSocket::check_pending_wait_for(self);
 
@@ -1260,6 +1297,19 @@ impl ApplicationHandler<CtrlMsg> for App {
             .collect();
         for sig in changed_signals {
             self.scheduler.fire(sig);
+        }
+
+        {
+            let has_awake = self.scheduler.has_awake_engines();
+            let mut buf = String::with_capacity(64);
+            use std::fmt::Write as _;
+            let _ = writeln!(
+                buf,
+                "AW|has_awake={}|wall_us={}",
+                has_awake as u8,
+                crate::emInstr::wall_us()
+            );
+            crate::emInstr::write_line(&buf);
         }
 
         // Run one scheduler time slice. `framework_actions` is now owned by
@@ -1475,6 +1525,18 @@ impl ApplicationHandler<CtrlMsg> for App {
                 win.request_redraw();
             }
         }
+
+        let _instr_t1 = crate::emInstr::wall_us();
+        let mut buf = String::with_capacity(96);
+        use std::fmt::Write as _;
+        let _ = writeln!(
+            buf,
+            "CB|name=about_to_wait|enter_us={}|exit_us={}|dur_us={}",
+            _instr_t0,
+            _instr_t1,
+            _instr_t1 - _instr_t0
+        );
+        crate::emInstr::write_line(&buf);
     }
 }
 
