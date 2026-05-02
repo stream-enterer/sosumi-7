@@ -10,6 +10,7 @@ Post-remediation work surfaced during Tier-B execution (2026-04-27 → 2026-05-0
 | [FU-002](FU-002-app-bound-reactions.md) | App-bound reaction wiring (mainctrl) | emmain | Cycle-side `&mut App` access | architectural decision on App threading |
 | [FU-003](FU-003-emview-multiview-port.md) | bookmark navigation completion (rescoped 2026-05-02; was "emView multi-view port") | emmain (emBookmarks, emMainWindow) | wire-up | none |
 | [FU-004](FU-004-d009-polling-sweep.md) | D-009 polling-intermediary sweep | tree-wide | structural drift | none |
+| [FU-005](FU-005-emfilemodel-state-signal-conflation.md) | emFileModel file-state-signal conflation fix (carved off FU-001 2026-05-02) | emcore + downstream | signal-shape fix | none |
 
 ## Selection rationale
 
@@ -17,6 +18,7 @@ Post-remediation work surfaced during Tier-B execution (2026-04-27 → 2026-05-0
 - **FU-002** unblocks B-012 reaction bodies but requires picking an App-threading model; design before implementation.
 - **FU-003** was rescoped 2026-05-02 from "large upstream port" to a small wire-up bucket — research showed the multi-view infrastructure is already ported; only bookmark hotkey wiring + a stale comment need fixing.
 - **FU-004** is discovery-led — start with a fresh scan, not a row list. Promote sightings (e.g., `emCoreConfigPanel` reset closure) to a real bucket once enumerated.
+- **FU-005** is well-scoped (signal-shape fix at base class + ~10 fire-site wirings + delegation chain). Brainstorm should settle the (α) split-vs-(β) rename design choice before plan-writing. Removes the 3 UPSTREAM-GAP markers downstream.
 
 ## Out of scope
 

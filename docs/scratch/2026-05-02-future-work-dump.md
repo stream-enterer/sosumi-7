@@ -19,7 +19,7 @@ what we caught).
 | FU-002 — App-bound reaction wiring (mainctrl) | Bucket file only. **Brainstorm pending.** Architectural decision required first (App-threading model: thread `&mut App`, pending-action queue, or `EngineCtx::app()` registry). | `…/followups/FU-002-app-bound-reactions.md` |
 | FU-003 — emView multi-view content/control split port | Bucket file only. **Brainstorm pending.** Large standalone upstream port, not a bucket-style sweep. | `…/followups/FU-003-emview-multiview-port.md` |
 | FU-004 — D-009 polling-intermediary sweep | Bucket file only. **Brainstorm pending.** Discovery-led; first phase is enumeration. | `…/followups/FU-004-d009-polling-sweep.md` |
-| FU-005 — `emFileModel` file-state-signal conflation fix | **Bucket file not yet written.** Created during FU-001 brainstorm when scan revealed `change_signal` is allocated but never fired and `GetFileStateSignal()` returns it (conflated with what should be a distinct ChangeSignal). 15 C++ fire sites; ~10 Rust state-mutation sites need D-007 ectx-threading audit. Cross-crate consumer audit needed. | (to be written) |
+| FU-005 — `emFileModel` file-state-signal conflation fix | Bucket file written 2026-05-02. Brainstorm pending. | `…/followups/FU-005-emfilemodel-state-signal-conflation.md` |
 
 ## B. Surfaced during FU-001 / FU-002 brainstorms — beyond their scope
 
