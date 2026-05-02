@@ -1,5 +1,7 @@
 # FU-001 — emstocks reaction-body completion + emFileModel state-signal lift
 
+**Status: Closed 2026-05-02** — merged to `main` at `a4a44d8f`. Spec: `docs/superpowers/specs/2026-05-02-FU-001-emstocks-reaction-bodies-design.md`. Plan: `docs/superpowers/plans/2026-05-02-FU-001-emstocks-reaction-bodies.md`. The state-signal lift was carved off into FU-005 mid-flight; this bucket landed reaction bodies + the `emCheckBox::click_signal` mirror.
+
 **Pattern:** reaction-body stubs + accessor-lift (post-D-006 wiring).
 **Scope:** `emstocks` (consumers), `emcore` (one accessor lift, one accessor add).
 **Row count:** 5 reaction stubs + 1 upstream lift + 1 emcore accessor.

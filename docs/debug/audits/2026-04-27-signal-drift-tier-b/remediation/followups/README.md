@@ -1,16 +1,18 @@
 # Tier-B Follow-up Buckets
 
-Post-remediation work surfaced during Tier-B execution (2026-04-27 → 2026-05-01). Tier-B itself is **closed** (19/19 buckets, 212/212 rows, 3003 nextest tests passing). The buckets below cover residual stubs and architectural gaps that were intentionally scoped out, all currently tracked as `TODO(B-0XX-followup)` markers in source or as `UPSTREAM-GAP` annotations.
+**Status: Closed 2026-05-02.** All 5 buckets implemented, merged to `main`, and pushed. Tier-B itself was closed 2026-05-01 (19/19 buckets, 212/212 rows, 3003 nextest tests passing). The buckets below cover residual stubs and architectural gaps that were intentionally scoped out, all originally tracked as `TODO(B-0XX-followup)` markers or `UPSTREAM-GAP` annotations.
 
 ## Buckets
 
-| ID | Title | Scope | Axis | Prereqs |
-|---|---|---|---|---|
-| [FU-001](FU-001-emstocks-reaction-bodies.md) | emstocks reaction-body completion + emFileModel state-signal lift | emstocks + emcore | reaction-body wiring, accessor lift | none |
-| [FU-002](FU-002-app-bound-reactions.md) | App-bound reaction wiring (mainctrl) | emmain | Cycle-side `&mut App` access | architectural decision on App threading |
-| [FU-003](FU-003-emview-multiview-port.md) | bookmark navigation completion (rescoped 2026-05-02; was "emView multi-view port") | emmain (emBookmarks, emMainWindow) | wire-up | none |
-| [FU-004](FU-004-d009-polling-sweep.md) | D-009 polling-intermediary sweep | tree-wide | structural drift | none |
-| [FU-005](FU-005-emfilemodel-state-signal-conflation.md) | emFileModel file-state-signal conflation fix (carved off FU-001 2026-05-02) | emcore + downstream | signal-shape fix | none |
+| ID | Title | Status | Spec | Plan | Merge |
+|---|---|---|---|---|---|
+| [FU-001](FU-001-emstocks-reaction-bodies.md) | emstocks reaction-body completion + emCheckBox click_signal mirror | Closed 2026-05-02 | [spec](../../../../superpowers/specs/2026-05-02-FU-001-emstocks-reaction-bodies-design.md) | [plan](../../../../superpowers/plans/2026-05-02-FU-001-emstocks-reaction-bodies.md) | `a4a44d8f` |
+| [FU-002](FU-002-app-bound-reactions.md) | App-bound reaction wiring (mainctrl) | Closed 2026-05-02 | [spec](../../../../superpowers/specs/2026-05-02-FU-002-app-bound-reactions-design.md) | [plan](../../../../superpowers/plans/2026-05-02-FU-002-app-bound-reactions.md) | `30d2b79f` |
+| [FU-003](FU-003-emview-multiview-port.md) | bookmark navigation completion (rescoped 2026-05-02 from "emView multi-view port") | Closed 2026-05-02 | [spec](../../../../superpowers/specs/2026-05-02-FU-003-bookmark-navigation-completion-design.md) | [plan](../../../../superpowers/plans/2026-05-02-FU-003-bookmark-navigation-completion.md) | `2281f9ae` |
+| [FU-004](FU-004-d009-polling-sweep.md) | D-009 polling-intermediary sweep / inventory | Closed 2026-05-02 | [spec](../../../../superpowers/specs/2026-05-02-FU-004-d009-polling-sweep-design.md) | [plan](../../../../superpowers/plans/2026-05-02-FU-004-d009-inventory.md) | `6e3f6f59` |
+| [FU-005](FU-005-emfilemodel-state-signal-conflation.md) | emFileModel file-state-signal conflation fix (carved off FU-001 2026-05-02) | Closed 2026-05-02 | [spec](../../../../superpowers/specs/2026-05-02-FU-005-emfilemodel-state-signal-conflation-design.md) | [plan](../../../../superpowers/plans/2026-05-02-FU-005-emfilemodel-state-signal-conflation.md) | `e0e01500` |
+
+Residual divergences surfaced post-implementation are recorded in `docs/scratch/2026-05-02-future-work-dump.md` (commit `0707e79e`).
 
 ## Selection rationale
 

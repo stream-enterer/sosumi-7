@@ -1,5 +1,7 @@
 # FU-005 — emFileModel file-state-signal conflation fix
 
+**Status: Closed 2026-05-02** — merged to `main` at `e0e01500`. Spec: `docs/superpowers/specs/2026-05-02-FU-005-emfilemodel-state-signal-conflation-design.md` (with mid-flight correction at `6ae88a67`). Plan: `docs/superpowers/plans/2026-05-02-FU-005-emfilemodel-state-signal-conflation.md`. emRecFileModel adapted to standalone shape (lazy `file_state_signal: Cell<SignalId>` mirroring `change_signal`); 9 paired `signal_file_state` calls added; downstream UPSTREAM-GAPs in emstocks dropped.
+
 > **Origin:** Surfaced 2026-05-02 during the FU-001 brainstorm. The original FU-001 had a "GetFileStateSignal lift" item assuming a small accessor lift; verification showed the actual situation is a **signal-conflation bug spanning emFileModel + emRecFileModel + downstream consumers**, requiring its own brainstorm and consumer audit. Carved out as FU-005.
 
 **Pattern:** Signal-shape fix at emcore base class — separate two C++ signals that the Rust port conflated into one never-fired field; wire firing at all state-transition sites; fix delegation chain in derived classes.

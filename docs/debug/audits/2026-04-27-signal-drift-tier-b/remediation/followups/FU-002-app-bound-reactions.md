@@ -1,5 +1,7 @@
 # FU-002 — App-bound reaction wiring (mainctrl)
 
+**Status: Closed 2026-05-02** — merged to `main` at `30d2b79f`. Spec: `docs/superpowers/specs/2026-05-02-FU-002-app-bound-reactions-design.md`. Plan: `docs/superpowers/plans/2026-05-02-FU-002-app-bound-reactions.md`. Resolved via `enqueue_main_window_action` helper threading `&mut App` through `EngineCtx::pending_actions()`.
+
 **Pattern:** reaction body needs `&mut App` access from `Cycle` context.
 **Scope:** `emmain`.
 **Row count:** 3 stubs (B-012-followup) — likely more once swept.

@@ -1,5 +1,7 @@
 # FU-004 — D-009 polling-intermediary sweep
 
+**Status: Closed 2026-05-02** — merged to `main` at `6e3f6f59`. Spec: `docs/superpowers/specs/2026-05-02-FU-004-d009-polling-sweep-design.md`. Plan: `docs/superpowers/plans/2026-05-02-FU-004-d009-inventory.md`. Inventory of 17 candidates published at `FU-004-inventory.md`; verified D-009 fields received C++-mirrored doc-comments + `DIVERGED:` annotation where forced. Vestigial / D-007 / needs-deeper-audit candidates surfaced into `docs/scratch/2026-05-02-future-work-dump.md`.
+
 **Pattern:** D-009 (CLAUDE.md §"Polling intermediaries") — `Cell` / `RefCell` field set at one site and drained by another's `Cycle`, producing one-tick timing drift from C++.
 **Scope:** tree-wide (discovery pass).
 **Row count:** unknown — bucket starts with a fresh enumeration phase.

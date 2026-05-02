@@ -1,5 +1,7 @@
 # FU-003 — bookmark navigation completion
 
+**Status: Closed 2026-05-02** — merged to `main` at `2281f9ae`. Spec: `docs/superpowers/specs/2026-05-02-FU-003-bookmark-navigation-completion-design.md`. Plan: `docs/superpowers/plans/2026-05-02-FU-003-bookmark-navigation-completion.md`. Bookmark hotkey wired to `emSubViewPanel::visit_by_identity` synchronously; stale `DIVERGED:` comment in `emBookmarks.rs` corrected.
+
 > **Scope correction (2026-05-02).** This bucket was originally framed as "emView multi-view content/control split port — large standalone upstream port." Research showed that framing was based on incomplete reading: the multi-view infrastructure (`emSubViewPanel`, `emView::VisitByIdentity`, sub-view dispatch via `home_tree.with_behavior_as::<emSubViewPanel>(...)`) is already ported and is already used correctly in `emBookmarks.rs`'s click reaction. The actual remaining work is small. This file has been rewritten with the corrected scope. The original framing is preserved in `docs/scratch/2026-05-02-future-work-dump.md` for reference, alongside speculative items that were carved off.
 
 **Pattern:** Wire-up — leverage existing emView/emSubViewPanel infrastructure for two sites currently using stubs/stale workarounds.
