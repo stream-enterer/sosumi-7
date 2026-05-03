@@ -4200,6 +4200,22 @@ impl emView {
                     framework_clipboard,
                     pending_actions,
                 );
+                // Phase 0 (B2): NOTICE_FC_DECODE — emit per FOCUS_CHANGED notice
+                // delivery so the analyzer can read in_active_path/window_focused
+                // at the exact dispatch moment. Unconditional on FOCUS_CHANGED so
+                // we capture both branches (would-fire-handler vs. would-skip).
+                if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
+                    let line = format!(
+                        "NOTICE_FC_DECODE|wall_us={}|panel_id={:?}|behavior_type={}|in_active_path={}|window_focused={}|flags={:#x}\n",
+                        crate::emInstr::wall_us(),
+                        id,
+                        recipient_type_owned,
+                        if state.in_active_path { "t" } else { "f" },
+                        if state.window_focused { "t" } else { "f" },
+                        flags.bits(),
+                    );
+                    crate::emInstr::write_line(&line);
+                }
                 behavior.notice(flags, &state, &mut ctx);
                 // "Notice() is allowed to do a 'delete this'" — C++ emPanel.cpp:1421.
                 if tree.panels.contains_key(id) {
