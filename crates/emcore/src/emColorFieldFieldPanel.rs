@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::emColor::emColor;
 use crate::emCursor::emCursor;
-use crate::emEngineCtx::PanelCtx;
+use crate::emEngineCtx::{EngineCtx, PanelCtx};
 use crate::emInput::emInputEvent;
 use crate::emInputState::emInputState;
 use crate::emPainter::emPainter;
@@ -76,6 +76,12 @@ impl PanelBehavior for ScalarFieldPanel {
 /// PanelBehavior wrapper for emTextField — used by emColorField expansion.
 pub(crate) struct TextFieldPanel {
     pub text_field: emTextField,
+    /// Cached focus state. Set in `notice` from `state.in_focused_path()`
+    /// (which incorporates window-focus, not stored on the tree); read in
+    /// `Cycle` so blink advances only while focused. Mirrors the role of
+    /// C++ `emTextField::IsInFocusedPath()` queried at Cycle entry; the
+    /// tree alone cannot answer this without a `window_focused` flag.
+    pub(crate) is_focused: bool,
 }
 
 impl TextFieldPanel {
@@ -93,7 +99,10 @@ impl TextFieldPanel {
         tf.border_mut().outer = OuterBorderType::Rect;
         tf.border_mut().inner = InnerBorderType::CustomRect;
         tf.border_mut().SetBorderScaling(2.0);
-        Self { text_field: tf }
+        Self {
+            text_field: tf,
+            is_focused: false,
+        }
     }
 }
 
@@ -107,14 +116,35 @@ impl PanelBehavior for TextFieldPanel {
         state: &PanelState,
     ) {
         let pixel_scale = state.viewed_rect.w * state.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.text_field.cycle_blink(state.in_focused_path());
+        // cycle_blink moved to Cycle (mirrors C++ emTextField::Cycle, emTextField.cpp:306).
         self.text_field
             .Paint(painter, canvas_color, w, h, state.enabled, pixel_scale);
     }
 
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
+    fn Cycle(&mut self, _ectx: &mut EngineCtx<'_>, pctx: &mut PanelCtx) -> bool {
+        // Mirrors C++ emTextField::Cycle (emTextField.cpp:306-340):
+        // - Read focus, advance blink state.
+        // - On blink-state flip, InvalidatePainting (whole panel).
+        // - Return busy=true while focused so the engine stays awake.
+        let r = self.text_field.cycle_blink(self.is_focused);
+        if r.flipped {
+            pctx.request_invalidate_self();
+        }
+        r.busy
+    }
+
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
-            self.text_field.on_focus_changed(state.in_focused_path());
+            self.is_focused = state.in_focused_path();
+            self.text_field.on_focus_changed(self.is_focused);
+            // Mirrors C++ emTextField::Notice (emTextField.cpp:343-350):
+            // RestartCursorBlinking() + WakeUp() guarded by IsInFocusedPath()
+            // so they fire on focus-gain only, not focus-loss.
+            if self.is_focused {
+                self.text_field.RestartCursorBlinking();
+                let id = ctx.id;
+                ctx.wake_up_panel(id);
+            }
         }
     }
 }

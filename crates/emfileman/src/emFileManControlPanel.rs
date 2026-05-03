@@ -915,17 +915,7 @@ mod tests {
 
         // First Cycle: subscribe + allocate signals.
         let mut tree = PanelTree::new();
-        let mut pctx = PanelCtx {
-            tree: &mut tree,
-            id: PanelId::null(),
-            current_pixel_tallness: 1.0,
-            scheduler: None,
-            framework_clipboard: None,
-            framework_actions: None,
-            root_context: None,
-            view_context: None,
-            pending_actions: None,
-        };
+        let mut pctx = PanelCtx::new(&mut tree, PanelId::null(), 1.0);
         {
             let mut ectx = h.engine_ctx(dummy_eid);
             let _ = panel.Cycle(&mut ectx, &mut pctx);

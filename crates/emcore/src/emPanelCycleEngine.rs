@@ -91,7 +91,7 @@ impl emEngine for PanelCycleEngine {
                     };
                     (tallness, b)
                 };
-                let stay_awake = {
+                let (stay_awake, invalidate_requested) = {
                     let mut ectx = crate::emEngineCtx::EngineCtx {
                         scheduler: unsafe { &mut *sched_ptr },
                         tree: None,
@@ -119,7 +119,9 @@ impl emEngine for PanelCycleEngine {
                         ctx.framework_clipboard,
                         ctx.pending_actions,
                     );
-                    behavior.Cycle(&mut ectx, &mut pctx)
+                    let busy = behavior.Cycle(&mut ectx, &mut pctx);
+                    let inval = pctx.take_invalidate_self_request();
+                    (busy, inval)
                 };
                 let ctx_tree = ctx
                     .tree
@@ -127,6 +129,29 @@ impl emEngine for PanelCycleEngine {
                     .expect("PanelCycleEngine: tree is Some for Toplevel engines");
                 if ctx_tree.panels.contains_key(self.panel_id) {
                     ctx_tree.put_behavior(self.panel_id, behavior);
+                }
+                if invalidate_requested {
+                    // RUST_ONLY: (language-forced-utility) — Implements the
+                    // drain half of the language-forced
+                    // `request_invalidate_self` adapter (see RUST_ONLY in
+                    // `emEngineCtx.rs`, `invalidate_self_requested`). What we
+                    // mirror is the *effect* of C++
+                    // `emPanel::InvalidatePainting()` (no-arg) called inline
+                    // from `emTextField::Cycle` (emTextField.cpp:319/325/334)
+                    // — C++ has no drain step. SAFETY: the tree raw pointer
+                    // aliases `ctx.tree`, but `resolve_view` for Toplevel
+                    // scopes only touches `ctx.windows` and `view.dirty_rects`
+                    // — `ctx.tree` is not re-borrowed by the closure
+                    // (single-threaded; same raw-ptr pattern used above for
+                    // sched/framework_actions).
+                    let panel_id = self.panel_id;
+                    let tree_ptr: *const crate::emPanelTree::PanelTree = ctx
+                        .tree
+                        .as_deref()
+                        .expect("PanelCycleEngine: tree is Some for Toplevel engines");
+                    self.scope.resolve_view(ctx, |view, sc| {
+                        view.InvalidatePainting(sc, unsafe { &*tree_ptr }, panel_id);
+                    });
                 }
                 stay_awake
             }
@@ -164,7 +189,7 @@ impl emEngine for PanelCycleEngine {
                 // `ectx.windows` borrows `ctx.windows`; `pctx` borrows `ctx.tree` (sub_tree
                 // through the outer tree chain). These are distinct fields of `ctx` so the
                 // compiler accepts both borrows simultaneously — same pattern as Toplevel.
-                let stay_awake = {
+                let (stay_awake, invalidate_requested) = {
                     let mut ectx = crate::emEngineCtx::EngineCtx {
                         scheduler: unsafe { &mut *sched_ptr },
                         tree: None,
@@ -199,10 +224,25 @@ impl emEngine for PanelCycleEngine {
                         ctx.framework_clipboard,
                         ctx.pending_actions,
                     );
-                    behavior.Cycle(&mut ectx, &mut pctx)
+                    let busy = behavior.Cycle(&mut ectx, &mut pctx);
+                    let inval = pctx.take_invalidate_self_request();
+                    (busy, inval)
                 };
 
-                // Phase 3: put behavior back. Re-navigate (borrow from phase 2 dropped).
+                // Phase 3: put behavior back, then (if requested) invalidate.
+                // Re-navigate (borrow from phase 2 dropped). Both put_behavior
+                // and the InvalidatePainting drain happen inside the same
+                // svp borrow window so we don't need a second raw-ptr re-derivation.
+                //
+                // RUST_ONLY: (language-forced-utility) — Implements the drain
+                // half of the language-forced `request_invalidate_self`
+                // adapter (see RUST_ONLY in `emEngineCtx.rs`,
+                // `invalidate_self_requested`). What we mirror is the *effect*
+                // of C++ `emPanel::InvalidatePainting()` (no-arg) called inline
+                // from `emTextField::Cycle` — C++ has no drain step. The
+                // disjoint-field borrow `svp.sub_view_and_tree_mut()` lets us
+                // call `view.InvalidatePainting(sched, &sub_tree, panel_id)`
+                // without aliasing `svp` through the outer tree twice.
                 let outer_tree = ctx
                     .tree
                     .as_deref_mut()
@@ -213,9 +253,21 @@ impl emEngine for PanelCycleEngine {
                     .and_then(|p| p.behavior.as_mut())
                     .and_then(|b| b.as_sub_view_panel_mut())
                 {
-                    let sub_tree = svp.sub_tree_mut();
+                    let (sub_view, sub_tree) = svp.sub_view_and_tree_mut();
                     if sub_tree.panels.contains_key(self.panel_id) {
                         sub_tree.put_behavior(self.panel_id, behavior);
+                    }
+                    if invalidate_requested {
+                        let mut sched_ctx = crate::emEngineCtx::SchedCtx {
+                            scheduler: unsafe { &mut *sched_ptr },
+                            framework_actions: unsafe { &mut *fw_ptr },
+                            root_context: ctx.root_context,
+                            view_context: None,
+                            framework_clipboard: ctx.framework_clipboard,
+                            current_engine: Some(ctx.engine_id),
+                            pending_actions: ctx.pending_actions,
+                        };
+                        sub_view.InvalidatePainting(&mut sched_ctx, sub_tree, self.panel_id);
                     }
                 }
                 stay_awake

@@ -618,6 +618,18 @@ pub struct PanelCtx<'a> {
     /// actions. Set by full-reach call sites so behaviors can call
     /// `ConstructCtx::pending_actions`. Mirrors `framework_clipboard` pattern.
     pub pending_actions: Option<&'a Rc<RefCell<Vec<FrameworkDeferredAction>>>>,
+    /// RUST_ONLY: (language-forced-utility) — In C++ `emPanel::Cycle` calls
+    /// `InvalidatePainting()` on itself directly, walking up to its view via
+    /// normal pointers. In the Rust port the behavior is `take`n out of the
+    /// tree during `Cycle` (canonical ownership rule from CLAUDE.md
+    /// §Ownership), so the behavior cannot synchronously reach
+    /// `view.InvalidatePainting(sched, tree, panel_id)` — the tree is on the
+    /// other side of the `take`. Set by panel behaviors during `Cycle` and
+    /// drained by `PanelCycleEngine` after `Cycle` returns. The deferred-
+    /// request flag is the minimum adapter that the Rust ownership model
+    /// admits for the C++ shape; effect (a fresh paint) is preserved.
+    /// Used by `emTextField::Cycle` for cursor-blink repaints.
+    invalidate_self_requested: bool,
 }
 
 impl<'a> PanelCtx<'a> {
@@ -634,6 +646,7 @@ impl<'a> PanelCtx<'a> {
             root_context: None,
             view_context: None,
             pending_actions: None,
+            invalidate_self_requested: false,
         }
     }
 
@@ -688,6 +701,7 @@ impl<'a> PanelCtx<'a> {
             root_context: Some(root_context),
             view_context: None,
             pending_actions: Some(pending_actions),
+            invalidate_self_requested: false,
         }
     }
 
@@ -723,6 +737,7 @@ impl<'a> PanelCtx<'a> {
             root_context,
             view_context,
             pending_actions: Some(pending_actions),
+            invalidate_self_requested: false,
         }
     }
 
@@ -771,7 +786,28 @@ impl<'a> PanelCtx<'a> {
             view_context: self.view_context,
             framework_clipboard: self.framework_clipboard,
             pending_actions: self.pending_actions,
+            invalidate_self_requested: false,
         }
+    }
+
+    /// RUST_ONLY: (language-forced-utility) — Producer half of the deferred
+    /// `InvalidatePainting()` adapter; see the field doc on
+    /// `invalidate_self_requested`. Idempotent within a single Cycle call.
+    /// Drained by `PanelCycleEngine` after `Cycle` returns; the drain calls
+    /// `view.InvalidatePainting(sched, tree, panel_id)`, preserving the
+    /// observable effect of C++ `emPanel::InvalidatePainting()` (no-arg form).
+    pub fn request_invalidate_self(&mut self) {
+        self.invalidate_self_requested = true;
+    }
+
+    /// RUST_ONLY: (language-forced-utility) — Drain accessor for the
+    /// `request_invalidate_self` adapter. Returns `true` if
+    /// `request_invalidate_self` was called since the last drain. Internal —
+    /// called by `PanelCycleEngine` after `Cycle` returns.
+    pub(crate) fn take_invalidate_self_request(&mut self) -> bool {
+        let v = self.invalidate_self_requested;
+        self.invalidate_self_requested = false;
+        v
     }
 
     /// Wake this panel's scheduler engine.

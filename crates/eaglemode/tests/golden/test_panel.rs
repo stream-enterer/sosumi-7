@@ -27,7 +27,7 @@ use emcore::emRasterLayout::emRasterLayout;
 use emcore::emResTga::load_tga;
 use emcore::emTiling::{ChildConstraint, Orientation};
 
-use emcore::emEngineCtx::PanelCtx;
+use emcore::emEngineCtx::{EngineCtx, PanelCtx};
 
 use emcore::emPanelTree::{PanelId, PanelTree, ViewConditionType};
 
@@ -258,13 +258,20 @@ impl PanelBehavior for RadioBoxPanel {
 
 struct TextFieldPanel {
     widget: emTextField,
+    is_focused: bool,
 }
 impl PanelBehavior for TextFieldPanel {
     fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.widget.cycle_blink(s.in_focused_path());
         self.widget
             .Paint(p, canvas_color, w, h, s.enabled, pixel_scale);
+    }
+    fn Cycle(&mut self, _ectx: &mut EngineCtx<'_>, pctx: &mut PanelCtx) -> bool {
+        let r = self.widget.cycle_blink(self.is_focused);
+        if r.flipped {
+            pctx.request_invalidate_self();
+        }
+        r.busy
     }
     fn Input(
         &mut self,
@@ -281,9 +288,17 @@ impl PanelBehavior for TextFieldPanel {
     fn IsOpaque(&self) -> bool {
         true
     }
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
-            self.widget.on_focus_changed(state.in_focused_path());
+            self.is_focused = state.in_focused_path();
+            self.widget.on_focus_changed(self.is_focused);
+            // Mirrors C++ emTextField::Notice (emTextField.cpp:343-350):
+            // RestartCursorBlinking + WakeUp guarded by IsInFocusedPath().
+            if self.is_focused {
+                self.widget.RestartCursorBlinking();
+                let id = ctx.id;
+                ctx.wake_up_panel(id);
+            }
         }
     }
 }
@@ -1715,8 +1730,13 @@ impl TkTestPanel {
             tf1.SetDescription("This is a read-only text field.");
             tf1.SetText("Read-Only");
             let id = ctx.tree.create_child(gid, "tf1", None);
-            ctx.tree
-                .set_behavior(id, Box::new(TextFieldPanel { widget: tf1 }));
+            ctx.tree.set_behavior(
+                id,
+                Box::new(TextFieldPanel {
+                    widget: tf1,
+                    is_focused: false,
+                }),
+            );
 
             let mut tf2 = emTextField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             tf2.SetCaption("Editable");
@@ -1724,8 +1744,13 @@ impl TkTestPanel {
             tf2.SetEditable(true);
             tf2.SetText("Editable");
             let id = ctx.tree.create_child(gid, "tf2", None);
-            ctx.tree
-                .set_behavior(id, Box::new(TextFieldPanel { widget: tf2 }));
+            ctx.tree.set_behavior(
+                id,
+                Box::new(TextFieldPanel {
+                    widget: tf2,
+                    is_focused: false,
+                }),
+            );
 
             let mut tf3 = emTextField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             tf3.SetCaption("Password");
@@ -1734,8 +1759,13 @@ impl TkTestPanel {
             tf3.SetText("Password");
             tf3.SetPasswordMode(true);
             let id = ctx.tree.create_child(gid, "tf3", None);
-            ctx.tree
-                .set_behavior(id, Box::new(TextFieldPanel { widget: tf3 }));
+            ctx.tree.set_behavior(
+                id,
+                Box::new(TextFieldPanel {
+                    widget: tf3,
+                    is_focused: false,
+                }),
+            );
 
             let mut mltf1 = emTextField::new(&mut ctx.as_sched_ctx().expect("sched"), look.clone());
             mltf1.SetCaption("Multi-Line");
@@ -1744,8 +1774,13 @@ impl TkTestPanel {
             mltf1.SetMultiLineMode(true);
             mltf1.SetText("first line\nsecond line\n...");
             let id = ctx.tree.create_child(gid, "mltf1", None);
-            ctx.tree
-                .set_behavior(id, Box::new(TextFieldPanel { widget: mltf1 }));
+            ctx.tree.set_behavior(
+                id,
+                Box::new(TextFieldPanel {
+                    widget: mltf1,
+                    is_focused: false,
+                }),
+            );
         }
 
         // 5. Scalar Fields (C++ :658-712)
@@ -2420,6 +2455,7 @@ impl PolyDrawPanel {
                         tf.SetText("9");
                         tf
                     },
+                    is_focused: false,
                 }),
                 "FillColor",
                 Box::new(ColorFieldPanel {
@@ -2449,6 +2485,7 @@ impl PolyDrawPanel {
                         tf.SetText("0.01");
                         tf
                     },
+                    is_focused: false,
                 }),
                 "WithCanvasColor",
                 Box::new(CheckBoxPanel {
@@ -2520,6 +2557,7 @@ impl PolyDrawPanel {
                         tf.SetText("1.0");
                         tf
                     },
+                    is_focused: false,
                 }),
                 "GapLengthFactor",
                 Box::new(TextFieldPanel {
@@ -2529,6 +2567,7 @@ impl PolyDrawPanel {
                         tf.SetText("1.0");
                         tf
                     },
+                    is_focused: false,
                 }),
             );
         };
@@ -2590,6 +2629,7 @@ impl PolyDrawPanel {
                         tf.SetText("1.0");
                         tf
                     },
+                    is_focused: false,
                 }),
                 "LengthFactor",
                 Box::new(TextFieldPanel {
@@ -2599,6 +2639,7 @@ impl PolyDrawPanel {
                         tf.SetText("1.0");
                         tf
                     },
+                    is_focused: false,
                 }),
             );
         };
@@ -2660,6 +2701,7 @@ impl PolyDrawPanel {
                         tf.SetText("1.0");
                         tf
                     },
+                    is_focused: false,
                 }),
                 "LengthFactor",
                 Box::new(TextFieldPanel {
@@ -2669,6 +2711,7 @@ impl PolyDrawPanel {
                         tf.SetText("1.0");
                         tf
                     },
+                    is_focused: false,
                 }),
             );
         };

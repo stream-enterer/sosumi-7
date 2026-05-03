@@ -1239,8 +1239,13 @@ impl emFileSelectionBox {
             tf.SetEditable(true);
             tf.SetText(&self.parent_dir.to_string_lossy());
             self.dir_text_sig = tf.text_signal;
-            let id =
-                ctx.create_child_with("directory", Box::new(TextFieldPanel { text_field: tf }));
+            let id = ctx.create_child_with(
+                "directory",
+                Box::new(TextFieldPanel {
+                    text_field: tf,
+                    is_focused: false,
+                }),
+            );
             self.dir_field_id = Some(id);
         }
 
@@ -1318,7 +1323,13 @@ impl emFileSelectionBox {
                 tf.SetText(name);
             }
             self.name_text_sig = tf.text_signal;
-            let id = ctx.create_child_with("name", Box::new(TextFieldPanel { text_field: tf }));
+            let id = ctx.create_child_with(
+                "name",
+                Box::new(TextFieldPanel {
+                    text_field: tf,
+                    is_focused: false,
+                }),
+            );
             self.name_field_id = Some(id);
         }
 

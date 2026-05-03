@@ -58,6 +58,25 @@ enum DragMode {
     Move,
 }
 
+/// RUST_ONLY: (language-forced-utility) — Result of one `cycle_blink` call.
+///
+/// C++ `emTextField::Cycle` returns a single `bool busy` and calls
+/// `InvalidatePainting()` inline on blink flip. The Rust split exists
+/// because the behavior cannot call invalidate inline — the panel tree
+/// is `take`n during `Cycle` (CLAUDE.md §Ownership) so the behavior cannot
+/// reach the view synchronously. This struct is the return-side half of
+/// the deferred-invalidate adapter (see `request_invalidate_self` /
+/// `take_invalidate_self_request` on `PanelCtx` in `emEngineCtx.rs`).
+///
+/// `flipped` is true when `cursor_blink_on` actually changed during this
+/// call — the caller should call `pctx.request_invalidate_self()` only
+/// when this is set. `busy` is true while focused, mirroring C++
+/// `emTextField::Cycle`'s return value (`busy=true` keeps the engine awake).
+pub struct CycleBlinkResult {
+    pub flipped: bool,
+    pub busy: bool,
+}
+
 /// Single-line or multi-line text input widget.
 pub struct emTextField {
     border: emBorder,
@@ -2333,24 +2352,43 @@ impl emTextField {
     }
 
     /// Toggles cursor blink state based on elapsed time. Should be called
-    /// from a periodic timer. Returns `true` if the widget is busy (needs
-    /// continued cycling). `focused` indicates whether this text field is
-    /// in the focused path. Matches C++ `Cycle` blink logic.
-    pub fn cycle_blink(&mut self, focused: bool) -> bool {
+    /// from `TextFieldPanel::Cycle`. Returns a [`CycleBlinkResult`]
+    /// (`flipped`, `busy`). `focused` indicates whether this text field is in
+    /// the focused path. Matches C++ `emTextField::Cycle` blink logic
+    /// (emTextField.cpp:306-340).
+    pub fn cycle_blink(&mut self, focused: bool) -> CycleBlinkResult {
         if focused {
             let now = std::time::Instant::now();
             let elapsed_ms = now.duration_since(self.cursor_blink_time).as_millis();
             if elapsed_ms >= 1000 {
                 self.cursor_blink_time = now;
+                let was_off = !self.cursor_blink_on;
                 self.cursor_blink_on = true;
-            } else if elapsed_ms >= 500 {
-                self.cursor_blink_on = false;
+                return CycleBlinkResult {
+                    flipped: was_off,
+                    busy: true,
+                };
             }
-            true
+            if elapsed_ms >= 500 {
+                let was_on = self.cursor_blink_on;
+                self.cursor_blink_on = false;
+                return CycleBlinkResult {
+                    flipped: was_on,
+                    busy: true,
+                };
+            }
+            CycleBlinkResult {
+                flipped: false,
+                busy: true,
+            }
         } else {
             self.cursor_blink_time = std::time::Instant::now();
+            let was_off = !self.cursor_blink_on;
             self.cursor_blink_on = true;
-            false
+            CycleBlinkResult {
+                flipped: was_off,
+                busy: false,
+            }
         }
     }
 
@@ -3826,14 +3864,24 @@ mod tests {
         let mut __init = TestInit::new();
         let look = emLook::new();
         let mut tf = emTextField::new(&mut __init.ctx(), look);
-        assert!(tf.IsCursorBlinkOn());
-        // Focused: returns busy=true
-        let busy = tf.cycle_blink(true);
-        assert!(busy);
-        assert!(tf.IsCursorBlinkOn()); // just started, < 500ms
-                                       // Not focused: resets blink, returns false
-        let busy = tf.cycle_blink(false);
-        assert!(!busy);
+        // Backdate the blink timer so the very next cycle_blink crosses the
+        // 500ms boundary (matches C++ emTextField::Cycle: blink flip on
+        // 500ms / 1000ms boundaries).
+        tf.cursor_blink_time = std::time::Instant::now() - std::time::Duration::from_millis(600);
+        assert!(tf.IsCursorBlinkOn()); // initial state
+        let r = tf.cycle_blink(true);
+        assert!(r.flipped, "after 500ms, blink state should flip");
+        assert!(r.busy, "focused TextField is busy");
+        assert!(
+            !tf.IsCursorBlinkOn(),
+            "blink off after first 500ms boundary"
+        );
+        let r2 = tf.cycle_blink(true);
+        assert!(!r2.flipped, "no flip on the same boundary");
+        assert!(r2.busy);
+        let r3 = tf.cycle_blink(false);
+        assert!(r3.flipped, "leaving focus restores blink-on, that's a flip");
+        assert!(!r3.busy, "unfocused TextField is not busy");
         assert!(tf.IsCursorBlinkOn());
     }
 

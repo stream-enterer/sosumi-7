@@ -200,13 +200,20 @@ impl PanelBehavior for RadioBoxPanel {
 
 struct TextFieldPanel {
     widget: emTextField,
+    is_focused: bool,
 }
 impl PanelBehavior for TextFieldPanel {
     fn Paint(&mut self, p: &mut emPainter, canvas_color: emColor, w: f64, h: f64, s: &PanelState) {
         let pixel_scale = s.viewed_rect.w * s.viewed_rect.h / w.max(1e-100) / h.max(1e-100);
-        self.widget.cycle_blink(s.in_focused_path());
         self.widget
             .Paint(p, canvas_color, w, h, s.enabled, pixel_scale);
+    }
+    fn Cycle(&mut self, _ectx: &mut EngineCtx<'_>, pctx: &mut PanelCtx) -> bool {
+        let r = self.widget.cycle_blink(self.is_focused);
+        if r.flipped {
+            pctx.request_invalidate_self();
+        }
+        r.busy
     }
     fn Input(
         &mut self,
@@ -223,9 +230,17 @@ impl PanelBehavior for TextFieldPanel {
     fn IsOpaque(&self) -> bool {
         true
     }
-    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, _ctx: &mut PanelCtx) {
+    fn notice(&mut self, flags: NoticeFlags, state: &PanelState, ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
-            self.widget.on_focus_changed(state.in_focused_path());
+            self.is_focused = state.in_focused_path();
+            self.widget.on_focus_changed(self.is_focused);
+            // Mirrors C++ emTextField::Notice (emTextField.cpp:343-350):
+            // RestartCursorBlinking + WakeUp guarded by IsInFocusedPath().
+            if self.is_focused {
+                self.widget.RestartCursorBlinking();
+                let id = ctx.id;
+                ctx.wake_up_panel(id);
+            }
         }
     }
 }
@@ -1893,8 +1908,13 @@ impl TkTestPanel {
             tf1.SetDescription("This is a read-only text field.");
             tf1.SetText("Read-Only");
             let id = ctx.tree.create_child(gid, "tf1", None);
-            ctx.tree
-                .set_behavior(id, Box::new(TextFieldPanel { widget: tf1 }));
+            ctx.tree.set_behavior(
+                id,
+                Box::new(TextFieldPanel {
+                    widget: tf1,
+                    is_focused: false,
+                }),
+            );
 
             let mut tf2 = emTextField::new(ctx, look.clone());
             tf2.SetCaption("Editable");
@@ -1902,8 +1922,13 @@ impl TkTestPanel {
             tf2.SetEditable(true);
             tf2.SetText("Editable");
             let id = ctx.tree.create_child(gid, "tf2", None);
-            ctx.tree
-                .set_behavior(id, Box::new(TextFieldPanel { widget: tf2 }));
+            ctx.tree.set_behavior(
+                id,
+                Box::new(TextFieldPanel {
+                    widget: tf2,
+                    is_focused: false,
+                }),
+            );
 
             let mut tf3 = emTextField::new(ctx, look.clone());
             tf3.SetCaption("Password");
@@ -1912,8 +1937,13 @@ impl TkTestPanel {
             tf3.SetText("Password");
             tf3.SetPasswordMode(true);
             let id = ctx.tree.create_child(gid, "tf3", None);
-            ctx.tree
-                .set_behavior(id, Box::new(TextFieldPanel { widget: tf3 }));
+            ctx.tree.set_behavior(
+                id,
+                Box::new(TextFieldPanel {
+                    widget: tf3,
+                    is_focused: false,
+                }),
+            );
 
             let mut mltf1 = emTextField::new(ctx, look.clone());
             mltf1.SetCaption("Multi-Line");
@@ -1922,8 +1952,13 @@ impl TkTestPanel {
             mltf1.SetMultiLineMode(true);
             mltf1.SetText("first line\nsecond line\n...");
             let id = ctx.tree.create_child(gid, "mltf1", None);
-            ctx.tree
-                .set_behavior(id, Box::new(TextFieldPanel { widget: mltf1 }));
+            ctx.tree.set_behavior(
+                id,
+                Box::new(TextFieldPanel {
+                    widget: mltf1,
+                    is_focused: false,
+                }),
+            );
         }
 
         // 5. Scalar Fields (sf1–sf6) — C++ :611-660.
@@ -2755,8 +2790,13 @@ impl PanelBehavior for PolyDrawPanel {
         vc.SetEditable(true);
         vc.SetText("9");
         let vertex_count_signal = vc.text_signal;
-        ctx.tree
-            .set_behavior(vertex_count_id, Box::new(TextFieldPanel { widget: vc }));
+        ctx.tree.set_behavior(
+            vertex_count_id,
+            Box::new(TextFieldPanel {
+                widget: vc,
+                is_focused: false,
+            }),
+        );
 
         // FillColor
         // C++: FillColor->SetEditable(); FillColor->SetAlphaEnabled(); FillColor->SetColor(0xFFFFFFFF)
@@ -2786,8 +2826,13 @@ impl PanelBehavior for PolyDrawPanel {
         sw.SetEditable(true);
         sw.SetText("0.01");
         let stroke_width_signal = sw.text_signal;
-        ctx.tree
-            .set_behavior(stroke_width_id, Box::new(TextFieldPanel { widget: sw }));
+        ctx.tree.set_behavior(
+            stroke_width_id,
+            Box::new(TextFieldPanel {
+                widget: sw,
+                is_focused: false,
+            }),
+        );
 
         // WithCanvasColor
         // C++: WithCanvasColor=new emCheckBox(ll,"WithCanvasColor","With Canvas Color")
@@ -2880,7 +2925,10 @@ impl PanelBehavior for PolyDrawPanel {
         let dash_length_factor_signal = dlf.text_signal;
         ctx.tree.set_behavior(
             dash_length_factor_id,
-            Box::new(TextFieldPanel { widget: dlf }),
+            Box::new(TextFieldPanel {
+                widget: dlf,
+                is_focused: false,
+            }),
         );
 
         // GapLengthFactor
@@ -2892,7 +2940,10 @@ impl PanelBehavior for PolyDrawPanel {
         let gap_length_factor_signal = glf.text_signal;
         ctx.tree.set_behavior(
             gap_length_factor_id,
-            Box::new(TextFieldPanel { widget: glf }),
+            Box::new(TextFieldPanel {
+                widget: glf,
+                is_focused: false,
+            }),
         );
 
         // ════════════════════════════════════════════════════════════════════
@@ -2987,7 +3038,10 @@ impl PanelBehavior for PolyDrawPanel {
         let stroke_start_width_factor_signal = sswf.text_signal;
         ctx.tree.set_behavior(
             stroke_start_width_factor_id,
-            Box::new(TextFieldPanel { widget: sswf }),
+            Box::new(TextFieldPanel {
+                widget: sswf,
+                is_focused: false,
+            }),
         );
 
         // StrokeStartLengthFactor
@@ -3001,7 +3055,10 @@ impl PanelBehavior for PolyDrawPanel {
         let stroke_start_length_factor_signal = sslf.text_signal;
         ctx.tree.set_behavior(
             stroke_start_length_factor_id,
-            Box::new(TextFieldPanel { widget: sslf }),
+            Box::new(TextFieldPanel {
+                widget: sslf,
+                is_focused: false,
+            }),
         );
 
         // ════════════════════════════════════════════════════════════════════
@@ -3090,7 +3147,10 @@ impl PanelBehavior for PolyDrawPanel {
         let stroke_end_width_factor_signal = sewf.text_signal;
         ctx.tree.set_behavior(
             stroke_end_width_factor_id,
-            Box::new(TextFieldPanel { widget: sewf }),
+            Box::new(TextFieldPanel {
+                widget: sewf,
+                is_focused: false,
+            }),
         );
 
         // StrokeEndLengthFactor
@@ -3104,7 +3164,10 @@ impl PanelBehavior for PolyDrawPanel {
         let stroke_end_length_factor_signal = self_.text_signal;
         ctx.tree.set_behavior(
             stroke_end_length_factor_id,
-            Box::new(TextFieldPanel { widget: self_ }),
+            Box::new(TextFieldPanel {
+                widget: self_,
+                is_focused: false,
+            }),
         );
 
         // ── CanvasPanel ──────────────────────────────────────────────────────
