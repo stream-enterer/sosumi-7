@@ -829,9 +829,21 @@ impl emView {
                 })
             })
             .collect();
+        let panels_notified = notice_list.len();
         for (id, flags) in notice_list {
             tree.queue_notice(id, flags, None);
         }
+        // Phase 0 (B2): SET_FOCUSED_RESULT — emit per SetFocused call so the
+        // analyzer can detect double-toggles or stale window_focused at notice
+        // dispatch. update_engine_id maps to view-kind via REGISTER entries.
+        let line = format!(
+            "SET_FOCUSED_RESULT|wall_us={}|update_engine_id={:?}|focused={}|panels_notified={}\n",
+            crate::emInstr::wall_us(),
+            self.update_engine_id,
+            if self.window_focused { "t" } else { "f" },
+            panels_notified,
+        );
+        crate::emInstr::write_line(&line);
     }
 
     pub fn IsActivationAdherent(&self) -> bool {
