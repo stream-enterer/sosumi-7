@@ -147,7 +147,8 @@ impl PanelBehavior for TextFieldPanel {
 
     fn notice(&mut self, flags: NoticeFlags, state: &PanelState, ctx: &mut PanelCtx) {
         if flags.intersects(NoticeFlags::FOCUS_CHANGED) {
-            self.is_focused = state.in_focused_path();
+            let in_focused_path = state.in_focused_path();
+            self.is_focused = in_focused_path;
             self.text_field.on_focus_changed(self.is_focused);
             // Mirrors C++ emTextField::Notice (emTextField.cpp:343-350):
             // RestartCursorBlinking() + WakeUp() guarded by IsInFocusedPath()
@@ -157,6 +158,18 @@ impl PanelBehavior for TextFieldPanel {
                 let id = ctx.id;
                 ctx.wake_up_panel(id);
             }
+            // Phase 0 (B2.1): HANDLER_ENTRY — emit at end of FOCUS_CHANGED
+            // block so the analyzer can detect whether the body ran and
+            // whether the focus-dependent branch was taken.
+            let line = format!(
+                "HANDLER_ENTRY|wall_us={}|panel_id={:?}|impl=emColorFieldFieldPanel::TextFieldPanel|flags={:#x}|is_focused_path={}|branch_taken={}\n",
+                crate::emInstr::wall_us(),
+                ctx.id,
+                flags.bits(),
+                if in_focused_path { "t" } else { "f" },
+                if self.is_focused { "t" } else { "f" },
+            );
+            crate::emInstr::write_line(&line);
         }
     }
 }
