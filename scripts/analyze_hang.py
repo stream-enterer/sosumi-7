@@ -450,6 +450,82 @@ def _phase0_verdict(notice_fc_events, wake_events, panel_id_filter,
     }
 
 
+def _pick_click_target(set_active_events, marker_open_us, marker_close_us):
+    """B2.1: pick the click target as the latest SET_ACTIVE_RESULT
+    with window_focused=t between the open and close markers."""
+    candidates = [
+        ev for ev in set_active_events
+        if marker_open_us <= ev["wall_us"] <= marker_close_us
+        and ev["window_focused"]
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda ev: ev["wall_us"])
+
+
+def _b21_verdict(target_panel_id, decisive_wall_us, events_by_kind):
+    """B2.1: read the chain forward from the decisive NOTICE_FC_DECODE
+    and name the bin per the 9-bin truth table.
+
+    events_by_kind: dict mapping kind names to lists of events (already
+    filtered to post-decisive, target-related rows).
+
+    Returns: dict with "bin", "evidence" (list of strings), "dispatch".
+    """
+    if not events_by_kind.get("HANDLER_ENTRY"):
+        return {"bin": "OA1", "evidence": ["NOTICE_FC_DECODE present, HANDLER_ENTRY absent"],
+                "dispatch": "Re-brainstorm B2.2 (handler not invoked: panic / vtable / wrong impl)"}
+
+    handler = events_by_kind["HANDLER_ENTRY"][0]
+    if not events_by_kind.get("WUP_RESULT"):
+        if handler["branch_taken"]:
+            return {"bin": "OA1-PARTIAL", "evidence": ["HANDLER_ENTRY branch_taken=t but WUP_RESULT absent"],
+                    "dispatch": "Re-brainstorm B2.2 (body crashed between RestartCursorBlinking and wake_up_panel)"}
+        return {"bin": "OA1-BRANCH", "evidence": ["HANDLER_ENTRY branch_taken=f despite is_focused_path=" + ("t" if handler["is_focused_path"] else "f")],
+                "dispatch": "Re-brainstorm B2.2 (focused branch not taken)"}
+
+    wup = events_by_kind["WUP_RESULT"][0]
+    if not wup["panel_found"]:
+        return {"bin": "OB1", "evidence": ["WUP_RESULT panel_found=f"],
+                "dispatch": "Re-brainstorm B2.2 (panel disappeared mid-handler; impossible by code; 🚨)"}
+    if "Some(" not in wup["engine_id"]:
+        return {"bin": "OB2", "evidence": ["WUP_RESULT engine_id=None"],
+                "dispatch": "Phase 1 fix: engine binding lifecycle (see spec Phase 1 OB2)"}
+    if not wup["scheduler_some"]:
+        return {"bin": "OB3", "evidence": ["WUP_RESULT scheduler_some=f"],
+                "dispatch": "Phase 1 fix: PanelCtx scheduler propagation (see spec Phase 1 OB3)"}
+
+    if not events_by_kind.get("CYCLE_ENTRY"):
+        wakes = events_by_kind.get("WAKE", [])
+        engine_type = wakes[0].get("engine_type", "") if wakes else "<no WAKE>"
+        if "<unregistered>" in engine_type:
+            return {"bin": "OC-NOPICKUP-STALE", "evidence": ["WAKE engine_type=<unregistered>; CYCLE_ENTRY absent"],
+                    "dispatch": "Phase 1 fix: stale engine_id binding; clear on deregister"}
+        if "PanelCycleEngine" not in engine_type:
+            return {"bin": "OC-NOPICKUP-WRONGTYPE", "evidence": [f"WAKE engine_type={engine_type}; CYCLE_ENTRY absent"],
+                    "dispatch": "Phase 1 fix: wrong engine type bound to panel"}
+        return {"bin": "OC-NOPICKUP-DOTIMESLICE", "evidence": ["WAKE engine_type=PanelCycleEngine; CYCLE_ENTRY absent"],
+                "dispatch": "Re-brainstorm B2.2 (DoTimeSlice scheduler internals; out of budget)"}
+
+    if not events_by_kind.get("BLINK_CYCLE"):
+        return {"bin": "OC-DISPATCH", "evidence": ["CYCLE_ENTRY present, BLINK_CYCLE absent"],
+                "dispatch": "Phase 1 fix: PanelCycleEngine routing (see spec Phase 1 OC-DISPATCH)"}
+
+    blink_cycles = events_by_kind["BLINK_CYCLE"]
+    if not any(bc.get("flipped", False) for bc in blink_cycles):
+        return {"bin": "OD2", "evidence": [f"BLINK_CYCLE present ({len(blink_cycles)}), flipped=t never observed"],
+                "dispatch": "Phase 1 fix: cycle_blink timer logic (see spec Phase 1 OD2)"}
+
+    inval_drains = events_by_kind.get("INVAL_DRAIN", [])
+    target_drains = [d for d in inval_drains if d.get("panel_id") == target_panel_id]
+    if target_drains and not any(d.get("drained", False) for d in target_drains):
+        return {"bin": "OD3", "evidence": [f"INVAL_DRAIN drained=f ({len(target_drains)}) for click target post-flip"],
+                "dispatch": "Phase 1 fix or escalate: paint pipeline (see spec Phase 1 OD3)"}
+
+    return {"bin": "OD-OK", "evidence": ["full chain present, no visible blink — non-structural"],
+            "dispatch": "Re-brainstorm B2.2 (paint content / capture procedure / perception)"}
+
+
 def blink_command_text(log_content, focus_changed_bit=0x20):
     """Produce Markdown blink path-trace report."""
     ok, reason = validate_capture(log_content, kind="blink", focus_changed_bit=focus_changed_bit)
@@ -467,6 +543,10 @@ def blink_command_text(log_content, focus_changed_bit=0x20):
     notice_fc_events_for_target = []
     set_active_events = []
     set_focused_events = []
+    handler_entry_events = []
+    wup_result_events = []
+    cycle_entry_events = []
+    notice_fc_events_all = []
     for ln in log_content.splitlines():
         ln = ln.strip()
         if not ln:
@@ -492,6 +572,19 @@ def blink_command_text(log_content, focus_changed_bit=0x20):
                 ev = parse_notice_fc_decode(ln)
                 if ev:
                     notice_fc_events_for_target.append(ev)
+                    notice_fc_events_all.append(ev)
+            elif ln.startswith("HANDLER_ENTRY|"):
+                ev = parse_handler_entry(ln)
+                if ev:
+                    handler_entry_events.append(ev)
+            elif ln.startswith("WUP_RESULT|"):
+                ev = parse_wup_result(ln)
+                if ev:
+                    wup_result_events.append(ev)
+            elif ln.startswith("CYCLE_ENTRY|"):
+                ev = parse_cycle_entry(ln)
+                if ev:
+                    cycle_entry_events.append(ev)
             elif ln.startswith("SET_ACTIVE_RESULT|"):
                 ev = parse_set_active_result(ln)
                 if ev:
@@ -626,6 +719,57 @@ def blink_command_text(log_content, focus_changed_bit=0x20):
         "O4": "→ STOP: re-brainstorm B2.1 (notice not delivered to TextField)",
     }
     out.append(dispatch.get(verdict["outcome"], "→ unknown outcome"))
+
+    # ============== B2.1 verdict (post-handler chain analysis) ==============
+    click_target_ev = _pick_click_target(set_active_events, t_open, t_close)
+    if click_target_ev is None:
+        out.append("")
+        out.append("## B2.1 verdict: SKIPPED (no SET_ACTIVE_RESULT|window_focused=t between markers)")
+    else:
+        b21_target = click_target_ev["target_panel_id"]
+        decisive_candidates = [
+            ev for ev in notice_fc_events_all
+            if ev.get("panel_id") == b21_target
+            and ev.get("in_active_path")
+            and ev.get("window_focused")
+            and ev.get("wall_us", 0) >= click_target_ev["wall_us"]
+        ]
+        decisive_candidates.sort(key=lambda ev: ev["wall_us"])
+        decisive = decisive_candidates[0] if decisive_candidates else None
+
+        if decisive is None:
+            out.append("")
+            out.append(f"## B2.1 verdict: O4-RETARGETED (no NOTICE_FC_DECODE for click target {b21_target} with iap=t,wf=t)")
+            out.append(f"## B2.1 dispatch: Re-brainstorm B2.2 (notice did not reach the click target)")
+        else:
+            t_dec = decisive["wall_us"]
+            t_window_end = t_dec + 5_000_000
+
+            def _post(events, panel_id_field="panel_id", panel_filter=True):
+                result = []
+                for ev in events:
+                    w = ev.get("wall_us", 0)
+                    if w < t_dec or w > t_window_end:
+                        continue
+                    if panel_filter and ev.get(panel_id_field) != b21_target:
+                        continue
+                    result.append(ev)
+                return result
+
+            events_by_kind = {
+                "HANDLER_ENTRY": _post(handler_entry_events),
+                "WUP_RESULT":    _post(wup_result_events),
+                "WAKE":          _post(wakes, panel_filter=False),
+                "CYCLE_ENTRY":   _post(cycle_entry_events),
+                "BLINK_CYCLE":   _post(blinks),
+                "INVAL_DRAIN":   _post(drains, panel_filter=False),
+            }
+            verdict_b21 = _b21_verdict(b21_target, t_dec, events_by_kind)
+            out.append("")
+            out.append(f"## B2.1 verdict: {verdict_b21['bin']}")
+            for line in verdict_b21["evidence"]:
+                out.append(f"  evidence: {line}")
+            out.append(f"## B2.1 dispatch: {verdict_b21['dispatch']}")
 
     return "\n".join(out)
 
