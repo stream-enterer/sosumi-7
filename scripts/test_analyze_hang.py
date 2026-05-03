@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from analyze_hang import (
     parse_register, parse_stayawake, parse_wake,
     parse_notice, parse_blink_cycle, parse_inval_req, parse_inval_drain,
+    parse_notice_fc_decode, parse_set_active_result, parse_set_focused_result,
+    _phase0_verdict,
 )
 
 def test_parse_register():
@@ -190,3 +192,74 @@ def test_validate_capture_passes_valid_idle():
     from analyze_hang import validate_capture
     ok, reason = validate_capture(log, kind="idle")
     assert ok
+
+
+# T16 — B2 parser tests
+
+def test_parse_notice_fc_decode_full():
+    line = ("NOTICE_FC_DECODE|wall_us=77680728|panel_id=PanelId(497v1)|"
+            "behavior_type=TextFieldPanel|in_active_path=t|window_focused=f|flags=0xf0")
+    ev = parse_notice_fc_decode(line)
+    assert ev["wall_us"] == 77680728
+    assert ev["panel_id"] == "PanelId(497v1)"
+    assert ev["behavior_type"] == "TextFieldPanel"
+    assert ev["in_active_path"] is True
+    assert ev["window_focused"] is False
+    assert ev["flags"] == 0xf0
+
+
+def test_phase0_verdict_o1_iap_false():
+    notice = [{
+        "wall_us": 1000, "panel_id": "P", "behavior_type": "T",
+        "in_active_path": False, "window_focused": True, "flags": 0xf0,
+    }]
+    v = _phase0_verdict(notice, [], "P", [("emTestPanel.rs", 240, 245)])
+    assert v["outcome"] == "O1"
+
+
+def test_phase0_verdict_o2_wf_false():
+    notice = [{
+        "wall_us": 1000, "panel_id": "P", "behavior_type": "T",
+        "in_active_path": True, "window_focused": False, "flags": 0xf0,
+    }]
+    v = _phase0_verdict(notice, [], "P", [("emTestPanel.rs", 240, 245)])
+    assert v["outcome"] == "O2"
+
+
+def test_phase0_verdict_o3_branch_fires():
+    notice = [{
+        "wall_us": 1000, "panel_id": "P", "behavior_type": "T",
+        "in_active_path": True, "window_focused": True, "flags": 0xf0,
+    }]
+    wake = [{
+        "wall_us": 1050, "caller": "crates/emtest/src/emTestPanel.rs:242",
+    }]
+    v = _phase0_verdict(notice, wake, "P", [("emTestPanel.rs", 240, 245)])
+    assert v["outcome"] == "O3"
+
+
+def test_phase0_verdict_o3_ambig_branch_does_not_fire():
+    notice = [{
+        "wall_us": 1000, "panel_id": "P", "behavior_type": "T",
+        "in_active_path": True, "window_focused": True, "flags": 0xf0,
+    }]
+    v = _phase0_verdict(notice, [], "P", [("emTestPanel.rs", 240, 245)])
+    assert v["outcome"] == "O3-AMBIG"
+
+
+def test_phase0_verdict_o4_no_notice():
+    v = _phase0_verdict([], [], "P", [("emTestPanel.rs", 240, 245)])
+    assert v["outcome"] == "O4"
+
+
+if __name__ == "__main__":
+    failed = 0
+    for name, fn in list(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            try:
+                fn()
+                print(f"PASS {name}")
+            except AssertionError as e:
+                print(f"FAIL {name}: {e}")
+                failed += 1
+    sys.exit(1 if failed else 0)
