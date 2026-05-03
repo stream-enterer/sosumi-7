@@ -1788,9 +1788,23 @@ impl emView {
         if let Some(sig) = self.control_panel_signal {
             ctx.fire(sig);
         }
+        let notice_count = notice_ids.len();
         for id in notice_ids {
             tree.queue_notice(id, flags, None);
         }
+        // Phase 0 (B2): SET_ACTIVE_RESULT — emit per set_active_panel call so
+        // the analyzer can correlate the panel-tree write against the notice
+        // dispatch time. `sched_some=f` reflects that queue_notice is called
+        // with None for sched here (the missing-WakeUpUpdateEngine divergence
+        // tracked under D1).
+        let line = format!(
+            "SET_ACTIVE_RESULT|wall_us={}|target_panel_id={:?}|window_focused={}|notice_count={}|sched_some=f\n",
+            crate::emInstr::wall_us(),
+            target,
+            if self.window_focused { "t" } else { "f" },
+            notice_count,
+        );
+        crate::emInstr::write_line(&line);
     }
 
     /// Auto-select best visible focusable panel as active.
