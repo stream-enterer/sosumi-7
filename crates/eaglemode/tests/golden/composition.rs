@@ -311,8 +311,21 @@ impl PanelBehavior for TextFieldPanel {
         self.widget
             .Paint(p, canvas_color, w, h, s.enabled, pixel_scale);
     }
-    fn Cycle(&mut self, _ectx: &mut EngineCtx<'_>, pctx: &mut PanelCtx) -> bool {
+    fn Cycle(&mut self, ectx: &mut EngineCtx<'_>, pctx: &mut PanelCtx) -> bool {
         let r = self.widget.cycle_blink(self.is_focused);
+        {
+            let line = format!(
+                "BLINK_CYCLE|wall_us={}|engine_id={:?}|panel_id={:?}|focused={}|flipped={}|busy={}
+",
+                emcore::emInstr::wall_us(),
+                ectx.engine_id,
+                pctx.id,
+                if self.is_focused { "t" } else { "f" },
+                if r.flipped { "t" } else { "f" },
+                if r.busy { "t" } else { "f" },
+            );
+            emcore::emInstr::write_line(&line);
+        }
         if r.flipped {
             pctx.request_invalidate_self();
         }
