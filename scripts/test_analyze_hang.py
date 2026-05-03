@@ -252,6 +252,154 @@ def test_phase0_verdict_o4_no_notice():
     assert v["outcome"] == "O4"
 
 
+# B2.1 Phase 0 tests
+
+from analyze_hang import (
+    parse_handler_entry, parse_wup_result, parse_cycle_entry,
+    _pick_click_target, _b21_verdict,
+)
+
+
+def test_parse_handler_entry_full():
+    line = ("HANDLER_ENTRY|wall_us=100|panel_id=PanelId(125v1)|"
+            "impl=emTestPanel::TextFieldPanel|flags=0xf0|"
+            "is_focused_path=t|branch_taken=t")
+    ev = parse_handler_entry(line)
+    assert ev["wall_us"] == 100
+    assert ev["panel_id"] == "PanelId(125v1)"
+    assert ev["impl"] == "emTestPanel::TextFieldPanel"
+    assert ev["flags"] == 0xf0
+    assert ev["is_focused_path"] is True
+    assert ev["branch_taken"] is True
+
+
+def test_parse_wup_result_engine_id_none():
+    line = ("WUP_RESULT|wall_us=200|panel_id=PanelId(125v1)|"
+            "caller=crates/emtest/src/emTestPanel.rs:255|panel_found=t|"
+            "engine_id=None|scheduler_some=t|wake_dispatched=f")
+    ev = parse_wup_result(line)
+    assert ev["panel_found"] is True
+    assert ev["engine_id"] == "None"
+    assert ev["scheduler_some"] is True
+    assert ev["wake_dispatched"] is False
+
+
+def test_parse_cycle_entry():
+    line = ("CYCLE_ENTRY|wall_us=300|engine_id=EngineId(7v1)|"
+            "panel_id=PanelId(125v1)|behavior_type=emTestPanel::TextFieldPanel")
+    ev = parse_cycle_entry(line)
+    assert ev["engine_id"] == "EngineId(7v1)"
+    assert ev["behavior_type"] == "emTestPanel::TextFieldPanel"
+
+
+def test_pick_click_target_picks_latest_post_marker():
+    events = [
+        {"target_panel_id": "P_A", "window_focused": True, "wall_us": 1000},
+        {"target_panel_id": "P_B", "window_focused": True, "wall_us": 2000},
+        {"target_panel_id": "P_C", "window_focused": False, "wall_us": 2500},
+    ]
+    ev = _pick_click_target(events, 500, 3000)
+    assert ev["target_panel_id"] == "P_B"
+
+
+def test_pick_click_target_none_when_outside_markers():
+    events = [
+        {"target_panel_id": "P_A", "window_focused": True, "wall_us": 100},
+    ]
+    assert _pick_click_target(events, 500, 3000) is None
+
+
+def test_b21_verdict_oa1_no_handler_entry():
+    v = _b21_verdict("P", 1000, {})
+    assert v["bin"] == "OA1"
+
+
+def test_b21_verdict_ob1_panel_not_found():
+    eb = {
+        "HANDLER_ENTRY": [{"branch_taken": True, "is_focused_path": True}],
+        "WUP_RESULT": [{"panel_found": False, "engine_id": "None", "scheduler_some": True, "wake_dispatched": False}],
+    }
+    v = _b21_verdict("P", 1000, eb)
+    assert v["bin"] == "OB1"
+
+
+def test_b21_verdict_ob2_engine_id_none():
+    eb = {
+        "HANDLER_ENTRY": [{"branch_taken": True, "is_focused_path": True}],
+        "WUP_RESULT": [{"panel_found": True, "engine_id": "None", "scheduler_some": True, "wake_dispatched": False}],
+    }
+    v = _b21_verdict("P", 1000, eb)
+    assert v["bin"] == "OB2"
+
+
+def test_b21_verdict_ob3_scheduler_none():
+    eb = {
+        "HANDLER_ENTRY": [{"branch_taken": True, "is_focused_path": True}],
+        "WUP_RESULT": [{"panel_found": True, "engine_id": "Some(EngineId(7v1))", "scheduler_some": False, "wake_dispatched": False}],
+    }
+    v = _b21_verdict("P", 1000, eb)
+    assert v["bin"] == "OB3"
+
+
+def test_b21_verdict_oc_nopickup_stale():
+    eb = {
+        "HANDLER_ENTRY": [{"branch_taken": True, "is_focused_path": True}],
+        "WUP_RESULT": [{"panel_found": True, "engine_id": "Some(EngineId(7v1))", "scheduler_some": True, "wake_dispatched": True}],
+        "WAKE": [{"engine_type": "<unregistered>"}],
+    }
+    v = _b21_verdict("P", 1000, eb)
+    assert v["bin"] == "OC-NOPICKUP-STALE"
+
+
+def test_b21_verdict_oc_dispatch():
+    eb = {
+        "HANDLER_ENTRY": [{"branch_taken": True, "is_focused_path": True}],
+        "WUP_RESULT": [{"panel_found": True, "engine_id": "Some(EngineId(7v1))", "scheduler_some": True, "wake_dispatched": True}],
+        "WAKE": [{"engine_type": "emcore::emPanelCycleEngine::PanelCycleEngine"}],
+        "CYCLE_ENTRY": [{}],
+    }
+    v = _b21_verdict("P", 1000, eb)
+    assert v["bin"] == "OC-DISPATCH"
+
+
+def test_b21_verdict_od2_no_flip():
+    eb = {
+        "HANDLER_ENTRY": [{"branch_taken": True, "is_focused_path": True}],
+        "WUP_RESULT": [{"panel_found": True, "engine_id": "Some(EngineId(7v1))", "scheduler_some": True, "wake_dispatched": True}],
+        "WAKE": [{"engine_type": "PanelCycleEngine"}],
+        "CYCLE_ENTRY": [{}],
+        "BLINK_CYCLE": [{"flipped": False}, {"flipped": False}],
+    }
+    v = _b21_verdict("P", 1000, eb)
+    assert v["bin"] == "OD2"
+
+
+def test_b21_verdict_od3_drain_false():
+    eb = {
+        "HANDLER_ENTRY": [{"branch_taken": True, "is_focused_path": True}],
+        "WUP_RESULT": [{"panel_found": True, "engine_id": "Some(EngineId(7v1))", "scheduler_some": True, "wake_dispatched": True}],
+        "WAKE": [{"engine_type": "PanelCycleEngine"}],
+        "CYCLE_ENTRY": [{}],
+        "BLINK_CYCLE": [{"flipped": True}],
+        "INVAL_DRAIN": [{"panel_id": "P", "drained": False}],
+    }
+    v = _b21_verdict("P", 1000, eb)
+    assert v["bin"] == "OD3"
+
+
+def test_b21_verdict_od_ok():
+    eb = {
+        "HANDLER_ENTRY": [{"branch_taken": True, "is_focused_path": True}],
+        "WUP_RESULT": [{"panel_found": True, "engine_id": "Some(EngineId(7v1))", "scheduler_some": True, "wake_dispatched": True}],
+        "WAKE": [{"engine_type": "PanelCycleEngine"}],
+        "CYCLE_ENTRY": [{}],
+        "BLINK_CYCLE": [{"flipped": True}],
+        "INVAL_DRAIN": [{"panel_id": "P", "drained": True}],
+    }
+    v = _b21_verdict("P", 1000, eb)
+    assert v["bin"] == "OD-OK"
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in list(globals().items()):
