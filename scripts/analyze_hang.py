@@ -330,6 +330,76 @@ def idle_command_text(log_content, threshold=0.8):
 # blink command
 # ---------------------------------------------------------------------------
 
+def _phase0_verdict(notice_fc_events, wake_events, panel_id_filter,
+                    fire_caller_lines):
+    """B2 Phase 0: compute O1/O2/O3/O4 verdict from events.
+
+    notice_fc_events: list of NOTICE_FC_DECODE dicts (post-marker, filtered
+        to panel_id_filter).
+    wake_events: list of WAKE dicts (post-marker, all).
+    panel_id_filter: panel_id string for the focus-target TextField.
+    fire_caller_lines: iterable of (file_substr, line_min, line_max) tuples
+        identifying the wake_up_panel call site inside the notice handler.
+
+    Returns: dict {"outcome": "O1"|"O2"|"O3"|"O4"|"O3-AMBIG", "events": [...]}.
+    """
+    if not notice_fc_events:
+        return {"outcome": "O4", "events": []}
+
+    # Decisive event = last NOTICE_FC_DECODE for the target panel.
+    decisive = notice_fc_events[-1]
+
+    # Did a wake fire from the handler within 100ms after the notice?
+    fired = False
+    for wake in wake_events:
+        if wake["wall_us"] < decisive["wall_us"]:
+            continue
+        if wake["wall_us"] - decisive["wall_us"] > 100_000:  # 100ms
+            break
+        caller = wake.get("caller", "")
+        for substr, lmin, lmax in fire_caller_lines:
+            if substr in caller:
+                # caller format: "path/to/file.rs:NNN"
+                try:
+                    line_no = int(caller.rsplit(":", 1)[1])
+                except (ValueError, IndexError):
+                    continue
+                if lmin <= line_no <= lmax:
+                    fired = True
+                    break
+        if fired:
+            break
+
+    iap = decisive["in_active_path"]
+    wf = decisive["window_focused"]
+
+    if not iap:
+        outcome = "O1"  # in_active_path stale at notice time
+    elif iap and not wf:
+        outcome = "O2"  # window_focused stale at notice time
+    elif iap and wf and fired:
+        outcome = "O3"  # handler ran; bug elsewhere
+    elif iap and wf and not fired:
+        outcome = "O3-AMBIG"  # impossible by code; flag and treat as O3
+    else:
+        outcome = "O3-AMBIG"
+
+    return {
+        "outcome": outcome,
+        "events": [
+            {
+                "wall_us": decisive["wall_us"],
+                "panel_id": decisive["panel_id"],
+                "behavior_type": decisive["behavior_type"],
+                "in_active_path": iap,
+                "window_focused": wf,
+                "flags": decisive["flags"],
+                "branch_fired": fired,
+            }
+        ],
+    }
+
+
 def blink_command_text(log_content, focus_changed_bit=0x20):
     """Produce Markdown blink path-trace report."""
     ok, reason = validate_capture(log_content, kind="blink", focus_changed_bit=focus_changed_bit)
@@ -344,6 +414,9 @@ def blink_command_text(log_content, focus_changed_bit=0x20):
     invreqs = []
     drains = []
     registers = []
+    notice_fc_events_for_target = []
+    set_active_events = []
+    set_focused_events = []
     for ln in log_content.splitlines():
         ln = ln.strip()
         if not ln:
@@ -365,6 +438,18 @@ def blink_command_text(log_content, focus_changed_bit=0x20):
                 drains.append(parse_inval_drain(ln))
             elif ln.startswith("REGISTER|"):
                 registers.append(parse_register(ln))
+            elif ln.startswith("NOTICE_FC_DECODE|"):
+                ev = parse_notice_fc_decode(ln)
+                if ev:
+                    notice_fc_events_for_target.append(ev)
+            elif ln.startswith("SET_ACTIVE_RESULT|"):
+                ev = parse_set_active_result(ln)
+                if ev:
+                    set_active_events.append(ev)
+            elif ln.startswith("SET_FOCUSED_RESULT|"):
+                ev = parse_set_focused_result(ln)
+                if ev:
+                    set_focused_events.append(ev)
         except (ValueError, KeyError):
             pass  # malformed line, skip
 
@@ -382,6 +467,20 @@ def blink_command_text(log_content, focus_changed_bit=0x20):
     focus = focus_notices[0]
     t_focus = focus["wall_us"]
     target_panel_id = focus["recipient_panel_id"]
+
+    # Filter Phase 0 accumulators to window + target panel
+    notice_fc_events_for_target = [
+        ev for ev in notice_fc_events_for_target
+        if t_open <= ev["wall_us"] <= t_close and ev["panel_id"] == target_panel_id
+    ]
+    set_active_events = [
+        ev for ev in set_active_events
+        if t_open <= ev["wall_us"] <= t_close
+    ]
+    set_focused_events = [
+        ev for ev in set_focused_events
+        if t_open <= ev["wall_us"] <= t_close
+    ]
 
     # Find the engine for this panel: latest REGISTER for a PanelCycleEngine whose scope mentions target_panel_id
     target_engine_id = None
@@ -446,6 +545,37 @@ def blink_command_text(log_content, focus_changed_bit=0x20):
     else:
         out.append("No break in path-trace. If blink still not visually working, run A2-prod contingency capture.\n")
         out.append("_Next step: A2-prod follow-up capture._\n")
+
+    fire_caller_lines = [
+        ("crates/emtest/src/emTestPanel.rs", 240, 245),
+        ("crates/emcore/src/emColorFieldFieldPanel.rs", 144, 148),
+    ]
+    verdict = _phase0_verdict(
+        notice_fc_events_for_target, wakes,
+        target_panel_id, fire_caller_lines,
+    )
+    out.append("")
+    out.append(f"## Phase 0 verdict: {verdict['outcome']}")
+    for ev in verdict["events"]:
+        out.append(
+            f"  decisive_event: wall_us={ev['wall_us']}, panel_id={ev['panel_id']}, "
+            f"behavior_type={ev['behavior_type']}"
+        )
+        out.append(
+            f"    in_active_path={ev['in_active_path']}, "
+            f"window_focused={ev['window_focused']}, "
+            f"flags={ev['flags']:#x}, branch_fired={ev['branch_fired']}"
+        )
+    out.append("")
+    out.append("## Phase 0 dispatch")
+    dispatch = {
+        "O1": "→ Phase 1a: in_active_path stale; fix in set_active_panel/build_panel_state",
+        "O2": "→ Phase 1b: window_focused stale; fix in SubViewPanel::Input/SetFocused",
+        "O3": "→ STOP: re-brainstorm B2.1 (bug not in focus-path system)",
+        "O3-AMBIG": "→ STOP: re-brainstorm B2.1 (impossible-row outcome; investigate)",
+        "O4": "→ STOP: re-brainstorm B2.1 (notice not delivered to TextField)",
+    }
+    out.append(dispatch.get(verdict["outcome"], "→ unknown outcome"))
 
     return "\n".join(out)
 
