@@ -104,6 +104,54 @@ def parse_inval_drain(line):
     }
 
 
+def parse_notice_fc_decode(line):
+    """B2 Phase 0: parse NOTICE_FC_DECODE."""
+    try:
+        f = _parse_kv_line(line, "NOTICE_FC_DECODE")
+    except ValueError:
+        return None
+    return {
+        "kind": "NOTICE_FC_DECODE",
+        "wall_us": int(f["wall_us"]),
+        "panel_id": f["panel_id"],
+        "behavior_type": f.get("behavior_type", ""),
+        "in_active_path": f["in_active_path"] == "t",
+        "window_focused": f["window_focused"] == "t",
+        "flags": int(f["flags"], 16),
+    }
+
+
+def parse_set_active_result(line):
+    """B2 Phase 0: parse SET_ACTIVE_RESULT."""
+    try:
+        f = _parse_kv_line(line, "SET_ACTIVE_RESULT")
+    except ValueError:
+        return None
+    return {
+        "kind": "SET_ACTIVE_RESULT",
+        "wall_us": int(f["wall_us"]),
+        "target_panel_id": f["target_panel_id"],
+        "window_focused": f["window_focused"] == "t",
+        "notice_count": int(f["notice_count"]),
+        "sched_some": f["sched_some"] == "t",
+    }
+
+
+def parse_set_focused_result(line):
+    """B2 Phase 0: parse SET_FOCUSED_RESULT."""
+    try:
+        f = _parse_kv_line(line, "SET_FOCUSED_RESULT")
+    except ValueError:
+        return None
+    return {
+        "kind": "SET_FOCUSED_RESULT",
+        "wall_us": int(f["wall_us"]),
+        "update_engine_id": f["update_engine_id"],
+        "focused": f["focused"] == "t",
+        "panels_notified": int(f["panels_notified"]),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Validation pre-pass
 # ---------------------------------------------------------------------------
