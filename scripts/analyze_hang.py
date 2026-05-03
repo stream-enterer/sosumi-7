@@ -1,16 +1,410 @@
 #!/usr/bin/env python3
-"""Phase 0 v3 analyzer for hang-instrumentation log.
+"""Hang-instrumentation log analyzer.
 
-Streams /tmp/em_instr.phase0.log (or path passed on argv). Parses
-SLICE, CB, AW, RENDER, MARKER lines. Slices the timeline between the
-first two MARKER lines (or the whole log if fewer than 2 markers) and
-emits a ranked breakdown of where wall-clock went per chokepoint type.
+Subcommands:
+  phase0   — Phase 0 v3 chokepoint breakdown (SLICE/CB/AW/RENDER)
+  idle     — A1 has_awake findings from idle capture
+  blink    — A2 path-trace findings from blink capture
 
-No magic thresholds. Verdict is the dominant chokepoint.
+Default (no subcommand): runs phase0 for backwards compatibility.
 """
 import sys
+import argparse
 from collections import defaultdict
 
+
+# ---------------------------------------------------------------------------
+# Low-level KV parsers (new line types added in Phase A source instrumentation)
+# ---------------------------------------------------------------------------
+
+def _parse_kv_line(line, expected_prefix):
+    """Parse a |-separated key=value line. Returns dict of fields."""
+    line = line.rstrip("\n")
+    parts = line.split("|")
+    if not parts or parts[0] != expected_prefix:
+        raise ValueError(f"expected {expected_prefix} prefix, got: {line[:80]}")
+    out = {}
+    for kv in parts[1:]:
+        if "=" not in kv:
+            continue
+        k, _, v = kv.partition("=")
+        out[k] = v
+    return out
+
+def _to_int(s):
+    return int(s, 0)  # handles 0x prefix and decimal
+
+def _to_bool_tf(s):
+    return s == "t"
+
+def parse_register(line):
+    f = _parse_kv_line(line, "REGISTER")
+    return {
+        "wall_us": _to_int(f["wall_us"]),
+        "engine_id": f["engine_id"],
+        "engine_type": f["engine_type"],
+        "scope": f["scope"],
+    }
+
+def parse_stayawake(line):
+    f = _parse_kv_line(line, "STAYAWAKE")
+    return {
+        "wall_us": _to_int(f["wall_us"]),
+        "slice": _to_int(f["slice"]),
+        "engine_id": f["engine_id"],
+        "engine_type": f["engine_type"],
+        "stay_awake": _to_bool_tf(f["stay_awake"]),
+    }
+
+def parse_wake(line):
+    f = _parse_kv_line(line, "WAKE")
+    return {
+        "wall_us": _to_int(f["wall_us"]),
+        "engine_id": f["engine_id"],
+        "engine_type": f["engine_type"],
+        "caller": f["caller"],
+    }
+
+def parse_notice(line):
+    f = _parse_kv_line(line, "NOTICE")
+    return {
+        "wall_us": _to_int(f["wall_us"]),
+        "recipient_panel_id": f["recipient_panel_id"],
+        "recipient_type": f["recipient_type"],
+        "flags": _to_int(f["flags"]),
+    }
+
+def parse_blink_cycle(line):
+    f = _parse_kv_line(line, "BLINK_CYCLE")
+    return {
+        "wall_us": _to_int(f["wall_us"]),
+        "engine_id": f["engine_id"],
+        "panel_id": f["panel_id"],
+        "focused": _to_bool_tf(f["focused"]),
+        "flipped": _to_bool_tf(f["flipped"]),
+        "busy": _to_bool_tf(f["busy"]),
+    }
+
+def parse_inval_req(line):
+    f = _parse_kv_line(line, "INVAL_REQ")
+    return {
+        "wall_us": _to_int(f["wall_us"]),
+        "engine_id": f["engine_id"],
+        "panel_id": f["panel_id"],
+        "source": f["source"],
+    }
+
+def parse_inval_drain(line):
+    f = _parse_kv_line(line, "INVAL_DRAIN")
+    return {
+        "wall_us": _to_int(f["wall_us"]),
+        "engine_id": f["engine_id"],
+        "panel_id": f["panel_id"],
+        "drained": _to_bool_tf(f["drained"]),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Validation pre-pass
+# ---------------------------------------------------------------------------
+
+def validate_capture(log_content, kind, focus_changed_bit=0x20):
+    """Returns (ok, reason). For kind in {"idle", "blink"}."""
+    markers = []
+    has_register = False
+    notices = []
+    for ln in log_content.splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        if ln.startswith("MARKER|"):
+            markers.append(ln)
+        elif ln.startswith("REGISTER|"):
+            has_register = True
+        elif ln.startswith("NOTICE|") and kind == "blink":
+            try:
+                n = parse_notice(ln)
+                notices.append(n)
+            except (KeyError, ValueError):
+                pass
+
+    if len(markers) != 2:
+        return False, f"expected 2 MARKER lines, got {len(markers)}"
+    if not has_register:
+        return False, "no REGISTER lines (instrumentation did not initialize)"
+    if kind == "blink":
+        focus_changes = [
+            n for n in notices
+            if (n["flags"] & focus_changed_bit) and "TextFieldPanel" in n["recipient_type"]
+        ]
+        if not focus_changes:
+            return False, "no NOTICE FOCUS_CHANGED to TextFieldPanel — click did not land on TextField"
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# idle command
+# ---------------------------------------------------------------------------
+
+def idle_command_text(log_content, threshold=0.8):
+    """Produce Markdown idle aggregation report from raw log content."""
+    ok, reason = validate_capture(log_content, kind="idle")
+    if not ok:
+        return f"capture invalid: {reason}\n"
+
+    # Parse markers; extract bracketed window
+    markers = []
+    register_records = []
+    stayawake_records = []
+    wake_records = []
+    for ln in log_content.splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        if ln.startswith("MARKER|"):
+            f = _parse_kv_line(ln, "MARKER")
+            markers.append(_to_int(f["wall_us"]))
+        elif ln.startswith("REGISTER|"):
+            register_records.append(parse_register(ln))
+        elif ln.startswith("STAYAWAKE|"):
+            stayawake_records.append(parse_stayawake(ln))
+        elif ln.startswith("WAKE|"):
+            wake_records.append(parse_wake(ln))
+
+    t_open, t_close = sorted(markers)
+    in_window = lambda r: t_open <= r["wall_us"] <= t_close
+
+    # Filter to in-window
+    sa = [r for r in stayawake_records if in_window(r)]
+    wk = [r for r in wake_records if in_window(r)]
+
+    # engine_id -> type_name (from register; falls back to type seen in stayawake)
+    eid_to_type = {r["engine_id"]: r["engine_type"] for r in register_records}
+    for r in sa:
+        eid_to_type.setdefault(r["engine_id"], r["engine_type"])
+
+    # Per-engine-type aggregation
+    by_type = defaultdict(lambda: {"cycles": 0, "stay_awake_t": 0, "ext_wakes": 0, "callers": defaultdict(int)})
+    # cycles + stay_awake_t
+    for r in sa:
+        b = by_type[r["engine_type"]]
+        b["cycles"] += 1
+        if r["stay_awake"]:
+            b["stay_awake_t"] += 1
+    # ext_wakes: for each STAYAWAKE(stay_awake=f), check if there is any WAKE
+    # for the same engine that arrived before this cycle (anywhere in the window).
+    # This identifies cycles that were externally triggered — the engine was woken
+    # by an external caller rather than self-perpetuating.  Count how many such
+    # stay_awake=f cycles have a preceding WAKE as evidence of external driving.
+    wk_by_eid = defaultdict(list)
+    for r in wk:
+        wk_by_eid[r["engine_id"]].append(r)
+    sa_by_eid = defaultdict(list)
+    for r in sa:
+        sa_by_eid[r["engine_id"]].append(r)
+
+    for eid, cycles_for_eid in sa_by_eid.items():
+        wakes_for_eid = wk_by_eid.get(eid, [])
+        if not wakes_for_eid:
+            continue
+        t = eid_to_type.get(eid, "<unknown>")
+        for cycle in cycles_for_eid:
+            if cycle["stay_awake"]:
+                continue
+            # Is there any WAKE for this engine before this cycle?
+            preceding_wakes = [w for w in wakes_for_eid if w["wall_us"] <= cycle["wall_us"]]
+            if preceding_wakes:
+                by_type[t]["ext_wakes"] += 1
+                # Record the most recent WAKE's caller for attribution
+                most_recent = max(preceding_wakes, key=lambda w: w["wall_us"])
+                by_type[t]["callers"][most_recent["caller"]] += 1
+
+    # Slice count: number of distinct slice values in the window
+    slice_count = len({r["slice"] for r in sa})
+
+    # Build classification per type
+    def classify(b):
+        if b["cycles"] == 0:
+            return "never-awake"
+        sa_pct = b["stay_awake_t"] / b["cycles"] if b["cycles"] else 0.0
+        if sa_pct >= threshold:
+            return "self-perpetuating"
+        if b["cycles"] and b["ext_wakes"] >= threshold * b["cycles"]:
+            return "externally-rewoken"
+        return "episodic"
+
+    rows = []
+    for t, b in sorted(by_type.items(), key=lambda kv: -kv[1]["stay_awake_t"]):
+        sa_pct = (b["stay_awake_t"] / b["cycles"]) if b["cycles"] else 0.0
+        rows.append({
+            "type": t, "cycles": b["cycles"], "sa_pct": sa_pct,
+            "ext_wakes": b["ext_wakes"], "classification": classify(b),
+            "callers": dict(b["callers"]),
+        })
+
+    # Format report
+    out = []
+    out.append(f"## Window")
+    out.append(f"{slice_count} slices, {(t_close - t_open) / 1_000_000:.2f}s\n")
+    out.append("## Per-engine-type aggregation\n")
+    out.append("| engine_type | cycles | stay_awake_pct | ext_wakes | classification |")
+    out.append("|---|---:|---:|---:|---|")
+    for r in rows:
+        out.append(f"| `{r['type']}` | {r['cycles']} | {r['sa_pct']*100:.1f}% | {r['ext_wakes']} | {r['classification']} |")
+    out.append("")
+
+    offenders = [r for r in rows if r["classification"] in ("self-perpetuating", "externally-rewoken")]
+    out.append("## Offenders")
+    if not offenders:
+        out.append(f"_None at threshold={threshold*100:.0f}%._")
+    else:
+        for r in offenders:
+            out.append(f"- `{r['type']}` — {r['classification']} (cycles={r['cycles']}, stay_awake={r['sa_pct']*100:.1f}%, ext_wakes={r['ext_wakes']})")
+    out.append("")
+
+    out.append("## External-wake caller breakdown")
+    any_ext = False
+    for r in offenders:
+        if r["callers"]:
+            any_ext = True
+            out.append(f"### `{r['type']}`")
+            for caller, n in sorted(r["callers"].items(), key=lambda kv: -kv[1]):
+                out.append(f"- `{caller}` — count={n}")
+    if not any_ext:
+        out.append("_None._")
+    out.append("")
+
+    out.append(f"_Next step: spec B1 — compare {{offenders}} to C++ ground truth._\n")
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
+# blink command
+# ---------------------------------------------------------------------------
+
+def blink_command_text(log_content, focus_changed_bit=0x20):
+    """Produce Markdown blink path-trace report."""
+    ok, reason = validate_capture(log_content, kind="blink", focus_changed_bit=focus_changed_bit)
+    if not ok:
+        return f"capture invalid: {reason}\n"
+
+    markers = []
+    notices = []
+    wakes = []
+    stays = []
+    blinks = []
+    invreqs = []
+    drains = []
+    registers = []
+    for ln in log_content.splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            if ln.startswith("MARKER|"):
+                markers.append(_to_int(_parse_kv_line(ln, "MARKER")["wall_us"]))
+            elif ln.startswith("NOTICE|"):
+                notices.append(parse_notice(ln))
+            elif ln.startswith("WAKE|"):
+                wakes.append(parse_wake(ln))
+            elif ln.startswith("STAYAWAKE|"):
+                stays.append(parse_stayawake(ln))
+            elif ln.startswith("BLINK_CYCLE|"):
+                blinks.append(parse_blink_cycle(ln))
+            elif ln.startswith("INVAL_REQ|"):
+                invreqs.append(parse_inval_req(ln))
+            elif ln.startswith("INVAL_DRAIN|"):
+                drains.append(parse_inval_drain(ln))
+            elif ln.startswith("REGISTER|"):
+                registers.append(parse_register(ln))
+        except (ValueError, KeyError):
+            pass  # malformed line, skip
+
+    t_open, t_close = sorted(markers)
+
+    # Locate focus-change
+    focus_notices = [
+        n for n in notices
+        if t_open <= n["wall_us"] <= t_close
+        and (n["flags"] & focus_changed_bit)
+        and "TextFieldPanel" in n["recipient_type"]
+    ]
+    if not focus_notices:
+        return "capture invalid: no NOTICE FOCUS_CHANGED to TextFieldPanel within window\n"
+    focus = focus_notices[0]
+    t_focus = focus["wall_us"]
+    target_panel_id = focus["recipient_panel_id"]
+
+    # Find the engine for this panel: latest REGISTER for a PanelCycleEngine whose scope mentions target_panel_id
+    target_engine_id = None
+    for r in registers:
+        if "PanelCycleEngine" in r["engine_type"] and target_panel_id in r["scope"]:
+            target_engine_id = r["engine_id"]
+            break
+    # Fallback: pick by latest BLINK_CYCLE for the panel
+    if not target_engine_id:
+        post_focus_blinks = [b for b in blinks if b["wall_us"] >= t_focus and b["panel_id"] == target_panel_id]
+        if post_focus_blinks:
+            target_engine_id = post_focus_blinks[0]["engine_id"]
+
+    # Path-trace verdict
+    out = []
+    out.append("## Path-trace verdict (transition)\n")
+    out.append(f"Focus-change identified at +{(t_focus - t_open)/1000:.1f}ms (`{target_panel_id}`, `{focus['recipient_type']}`).\n")
+
+    chain = []  # list of (label, ok, evidence)
+
+    chain.append(("NOTICE FOCUS_CHANGED → TextFieldPanel", True,
+                  f"`NOTICE|wall_us={focus['wall_us']}|recipient_panel_id={focus['recipient_panel_id']}|flags={focus['flags']:#x}`"))
+
+    if target_engine_id is None:
+        chain.append(("Engine REGISTER for PanelCycleEngine", False, "no REGISTER record matches target panel"))
+    else:
+        post_wake = [w for w in wakes if w["wall_us"] >= t_focus and w["engine_id"] == target_engine_id]
+        chain.append(("WAKE → PanelCycleEngine", bool(post_wake),
+                      f"`{post_wake[0]['caller']}` at +{(post_wake[0]['wall_us']-t_focus)/1000:.1f}ms" if post_wake else "no WAKE within window"))
+        if post_wake:
+            t_wake = post_wake[0]["wall_us"]
+            post_stay = [s for s in stays if s["wall_us"] >= t_wake and s["engine_id"] == target_engine_id]
+            chain.append(("STAYAWAKE within 1 slice of WAKE", bool(post_stay),
+                          f"slice={post_stay[0]['slice']}, stay_awake={post_stay[0]['stay_awake']}" if post_stay else "no STAYAWAKE for engine after WAKE"))
+
+        post_blinks = [b for b in blinks if b["wall_us"] >= t_focus and b["engine_id"] == target_engine_id]
+        focused_blinks = [b for b in post_blinks if b["focused"]]
+        chain.append(("BLINK_CYCLE focused=true", bool(focused_blinks),
+                      f"first focused=t at +{(focused_blinks[0]['wall_us']-t_focus)/1000:.1f}ms" if focused_blinks else "no BLINK_CYCLE focused=t"))
+        flipped_blinks = [b for b in post_blinks if b["flipped"]]
+        chain.append(("BLINK_CYCLE flipped=true at ~500ms cadence", bool(flipped_blinks),
+                      f"{len(flipped_blinks)} flips in window" if flipped_blinks else "no BLINK_CYCLE flipped=t"))
+
+        post_invreq = [i for i in invreqs if i["wall_us"] >= t_focus and i["engine_id"] == target_engine_id]
+        chain.append(("INVAL_REQ from cycle_blink", bool(post_invreq),
+                      f"first source={post_invreq[0]['source']}" if post_invreq else "no INVAL_REQ"))
+
+        post_drain = [d for d in drains if d["wall_us"] >= t_focus and d["engine_id"] == target_engine_id and d["drained"]]
+        chain.append(("INVAL_DRAIN drained=true", bool(post_drain),
+                      f"first drain at +{(post_drain[0]['wall_us']-t_focus)/1000:.1f}ms" if post_drain else "no INVAL_DRAIN drained=t"))
+
+    for label, ok, evidence in chain:
+        marker = "✓" if ok else "✗"
+        out.append(f"- {marker} **{label}** — {evidence}")
+    out.append("")
+
+    first_break = next((label for label, ok, _ in chain if not ok), None)
+    out.append("## Identified break\n")
+    if first_break:
+        out.append(f"First ✗: **{first_break}**.\n")
+        out.append(f"_Next step: spec B2 — investigate {first_break}._\n")
+    else:
+        out.append("No break in path-trace. If blink still not visually working, run A2-prod contingency capture.\n")
+        out.append("_Next step: A2-prod follow-up capture._\n")
+
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
+# Phase 0 v3 legacy helpers
+# ---------------------------------------------------------------------------
 
 def parse_kv(line):
     parts = line.rstrip("\n").split("|")
@@ -25,8 +419,7 @@ def parse_kv(line):
     return head, kv
 
 
-def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "/tmp/em_instr.phase0.log"
+def _phase0_main(path):
     rows = []
     with open(path) as f:
         for line in f:
@@ -171,6 +564,51 @@ def main():
         print(f"→ Phase A row: investigate {top_bucket} internals.")
 
     return 0
+
+
+def main():
+    # Detect legacy invocation: first arg is a file path (not a subcommand).
+    # Preserve backward compat: `analyze_hang.py /path/to/log` still works.
+    subcommands = {"phase0", "idle", "blink"}
+    if len(sys.argv) >= 2 and sys.argv[1] not in subcommands and not sys.argv[1].startswith("-"):
+        # Legacy: treat first arg as log path for phase0
+        return _phase0_main(sys.argv[1])
+
+    parser = argparse.ArgumentParser(
+        description="Hang-instrumentation log analyzer."
+    )
+    subparsers = parser.add_subparsers(dest="cmd")
+
+    sp_phase0 = subparsers.add_parser("phase0", help="Phase 0 v3 chokepoint breakdown")
+    sp_phase0.add_argument("log", nargs="?", default="/tmp/em_instr.phase0.log",
+                           help="path to log (default /tmp/em_instr.phase0.log)")
+
+    sp_idle = subparsers.add_parser("idle", help="A1 has_awake findings from idle capture")
+    sp_idle.add_argument("log", help="path to /tmp/em_instr.idle.log")
+    sp_idle.add_argument("--threshold", type=float, default=0.8)
+
+    sp_blink = subparsers.add_parser("blink", help="A2 path-trace findings from blink capture")
+    sp_blink.add_argument("log", help="path to /tmp/em_instr.blink.log")
+    sp_blink.add_argument("--focus-changed-bit", type=lambda s: int(s, 0), default=0x20)
+
+    args = parser.parse_args()
+
+    if args.cmd == "phase0" or args.cmd is None:
+        log_path = getattr(args, "log", "/tmp/em_instr.phase0.log")
+        return _phase0_main(log_path)
+    elif args.cmd == "idle":
+        with open(args.log) as f:
+            content = f.read()
+        print(idle_command_text(content, threshold=args.threshold))
+        return 0
+    elif args.cmd == "blink":
+        with open(args.log) as f:
+            content = f.read()
+        print(blink_command_text(content, focus_changed_bit=args.focus_changed_bit))
+        return 0
+    else:
+        parser.print_help()
+        return 1
 
 
 if __name__ == "__main__":
