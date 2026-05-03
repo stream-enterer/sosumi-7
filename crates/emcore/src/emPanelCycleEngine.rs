@@ -119,6 +119,20 @@ impl emEngine for PanelCycleEngine {
                         ctx.framework_clipboard,
                         ctx.pending_actions,
                     );
+                    // Phase 0 (B2.1): CYCLE_ENTRY — emit before
+                    // behavior.Cycle so the analyzer can detect whether
+                    // DoTimeSlice picked up the woken engine and
+                    // PanelCycleEngine routed to a behavior.
+                    {
+                        let line = format!(
+                            "CYCLE_ENTRY|wall_us={}|engine_id={:?}|panel_id={:?}|behavior_type={}\n",
+                            crate::emInstr::wall_us(),
+                            ctx.engine_id,
+                            self.panel_id,
+                            std::any::type_name_of_val(&*behavior),
+                        );
+                        crate::emInstr::write_line(&line);
+                    }
                     let busy = behavior.Cycle(&mut ectx, &mut pctx);
                     let inval = pctx.take_invalidate_self_request();
                     {
@@ -234,6 +248,20 @@ impl emEngine for PanelCycleEngine {
                         ctx.framework_clipboard,
                         ctx.pending_actions,
                     );
+                    // Phase 0 (B2.1): CYCLE_ENTRY — emit before
+                    // behavior.Cycle so the analyzer can detect whether
+                    // DoTimeSlice picked up the woken engine and
+                    // PanelCycleEngine routed to a behavior.
+                    {
+                        let line = format!(
+                            "CYCLE_ENTRY|wall_us={}|engine_id={:?}|panel_id={:?}|behavior_type={}\n",
+                            crate::emInstr::wall_us(),
+                            ctx.engine_id,
+                            self.panel_id,
+                            std::any::type_name_of_val(&*behavior),
+                        );
+                        crate::emInstr::write_line(&line);
+                    }
                     let busy = behavior.Cycle(&mut ectx, &mut pctx);
                     let inval = pctx.take_invalidate_self_request();
                     {
