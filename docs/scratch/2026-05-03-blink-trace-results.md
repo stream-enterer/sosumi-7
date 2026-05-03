@@ -142,3 +142,78 @@ NOTICE|wall_us=48655523|recipient_panel_id=PanelId(125v1)|recipient_type=emTestP
 NOTICE_FC_DECODE|wall_us=48655524|panel_id=PanelId(125v1)|behavior_type=emTestPanel::emTestPanel::TextFieldPanel|in_active_path=t|window_focused=t|flags=0xf0
 [next 100ms: 8 WAKE entries; none from emTestPanel.rs:255]
 ```
+
+**Next phase dispatched:** B2.1 re-brainstorm (skip Tasks 12–17).
+
+## Handoff to B2.1 brainstorm
+
+Phase 0 verdict (when read from the actual user click event, not the
+analyzer's heuristic-chosen target) is **O3-AMBIG**, which means the
+focus-path bookkeeping system is NOT the bug. B2 closes here without a
+fix landed.
+
+### What we learned
+
+Phase 0 successfully ruled out:
+
+- `in_active_path` stale at notice dispatch (it is `t` at the real
+  click target).
+- `window_focused` stale at notice dispatch (it is `t` at the real
+  click target).
+- `state.in_focused_path()` returning false despite both flags being
+  true (the formula is `in_active_path && window_focused`, both `t`).
+
+Phase 0 also surfaced:
+
+- A **silent-no-op trap in `emEngineCtx::wake_up_panel`**
+  (`crates/emcore/src/emEngineCtx.rs:847`): two early-return guards
+  (`panel.engine_id == None`, `self.scheduler == None`) skip the wake
+  without emitting a `WAKE` log line. This is the most likely bug
+  vector for the blink regression.
+- A **path-trace heuristic limitation in
+  `scripts/analyze_hang.py`**: the blink command's transition detector
+  picked a layout-driven blanket FOCUS_CHANGED flush as the focus
+  event, not the user's click. Re-targeting the verdict logic to "the
+  panel reported by `SET_ACTIVE_RESULT` with `window_focused=t` after
+  the open marker" would pick the right target.
+- The **B1 D1 deferral** (set_active_panel missing
+  WakeUpUpdateEngine) — see
+  `docs/scratch/2026-05-03-set-active-panel-missing-wake.md`.
+
+### What remains unknown
+
+- Whether `panel.engine_id` is actually `None` for the focused
+  TextFieldPanel at notice dispatch (i.e., the cursor-blink engine is
+  not yet registered when the FOCUS_CHANGED notice fires). Likely
+  cause: `RestartCursorBlinking` registers the engine *during* the
+  notice handler but the wake call uses a stale read of
+  `panel.engine_id`.
+- Whether `PanelCtx::scheduler` is `Some` at notice dispatch time.
+  Notice delivery in `handle_notice_one` builds a
+  `PanelCtx::with_sched_reach_optional_roots(...)` — the
+  "sched-optional" suggests this can be None depending on the call
+  path.
+- Why the previous A2 hypothesis ("`state.in_focused_path()` returns
+  false") was ever supported by data — this run shows it returns true.
+  Either A2's path-trace heuristic also picked the wrong target, or
+  the bug is intermittent.
+
+### Next step
+
+Invoke `superpowers:brainstorming` for **B2.1** with this findings doc
+and the capture log (`/tmp/em_instr.blink-trace.log`) as input. The
+candidate space for B2.1 is much smaller than B2's:
+
+1. `wake_up_panel` early-return on `panel.engine_id == None` — verify
+   by adding instrumentation logging both guards' outcomes.
+2. `wake_up_panel` early-return on `scheduler == None` — same.
+3. `RestartCursorBlinking` not registering the cursor-blink engine on
+   the panel before `wake_up_panel` is called.
+4. `RestartCursorBlinking` registering an engine that is not bound to
+   `panel.engine_id` (so wake target is wrong even when an engine
+   exists).
+
+The first two are easy to falsify with a 2-line instrumentation patch
+on `instr/blink-trace-2026-05-03`. (3) and (4) require reading C++
+`emTextField::RestartCursorBlinking` and the Rust port's engine
+registration flow.
