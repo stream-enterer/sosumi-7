@@ -115,3 +115,40 @@ Saved at `/tmp/blink-cycle-report.txt`. Excerpt of relevant tail:
 Note: B2's path-trace verdict (`O1`) targeted `PanelId(71v1)` (the production TextField under control-panel area) per the legacy heuristic. B2.1's revised picker chose `PanelId(497v1)` (the test-panel TextField the user actually clicked into, in the test cosmos area). Both targets receive zero HANDLER_ENTRY in the active window, so the OA1 verdict is robust regardless of target-picker choice.
 
 **Next phase dispatched:** Task 22 — B2.2 re-brainstorm. Per spec Phase 0 outcome dispatch, the OA1 bin (handler not invoked despite NOTICE_FC_DECODE present) is out of B2.1's ≤30 LOC fix budget; the candidate space for B2.2 is the gap between `behavior_type` lookup and `behavior.notice()` invocation in `emView.rs:4204-4245`. Tasks 13-21 are skipped (no Phase 1 fix lands in B2.1).
+
+---
+
+## Handoff to B2.2 brainstorm
+
+Phase 0 verdict was OA1, which means **the notice-dispatch chain reaches NOTICE_FC_DECODE emit (emView.rs:4243) but does not reach the TextFieldPanel impl's body (HANDLER_ENTRY emit at emTestPanel.rs:265 / emColorFieldFieldPanel.rs:158)** in the focus-hold window. B2.1 closes here without a fix landed.
+
+### What we learned
+
+- B2.1's 3-line instrumentation (HANDLER_ENTRY, WUP_RESULT, CYCLE_ENTRY) cleanly distinguished the 9-bin truth table; the capture identified OA1 unambiguously.
+- The bug class is upstream of the post-handler chain. *All* of {OB1, OB2, OB3, OC-NOPICKUP, OC-DISPATCH, OD2, OD3, OD-OK} are ruled out — none required: HANDLER_ENTRY is absent, so no downstream link is reachable.
+- **All 237 HANDLER_ENTRY events in the entire 4.7-hour log occurred in the first 68 seconds of process lifetime.** After `wall_us=68658526` there is a ~17000-second gap with zero HANDLER_ENTRY emissions, including across the user's actual click and 30-second focus hold.
+- 12 NOTICE_FC_DECODE events fired in the focus-hold window, 2 of them targeting `emTestPanel::TextFieldPanel` (PanelId(497v1)); zero HANDLER_ENTRY for any panel followed.
+- The cdylib's instrumentation IS compiled in (`strings target/release/deps/libemTestPanel.so | grep HANDLER_ENTRY` confirms presence), so this is not the prior `project_isactive_bug.md` cdylib-staleness trap directly.
+
+### What remains unknown
+
+The four candidate root causes for B2.2:
+
+1. **Vtable corruption / wrong impl bound at click time.** The `behavior` for PanelId(497v1) reports `behavior_type=emTestPanel::emTestPanel::TextFieldPanel` at NOTICE_FC_DECODE time (emView.rs:4204 reads `tree.behavior_type_name(id)`). But that's a *type-name string*, not the actual `Box<dyn PanelBehavior>` vtable. Possibility: the type name lookup and the actual stored behavior diverge (e.g., type_name cached at registration but behavior swapped via take_behavior/put_behavior pair).
+2. **Silent panic between NOTICE_FC_DECODE and behavior.notice.** Lines 4244 and 4245 are sequential; a panic between them would kill the panel handler chain. Investigation: add an EMIT_DELIVERED line right after `behavior.notice(...)` returns to detect whether the call returned at all.
+3. **Cdylib in-memory copy vs. on-disk file divergence.** dlopen can pin an in-memory image of the .so. If anything (test runner, `cargo build`, etc.) recompiled the .so between dlopen and click, behavior could diverge from disk. We did NOT explicitly verify that the running cdylib was loaded AFTER the most recent emtest source change.
+4. **Activity drop-off pattern correlates with something else.** All HANDLER_ENTRY events stop at ~68s. What system event happens around 68 seconds into the process? (Possibly: panel-tree settles, activations stop firing FOCUS_CHANGED, panels go into a "warm" steady state.) If the 4-hour AFK plus the click triggered a notice-delivery code path that was never exercised in the first 68s, that path may have a permanent bug.
+
+The aside on `SET_ACTIVE_RESULT.sched_some=f` at click time is a separate observable that B2.2 should triangulate — it might be coincident, or it might block notice-delivery causally.
+
+### What B2.2 instrumentation should add
+
+Beyond what B2.1 already covers:
+
+- **DELIVERED line** immediately after `behavior.notice(...)` returns at emView.rs:4246 — distinguishes "behavior.notice ran but didn't enter FOCUS_CHANGED branch" vs. "behavior.notice never ran".
+- **BEHAVIOR_PTR line** at the dispatch site that logs the actual vtable pointer of the dispatched `behavior` — distinguishes "right type name, wrong vtable" trap.
+- **PROCESS_STATE / SCHEDULER_STATE line** at periodic intervals — surfaces whether the activity drop-off at 68s is caused by some event-loop state change.
+
+### Next step
+
+Invoke `superpowers:brainstorming` for B2.2 with this findings doc and the capture log as input. The candidate space is much smaller than B2.1's — only 4 candidates above, each with a specific instrumentation strategy.
